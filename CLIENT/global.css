@@ -1,0 +1,593 @@
+/** @import must precede all other statements */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /**
+   * Global overflow and layout utilities
+   */
+
+  /* In globals.css or tailwind.css */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* SweetAlert must ALWAYS be above all modals */
+  .swal-super-top {
+    z-index: 2147483647 !important;
+  }
+
+  .swal2-backdrop {
+    z-index: 2147483646 !important;
+  }
+
+
+  .zoomer{
+    zoom: 0.95 !important;
+  }
+
+  .body {
+    zoom: 0.8 !important;
+  }
+
+  /* Ensure dialogs have proper stacking context */
+  [data-radix-dialog-content] {
+    z-index: 50 !important;
+  }
+
+  /* Backdrop for dialogs */
+  .dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    z-index: 40;
+  }
+
+  .page-container {
+    @apply h-screen flex flex-col overflow-hidden;
+  }
+
+  .page-header {
+    @apply flex-shrink-0;
+  }
+
+  .page-content {
+    @apply flex-1 overflow-y-auto px-8 py-6 flex flex-col;
+  }
+
+  .scrollable-content {
+    @apply flex-1 overflow-y-auto;
+  }
+
+  .table-container {
+    @apply flex-1 overflow-y-auto;
+  }
+
+  .sticky-header {
+    @apply sticky top-0 bg-background z-10;
+  }
+
+  /* Ensure consistent spacing for main content areas */
+  .main-content {
+    @apply px-8 py-6 space-y-6 flex flex-col overflow-y-auto h-full hide-scrollbar;
+  }
+
+  /* Card spacing improvements */
+  .card-spacing {
+    @apply p-6 space-y-4;
+  }
+
+  /* Extra wide spacing for better visual breathing room */
+  .wide-spacing {
+    @apply px-12 py-8 space-y-8;
+  }
+
+  /* Extra wide horizontal spacing only */
+  .wide-horizontal {
+    @apply px-12;
+  }
+
+  /* Hide all scrollbars globally while keeping scroll functionality */
+  * {
+    scrollbar-width: none !important;
+    /* Firefox */
+    -ms-overflow-style: none !important;
+    /* IE and Edge */
+  }
+
+  *::-webkit-scrollbar {
+    display: none !important;
+    /* Chrome, Safari, Opera */
+  }
+
+  /* Custom scrollbar hiding for specific elements */
+  .hide-scrollbar {
+    scrollbar-width: none !important;
+    /* Firefox */
+    -ms-overflow-style: none !important;
+    /* IE and Edge */
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none !important;
+    /* Chrome, Safari, Opera */
+  }
+
+  /**
+   * SweetAlert2 Custom Styles - Compact and responsive
+   */
+  .swal2-popup {
+    font-size: 0.875rem !important;
+    max-width: 90vw !important;
+    width: 20em !important;
+    padding: 1rem !important;
+  }
+
+  .swal2-title {
+    font-size: 1.125rem !important;
+    font-weight: 600 !important;
+    margin-bottom: 0.5rem !important;
+  }
+
+  .swal2-content {
+    font-size: 0.875rem !important;
+    line-height: 1.4 !important;
+    margin-bottom: 1rem !important;
+  }
+
+  .swal2-actions {
+    margin-top: 1rem !important;
+  }
+
+  .swal2-confirm,
+  .swal2-cancel {
+    font-size: 0.875rem !important;
+    padding: 0.5rem 1rem !important;
+    margin: 0 0.25rem !important;
+  }
+
+  .swal2-toast {
+    font-size: 0.875rem !important;
+    max-width: 90vw !important;
+    width: 280px !important;
+    padding: 0.75rem !important;
+  }
+
+  .swal2-toast .swal2-title {
+    font-size: 0.875rem !important;
+    margin: 0 !important;
+  }
+
+  /**
+   * Hide scrollbars while keeping scroll functionality
+   */
+  html,
+  body {
+    overflow-x: hidden !important;
+    max-width: 100vw !important;
+    width: 100% !important;
+  }
+
+  * {
+    box-sizing: border-box !important;
+  }
+
+  /* Ensure all containers respect viewport width */
+  .page-container,
+  .page-content,
+  .scrollable-content,
+  .table-container {
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+    width: 100% !important;
+  }
+
+  /* Force table to be responsive and not overflow */
+  .table-container table {
+    width: 100% !important;
+    max-width: 100% !important;
+    table-layout: fixed !important;
+  }
+
+  /* Ensure all table cells respect their container */
+  .table-container th,
+  .table-container td {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  /* Allow text wrapping in specific cells that need it */
+  .table-container .break-words {
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+  }
+
+  /* Ensure sidebar doesn't cause horizontal overflow */
+  [data-sidebar] {
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Ensure main content area doesn't overflow */
+  [data-sidebar-inset] {
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Force all flex containers to not overflow */
+  .flex {
+    max-width: 100% !important;
+  }
+
+  /* Ensure cards and containers don't overflow */
+  .card,
+  [class*="card"] {
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Prevent horizontal scrolling for main containers */
+  .page-container,
+  .page-content,
+  .scrollable-content,
+  .table-container,
+  .card,
+  [class*="card"] {
+    max-width: 100% !important;
+  }
+
+  /**
+   * Tailwind CSS theme
+   * tailwind.config.ts expects the following color variables to be expressed as HSL values.
+   * A different format will require also updating the theme in tailwind.config.ts.
+  */
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Emerald primary for brand */
+    --primary: 160 84% 39%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 200 100% 97%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 190 92% 42%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 160 84% 39%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 99%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 160 84% 39%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 190 92% 42% / 0.08;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 214 32% 91%;
+    --sidebar-ring: 190 92% 42%;
+  }
+
+  .dark {
+    /* Blue-black theme */
+    --background: 220 70% 6%;
+    --foreground: 210 40% 98%;
+
+    --card: 220 65% 8%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 220 65% 8%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 160 84% 39%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 220 30% 12%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 220 28% 16%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 200 92% 45%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 63% 30%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 220 26% 15%;
+    --input: 220 26% 15%;
+    --ring: 200 92% 45%;
+
+    --sidebar-background: 220 70% 6.5%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 160 84% 39%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 200 92% 45% / 0.12;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 220 28% 14%;
+    --sidebar-ring: 200 92% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* SweetAlert2 Professional Custom Styles */
+.swal2-popup {
+  @apply font-sans rounded-2xl shadow-2xl border-0 backdrop-blur-sm;
+  font-family: 'Inter', sans-serif;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.swal2-title {
+  @apply text-2xl font-bold text-gray-900 mb-2;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.swal2-content {
+  @apply text-gray-600 text-base leading-relaxed;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.swal2-html-container {
+  @apply text-gray-600 text-base leading-relaxed;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.swal2-confirm {
+  @apply rounded-xl font-semibold px-8 py-3 text-sm transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-opacity-50;
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  border: none;
+  box-shadow: 0 4px 14px 0 rgba(59, 130, 246, 0.4);
+  font-weight: 600;
+  letter-spacing: 0.025em;
+}
+
+.swal2-confirm:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px 0 rgba(59, 130, 246, 0.5);
+}
+
+.swal2-cancel {
+  @apply rounded-xl font-semibold px-8 py-3 text-sm transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-opacity-50;
+  background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+  border: none;
+  box-shadow: 0 4px 14px 0 rgba(107, 114, 128, 0.3);
+  font-weight: 600;
+  letter-spacing: 0.025em;
+}
+
+.swal2-cancel:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px 0 rgba(107, 114, 128, 0.4);
+}
+
+/* Icon styling */
+.swal2-icon {
+  @apply border-4;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  margin: 20px auto 30px;
+}
+
+.swal2-icon.swal2-success {
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.swal2-icon.swal2-error {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.swal2-icon.swal2-warning {
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.swal2-icon.swal2-info {
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+.swal2-icon.swal2-question {
+  border-color: #8b5cf6;
+  color: #8b5cf6;
+}
+
+/* Success button */
+.swal2-confirm.swal2-styled {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.4);
+}
+
+.swal2-confirm.swal2-styled:hover {
+  box-shadow: 0 6px 20px 0 rgba(16, 185, 129, 0.5);
+}
+
+/* Error button */
+.swal2-confirm.swal2-styled[style*="background-color: rgb(239, 68, 68)"] {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+  box-shadow: 0 4px 14px 0 rgba(239, 68, 68, 0.4) !important;
+}
+
+.swal2-confirm.swal2-styled[style*="background-color: rgb(239, 68, 68)"]:hover {
+  box-shadow: 0 6px 20px 0 rgba(239, 68, 68, 0.5) !important;
+}
+
+/* Warning button */
+.swal2-confirm.swal2-styled[style*="background-color: rgb(245, 158, 11)"] {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+  box-shadow: 0 4px 14px 0 rgba(245, 158, 11, 0.4) !important;
+}
+
+.swal2-confirm.swal2-styled[style*="background-color: rgb(245, 158, 11)"]:hover {
+  box-shadow: 0 6px 20px 0 rgba(245, 158, 11, 0.5) !important;
+}
+
+/* Dark mode support */
+.dark .swal2-popup {
+  background: rgba(17, 24, 39, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.dark .swal2-title {
+  @apply text-white;
+}
+
+.dark .swal2-content {
+  @apply text-gray-300;
+}
+
+.dark .swal2-html-container {
+  @apply text-gray-300;
+}
+
+/* Toast styling */
+.swal2-toast {
+  @apply rounded-xl shadow-xl border-0 backdrop-blur-sm;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.dark .swal2-toast {
+  background: rgba(17, 24, 39, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Loading spinner */
+.swal2-loader {
+  border-color: #3b82f6;
+  border-top-color: transparent;
+}
+
+/* Close button */
+.swal2-close {
+  @apply text-gray-400 hover:text-gray-600 transition-colors duration-200;
+  font-size: 24px;
+  font-weight: 300;
+}
+
+.dark .swal2-close {
+  @apply text-gray-500 hover:text-gray-300;
+}
+
+/* Progress bar */
+.swal2-timer-progress-bar {
+  background: linear-gradient(90deg, #3b82f6, #1d4ed8);
+}
+
+/* Input styling */
+.swal2-input {
+  @apply rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200;
+  padding: 12px 16px;
+  font-size: 16px;
+}
+
+.dark .swal2-input {
+  @apply bg-gray-800 border-gray-600 text-white focus:border-blue-400 focus:ring-blue-900;
+}
+
+/* Select styling */
+.swal2-select {
+  @apply rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200;
+  padding: 12px 16px;
+  font-size: 16px;
+}
+
+.dark .swal2-select {
+  @apply bg-gray-800 border-gray-600 text-white focus:border-blue-400 focus:ring-blue-900;
+}
+
+/* Textarea styling */
+.swal2-textarea {
+  @apply rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200;
+  padding: 12px 16px;
+  font-size: 16px;
+  resize: vertical;
+}
+
+.dark .swal2-textarea {
+  @apply bg-gray-800 border-gray-600 text-white focus:border-blue-400 focus:ring-blue-900;
+}
+
+/* Animation improvements */
+.swal2-show {
+  animation: swal2-show 0.3s ease-out;
+}
+
+.swal2-hide {
+  animation: swal2-hide 0.2s ease-in;
+}
+
+@keyframes swal2-show {
+  0% {
+    transform: scale(0.7) translateY(-50px);
+    opacity: 0;
+  }
+
+  45% {
+    transform: scale(1.05) translateY(0);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes swal2-hide {
+  0% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(0.7) translateY(-50px);
+    opacity: 0;
+  }
+}

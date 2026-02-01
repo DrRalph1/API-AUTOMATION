@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>API Automation</title>
+
+  <!-- Favicon / WAF Icon -->
+  <link rel="icon" href="/static/waf-icon.png" type="image/png" />
+  <!-- Optionally include multiple sizes for better browser support -->
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/waf-icon.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/waf-icon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/waf-icon-16x16.png" />
+
+  <!-- Prevent theme flash by setting theme immediately -->
+  <script>
+    (function () {
+      try {
+        const savedTheme = localStorage.getItem('waf-theme');
+        if (savedTheme === 'dark') {
+          document.documentElement.classList.add('dark');
+        } else if (savedTheme === 'light') {
+          document.documentElement.classList.remove('dark');
+        } else {
+          // No saved preference, use system preference
+          const mq = window.matchMedia('(prefers-color-scheme: dark)');
+          if (mq.matches) {
+            document.documentElement.classList.add('dark');
+          }
+        }
+      } catch (e) {
+        // Fallback to light theme
+        document.documentElement.classList.remove('dark');
+      }
+    })();
+  </script>
+</head>
+
+<body>
+  <div id="root"></div>
+  <!-- Webpack bundle served from Express -->
+  <script src="/static/bundle.js"></script>
+</body>
+
+</html>
