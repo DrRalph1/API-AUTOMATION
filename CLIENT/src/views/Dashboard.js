@@ -157,6 +157,10 @@ const Dashboard = () => {
     csharp: 5
   });
 
+  // Pagination for recent activities
+  const [activityPage, setActivityPage] = useState(1);
+  const [activitiesPerPage, setActivitiesPerPage] = useState(4);
+
   const isDark = theme === 'dark';
 
   // Color scheme matching your other components
@@ -367,7 +371,7 @@ const Dashboard = () => {
         { name: 'Generate Report', latency: 125, calls: 342, successRate: 99.2 }
       ];
 
-      // Sample schema data
+      // Sample schema data with more detailed information
       const sampleSchemaData = {
         totalObjects: 156,
         tables: 45,
@@ -376,44 +380,41 @@ const Dashboard = () => {
         packages: 8,
         functions: 15,
         triggers: 9,
-        indexes: 44
+        indexes: 44,
+        sequences: 5,
+        materializedViews: 3,
+        partitions: 21
       };
 
-      // Sample recent activity
-      const sampleRecentActivity = [
-        {
-          id: 'act-1',
-          action: 'API Generated',
-          description: 'User Management API v2.1 deployed',
-          user: 'Admin',
-          time: '10 minutes ago',
-          icon: 'api'
-        },
-        {
-          id: 'act-2',
-          action: 'Database Connected',
-          description: 'Connected to HR_PROD database',
-          user: 'System',
-          time: '25 minutes ago',
-          icon: 'database'
-        },
-        {
-          id: 'act-3',
-          action: 'Code Generated',
-          description: 'Java Spring Boot code for Payment API',
-          user: 'Developer',
-          time: '1 hour ago',
-          icon: 'code'
-        },
-        {
-          id: 'act-4',
-          action: 'Schema Updated',
-          description: 'Updated EMPLOYEES table structure',
-          user: 'DBA',
-          time: '2 hours ago',
-          icon: 'schema'
+      // Generate more sample recent activities for pagination
+      const generateSampleActivities = () => {
+        const activities = [];
+        const actions = ['API Generated', 'Database Connected', 'Code Generated', 'Schema Updated', 
+                        'User Login', 'Configuration Updated', 'Backup Created', 'Test Executed',
+                        'Deployment Completed', 'Security Scan', 'Performance Test', 'Bug Fixed'];
+        const users = ['Admin', 'System', 'Developer', 'DBA', 'Tester', 'DevOps', 'Security Analyst'];
+        const icons = ['api', 'database', 'code', 'schema', 'user', 'settings', 'backup', 'test'];
+        
+        for (let i = 1; i <= 25; i++) {
+          const action = actions[Math.floor(Math.random() * actions.length)];
+          const user = users[Math.floor(Math.random() * users.length)];
+          const icon = icons[Math.floor(Math.random() * icons.length)];
+          const hoursAgo = Math.floor(Math.random() * 24 * 7); // Up to 1 week ago
+          
+          activities.push({
+            id: `act-${i}`,
+            action: action,
+            description: `${action} for ${user}'s task #${i}`,
+            user: user,
+            time: hoursAgo === 0 ? 'Just now' : 
+                  hoursAgo < 24 ? `${hoursAgo} hour${hoursAgo > 1 ? 's' : ''} ago` :
+                  `${Math.floor(hoursAgo / 24)} day${Math.floor(hoursAgo / 24) > 1 ? 's' : ''} ago`,
+            icon: icon,
+            priority: Math.random() > 0.7 ? 'high' : Math.random() > 0.4 ? 'medium' : 'low'
+          });
         }
-      ];
+        return activities;
+      };
 
       // Calculate stats
       const sampleStats = {
@@ -433,11 +434,30 @@ const Dashboard = () => {
       setApiPerformance(sampleApiPerformance);
       setSchemaData(sampleSchemaData);
       setStats(sampleStats);
-      setRecentActivity(sampleRecentActivity);
+      setRecentActivity(generateSampleActivities());
     };
 
     fetchDashboardData();
   }, []);
+
+  // Pagination logic
+  const totalActivityPages = Math.ceil(recentActivity.length / activitiesPerPage);
+  const paginatedActivities = recentActivity.slice(
+    (activityPage - 1) * activitiesPerPage,
+    activityPage * activitiesPerPage
+  );
+
+  const handlePrevPage = () => {
+    if (activityPage > 1) {
+      setActivityPage(activityPage - 1);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (activityPage < totalActivityPages) {
+      setActivityPage(activityPage + 1);
+    }
+  };
 
   const handleRefresh = () => {
     setLoading(true);
@@ -454,6 +474,10 @@ const Dashboard = () => {
       case 'database': return <Database {...iconProps} />;
       case 'code': return <Code {...iconProps} />;
       case 'schema': return <Table {...iconProps} />;
+      case 'user': return <Users {...iconProps} />;
+      case 'settings': return <Settings {...iconProps} />;
+      case 'backup': return <DatabaseBackup {...iconProps} />;
+      case 'test': return <Beaker {...iconProps} />;
       default: return <Activity {...iconProps} />;
     }
   };
@@ -480,6 +504,15 @@ const Dashboard = () => {
       case 'postgresql': return <Server {...iconProps} />;
       case 'mysql': return <DatabaseIcon {...iconProps} />;
       default: return <Database {...iconProps} />;
+    }
+  };
+
+  const getPriorityColor = (priority) => {
+    switch(priority) {
+      case 'high': return colors.error;
+      case 'medium': return colors.warning;
+      case 'low': return colors.success;
+      default: return colors.textSecondary;
     }
   };
 
@@ -592,8 +625,13 @@ const Dashboard = () => {
   const ActivityItem = ({ activity }) => (
     <div className="flex items-start gap-3 p-3 border-b last:border-b-0 hover:bg-opacity-50 transition-colors hover-lift"
       style={{ borderColor: colors.border }}>
-      <div className="p-1.5 rounded" style={{ backgroundColor: colors.hover }}>
-        {getIconForActivity(activity.icon)}
+      <div className="relative">
+        <div className="p-1.5 rounded" style={{ backgroundColor: colors.hover }}>
+          {getIconForActivity(activity.icon)}
+        </div>
+        {activity.priority === 'high' && (
+          <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full" style={{ backgroundColor: getPriorityColor(activity.priority) }} />
+        )}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between">
@@ -607,36 +645,217 @@ const Dashboard = () => {
         <p className="text-xs mt-1" style={{ color: colors.textSecondary }}>
           {activity.description}
         </p>
-        <div className="text-xs mt-1" style={{ color: colors.textTertiary }}>
-          by {activity.user}
+        <div className="flex items-center justify-between mt-1">
+          <div className="text-xs" style={{ color: colors.textTertiary }}>
+            by {activity.user}
+          </div>
+          {activity.priority !== 'low' && (
+            <div className={`text-xs px-2 py-0.5 rounded-full capitalize ${
+              activity.priority === 'high' ? 'bg-red-500/10 text-red-500' : 'bg-yellow-500/10 text-yellow-500'
+            }`}>
+              {activity.priority}
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 
-  // Schema Stats Card
-  const SchemaStatsCard = () => (
-    <div className="border rounded-xl p-4 hover-lift" style={{ 
-      borderColor: colors.border,
-      backgroundColor: colors.card
-    }}>
-      <div className="flex items-center justify-between mb-4">
-        <div className="text-sm font-medium" style={{ color: colors.text }}>
-          Schema Statistics
-        </div>
-        <Database size={16} style={{ color: colors.textSecondary }} />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        {Object.entries(schemaData).map(([key, value]) => (
-          <div key={key} className="text-center">
-            <div className="text-lg font-bold mb-1" style={{ color: colors.text }}>
-              {value}
-            </div>
-            <div className="text-xs capitalize" style={{ color: colors.textSecondary }}>
-              {key.replace(/([A-Z])/g, ' $1').trim()}
-            </div>
+  // Enhanced Schema Stats Card
+  const SchemaStatsCard = () => {
+    const schemaCategories = [
+      { 
+        name: 'Tables & Views', 
+        items: [
+          { key: 'tables', value: schemaData.tables, icon: <Table size={12} /> },
+          { key: 'views', value: schemaData.views, icon: <Eye size={12} /> },
+          { key: 'materializedViews', value: schemaData.materializedViews || 0, icon: <Database size={12} /> }
+        ],
+        color: colors.info
+      },
+      { 
+        name: 'Program Units', 
+        items: [
+          { key: 'procedures', value: schemaData.procedures, icon: <FileCode size={12} /> },
+          { key: 'functions', value: schemaData.functions, icon: <Code size={12} /> },
+          { key: 'packages', value: schemaData.packages, icon: <Package size={12} /> }
+        ],
+        color: colors.success
+      },
+      { 
+        name: 'Database Objects', 
+        items: [
+          { key: 'triggers', value: schemaData.triggers, icon: <Zap size={12} /> },
+          { key: 'indexes', value: schemaData.indexes, icon: <BarChart3 size={12} /> },
+          { key: 'sequences', value: schemaData.sequences || 0, icon: <TrendingUp size={12} /> }
+        ],
+        color: colors.warning
+      }
+    ];
+
+    return (
+      <div className="border rounded-xl p-4 hover-lift" style={{ 
+        borderColor: colors.border,
+        backgroundColor: colors.card
+      }}>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="text-sm font-semibold mb-1" style={{ color: colors.text }}>
+              Schema Statistics
+            </h3>
+            <p className="text-xs" style={{ color: colors.textSecondary }}>
+              {schemaData.totalObjects} total database objects
+            </p>
           </div>
-        ))}
+          <div className="p-2 rounded-lg" style={{ backgroundColor: `${colors.primaryDark}20` }}>
+            <Database size={18} style={{ color: colors.primaryDark }} />
+          </div>
+        </div>
+
+        {/* Progress bar for total objects */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs" style={{ color: colors.textSecondary }}>Database Utilization</span>
+            <span className="text-xs font-medium" style={{ color: colors.text }}>
+              {Math.round((schemaData.totalObjects / 200) * 100)}%
+            </span>
+          </div>
+          <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: colors.border }}>
+            <div 
+              className="h-full rounded-full transition-all duration-300"
+              style={{ 
+                width: `${Math.min((schemaData.totalObjects / 200) * 100, 100)}%`,
+                background: `linear-gradient(90deg, ${colors.info}, ${colors.primaryDark})`
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Schema categories */}
+        <div className="space-y-4">
+          {schemaCategories.map((category, index) => (
+            <div key={index} className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium" style={{ color: colors.text }}>
+                  {category.name}
+                </span>
+                <span className="text-xs" style={{ color: category.color }}>
+                  {category.items.reduce((sum, item) => sum + item.value, 0)} objects
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {category.items.map((item, idx) => (
+                  <div key={idx} className="border rounded p-2 text-center hover-lift"
+                    style={{ 
+                      borderColor: colors.borderLight,
+                      backgroundColor: colors.hover
+                    }}>
+                    <div className="flex items-center justify-center gap-1 mb-1">
+                      {item.icon}
+                      <span className="text-xs font-bold" style={{ color: colors.text }}>
+                        {item.value}
+                      </span>
+                    </div>
+                    <div className="text-xs capitalize" style={{ color: colors.textSecondary }}>
+                      {item.key.replace(/([A-Z])/g, ' $1').trim()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Quick summary */}
+        <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+          <div className="flex items-center justify-between text-xs">
+            <span style={{ color: colors.textSecondary }}>Last Updated</span>
+            <span style={{ color: colors.text }}>Today, 10:30 AM</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Activity Pagination Component
+  const ActivityPagination = () => (
+    <div className="flex items-center justify-between p-4 border-t" style={{ borderColor: colors.border }}>
+      <div className="text-xs" style={{ color: colors.textSecondary }}>
+        Showing {((activityPage - 1) * activitiesPerPage) + 1} - {Math.min(activityPage * activitiesPerPage, recentActivity.length)} of {recentActivity.length} activities
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handlePrevPage}
+          disabled={activityPage === 1}
+          className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
+          style={{ 
+            backgroundColor: activityPage === 1 ? 'transparent' : colors.hover,
+            color: colors.text,
+            cursor: activityPage === 1 ? 'not-allowed' : 'pointer'
+          }}
+        >
+          <ChevronLeft size={14} />
+        </button>
+        
+        <div className="flex items-center gap-1">
+          {Array.from({ length: Math.min(3, totalActivityPages) }, (_, i) => {
+            let pageNum;
+            if (totalActivityPages <= 3) {
+              pageNum = i + 1;
+            } else if (activityPage === 1) {
+              pageNum = i + 1;
+            } else if (activityPage === totalActivityPages) {
+              pageNum = totalActivityPages - 2 + i;
+            } else {
+              pageNum = activityPage - 1 + i;
+            }
+            
+            if (pageNum > totalActivityPages) return null;
+            
+            return (
+              <button
+                key={pageNum}
+                onClick={() => setActivityPage(pageNum)}
+                className="w-6 h-6 rounded text-xs font-medium transition-colors"
+                style={{ 
+                  backgroundColor: activityPage === pageNum ? colors.selected : 'transparent',
+                  color: activityPage === pageNum ? colors.primaryDark : colors.textSecondary
+                }}
+              >
+                {pageNum}
+              </button>
+            );
+          })}
+          
+          {totalActivityPages > 3 && activityPage < totalActivityPages - 1 && (
+            <>
+              <span className="text-xs" style={{ color: colors.textSecondary }}>...</span>
+              <button
+                onClick={() => setActivityPage(totalActivityPages)}
+                className="w-6 h-6 rounded text-xs font-medium transition-colors"
+                style={{ 
+                  backgroundColor: activityPage === totalActivityPages ? colors.selected : 'transparent',
+                  color: activityPage === totalActivityPages ? colors.primaryDark : colors.textSecondary
+                }}
+              >
+                {totalActivityPages}
+              </button>
+            </>
+          )}
+        </div>
+        
+        <button
+          onClick={handleNextPage}
+          disabled={activityPage === totalActivityPages}
+          className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
+          style={{ 
+            backgroundColor: activityPage === totalActivityPages ? 'transparent' : colors.hover,
+            color: colors.text,
+            cursor: activityPage === totalActivityPages ? 'not-allowed' : 'pointer'
+          }}
+        >
+          <ChevronRightIcon size={14} />
+        </button>
       </div>
     </div>
   );
@@ -840,8 +1059,8 @@ const Dashboard = () => {
       {/* Main Content - Shifted to the left */}
       <div className="flex-1 overflow-hidden flex">
         <div className="flex-1 overflow-auto p-4">
-          <div className="max-w-7xl mx-auto">
-            {/* Key Metrics */}
+          <div className="max-w-8xl mx-auto pl-12 pr-12">
+            {/* Key Metrics */} 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <StatCard
                 title="Total Connections"
@@ -946,14 +1165,30 @@ const Dashboard = () => {
                       <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
                         Recent Activity
                       </h3>
-                      <Clock size={14} style={{ color: colors.textSecondary }} />
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={activitiesPerPage}
+                          onChange={(e) => setActivitiesPerPage(Number(e.target.value))}
+                          className="text-xs px-2 py-1 rounded border bg-transparent"
+                          style={{ 
+                            borderColor: colors.border,
+                            color: colors.text
+                          }}
+                        >
+                          <option value={5}>5 per page</option>
+                          <option value={10}>10 per page</option>
+                          <option value={15}>15 per page</option>
+                        </select>
+                        <Clock size={14} style={{ color: colors.textSecondary }} />
+                      </div>
                     </div>
                   </div>
                   <div className="max-h-96 overflow-auto">
-                    {recentActivity.map(activity => (
+                    {paginatedActivities.map(activity => (
                       <ActivityItem key={activity.id} activity={activity} />
                     ))}
                   </div>
+                  <ActivityPagination />
                 </div>
 
                 {/* Schema Statistics */}

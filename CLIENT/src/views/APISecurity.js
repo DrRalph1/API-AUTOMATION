@@ -923,13 +923,13 @@ const APISecurity = () => {
         </h2>
         <div className="space-y-1">
           {[
-            { id: 'overview', label: 'Overview', icon: <Activity size={16} /> },
+            // { id: 'overview', label: 'Overview', icon: <Activity size={16} /> },
             { id: 'rate-limits', label: 'Rate Limits', icon: <Filter size={16} /> },
             { id: 'ip-whitelist', label: 'IP Whitelist', icon: <Globe size={16} /> },
             { id: 'load-balancers', label: 'Load Balancers', icon: <Server size={16} /> },
             { id: 'security-events', label: 'Security Events', icon: <AlertTriangle size={16} /> },
-            { id: 'waf-rules', label: 'WAF Rules', icon: <Shield size={16} /> },
-            { id: 'api-keys', label: 'API Keys', icon: <Key size={16} /> },
+            // { id: 'waf-rules', label: 'WAF Rules', icon: <Shield size={16} /> },
+            // { id: 'api-keys', label: 'API Keys', icon: <Key size={16} /> },
             { id: 'authentication', label: 'Authentication', icon: <Lock size={16} /> },
             { id: 'monitoring', label: 'Monitoring', icon: <BarChart3 size={16} /> },
             { id: 'reports', label: 'Reports', icon: <FileText size={16} /> }
@@ -953,7 +953,7 @@ const APISecurity = () => {
       </div>
 
       {/* Security Summary */}
-      {/* <div className="border rounded-xl p-4 mb-6" style={{ 
+      <div className="border rounded-xl p-4 mb-6" style={{ 
         borderColor: colors.border,
         backgroundColor: colors.card
       }}>
@@ -990,7 +990,7 @@ const APISecurity = () => {
             </div>
           </div>
         </div>
-      </div> */}
+      </div>
 
       {/* Quick Actions */}
       <div>
