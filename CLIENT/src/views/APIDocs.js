@@ -564,9 +564,10 @@ const APIDocs = () => {
   
   const isDark = theme === 'dark';
 
-  // Updated color scheme to match APIScript
+  // Updated color scheme to match APICodeBase
   const colors = isDark ? {
     bg: '#0f172a',
+    white: '#f8fafc',
     sidebar: '#1e293b',
     main: '#0f172a',
     header: '#1e293b',
@@ -580,7 +581,7 @@ const APIDocs = () => {
     hover: '#334155',
     active: '#475569',
     selected: '#2c5282',
-    primary: '#3b82f6',
+    primary: '#f1f5f9',
     primaryLight: '#60a5fa',
     primaryDark: '#2563eb',
     method: {
@@ -614,6 +615,7 @@ const APIDocs = () => {
     codeBg: '#1e293b'
   } : {
     bg: '#f8fafc',
+    white: '#f8fafc',
     sidebar: '#ffffff',
     main: '#f8fafc',
     header: '#ffffff',
@@ -627,7 +629,7 @@ const APIDocs = () => {
     hover: '#f1f5f9',
     active: '#e2e8f0',
     selected: '#dbeafe',
-    primary: '#3b82f6',
+    primary: '#1e293b',
     primaryLight: '#60a5fa',
     primaryDark: '#2563eb',
     method: {
@@ -922,7 +924,7 @@ req.end();`}`
               const example = generateCodeExample();
               copyToClipboard(example);
             }}
-            style={{ backgroundColor: colors.primary, color: 'white' }}>
+            style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
             <Copy size={12} />
             Copy to Clipboard
           </button>
@@ -968,7 +970,7 @@ req.end();`}`
               <p className="text-sm mb-4" style={{ color: colors.text }}>Drag and drop your file here</p>
               <p className="text-xs mb-4" style={{ color: colors.textSecondary }}>Supports: Postman Collection v2.1, OpenAPI 3.0, cURL</p>
               <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
-                style={{ backgroundColor: colors.primary, color: 'white' }}
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}
                 onClick={() => showToast('File browser would open', 'info')}>
                 Browse Files
               </button>
@@ -1002,7 +1004,7 @@ req.end();`}`
                 showToast('Collection imported successfully!', 'success');
                 setShowImportModal(false);
               }} className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
-                style={{ backgroundColor: colors.primary, color: 'white' }}>
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                 Import
               </button>
             </div>
@@ -1078,7 +1080,7 @@ req.end();`}`
                 showToast('Settings saved!', 'success');
                 setShowSettingsModal(false);
               }} className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
-                style={{ backgroundColor: colors.primary, color: 'white' }}>
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                 Save Changes
               </button>
             </div>
@@ -1164,7 +1166,7 @@ req.end();`}`
               <button onClick={() => {
                 generatePublishUrl();
               }} className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
-                style={{ backgroundColor: colors.primary, color: 'white' }}>
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                 {isGeneratingDocs ? (
                   <>
                     <RefreshCw size={12} className="animate-spin inline mr-2" />
@@ -1205,7 +1207,7 @@ req.end();`}`
     
     return (
       <div className="flex-1 overflow-auto p-8">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-6xl mx-auto">
           {/* Header */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-2">
@@ -1485,7 +1487,7 @@ req.end();`}`
                         />
                         <button className="px-3 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
                           onClick={() => copyToClipboard(publishUrl)}
-                          style={{ backgroundColor: colors.primary, color: 'white' }}>
+                          style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                           Copy
                         </button>
                         <button className="px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
@@ -1530,7 +1532,7 @@ req.end();`}`
               </div>
               <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                 onClick={() => showToast('Connecting to API Network...', 'info')}
-                style={{ backgroundColor: colors.primary, color: 'white' }}>
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                 Connect API
               </button>
             </div>
@@ -1620,7 +1622,7 @@ req.end();`}`
               </div>
               <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                 onClick={() => showToast('Creating mock server...', 'info')}
-                style={{ backgroundColor: colors.primary, color: 'white' }}>
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                 New Mock Server
               </button>
             </div>
@@ -1652,7 +1654,7 @@ req.end();`}`
               </div>
               <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                 onClick={() => showToast('Creating new monitor...', 'info')}
-                style={{ backgroundColor: colors.primary, color: 'white' }}>
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                 Add Monitor
               </button>
             </div>
@@ -1727,7 +1729,7 @@ req.end();`}`
                   <p className="mb-4">Team collaboration and comments feature</p>
                   <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                     onClick={() => showToast('Enable comments feature', 'info')}
-                    style={{ backgroundColor: colors.primary, color: 'white' }}>
+                    style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                     Enable Comments
                   </button>
                 </div>

@@ -157,105 +157,106 @@ const APICollections = () => {
   const [theme, setTheme] = useState('dark');
   const isDark = theme === 'dark';
 
-  // Postman EXACT colors
-  const postmanColors = {
-    light: {
-      bg: '#F6F6F6',
-      sidebar: '#FFFFFF',
-      main: '#FFFFFF',
-      header: '#FFFFFF',
-      card: '#FFFFFF',
-      text: '#2D2D2D',
-      textSecondary: '#757575',
-      textTertiary: '#9E9E9E',
-      border: '#E0E0E0',
-      borderLight: '#F0F0F0',
-      borderDark: '#CCCCCC',
-      hover: '#F5F5F5',
-      active: '#EEEEEE',
-      selected: '#E8F4FD',
-      primary: '#FF6C37',
-      primaryLight: '#FF8B5C',
-      primaryDark: '#E55B2E',
-      method: {
-        GET: '#0F9D58',
-        POST: '#FF9800',
-        PUT: '#4285F4',
-        DELETE: '#DB4437',
-        PATCH: '#7B1FA2',
-        HEAD: '#607D8B',
-        OPTIONS: '#795548',
-        LINK: '#039BE5',
-        UNLINK: '#F4511E'
-      },
-      success: '#0F9D58',
-      warning: '#F4B400',
-      error: '#DB4437',
-      info: '#4285F4',
-      tabActive: '#FF6C37',
-      tabInactive: '#757575',
-      sidebarActive: '#FF6C37',
-      sidebarHover: '#F5F5F5',
-      inputBg: '#FFFFFF',
-      inputBorder: '#E0E0E0',
-      tableHeader: '#F5F5F5',
-      tableRow: '#FFFFFF',
-      tableRowHover: '#FAFAFA',
-      dropdownBg: '#FFFFFF',
-      dropdownBorder: '#E0E0E0',
-      modalBg: '#FFFFFF',
-      modalBorder: '#E0E0E0'
+  // Matching the exact color scheme from the first component
+  const colors = isDark ? {
+    bg: '#0f172a',
+    white: '#f8fafc',
+    sidebar: '#1e293b',
+    main: '#0f172a',
+    header: '#1e293b',
+    card: '#1e293b',
+    text: '#f1f5f9',
+    textSecondary: '#94a3b8',
+    textTertiary: '#64748b',
+    border: '#334155',
+    borderLight: '#2d3748',
+    borderDark: '#475569',
+    hover: '#334155',
+    active: '#475569',
+    selected: '#2c5282',
+    primary: '#f1f5f9',
+    primaryLight: '#60a5fa',
+    primaryDark: '#2563eb',
+    method: {
+      GET: '#10b981',
+      POST: '#3b82f6',
+      PUT: '#f59e0b',
+      DELETE: '#ef4444',
+      PATCH: '#8b5cf6',
+      HEAD: '#6b7280',
+      OPTIONS: '#8b5cf6',
+      LINK: '#06b6d4',
+      UNLINK: '#f97316'
     },
-    dark: {
-      bg: '#0D0D0D',
-      sidebar: '#1A1A1A',
-      main: '#151515',
-      header: '#1A1A1A',
-      card: '#1E1E1E',
-      text: '#E0E0E0',
-      textSecondary: '#AAAAAA',
-      textTertiary: '#888888',
-      border: '#333333',
-      borderLight: '#2A2A2A',
-      borderDark: '#404040',
-      hover: '#2A2A2A',
-      active: '#333333',
-      selected: '#2C3E50',
-      primary: '#FF6C37',
-      primaryLight: '#FF8B5C',
-      primaryDark: '#E55B2E',
-      method: {
-        GET: '#34A853',
-        POST: '#FBBC05',
-        PUT: '#4285F4',
-        DELETE: '#EA4335',
-        PATCH: '#A142F4',
-        HEAD: '#8C9EFF',
-        OPTIONS: '#A1887F',
-        LINK: '#039BE5',
-        UNLINK: '#FF7043'
-      },
-      success: '#34A853',
-      warning: '#FBBC05',
-      error: '#EA4335',
-      info: '#4285F4',
-      tabActive: '#FF6C37',
-      tabInactive: '#AAAAAA',
-      sidebarActive: '#FF6C37',
-      sidebarHover: '#2A2A2A',
-      inputBg: '#1A1A1A',
-      inputBorder: '#333333',
-      tableHeader: '#2A2A2A',
-      tableRow: '#1E1E1E',
-      tableRowHover: '#252525',
-      dropdownBg: '#1E1E1E',
-      dropdownBorder: '#333333',
-      modalBg: '#1E1E1E',
-      modalBorder: '#333333'
-    }
+    success: '#10b981',
+    warning: '#f59e0b',
+    error: '#ef4444',
+    info: '#3b82f6',
+    tabActive: '#3b82f6',
+    tabInactive: '#94a3b8',
+    sidebarActive: '#3b82f6',
+    sidebarHover: '#334155',
+    inputBg: '#1e293b',
+    inputBorder: '#334155',
+    tableHeader: '#334155',
+    tableRow: '#1e293b',
+    tableRowHover: '#2d3748',
+    dropdownBg: '#1e293b',
+    dropdownBorder: '#334155',
+    modalBg: '#1e293b',
+    modalBorder: '#334155',
+    codeBg: '#1e293b',
+    gradient: 'from-blue-500/20 via-violet-500/20 to-orange-500/20'
+  } : {
+    bg: '#f8fafc',
+    white: '#f8fafc',
+    sidebar: '#ffffff',
+    main: '#f8fafc',
+    header: '#ffffff',
+    card: '#ffffff',
+    text: '#1e293b',
+    textSecondary: '#64748b',
+    textTertiary: '#94a3b8',
+    border: '#e2e8f0',
+    borderLight: '#f1f5f9',
+    borderDark: '#cbd5e1',
+    hover: '#f1f5f9',
+    active: '#e2e8f0',
+    selected: '#dbeafe',
+    primary: '#1e293b',
+    primaryLight: '#60a5fa',
+    primaryDark: '#2563eb',
+    method: {
+      GET: '#10b981',
+      POST: '#3b82f6',
+      PUT: '#f59e0b',
+      DELETE: '#ef4444',
+      PATCH: '#8b5cf6',
+      HEAD: '#6b7280',
+      OPTIONS: '#8b5cf6',
+      LINK: '#06b6d4',
+      UNLINK: '#f97316'
+    },
+    success: '#10b981',
+    warning: '#f59e0b',
+    error: '#ef4444',
+    info: '#3b82f6',
+    tabActive: '#3b82f6',
+    tabInactive: '#64748b',
+    sidebarActive: '#3b82f6',
+    sidebarHover: '#f1f5f9',
+    inputBg: '#ffffff',
+    inputBorder: '#e2e8f0',
+    tableHeader: '#f8fafc',
+    tableRow: '#ffffff',
+    tableRowHover: '#f8fafc',
+    dropdownBg: '#ffffff',
+    dropdownBorder: '#e2e8f0',
+    modalBg: '#ffffff',
+    modalBorder: '#e2e8f0',
+    codeBg: '#f1f5f9',
+    gradient: 'from-blue-400/20 via-violet-400/20 to-orange-400/20'
   };
-
-  const colors = isDark ? postmanColors.dark : postmanColors.light;
 
   // State
   const [collections, setCollections] = useState([
@@ -1030,7 +1031,7 @@ const APICollections = () => {
       }}>
         <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: colors.border }}>
           <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Code</h3>
-          <button onClick={() => setShowCodePanel(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors"
+          <button onClick={() => setShowCodePanel(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
             style={{ backgroundColor: colors.hover }}>
             <X size={14} style={{ color: colors.textSecondary }} />
           </button>
@@ -1039,7 +1040,7 @@ const APICollections = () => {
         <div className="relative px-4 py-3 border-b" style={{ borderColor: colors.border }}>
           <button
             onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
-            className="w-full px-3 py-2 rounded text-sm font-medium flex items-center justify-between hover:bg-opacity-50 transition-colors"
+            className="w-full px-3 py-2 rounded text-sm font-medium flex items-center justify-between hover:bg-opacity-50 transition-colors hover-lift"
             style={{ backgroundColor: colors.hover, color: colors.text }}
           >
             <div className="flex items-center gap-2">
@@ -1064,7 +1065,7 @@ const APICollections = () => {
                     setSelectedLanguage(lang.id);
                     setShowLanguageDropdown(false);
                   }}
-                  className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors"
+                  className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors hover-lift"
                   style={{ 
                     backgroundColor: selectedLanguage === lang.id ? colors.selected : 'transparent',
                     color: selectedLanguage === lang.id ? colors.primary : colors.text
@@ -1088,12 +1089,12 @@ const APICollections = () => {
 
         <div className="p-4 border-t" style={{ borderColor: colors.border }}>
           <button 
-            className="w-full py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center justify-center gap-2"
+            className="w-full py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center justify-center gap-2 hover-lift"
             onClick={() => {
               navigator.clipboard.writeText(generateCodeSnippet());
               showToast('Copied to clipboard!', 'success');
             }}
-            style={{ backgroundColor: colors.primary, color: 'white' }}>
+            style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
             <Copy size={12} />
             Copy to Clipboard
           </button>
@@ -1123,7 +1124,7 @@ const APICollections = () => {
           <div className="relative">
             <button
               onClick={() => setShowAuthDropdown(!showAuthDropdown)}
-              className="w-full px-3 py-2 rounded text-sm flex items-center justify-between hover:bg-opacity-50 transition-colors border"
+              className="w-full px-3 py-2 rounded text-sm flex items-center justify-between hover:bg-opacity-50 transition-colors border hover-lift"
               style={{ 
                 backgroundColor: colors.inputBg,
                 borderColor: colors.border,
@@ -1152,7 +1153,7 @@ const APICollections = () => {
                       setShowAuthDropdown(false);
                       setAuthConfig({ type: type.id });
                     }}
-                    className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors"
+                    className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors hover-lift"
                     style={{ 
                       backgroundColor: authType === type.id ? colors.selected : 'transparent',
                       color: authType === type.id ? colors.primary : colors.text
@@ -1173,7 +1174,7 @@ const APICollections = () => {
           )}
         </div>
 
-        {/* Dynamic auth forms - Postman style */}
+        {/* Dynamic auth forms */}
         <div className="mt-6">
           {authType === 'bearer' && (
             <div className="space-y-4">
@@ -1186,7 +1187,7 @@ const APICollections = () => {
                     type={showToken ? "text" : "password"}
                     value={authConfig.token || ''}
                     onChange={(e) => setAuthConfig({ ...authConfig, token: e.target.value })}
-                    className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10"
+                    className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 hover-lift"
                     style={{
                       backgroundColor: colors.inputBg,
                       borderColor: colors.border,
@@ -1197,7 +1198,7 @@ const APICollections = () => {
                   <button
                     type="button"
                     onClick={() => setShowToken(!showToken)}
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1"
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover-lift"
                     style={{ color: colors.textSecondary }}
                   >
                     {showToken ? <EyeOff size={16} /> : <EyeIcon size={16} />}
@@ -1210,7 +1211,7 @@ const APICollections = () => {
                   <select
                     value={authConfig.tokenType || 'Bearer'}
                     onChange={(e) => setAuthConfig({ ...authConfig, tokenType: e.target.value })}
-                    className="w-full px-3 py-2 border rounded text-sm focus:outline-none"
+                    className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
                     style={{
                       backgroundColor: colors.inputBg,
                       borderColor: colors.border,
@@ -1239,7 +1240,7 @@ const APICollections = () => {
                   type="text"
                   value={authConfig.username || ''}
                   onChange={(e) => setAuthConfig({ ...authConfig, username: e.target.value })}
-                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none"
+                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
                   style={{
                     backgroundColor: colors.inputBg,
                     borderColor: colors.border,
@@ -1257,7 +1258,7 @@ const APICollections = () => {
                     type={showPassword ? "text" : "password"}
                     value={authConfig.password || ''}
                     onChange={(e) => setAuthConfig({ ...authConfig, password: e.target.value })}
-                    className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10"
+                    className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 hover-lift"
                     style={{
                       backgroundColor: colors.inputBg,
                       borderColor: colors.border,
@@ -1268,7 +1269,7 @@ const APICollections = () => {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1"
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover-lift"
                     style={{ color: colors.textSecondary }}
                   >
                     {showPassword ? <EyeOff size={16} /> : <EyeIcon size={16} />}
@@ -1279,7 +1280,7 @@ const APICollections = () => {
                 <input
                   type="checkbox"
                   id="show-header"
-                  className="rounded-sm"
+                  className="rounded-sm hover-lift"
                   style={{
                     borderColor: colors.border,
                     backgroundColor: colors.inputBg
@@ -1303,7 +1304,7 @@ const APICollections = () => {
                     type="text"
                     value={authConfig.key || ''}
                     onChange={(e) => setAuthConfig({ ...authConfig, key: e.target.value })}
-                    className="w-full px-3 py-2 border rounded text-sm focus:outline-none"
+                    className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
                     style={{
                       backgroundColor: colors.inputBg,
                       borderColor: colors.border,
@@ -1321,7 +1322,7 @@ const APICollections = () => {
                       type={showToken ? "text" : "password"}
                       value={authConfig.value || ''}
                       onChange={(e) => setAuthConfig({ ...authConfig, value: e.target.value })}
-                      className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10"
+                      className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 hover-lift"
                       style={{
                         backgroundColor: colors.inputBg,
                         borderColor: colors.border,
@@ -1332,7 +1333,7 @@ const APICollections = () => {
                     <button
                       type="button"
                       onClick={() => setShowToken(!showToken)}
-                      className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1"
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover-lift"
                       style={{ color: colors.textSecondary }}
                     >
                       {showToken ? <EyeOff size={16} /> : <EyeIcon size={16} />}
@@ -1347,7 +1348,7 @@ const APICollections = () => {
                 <select
                   value={authConfig.addTo || 'header'}
                   onChange={(e) => setAuthConfig({ ...authConfig, addTo: e.target.value })}
-                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none"
+                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
                   style={{
                     backgroundColor: colors.inputBg,
                     borderColor: colors.border,
@@ -1371,7 +1372,7 @@ const APICollections = () => {
                     type={showToken ? "text" : "password"}
                     value={authConfig.token || ''}
                     onChange={(e) => setAuthConfig({ ...authConfig, token: e.target.value })}
-                    className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10"
+                    className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 hover-lift"
                     style={{
                       backgroundColor: colors.inputBg,
                       borderColor: colors.border,
@@ -1382,7 +1383,7 @@ const APICollections = () => {
                   <button
                     type="button"
                     onClick={() => setShowToken(!showToken)}
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1"
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover-lift"
                     style={{ color: colors.textSecondary }}
                   >
                     {showToken ? <EyeOff size={16} /> : <EyeIcon size={16} />}
@@ -1393,7 +1394,7 @@ const APICollections = () => {
                 <input
                   type="checkbox"
                   id="auto-refresh"
-                  className="rounded-sm"
+                  className="rounded-sm hover-lift"
                   style={{
                     borderColor: colors.border,
                     backgroundColor: colors.inputBg
@@ -1431,7 +1432,7 @@ const APICollections = () => {
             <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Query Parameters</h3>
             {hasParams && (
               <div className="flex items-center gap-2">
-                <button className="text-xs px-2 py-1 rounded" style={{ 
+                <button className="text-xs px-2 py-1 rounded hover-lift" style={{ 
                   backgroundColor: colors.hover,
                   color: colors.textSecondary
                 }}
@@ -1445,8 +1446,8 @@ const APICollections = () => {
               </div>
             )}
           </div>
-          <button onClick={addParam} className="px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2 hover:opacity-90 transition-colors"
-            style={{ backgroundColor: colors.primary, color: 'white' }}>
+          <button onClick={addParam} className="px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2 hover:opacity-90 transition-colors hover-lift"
+            style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
             <Plus size={12} />
             Add
           </button>
@@ -1462,7 +1463,7 @@ const APICollections = () => {
                       <div className="p-3">
                         <input 
                           type="checkbox" 
-                          className="rounded-sm"
+                          className="rounded-sm hover-lift"
                           checked={requestParams.every(p => p.enabled)}
                           onChange={() => {
                             const allEnabled = requestParams.every(p => p.enabled);
@@ -1484,7 +1485,7 @@ const APICollections = () => {
                 </thead>
                 <tbody>
                   {requestParams.map(param => (
-                    <tr key={param.id} className="hover:bg-opacity-50 transition-colors" 
+                    <tr key={param.id} className="hover:bg-opacity-50 transition-colors hover-lift" 
                       style={{ backgroundColor: colors.tableRow }}>
                       <td className="p-0">
                         <div className="p-3">
@@ -1492,7 +1493,7 @@ const APICollections = () => {
                             type="checkbox"
                             checked={param.enabled}
                             onChange={() => updateParam(param.id, 'enabled', !param.enabled)}
-                            className="rounded-sm"
+                            className="rounded-sm hover-lift"
                             style={{ 
                               borderColor: colors.border,
                               backgroundColor: colors.card,
@@ -1506,7 +1507,7 @@ const APICollections = () => {
                           type="text"
                           value={param.key}
                           onChange={(e) => updateParam(param.id, 'key', e.target.value)}
-                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none"
+                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
                           style={{ 
                             borderColor: colors.border,
                             color: colors.text,
@@ -1520,7 +1521,7 @@ const APICollections = () => {
                           type="text"
                           value={param.value}
                           onChange={(e) => updateParam(param.id, 'value', e.target.value)}
-                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none"
+                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
                           style={{ 
                             borderColor: colors.border,
                             color: colors.text,
@@ -1534,7 +1535,7 @@ const APICollections = () => {
                           type="text"
                           value={param.description || ''}
                           onChange={(e) => updateParam(param.id, 'description', e.target.value)}
-                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none"
+                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
                           style={{ 
                             borderColor: colors.border,
                             color: colors.text,
@@ -1546,7 +1547,7 @@ const APICollections = () => {
                       <td className="p-3">
                         <button
                           onClick={() => deleteParam(param.id)}
-                          className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+                          className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                           style={{ backgroundColor: colors.hover }}>
                           <Trash2 size={13} style={{ color: colors.textSecondary }} />
                         </button>
@@ -1565,8 +1566,8 @@ const APICollections = () => {
               </p>
               <button
                 onClick={addParam}
-                className="px-3 py-1.5 text-sm font-medium rounded flex items-center gap-2 hover:opacity-90 transition-colors"
-                style={{ backgroundColor: colors.primary, color: 'white' }}>
+                className="px-3 py-1.5 text-sm font-medium rounded flex items-center gap-2 hover:opacity-90 transition-colors hover-lift"
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                 <Plus size={13} />
                 Add Parameter
               </button>
@@ -1584,7 +1585,7 @@ const APICollections = () => {
         <div className="flex justify-between items-center p-4">
           <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Headers</h3>
           <div className="flex items-center gap-2">
-            <button className="text-xs px-2 py-1 rounded" style={{ 
+            <button className="text-xs px-2 py-1 rounded hover-lift" style={{ 
               backgroundColor: colors.hover,
               color: colors.textSecondary
             }}
@@ -1597,8 +1598,8 @@ const APICollections = () => {
             </button>
             <button
               onClick={addHeader}
-              className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2"
-              style={{ backgroundColor: colors.primary, color: 'white' }}>
+              className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 hover-lift"
+              style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
               <Plus size={13} />
               Add Header
             </button>
@@ -1613,7 +1614,7 @@ const APICollections = () => {
                   <div className="flex items-center">
                     <input 
                       type="checkbox" 
-                      className="rounded-sm"
+                      className="rounded-sm hover-lift"
                       checked={requestHeaders.every(h => h.enabled)}
                       onChange={() => {
                         const allEnabled = requestHeaders.every(h => h.enabled);
@@ -1635,7 +1636,7 @@ const APICollections = () => {
             </thead>
             <tbody>
               {requestHeaders.map((header) => (
-                <tr key={header.id} className="hover:bg-opacity-50 transition-colors" 
+                <tr key={header.id} className="hover:bg-opacity-50 transition-colors hover-lift" 
                   style={{ backgroundColor: colors.tableRow }}>
                   <td className="px-4 py-3">
                     <div className="flex items-center">
@@ -1643,7 +1644,7 @@ const APICollections = () => {
                         type="checkbox"
                         checked={header.enabled}
                         onChange={() => updateHeader(header.id, 'enabled', !header.enabled)}
-                        className="rounded-sm"
+                        className="rounded-sm hover-lift"
                         style={{ 
                           borderColor: colors.border,
                           backgroundColor: colors.card,
@@ -1657,7 +1658,7 @@ const APICollections = () => {
                       type="text"
                       value={header.key}
                       onChange={(e) => updateHeader(header.id, 'key', e.target.value)}
-                      className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none"
+                      className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
                       style={{ 
                         borderColor: colors.border,
                         color: colors.text,
@@ -1671,7 +1672,7 @@ const APICollections = () => {
                       type="text"
                       value={header.value}
                       onChange={(e) => updateHeader(header.id, 'value', e.target.value)}
-                      className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none"
+                      className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
                       style={{ 
                         borderColor: colors.border,
                         color: colors.text,
@@ -1685,7 +1686,7 @@ const APICollections = () => {
                       type="text"
                       value={header.description || ''}
                       onChange={(e) => updateHeader(header.id, 'description', e.target.value)}
-                      className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none"
+                      className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
                       style={{ 
                         borderColor: colors.border,
                         color: colors.text,
@@ -1697,7 +1698,7 @@ const APICollections = () => {
                   <td className="px-4 py-3">
                     <button
                       onClick={() => deleteHeader(header.id)}
-                      className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+                      className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                       style={{ backgroundColor: colors.hover }}>
                       <Trash2 size={13} style={{ color: colors.textSecondary }} />
                     </button>
@@ -1713,8 +1714,8 @@ const APICollections = () => {
                       <p className="text-sm">No headers added</p>
                       <button
                         onClick={addHeader}
-                        className="mt-2 px-3 py-1.5 text-sm font-medium rounded flex items-center gap-2 hover:opacity-90 transition-colors"
-                        style={{ backgroundColor: colors.primary, color: 'white' }}>
+                        className="mt-2 px-3 py-1.5 text-sm font-medium rounded flex items-center gap-2 hover:opacity-90 transition-colors hover-lift"
+                        style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                         <Plus size={13} />
                         Add your first header
                       </button>
@@ -1743,7 +1744,7 @@ const APICollections = () => {
                       <div className="flex items-center">
                         <input 
                           type="checkbox" 
-                          className="rounded-sm"
+                          className="rounded-sm hover-lift"
                           checked={formData.every(f => f.enabled)}
                           onChange={() => {
                             const allEnabled = formData.every(f => f.enabled);
@@ -1763,7 +1764,7 @@ const APICollections = () => {
                     <th className="w-20 px-4 py-3">
                       <button
                         onClick={() => setFormData([...formData, { id: `form-${Date.now()}`, key: '', value: '', type: 'text', enabled: true }])}
-                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                        className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
                         style={{ backgroundColor: colors.hover }}>
                         <Plus size={14} style={{ color: colors.textSecondary }} />
                       </button>
@@ -1772,7 +1773,7 @@ const APICollections = () => {
                 </thead>
                 <tbody>
                   {formData.map((item, index) => (
-                    <tr key={item.id} className="border-b last:border-b-0" style={{ borderColor: colors.border }}>
+                    <tr key={item.id} className="border-b last:border-b-0 hover-lift" style={{ borderColor: colors.border }}>
                       <td className="px-4 py-3">
                         <div className="flex items-center">
                           <input
@@ -1783,7 +1784,7 @@ const APICollections = () => {
                               newData[index].enabled = !newData[index].enabled;
                               setFormData(newData);
                             }}
-                            className="rounded-sm"
+                            className="rounded-sm hover-lift"
                             style={{ 
                               borderColor: colors.border,
                               backgroundColor: colors.card,
@@ -1801,7 +1802,7 @@ const APICollections = () => {
                             newData[index].key = e.target.value;
                             setFormData(newData);
                           }}
-                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none"
+                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
                           style={{ 
                             borderColor: colors.border,
                             color: colors.text,
@@ -1820,7 +1821,7 @@ const APICollections = () => {
                               newData[index].value = e.target.value;
                               setFormData(newData);
                             }}
-                            className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none"
+                            className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
                             style={{ 
                               borderColor: colors.border,
                               color: colors.text,
@@ -1829,7 +1830,7 @@ const APICollections = () => {
                             placeholder="Value"
                           />
                         ) : (
-                          <button className="w-full px-2 py-1.5 border rounded-sm text-sm text-left hover:bg-opacity-50 transition-colors"
+                          <button className="w-full px-2 py-1.5 border rounded-sm text-sm text-left hover:bg-opacity-50 transition-colors hover-lift"
                             style={{ 
                               borderColor: colors.border,
                               color: colors.textSecondary,
@@ -1861,7 +1862,7 @@ const APICollections = () => {
                             newData[index].type = e.target.value;
                             setFormData(newData);
                           }}
-                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none"
+                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
                           style={{ 
                             borderColor: colors.border,
                             color: colors.text,
@@ -1877,7 +1878,7 @@ const APICollections = () => {
                             const newData = formData.filter((_, i) => i !== index);
                             setFormData(newData);
                           }}
-                          className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+                          className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                           style={{ backgroundColor: colors.hover }}>
                           <Trash2 size={13} style={{ color: colors.textSecondary }} />
                         </button>
@@ -1893,8 +1894,8 @@ const APICollections = () => {
                           <p className="text-sm">No form data</p>
                           <button
                             onClick={() => setFormData([...formData, { id: `form-${Date.now()}`, key: '', value: '', type: 'text', enabled: true }])}
-                            className="mt-2 px-3 py-1.5 text-sm font-medium rounded flex items-center gap-2 hover:opacity-90 transition-colors"
-                            style={{ backgroundColor: colors.primary, color: 'white' }}>
+                            className="mt-2 px-3 py-1.5 text-sm font-medium rounded flex items-center gap-2 hover:opacity-90 transition-colors hover-lift"
+                            style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                             <Plus size={13} />
                             Add form data
                           </button>
@@ -1917,7 +1918,7 @@ const APICollections = () => {
                       <div className="flex items-center">
                         <input 
                           type="checkbox" 
-                          className="rounded-sm"
+                          className="rounded-sm hover-lift"
                           checked={urlEncodedData.every(u => u.enabled)}
                           onChange={() => {
                             const allEnabled = urlEncodedData.every(u => u.enabled);
@@ -1937,7 +1938,7 @@ const APICollections = () => {
                     <th className="w-20 px-4 py-3">
                       <button
                         onClick={() => setUrlEncodedData([...urlEncodedData, { id: `url-${Date.now()}`, key: '', value: '', description: '', enabled: true }])}
-                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                        className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
                         style={{ backgroundColor: colors.hover }}>
                         <Plus size={14} style={{ color: colors.textSecondary }} />
                       </button>
@@ -1946,7 +1947,7 @@ const APICollections = () => {
                 </thead>
                 <tbody>
                   {urlEncodedData.map((item, index) => (
-                    <tr key={item.id} className="border-b last:border-b-0" style={{ borderColor: colors.border }}>
+                    <tr key={item.id} className="border-b last:border-b-0 hover-lift" style={{ borderColor: colors.border }}>
                       <td className="px-4 py-3">
                         <div className="flex items-center">
                           <input
@@ -1957,7 +1958,7 @@ const APICollections = () => {
                               newData[index].enabled = !newData[index].enabled;
                               setUrlEncodedData(newData);
                             }}
-                            className="rounded-sm"
+                            className="rounded-sm hover-lift"
                             style={{ 
                               borderColor: colors.border,
                               backgroundColor: colors.card,
@@ -1975,7 +1976,7 @@ const APICollections = () => {
                             newData[index].key = e.target.value;
                             setUrlEncodedData(newData);
                           }}
-                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none"
+                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
                           style={{ 
                             borderColor: colors.border,
                             color: colors.text,
@@ -1993,7 +1994,7 @@ const APICollections = () => {
                             newData[index].value = e.target.value;
                             setUrlEncodedData(newData);
                           }}
-                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none"
+                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
                           style={{ 
                             borderColor: colors.border,
                             color: colors.text,
@@ -2011,7 +2012,7 @@ const APICollections = () => {
                             newData[index].description = e.target.value;
                             setUrlEncodedData(newData);
                           }}
-                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none"
+                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
                           style={{ 
                             borderColor: colors.border,
                             color: colors.text,
@@ -2026,7 +2027,7 @@ const APICollections = () => {
                             const newData = urlEncodedData.filter((_, i) => i !== index);
                             setUrlEncodedData(newData);
                           }}
-                          className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+                          className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                           style={{ backgroundColor: colors.hover }}>
                           <Trash2 size={13} style={{ color: colors.textSecondary }} />
                         </button>
@@ -2042,223 +2043,223 @@ const APICollections = () => {
                           <p className="text-sm">No url-encoded data</p>
                           <button
                             onClick={() => setUrlEncodedData([...urlEncodedData, { id: `url-${Date.now()}`, key: '', value: '', description: '', enabled: true }])}
-                            className="mt-2 px-3 py-1.5 text-sm font-medium rounded flex items-center gap-2 hover:opacity-90 transition-colors"
-                            style={{ backgroundColor: colors.primary, color: 'white' }}>
+                            className="mt-2 px-3 py-1.5 text-sm font-medium rounded flex items-center gap-2 hover:opacity-90 transition-colors hover-lift"
+                            style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                             <Plus size={13} />
                             Add parameter
                           </button>
                         </div>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          );
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      );
 
-        case 'raw':
-          return (
-            <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
-              <div className="flex items-center justify-between px-3 py-2 border-b" style={{ 
-                backgroundColor: colors.tableHeader,
-                borderColor: colors.border
-              }}>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={rawBodyType}
-                    onChange={(e) => setRawBodyType(e.target.value)}
-                    className="px-2 py-1 rounded text-sm focus:outline-none transition-colors"
-                    style={{ 
-                      backgroundColor: colors.card,
-                      color: colors.text,
-                      border: `1px solid ${colors.border}`,
-                      cursor: 'pointer'
-                    }}>
-                    <option value="json">JSON</option>
-                    <option value="text">Text</option>
-                    <option value="javascript">JavaScript</option>
-                    <option value="html">HTML</option>
-                    <option value="xml">XML</option>
-                  </select>
-                  <button 
-                    className="px-2 py-1 text-sm rounded hover:bg-opacity-50 transition-colors" 
-                    style={{ 
-                      backgroundColor: colors.hover,
-                      color: colors.textSecondary
-                    }}
-                    onClick={() => {
-                      try {
-                        const parsed = JSON.parse(requestBody);
-                        setRequestBody(JSON.stringify(parsed, null, 2));
-                        showToast('JSON beautified!', 'success');
-                      } catch (e) {
-                        showToast('Not valid JSON', 'error');
-                      }
-                    }}>
-                    Beautify
-                  </button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs" style={{ color: colors.textSecondary }}>
-                    {requestBody.length} characters
-                  </span>
-                  <button 
-                    className="p-1 rounded hover:bg-opacity-50 transition-colors" 
-                    style={{ backgroundColor: colors.hover }}
-                    onClick={() => {
-                      navigator.clipboard.writeText(requestBody);
-                      showToast('Copied to clipboard!', 'success');
-                    }}>
-                    <Copy size={13} style={{ color: colors.textSecondary }} />
-                  </button>
-                </div>
-              </div>
-              <textarea
-                value={requestBody}
-                onChange={(e) => setRequestBody(e.target.value)}
-                className="w-full h-64 font-mono text-sm p-4 resize-none focus:outline-none"
-                style={{
+    case 'raw':
+      return (
+        <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
+          <div className="flex items-center justify-between px-3 py-2 border-b" style={{ 
+            backgroundColor: colors.tableHeader,
+            borderColor: colors.border
+          }}>
+            <div className="flex items-center gap-2">
+              <select
+                value={rawBodyType}
+                onChange={(e) => setRawBodyType(e.target.value)}
+                className="px-2 py-1 rounded text-sm focus:outline-none transition-colors hover-lift"
+                style={{ 
                   backgroundColor: colors.card,
                   color: colors.text,
-                  lineHeight: '1.5'
-                }}
-                placeholder={rawBodyType === 'json' ? '{\n  "key": "value"\n}' : 'Enter text here...'}
-                spellCheck="false"
-              />
-            </div>
-          );
-
-        case 'binary':
-          return (
-            <div className="border rounded p-8 text-center" style={{ borderColor: colors.border }}>
-              <FileBinary size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
-              <p className="text-sm mb-2" style={{ color: colors.text }}>Upload a file</p>
-              <p className="text-xs mb-6 max-w-sm mx-auto" style={{ color: colors.textSecondary }}>
-                Select a file to send as the request body. Files are sent as-is without any processing.
-              </p>
-              <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 mx-auto"
-                style={{ backgroundColor: colors.primary, color: 'white' }}
-                onClick={() => {
-                  const input = document.createElement('input');
-                  input.type = 'file';
-                  input.accept = '*/*';
-                  input.onchange = (e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                      setBinaryFile(file);
-                      showToast(`File selected: ${file.name}`, 'success');
-                    }
-                  };
-                  input.click();
+                  border: `1px solid ${colors.border}`,
+                  cursor: 'pointer'
                 }}>
-                <Upload size={14} />
-                Choose File
-              </button>
-              {binaryFile && (
-                <div className="mt-4 p-3 rounded" style={{ backgroundColor: colors.hover }}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <File size={14} style={{ color: colors.textSecondary }} />
-                      <span className="text-sm" style={{ color: colors.text }}>{binaryFile.name}</span>
-                    </div>
-                    <button onClick={() => setBinaryFile(null)} className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                      style={{ backgroundColor: colors.card }}>
-                      <X size={12} style={{ color: colors.textSecondary }} />
-                    </button>
-                  </div>
-                  <p className="text-xs mt-1" style={{ color: colors.textSecondary }}>
-                    Size: {(binaryFile.size / 1024).toFixed(2)} KB
-                  </p>
-                </div>
-              )}
-            </div>
-          );
-
-        case 'graphql':
-          return (
-            <div className="space-y-4">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-medium" style={{ color: colors.text }}>Query</label>
-                  <button className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors"
-                    style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
-                    onClick={() => {
-                      setGraphqlQuery('query {\n  getUser(id: 1) {\n    id\n    name\n    email\n  }\n}');
-                      showToast('Sample query loaded', 'success');
-                    }}>
-                    Sample
-                  </button>
-                </div>
-                <textarea
-                  value={graphqlQuery}
-                  onChange={(e) => setGraphqlQuery(e.target.value)}
-                  className="w-full h-48 font-mono text-sm p-4 border rounded resize-none focus:outline-none"
-                  style={{
-                    backgroundColor: colors.card,
-                    borderColor: colors.border,
-                    color: colors.text,
-                    lineHeight: '1.5'
-                  }}
-                  placeholder="query {\n  getUser(id: 1) {\n    id\n    name\n    email\n  }\n}"
-                  spellCheck="false"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Variables</label>
-                <textarea
-                  value={graphqlVariables}
-                  onChange={(e) => setGraphqlVariables(e.target.value)}
-                  className="w-full h-32 font-mono text-sm p-4 border rounded resize-none focus:outline-none"
-                  style={{
-                    backgroundColor: colors.card,
-                    borderColor: colors.border,
-                    color: colors.text,
-                    lineHeight: '1.5'
-                  }}
-                  placeholder='{\n  "id": 1\n}'
-                  spellCheck="false"
-                />
-              </div>
-            </div>
-          );
-
-        default:
-          return (
-            <div className="border rounded p-8 text-center" style={{ borderColor: colors.border }}>
-              <FileText size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
-              <p className="text-sm" style={{ color: colors.text }}>
-                This request does not have a body
-              </p>
-            </div>
-          );
-      }
-    };
-
-    return (
-      <div className="p-4">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Body</h3>
-          <div className="flex gap-2">
-            {['none', 'form-data', 'x-www-form-urlencoded', 'raw', 'binary', 'graphql'].map(type => (
-              <button
-                key={type}
-                onClick={() => setRequestBodyType(type)}
-                className={`px-3 py-1.5 rounded text-sm font-medium capitalize transition-colors ${
-                  requestBodyType === type ? '' : 'hover:bg-opacity-50'
-                }`}
+                <option value="json">JSON</option>
+                <option value="text">Text</option>
+                <option value="javascript">JavaScript</option>
+                <option value="html">HTML</option>
+                <option value="xml">XML</option>
+              </select>
+              <button 
+                className="px-2 py-1 text-sm rounded hover:bg-opacity-50 transition-colors hover-lift" 
                 style={{ 
-                  backgroundColor: requestBodyType === type ? colors.primary : colors.hover,
-                  color: requestBodyType === type ? 'white' : colors.textSecondary
+                  backgroundColor: colors.hover,
+                  color: colors.textSecondary
+                }}
+                onClick={() => {
+                  try {
+                    const parsed = JSON.parse(requestBody);
+                    setRequestBody(JSON.stringify(parsed, null, 2));
+                    showToast('JSON beautified!', 'success');
+                  } catch (e) {
+                    showToast('Not valid JSON', 'error');
+                  }
                 }}>
-                {type === 'x-www-form-urlencoded' ? 'x-www-form' : type}
+                Beautify
               </button>
-            ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs" style={{ color: colors.textSecondary }}>
+                {requestBody.length} characters
+              </span>
+              <button 
+                className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift" 
+                style={{ backgroundColor: colors.hover }}
+                onClick={() => {
+                  navigator.clipboard.writeText(requestBody);
+                  showToast('Copied to clipboard!', 'success');
+                }}>
+                <Copy size={13} style={{ color: colors.textSecondary }} />
+              </button>
+            </div>
+          </div>
+          <textarea
+            value={requestBody}
+            onChange={(e) => setRequestBody(e.target.value)}
+            className="w-full h-64 font-mono text-sm p-4 resize-none focus:outline-none hover-lift"
+            style={{
+              backgroundColor: colors.card,
+              color: colors.text,
+              lineHeight: '1.5'
+            }}
+            placeholder={rawBodyType === 'json' ? '{\n  "key": "value"\n}' : 'Enter text here...'}
+            spellCheck="false"
+          />
+        </div>
+      );
+
+    case 'binary':
+      return (
+        <div className="border rounded p-8 text-center" style={{ borderColor: colors.border }}>
+          <FileBinary size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
+          <p className="text-sm mb-2" style={{ color: colors.text }}>Upload a file</p>
+          <p className="text-xs mb-6 max-w-sm mx-auto" style={{ color: colors.textSecondary }}>
+            Select a file to send as the request body. Files are sent as-is without any processing.
+          </p>
+          <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 mx-auto hover-lift"
+            style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+            onClick={() => {
+              const input = document.createElement('input');
+              input.type = 'file';
+              input.accept = '*/*';
+              input.onchange = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                  setBinaryFile(file);
+                  showToast(`File selected: ${file.name}`, 'success');
+                }
+              };
+              input.click();
+            }}>
+            <Upload size={14} />
+            Choose File
+          </button>
+          {binaryFile && (
+            <div className="mt-4 p-3 rounded hover-lift" style={{ backgroundColor: colors.hover }}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <File size={14} style={{ color: colors.textSecondary }} />
+                  <span className="text-sm" style={{ color: colors.text }}>{binaryFile.name}</span>
+                </div>
+                <button onClick={() => setBinaryFile(null)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                  style={{ backgroundColor: colors.card }}>
+                  <X size={12} style={{ color: colors.textSecondary }} />
+                </button>
+              </div>
+              <p className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+                Size: {(binaryFile.size / 1024).toFixed(2)} KB
+              </p>
+            </div>
+          )}
+        </div>
+      );
+
+    case 'graphql':
+      return (
+        <div className="space-y-4">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium" style={{ color: colors.text }}>Query</label>
+              <button className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+                onClick={() => {
+                  setGraphqlQuery('query {\n  getUser(id: 1) {\n    id\n    name\n    email\n  }\n}');
+                  showToast('Sample query loaded', 'success');
+                }}>
+                Sample
+              </button>
+            </div>
+            <textarea
+              value={graphqlQuery}
+              onChange={(e) => setGraphqlQuery(e.target.value)}
+              className="w-full h-48 font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
+              style={{
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                color: colors.text,
+                lineHeight: '1.5'
+              }}
+              placeholder="query {\n  getUser(id: 1) {\n    id\n    name\n    email\n  }\n}"
+              spellCheck="false"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Variables</label>
+            <textarea
+              value={graphqlVariables}
+              onChange={(e) => setGraphqlVariables(e.target.value)}
+              className="w-full h-32 font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
+              style={{
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                color: colors.text,
+                lineHeight: '1.5'
+              }}
+              placeholder='{\n  "id": 1\n}'
+              spellCheck="false"
+            />
           </div>
         </div>
-        
-        {renderBodyContent()}
+      );
+
+    default:
+      return (
+        <div className="border rounded p-8 text-center" style={{ borderColor: colors.border }}>
+          <FileText size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
+          <p className="text-sm" style={{ color: colors.text }}>
+            This request does not have a body
+          </p>
+        </div>
+      );
+  }
+};
+
+return (
+  <div className="p-4">
+    <div className="flex justify-between items-center mb-4">
+      <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Body</h3>
+      <div className="flex gap-2">
+        {['none', 'form-data', 'x-www-form-urlencoded', 'raw', 'binary', 'graphql'].map(type => (
+          <button
+            key={type}
+            onClick={() => setRequestBodyType(type)}
+            className={`px-3 py-1.5 rounded text-sm font-medium capitalize transition-colors hover-lift ${
+              requestBodyType === type ? '' : 'hover:bg-opacity-50'
+            }`}
+            style={{ 
+              backgroundColor: requestBodyType === type ? colors.primaryDark : colors.hover,
+              color: requestBodyType === type ? 'white' : colors.textSecondary
+            }}>
+            {type === 'x-www-form-urlencoded' ? 'x-www-form' : type}
+          </button>
+        ))}
       </div>
-    );
+    </div>
+    
+    {renderBodyContent()}
+  </div>
+);
   };
 
   // Render Response Panel with view options
@@ -2279,9 +2280,9 @@ const APICollections = () => {
       switch (responseView) {
         case 'raw':
           return (
-            <pre className="border rounded p-4 overflow-auto text-sm font-mono whitespace-pre-wrap"
+            <pre className="border rounded p-4 overflow-auto text-sm font-mono whitespace-pre-wrap hover-lift"
               style={{ 
-                backgroundColor: colors.bg,
+                backgroundColor: colors.codeBg,
                 borderColor: colors.border,
                 color: colors.text,
                 height: 'calc(100% - 60px)'
@@ -2294,9 +2295,9 @@ const APICollections = () => {
           try {
             const parsed = JSON.parse(response.body);
             return (
-              <div className="border rounded p-4 overflow-auto text-sm"
+              <div className="border rounded p-4 overflow-auto text-sm hover-lift"
                 style={{ 
-                  backgroundColor: colors.bg,
+                  backgroundColor: colors.codeBg,
                   borderColor: colors.border,
                   color: colors.text,
                   height: 'calc(100% - 60px)'
@@ -2306,9 +2307,9 @@ const APICollections = () => {
             );
           } catch (e) {
             return (
-              <div className="border rounded p-4 overflow-auto text-sm font-mono whitespace-pre-wrap"
+              <div className="border rounded p-4 overflow-auto text-sm font-mono whitespace-pre-wrap hover-lift"
                 style={{ 
-                  backgroundColor: colors.bg,
+                  backgroundColor: colors.codeBg,
                   borderColor: colors.border,
                   color: colors.text,
                   height: 'calc(100% - 60px)'
@@ -2320,9 +2321,9 @@ const APICollections = () => {
         
         case 'headers':
           return (
-            <div className="border rounded overflow-hidden"
+            <div className="border rounded overflow-hidden hover-lift"
               style={{ 
-                backgroundColor: colors.bg,
+                backgroundColor: colors.codeBg,
                 borderColor: colors.border,
                 height: 'calc(100% - 60px)'
               }}>
@@ -2335,7 +2336,7 @@ const APICollections = () => {
                 </thead>
                 <tbody>
                   {response.headers.map((header, index) => (
-                    <tr key={index} className="border-b last:border-b-0" style={{ borderColor: colors.border }}>
+                    <tr key={index} className="border-b last:border-b-0 hover-lift" style={{ borderColor: colors.border }}>
                       <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>{header.key}</td>
                       <td className="px-4 py-3" style={{ color: colors.textSecondary }}>{header.value}</td>
                     </tr>
@@ -2347,9 +2348,9 @@ const APICollections = () => {
         
         default:
           return (
-            <pre className="border rounded p-4 overflow-auto text-sm font-mono whitespace-pre-wrap"
+            <pre className="border rounded p-4 overflow-auto text-sm font-mono whitespace-pre-wrap hover-lift"
               style={{ 
-                backgroundColor: colors.bg,
+                backgroundColor: colors.codeBg,
                 borderColor: colors.border,
                 color: colors.text,
                 height: 'calc(100% - 60px)'
@@ -2371,14 +2372,14 @@ const APICollections = () => {
         ref={responseRef}
       >
         <div 
-          className="h-2 cursor-row-resize flex items-center justify-center hover:bg-opacity-50 transition-colors"
+          className="h-2 cursor-row-resize flex items-center justify-center hover:bg-opacity-50 transition-colors hover-lift"
           style={{ backgroundColor: colors.border }}
           onMouseDown={() => setIsResizing(true)}
         >
           <GripVertical size={12} style={{ color: colors.textSecondary }} />
         </div>
 
-        <div className="flex items-center justify-between px-4 py-3 border-b" style={{ 
+        <div className="flex items-center justify-between px-4 py-3 border-b -mt-4" style={{ 
           backgroundColor: colors.card,
           borderColor: colors.border
         }}>
@@ -2389,11 +2390,11 @@ const APICollections = () => {
                 {['raw', 'preview', 'headers'].map(view => (
                   <button key={view}
                     onClick={() => setResponseView(view)}
-                    className={`px-3 py-1 rounded text-xs font-medium capitalize transition-colors ${
+                    className={`px-3 py-1 rounded text-xs font-medium capitalize transition-colors hover-lift ${
                       responseView === view ? '' : 'hover:bg-opacity-50'
                     }`}
                     style={{ 
-                      backgroundColor: responseView === view ? colors.primary : colors.hover,
+                      backgroundColor: responseView === view ? colors.primaryDark : colors.hover,
                       color: responseView === view ? 'white' : colors.textSecondary
                     }}>
                     {view}
@@ -2404,7 +2405,7 @@ const APICollections = () => {
           </div>
           {response && (
             <div className="flex items-center gap-2">
-              <button className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors"
+              <button className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
                 onClick={() => {
                   try {
@@ -2420,7 +2421,7 @@ const APICollections = () => {
                 }}>
                 Beautify
               </button>
-              <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+              <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover }}
                 onClick={() => {
                   navigator.clipboard.writeText(response.body);
@@ -2436,7 +2437,7 @@ const APICollections = () => {
           {response && (
             <div className="space-y-4">
               <div className="flex items-center gap-3">
-                <div className={`px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2 ${
+                <div className={`px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2 hover-lift ${
                   response.status === 200 ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
                 }`}>
                   {response.status === 200 ? <CheckCircle size={12} /> : <XCircle size={12} />}
@@ -2462,15 +2463,15 @@ const APICollections = () => {
     }}>
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: colors.border }}>
         <h3 className="text-sm font-semibold" style={{ color: colors.text }}>APIs</h3>
-        <button onClick={() => setShowAPIs(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors"
+        <button onClick={() => setShowAPIs(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
           style={{ backgroundColor: colors.hover }}>
           <X size={14} style={{ color: colors.textSecondary }} />
         </button>
       </div>
       <div className="p-4">
         <p className="text-sm mb-4" style={{ color: colors.textSecondary }}>No APIs created</p>
-        <button className="w-full py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
-          style={{ backgroundColor: colors.primary, color: 'white' }}
+        <button className="w-full py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+          style={{ backgroundColor: colors.primaryDark, color: colors.white }}
           onClick={() => showToast('Create API feature would open', 'info')}>
           <Plus size={12} className="inline mr-2" />
           Create API
@@ -2486,7 +2487,7 @@ const APICollections = () => {
     }}>
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: colors.border }}>
         <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Environments</h3>
-        <button onClick={() => setShowEnvironments(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors"
+        <button onClick={() => setShowEnvironments(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
           style={{ backgroundColor: colors.hover }}>
           <X size={14} style={{ color: colors.textSecondary }} />
         </button>
@@ -2499,7 +2500,7 @@ const APICollections = () => {
               setEnvironments(envs => envs.map(e => ({ ...e, isActive: e.id === env.id })));
               showToast(`Switched to ${env.name}`, 'success');
             }}
-            className={`w-full px-3 py-2 rounded text-sm text-left transition-colors ${
+            className={`w-full px-3 py-2 rounded text-sm text-left transition-colors hover-lift ${
               activeEnvironment === env.id ? '' : 'hover:bg-opacity-50'
             }`}
             style={{ 
@@ -2510,7 +2511,7 @@ const APICollections = () => {
             {activeEnvironment === env.id && <Check size={14} className="float-right" />}
           </button>
         ))}
-        <button className="w-full px-3 py-2 rounded text-sm text-left hover:bg-opacity-50 transition-colors"
+        <button className="w-full px-3 py-2 rounded text-sm text-left hover:bg-opacity-50 transition-colors hover-lift"
           style={{ backgroundColor: colors.hover, color: colors.primary }}
           onClick={() => showToast('Create Environment feature would open', 'info')}>
           <Plus size={12} className="inline mr-2" />
@@ -2527,15 +2528,15 @@ const APICollections = () => {
     }}>
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: colors.border }}>
         <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Mock Servers</h3>
-        <button onClick={() => setShowMockServers(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors"
+        <button onClick={() => setShowMockServers(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
           style={{ backgroundColor: colors.hover }}>
           <X size={14} style={{ color: colors.textSecondary }} />
         </button>
       </div>
       <div className="p-4">
         <p className="text-sm mb-4" style={{ color: colors.textSecondary }}>No mock servers created</p>
-        <button className="w-full py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
-          style={{ backgroundColor: colors.primary, color: 'white' }}
+        <button className="w-full py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+          style={{ backgroundColor: colors.primaryDark, color: colors.white }}
           onClick={() => showToast('Create Mock Server feature would open', 'info')}>
           <Plus size={12} className="inline mr-2" />
           Create Mock Server
@@ -2551,15 +2552,15 @@ const APICollections = () => {
     }}>
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: colors.border }}>
         <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Monitors</h3>
-        <button onClick={() => setShowMonitors(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors"
+        <button onClick={() => setShowMonitors(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
           style={{ backgroundColor: colors.hover }}>
           <X size={14} style={{ color: colors.textSecondary }} />
         </button>
       </div>
       <div className="p-4">
         <p className="text-sm mb-4" style={{ color: colors.textSecondary }}>No monitors created</p>
-        <button className="w-full py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
-          style={{ backgroundColor: colors.primary, color: 'white' }}
+        <button className="w-full py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+          style={{ backgroundColor: colors.primaryDark, color: colors.white }}
           onClick={() => showToast('Create Monitor feature would open', 'info')}>
           <Plus size={12} className="inline mr-2" />
           Create Monitor
@@ -2583,7 +2584,7 @@ const APICollections = () => {
     if (!showNotifications) return null;
     
     return (
-      <div className="absolute right-0 top-full mt-1 w-80 rounded shadow-lg z-50 border"
+      <div className="absolute right-0 top-full mt-1 w-80 rounded shadow-lg z-50 border hover-lift"
         style={{ 
           backgroundColor: colors.dropdownBg,
           borderColor: colors.border
@@ -2593,7 +2594,7 @@ const APICollections = () => {
         </div>
         <div className="max-h-80 overflow-y-auto">
           {notifications.map(notification => (
-            <div key={notification.id} className={`p-3 border-b hover:bg-opacity-50 transition-colors ${notification.read ? '' : 'bg-opacity-20'}`}
+            <div key={notification.id} className={`p-3 border-b hover:bg-opacity-50 transition-colors hover-lift ${notification.read ? '' : 'bg-opacity-20'}`}
               style={{ 
                 borderColor: colors.border,
                 backgroundColor: notification.read ? 'transparent' : colors.selected
@@ -2616,7 +2617,7 @@ const APICollections = () => {
           ))}
         </div>
         <div className="p-2 border-t" style={{ borderColor: colors.border }}>
-          <button className="w-full px-3 py-2 rounded text-sm text-center hover:bg-opacity-50 transition-colors"
+          <button className="w-full px-3 py-2 rounded text-sm text-center hover:bg-opacity-50 transition-colors hover-lift"
             onClick={() => {
               setNotifications(notifications.map(n => ({ ...n, read: true })));
               setShowNotifications(false);
@@ -2643,17 +2644,7 @@ const APICollections = () => {
       <div className="fixed bottom-4 right-4 px-4 py-2 rounded text-sm font-medium z-50 animate-fade-in-up"
         style={{ 
           backgroundColor: bgColor,
-          color: 'white',
-          animation: 'fadeInUp 0.2s ease-out'
-        }}
-        onAnimationEnd={() => {
-          setTimeout(() => {
-            const element = document.querySelector('.fixed.bottom-4.right-4');
-            if (element) {
-              element.style.animation = 'fadeOut 0.3s ease-out';
-              setTimeout(() => setToast(null), 300);
-            }
-          }, 1700);
+          color: 'white'
         }}>
         {toast.message}
       </div>
@@ -2672,18 +2663,18 @@ const APICollections = () => {
         }}>
           <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: colors.border }}>
             <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Import</h3>
-            <button onClick={() => setShowImportModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors"
+            <button onClick={() => setShowImportModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover }}>
               <X size={14} style={{ color: colors.textSecondary }} />
             </button>
           </div>
           <div className="p-4 space-y-4">
-            <div className="text-center p-8 border-2 border-dashed rounded" style={{ borderColor: colors.border }}>
+            <div className="text-center p-8 border-2 border-dashed rounded hover-lift" style={{ borderColor: colors.border }}>
               <Upload size={32} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
               <p className="text-sm mb-2" style={{ color: colors.text }}>Drag and drop files here</p>
               <p className="text-xs" style={{ color: colors.textSecondary }}>Supports: Postman collections, OpenAPI, etc.</p>
-              <button className="mt-4 px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
-                style={{ backgroundColor: colors.primary, color: 'white' }}
+              <button className="mt-4 px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}
                 onClick={() => {
                   showToast('Import feature would open file dialog', 'info');
                   setTimeout(() => setShowImportModal(false), 1500);
@@ -2692,7 +2683,7 @@ const APICollections = () => {
               </button>
             </div>
             <div className="space-y-2">
-              <button className="w-full px-4 py-3 rounded text-sm text-left hover:bg-opacity-50 transition-colors flex items-center gap-3"
+              <button className="w-full px-4 py-3 rounded text-sm text-left hover:bg-opacity-50 transition-colors flex items-center gap-3 hover-lift"
                 style={{ backgroundColor: colors.hover, color: colors.text }}
                 onClick={() => {
                   showToast('Import from link dialog would open', 'info');
@@ -2701,7 +2692,7 @@ const APICollections = () => {
                 <Globe size={14} />
                 Import from Link
               </button>
-              <button className="w-full px-4 py-3 rounded text-sm text-left hover:bg-opacity-50 transition-colors flex items-center gap-3"
+              <button className="w-full px-4 py-3 rounded text-sm text-left hover:bg-opacity-50 transition-colors flex items-center gap-3 hover-lift"
                 style={{ backgroundColor: colors.hover, color: colors.text }}
                 onClick={() => {
                   showToast('Paste raw text dialog would open', 'info');
@@ -2728,7 +2719,7 @@ const APICollections = () => {
         }}>
           <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: colors.border }}>
             <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Share Collection</h3>
-            <button onClick={() => setShowShareModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors"
+            <button onClick={() => setShowShareModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover }}>
               <X size={14} style={{ color: colors.textSecondary }} />
             </button>
@@ -2741,19 +2732,19 @@ const APICollections = () => {
                   type="text"
                   readOnly
                   value="https://postman.com/collection/abc123"
-                  className="flex-1 px-3 py-2 border rounded text-sm focus:outline-none"
+                  className="flex-1 px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
                   style={{
                     backgroundColor: colors.inputBg,
                     borderColor: colors.border,
                     color: colors.text
                   }}
                 />
-                <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
+                <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                   onClick={() => {
                     navigator.clipboard.writeText('https://postman.com/collection/abc123');
                     showToast('Link copied to clipboard!', 'success');
                   }}
-                  style={{ backgroundColor: colors.primary, color: 'white' }}>
+                  style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                   Copy
                 </button>
               </div>
@@ -2764,16 +2755,16 @@ const APICollections = () => {
                 <input
                   type="text"
                   placeholder="Enter email addresses"
-                  className="flex-1 px-3 py-2 border rounded text-sm focus:outline-none"
+                  className="flex-1 px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
                   style={{
                     backgroundColor: colors.inputBg,
                     borderColor: colors.border,
                     color: colors.text
                   }}
                 />
-                <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
+                <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                   onClick={() => showToast('Invitation sent!', 'success')}
-                  style={{ backgroundColor: colors.primary, color: 'white' }}>
+                  style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                   Invite
                 </button>
               </div>
@@ -2795,7 +2786,7 @@ const APICollections = () => {
         }}>
           <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: colors.border }}>
             <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Settings</h3>
-            <button onClick={() => setShowSettingsModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors"
+            <button onClick={() => setShowSettingsModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover }}>
               <X size={14} style={{ color: colors.textSecondary }} />
             </button>
@@ -2806,11 +2797,11 @@ const APICollections = () => {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: colors.text }}>Trim keys and values in request body</span>
-                  <input type="checkbox" defaultChecked className="rounded" />
+                  <input type="checkbox" defaultChecked className="rounded hover-lift" />
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: colors.text }}>Language detection</span>
-                  <input type="checkbox" defaultChecked className="rounded" />
+                  <input type="checkbox" defaultChecked className="rounded hover-lift" />
                 </div>
               </div>
             </div>
@@ -2819,23 +2810,23 @@ const APICollections = () => {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: colors.text }}>Send no-cache header</span>
-                  <input type="checkbox" className="rounded" />
+                  <input type="checkbox" className="rounded hover-lift" />
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: colors.text }}>Request timeout (ms)</span>
-                  <input type="number" defaultValue="0" className="w-24 px-2 py-1 border rounded text-sm"
+                  <input type="number" defaultValue="0" className="w-24 px-2 py-1 border rounded text-sm hover-lift"
                     style={{ backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }} />
                 </div>
               </div>
             </div>
           </div>
           <div className="p-4 border-t" style={{ borderColor: colors.border }}>
-            <button className="w-full py-2.5 rounded text-sm font-medium hover:opacity-90 transition-colors"
+            <button className="w-full py-2.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
               onClick={() => {
                 showToast('Settings saved!', 'success');
                 setShowSettingsModal(false);
               }}
-              style={{ backgroundColor: colors.primary, color: 'white' }}>
+              style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
               Save Settings
             </button>
           </div>
@@ -2857,7 +2848,7 @@ const APICollections = () => {
           }}>
             <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: colors.border }}>
               <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Create Collection</h3>
-              <button onClick={() => setShowCreateModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors"
+              <button onClick={() => setShowCreateModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover }}>
                 <X size={14} style={{ color: colors.textSecondary }} />
               </button>
@@ -2870,7 +2861,7 @@ const APICollections = () => {
                   value={newCollectionName}
                   onChange={(e) => setNewCollectionName(e.target.value)}
                   placeholder="My Collection"
-                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none"
+                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
                   style={{
                     backgroundColor: colors.inputBg,
                     borderColor: colors.border,
@@ -2884,7 +2875,7 @@ const APICollections = () => {
                   value={newCollectionDescription}
                   onChange={(e) => setNewCollectionDescription(e.target.value)}
                   placeholder="Description of your collection"
-                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none h-24 resize-none"
+                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none h-24 resize-none hover-lift"
                   style={{
                     backgroundColor: colors.inputBg,
                     borderColor: colors.border,
@@ -2892,7 +2883,7 @@ const APICollections = () => {
                   }}
                 />
               </div>
-              <button className="w-full py-2.5 rounded text-sm font-medium hover:opacity-90 transition-colors"
+              <button className="w-full py-2.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                 onClick={() => {
                   if (!newCollectionName.trim()) {
                     showToast('Please enter a collection name', 'error');
@@ -2902,7 +2893,7 @@ const APICollections = () => {
                   setNewCollectionName('');
                   setNewCollectionDescription('');
                 }}
-                style={{ backgroundColor: colors.primary, color: 'white' }}>
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                 Create Collection
               </button>
             </div>
@@ -2921,27 +2912,21 @@ const APICollections = () => {
     }}>
       <style>{`
         @keyframes fadeInUp {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
         }
         
-        @keyframes fadeOut {
-          from {
-            opacity: 1;
-          }
-          to {
-            opacity: 0;
-          }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
         
         .animate-fade-in-up {
           animation: fadeInUp 0.2s ease-out;
+        }
+        
+        .animate-spin {
+          animation: spin 1s linear infinite;
         }
         
         .text-blue-400 { color: #60a5fa; }
@@ -2971,9 +2956,40 @@ const APICollections = () => {
           background: ${colors.textSecondary};
         }
         
-        /* Hide scrollbar when not needed */
-        .overflow-auto {
-          scrollbar-width: thin;
+        .prose {
+          color: ${colors.textSecondary};
+          line-height: 1.6;
+        }
+        
+        .prose p {
+          margin-bottom: 1em;
+        }
+        
+        .prose strong {
+          color: ${colors.text};
+          font-weight: 600;
+        }
+        
+        code {
+          font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Segoe UI Mono', 'Roboto Mono', monospace;
+          font-size: 0.875em;
+        }
+        
+        /* Focus styles */
+        input:focus, button:focus {
+          outline: 2px solid ${colors.primary}40;
+          outline-offset: 2px;
+        }
+        
+        /* Hover effects */
+        .hover-lift:hover {
+          transform: translateY(-2px);
+          transition: transform 0.2s ease;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        
+        .gradient-bg {
+          background: linear-gradient(135deg, ${colors.primary}20 0%, ${colors.info}20 50%, ${colors.warning}20 100%);
         }
       `}</style>
 
@@ -2982,43 +2998,14 @@ const APICollections = () => {
         backgroundColor: colors.header,
         borderColor: colors.border
       }}>
-        <div className="flex items-center gap-4 text-nowrap">
-          {/* <button className="flex items-center gap-2 px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
-            style={{ backgroundColor: colors.hover }}>
-            <div className="w-3 h-3 rounded" style={{ backgroundColor: colors.primary }}></div>
-            My Workspace
-            <ChevronDown size={14} style={{ color: colors.textSecondary }} />
-          </button> */}
-
-          <div className="flex items-center gap-1 -ml-4">
-            {/* <button onClick={() => {setShowAPIs(!showAPIs); setShowCodePanel(false); setShowEnvironments(false); setShowMockServers(false); setShowMonitors(false);}} 
-              className="px-3 py-1.5 text-nowrap text-sm font-medium hover:bg-opacity-50 transition-colors rounded"
-              style={{ color: showAPIs ? colors.primary : colors.textSecondary, backgroundColor: showAPIs ? colors.selected : 'transparent' }}>
-              APIs
-            </button>
-            <button onClick={() => {setShowEnvironments(!showEnvironments); setShowCodePanel(false); setShowAPIs(false); setShowMockServers(false); setShowMonitors(false);}} 
-              className="px-3 py-1.5 text-nowrap text-sm font-medium hover:bg-opacity-50 transition-colors rounded"
-              style={{ color: showEnvironments ? colors.primary : colors.textSecondary, backgroundColor: showEnvironments ? colors.selected : 'transparent' }}>
-              Environments
-            </button>
-            <button onClick={() => {setShowMockServers(!showMockServers); setShowCodePanel(false); setShowAPIs(false); setShowEnvironments(false); setShowMonitors(false);}} 
-              className="px-3 py-1.5 text-nowrap text-sm font-medium hover:bg-opacity-50 transition-colors rounded"
-              style={{ color: showMockServers ? colors.primary : colors.textSecondary, backgroundColor: showMockServers ? colors.selected : 'transparent' }}>
-              Mock Servers
-            </button>
-            <button onClick={() => {setShowMonitors(!showMonitors); setShowCodePanel(false); setShowAPIs(false); setShowEnvironments(false); setShowMockServers(false);}} 
-              className="px-3 py-1.5 text-nowrap text-sm font-medium hover:bg-opacity-50 transition-colors rounded"
-              style={{ color: showMonitors ? colors.primary : colors.textSecondary, backgroundColor: showMonitors ? colors.selected : 'transparent' }}>
-              Monitors
-            </button> */}
-
-            <span className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift`}>API Collections</span>
-          </div>
+        <div className="flex items-center gap-4 -ml-3 text-nowrap">
+          <span className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift`} style={{ color: colors.text }}>API Collections</span>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Environment Selector */}
           <div className="relative">
-            <button className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:bg-opacity-50 transition-colors"
+            <button className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover }}
               onClick={() => {
                 const nextIndex = (environments.findIndex(e => e.isActive) + 1) % environments.length;
@@ -3035,6 +3022,7 @@ const APICollections = () => {
 
           <div className="w-px h-4" style={{ backgroundColor: colors.border }}></div>
 
+          {/* Global Search */}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
             <input 
@@ -3042,12 +3030,12 @@ const APICollections = () => {
               placeholder="Search"
               value={globalSearchQuery}
               onChange={(e) => setGlobalSearchQuery(e.target.value)}
-              className="pl-8 pr-3 py-1.5 rounded text-sm focus:outline-none w-48"
+              className="pl-8 pr-3 py-1.5 rounded text-sm focus:outline-none w-48 hover-lift"
               style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }} 
             />
             {globalSearchQuery && (
               <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                <button onClick={() => setGlobalSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors"
+                <button onClick={() => setGlobalSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                   style={{ backgroundColor: colors.hover }}>
                   <X size={12} style={{ color: colors.textSecondary }} />
                 </button>
@@ -3055,306 +3043,305 @@ const APICollections = () => {
             )}
           </div>
 
+          {/* Code Panel Toggle */}
           <button onClick={() => {setShowCodePanel(!showCodePanel); setShowAPIs(false); setShowEnvironments(false); setShowMockServers(false); setShowMonitors(false);}} 
-            className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+            className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
             style={{ backgroundColor: showCodePanel ? colors.selected : colors.hover }}>
             <Code size={14} style={{ color: showCodePanel ? colors.primary : colors.textSecondary }} />
           </button>
 
-          <button onClick={() => setShowShareModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+          {/* Share Button */}
+          <button onClick={() => setShowShareModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
             style={{ backgroundColor: colors.hover }}>
             <Share2 size={14} style={{ color: colors.textSecondary }} />
           </button>
 
+          {/* Notifications */}
           <div className="relative">
-            <button onClick={() => setShowNotifications(!showNotifications)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors relative"
+            <button onClick={() => setShowNotifications(!showNotifications)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors relative hover-lift"
               style={{ backgroundColor: colors.hover }}>
               <Bell size={14} style={{ color: colors.textSecondary }} />
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-xs flex items-center justify-center font-medium"
-                style={{ backgroundColor: colors.primary, color: 'white' }}>
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-xs flex items-center justify-center font-medium hover-lift"
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                 {notifications.filter(n => !n.read).length}
               </span>
             </button>
             {renderNotifications()}
           </div>
 
-          <button onClick={() => setShowSettingsModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+          {/* Settings */}
+          <button onClick={() => setShowSettingsModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
             style={{ backgroundColor: colors.hover }}>
             <Settings size={14} style={{ color: colors.textSecondary }} />
           </button>
 
-          <button onClick={() => setTheme(isDark ? 'light' : 'dark')} className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+          {/* Theme Toggle */}
+          <button onClick={() => setTheme(isDark ? 'light' : 'dark')} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
             style={{ backgroundColor: colors.hover }}>
             {isDark ? <Sun size={14} style={{ color: colors.textSecondary }} /> : <Moon size={14} style={{ color: colors.textSecondary }} />}
           </button>
-
         </div>
       </div>
 
       {/* MAIN CONTENT */}
       <div className="flex flex-1 overflow-hidden">
-        {/* LEFT SIDEBAR */}
+        {/* LEFT SIDEBAR - Collections */}
         <div className="w-64 border-r flex flex-col" style={{ 
-  backgroundColor: colors.sidebar,
-  borderColor: colors.border
-}}>
-  <div className="p-3 border-b" style={{ borderColor: colors.border }}>
-    <div className="flex items-center justify-between mb-3">
-      <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Collections</h3>
-      <div className="flex gap-1">
-        <button onClick={() => setShowCreateModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
-          style={{ backgroundColor: colors.hover }}>
-          <Plus size={12} style={{ color: colors.textSecondary }} />
-        </button>
-        <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
-          style={{ backgroundColor: colors.hover }}
-          onClick={() => showToast('More options menu would open', 'info')}>
-          <MoreVertical size={12} style={{ color: colors.textSecondary }} />
-        </button>
-      </div>
-    </div>
-    <div className="relative mb-3">
-      <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
-      <input 
-        type="text" 
-        placeholder="Search collections"
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        className="w-full pl-8 pr-3 py-2 rounded text-sm focus:outline-none"
-        style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }} 
-      />
-      {searchQuery && (
-        <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-          <button onClick={() => setSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors"
-            style={{ backgroundColor: colors.hover }}>
-            <X size={12} style={{ color: colors.textSecondary }} />
-          </button>
-        </div>
-      )}
-    </div>
-    <button onClick={() => setShowImportModal(true)} className="w-full py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center justify-center gap-2"
-      style={{ backgroundColor: colors.primary, color: 'white' }}>
-      <Upload size={12} />
-      Import
-    </button>
-  </div>
-
-  <div className="flex-1 overflow-auto p-2">
-    {filteredCollections.map(collection => (
-      <div key={collection.id} className="mb-3">
-        <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer group"
-          onClick={() => toggleCollection(collection.id)}
-          style={{ backgroundColor: colors.hover }}>
-          {collection.isExpanded ? (
-            <ChevronDown size={12} style={{ color: colors.textSecondary }} />
-          ) : (
-            <ChevronRight size={12} style={{ color: colors.textSecondary }} />
-          )}
-          <button onClick={(e) => {
-            e.stopPropagation();
-            toggleFavorite(collection.id);
-          }}>
-            {collection.isFavorite ? (
-              <Star size={12} fill="#FFB300" style={{ color: '#FFB300' }} />
-            ) : (
-              <Star size={12} style={{ color: colors.textSecondary }} />
-            )}
-          </button>
-          
-          {collection.isEditing ? (
-            <input
-              type="text"
-              defaultValue={collection.name}
-              onBlur={(e) => updateCollectionName(collection.id, e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  updateCollectionName(collection.id, e.target.value);
-                } else if (e.key === 'Escape') {
-                  setCollections(cols => cols.map(col => 
-                    col.id === collection.id ? { ...col, isEditing: false } : col
-                  ));
-                }
-              }}
-              className="flex-1 text-sm font-medium bg-transparent border-none outline-none"
-              style={{ color: colors.text }}
-              autoFocus
-            />
-          ) : (
-            <span className="text-sm font-medium flex-1" style={{ color: colors.text }}>
-              {collection.name}
-            </span>
-          )}
-          
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              setCollections(cols => cols.map(col => 
-                col.id === collection.id ? { ...col, isEditing: true } : col
-              ));
-            }}
-            className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all"
-            style={{ backgroundColor: colors.card }}>
-            <Edit2 size={11} style={{ color: colors.textSecondary }} />
-          </button>
-        </div>
-
-        {collection.isExpanded && (
-          <>
-            {collection.folders.map(folder => (
-              <div key={folder.id} className="ml-4 mb-2">
-                <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer group"
-                  onClick={() => toggleFolder(collection.id, folder.id)}
+          backgroundColor: colors.sidebar,
+          borderColor: colors.border
+        }}>
+          <div className="p-3 border-b" style={{ borderColor: colors.border }}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Collections</h3>
+              <div className="flex gap-1">
+                <button onClick={() => setShowCreateModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                   style={{ backgroundColor: colors.hover }}>
-                  {folder.isExpanded ? (
-                    <ChevronDown size={11} style={{ color: colors.textSecondary }} />
+                  <Plus size={12} style={{ color: colors.textSecondary }} />
+                </button>
+                <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                  style={{ backgroundColor: colors.hover }}
+                  onClick={() => showToast('More options menu would open', 'info')}>
+                  <MoreVertical size={12} style={{ color: colors.textSecondary }} />
+                </button>
+              </div>
+            </div>
+            <div className="relative mb-3">
+              <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
+              <input 
+                type="text" 
+                placeholder="Search collections"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-3 py-2 rounded text-sm focus:outline-none hover-lift"
+                style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }} 
+              />
+              {searchQuery && (
+                <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                  <button onClick={() => setSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                    style={{ backgroundColor: colors.hover }}>
+                    <X size={12} style={{ color: colors.textSecondary }} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-auto p-2">
+            {filteredCollections.map(collection => (
+              <div key={collection.id} className="mb-3">
+                <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer group hover-lift"
+                  onClick={() => toggleCollection(collection.id)}
+                  style={{ backgroundColor: colors.hover }}>
+                  {collection.isExpanded ? (
+                    <ChevronDown size={12} style={{ color: colors.textSecondary }} />
                   ) : (
-                    <ChevronRight size={11} style={{ color: colors.textSecondary }} />
+                    <ChevronRight size={12} style={{ color: colors.textSecondary }} />
                   )}
-                  <FolderOpen size={11} style={{ color: colors.textSecondary }} />
+                  <button onClick={(e) => {
+                    e.stopPropagation();
+                    toggleFavorite(collection.id);
+                  }}>
+                    {collection.isFavorite ? (
+                      <Star size={12} fill="#FFB300" style={{ color: '#FFB300' }} />
+                    ) : (
+                      <Star size={12} style={{ color: colors.textSecondary }} />
+                    )}
+                  </button>
                   
-                  {folder.isEditing ? (
+                  {collection.isEditing ? (
                     <input
                       type="text"
-                      defaultValue={folder.name}
-                      onBlur={(e) => updateFolderName(collection.id, folder.id, e.target.value)}
+                      defaultValue={collection.name}
+                      onBlur={(e) => updateCollectionName(collection.id, e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
-                          updateFolderName(collection.id, folder.id, e.target.value);
+                          updateCollectionName(collection.id, e.target.value);
                         } else if (e.key === 'Escape') {
-                          setCollections(cols => cols.map(col => ({
-                            ...col,
-                            folders: col.folders.map(f => 
-                              f.id === folder.id ? { ...f, isEditing: false } : f
-                            )
-                          })));
+                          setCollections(cols => cols.map(col => 
+                            col.id === collection.id ? { ...col, isEditing: false } : col
+                          ));
                         }
                       }}
-                      className="flex-1 text-sm bg-transparent border-none outline-none"
+                      className="flex-1 text-sm font-medium bg-transparent border-none outline-none"
                       style={{ color: colors.text }}
                       autoFocus
                     />
                   ) : (
-                    <span className="text-sm flex-1" style={{ color: colors.text }}>
-                      {folder.name}
+                    <span className="text-sm font-medium flex-1" style={{ color: colors.text }}>
+                      {collection.name}
                     </span>
                   )}
                   
                   <button 
                     onClick={(e) => {
                       e.stopPropagation();
-                      setCollections(cols => cols.map(col => ({
-                        ...col,
-                        folders: col.folders.map(f => 
-                          f.id === folder.id ? { ...f, isEditing: true } : f
-                        )
-                      })));
+                      setCollections(cols => cols.map(col => 
+                        col.id === collection.id ? { ...col, isEditing: true } : col
+                      ));
                     }}
-                    className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all"
+                    className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all hover-lift"
                     style={{ backgroundColor: colors.card }}>
-                    <Edit2 size={10} style={{ color: colors.textSecondary }} />
+                    <Edit2 size={11} style={{ color: colors.textSecondary }} />
                   </button>
                 </div>
 
-                {folder.isExpanded && (
+                {collection.isExpanded && (
                   <>
-                    {folder.requests.map(request => (
-                      <div key={request.id} className="flex items-center gap-2 ml-6 mb-1.5 group">
-                        <button
-                          onClick={() => handleSelectRequest(request, collection.id, folder.id)}
-                          className="flex items-center gap-2 text-sm text-left transition-colors hover:text-opacity-80 flex-1 px-2 py-1.5 rounded hover:bg-opacity-50"
-                          style={{ 
-                            color: selectedRequest?.id === request.id ? colors.primary : colors.text,
-                            backgroundColor: selectedRequest?.id === request.id ? colors.hover : 'transparent'
-                          }}>
-                          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
-                            backgroundColor: getMethodColor(request.method)
-                          }} />
+                    {collection.folders.map(folder => (
+                      <div key={folder.id} className="ml-4 mb-2">
+                        <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer group hover-lift"
+                          onClick={() => toggleFolder(collection.id, folder.id)}
+                          style={{ backgroundColor: colors.hover }}>
+                          {folder.isExpanded ? (
+                            <ChevronDown size={11} style={{ color: colors.textSecondary }} />
+                          ) : (
+                            <ChevronRight size={11} style={{ color: colors.textSecondary }} />
+                          )}
+                          <FolderOpen size={11} style={{ color: colors.textSecondary }} />
                           
-                          {request.isEditing ? (
+                          {folder.isEditing ? (
                             <input
                               type="text"
-                              defaultValue={request.name}
-                              onBlur={(e) => updateRequestName(collection.id, folder.id, request.id, e.target.value)}
+                              defaultValue={folder.name}
+                              onBlur={(e) => updateFolderName(collection.id, folder.id, e.target.value)}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
-                                  updateRequestName(collection.id, folder.id, request.id, e.target.value);
+                                  updateFolderName(collection.id, folder.id, e.target.value);
                                 } else if (e.key === 'Escape') {
                                   setCollections(cols => cols.map(col => ({
                                     ...col,
                                     folders: col.folders.map(f => 
-                                      f.id === folder.id ? {
-                                        ...f,
-                                        requests: f.requests.map(r => 
-                                          r.id === request.id ? { ...r, isEditing: false } : r
-                                        )
-                                      } : f
+                                      f.id === folder.id ? { ...f, isEditing: false } : f
                                     )
                                   })));
                                 }
                               }}
-                              className="flex-1 bg-transparent border-none outline-none"
-                              style={{ color: selectedRequest?.id === request.id ? colors.primary : colors.text }}
+                              className="flex-1 text-sm bg-transparent border-none outline-none"
+                              style={{ color: colors.text }}
                               autoFocus
                             />
                           ) : (
-                            <span className="truncate">{request.name}</span>
+                            <span className="text-sm flex-1" style={{ color: colors.text }}>
+                              {folder.name}
+                            </span>
                           )}
-                        </button>
-                        
-                        {!request.isEditing && (
+                          
                           <button 
                             onClick={(e) => {
                               e.stopPropagation();
                               setCollections(cols => cols.map(col => ({
                                 ...col,
                                 folders: col.folders.map(f => 
-                                  f.id === folder.id ? {
-                                    ...f,
-                                    requests: f.requests.map(r => 
-                                      r.id === request.id ? { ...r, isEditing: true } : r
-                                    )
-                                  } : f
+                                  f.id === folder.id ? { ...f, isEditing: true } : f
                                 )
                               })));
                             }}
-                            className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all mr-2"
+                            className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all hover-lift"
                             style={{ backgroundColor: colors.card }}>
                             <Edit2 size={10} style={{ color: colors.textSecondary }} />
                           </button>
+                        </div>
+
+                        {folder.isExpanded && (
+                          <>
+                            {folder.requests.map(request => (
+                              <div key={request.id} className="flex items-center gap-2 ml-6 mb-1.5 group">
+                                <button
+                                  onClick={() => handleSelectRequest(request, collection.id, folder.id)}
+                                  className="flex items-center gap-2 text-sm text-left transition-colors hover:text-opacity-80 flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
+                                  style={{ 
+                                    color: selectedRequest?.id === request.id ? colors.primary : colors.text,
+                                    backgroundColor: selectedRequest?.id === request.id ? colors.selected : 'transparent'
+                                  }}>
+                                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
+                                    backgroundColor: getMethodColor(request.method)
+                                  }} />
+                                  
+                                  {request.isEditing ? (
+                                    <input
+                                      type="text"
+                                      defaultValue={request.name}
+                                      onBlur={(e) => updateRequestName(collection.id, folder.id, request.id, e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          updateRequestName(collection.id, folder.id, request.id, e.target.value);
+                                        } else if (e.key === 'Escape') {
+                                          setCollections(cols => cols.map(col => ({
+                                            ...col,
+                                            folders: col.folders.map(f => 
+                                              f.id === folder.id ? {
+                                                ...f,
+                                                requests: f.requests.map(r => 
+                                                  r.id === request.id ? { ...r, isEditing: false } : r
+                                                )
+                                              } : f
+                                            )
+                                          })));
+                                        }
+                                      }}
+                                      className="flex-1 bg-transparent border-none outline-none"
+                                      style={{ color: selectedRequest?.id === request.id ? colors.primary : colors.text }}
+                                      autoFocus
+                                    />
+                                  ) : (
+                                    <span className="truncate">{request.name}</span>
+                                  )}
+                                </button>
+                                
+                                {!request.isEditing && (
+                                  <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setCollections(cols => cols.map(col => ({
+                                        ...col,
+                                        folders: col.folders.map(f => 
+                                          f.id === folder.id ? {
+                                            ...f,
+                                            requests: f.requests.map(r => 
+                                              r.id === request.id ? { ...r, isEditing: true } : r
+                                            )
+                                          } : f
+                                        )
+                                      })));
+                                    }}
+                                    className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all mr-2 hover-lift"
+                                    style={{ backgroundColor: colors.card }}>
+                                    <Edit2 size={10} style={{ color: colors.textSecondary }} />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            <button
+                              onClick={() => addNewRequest(collection.id, folder.id)}
+                              className="ml-6 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1 hover-lift"
+                              style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>
+                              <Plus size={10} />
+                              Add Request
+                            </button>
+                          </>
                         )}
                       </div>
                     ))}
                     <button
-                      onClick={() => addNewRequest(collection.id, folder.id)}
-                      className="ml-6 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1"
+                      onClick={() => addNewFolder(collection.id)}
+                      className="ml-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1 hover-lift"
                       style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>
                       <Plus size={10} />
-                      Add Request
+                      Add Folder
                     </button>
                   </>
                 )}
               </div>
             ))}
-            <button
-              onClick={() => addNewFolder(collection.id)}
-              className="ml-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1"
-              style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>
-              <Plus size={10} />
-              Add Folder
-            </button>
-          </>
-        )}
-      </div>
-    ))}
-    
-    {filteredCollections.length === 0 && searchQuery && (
-      <div className="text-center p-4" style={{ color: colors.textSecondary }}>
-        <Search size={20} className="mx-auto mb-2 opacity-50" />
-        <p className="text-sm">No collections found for "{searchQuery}"</p>
-      </div>
-    )}
-  </div>
-</div>
+            
+            {filteredCollections.length === 0 && searchQuery && (
+              <div className="text-center p-4" style={{ color: colors.textSecondary }}>
+                <Search size={20} className="mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No collections found for "{searchQuery}"</p>
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* MAIN WORKSPACE */}
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -3366,7 +3353,7 @@ const APICollections = () => {
             <div className="flex items-center flex-1 overflow-x-auto px-2">
               {requestTabs.map(tab => (
                 <div key={tab.id}
-                  className={`flex items-center gap-2 px-3 py-2 border-r cursor-pointer min-w-32 max-w-48 ${
+                  className={`flex items-center gap-2 px-3 py-2 border-r cursor-pointer min-w-32 max-w-48 hover-lift ${
                     tab.isActive ? '' : 'hover:bg-opacity-50 transition-colors'
                   }`}
                   style={{ 
@@ -3411,7 +3398,7 @@ const APICollections = () => {
                     } else {
                       showToast('Cannot close the last tab', 'error');
                     }
-                  }} className="p-0.5 rounded opacity-0 hover:opacity-100 hover:bg-opacity-50 transition-colors"
+                  }} className="p-0.5 rounded opacity-0 hover:opacity-100 hover:bg-opacity-50 transition-colors hover-lift"
                     style={{ backgroundColor: colors.hover }}>
                     <X size={12} style={{ color: colors.textSecondary }} />
                   </button>
@@ -3437,7 +3424,7 @@ const APICollections = () => {
                   };
                   handleSelectRequest(newRequest, '', '');
                 }}
-                className="px-3 py-2 border-r hover:bg-opacity-50 transition-colors"
+                className="px-3 py-2 border-r hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ borderRightColor: colors.border, backgroundColor: colors.hover }}>
                 <Plus size={12} style={{ color: colors.textSecondary }} />
               </button>
@@ -3451,7 +3438,7 @@ const APICollections = () => {
               backgroundColor: colors.card
             }}>
               <select value={requestMethod} onChange={(e) => setRequestMethod(e.target.value)}
-                className="px-3 py-2 rounded text-sm font-medium focus:outline-none"
+                className="px-3 py-2 rounded text-sm font-medium focus:outline-none hover-lift"
                 style={{ 
                   backgroundColor: colors.inputBg,
                   color: getMethodColor(requestMethod),
@@ -3463,7 +3450,7 @@ const APICollections = () => {
                 ))}
               </select>
               
-              <div className="flex-1 flex items-center rounded overflow-hidden" style={{ 
+              <div className="flex-1 flex items-center rounded overflow-hidden hover-lift" style={{ 
                 border: `1px solid ${colors.inputBorder}`
               }}>
                 <input type="text" value={requestUrl} onChange={(e) => setRequestUrl(e.target.value)}
@@ -3473,10 +3460,10 @@ const APICollections = () => {
               </div>
               
               <button onClick={sendRequest} disabled={isSending}
-                className={`px-4 py-2 rounded text-sm font-medium flex items-center gap-2 transition-colors min-w-32 ${
+                className={`px-4 py-2 rounded text-sm font-medium flex items-center gap-2 transition-colors min-w-32 hover-lift ${
                   isSending ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'
                 }`}
-                style={{ backgroundColor: colors.primary, color: 'white' }}>
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                 {isSending ? (
                   <>
                     <RefreshCw size={12} className="animate-spin" />
@@ -3490,8 +3477,8 @@ const APICollections = () => {
                 )}
               </button>
               
-              <button className="px-3 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
-                style={{ backgroundColor: colors.primary, color: 'white' }}
+              <button className="px-3 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}
                 onClick={saveRequestChanges}>
                 Save
               </button>
@@ -3506,7 +3493,7 @@ const APICollections = () => {
                 const tabId = tab.toLowerCase().replace(' ', '-');
                 return (
                   <button key={tabId} onClick={() => setActiveTab(tabId)}
-                    className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                    className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors hover-lift ${
                       activeTab === tabId ? '' : 'hover:bg-opacity-50'
                     }`}
                     style={{ 
@@ -3530,7 +3517,7 @@ const APICollections = () => {
                 <div className="p-4">
                   <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Tests</h3>
                   <textarea 
-                    className="w-full h-64 font-mono text-sm p-4 border rounded resize-none focus:outline-none"
+                    className="w-full h-64 font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
                     style={{ 
                       backgroundColor: colors.inputBg,
                       borderColor: colors.border,
@@ -3549,11 +3536,11 @@ const APICollections = () => {
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <span className="text-sm" style={{ color: colors.text }}>Follow redirects</span>
-                      <input type="checkbox" defaultChecked className="rounded" />
+                      <input type="checkbox" defaultChecked className="rounded hover-lift" />
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm" style={{ color: colors.text }}>Request timeout (ms)</span>
-                      <input type="number" defaultValue="0" className="w-24 px-2 py-1 border rounded text-sm focus:outline-none"
+                      <input type="number" defaultValue="0" className="w-24 px-2 py-1 border rounded text-sm focus:outline-none hover-lift"
                         style={{ backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }} />
                     </div>
                   </div>
@@ -3562,7 +3549,7 @@ const APICollections = () => {
               {activeTab === 'pre-request-script' && (
                 <div className="p-4">
                   <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Pre-request Script</h3>
-                  <textarea className="w-full h-64 font-mono text-sm p-4 border rounded resize-none focus:outline-none"
+                  <textarea className="w-full h-64 font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
                     style={{ 
                       backgroundColor: colors.inputBg,
                       borderColor: colors.border,

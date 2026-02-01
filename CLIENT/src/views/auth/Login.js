@@ -80,6 +80,7 @@ export default function Login() {
   // Color scheme matching APIDocs
   const colors = isDark ? {
     bg: '#0f172a',
+    white: '#f8fafc',
     sidebar: '#1e293b',
     main: '#0f172a',
     header: '#1e293b',
@@ -107,6 +108,7 @@ export default function Login() {
     gradient: 'from-blue-500/20 via-violet-500/20 to-orange-500/20'
   } : {
     bg: '#f8fafc',
+    white: '#f8fafc',
     sidebar: '#ffffff',
     main: '#f8fafc',
     header: '#ffffff',
@@ -186,23 +188,6 @@ export default function Login() {
 
       {/* Main Content */}
       <div className="w-full max-w-md relative z-10">
-        {/* Logo/Header Section */}
-        {/* <div className="text-center mb-8 animate-fade-in">
-          <div className="inline-flex items-center justify-center p-4 rounded-2xl border mb-4 gradient-bg" 
-            style={{ 
-              borderColor: colors.border,
-              backgroundColor: colors.card 
-            }}>
-            <Database className="h-9 w-9" style={{ color: colors.primary }} />
-          </div>
-          <h1 className="text-2xl font-bold mb-2 bg-gradient-to-r from-blue-400 to-violet-400 bg-clip-text text-transparent">
-            API Automation
-          </h1>
-          <p className="text-sm max-w-xs mx-auto" style={{ color: colors.textSecondary }}>
-            Secure access to your API automator
-          </p>
-        </div> */}
-
         {/* Login Card */}
         <div className={`rounded-2xl border transition-all duration-300 overflow-hidden shadow-xl hover:shadow-2xl`}
           style={{ 
@@ -211,7 +196,7 @@ export default function Login() {
           }}>
           
           {/* Card Header Gradient */}
-          <div className="h-1 bg-gradient-to-r from-blue-500 via-violet-500 to-orange-500"></div>
+          <div className="h-1 bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500"></div>
           
           {/* Card Header */}
           <div className="p-7 pb-4">
@@ -328,7 +313,7 @@ export default function Login() {
                         <button
                           type="button"
                           onClick={() => setShowForgotPassword(true)}
-                          className="text-xs font-medium px-2 py-1 rounded-lg transition-all duration-300 hover-lift"
+                          className="text-xs font-medium px-2 py-1 rounded-lg transition-all duration-300 hover-lift hover:scale-105 active:scale-95"
                           style={{ 
                             color: colors.primary,
                             backgroundColor: `${colors.primary}10`
@@ -359,11 +344,12 @@ export default function Login() {
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3.5 top-1/2 transform -translate-y-1/2 p-2 rounded-lg transition-all duration-300 hover-lift"
+                          className="absolute right-3.5 top-1/2 transform -translate-y-1/2 p-2 rounded-lg transition-all duration-300 hover-lift hover:scale-110 active:scale-95"
                           style={{ 
                             backgroundColor: colors.hover,
                             color: colors.textSecondary
                           }}
+                          aria-label={showPassword ? "Hide password" : "Show password"}
                         >
                           {showPassword ? (
                             <EyeOff className="h-4 w-4" />
@@ -386,9 +372,10 @@ export default function Login() {
                             backgroundColor: colors.inputBg
                           }}
                         />
-                        <Check className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 h-3 w-3 text-white pointer-events-none opacity-0 checked:opacity-100 transition-opacity duration-300" />
+                        <Check className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 h-3 w-3 text-white pointer-events-none opacity-0 checked:opacity-100 transition-opacity duration-300" 
+                          style={{ color: colors.primary }} />
                       </div>
-                      <label htmlFor="remember" className="text-sm font-medium cursor-pointer" style={{ color: colors.textSecondary }}>
+                      <label htmlFor="remember" className="text-sm font-medium cursor-pointer hover:text-opacity-80" style={{ color: colors.textSecondary }}>
                         Keep me signed in
                       </label>
                     </div>
@@ -396,10 +383,11 @@ export default function Login() {
                     {/* Submit Button */}
                     <Button
                       type="submit"
-                      className="w-full py-3.5 rounded-xl font-semibold transition-all duration-300 relative group overflow-hidden hover-lift"
+                      className="w-full py-3.5 rounded-xl font-semibold transition-all duration-300 relative group overflow-hidden hover-lift hover:shadow-lg"
                       style={{ 
                         backgroundColor: colors.primary,
-                        color: 'white'
+                        color: 'white',
+                        boxShadow: `0 4px 14px ${colors.primary}40`
                       }}
                       disabled={loading}
                     >
@@ -552,3 +540,6 @@ const globalStyles = `
   background: #94a3b8;
 }
 `;
+
+// Export the styles for use in your application
+export { globalStyles };

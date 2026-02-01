@@ -17,150 +17,149 @@ import {
 } from 'lucide-react';
 
 const SchemaBrowser = () => {
-  const [theme, setTheme] = useState('dark'); // Default to dark theme like APIScript
+  const [theme, setTheme] = useState('dark'); // Default to dark theme like APICodeBase
   const isDark = theme === 'dark';
 
-  // Using APIScript's color system for consistency
-  const postmanColors = {
-    light: {
-      bg: '#F6F6F6',
-      sidebar: '#FFFFFF',
-      main: '#FFFFFF',
-      header: '#FFFFFF',
-      card: '#FFFFFF',
-      text: '#2D2D2D',
-      textSecondary: '#757575',
-      textTertiary: '#9E9E9E',
-      border: '#E0E0E0',
-      borderLight: '#F0F0F0',
-      borderDark: '#CCCCCC',
-      hover: '#F5F5F5',
-      active: '#EEEEEE',
-      selected: '#E8F4FD',
-      primary: '#FF6C37',
-      primaryLight: '#FF8B5C',
-      primaryDark: '#E55B2E',
-      method: {
-        GET: '#0F9D58',
-        POST: '#FF9800',
-        PUT: '#4285F4',
-        DELETE: '#DB4437',
-        PATCH: '#7B1FA2',
-        HEAD: '#607D8B',
-        OPTIONS: '#795548',
-        LINK: '#039BE5',
-        UNLINK: '#F4511E'
-      },
-      success: '#0F9D58',
-      warning: '#F4B400',
-      error: '#DB4437',
-      info: '#4285F4',
-      tabActive: '#FF6C37',
-      tabInactive: '#757575',
-      sidebarActive: '#FF6C37',
-      sidebarHover: '#F5F5F5',
-      inputBg: '#FFFFFF',
-      inputBorder: '#E0E0E0',
-      tableHeader: '#F5F5F5',
-      tableRow: '#FFFFFF',
-      tableRowHover: '#FAFAFA',
-      dropdownBg: '#FFFFFF',
-      dropdownBorder: '#E0E0E0',
-      modalBg: '#FFFFFF',
-      modalBorder: '#E0E0E0',
-      // Schema Browser specific
-      gridRowEven: '#FAFAFA',
-      gridRowOdd: '#FFFFFF',
-      gridHeader: '#F5F5F5',
-      gridBorder: '#E0E0E0',
-      connectionOnline: '#0F9D58',
-      connectionOffline: '#DB4437',
-      connectionIdle: '#F4B400',
-      objectType: {
-        table: '#4285F4', // Blue
-        view: '#0F9D58', // Green
-        procedure: '#7B1FA2', // Purple
-        function: '#FF9800', // Orange
-        package: '#795548', // Brown
-        sequence: '#607D8B', // Dark blue gray
-        synonym: '#039BE5', // Teal
-        type: '#3F51B5', // Indigo
-        trigger: '#E91E63', // Pink
-        index: '#009688', // Teal
-        constraint: '#DB4437' // Red
-      }
+  // Using APICodeBase's exact color system for consistency
+  const colors = isDark ? {
+    bg: '#0f172a',
+    white: '#f8fafc',
+    sidebar: '#1e293b',
+    main: '#0f172a',
+    header: '#1e293b',
+    card: '#1e293b',
+    text: '#f1f5f9',
+    textSecondary: '#94a3b8',
+    textTertiary: '#64748b',
+    border: '#334155',
+    borderLight: '#2d3748',
+    borderDark: '#475569',
+    hover: '#334155',
+    active: '#475569',
+    selected: '#2c5282',
+    primary: '#f1f5f9',
+    primaryLight: '#60a5fa',
+    primaryDark: '#2563eb',
+    method: {
+      GET: '#10b981',
+      POST: '#3b82f6',
+      PUT: '#f59e0b',
+      DELETE: '#ef4444',
+      PATCH: '#8b5cf6',
+      HEAD: '#6b7280',
+      OPTIONS: '#8b5cf6',
+      LINK: '#06b6d4',
+      UNLINK: '#f97316'
     },
-    dark: {
-      bg: '#0D0D0D',
-      sidebar: '#1A1A1A',
-      main: '#151515',
-      header: '#1A1A1A',
-      card: '#1E1E1E',
-      text: '#E0E0E0',
-      textSecondary: '#AAAAAA',
-      textTertiary: '#888888',
-      border: '#333333',
-      borderLight: '#2A2A2A',
-      borderDark: '#404040',
-      hover: '#2A2A2A',
-      active: '#333333',
-      selected: '#2C3E50',
-      primary: '#FF6C37',
-      primaryLight: '#FF8B5C',
-      primaryDark: '#E55B2E',
-      method: {
-        GET: '#34A853',
-        POST: '#FBBC05',
-        PUT: '#4285F4',
-        DELETE: '#EA4335',
-        PATCH: '#A142F4',
-        HEAD: '#8C9EFF',
-        OPTIONS: '#A1887F',
-        LINK: '#039BE5',
-        UNLINK: '#FF7043'
-      },
-      success: '#34A853',
-      warning: '#FBBC05',
-      error: '#EA4335',
-      info: '#4285F4',
-      tabActive: '#FF6C37',
-      tabInactive: '#AAAAAA',
-      sidebarActive: '#FF6C37',
-      sidebarHover: '#2A2A2A',
-      inputBg: '#1A1A1A',
-      inputBorder: '#333333',
-      tableHeader: '#2A2A2A',
-      tableRow: '#1E1E1E',
-      tableRowHover: '#252525',
-      dropdownBg: '#1E1E1E',
-      dropdownBorder: '#333333',
-      modalBg: '#1E1E1E',
-      modalBorder: '#333333',
-      // Schema Browser specific
-      gridRowEven: '#252526',
-      gridRowOdd: '#2D2D30',
-      gridHeader: '#3E3E42',
-      gridBorder: '#404040',
-      connectionOnline: '#34A853',
-      connectionOffline: '#EA4335',
-      connectionIdle: '#FBBC05',
-      objectType: {
-        table: '#4FC3F7',
-        view: '#81C784',
-        procedure: '#BA68C8',
-        function: '#FFB74D',
-        package: '#A1887F',
-        sequence: '#90A4AE',
-        synonym: '#4DB6AC',
-        type: '#7986CB',
-        trigger: '#F06292',
-        index: '#4DB6AC',
-        constraint: '#E57373'
-      }
+    success: '#10b981',
+    warning: '#f59e0b',
+    error: '#ef4444',
+    info: '#3b82f6',
+    tabActive: '#3b82f6',
+    tabInactive: '#94a3b8',
+    sidebarActive: '#3b82f6',
+    sidebarHover: '#334155',
+    inputBg: '#1e293b',
+    inputBorder: '#334155',
+    tableHeader: '#334155',
+    tableRow: '#1e293b',
+    tableRowHover: '#2d3748',
+    dropdownBg: '#1e293b',
+    dropdownBorder: '#334155',
+    modalBg: '#1e293b',
+    modalBorder: '#334155',
+    codeBg: '#1e293b',
+    // Schema Browser specific colors matching APICodeBase's style
+    gridRowEven: '#1e293b',
+    gridRowOdd: '#2d3748',
+    gridHeader: '#334155',
+    gridBorder: '#334155',
+    connectionOnline: '#10b981',
+    connectionOffline: '#ef4444',
+    connectionIdle: '#f59e0b',
+    objectType: {
+      table: '#3b82f6', // Blue
+      view: '#10b981', // Green
+      procedure: '#8b5cf6', // Purple
+      function: '#f59e0b', // Orange
+      package: '#6b7280', // Gray
+      sequence: '#64748b', // Dark blue gray
+      synonym: '#06b6d4', // Teal
+      type: '#6366f1', // Indigo
+      trigger: '#ec4899', // Pink
+      index: '#0d9488', // Teal
+      constraint: '#ef4444' // Red
+    }
+  } : {
+    bg: '#f8fafc',
+    white: '#f8fafc',
+    sidebar: '#ffffff',
+    main: '#f8fafc',
+    header: '#ffffff',
+    card: '#ffffff',
+    text: '#1e293b',
+    textSecondary: '#64748b',
+    textTertiary: '#94a3b8',
+    border: '#e2e8f0',
+    borderLight: '#f1f5f9',
+    borderDark: '#cbd5e1',
+    hover: '#f1f5f9',
+    active: '#e2e8f0',
+    selected: '#dbeafe',
+    primary: '#1e293b',
+    primaryLight: '#60a5fa',
+    primaryDark: '#2563eb',
+    method: {
+      GET: '#10b981',
+      POST: '#3b82f6',
+      PUT: '#f59e0b',
+      DELETE: '#ef4444',
+      PATCH: '#8b5cf6',
+      HEAD: '#6b7280',
+      OPTIONS: '#8b5cf6',
+      LINK: '#06b6d4',
+      UNLINK: '#f97316'
+    },
+    success: '#10b981',
+    warning: '#f59e0b',
+    error: '#ef4444',
+    info: '#3b82f6',
+    tabActive: '#3b82f6',
+    tabInactive: '#64748b',
+    sidebarActive: '#3b82f6',
+    sidebarHover: '#f1f5f9',
+    inputBg: '#ffffff',
+    inputBorder: '#e2e8f0',
+    tableHeader: '#f8fafc',
+    tableRow: '#ffffff',
+    tableRowHover: '#f8fafc',
+    dropdownBg: '#ffffff',
+    dropdownBorder: '#e2e8f0',
+    modalBg: '#ffffff',
+    modalBorder: '#e2e8f0',
+    codeBg: '#f1f5f9',
+    // Schema Browser specific colors matching APICodeBase's style
+    gridRowEven: '#ffffff',
+    gridRowOdd: '#f8fafc',
+    gridHeader: '#f1f5f9',
+    gridBorder: '#e2e8f0',
+    connectionOnline: '#10b981',
+    connectionOffline: '#ef4444',
+    connectionIdle: '#f59e0b',
+    objectType: {
+      table: '#3b82f6', // Blue
+      view: '#10b981', // Green
+      procedure: '#8b5cf6', // Purple
+      function: '#f59e0b', // Orange
+      package: '#6b7280', // Gray
+      sequence: '#64748b', // Dark blue gray
+      synonym: '#06b6d4', // Teal
+      type: '#6366f1', // Indigo
+      trigger: '#ec4899', // Pink
+      index: '#0d9488', // Teal
+      constraint: '#ef4444' // Red
     }
   };
-
-  const colors = isDark ? postmanColors.dark : postmanColors.light;
 
   // Professional Data Structures - Oracle Standards
   const [connections, setConnections] = useState([
@@ -718,7 +717,7 @@ END BIU_EMPLOYEES;`
     ]
   };
 
-  // Get Object Icon with color scheme from APIScript
+  // Get Object Icon with color scheme from APICodeBase
   const getObjectIcon = (type) => {
     const iconProps = { size: 14, style: { color: colors.objectType[type.toLowerCase()] || colors.textSecondary } };
     
@@ -865,7 +864,7 @@ END BIU_EMPLOYEES;`
   // Render Columns Tab (Professional Style)
   const renderColumnsTab = () => (
     <div className="flex-1 overflow-auto">
-      <div className="border rounded-sm" style={{ 
+      <div className="border rounded" style={{ 
         borderColor: colors.gridBorder,
         backgroundColor: colors.card
       }}>
@@ -878,12 +877,12 @@ END BIU_EMPLOYEES;`
             Columns ({activeObject.columns?.length || 0})
           </div>
           <div className="flex items-center gap-2">
-            <button className="px-2 py-1 text-xs rounded-sm hover:bg-opacity-50 transition-colors hover-lift"
+            <button className="px-2 py-1 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover, color: colors.text }}>
               <Copy size={10} className="inline mr-1" />
               Copy
             </button>
-            <button className="px-2 py-1 text-xs rounded-sm hover:bg-opacity-50 transition-colors hover-lift"
+            <button className="px-2 py-1 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover, color: colors.text }}>
               <Download size={10} className="inline mr-1" />
               Export
@@ -950,7 +949,7 @@ END BIU_EMPLOYEES;`
                   <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{col.name}</td>
                   <td className="p-2 text-xs font-mono" style={{ color: colors.text }}>{col.type}</td>
                   <td className="p-2 text-xs text-center">
-                    <div className={`inline-flex items-center justify-center w-5 h-5 rounded-sm ${
+                    <div className={`inline-flex items-center justify-center w-5 h-5 rounded ${
                       col.nullable === 'Y' ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'
                     }`}>
                       {col.nullable === 'Y' ? 'Y' : 'N'}
@@ -959,9 +958,9 @@ END BIU_EMPLOYEES;`
                   <td className="p-2">
                     {col.key && (
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                        col.key === 'PK' ? 'bg-blue-100 text-blue-800' :
-                        col.key === 'FK' ? 'bg-purple-100 text-purple-800' :
-                        'bg-green-100 text-green-800'
+                        col.key === 'PK' ? 'bg-blue-500/10' :
+                        col.key === 'FK' ? 'bg-purple-500/10 text-purple-400' :
+                        'bg-green-500/10 text-green-400'
                       }`}>
                         {col.key}
                       </span>
@@ -994,22 +993,22 @@ END BIU_EMPLOYEES;`
           backgroundColor: colors.card
         }}>
           <div className="flex items-center gap-2">
-            <button className="px-3 py-1.5 rounded-sm text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 hover-lift"
-              style={{ backgroundColor: colors.primary, color: 'white' }}>
+            <button className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 hover-lift"
+              style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
               <Play size={12} />
               Execute
             </button>
-            <button className="px-3 py-1.5 rounded-sm text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
+            <button className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover, color: colors.text }}>
               Commit
             </button>
-            <button className="px-3 py-1.5 rounded-sm text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
+            <button className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover, color: colors.text }}>
               Rollback
             </button>
             <div className="ml-4 flex items-center gap-2">
               <span className="text-sm" style={{ color: colors.textSecondary }}>Auto-refresh:</span>
-              <select className="px-2 py-1 border rounded-sm text-sm focus:outline-none hover-lift"
+              <select className="px-2 py-1 border rounded text-sm focus:outline-none hover-lift"
                 style={{ 
                   backgroundColor: colors.card,
                   borderColor: colors.border,
@@ -1027,11 +1026,11 @@ END BIU_EMPLOYEES;`
               Page: 1 of 1 | Rows: 1-{data.length} of {activeObject.rowCount?.toLocaleString()}
             </span>
             <div className="flex items-center gap-2">
-              <button className="p-1 rounded-sm hover:bg-opacity-50 transition-colors hover-lift"
+              <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover }}>
                 <ChevronLeft size={14} style={{ color: colors.textSecondary }} />
               </button>
-              <button className="p-1 rounded-sm hover:bg-opacity-50 transition-colors hover-lift"
+              <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover }}>
                 <ChevronRight size={14} style={{ color: colors.textSecondary }} />
               </button>
@@ -1041,7 +1040,7 @@ END BIU_EMPLOYEES;`
 
         {/* Data Grid */}
         <div className="flex-1 overflow-auto">
-          <div className="border rounded-sm" style={{ 
+          <div className="border rounded" style={{ 
             borderColor: colors.gridBorder,
             backgroundColor: colors.card
           }}>
@@ -1062,9 +1061,9 @@ END BIU_EMPLOYEES;`
                       {col.name}
                       {col.key && (
                         <span className={`ml-1 px-1 py-0.5 rounded text-xs ${
-                          col.key === 'PK' ? 'bg-blue-100 text-blue-800' :
-                          col.key === 'FK' ? 'bg-purple-100 text-purple-800' :
-                          'bg-green-100 text-green-800'
+                          col.key === 'PK' ? 'bg-blue-500/10' :
+                          col.key === 'FK' ? 'bg-purple-500/10 text-purple-400' :
+                          'bg-green-500/10 text-green-400'
                         }`}>
                           {col.key}
                         </span>
@@ -1119,7 +1118,7 @@ END BIU_EMPLOYEES;`
   // Render Parameters Tab for Procedures/Functions
   const renderParametersTab = () => (
     <div className="flex-1 overflow-auto">
-      <div className="border rounded-sm" style={{ 
+      <div className="border rounded" style={{ 
         borderColor: colors.gridBorder,
         backgroundColor: colors.card
       }}>
@@ -1172,9 +1171,9 @@ END BIU_EMPLOYEES;`
                 <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{param.name}</td>
                 <td className="p-2">
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                    param.type === 'IN' ? 'bg-blue-100 text-blue-800' :
-                    param.type === 'OUT' ? 'bg-purple-100 text-purple-800' :
-                    'bg-green-100 text-green-800'
+                    param.type === 'IN' ? 'bg-blue-500/10' :
+                    param.type === 'OUT' ? 'bg-purple-500/10 text-purple-400' :
+                    'bg-green-500/10 text-green-400'
                   }`}>
                     {param.type}
                   </span>
@@ -1190,7 +1189,7 @@ END BIU_EMPLOYEES;`
                 <td className="p-2 text-xs font-medium" style={{ color: colors.textSecondary }}>-</td>
                 <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>RETURN</td>
                 <td className="p-2">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-500/10 text-green-400">
                     OUT
                   </span>
                 </td>
@@ -1212,7 +1211,7 @@ END BIU_EMPLOYEES;`
   // Render DDL Tab
   const renderDDLTab = () => (
     <div className="flex-1 overflow-auto">
-      <div className="border rounded-sm p-4" style={{ 
+      <div className="border rounded p-4" style={{ 
         borderColor: colors.border,
         backgroundColor: colors.card
       }}>
@@ -1229,7 +1228,7 @@ END BIU_EMPLOYEES;`
   // Render Constraints Tab
   const renderConstraintsTab = () => (
     <div className="flex-1 overflow-auto">
-      <div className="border rounded-sm" style={{ 
+      <div className="border rounded" style={{ 
         borderColor: colors.gridBorder,
         backgroundColor: colors.card
       }}>
@@ -1264,10 +1263,10 @@ END BIU_EMPLOYEES;`
                 <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{con.name}</td>
                 <td className="p-2">
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                    con.type === 'PRIMARY KEY' ? 'bg-blue-100 text-blue-800' :
-                    con.type === 'FOREIGN KEY' ? 'bg-purple-100 text-purple-800' :
-                    con.type === 'UNIQUE' ? 'bg-green-100 text-green-800' :
-                    'bg-yellow-100 text-yellow-800'
+                    con.type === 'PRIMARY KEY' ? 'bg-blue-500/10' :
+                    con.type === 'FOREIGN KEY' ? 'bg-purple-500/10 text-purple-400' :
+                    con.type === 'UNIQUE' ? 'bg-green-500/10 text-green-400' :
+                    'bg-yellow-500/10 text-yellow-400'
                   }`}>
                     {con.type}
                   </span>
@@ -1278,7 +1277,7 @@ END BIU_EMPLOYEES;`
                 </td>
                 <td className="p-2">
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                    con.status === 'ENABLED' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    con.status === 'ENABLED' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
                   }`}>
                     {con.status}
                   </span>
@@ -1294,7 +1293,7 @@ END BIU_EMPLOYEES;`
   // Render Indexes Tab
   const renderIndexesTab = () => (
     <div className="flex-1 overflow-auto">
-      <div className="border rounded-sm" style={{ 
+      <div className="border rounded" style={{ 
         borderColor: colors.gridBorder,
         backgroundColor: colors.card
       }}>
@@ -1331,14 +1330,14 @@ END BIU_EMPLOYEES;`
                 <td className="p-2 text-xs" style={{ color: colors.text }}>{idx.columns}</td>
                 <td className="p-2">
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                    idx.uniqueness === 'UNIQUE' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                    idx.uniqueness === 'UNIQUE' ? 'bg-green-500/10 text-green-400' : 'bg-blue-500/10'
                   }`}>
                     {idx.uniqueness}
                   </span>
                 </td>
                 <td className="p-2">
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                    idx.status === 'VALID' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    idx.status === 'VALID' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
                   }`}>
                     {idx.status}
                   </span>
@@ -1368,7 +1367,7 @@ END BIU_EMPLOYEES;`
 
     return (
       <div className="flex-1 overflow-auto">
-        <div className="border rounded-sm" style={{ 
+        <div className="border rounded" style={{ 
           borderColor: colors.border,
           backgroundColor: colors.card
         }}>
@@ -1472,7 +1471,7 @@ END BIU_EMPLOYEES;`
 
     return (
       <div 
-        className="fixed z-50 rounded-sm shadow-lg border py-1 min-w-48"
+        className="fixed z-50 rounded shadow-lg border py-1 min-w-48"
         style={{ 
           backgroundColor: colors.dropdownBg,
           borderColor: colors.dropdownBorder,
@@ -1496,7 +1495,7 @@ END BIU_EMPLOYEES;`
                 <ChevronRight size={12} style={{ color: colors.textSecondary }} />
               </div>
               <div className="absolute left-full top-0 hidden group-hover:block ml-1">
-                <div className="rounded-sm border shadow-lg py-1 min-w-32" style={{ 
+                <div className="rounded border shadow-lg py-1 min-w-32" style={{ 
                   backgroundColor: colors.dropdownBg,
                   borderColor: colors.dropdownBorder
                 }}>
@@ -1531,13 +1530,13 @@ END BIU_EMPLOYEES;`
 
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="rounded-sm w-full max-w-2xl" style={{ 
+        <div className="rounded w-full max-w-2xl" style={{ 
           backgroundColor: colors.modalBg,
           border: `1px solid ${colors.modalBorder}`
         }}>
           <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: colors.border }}>
             <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Connection Manager</h3>
-            <button onClick={() => setShowConnectionManager(false)} className="p-1 rounded-sm hover:bg-opacity-50 transition-colors hover-lift"
+            <button onClick={() => setShowConnectionManager(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover }}>
               <X size={14} style={{ color: colors.textSecondary }} />
             </button>
@@ -1547,7 +1546,7 @@ END BIU_EMPLOYEES;`
             <div className="space-y-3">
               {connections.map(conn => (
                 <div key={conn.id}
-                  className={`p-3 rounded-sm border cursor-pointer transition-colors hover-lift ${
+                  className={`p-3 rounded border cursor-pointer transition-colors hover-lift ${
                     activeConnection === conn.id ? 'border-primary' : 'hover:border-primary/50'
                   }`}
                   style={{ 
@@ -1574,7 +1573,7 @@ END BIU_EMPLOYEES;`
                 </div>
               ))}
               
-              <button className="w-full p-4 rounded-sm border-2 border-dashed hover:border-primary/50 transition-colors flex items-center justify-center gap-2 hover-lift"
+              <button className="w-full p-4 rounded border-2 border-dashed hover:border-primary/50 transition-colors flex items-center justify-center gap-2 hover-lift"
                 style={{ borderColor: colors.border, color: colors.text }}>
                 <Plus size={16} />
                 Add New Connection
@@ -1598,7 +1597,7 @@ END BIU_EMPLOYEES;`
       backgroundColor: colors.bg,
       color: colors.text,
       fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
-      fontSize: '13px' // Match APIScript font size
+      fontSize: '13px'
     }}>
       <style>{`
         @keyframes fadeInUp {
@@ -1619,7 +1618,7 @@ END BIU_EMPLOYEES;`
           animation: spin 1s linear infinite;
         }
         
-        .text-blue-400 { color: #60a5fa; }
+         { color: #60a5fa; }
         .text-green-400 { color: #34d399; }
         .text-purple-400 { color: #a78bfa; }
         .text-orange-400 { color: #fb923c; }
@@ -1675,10 +1674,11 @@ END BIU_EMPLOYEES;`
         .hover-lift:hover {
           transform: translateY(-2px);
           transition: transform 0.2s ease;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
         
-        .code-bg {
-          background-color: ${isDark ? '#1a1a1a' : '#f8f9fa'};
+        .gradient-bg {
+          background: linear-gradient(135deg, ${colors.primary}20 0%, ${colors.info}20 100%);
         }
       `}</style>
 
@@ -1690,30 +1690,7 @@ END BIU_EMPLOYEES;`
         <div className="flex items-center gap-4">
 
           {/* Main Menu */}
-          <div className="flex items-center gap-1">
-            {/* {[
-              { icon: <Server size={13} />, label: 'Connections', action: () => setShowConnectionManager(true) },
-              { icon: <FolderOpen size={13} />, label: 'Open' },
-              { icon: <Save size={13} />, label: 'Save' },
-              { icon: <Table size={13} />, label: 'Data' },
-              { icon: <Code size={13} />, label: 'API' },
-              { icon: <Search size={13} />, label: 'Search' },
-              { icon: <Activity size={13} />, label: 'Monitor' }
-            ].map((item, index) => (
-              <button
-                key={index}
-                onClick={item.action}
-                className="flex items-center gap-1 px-2 py-1.5 rounded text-sm hover:bg-opacity-50 transition-colors hover-lift"
-                style={{ 
-                  color: colors.textSecondary,
-                  backgroundColor: 'transparent'
-                }}
-              >
-                {item.icon}
-                <span>{item.label}</span>
-              </button>
-            ))} */}
-
+          <div className="flex items-center gap-1 -ml-3 text-nowrap">
             <span className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift`}>API Code Base</span>
           </div>
         </div>
@@ -1744,17 +1721,6 @@ END BIU_EMPLOYEES;`
           >
             {isDark ? <Sun size={14} style={{ color: colors.textSecondary }} /> : <Moon size={14} style={{ color: colors.textSecondary }} />}
           </button>
-
-          {/* User Menu */}
-          {/* <button className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-            style={{ backgroundColor: colors.hover }}>
-            <div className="w-5 h-5 rounded flex items-center justify-center" style={{ 
-              backgroundColor: colors.primary 
-            }}>
-              <User size={10} style={{ color: 'white' }} />
-            </div>
-            <span className="text-xs" style={{ color: colors.text }}>HR</span>
-          </button> */}
         </div>
       </div>
 
@@ -1922,8 +1888,8 @@ END BIU_EMPLOYEES;`
                         {activeObject.owner}.{activeObject.name}
                       </span>
                       <span className="text-xs px-2 py-0.5 rounded" style={{ 
-                        backgroundColor: activeObject.status === 'VALID' ? '#E8F5E9' : '#FFEBEE',
-                        color: activeObject.status === 'VALID' ? '#2E7D32' : '#C62828'
+                        backgroundColor: activeObject.status === 'VALID' ? '#10b98120' : '#ef444420',
+                        color: activeObject.status === 'VALID' ? colors.success : colors.error
                       }}>
                         {activeObject.status}
                       </span>
@@ -1946,7 +1912,7 @@ END BIU_EMPLOYEES;`
                       Favorite
                     </button>
                     <button className="px-3 py-1.5 text-sm rounded hover:opacity-90 transition-colors flex items-center gap-2 hover-lift"
-                      style={{ backgroundColor: colors.primary, color: 'white' }}>
+                      style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                       <Code size={12} />
                       Generate API
                     </button>

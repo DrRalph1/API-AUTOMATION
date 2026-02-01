@@ -553,7 +553,7 @@ import {
 } from "lucide-react";
 
 // Import your empty components
-import APIScript from "./APIScript.js";
+import APICodeBase from "./APICodeBase.js";
 import APICollections from "./APICollections.js";
 import APISecurity from "./APISecurity.js";
 import Dashboard from "./Dashboard.js";
@@ -830,8 +830,8 @@ export default function EntryPage() {
     { id: "schema-browser", label: "Schema Browser", icon: DatabaseBackup, component: <SchemaBrowser /> },
     { id: "apis", label: "Collections", icon: FileCode, component: <APICollections /> },
     { id: "api-docs", label: "Documenation", icon: Activity, component: <APIDocs /> },
-    { id: "api-script", label: "Code Base", icon: Code, component: <APIScript /> },
-    { id: "security", label: "Security", icon: Shield, component: <APISecurity /> },
+    { id: "api-script", label: "Code Base", icon: Code, component: <APICodeBase /> },
+    { id: "security", label: "API Security", icon: Shield, component: <APISecurity /> },
   ];
 
   // Quick actions

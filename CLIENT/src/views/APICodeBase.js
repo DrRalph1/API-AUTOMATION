@@ -945,7 +945,7 @@ const NOTIFICATIONS = [
   { id: 'notif-3', title: 'Download Ready', message: 'Complete Node.js package ready for download', time: '1 day ago', read: true, type: 'success' }
 ];
 
-const APIScript = () => {
+const APICodeBase = () => {
   const [theme, setTheme] = useState('dark');
   const [activeTab, setActiveTab] = useState('implementations');
   const [showCodePanel, setShowCodePanel] = useState(true);
@@ -977,104 +977,106 @@ const APIScript = () => {
   
   const isDark = theme === 'dark';
 
-  const postmanColors = {
-    light: {
-      bg: '#F6F6F6',
-      sidebar: '#FFFFFF',
-      main: '#FFFFFF',
-      header: '#FFFFFF',
-      card: '#FFFFFF',
-      text: '#2D2D2D',
-      textSecondary: '#757575',
-      textTertiary: '#9E9E9E',
-      border: '#E0E0E0',
-      borderLight: '#F0F0F0',
-      borderDark: '#CCCCCC',
-      hover: '#F5F5F5',
-      active: '#EEEEEE',
-      selected: '#E8F4FD',
-      primary: '#FF6C37',
-      primaryLight: '#FF8B5C',
-      primaryDark: '#E55B2E',
-      method: {
-        GET: '#0F9D58',
-        POST: '#FF9800',
-        PUT: '#4285F4',
-        DELETE: '#DB4437',
-        PATCH: '#7B1FA2',
-        HEAD: '#607D8B',
-        OPTIONS: '#795548',
-        LINK: '#039BE5',
-        UNLINK: '#F4511E'
-      },
-      success: '#0F9D58',
-      warning: '#F4B400',
-      error: '#DB4437',
-      info: '#4285F4',
-      tabActive: '#FF6C37',
-      tabInactive: '#757575',
-      sidebarActive: '#FF6C37',
-      sidebarHover: '#F5F5F5',
-      inputBg: '#FFFFFF',
-      inputBorder: '#E0E0E0',
-      tableHeader: '#F5F5F5',
-      tableRow: '#FFFFFF',
-      tableRowHover: '#FAFAFA',
-      dropdownBg: '#FFFFFF',
-      dropdownBorder: '#E0E0E0',
-      modalBg: '#FFFFFF',
-      modalBorder: '#E0E0E0'
+  // Color scheme matching previous components
+  const colors = isDark ? {
+    bg: '#0f172a',
+    white: '#f8fafc',
+    sidebar: '#1e293b',
+    main: '#0f172a',
+    header: '#1e293b',
+    card: '#1e293b',
+    text: '#f1f5f9',
+    textSecondary: '#94a3b8',
+    textTertiary: '#64748b',
+    border: '#334155',
+    borderLight: '#2d3748',
+    borderDark: '#475569',
+    hover: '#334155',
+    active: '#475569',
+    selected: '#2c5282',
+    primary: '#f1f5f9',
+    primaryLight: '#60a5fa',
+    primaryDark: '#2563eb',
+    method: {
+      GET: '#10b981',
+      POST: '#3b82f6',
+      PUT: '#f59e0b',
+      DELETE: '#ef4444',
+      PATCH: '#8b5cf6',
+      HEAD: '#6b7280',
+      OPTIONS: '#8b5cf6',
+      LINK: '#06b6d4',
+      UNLINK: '#f97316'
     },
-    dark: {
-      bg: '#0D0D0D',
-      sidebar: '#1A1A1A',
-      main: '#151515',
-      header: '#1A1A1A',
-      card: '#1E1E1E',
-      text: '#E0E0E0',
-      textSecondary: '#AAAAAA',
-      textTertiary: '#888888',
-      border: '#333333',
-      borderLight: '#2A2A2A',
-      borderDark: '#404040',
-      hover: '#2A2A2A',
-      active: '#333333',
-      selected: '#2C3E50',
-      primary: '#FF6C37',
-      primaryLight: '#FF8B5C',
-      primaryDark: '#E55B2E',
-      method: {
-        GET: '#34A853',
-        POST: '#FBBC05',
-        PUT: '#4285F4',
-        DELETE: '#EA4335',
-        PATCH: '#A142F4',
-        HEAD: '#8C9EFF',
-        OPTIONS: '#A1887F',
-        LINK: '#039BE5',
-        UNLINK: '#FF7043'
-      },
-      success: '#34A853',
-      warning: '#FBBC05',
-      error: '#EA4335',
-      info: '#4285F4',
-      tabActive: '#FF6C37',
-      tabInactive: '#AAAAAA',
-      sidebarActive: '#FF6C37',
-      sidebarHover: '#2A2A2A',
-      inputBg: '#1A1A1A',
-      inputBorder: '#333333',
-      tableHeader: '#2A2A2A',
-      tableRow: '#1E1E1E',
-      tableRowHover: '#252525',
-      dropdownBg: '#1E1E1E',
-      dropdownBorder: '#333333',
-      modalBg: '#1E1E1E',
-      modalBorder: '#333333'
-    }
+    success: '#10b981',
+    warning: '#f59e0b',
+    error: '#ef4444',
+    info: '#3b82f6',
+    tabActive: '#3b82f6',
+    tabInactive: '#94a3b8',
+    sidebarActive: '#3b82f6',
+    sidebarHover: '#334155',
+    inputBg: '#1e293b',
+    inputBorder: '#334155',
+    tableHeader: '#334155',
+    tableRow: '#1e293b',
+    tableRowHover: '#2d3748',
+    dropdownBg: '#1e293b',
+    dropdownBorder: '#334155',
+    modalBg: '#1e293b',
+    modalBorder: '#334155',
+    codeBg: '#1e293b',
+    gradient: 'from-blue-500/20 via-violet-500/20 to-orange-500/20'
+  } : {
+    bg: '#f8fafc',
+    white: '#f8fafc',
+    sidebar: '#ffffff',
+    main: '#f8fafc',
+    header: '#ffffff',
+    card: '#ffffff',
+    text: '#1e293b',
+    textSecondary: '#64748b',
+    textTertiary: '#94a3b8',
+    border: '#e2e8f0',
+    borderLight: '#f1f5f9',
+    borderDark: '#cbd5e1',
+    hover: '#f1f5f9',
+    active: '#e2e8f0',
+    selected: '#dbeafe',
+    primary: '#1e293b',
+    primaryLight: '#60a5fa',
+    primaryDark: '#2563eb',
+    method: {
+      GET: '#10b981',
+      POST: '#3b82f6',
+      PUT: '#f59e0b',
+      DELETE: '#ef4444',
+      PATCH: '#8b5cf6',
+      HEAD: '#6b7280',
+      OPTIONS: '#8b5cf6',
+      LINK: '#06b6d4',
+      UNLINK: '#f97316'
+    },
+    success: '#10b981',
+    warning: '#f59e0b',
+    error: '#ef4444',
+    info: '#3b82f6',
+    tabActive: '#3b82f6',
+    tabInactive: '#64748b',
+    sidebarActive: '#3b82f6',
+    sidebarHover: '#f1f5f9',
+    inputBg: '#ffffff',
+    inputBorder: '#e2e8f0',
+    tableHeader: '#f8fafc',
+    tableRow: '#ffffff',
+    tableRowHover: '#f8fafc',
+    dropdownBg: '#ffffff',
+    dropdownBorder: '#e2e8f0',
+    modalBg: '#ffffff',
+    modalBorder: '#e2e8f0',
+    codeBg: '#f1f5f9',
+    gradient: 'from-blue-400/20 via-violet-400/20 to-orange-400/20'
   };
-
-  const colors = isDark ? postmanColors.dark : postmanColors.light;
 
   // Filter collections based on search
   const filteredCollections = collections.filter(collection => {
@@ -1227,7 +1229,7 @@ const APIScript = () => {
       }}>
         <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: colors.border }}>
           <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Code Implementation</h3>
-          <button onClick={() => setShowCodePanel(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors"
+          <button onClick={() => setShowCodePanel(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
             style={{ backgroundColor: colors.hover }}>
             <X size={14} style={{ color: colors.textSecondary }} />
           </button>
@@ -1239,14 +1241,14 @@ const APIScript = () => {
             <div className="relative">
               <button
                 onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
-                className="w-full px-3 py-2 rounded text-sm font-medium flex items-center justify-between hover:bg-opacity-50 transition-colors"
+                className="w-full px-3 py-2 rounded text-sm font-medium flex items-center justify-between hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover, color: colors.text }}
               >
                 <div className="flex items-center gap-2">
                   {currentLanguage?.icon}
                   <span>{currentLanguage?.name}</span>
                   <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
-                    backgroundColor: currentLanguage?.color + '20',
+                    backgroundColor: `${currentLanguage?.color}20`,
                     color: currentLanguage?.color
                   }}>
                     {currentLanguage?.framework}
@@ -1278,12 +1280,12 @@ const APIScript = () => {
                       {lang.icon}
                       {lang.name}
                       <span className="text-xs ml-auto px-1.5 py-0.5 rounded" style={{ 
-                        backgroundColor: lang.color + '20',
+                        backgroundColor: `${lang.color}20`,
                         color: lang.color
                       }}>
                         {lang.framework}
                       </span>
-                      {selectedLanguage === lang.id && <Check size={14} className="ml-2" />}
+                      {selectedLanguage === lang.id && <Check size={14} className="ml-2" style={{ color: colors.primary }} />}
                     </button>
                   ))}
                 </div>
@@ -1299,11 +1301,11 @@ const APIScript = () => {
                   <button
                     key={component}
                     onClick={() => setSelectedComponent(component)}
-                    className={`px-2 py-1 text-xs rounded capitalize ${
+                    className={`px-2 py-1 text-xs rounded capitalize hover-lift ${
                       selectedComponent === component ? '' : 'hover:bg-opacity-50'
                     }`}
                     style={{ 
-                      backgroundColor: selectedComponent === component ? colors.primary : colors.hover,
+                      backgroundColor: selectedComponent === component ? colors.primaryDark : colors.hover,
                       color: selectedComponent === component ? 'white' : colors.text
                     }}
                   >
@@ -1322,13 +1324,13 @@ const APIScript = () => {
               <span className="text-sm font-medium capitalize" style={{ color: colors.text }}>
                 {selectedComponent.replace(/([A-Z])/g, ' $1').trim()}
               </span>
-              <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: colors.hover }}>
+              <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>
                 {getFileName(selectedComponent, selectedLanguage)}
               </span>
             </div>
             <button 
               onClick={() => copyToClipboard(currentCode)}
-              className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors flex items-center gap-1"
+              className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors flex items-center gap-1 hover-lift"
               style={{ backgroundColor: colors.hover, color: colors.text }}
             >
               <Copy size={10} />
@@ -1336,7 +1338,7 @@ const APIScript = () => {
             </button>
           </div>
           
-          <div className="p-4">
+          <div className="p-4" style={{ backgroundColor: colors.codeBg }}>
             <SyntaxHighlighter 
               language={selectedLanguage}
               code={currentCode}
@@ -1346,14 +1348,14 @@ const APIScript = () => {
 
         <div className="p-4 border-t space-y-2" style={{ borderColor: colors.border }}>
           <button 
-            className="w-full py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center justify-center gap-2"
+            className="w-full py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center justify-center gap-2 hover-lift"
             onClick={() => copyToClipboard(currentCode)}
-            style={{ backgroundColor: colors.primary, color: 'white' }}>
+            style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
             <Copy size={12} />
             Copy Code
           </button>
           <button 
-            className="w-full py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center justify-center gap-2"
+            className="w-full py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center justify-center gap-2 hover-lift"
             onClick={generateDownloadPackage}
             style={{ backgroundColor: colors.hover, color: colors.text }}>
             {isGeneratingCode ? (
@@ -1370,7 +1372,7 @@ const APIScript = () => {
           </button>
           {showAllFiles && (
             <button 
-              className="w-full py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center justify-center gap-2"
+              className="w-full py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center justify-center gap-2 hover-lift"
               onClick={() => setShowAllFiles(!showAllFiles)}
               style={{ backgroundColor: colors.hover, color: colors.text }}>
               {showAllFiles ? 'Show Single File' : 'Show All Files'}
@@ -1392,7 +1394,7 @@ const APIScript = () => {
         }}>
           <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: colors.border }}>
             <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Import API Specification</h3>
-            <button onClick={() => setShowImportModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors"
+            <button onClick={() => setShowImportModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover }}>
               <X size={14} style={{ color: colors.textSecondary }} />
             </button>
@@ -1405,15 +1407,15 @@ const APIScript = () => {
               <UploadCloud size={32} className="mx-auto mb-4" style={{ color: colors.textSecondary }} />
               <p className="text-sm mb-4" style={{ color: colors.text }}>Import OpenAPI/Swagger Spec</p>
               <p className="text-xs mb-4" style={{ color: colors.textSecondary }}>Supports: OpenAPI 3.0, Swagger 2.0, Postman Collection</p>
-              <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
-                style={{ backgroundColor: colors.primary, color: 'white' }}
+              <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}
                 onClick={() => showToast('File browser would open', 'info')}>
                 Select File
               </button>
             </div>
             <div className="grid grid-cols-2 gap-3">
               {['From URL', 'From GitHub', 'From Postman', 'Example APIs'].map(source => (
-                <button key={source} className="p-4 rounded text-sm text-left hover:bg-opacity-50 transition-colors"
+                <button key={source} className="p-4 rounded text-sm text-left hover:bg-opacity-50 transition-colors hover-lift"
                   onClick={() => showToast(`Importing ${source}`, 'info')}
                   style={{ 
                     backgroundColor: colors.hover,
@@ -1432,15 +1434,15 @@ const APIScript = () => {
           </div>
           <div className="p-4 border-t" style={{ borderColor: colors.border }}>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setShowImportModal(false)} className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
+              <button onClick={() => setShowImportModal(false)} className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover, color: colors.text }}>
                 Cancel
               </button>
               <button onClick={() => {
                 showToast('API specification imported!', 'success');
                 setShowImportModal(false);
-              }} className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
-                style={{ backgroundColor: colors.primary, color: 'white' }}>
+              }} className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                 Import & Generate
               </button>
             </div>
@@ -1461,7 +1463,7 @@ const APIScript = () => {
         }}>
           <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: colors.border }}>
             <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Settings</h3>
-            <button onClick={() => setShowSettingsModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors"
+            <button onClick={() => setShowSettingsModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover }}>
               <X size={14} style={{ color: colors.textSecondary }} />
             </button>
@@ -1469,7 +1471,7 @@ const APIScript = () => {
           <div className="p-4">
             <div className="grid grid-cols-3 gap-4 mb-6">
               {['Code Style', 'Templates', 'Export', 'Security', 'Notifications', 'Preferences'].map(setting => (
-                <button key={setting} className="p-4 rounded text-center hover:bg-opacity-50 transition-colors"
+                <button key={setting} className="p-4 rounded text-center hover:bg-opacity-50 transition-colors hover-lift"
                   onClick={() => showToast(`Opening ${setting} settings`, 'info')}
                   style={{ 
                     backgroundColor: colors.hover,
@@ -1486,7 +1488,7 @@ const APIScript = () => {
                   <div className="font-medium" style={{ color: colors.text }}>Dark Mode</div>
                   <div className="text-sm" style={{ color: colors.textSecondary }}>Toggle dark/light theme</div>
                 </div>
-                <button onClick={() => setTheme(isDark ? 'light' : 'dark')} className="relative inline-flex h-6 w-11 items-center rounded-full"
+                <button onClick={() => setTheme(isDark ? 'light' : 'dark')} className="relative inline-flex h-6 w-11 items-center rounded-full hover-lift"
                   style={{ backgroundColor: isDark ? colors.primary : colors.border }}>
                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
                     isDark ? 'translate-x-6' : 'translate-x-1'
@@ -1498,7 +1500,7 @@ const APIScript = () => {
                   <div className="font-medium" style={{ color: colors.text }}>Auto-generate Tests</div>
                   <div className="text-sm" style={{ color: colors.textSecondary }}>Generate unit tests with code</div>
                 </div>
-                <button className="relative inline-flex h-6 w-11 items-center rounded-full"
+                <button className="relative inline-flex h-6 w-11 items-center rounded-full hover-lift"
                   style={{ backgroundColor: colors.primary }}
                   onClick={() => showToast('Auto-test generation toggled', 'info')}>
                   <span className="inline-block h-4 w-4 transform rounded-full bg-white translate-x-6" />
@@ -1508,15 +1510,15 @@ const APIScript = () => {
           </div>
           <div className="p-4 border-t" style={{ borderColor: colors.border }}>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setShowSettingsModal(false)} className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
+              <button onClick={() => setShowSettingsModal(false)} className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover, color: colors.text }}>
                 Cancel
               </button>
               <button onClick={() => {
                 showToast('Settings saved!', 'success');
                 setShowSettingsModal(false);
-              }} className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
-                style={{ backgroundColor: colors.primary, color: 'white' }}>
+              }} className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                 Save Changes
               </button>
             </div>
@@ -1537,7 +1539,7 @@ const APIScript = () => {
         }}>
           <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: colors.border }}>
             <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Export & Share</h3>
-            <button onClick={() => setShowPublishModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors"
+            <button onClick={() => setShowPublishModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover }}>
               <X size={14} style={{ color: colors.textSecondary }} />
             </button>
@@ -1547,7 +1549,7 @@ const APIScript = () => {
               <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Export Format</label>
               <div className="grid grid-cols-2 gap-2">
                 {['Complete Package', 'Single File', 'GitHub Gist', 'Docker Package'].map(format => (
-                  <button key={format} className="p-3 rounded text-sm text-left transition-colors hover:bg-opacity-50"
+                  <button key={format} className="p-3 rounded text-sm text-left transition-colors hover:bg-opacity-50 hover-lift"
                     style={{ 
                       backgroundColor: colors.hover,
                       border: `1px solid ${colors.border}`,
@@ -1567,7 +1569,7 @@ const APIScript = () => {
             <div>
               <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Target Language</label>
               <select 
-                className="w-full px-3 py-2 border rounded text-sm focus:outline-none"
+                className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
                 value={selectedLanguage}
                 onChange={(e) => setSelectedLanguage(e.target.value)}
                 style={{
@@ -1584,17 +1586,17 @@ const APIScript = () => {
             <div>
               <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Include Documentation</label>
               <div className="flex items-center gap-2">
-                <button className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors"
-                  style={{ backgroundColor: colors.primary, color: 'white' }}
+                <button className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                  style={{ backgroundColor: colors.primaryDark, color: colors.white }}
                   onClick={() => showToast('Include README selected', 'info')}>
                   README.md
                 </button>
-                <button className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
+                <button className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
                   style={{ backgroundColor: colors.hover, color: colors.text }}
                   onClick={() => showToast('Include API docs selected', 'info')}>
                   API Docs
                 </button>
-                <button className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
+                <button className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
                   style={{ backgroundColor: colors.hover, color: colors.text }}
                   onClick={() => showToast('Include tests selected', 'info')}>
                   Tests
@@ -1604,12 +1606,12 @@ const APIScript = () => {
           </div>
           <div className="p-4 border-t" style={{ borderColor: colors.border }}>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setShowPublishModal(false)} className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
+              <button onClick={() => setShowPublishModal(false)} className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover, color: colors.text }}>
                 Cancel
               </button>
-              <button onClick={generateDownloadPackage} className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
-                style={{ backgroundColor: colors.primary, color: 'white' }}>
+              <button onClick={generateDownloadPackage} className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                 {isGeneratingCode ? (
                   <>
                     <RefreshCw size={12} className="animate-spin inline mr-2" />
@@ -1660,24 +1662,26 @@ const APIScript = () => {
     return (
       <div className="space-y-6">
         {Object.entries(implementation).map(([component, code]) => (
-          <div key={component} className="border rounded-lg overflow-hidden" style={{ borderColor: colors.border }}>
+          <div key={component} className="border rounded-lg overflow-hidden hover-lift" style={{ 
+            borderColor: colors.border,
+            backgroundColor: colors.card
+          }}>
             <div className="px-4 py-3 flex items-center justify-between" style={{ 
-              backgroundColor: colors.card,
               borderBottomColor: colors.border
             }}>
               <div className="flex items-center gap-2">
-                <FileCode size={14} />
+                <FileCode size={14} style={{ color: colors.textSecondary }} />
                 <span className="text-sm font-medium capitalize" style={{ color: colors.text }}>
                   {component.replace(/([A-Z])/g, ' $1').trim()}
                 </span>
-                <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: colors.hover }}>
+                <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>
                   {getFileName(component, selectedLanguage)}
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => copyToClipboard(code)}
-                  className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+                  className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                   style={{ backgroundColor: colors.hover }}
                   title="Copy to clipboard"
                 >
@@ -1695,7 +1699,7 @@ const APIScript = () => {
                     document.body.removeChild(a);
                     URL.revokeObjectURL(url);
                   }}
-                  className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+                  className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                   style={{ backgroundColor: colors.hover }}
                   title="Download file"
                 >
@@ -1703,7 +1707,7 @@ const APIScript = () => {
                 </button>
               </div>
             </div>
-            <div className="p-4">
+            <div className="p-4" style={{ backgroundColor: colors.codeBg }}>
               <SyntaxHighlighter language={selectedLanguage} code={code} />
             </div>
           </div>
@@ -1743,7 +1747,7 @@ const APIScript = () => {
             
             <div className="flex flex-wrap items-center gap-4 text-sm mb-6">
               <div style={{ color: colors.textTertiary }}>
-                <Folder size={12} className="inline mr-1" />
+                <Folder size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
                 {selectedCollection.name} › {selectedCollection.folders.find(f => f.requests?.some(r => r.id === selectedRequest.id))?.name}
               </div>
               <div className="flex items-center gap-2">
@@ -1757,14 +1761,14 @@ const APIScript = () => {
                 ))}
               </div>
               <div style={{ color: colors.textTertiary }}>
-                <Clock size={12} className="inline mr-1" />
+                <Clock size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
                 Last updated: {selectedRequest.lastModified}
               </div>
             </div>
           </div>
 
           {/* Language & Framework Selection */}
-          <div className="mb-8 p-4 rounded border" style={{ 
+          <div className="mb-8 p-6 rounded-xl border hover-lift" style={{ 
             backgroundColor: colors.card,
             borderColor: colors.border
           }}>
@@ -1777,7 +1781,7 @@ const APIScript = () => {
                     setSelectedLanguage(lang.id);
                     setSelectedComponent('controller');
                   }}
-                  className={`p-4 rounded-lg text-sm text-center hover-lift transition-all ${
+                  className={`p-4 rounded-xl text-sm text-center hover-lift transition-all ${
                     selectedLanguage === lang.id ? 'ring-2 ring-offset-1' : ''
                   }`}
                   style={{ 
@@ -1806,9 +1810,11 @@ const APIScript = () => {
               {showAllFiles ? (
                 renderAllFilesView()
               ) : (
-                <div className="border rounded-lg overflow-hidden" style={{ borderColor: colors.border }}>
+                <div className="border rounded-xl overflow-hidden hover-lift" style={{ 
+                  borderColor: colors.border,
+                  backgroundColor: colors.card
+                }}>
                   <div className="px-4 py-3 flex items-center justify-between" style={{ 
-                    backgroundColor: colors.card,
                     borderBottomColor: colors.border
                   }}>
                     <div className="flex items-center gap-3">
@@ -1818,7 +1824,7 @@ const APIScript = () => {
                           {currentLanguage?.name} Implementation
                         </span>
                         <span className="text-xs px-2 py-0.5 rounded" style={{ 
-                          backgroundColor: currentLanguage?.color + '20',
+                          backgroundColor: `${currentLanguage?.color}20`,
                           color: currentLanguage?.color
                         }}>
                           {currentLanguage?.framework}
@@ -1830,11 +1836,11 @@ const APIScript = () => {
                             <button
                               key={component}
                               onClick={() => setSelectedComponent(component)}
-                              className={`px-3 py-1 text-xs rounded capitalize ${
+                              className={`px-3 py-1 text-xs rounded capitalize hover-lift ${
                                 selectedComponent === component ? '' : 'hover:bg-opacity-50'
                               }`}
                               style={{ 
-                                backgroundColor: selectedComponent === component ? colors.primary : colors.hover,
+                                backgroundColor: selectedComponent === component ? colors.primaryDark : colors.hover,
                                 color: selectedComponent === component ? 'white' : colors.text
                               }}
                             >
@@ -1847,7 +1853,7 @@ const APIScript = () => {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => copyToClipboard(getCurrentCode())}
-                        className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2"
+                        className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift"
                         style={{ backgroundColor: colors.hover, color: colors.text }}
                       >
                         <Copy size={12} />
@@ -1855,14 +1861,14 @@ const APIScript = () => {
                       </button>
                       <button
                         onClick={() => setShowAllFiles(!showAllFiles)}
-                        className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2"
-                        style={{ backgroundColor: colors.primary, color: 'white' }}
+                        className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 hover-lift"
+                        style={{ backgroundColor: colors.primaryDark, color: colors.white }}
                       >
                         {showAllFiles ? 'Single File' : 'All Files'}
                       </button>
                     </div>
                   </div>
-                  <div className="p-4">
+                  <div className="p-4" style={{ backgroundColor: colors.codeBg }}>
                     <SyntaxHighlighter 
                       language={selectedLanguage}
                       code={getCurrentCode()}
@@ -1873,7 +1879,10 @@ const APIScript = () => {
 
               {/* Features & Requirements */}
               <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="border rounded-lg p-4" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
+                <div className="border rounded-xl p-6 hover-lift" style={{ 
+                  backgroundColor: colors.card, 
+                  borderColor: colors.border 
+                }}>
                   <div className="flex items-center gap-2 mb-3">
                     <ShieldCheck size={20} style={{ color: colors.success }} />
                     <h3 className="font-semibold" style={{ color: colors.text }}>Security Features</h3>
@@ -1894,7 +1903,10 @@ const APIScript = () => {
                   </ul>
                 </div>
                 
-                <div className="border rounded-lg p-4" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
+                <div className="border rounded-xl p-6 hover-lift" style={{ 
+                  backgroundColor: colors.card, 
+                  borderColor: colors.border 
+                }}>
                   <div className="flex items-center gap-2 mb-3">
                     <Layers size={20} style={{ color: colors.info }} />
                     <h3 className="font-semibold" style={{ color: colors.text }}>Architecture</h3>
@@ -1915,7 +1927,10 @@ const APIScript = () => {
                   </ul>
                 </div>
                 
-                <div className="border rounded-lg p-4" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
+                <div className="border rounded-xl p-6 hover-lift" style={{ 
+                  backgroundColor: colors.card, 
+                  borderColor: colors.border 
+                }}>
                   <div className="flex items-center gap-2 mb-3">
                     <Zap size={20} style={{ color: colors.warning }} />
                     <h3 className="font-semibold" style={{ color: colors.text }}>Ready to Use</h3>
@@ -1938,11 +1953,17 @@ const APIScript = () => {
               </div>
 
               {/* Quick Start Guide */}
-              <div className="mt-8 border rounded-lg p-6" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
+              <div className="mt-8 border rounded-xl p-6 hover-lift" style={{ 
+                backgroundColor: colors.card, 
+                borderColor: colors.border 
+              }}>
                 <h3 className="text-lg font-semibold mb-4" style={{ color: colors.text }}>Quick Start Guide</h3>
                 <div className="space-y-3 text-sm" style={{ color: colors.textSecondary }}>
                   <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: colors.primary, color: 'white' }}>
+                    <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ 
+                      backgroundColor: colors.primary, 
+                      color: 'white' 
+                    }}>
                       1
                     </div>
                     <div>
@@ -1952,12 +1973,18 @@ const APIScript = () => {
                   </div>
                   
                   <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: colors.primary, color: 'white' }}>
+                    <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ 
+                      backgroundColor: colors.primary, 
+                      color: 'white' 
+                    }}>
                       2
                     </div>
                     <div>
                       <span className="font-medium" style={{ color: colors.text }}>Install dependencies</span>
-                      <code className="block mt-1 p-2 rounded font-mono" style={{ backgroundColor: colors.codeBg }}>
+                      <code className="block mt-1 p-2 rounded font-mono" style={{ 
+                        backgroundColor: colors.codeBg,
+                        color: colors.text
+                      }}>
                         {selectedLanguage === 'java' && 'mvn install'}
                         {selectedLanguage === 'javascript' && 'npm install'}
                         {selectedLanguage === 'python' && 'pip install -r requirements.txt'}
@@ -1969,12 +1996,18 @@ const APIScript = () => {
                   </div>
                   
                   <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: colors.primary, color: 'white' }}>
+                    <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ 
+                      backgroundColor: colors.primary, 
+                      color: 'white' 
+                    }}>
                       3
                     </div>
                     <div>
                       <span className="font-medium" style={{ color: colors.text }}>Configure & Run</span>
-                      <code className="block mt-1 p-2 rounded font-mono" style={{ backgroundColor: colors.codeBg }}>
+                      <code className="block mt-1 p-2 rounded font-mono" style={{ 
+                        backgroundColor: colors.codeBg,
+                        color: colors.text
+                      }}>
                         {selectedLanguage === 'java' && 'mvn spring-boot:run'}
                         {selectedLanguage === 'javascript' && 'npm start'}
                         {selectedLanguage === 'python' && 'uvicorn main:app --reload'}
@@ -1990,9 +2023,9 @@ const APIScript = () => {
               <Code size={48} className="mx-auto mb-4 opacity-50" />
               <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>Implementation Not Available</h3>
               <p className="mb-6">Complete implementation for {selectedLanguage} is not yet available for this endpoint.</p>
-              <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
+              <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                 onClick={() => showToast('Requesting implementation generation', 'info')}
-                style={{ backgroundColor: colors.primary, color: 'white' }}>
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                 Generate Implementation
               </button>
             </div>
@@ -2011,12 +2044,12 @@ const APIScript = () => {
               <BookOpen size={48} className="mx-auto mb-4 opacity-50" />
               <h2 className="text-xl font-semibold mb-3" style={{ color: colors.text }}>API Documentation</h2>
               <p className="mb-6">View comprehensive documentation for each API endpoint.</p>
-              <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
+              <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                 onClick={() => {
                   setActiveTab('implementations');
                   showToast('Switching to implementations', 'info');
                 }}
-                style={{ backgroundColor: colors.primary, color: 'white' }}>
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                 View Implementations
               </button>
             </div>
@@ -2037,14 +2070,14 @@ const APIScript = () => {
                   { title: 'From cURL', desc: 'Convert cURL command to code', icon: <Terminal size={24} /> },
                   { title: 'Custom Template', desc: 'Use custom code templates', icon: <FileCode size={24} /> }
                 ].map(item => (
-                  <button key={item.title} className="border rounded p-6 text-left hover:border-opacity-50 transition-colors hover-lift"
+                  <button key={item.title} className="border rounded-xl p-6 text-left hover:border-opacity-50 transition-colors hover-lift"
                     onClick={() => setShowImportModal(true)}
                     style={{ 
                       borderColor: colors.border,
                       backgroundColor: colors.card
                     }}>
                     <div className="flex items-center gap-3 mb-3">
-                      <div className="p-2 rounded" style={{ backgroundColor: colors.primary + '20' }}>
+                      <div className="p-2 rounded" style={{ backgroundColor: `${colors.primary}20` }}>
                         {item.icon}
                       </div>
                       <h3 className="font-semibold" style={{ color: colors.text }}>{item.title}</h3>
@@ -2079,19 +2112,6 @@ const APIScript = () => {
                   }}>
                   Implementations
                 </button>
-                
-                {/* <button
-                  onClick={() => setActiveTab('documentation')}
-                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors hover-lift ${
-                    activeTab === 'documentation' ? '' : 'hover:bg-opacity-50'
-                  }`}
-                  style={{ 
-                    borderBottomColor: activeTab === 'documentation' ? colors.primary : 'transparent',
-                    color: activeTab === 'documentation' ? colors.primary : colors.textSecondary,
-                    backgroundColor: 'transparent'
-                  }}>
-                  Documentation
-                </button> */}
                 
                 <button
                   onClick={() => setActiveTab('generate')}
@@ -2197,10 +2217,11 @@ const APIScript = () => {
         .hover-lift:hover {
           transform: translateY(-2px);
           transition: transform 0.2s ease;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
         
-        .code-bg {
-          background-color: ${isDark ? '#1a1a1a' : '#f8f9fa'};
+        .gradient-bg {
+          background: linear-gradient(135deg, ${colors.primary}20 0%, ${colors.info}20 50%, ${colors.warning}20 100%);
         }
       `}</style>
 
@@ -2210,38 +2231,10 @@ const APIScript = () => {
         borderColor: colors.border
       }}>
         <div className="flex items-center gap-4">
-          {/* <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded" style={{ backgroundColor: colors.primary }}></div>
-            <span className="text-sm font-semibold" style={{ color: colors.text }}>APIScript</span>
-            <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
-              backgroundColor: colors.primary + '20',
-              color: colors.primary
-            }}>
-              BETA
-            </span>
-          </div> */}
-
           <div className="flex items-center gap-1 -ml-3 text-nowrap">
-            {/* {['APIs', 'Implementations', 'Templates', 'Generate', 'Docs'].map(tab => ( */}
-              {/* {['Implementations', 'Templates', 'Generate'].map(tab => (
-              <button key={tab} className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift ${
-                tab === activeMainTab ? '' : 'hover:bg-opacity-50'
-              }`}
-                onClick={() => {
-                  setActiveMainTab(tab);
-                  if (tab === 'Implementations') setActiveTab('implementations');
-                  if (tab === 'Generate') setActiveTab('generate');
-                  if (tab === 'Docs') setActiveTab('documentation');
-                  showToast(`Switching to ${tab}`, 'info');
-                }}
-                style={{ 
-                  backgroundColor: tab === activeMainTab ? colors.selected : 'transparent',
-                  color: tab === activeMainTab ? colors.primary : colors.textSecondary
-                }}>
-                {tab}
-              </button>
-            ))} */}
-            <span className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift`}>API Code Base</span>
+            <span className="px-3 py-1.5 text-sm font-medium rounded transition-colors" style={{ color: colors.text }}>
+              API Code Base
+            </span>
           </div>
         </div>
 
@@ -2276,7 +2269,7 @@ const APIScript = () => {
                       backgroundColor: env.isActive ? colors.success : colors.textSecondary 
                     }}></div>
                     {env.name}
-                    {env.isActive && <Check size={14} className="ml-auto" />}
+                    {env.isActive && <Check size={14} className="ml-auto" style={{ color: colors.primary }} />}
                   </button>
                 ))}
               </div>
@@ -2360,7 +2353,7 @@ const APIScript = () => {
             />
             {globalSearchQuery && (
               <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                <button onClick={() => setGlobalSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors"
+                <button onClick={() => setGlobalSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                   style={{ backgroundColor: colors.hover }}>
                   <X size={12} style={{ color: colors.textSecondary }} />
                 </button>
@@ -2380,48 +2373,6 @@ const APIScript = () => {
             style={{ backgroundColor: colors.hover }}>
             <DownloadCloud size={14} style={{ color: colors.textSecondary }} />
           </button>
-
-          {/* User Menu */}
-          <div className="relative">
-            {showUserMenu && (
-              <div className="absolute top-full right-0 mt-1 py-2 rounded shadow-lg z-50 border min-w-48"
-                style={{ 
-                  backgroundColor: colors.dropdownBg,
-                  borderColor: colors.border
-                }}>
-                <div className="px-4 py-3 border-b" style={{ borderColor: colors.border }}>
-                  <div className="text-sm font-medium" style={{ color: colors.text }}>Developer</div>
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>dev@apiscript.com</div>
-                </div>
-                {['My Implementations', 'Saved Templates', 'API Keys', 'Billing'].map(item => (
-                  <button
-                    key={item}
-                    onClick={() => {
-                      showToast(`Opening ${item}`, 'info');
-                      setShowUserMenu(false);
-                    }}
-                    className="w-full px-4 py-2 text-sm text-left hover:bg-opacity-50 transition-colors"
-                    style={{ color: colors.text }}
-                  >
-                    {item}
-                  </button>
-                ))}
-                <div className="border-t my-2" style={{ borderColor: colors.border }}></div>
-                <button
-                  onClick={() => {
-                    showToast('Opening settings', 'info');
-                    setShowSettingsModal(true);
-                    setShowUserMenu(false);
-                  }}
-                  className="w-full px-4 py-2 text-sm text-left hover:bg-opacity-50 transition-colors"
-                  style={{ color: colors.text }}
-                >
-                  <Settings size={12} className="inline mr-2" />
-                  Settings
-                </button>
-              </div>
-            )}
-          </div>
 
           {/* Theme Toggle */}
           <button onClick={() => setTheme(isDark ? 'light' : 'dark')} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
@@ -2463,7 +2414,7 @@ const APIScript = () => {
               />
               {searchQuery && (
                 <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                  <button onClick={() => setSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors"
+                  <button onClick={() => setSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                     style={{ backgroundColor: colors.hover }}>
                     <X size={12} style={{ color: colors.textSecondary }} />
                   </button>
@@ -2547,7 +2498,7 @@ const APIScript = () => {
                                   <span className="truncate">{request.name}</span>
                                   {request.implementations && (
                                     <span className="text-xs px-1 py-0.5 rounded ml-auto" style={{ 
-                                      backgroundColor: colors.success + '20',
+                                      backgroundColor: `${colors.success}20`,
                                       color: colors.success
                                     }}>
                                       {Object.keys(request.implementations).length}
@@ -2569,7 +2520,7 @@ const APIScript = () => {
               <div className="text-center p-4" style={{ color: colors.textSecondary }}>
                 <Search size={20} className="mx-auto mb-2 opacity-50" />
                 <p className="text-sm">No APIs found for "{searchQuery}"</p>
-                <button className="mt-2 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors"
+                <button className="mt-2 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
                   onClick={() => setSearchQuery('')}
                   style={{ backgroundColor: colors.hover, color: colors.text }}>
                   Clear Search
@@ -2597,4 +2548,4 @@ const APIScript = () => {
   );
 };
 
-export default APIScript;
+export default APICodeBase;
