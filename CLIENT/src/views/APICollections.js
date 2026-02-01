@@ -2379,7 +2379,7 @@ return (
           <GripVertical size={12} style={{ color: colors.textSecondary }} />
         </div>
 
-        <div className="flex items-center justify-between px-4 py-3 border-b -mt-4" style={{ 
+        <div className="flex items-center justify-between px-4 py-3 border-b" style={{ 
           backgroundColor: colors.card,
           borderColor: colors.border
         }}>
