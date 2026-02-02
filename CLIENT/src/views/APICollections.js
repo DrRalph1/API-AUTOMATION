@@ -153,61 +153,77 @@ const SyntaxHighlighter = ({ language, code }) => {
   );
 };
 
-const APICollections = () => {
-  const [theme, setTheme] = useState('dark');
-  const isDark = theme === 'dark';
+const APICollections = ({ theme, isDark, customTheme, toggleTheme }) => {
 
   // Matching the exact color scheme from the first component
   const colors = isDark ? {
-    bg: '#0f172a',
-    white: '#f8fafc',
-    sidebar: '#1e293b',
-    main: '#0f172a',
-    header: '#1e293b',
-    card: '#1e293b',
-    text: '#f1f5f9',
-    textSecondary: '#94a3b8',
-    textTertiary: '#64748b',
-    border: '#334155',
-    borderLight: '#2d3748',
-    borderDark: '#475569',
-    hover: '#334155',
-    active: '#475569',
-    selected: '#2c5282',
-    primary: '#f1f5f9',
-    primaryLight: '#60a5fa',
-    primaryDark: '#2563eb',
+    // Using your shade as base
+    bg: 'rgb(1 14 35)',
+    white: '#FFFFFF',
+    sidebar: 'rgb(20 26 38)',
+    main: 'rgb(1 14 35)',
+    header: 'rgb(20 26 38)',
+    card: 'rgb(41 53 72 / 39%)',
+    
+    // Text - coordinating grays
+    text: '#E8ECF1',
+    textSecondary: 'rgb(168 178 192)',
+    textTertiary: 'rgb(128 140 158)',
+    
+    // Borders - variations of your shade
+    border: 'rgb(61 73 92)',
+    borderLight: 'rgb(51 63 82)',
+    borderDark: 'rgb(71 83 102)',
+    
+    // Interactive - layered transparency
+    hover: 'rgb(51 63 82)',
+    active: 'rgb(61 73 92)',
+    selected: 'rgb(44 82 130)',
+    
+    // Primary colors
+    primary: '#E8ECF1',
+    primaryLight: 'rgb(96 165 250)',
+    primaryDark: 'rgb(37 99 235)',
+    
+    // HTTP Method colors
     method: {
-      GET: '#10b981',
-      POST: '#3b82f6',
-      PUT: '#f59e0b',
-      DELETE: '#ef4444',
-      PATCH: '#8b5cf6',
-      HEAD: '#6b7280',
-      OPTIONS: '#8b5cf6',
-      LINK: '#06b6d4',
-      UNLINK: '#f97316'
+      GET: 'rgb(16 185 129)',
+      POST: 'rgb(59 130 246)',
+      PUT: 'rgb(245 158 11)',
+      DELETE: 'rgb(239 68 68)',
+      PATCH: 'rgb(139 92 246)',
+      HEAD: 'rgb(107 114 128)',
+      OPTIONS: 'rgb(139 92 246)',
+      LINK: 'rgb(6 182 212)',
+      UNLINK: 'rgb(249 115 22)'
     },
-    success: '#10b981',
-    warning: '#f59e0b',
-    error: '#ef4444',
-    info: '#3b82f6',
-    tabActive: '#3b82f6',
-    tabInactive: '#94a3b8',
-    sidebarActive: '#3b82f6',
-    sidebarHover: '#334155',
-    inputBg: '#1e293b',
-    inputBorder: '#334155',
-    tableHeader: '#334155',
-    tableRow: '#1e293b',
-    tableRowHover: '#2d3748',
-    dropdownBg: '#1e293b',
-    dropdownBorder: '#334155',
-    modalBg: '#1e293b',
-    modalBorder: '#334155',
-    codeBg: '#1e293b',
+    
+    // Status colors
+    success: 'rgb(16 185 129)',
+    warning: 'rgb(245 158 11)',
+    error: 'rgb(239 68 68)',
+    info: 'rgb(59 130 246)',
+    
+    // UI Components
+    tabActive: 'rgb(59 130 246)',
+    tabInactive: 'rgb(148 163 184)',
+    sidebarActive: 'rgb(59 130 246)',
+    sidebarHover: 'rgb(51 63 82)',
+    inputBg: 'rgb(41 53 72 / 39%)',
+    inputBorder: 'rgb(61 73 92)',
+    tableHeader: 'rgb(51 63 82)',
+    tableRow: 'rgb(41 53 72 / 39%)',
+    tableRowHover: 'rgb(51 63 82)',
+    dropdownBg: 'rgb(41 53 72 / 39%)',
+    dropdownBorder: 'rgb(61 73 92)',
+    modalBg: 'rgb(41 53 72 / 39%)',
+    modalBorder: 'rgb(61 73 92)',
+    codeBg: 'rgb(41 53 72 / 39%)',
+    
+    // Gradient - updated to match the new color scheme
     gradient: 'from-blue-500/20 via-violet-500/20 to-orange-500/20'
   } : {
+    // KEEP THE ORIGINAL LIGHT MODE
     bg: '#f8fafc',
     white: '#f8fafc',
     sidebar: '#ffffff',
@@ -2579,58 +2595,6 @@ return (
     return null;
   };
 
-  // Render Notifications Dropdown
-  const renderNotifications = () => {
-    if (!showNotifications) return null;
-    
-    return (
-      <div className="absolute right-0 top-full mt-1 w-80 rounded shadow-lg z-50 border hover-lift"
-        style={{ 
-          backgroundColor: colors.dropdownBg,
-          borderColor: colors.border
-        }}>
-        <div className="p-3 border-b" style={{ borderColor: colors.border }}>
-          <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Notifications</h3>
-        </div>
-        <div className="max-h-80 overflow-y-auto">
-          {notifications.map(notification => (
-            <div key={notification.id} className={`p-3 border-b hover:bg-opacity-50 transition-colors hover-lift ${notification.read ? '' : 'bg-opacity-20'}`}
-              style={{ 
-                borderColor: colors.border,
-                backgroundColor: notification.read ? 'transparent' : colors.selected
-              }}>
-              <div className="flex items-start gap-2">
-                <div className="flex-shrink-0">
-                  {notification.read ? (
-                    <Bell size={14} style={{ color: colors.textSecondary }} />
-                  ) : (
-                    <div className="w-2 h-2 rounded-full mt-1" style={{ backgroundColor: colors.primary }} />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-medium mb-1" style={{ color: colors.text }}>{notification.title}</h4>
-                  <p className="text-xs mb-1" style={{ color: colors.textSecondary }}>{notification.message}</p>
-                  <span className="text-xs" style={{ color: colors.textTertiary }}>{notification.time}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="p-2 border-t" style={{ borderColor: colors.border }}>
-          <button className="w-full px-3 py-2 rounded text-sm text-center hover:bg-opacity-50 transition-colors hover-lift"
-            onClick={() => {
-              setNotifications(notifications.map(n => ({ ...n, read: true })));
-              setShowNotifications(false);
-              showToast('All notifications marked as read', 'success');
-            }}
-            style={{ backgroundColor: colors.hover, color: colors.primary }}>
-            Mark all as read
-          </button>
-        </div>
-      </div>
-    );
-  };
-
   // Render Toast
   const renderToast = () => {
     if (!toast) return null;
@@ -2998,7 +2962,7 @@ return (
         backgroundColor: colors.header,
         borderColor: colors.border
       }}>
-        <div className="flex items-center gap-4 -ml-3 text-nowrap">
+        <div className="flex items-center gap-4 -ml-4 text-nowrap uppercase">
           <span className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift`} style={{ color: colors.text }}>API Collections</span>
         </div>
 
@@ -3023,7 +2987,7 @@ return (
           <div className="w-px h-4" style={{ backgroundColor: colors.border }}></div>
 
           {/* Global Search */}
-          <div className="relative">
+          {/* <div className="relative">
             <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
             <input 
               type="text" 
@@ -3041,7 +3005,7 @@ return (
                 </button>
               </div>
             )}
-          </div>
+          </div> */}
 
           {/* Code Panel Toggle */}
           <button onClick={() => {setShowCodePanel(!showCodePanel); setShowAPIs(false); setShowEnvironments(false); setShowMockServers(false); setShowMonitors(false);}} 
@@ -3056,30 +3020,12 @@ return (
             <Share2 size={14} style={{ color: colors.textSecondary }} />
           </button>
 
-          {/* Notifications */}
-          <div className="relative">
-            <button onClick={() => setShowNotifications(!showNotifications)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors relative hover-lift"
-              style={{ backgroundColor: colors.hover }}>
-              <Bell size={14} style={{ color: colors.textSecondary }} />
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-xs flex items-center justify-center font-medium hover-lift"
-                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
-                {notifications.filter(n => !n.read).length}
-              </span>
-            </button>
-            {renderNotifications()}
-          </div>
-
           {/* Settings */}
           <button onClick={() => setShowSettingsModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
             style={{ backgroundColor: colors.hover }}>
             <Settings size={14} style={{ color: colors.textSecondary }} />
           </button>
 
-          {/* Theme Toggle */}
-          <button onClick={() => setTheme(isDark ? 'light' : 'dark')} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-            style={{ backgroundColor: colors.hover }}>
-            {isDark ? <Sun size={14} style={{ color: colors.textSecondary }} /> : <Moon size={14} style={{ color: colors.textSecondary }} />}
-          </button>
         </div>
       </div>
 

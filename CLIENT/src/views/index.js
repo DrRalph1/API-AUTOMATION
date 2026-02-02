@@ -958,8 +958,15 @@ export default function EntryPage() {
     const activeNavItem = navItems.find(item => item.id === activeTab);
     
     if (activeNavItem) {
-        return activeNavItem.component;
+      // Pass theme and other context props to each component
+      return React.cloneElement(activeNavItem.component, {
+        theme: theme,
+        isDark: isDark,
+        customTheme: customTheme,
+        toggleTheme: toggle // from useTheme()
+      });
     }
+    return null;
   };
 
   // Mobile Navigation Menu
@@ -1369,7 +1376,7 @@ export default function EntryPage() {
 
             {/* Right */}
             <div className="flex items-center gap-2">
-              <button
+              {/* <button
                 onClick={() => setShowNotificationCenter(true)}
                 className={`p-2 rounded-xl relative transition-colors ${
                   isDark ? 'hover:bg-gray-800' : 'hover:bg-gray-100'
@@ -1378,6 +1385,21 @@ export default function EntryPage() {
                 <Bell className={`h-5 w-5 ${isDark ? 'text-gray-300' : 'text-gray-700'}`} />
                 {notifications.filter(n => !n.read).length > 0 && (
                   <span className="absolute top-1 right-1 h-2 w-2 bg-orange-500 rounded-full"></span>
+                )}
+              </button> */}
+
+              {/* Theme toggle */}
+              <button
+                onClick={toggle}
+                className={`p-2 rounded-xl transition-colors ${
+                  isDark ? 'hover:bg-gray-800' : 'hover:bg-gray-100'
+                }`}
+                title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+              >
+                {isDark ? (
+                  <Sun className={`h-5 w-5 ${isDark ? 'text-gray-300' : 'text-gray-700'}`} />
+                ) : (
+                  <Moon className={`h-5 w-5 ${isDark ? 'text-gray-300' : 'text-gray-700'}`} />
                 )}
               </button>
               

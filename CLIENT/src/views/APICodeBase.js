@@ -945,8 +945,7 @@ const NOTIFICATIONS = [
   { id: 'notif-3', title: 'Download Ready', message: 'Complete Node.js package ready for download', time: '1 day ago', read: true, type: 'success' }
 ];
 
-const APICodeBase = () => {
-  const [theme, setTheme] = useState('dark');
+const APICodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
   const [activeTab, setActiveTab] = useState('implementations');
   const [showCodePanel, setShowCodePanel] = useState(true);
   const [selectedLanguage, setSelectedLanguage] = useState('java');
@@ -974,8 +973,6 @@ const APICodeBase = () => {
   const [showEnvironmentMenu, setShowEnvironmentMenu] = useState(false);
   const [selectedComponent, setSelectedComponent] = useState('controller');
   const [showAllFiles, setShowAllFiles] = useState(false);
-  
-  const isDark = theme === 'dark';
 
   // Color scheme matching previous components
   const colors = isDark ? {
@@ -2278,66 +2275,8 @@ const APICodeBase = () => {
 
           <div className="w-px h-4" style={{ backgroundColor: colors.border }}></div>
 
-          {/* Notifications */}
-          <div className="relative">
-            <button onClick={() => {
-              setShowNotifications(!showNotifications);
-              markAllNotificationsAsRead();
-            }} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift relative"
-              style={{ backgroundColor: colors.hover }}>
-              <Bell size={14} style={{ color: colors.textSecondary }} />
-              {notifications.filter(n => !n.read).length > 0 && (
-                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full" style={{ backgroundColor: colors.error }}></span>
-              )}
-            </button>
-
-            {showNotifications && (
-              <div className="absolute top-full right-0 mt-1 py-2 rounded shadow-lg z-50 border w-80"
-                style={{ 
-                  backgroundColor: colors.dropdownBg,
-                  borderColor: colors.border
-                }}>
-                <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: colors.border }}>
-                  <span className="text-sm font-medium" style={{ color: colors.text }}>Notifications</span>
-                  <button onClick={markAllNotificationsAsRead} className="text-xs hover:underline" style={{ color: colors.primary }}>
-                    Mark all as read
-                  </button>
-                </div>
-                <div className="max-h-96 overflow-auto">
-                  {notifications.map(notification => (
-                    <div key={notification.id} className={`px-4 py-3 border-b hover:bg-opacity-50 transition-colors cursor-pointer ${
-                      notification.read ? '' : 'bg-opacity-20'
-                    }`}
-                      style={{ 
-                        borderColor: colors.border,
-                        backgroundColor: notification.read ? 'transparent' : colors.selected
-                      }}
-                      onClick={() => showToast(`Opening notification: ${notification.title}`, 'info')}>
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5">
-                          {notification.type === 'warning' ? (
-                            <AlertCircle size={12} style={{ color: colors.warning }} />
-                          ) : notification.type === 'success' ? (
-                            <CheckCircle size={12} style={{ color: colors.success }} />
-                          ) : (
-                            <Info size={12} style={{ color: colors.info }} />
-                          )}
-                        </div>
-                        <div className="flex-1">
-                          <div className="text-sm font-medium" style={{ color: colors.text }}>{notification.title}</div>
-                          <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>{notification.message}</div>
-                          <div className="text-xs mt-1" style={{ color: colors.textTertiary }}>{notification.time}</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Global Search */}
-          <div className="relative">
+          {/* <div className="relative">
             <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
             <input 
               type="text" 
@@ -2359,7 +2298,7 @@ const APICodeBase = () => {
                 </button>
               </div>
             )}
-          </div>
+          </div> */}
 
           {/* Code Panel Toggle */}
           <button onClick={() => setShowCodePanel(!showCodePanel)} 
@@ -2374,11 +2313,6 @@ const APICodeBase = () => {
             <DownloadCloud size={14} style={{ color: colors.textSecondary }} />
           </button>
 
-          {/* Theme Toggle */}
-          <button onClick={() => setTheme(isDark ? 'light' : 'dark')} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-            style={{ backgroundColor: colors.hover }}>
-            {isDark ? <Sun size={14} style={{ color: colors.textSecondary }} /> : <Moon size={14} style={{ color: colors.textSecondary }} />}
-          </button>
         </div>
       </div>
 
@@ -2391,7 +2325,7 @@ const APICodeBase = () => {
         }}>
           <div className="p-4 border-b" style={{ borderColor: colors.border }}>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold" style={{ color: colors.text }}>API Collections</h3>
+              <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Specification</h3>
               <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
                 onClick={() => setShowImportModal(true)}
                 style={{ backgroundColor: colors.hover }}>

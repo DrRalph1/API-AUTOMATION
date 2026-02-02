@@ -10,7 +10,7 @@ import {
   Code, Cloud, ShieldCheck, CreditCard, Package, PieChart,
   Table, Grid, List, MessageSquare, Mail, Layers, GitMerge,
   BarChart, LineChart as LineChartIcon, Terminal, Cpu as CpuIcon,
-  FileJson, BookOpen, Share2, Upload, EyeOff, Type, Palette,
+  FileJson, BookOpen, Share2, Upload, EyeOff, Type, Palette, TrendingDown,
   Contrast, VolumeX, ZapOff, GitPullRequest, ShieldAlert,
   CalendarDays, DatabaseZap, Network as NetworkIcon, FileOutput,
   Code2, Search as SearchIcon, DownloadCloud, UploadCloud,
@@ -123,8 +123,7 @@ import {
   Brain as BrainIcon2
 } from "lucide-react";
 
-const Dashboard = () => {
-  const [theme, setTheme] = useState('dark');
+const Dashboard = ({ theme, isDark, customTheme, toggleTheme }) => {
   const [loading, setLoading] = useState(false);
   const [timeRange, setTimeRange] = useState("24h");
   const [stats, setStats] = useState({
@@ -161,50 +160,69 @@ const Dashboard = () => {
   const [activityPage, setActivityPage] = useState(1);
   const [activitiesPerPage, setActivitiesPerPage] = useState(4);
 
-  const isDark = theme === 'dark';
-
   // Color scheme matching your other components
   const colors = isDark ? {
-    bg: '#0f172a',
-    white: '#f8fafc',
-    sidebar: '#1e293b',
-    main: '#0f172a',
-    header: '#1e293b',
-    card: '#1e293b',
-    text: '#f1f5f9',
-    textSecondary: '#94a3b8',
-    textTertiary: '#64748b',
-    border: '#334155',
-    borderLight: '#2d3748',
-    borderDark: '#475569',
-    hover: '#334155',
-    active: '#475569',
-    selected: '#2c5282',
-    primary: '#f1f5f9',
-    primaryLight: '#60a5fa',
-    primaryDark: '#2563eb',
-    success: '#10b981',
-    warning: '#f59e0b',
-    error: '#ef4444',
-    info: '#3b82f6',
-    tabActive: '#3b82f6',
-    tabInactive: '#94a3b8',
-    sidebarActive: '#3b82f6',
-    sidebarHover: '#334155',
-    inputBg: '#1e293b',
-    inputBorder: '#334155',
-    tableHeader: '#334155',
-    tableRow: '#1e293b',
-    tableRowHover: '#2d3748',
-    dropdownBg: '#1e293b',
-    dropdownBorder: '#334155',
-    modalBg: '#1e293b',
-    modalBorder: '#334155',
-    codeBg: '#1e293b',
-    connectionOnline: '#10b981',
-    connectionOffline: '#ef4444',
-    connectionIdle: '#f59e0b'
+    // Using your shade as base
+    bg: 'rgb(1 14 35)',
+    white: '#FFFFFF',
+    sidebar: 'rgb(20 26 38)',
+    main: 'rgb(1 14 35)',
+    header: 'rgb(20 26 38)',
+    card: 'rgb(41 53 72 / 39%)',
+    
+    // Text - coordinating grays
+    text: '#F1F5F9',
+    textSecondary: 'rgb(148 163 184)',
+    textTertiary: 'rgb(100 116 139)',
+    
+    // Borders - variations of your shade
+    border: 'rgb(51 65 85)',
+    borderLight: 'rgb(45 55 72)',
+    borderDark: 'rgb(71 85 105)',
+    
+    // Interactive - layered transparency
+    hover: 'rgb(45 55 72)',
+    active: 'rgb(59 74 99)',
+    selected: 'rgb(44 82 130)',
+    
+    // Primary colors
+    primary: 'rgb(96 165 250)',
+    primaryLight: 'rgb(147 197 253)',
+    primaryDark: 'rgb(37 99 235)',
+    
+    // Status colors
+    success: 'rgb(52 211 153)',
+    warning: 'rgb(251 191 36)',
+    error: 'rgb(248 113 113)',
+    info: 'rgb(96 165 250)',
+    
+    // UI Components
+    tabActive: 'rgb(96 165 250)',
+    tabInactive: 'rgb(148 163 184)',
+    sidebarActive: 'rgb(96 165 250)',
+    sidebarHover: 'rgb(45 55 72)',
+    inputBg: 'rgb(41 53 72 / 39%)',
+    inputBorder: 'rgb(51 65 85)',
+    tableHeader: 'rgb(41 53 72 / 39%)',
+    tableRow: 'rgb(41 53 72 / 39%)',
+    tableRowHover: 'rgb(45 55 72)',
+    dropdownBg: 'rgb(41 53 72 / 39%)',
+    dropdownBorder: 'rgb(51 65 85)',
+    modalBg: 'rgb(41 53 72 / 39%)',
+    modalBorder: 'rgb(51 65 85)',
+    codeBg: 'rgb(41 53 72 / 39%)',
+    
+    // Connection status
+    connectionOnline: 'rgb(52 211 153)',
+    connectionOffline: 'rgb(248 113 113)',
+    connectionIdle: 'rgb(251 191 36)',
+    
+    // Accent colors
+    accentPurple: 'rgb(167 139 250)',
+    accentPink: 'rgb(244 114 182)',
+    accentCyan: 'rgb(34 211 238)'
   } : {
+    // KEEP THE ORIGINAL LIGHT MODE
     bg: '#f8fafc',
     white: '#f8fafc',
     sidebar: '#ffffff',
@@ -246,6 +264,12 @@ const Dashboard = () => {
     connectionIdle: '#f59e0b'
   };
 
+  // Update useEffect to use props if needed
+  useEffect(() => {
+    // You can use the theme prop here if needed
+    console.log('Current theme:', theme);
+  }, [theme]);
+
   // Initialize dashboard data
   useEffect(() => {
     const fetchDashboardData = () => {
@@ -253,9 +277,9 @@ const Dashboard = () => {
       const sampleConnections = [
         {
           id: 'conn-1',
-          name: 'HR_PROD',
-          description: 'Production HR Database',
-          host: 'db-prod.company.com',
+          name: 'CBX_DMX',
+          description: 'Development Database',
+          host: 'db.unionsg.com',
           port: '1521',
           service: 'ORCL',
           username: 'HR',
@@ -264,34 +288,6 @@ const Dashboard = () => {
           type: 'oracle',
           latency: '12ms',
           uptime: '99.9%'
-        },
-        {
-          id: 'conn-2',
-          name: 'SCOTT_DEV',
-          description: 'Development Database',
-          host: 'db-dev.company.com',
-          port: '1521',
-          service: 'XE',
-          username: 'SCOTT',
-          status: 'connected',
-          color: colors.connectionOnline,
-          type: 'oracle',
-          latency: '8ms',
-          uptime: '99.8%'
-        },
-        {
-          id: 'conn-3',
-          name: 'POSTGRES_ANALYTICS',
-          description: 'Analytics Database',
-          host: 'postgres-analytics.company.com',
-          port: '5432',
-          service: 'postgres',
-          username: 'analytics',
-          status: 'warning',
-          color: colors.connectionIdle,
-          type: 'postgresql',
-          latency: '15ms',
-          uptime: '98.5%'
         }
       ];
 
@@ -577,49 +573,6 @@ const Dashboard = () => {
     </div>
   );
 
-  // API Performance Card
-  const APIPerformanceCard = ({ api }) => (
-    <div className="border rounded-xl p-3 hover-lift" style={{ 
-      borderColor: colors.border,
-      backgroundColor: colors.card
-    }}>
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <FileCode size={14} style={{ color: colors.textSecondary }} />
-          <span className="text-sm font-medium" style={{ color: colors.text }}>
-            {api.name}
-          </span>
-        </div>
-        <div className="text-xs px-2 py-1 rounded-full" style={{ 
-          backgroundColor: api.successRate >= 99 ? '#10b98120' : api.successRate >= 95 ? '#f59e0b20' : '#ef444420',
-          color: api.successRate >= 99 ? colors.success : api.successRate >= 95 ? colors.warning : colors.error
-        }}>
-          {api.successRate}%
-        </div>
-      </div>
-      <div className="text-xs mb-3" style={{ color: colors.textSecondary }}>
-        {api.description}
-      </div>
-      <div className="grid grid-cols-3 gap-2 text-xs">
-        <div>
-          <div style={{ color: colors.textSecondary }}>Calls</div>
-          <div style={{ color: colors.text }}>{api.calls.toLocaleString()}</div>
-        </div>
-        <div>
-          <div style={{ color: colors.textSecondary }}>Latency</div>
-          <div style={{ color: colors.text }}>{api.latency}</div>
-        </div>
-        <div>
-          <div style={{ color: colors.textSecondary }}>Status</div>
-          <div className={`px-2 py-0.5 rounded-full text-xs inline-block ${
-            api.status === 'active' ? 'bg-green-500/10 text-green-500' : 'bg-yellow-500/10 text-yellow-500'
-          }`}>
-            {api.status}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
 
   // Activity Item
   const ActivityItem = ({ activity }) => (
@@ -663,119 +616,334 @@ const Dashboard = () => {
 
   // Enhanced Schema Stats Card
   const SchemaStatsCard = () => {
-    const schemaCategories = [
-      { 
-        name: 'Tables & Views', 
-        items: [
-          { key: 'tables', value: schemaData.tables, icon: <Table size={12} /> },
-          { key: 'views', value: schemaData.views, icon: <Eye size={12} /> },
-          { key: 'materializedViews', value: schemaData.materializedViews || 0, icon: <Database size={12} /> }
-        ],
-        color: colors.info
-      },
-      { 
-        name: 'Program Units', 
-        items: [
-          { key: 'procedures', value: schemaData.procedures, icon: <FileCode size={12} /> },
-          { key: 'functions', value: schemaData.functions, icon: <Code size={12} /> },
-          { key: 'packages', value: schemaData.packages, icon: <Package size={12} /> }
-        ],
-        color: colors.success
-      },
-      { 
-        name: 'Database Objects', 
-        items: [
-          { key: 'triggers', value: schemaData.triggers, icon: <Zap size={12} /> },
-          { key: 'indexes', value: schemaData.indexes, icon: <BarChart3 size={12} /> },
-          { key: 'sequences', value: schemaData.sequences || 0, icon: <TrendingUp size={12} /> }
-        ],
-        color: colors.warning
-      }
-    ];
+  const schemaCategories = [
+    { 
+      name: 'Tables & Views', 
+      items: [
+        { 
+          key: 'tables', 
+          value: schemaData.tables, 
+          icon: <Table size={12} />,
+          change: schemaData.tableChange || 0,
+          description: 'Data storage structures'
+        },
+        { 
+          key: 'views', 
+          value: schemaData.views, 
+          icon: <Eye size={12} />,
+          change: schemaData.viewChange || 0,
+          description: 'Virtual tables'
+        },
+        { 
+          key: 'materializedViews', 
+          value: schemaData.materializedViews || 0, 
+          icon: <Database size={12} />,
+          change: schemaData.materializedViewChange || 0,
+          description: 'Pre-computed views'
+        }
+      ],
+      color: colors.info,
+      icon: <Table size={14} />
+    },
+    { 
+      name: 'Program Units', 
+      items: [
+        { 
+          key: 'procedures', 
+          value: schemaData.procedures, 
+          icon: <FileCode size={12} />,
+          change: schemaData.procedureChange || 0,
+          description: 'Stored procedures'
+        },
+        { 
+          key: 'functions', 
+          value: schemaData.functions, 
+          icon: <Code size={12} />,
+          change: schemaData.functionChange || 0,
+          description: 'Return-value routines'
+        },
+        { 
+          key: 'packages', 
+          value: schemaData.packages, 
+          icon: <Package size={12} />,
+          change: schemaData.packageChange || 0,
+          description: 'Logical groupings'
+        }
+      ],
+      color: colors.success,
+      icon: <Code size={14} />
+    },
+    { 
+      name: 'Database Objects', 
+      items: [
+        { 
+          key: 'triggers', 
+          value: schemaData.triggers, 
+          icon: <Zap size={12} />,
+          change: schemaData.triggerChange || 0,
+          description: 'Event-driven actions'
+        },
+        { 
+          key: 'indexes', 
+          value: schemaData.indexes, 
+          icon: <BarChart3 size={12} />,
+          change: schemaData.indexChange || 0,
+          description: 'Query performance'
+        },
+        { 
+          key: 'sequences', 
+          value: schemaData.sequences || 0, 
+          icon: <TrendingUp size={12} />,
+          change: schemaData.sequenceChange || 0,
+          description: 'Auto-increment values'
+        }
+      ],
+      color: colors.warning,
+      icon: <Database size={14} />
+    }
+  ];
 
-    return (
-      <div className="border rounded-xl p-4 hover-lift" style={{ 
-        borderColor: colors.border,
-        backgroundColor: colors.card
-      }}>
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h3 className="text-sm font-semibold mb-1" style={{ color: colors.text }}>
+  // Calculate category totals with change percentages
+  const categoryStats = schemaCategories.map(category => ({
+    name: category.name,
+    total: category.items.reduce((sum, item) => sum + item.value, 0),
+    previousTotal: category.items.reduce((sum, item) => sum + (item.value - item.change), 0),
+    color: category.color
+  }));
+
+  // Calculate growth percentage
+  const calculateGrowth = (current, previous) => {
+    if (previous === 0) return 100;
+    return ((current - previous) / previous * 100).toFixed(1);
+  };
+
+  return (
+    <div className="border rounded-xl p-4 hover-lift transition-all duration-300" style={{ 
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+      boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+    }}>
+      {/* Header with more stats */}
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
               Schema Statistics
             </h3>
-            <p className="text-xs" style={{ color: colors.textSecondary }}>
-              {schemaData.totalObjects} total database objects
-            </p>
+            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs" 
+              style={{ 
+                backgroundColor: schemaData.totalObjectsChange >= 0 ? `${colors.success}20` : `${colors.error}20`,
+                color: schemaData.totalObjectsChange >= 0 ? colors.success : colors.error
+              }}>
+              <TrendingUp size={10} />
+              <span>{Math.abs(schemaData.totalObjectsChange || 0)}</span>
+            </div>
           </div>
-          <div className="p-2 rounded-lg" style={{ backgroundColor: `${colors.primaryDark}20` }}>
+          <div className="flex items-center gap-4">
+            <p className="text-xs" style={{ color: colors.textSecondary }}>
+              {schemaData.totalObjects} total objects
+            </p>
+            <div className="text-xs flex items-center gap-1" style={{ color: colors.textTertiary }}>
+              <Database size={10} />
+              <span>{schemaData.databaseName || 'Main Database'}</span>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="p-2 rounded-lg" style={{ backgroundColor: `${colors.primaryDark}15` }}>
             <Database size={18} style={{ color: colors.primaryDark }} />
           </div>
-        </div>
-
-        {/* Progress bar for total objects */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs" style={{ color: colors.textSecondary }}>Database Utilization</span>
-            <span className="text-xs font-medium" style={{ color: colors.text }}>
-              {Math.round((schemaData.totalObjects / 200) * 100)}%
-            </span>
-          </div>
-          <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: colors.border }}>
-            <div 
-              className="h-full rounded-full transition-all duration-300"
-              style={{ 
-                width: `${Math.min((schemaData.totalObjects / 200) * 100, 100)}%`,
-                background: `linear-gradient(90deg, ${colors.info}, ${colors.primaryDark})`
-              }}
-            />
+          <div className="text-right">
+            <div className="text-xs" style={{ color: colors.textSecondary }}>Size</div>
+            <div className="text-sm font-semibold" style={{ color: colors.text }}>
+              {schemaData.databaseSize || '2.4 GB'}
+            </div>
           </div>
         </div>
+      </div>
 
-        {/* Schema categories */}
-        <div className="space-y-4">
-          {schemaCategories.map((category, index) => (
-            <div key={index} className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium" style={{ color: colors.text }}>
-                  {category.name}
-                </span>
-                <span className="text-xs" style={{ color: category.color }}>
-                  {category.items.reduce((sum, item) => sum + item.value, 0)} objects
+      {/* Category Overview Bar */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs font-medium" style={{ color: colors.text }}>
+            Object Distribution
+          </span>
+          <div className="flex items-center gap-3">
+            {categoryStats.map((cat, idx) => (
+              <div key={idx} className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />
+                <span className="text-xs" style={{ color: colors.textSecondary }}>
+                  {cat.name}
                 </span>
               </div>
+            ))}
+          </div>
+        </div>
+        <div className="h-2 rounded-full overflow-hidden flex">
+          {categoryStats.map((cat, idx) => (
+            <div 
+              key={idx}
+              className="h-full transition-all duration-300"
+              style={{ 
+                width: `${(cat.total / schemaData.totalObjects) * 100}%`,
+                backgroundColor: cat.color,
+                marginRight: idx < categoryStats.length - 1 ? '2px' : '0'
+              }}
+              title={`${cat.name}: ${cat.total} objects (${((cat.total / schemaData.totalObjects) * 100).toFixed(1)}%)`}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Enhanced Progress bar */}
+      {/* <div className="mb-6 p-3 rounded-lg" style={{ backgroundColor: colors.hover }}>
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <span className="text-xs font-medium" style={{ color: colors.text }}>
+              Database Capacity
+            </span>
+            <div className="text-xs" style={{ color: colors.textSecondary }}>
+              {schemaData.totalObjects} of 500 objects • {Math.round((schemaData.totalObjects / 500) * 100)}% used
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-xs font-medium" style={{ color: colors.text }}>
+              {500 - schemaData.totalObjects} available
+            </div>
+            <div className="text-xs" style={{ color: colors.textSecondary }}>
+              Recommended: ≤ 400 objects
+            </div>
+          </div>
+        </div>
+        <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: colors.border }}>
+          <div 
+            className="h-full rounded-full transition-all duration-300 relative"
+            style={{ 
+              width: `${Math.min((schemaData.totalObjects / 500) * 100, 100)}%`,
+              background: `linear-gradient(90deg, ${colors.info}, ${colors.primaryDark})`
+            }}
+          >
+            {schemaData.totalObjects > 400 && (
+              <div 
+                className="absolute top-0 right-0 w-1 h-3 -mt-0.5 rounded"
+                style={{ backgroundColor: colors.warning }}
+              />
+            )}
+          </div>
+        </div>
+        <div className="flex justify-between mt-1">
+          <span className="text-xs" style={{ color: colors.textSecondary }}>0%</span>
+          <span className="text-xs font-medium" style={{ color: schemaData.totalObjects > 400 ? colors.warning : colors.text }}>
+            {schemaData.totalObjects > 400 ? '⚠️ Near Capacity' : 'Optimal'}
+          </span>
+          <span className="text-xs" style={{ color: colors.textSecondary }}>100%</span>
+        </div>
+      </div> */}
+
+      {/* Schema categories with enhanced details */}
+      <div className="space-y-4">
+        {schemaCategories.map((category, index) => {
+          const categoryTotal = category.items.reduce((sum, item) => sum + item.value, 0);
+          const previousTotal = category.items.reduce((sum, item) => sum + (item.value - item.change), 0);
+          const growth = calculateGrowth(categoryTotal, previousTotal);
+          
+          return (
+            <div key={index} className="space-y-2 p-3 rounded-lg hover-lift" 
+              style={{ backgroundColor: colors.hover }}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-1 rounded" style={{ backgroundColor: `${category.color}20` }}>
+                    {category.icon}
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold" style={{ color: colors.text }}>
+                      {category.name}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs" style={{ color: colors.textSecondary }}>
+                        {categoryTotal} objects
+                      </span>
+                      <div className={`text-xs flex items-center gap-0.5 ${Number(growth) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {Number(growth) >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                        <span>{Math.abs(Number(growth))}%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs" style={{ color: colors.textSecondary }}>
+                    {((categoryTotal / schemaData.totalObjects) * 100).toFixed(1)}% of total
+                  </div>
+                  <div className="text-xs font-medium" style={{ color: category.color }}>
+                    Δ {category.items.reduce((sum, item) => sum + item.change, 0)} this month
+                  </div>
+                </div>
+              </div>
+              
               <div className="grid grid-cols-3 gap-2">
                 {category.items.map((item, idx) => (
-                  <div key={idx} className="border rounded p-2 text-center hover-lift"
+                  <div key={idx} 
+                    className="border rounded-lg p-2 text-center hover-lift transition-all duration-200"
                     style={{ 
                       borderColor: colors.borderLight,
-                      backgroundColor: colors.hover
+                      backgroundColor: colors.card,
                     }}>
-                    <div className="flex items-center justify-center gap-1 mb-1">
-                      {item.icon}
-                      <span className="text-xs font-bold" style={{ color: colors.text }}>
-                        {item.value}
-                      </span>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-1">
+                        {item.icon}
+                        <span className="text-xs font-bold" style={{ color: colors.text }}>
+                          {item.value}
+                        </span>
+                      </div>
+                      {item.change !== 0 && (
+                        <div className={`text-xs ${item.change > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {item.change > 0 ? '+' : ''}{item.change}
+                        </div>
+                      )}
                     </div>
-                    <div className="text-xs capitalize" style={{ color: colors.textSecondary }}>
+                    <div className="text-xs font-medium capitalize mb-0.5" style={{ color: colors.text }}>
                       {item.key.replace(/([A-Z])/g, ' $1').trim()}
+                    </div>
+                    <div className="text-xs opacity-75 truncate" style={{ color: colors.textSecondary }}>
+                      {item.description}
                     </div>
                   </div>
                 ))}
               </div>
             </div>
-          ))}
-        </div>
+          );
+        })}
+      </div>
 
-        {/* Quick summary */}
-        <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
-          <div className="flex items-center justify-between text-xs">
-            <span style={{ color: colors.textSecondary }}>Last Updated</span>
-            <span style={{ color: colors.text }}>Today, 10:30 AM</span>
+      {/* Enhanced Footer with more metrics */}
+      <div className="mt-6 pt-4 border-t" style={{ borderColor: colors.border }}>
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <div className="text-xs" style={{ color: colors.textSecondary }}>Last Updated</div>
+            <div className="text-sm font-medium flex items-center gap-1" style={{ color: colors.text }}>
+              <Clock size={12} />
+              Today, 10:30 AM
+            </div>
+          </div>
+          <div>
+            <div className="text-xs" style={{ color: colors.textSecondary }}>Growth Rate</div>
+            <div className="text-sm font-medium flex items-center gap-1" style={{ color: colors.success }}>
+              <TrendingUp size={12} />
+              +{schemaData.monthlyGrowth || 12}% this month
+            </div>
+          </div>
+          <div>
+            <div className="text-xs" style={{ color: colors.textSecondary }}>Schema Version</div>
+            <div className="text-sm font-medium" style={{ color: colors.text }}>
+              v{schemaData.version || '1.2.3'}
+            </div>
           </div>
         </div>
+        
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   // Activity Pagination Component
   const ActivityPagination = () => (
@@ -863,11 +1031,11 @@ const Dashboard = () => {
   // Right Sidebar Component
   const RightSidebar = () => (
     <div className="w-80 border-l flex flex-col" style={{ 
-      backgroundColor: colors.sidebar,
+      backgroundColor: colors.bg,
       borderColor: colors.border
     }}>
       {/* System Health */}
-      <div className="border-b p-4" style={{ borderColor: colors.border }}>
+      {/* <div className="border-b p-4" style={{ borderColor: colors.border }}>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
             System Health
@@ -909,10 +1077,10 @@ const Dashboard = () => {
             </div>
           ))}
         </div>
-      </div>
+      </div> */}
 
       {/* Code Generation Stats */}
-      <div className="border-b p-4" style={{ borderColor: colors.border }}>
+      {/* <div className="border-b p-4" style={{ borderColor: colors.border }}>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
             Code Generation
@@ -957,13 +1125,13 @@ const Dashboard = () => {
             );
           })}
         </div>
-      </div>
+      </div> */}
 
       {/* Recent Deployments */}
       <div className="border-b p-4" style={{ borderColor: colors.border }}>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
-            Recent Deployments
+            Recent API's Generated
           </h3>
           <Rocket size={14} style={{ color: colors.textSecondary }} />
         </div>
@@ -1059,7 +1227,7 @@ const Dashboard = () => {
       {/* Main Content - Shifted to the left */}
       <div className="flex-1 overflow-hidden flex">
         <div className="flex-1 overflow-auto p-4">
-          <div className="max-w-8xl mx-auto pl-12 pr-12">
+          <div className="max-w-8xl mx-auto pl-8 pr-8">
             {/* Key Metrics */} 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <StatCard
@@ -1094,67 +1262,44 @@ const Dashboard = () => {
 
             {/* Main Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Left Column - Active Connections */}
-              <div className="space-y-6">
-                <div className="border rounded-xl" style={{ 
-                  borderColor: colors.border,
-                  backgroundColor: colors.card
-                }}>
-                  <div className="p-4 border-b" style={{ borderColor: colors.border }}>
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
-                        Active Database Connections
-                      </h3>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs" style={{ color: colors.textSecondary }}>
-                          {connections.length} connections
-                        </span>
-                        <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                          style={{ backgroundColor: colors.hover }}>
-                          <Plus size={14} style={{ color: colors.textSecondary }} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="p-4">
-                    <div className="space-y-3">
-                      {connections.map(conn => (
-                        <ConnectionCard key={conn.id} connection={conn} />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* API Performance */}
-                <div className="border rounded-xl" style={{ 
-                  borderColor: colors.border,
-                  backgroundColor: colors.card
-                }}>
-                  <div className="p-4 border-b" style={{ borderColor: colors.border }}>
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
-                        API Performance
-                      </h3>
-                      <div className="flex items-center gap-2">
-                        <button className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                          style={{ backgroundColor: colors.hover, color: colors.text }}>
-                          View All
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="p-4">
-                    <div className="space-y-3">
-                      {apis.map(api => (
-                        <APIPerformanceCard key={api.id} api={api} />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
+              {/* Schema Statistics */}
+                <SchemaStatsCard />
 
               {/* Right Column - Schema Stats and Recent Activity */}
               <div className="space-y-6">
+
+                {/* Left Column - Active Connections */}
+                <div className="space-y-6">
+                  <div className="border rounded-xl" style={{ 
+                    borderColor: colors.border,
+                    backgroundColor: colors.card
+                  }}>
+                    <div className="p-4 border-b" style={{ borderColor: colors.border }}>
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
+                          Active Database Connections
+                        </h3>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs" style={{ color: colors.textSecondary }}>
+                            {connections.length} connections
+                          </span>
+                          <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                            style={{ backgroundColor: colors.hover }}>
+                            <Plus size={14} style={{ color: colors.textSecondary }} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-4">
+                      <div className="space-y-3">
+                        {connections.map(conn => (
+                          <ConnectionCard key={conn.id} connection={conn} />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Recent Activity */}
                 <div className="border rounded-xl" style={{ 
                   borderColor: colors.border,
@@ -1191,8 +1336,6 @@ const Dashboard = () => {
                   <ActivityPagination />
                 </div>
 
-                {/* Schema Statistics */}
-                <SchemaStatsCard />
               </div>
             </div>
 

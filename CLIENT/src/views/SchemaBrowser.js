@@ -16,81 +16,100 @@ import {
   FileCode, ChevronsUp, ChevronsDown, AlertTriangle
 } from 'lucide-react';
 
-const SchemaBrowser = () => {
-  const [theme, setTheme] = useState('dark'); // Default to dark theme like APICodeBase
-  const isDark = theme === 'dark';
+const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
 
   // Using APICodeBase's exact color system for consistency
   const colors = isDark ? {
-    bg: '#0f172a',
-    white: '#f8fafc',
-    sidebar: '#1e293b',
-    main: '#0f172a',
-    header: '#1e293b',
-    card: '#1e293b',
-    text: '#f1f5f9',
-    textSecondary: '#94a3b8',
-    textTertiary: '#64748b',
-    border: '#334155',
-    borderLight: '#2d3748',
-    borderDark: '#475569',
-    hover: '#334155',
-    active: '#475569',
-    selected: '#2c5282',
-    primary: '#f1f5f9',
-    primaryLight: '#60a5fa',
-    primaryDark: '#2563eb',
+    // Using your shade as base
+    bg: 'rgb(1 14 35)',
+    white: '#FFFFFF',
+    sidebar: 'rgb(20 26 38)',
+    main: 'rgb(1 14 35)',
+    header: 'rgb(20 26 38)',
+    card: 'rgb(41 53 72 / 39%)',
+    
+    // Text - coordinating grays
+    text: '#E8ECF1',
+    textSecondary: 'rgb(168 178 192)',
+    textTertiary: 'rgb(128 140 158)',
+    
+    // Borders - variations of your shade
+    border: 'rgb(61 73 92)',
+    borderLight: 'rgb(51 63 82)',
+    borderDark: 'rgb(71 83 102)',
+    
+    // Interactive - layered transparency
+    hover: 'rgb(51 63 82)',
+    active: 'rgb(61 73 92)',
+    selected: 'rgb(44 82 130)',
+    
+    // Primary colors
+    primary: '#E8ECF1',
+    primaryLight: 'rgb(96 165 250)',
+    primaryDark: 'rgb(37 99 235)',
+    
+    // HTTP Method colors
     method: {
-      GET: '#10b981',
-      POST: '#3b82f6',
-      PUT: '#f59e0b',
-      DELETE: '#ef4444',
-      PATCH: '#8b5cf6',
-      HEAD: '#6b7280',
-      OPTIONS: '#8b5cf6',
-      LINK: '#06b6d4',
-      UNLINK: '#f97316'
+      GET: 'rgb(16 185 129)',
+      POST: 'rgb(59 130 246)',
+      PUT: 'rgb(245 158 11)',
+      DELETE: 'rgb(239 68 68)',
+      PATCH: 'rgb(139 92 246)',
+      HEAD: 'rgb(107 114 128)',
+      OPTIONS: 'rgb(139 92 246)',
+      LINK: 'rgb(6 182 212)',
+      UNLINK: 'rgb(249 115 22)'
     },
-    success: '#10b981',
-    warning: '#f59e0b',
-    error: '#ef4444',
-    info: '#3b82f6',
-    tabActive: '#3b82f6',
-    tabInactive: '#94a3b8',
-    sidebarActive: '#3b82f6',
-    sidebarHover: '#334155',
-    inputBg: '#1e293b',
-    inputBorder: '#334155',
-    tableHeader: '#334155',
-    tableRow: '#1e293b',
-    tableRowHover: '#2d3748',
-    dropdownBg: '#1e293b',
-    dropdownBorder: '#334155',
-    modalBg: '#1e293b',
-    modalBorder: '#334155',
-    codeBg: '#1e293b',
-    // Schema Browser specific colors matching APICodeBase's style
-    gridRowEven: '#1e293b',
-    gridRowOdd: '#2d3748',
-    gridHeader: '#334155',
-    gridBorder: '#334155',
-    connectionOnline: '#10b981',
-    connectionOffline: '#ef4444',
-    connectionIdle: '#f59e0b',
+    
+    // Status colors
+    success: 'rgb(16 185 129)',
+    warning: 'rgb(245 158 11)',
+    error: 'rgb(239 68 68)',
+    info: 'rgb(59 130 246)',
+    
+    // UI Components
+    tabActive: 'rgb(59 130 246)',
+    tabInactive: 'rgb(148 163 184)',
+    sidebarActive: 'rgb(59 130 246)',
+    sidebarHover: 'rgb(51 63 82)',
+    inputBg: 'rgb(41 53 72 / 39%)',
+    inputBorder: 'rgb(61 73 92)',
+    tableHeader: 'rgb(51 63 82)',
+    tableRow: 'rgb(41 53 72 / 39%)',
+    tableRowHover: 'rgb(51 63 82)',
+    dropdownBg: 'rgb(41 53 72 / 39%)',
+    dropdownBorder: 'rgb(61 73 92)',
+    modalBg: 'rgb(41 53 72 / 39%)',
+    modalBorder: 'rgb(61 73 92)',
+    codeBg: 'rgb(41 53 72 / 39%)',
+    
+    // Schema Browser specific colors
+    gridRowEven: 'rgb(41 53 72 / 39%)',
+    gridRowOdd: 'rgb(51 63 82)',
+    gridHeader: 'rgb(51 63 82)',
+    gridBorder: 'rgb(61 73 92)',
+    
+    // Connection status
+    connectionOnline: 'rgb(16 185 129)',
+    connectionOffline: 'rgb(239 68 68)',
+    connectionIdle: 'rgb(245 158 11)',
+    
+    // Object type colors
     objectType: {
-      table: '#3b82f6', // Blue
-      view: '#10b981', // Green
-      procedure: '#8b5cf6', // Purple
-      function: '#f59e0b', // Orange
-      package: '#6b7280', // Gray
-      sequence: '#64748b', // Dark blue gray
-      synonym: '#06b6d4', // Teal
-      type: '#6366f1', // Indigo
-      trigger: '#ec4899', // Pink
-      index: '#0d9488', // Teal
-      constraint: '#ef4444' // Red
+      table: 'rgb(59 130 246)', // Blue
+      view: 'rgb(16 185 129)', // Green
+      procedure: 'rgb(139 92 246)', // Purple
+      function: 'rgb(245 158 11)', // Orange
+      package: 'rgb(107 114 128)', // Gray
+      sequence: 'rgb(100 116 139)', // Dark blue gray
+      synonym: 'rgb(6 182 212)', // Teal
+      type: 'rgb(99 102 241)', // Indigo
+      trigger: 'rgb(236 72 153)', // Pink
+      index: 'rgb(13 148 136)', // Teal
+      constraint: 'rgb(239 68 68)' // Red
     }
   } : {
+    // KEEP THE ORIGINAL LIGHT MODE
     bg: '#f8fafc',
     white: '#f8fafc',
     sidebar: '#ffffff',
@@ -165,7 +184,7 @@ const SchemaBrowser = () => {
   const [connections, setConnections] = useState([
     {
       id: 'conn-1',
-      name: 'HR_PROD',
+      name: 'CBX_DMX',
       description: 'Production HR Database',
       host: 'db-prod.company.com',
       port: '1521',
@@ -866,12 +885,12 @@ END BIU_EMPLOYEES;`
     <div className="flex-1 overflow-auto">
       <div className="border rounded" style={{ 
         borderColor: colors.gridBorder,
-        backgroundColor: colors.card
+        backgroundColor: colors.bg
       }}>
         {/* Toolbar */}
         <div className="flex items-center justify-between p-2 border-b" style={{ 
           borderColor: colors.gridBorder,
-          backgroundColor: colors.gridHeader
+          backgroundColor: colors.bg
         }}>
           <div className="text-sm font-medium" style={{ color: colors.text }}>
             Columns ({activeObject.columns?.length || 0})
@@ -990,7 +1009,7 @@ END BIU_EMPLOYEES;`
         {/* Data Grid Toolbar */}
         <div className="flex items-center justify-between p-2 border-b" style={{ 
           borderColor: colors.border,
-          backgroundColor: colors.card
+          backgroundColor: colors.bg
         }}>
           <div className="flex items-center gap-2">
             <button className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 hover-lift"
@@ -1010,7 +1029,7 @@ END BIU_EMPLOYEES;`
               <span className="text-sm" style={{ color: colors.textSecondary }}>Auto-refresh:</span>
               <select className="px-2 py-1 border rounded text-sm focus:outline-none hover-lift"
                 style={{ 
-                  backgroundColor: colors.card,
+                  backgroundColor: colors.bg,
                   borderColor: colors.border,
                   color: colors.text
                 }}>
@@ -1042,7 +1061,7 @@ END BIU_EMPLOYEES;`
         <div className="flex-1 overflow-auto">
           <div className="border rounded" style={{ 
             borderColor: colors.gridBorder,
-            backgroundColor: colors.card
+            backgroundColor: colors.bg
           }}>
             <table className="w-full" style={{ borderCollapse: 'collapse' }}>
               <thead style={{ 
@@ -1103,7 +1122,7 @@ END BIU_EMPLOYEES;`
         {/* Status Bar */}
         <div className="p-2 border-t" style={{ 
           borderColor: colors.border,
-          backgroundColor: colors.card
+          backgroundColor: colors.bg
         }}>
           <div className="text-xs" style={{ color: colors.textSecondary }}>
             {data.length} rows fetched in 0.023 seconds | 
@@ -1120,11 +1139,11 @@ END BIU_EMPLOYEES;`
     <div className="flex-1 overflow-auto">
       <div className="border rounded" style={{ 
         borderColor: colors.gridBorder,
-        backgroundColor: colors.card
+        backgroundColor: colors.bg
       }}>
         <div className="p-2 border-b" style={{ 
           borderColor: colors.gridBorder,
-          backgroundColor: colors.gridHeader
+          backgroundColor: colors.bg
         }}>
           <div className="text-sm font-medium" style={{ color: colors.text }}>
             Parameters ({activeObject.parameters?.length || 0})
@@ -1230,11 +1249,11 @@ END BIU_EMPLOYEES;`
     <div className="flex-1 overflow-auto">
       <div className="border rounded" style={{ 
         borderColor: colors.gridBorder,
-        backgroundColor: colors.card
+        backgroundColor: colors.bg
       }}>
         <div className="p-2 border-b" style={{ 
           borderColor: colors.gridBorder,
-          backgroundColor: colors.gridHeader
+          backgroundColor: colors.bg
         }}>
           <div className="text-sm font-medium" style={{ color: colors.text }}>
             Constraints ({activeObject.constraints?.length || 0})
@@ -1295,11 +1314,11 @@ END BIU_EMPLOYEES;`
     <div className="flex-1 overflow-auto">
       <div className="border rounded" style={{ 
         borderColor: colors.gridBorder,
-        backgroundColor: colors.card
+        backgroundColor: colors.bg
       }}>
         <div className="p-2 border-b" style={{ 
           borderColor: colors.gridBorder,
-          backgroundColor: colors.gridHeader
+          backgroundColor: colors.bg
         }}>
           <div className="text-sm font-medium" style={{ color: colors.text }}>
             Indexes ({activeObject.indexes?.length || 0})
@@ -1690,7 +1709,7 @@ END BIU_EMPLOYEES;`
         <div className="flex items-center gap-4">
 
           {/* Main Menu */}
-          <div className="flex items-center gap-1 -ml-3 text-nowrap">
+          <div className="flex items-center gap-1 -ml-4 text-nowrap uppercase">
             <span className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift`}>API Code Base</span>
           </div>
         </div>
@@ -1737,7 +1756,7 @@ END BIU_EMPLOYEES;`
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors.connectionOnline }} />
                 <span className="text-sm font-medium" style={{ color: colors.text }}>
-                  HR_PROD
+                  CBX_DMX
                 </span>
               </div>
               <div className="flex gap-1">

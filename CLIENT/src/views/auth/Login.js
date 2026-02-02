@@ -77,36 +77,72 @@ export default function Login() {
 
   const isDark = theme === 'dark';
 
-  // Color scheme matching APIDocs
+  // Color scheme - updated to match provided theme
   const colors = isDark ? {
-    bg: '#0f172a',
-    white: '#f8fafc',
-    sidebar: '#1e293b',
-    main: '#0f172a',
-    header: '#1e293b',
-    card: '#1e293b',
-    text: '#f1f5f9',
-    textSecondary: '#94a3b8',
-    textTertiary: '#64748b',
-    border: '#334155',
-    borderLight: '#2d3748',
-    borderDark: '#475569',
-    hover: '#334155',
-    active: '#475569',
-    selected: '#2c5282',
-    primary: '#3b82f6',
-    primaryLight: '#60a5fa',
-    primaryDark: '#2563eb',
-    success: '#10b981',
-    warning: '#f59e0b',
-    error: '#ef4444',
-    info: '#3b82f6',
-    inputBg: '#1e293b',
-    inputBorder: '#334155',
-    modalBg: '#1e293b',
-    modalBorder: '#334155',
+    // Using your shade as base
+    bg: 'rgb(1 14 35)',
+    white: '#FFFFFF',
+    sidebar: 'rgb(20 26 38)',
+    main: 'rgb(1 14 35)',
+    header: 'rgb(20 26 38)',
+    card: 'rgb(41 53 72 / 39%)',
+    
+    // Text - coordinating grays
+    text: '#F1F5F9',
+    textSecondary: 'rgb(148 163 184)',
+    textTertiary: 'rgb(100 116 139)',
+    
+    // Borders - variations of your shade
+    border: 'rgb(51 65 85)',
+    borderLight: 'rgb(45 55 72)',
+    borderDark: 'rgb(71 85 105)',
+    
+    // Interactive - layered transparency
+    hover: 'rgb(45 55 72)',
+    active: 'rgb(59 74 99)',
+    selected: 'rgb(44 82 130)',
+    
+    // Primary colors
+    primary: 'rgb(96 165 250)',
+    primaryLight: 'rgb(147 197 253)',
+    primaryDark: 'rgb(37 99 235)',
+    
+    // Status colors
+    success: 'rgb(52 211 153)',
+    warning: 'rgb(251 191 36)',
+    error: 'rgb(248 113 113)',
+    info: 'rgb(96 165 250)',
+    
+    // UI Components
+    tabActive: 'rgb(96 165 250)',
+    tabInactive: 'rgb(148 163 184)',
+    sidebarActive: 'rgb(96 165 250)',
+    sidebarHover: 'rgb(45 55 72)',
+    inputBg: 'rgb(41 53 72 / 39%)',
+    inputBorder: 'rgb(51 65 85)',
+    tableHeader: 'rgb(41 53 72 / 39%)',
+    tableRow: 'rgb(41 53 72 / 39%)',
+    tableRowHover: 'rgb(45 55 72)',
+    dropdownBg: 'rgb(41 53 72 / 39%)',
+    dropdownBorder: 'rgb(51 65 85)',
+    modalBg: 'rgb(41 53 72 / 39%)',
+    modalBorder: 'rgb(51 65 85)',
+    codeBg: 'rgb(41 53 72 / 39%)',
+    
+    // Connection status
+    connectionOnline: 'rgb(52 211 153)',
+    connectionOffline: 'rgb(248 113 113)',
+    connectionIdle: 'rgb(251 191 36)',
+    
+    // Accent colors
+    accentPurple: 'rgb(167 139 250)',
+    accentPink: 'rgb(244 114 182)',
+    accentCyan: 'rgb(34 211 238)',
+    
+    // Additional for login component
     gradient: 'from-blue-500/20 via-violet-500/20 to-orange-500/20'
   } : {
+    // KEEP THE ORIGINAL LIGHT MODE
     bg: '#f8fafc',
     white: '#f8fafc',
     sidebar: '#ffffff',
@@ -122,17 +158,30 @@ export default function Login() {
     hover: '#f1f5f9',
     active: '#e2e8f0',
     selected: '#dbeafe',
-    primary: '#3b82f6',
+    primary: '#1e293b',
     primaryLight: '#60a5fa',
     primaryDark: '#2563eb',
     success: '#10b981',
     warning: '#f59e0b',
     error: '#ef4444',
     info: '#3b82f6',
+    tabActive: '#3b82f6',
+    tabInactive: '#64748b',
+    sidebarActive: '#3b82f6',
+    sidebarHover: '#f1f5f9',
     inputBg: '#ffffff',
     inputBorder: '#e2e8f0',
+    tableHeader: '#f8fafc',
+    tableRow: '#ffffff',
+    tableRowHover: '#f8fafc',
+    dropdownBg: '#ffffff',
+    dropdownBorder: '#e2e8f0',
     modalBg: '#ffffff',
     modalBorder: '#e2e8f0',
+    codeBg: '#f1f5f9',
+    connectionOnline: '#10b981',
+    connectionOffline: '#ef4444',
+    connectionIdle: '#f59e0b',
     gradient: 'from-blue-400/20 via-violet-400/20 to-orange-400/20'
   };
 
@@ -192,7 +241,8 @@ export default function Login() {
         <div className={`rounded-2xl border transition-all duration-300 overflow-hidden shadow-xl hover:shadow-2xl`}
           style={{ 
             backgroundColor: colors.card,
-            borderColor: colors.border
+            borderColor: colors.border,
+            backdropFilter: isDark ? 'blur(10px)' : 'none'
           }}>
           
           {/* Card Header Gradient */}
@@ -347,14 +397,15 @@ export default function Login() {
                           className="absolute right-3.5 top-1/2 transform -translate-y-1/2 p-2 rounded-lg transition-all duration-300 hover-lift hover:scale-110 active:scale-95"
                           style={{ 
                             backgroundColor: colors.hover,
+                            border: `1px solid ${colors.border}`,
                             color: colors.textSecondary
                           }}
                           aria-label={showPassword ? "Hide password" : "Show password"}
                         >
                           {showPassword ? (
-                            <EyeOff className="h-4 w-4" />
+                            <EyeOff className="h-4 w-4" style={{ color: colors.primary }} />
                           ) : (
-                            <Eye className="h-4 w-4" />
+                            <Eye className="h-4 w-4" style={{ color: colors.textSecondary }} />
                           )}
                         </button>
                       </div>
@@ -386,7 +437,7 @@ export default function Login() {
                       className="w-full py-3.5 rounded-xl font-semibold transition-all duration-300 relative group overflow-hidden hover-lift hover:shadow-lg"
                       style={{ 
                         backgroundColor: colors.primary,
-                        color: 'white',
+                        color: isDark ? '#0f172a' : 'white',
                         boxShadow: `0 4px 14px ${colors.primary}40`
                       }}
                       disabled={loading}
@@ -527,17 +578,17 @@ const globalStyles = `
 }
 
 ::-webkit-scrollbar-track {
-  background: #334155;
+  background: rgb(45 55 72);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #64748b;
+  background: rgb(100 116 139);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: rgb(148 163 184);
 }
 `;
 

@@ -534,8 +534,7 @@ const NOTIFICATIONS = [
 ];
 
 // Main component
-const APIDocs = () => {
-  const [theme, setTheme] = useState('dark');
+const APIDocs = ({ theme, isDark, customTheme, toggleTheme }) => {
   const [activeTab, setActiveTab] = useState('documentation');
   const [showCodePanel, setShowCodePanel] = useState(true);
   const [selectedLanguage, setSelectedLanguage] = useState('curl');
@@ -561,8 +560,6 @@ const APIDocs = () => {
   const [showWorkspaceSwitcher, setShowWorkspaceSwitcher] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showEnvironmentMenu, setShowEnvironmentMenu] = useState(false);
-  
-  const isDark = theme === 'dark';
 
   // Updated color scheme to match APICodeBase
   const colors = isDark ? {
@@ -1980,74 +1977,8 @@ req.end();`}`
 
           <div className="w-px h-4" style={{ backgroundColor: colors.border }}></div>
 
-          {/* Notifications */}
-          <div className="relative">
-            <button onClick={() => {
-              setShowNotifications(!showNotifications);
-              markAllNotificationsAsRead();
-            }} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift relative"
-              style={{ backgroundColor: colors.hover }}>
-              <Bell size={14} style={{ color: colors.textSecondary }} />
-              {notifications.filter(n => !n.read).length > 0 && (
-                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full" style={{ backgroundColor: colors.error }}></span>
-              )}
-            </button>
-
-            {showNotifications && (
-              <div className="absolute top-full right-0 mt-1 py-2 rounded shadow-lg z-50 border w-80"
-                style={{ 
-                  backgroundColor: colors.dropdownBg,
-                  borderColor: colors.border
-                }}>
-                <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: colors.border }}>
-                  <span className="text-sm font-medium" style={{ color: colors.text }}>Notifications</span>
-                  <button onClick={markAllNotificationsAsRead} className="text-xs hover:underline" style={{ color: colors.primary }}>
-                    Mark all as read
-                  </button>
-                </div>
-                <div className="max-h-96 overflow-auto">
-                  {notifications.map(notification => (
-                    <div key={notification.id} className={`px-4 py-3 border-b hover:bg-opacity-50 transition-colors cursor-pointer hover-lift ${
-                      notification.read ? '' : 'bg-opacity-20'
-                    }`}
-                      style={{ 
-                        borderColor: colors.border,
-                        backgroundColor: notification.read ? 'transparent' : colors.selected
-                      }}
-                      onClick={() => showToast(`Opening notification: ${notification.title}`, 'info')}>
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5">
-                          {notification.type === 'warning' ? (
-                            <AlertCircle size={12} style={{ color: colors.warning }} />
-                          ) : notification.type === 'success' ? (
-                            <CheckCircle size={12} style={{ color: colors.success }} />
-                          ) : (
-                            <Info size={12} style={{ color: colors.info }} />
-                          )}
-                        </div>
-                        <div className="flex-1">
-                          <div className="text-sm font-medium" style={{ color: colors.text }}>{notification.title}</div>
-                          <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>{notification.message}</div>
-                          <div className="text-xs mt-1" style={{ color: colors.textTertiary }}>{notification.time}</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="px-4 py-2 border-t" style={{ borderColor: colors.border }}>
-                  <button onClick={() => {
-                    showToast('Viewing all notifications', 'info');
-                    setShowNotifications(false);
-                  }} className="w-full text-center text-sm hover:underline hover-lift" style={{ color: colors.primary }}>
-                    View All
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Global Search */}
-          <div className="relative">
+          {/* <div className="relative">
             <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
             <input 
               type="text" 
@@ -2069,7 +2000,7 @@ req.end();`}`
                 </button>
               </div>
             )}
-          </div>
+          </div> */}
 
           {/* Code Panel Toggle */}
           <button onClick={() => setShowCodePanel(!showCodePanel)} 
@@ -2140,12 +2071,6 @@ req.end();`}`
               </div>
             )}
           </div>
-
-          {/* Theme Toggle */}
-          <button onClick={() => setTheme(isDark ? 'light' : 'dark')} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-            style={{ backgroundColor: colors.hover }}>
-            {isDark ? <Sun size={14} style={{ color: colors.textSecondary }} /> : <Moon size={14} style={{ color: colors.textSecondary }} />}
-          </button>
         </div>
       </div>
 

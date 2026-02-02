@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Shield, ShieldCheck, ShieldAlert, ShieldOff, ShieldPlus, ShieldMinus, ShieldEllipsis,
   Lock, LockOpen, Key, KeyRound, Fingerprint, Scan, QrCode, ScanFace, Eye, EyeOff,
@@ -12,7 +12,7 @@ import {
   AlertCircle, AlertTriangle, AlertOctagon, CheckCircle, XCircle, Info,
   Settings, Sliders, ToggleLeft, ToggleRight, Power, PowerOff,
   Download, Upload, RefreshCw, Plus, Minus, X, Check, Copy,
-  Search, Filter as FilterIcon, MoreVertical, Edit, Trash2,
+  Search, Filter as FilterIcon, MoreVertical, Edit2, Trash2,
   ExternalLink, Link, Link2, Unlink,
   MessageSquare, MessageCircle, Bell, BellRing, BellOff,
   FileText, FileCode, Database, Layers,
@@ -42,21 +42,61 @@ import {
   Layers as LayersIcon,
   BarChart as BarChartIcon,
   LineChart as LineChartIcon,
-  AreaChart as AreaChartIcon
+  AreaChart as AreaChartIcon,
+  LayoutDashboard,
+  Shield as ShieldCheckIcon,
+  DownloadCloud,
+  UploadCloud,
+  Printer,
+  Inbox,
+  Archive,
+  Trash,
+  RefreshCw as RefreshIcon,
+  ChevronsLeft,
+  ChevronsRight,
+  GripVertical,
+  Coffee,
+  Eye as EyeIcon,
+  FileArchive as FileBinary,
+  Database as DatabaseIcon2,
+  ChevronsUpDown,
+  Book,
+  File,
+  MessageSquare as MessageSquareIcon,
+  Tag,
+  Calendar as CalendarIcon2,
+  Hash as HashIcon2,
+  Link as LinkIcon,
+  Eye as EyeOpenIcon,
+  Clock as ClockIcon2,
+  Users as UsersIcon2,
+  Database as DatabaseIcon3,
+  Code as CodeIcon2,
+  Terminal as TerminalIcon2,
+  ExternalLink as ExternalLinkIcon,
+  Copy as CopyIcon,
+  Check as CheckIcon,
+  X as XIcon,
+  AlertCircle as AlertCircleIcon,
+  Info as InfoIcon,
+  HelpCircle as HelpCircleIcon,
+  Star as StarIcon,
+  Book as BookIcon,
+  Zap as ZapIcon2
 } from 'lucide-react';
 
-const APISecurity = () => {
-  const [theme, setTheme] = useState('dark');
+const APISecurity = ({ theme, isDark, customTheme, toggleTheme }) => {
   const [activeTab, setActiveTab] = useState('rate-limits');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddRuleModal, setShowAddRuleModal] = useState(false);
   const [showSecurityReport, setShowSecurityReport] = useState(false);
   const [showIPWhitelistModal, setShowIPWhitelistModal] = useState(false);
   const [showLoadBalancerModal, setShowLoadBalancerModal] = useState(false);
-  
-  const isDark = theme === 'dark';
+  const [toast, setToast] = useState(null);
+  const [expandedSections, setExpandedSections] = useState(['rate-limits', 'ip-whitelist']);
+  const [showNotifications, setShowNotifications] = useState(false);
 
-  // Color scheme matching your other components
+  // Updated color scheme to match APIDocs
   const colors = isDark ? {
     bg: '#0f172a',
     white: '#f8fafc',
@@ -76,6 +116,17 @@ const APISecurity = () => {
     primary: '#f1f5f9',
     primaryLight: '#60a5fa',
     primaryDark: '#2563eb',
+    method: {
+      GET: '#10b981',
+      POST: '#3b82f6',
+      PUT: '#f59e0b',
+      DELETE: '#ef4444',
+      PATCH: '#8b5cf6',
+      HEAD: '#6b7280',
+      OPTIONS: '#8b5cf6',
+      LINK: '#06b6d4',
+      UNLINK: '#f97316'
+    },
     success: '#10b981',
     warning: '#f59e0b',
     error: '#ef4444',
@@ -119,6 +170,17 @@ const APISecurity = () => {
     primary: '#1e293b',
     primaryLight: '#60a5fa',
     primaryDark: '#2563eb',
+    method: {
+      GET: '#10b981',
+      POST: '#3b82f6',
+      PUT: '#f59e0b',
+      DELETE: '#ef4444',
+      PATCH: '#8b5cf6',
+      HEAD: '#6b7280',
+      OPTIONS: '#8b5cf6',
+      LINK: '#06b6d4',
+      UNLINK: '#f97316'
+    },
     success: '#10b981',
     warning: '#f59e0b',
     error: '#ef4444',
@@ -309,6 +371,19 @@ const APISecurity = () => {
     lastScan: '2024-01-15T10:00:00Z'
   });
 
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const toggleSection = (sectionId) => {
+    setExpandedSections(prev =>
+      prev.includes(sectionId)
+        ? prev.filter(id => id !== sectionId)
+        : [...prev, sectionId]
+    );
+  };
+
   // Render Rate Limits Tab
   const renderRateLimitsTab = () => (
     <div className="space-y-6">
@@ -332,7 +407,7 @@ const APISecurity = () => {
       {/* Rules Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {rateLimitRules.map(rule => (
-          <div key={rule.id} className="border rounded-xl p-4 hover-lift" style={{ 
+          <div key={rule.id} className="border rounded-lg p-4 hover-lift" style={{ 
             borderColor: colors.border,
             backgroundColor: colors.card
           }}>
@@ -345,10 +420,12 @@ const APISecurity = () => {
               </div>
               <div className="flex gap-1">
                 <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                  onClick={() => showToast(`Editing ${rule.name}`, 'info')}
                   style={{ backgroundColor: colors.hover }}>
-                  <Edit size={12} style={{ color: colors.textSecondary }} />
+                  <Edit2 size={12} style={{ color: colors.textSecondary }} />
                 </button>
                 <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                  onClick={() => showToast(`Deleting ${rule.name}`, 'info')}
                   style={{ backgroundColor: colors.hover }}>
                   <Trash2 size={12} style={{ color: colors.error }} />
                 </button>
@@ -390,7 +467,7 @@ const APISecurity = () => {
       </div>
 
       {/* Statistics */}
-      <div className="border rounded-xl p-6" style={{ 
+      <div className="border rounded-lg p-6" style={{ 
         borderColor: colors.border,
         backgroundColor: colors.card
       }}>
@@ -441,7 +518,7 @@ const APISecurity = () => {
       </div>
 
       {/* IP Whitelist Table */}
-      <div className="border rounded-xl overflow-hidden" style={{ 
+      <div className="border rounded-lg overflow-hidden" style={{ 
         borderColor: colors.border,
         backgroundColor: colors.card
       }}>
@@ -494,14 +571,17 @@ const APISecurity = () => {
                   <td className="p-4">
                     <div className="flex items-center gap-2">
                       <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                        onClick={() => showToast(`Editing ${item.name}`, 'info')}
                         style={{ backgroundColor: colors.hover }}>
-                        <Edit size={12} style={{ color: colors.textSecondary }} />
+                        <Edit2 size={12} style={{ color: colors.textSecondary }} />
                       </button>
                       <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                        onClick={() => showToast(`Deleting ${item.name}`, 'info')}
                         style={{ backgroundColor: colors.hover }}>
                         <Trash2 size={12} style={{ color: colors.error }} />
                       </button>
                       <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                        onClick={() => showToast(`Viewing ${item.name} details`, 'info')}
                         style={{ backgroundColor: colors.hover }}>
                         <Eye size={12} style={{ color: colors.textSecondary }} />
                       </button>
@@ -516,12 +596,12 @@ const APISecurity = () => {
 
       {/* IP Analysis */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="border rounded-xl p-6 hover-lift" style={{ 
+        <div className="border rounded-lg p-6 hover-lift" style={{ 
           borderColor: colors.border,
           backgroundColor: colors.card
         }}>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded" style={{ backgroundColor: '#3b82f620' }}>
+            <div className="p-2 rounded" style={{ backgroundColor: `${colors.info}20` }}>
               <Shield size={20} style={{ color: colors.info }} />
             </div>
             <div>
@@ -547,12 +627,12 @@ const APISecurity = () => {
           </div>
         </div>
 
-        <div className="border rounded-xl p-6 hover-lift" style={{ 
+        <div className="border rounded-lg p-6 hover-lift" style={{ 
           borderColor: colors.border,
           backgroundColor: colors.card
         }}>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded" style={{ backgroundColor: '#10b98120' }}>
+            <div className="p-2 rounded" style={{ backgroundColor: `${colors.success}20` }}>
               <Activity size={20} style={{ color: colors.success }} />
             </div>
             <div>
@@ -566,8 +646,9 @@ const APISecurity = () => {
               { ip: '203.0.113.78', count: 8, endpoint: '/api/v1/auth/login' },
               { ip: '192.0.2.189', count: 23, endpoint: '/api/v1/payments/**' }
             ].map((block, index) => (
-              <div key={index} className="flex items-center justify-between p-2 rounded hover-lift"
-                style={{ backgroundColor: colors.hover }}>
+              <div key={index} className="flex items-center justify-between p-2 rounded hover-lift cursor-pointer"
+                style={{ backgroundColor: colors.hover }}
+                onClick={() => showToast(`Viewing details for ${block.ip}`, 'info')}>
                 <div>
                   <div className="text-xs font-medium" style={{ color: colors.text }}>{block.ip}</div>
                   <div className="text-xs" style={{ color: colors.textSecondary }}>{block.endpoint}</div>
@@ -609,13 +690,13 @@ const APISecurity = () => {
       {/* Load Balancers Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {loadBalancers.map(lb => (
-          <div key={lb.id} className="border rounded-xl p-6 hover-lift" style={{ 
+          <div key={lb.id} className="border rounded-lg p-6 hover-lift" style={{ 
             borderColor: colors.border,
             backgroundColor: colors.card
           }}>
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded" style={{ backgroundColor: '#10b98120' }}>
+                <div className="p-2 rounded" style={{ backgroundColor: `${colors.success}20` }}>
                   <Server size={20} style={{ color: colors.success }} />
                 </div>
                 <div>
@@ -627,10 +708,12 @@ const APISecurity = () => {
               </div>
               <div className="flex items-center gap-2">
                 <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                  onClick={() => showToast(`Configuring ${lb.name}`, 'info')}
                   style={{ backgroundColor: colors.hover }}>
                   <Settings size={12} style={{ color: colors.textSecondary }} />
                 </button>
                 <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                  onClick={() => showToast(`More options for ${lb.name}`, 'info')}
                   style={{ backgroundColor: colors.hover }}>
                   <MoreVertical size={12} style={{ color: colors.textSecondary }} />
                 </button>
@@ -660,8 +743,9 @@ const APISecurity = () => {
             <div className="space-y-3">
               <div className="text-sm font-medium" style={{ color: colors.text }}>Backend Servers</div>
               {lb.servers.map(server => (
-                <div key={server.id} className="flex items-center justify-between p-3 rounded-lg hover-lift"
-                  style={{ backgroundColor: colors.hover }}>
+                <div key={server.id} className="flex items-center justify-between p-3 rounded-lg hover-lift cursor-pointer"
+                  style={{ backgroundColor: colors.hover }}
+                  onClick={() => showToast(`Viewing ${server.name} details`, 'info')}>
                   <div className="flex items-center gap-3">
                     <div className={`w-2 h-2 rounded-full ${
                       server.status === 'healthy' ? 'bg-green-500' :
@@ -698,7 +782,7 @@ const APISecurity = () => {
       </div>
 
       {/* Load Balancer Stats */}
-      <div className="border rounded-xl p-6" style={{ 
+      <div className="border rounded-lg p-6" style={{ 
         borderColor: colors.border,
         backgroundColor: colors.card
       }}>
@@ -742,11 +826,13 @@ const APISecurity = () => {
         </div>
         <div className="flex items-center gap-2">
           <button className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
+            onClick={() => showToast('Opening filter options', 'info')}
             style={{ backgroundColor: colors.hover, color: colors.text }}>
             <Filter size={14} />
             Filter
           </button>
           <button className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
+            onClick={() => showToast('Exporting security events', 'info')}
             style={{ backgroundColor: colors.hover, color: colors.text }}>
             <Download size={14} />
             Export
@@ -755,7 +841,7 @@ const APISecurity = () => {
       </div>
 
       {/* Security Events Table */}
-      <div className="border rounded-xl overflow-hidden" style={{ 
+      <div className="border rounded-lg overflow-hidden" style={{ 
         borderColor: colors.border,
         backgroundColor: colors.card
       }}>
@@ -776,9 +862,10 @@ const APISecurity = () => {
                 <tr 
                   key={event.id}
                   className="hover:bg-opacity-50 transition-colors cursor-pointer"
+                  onClick={() => showToast(`Viewing event ${event.id} details`, 'info')}
                   style={{ 
                     backgroundColor: index % 2 === 0 ? colors.tableRow : colors.tableRowHover,
-                                        borderBottom: `1px solid ${colors.border}`
+                    borderBottom: `1px solid ${colors.border}`
                   }}
                 >
                   <td className="p-4">
@@ -833,12 +920,12 @@ const APISecurity = () => {
 
       {/* Security Insights */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="border rounded-xl p-6 hover-lift" style={{ 
+        <div className="border rounded-lg p-6 hover-lift" style={{ 
           borderColor: colors.border,
           backgroundColor: colors.card
         }}>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded" style={{ backgroundColor: '#ef444420' }}>
+            <div className="p-2 rounded" style={{ backgroundColor: `${colors.error}20` }}>
               <AlertTriangle size={20} style={{ color: colors.error }} />
             </div>
             <div>
@@ -854,12 +941,12 @@ const APISecurity = () => {
           </div>
         </div>
 
-        <div className="border rounded-xl p-6 hover-lift" style={{ 
+        <div className="border rounded-lg p-6 hover-lift" style={{ 
           borderColor: colors.border,
           backgroundColor: colors.card
         }}>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded" style={{ backgroundColor: '#3b82f620' }}>
+            <div className="p-2 rounded" style={{ backgroundColor: `${colors.info}20` }}>
               <BarChart3 size={20} style={{ color: colors.info }} />
             </div>
             <div>
@@ -886,12 +973,12 @@ const APISecurity = () => {
           </div>
         </div>
 
-        <div className="border rounded-xl p-6 hover-lift" style={{ 
+        <div className="border rounded-lg p-6 hover-lift" style={{ 
           borderColor: colors.border,
           backgroundColor: colors.card
         }}>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded" style={{ backgroundColor: '#10b98120' }}>
+            <div className="p-2 rounded" style={{ backgroundColor: `${colors.success}20` }}>
               <ShieldCheck size={20} style={{ color: colors.success }} />
             </div>
             <div>
@@ -912,27 +999,21 @@ const APISecurity = () => {
 
   // Render Sidebar
   const renderSidebar = () => (
-    <div className="w-64 border-r p-6" style={{ 
+    <div className="w-64 border-r p-4" style={{ 
       borderColor: colors.border,
       backgroundColor: colors.sidebar
     }}>
-      <div className="mb-8">
+      <div className="mb-6">
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: colors.text }}>
           <ShieldCheck size={20} />
           API Security
         </h2>
         <div className="space-y-1">
           {[
-            // { id: 'overview', label: 'Overview', icon: <Activity size={16} /> },
             { id: 'rate-limits', label: 'Rate Limits', icon: <Filter size={16} /> },
             { id: 'ip-whitelist', label: 'IP Whitelist', icon: <Globe size={16} /> },
             { id: 'load-balancers', label: 'Load Balancers', icon: <Server size={16} /> },
             { id: 'security-events', label: 'Security Events', icon: <AlertTriangle size={16} /> },
-            // { id: 'waf-rules', label: 'WAF Rules', icon: <Shield size={16} /> },
-            // { id: 'api-keys', label: 'API Keys', icon: <Key size={16} /> },
-            { id: 'authentication', label: 'Authentication', icon: <Lock size={16} /> },
-            { id: 'monitoring', label: 'Monitoring', icon: <BarChart3 size={16} /> },
-            { id: 'reports', label: 'Reports', icon: <FileText size={16} /> }
           ].map(item => (
             <button
               key={item.id}
@@ -941,19 +1022,20 @@ const APISecurity = () => {
                 activeTab === item.id ? 'font-medium' : ''
               } hover-lift`}
               style={{
-                backgroundColor: activeTab === item.id ? colors.sidebarActive : 'transparent',
-                color: activeTab === item.id ? colors.white : colors.textSecondary
+                backgroundColor: activeTab === item.id ? colors.selected : 'transparent',
+                color: activeTab === item.id ? colors.primary : colors.text
               }}
             >
               {item.icon}
               {item.label}
+              {activeTab === item.id && <ChevronRight size={14} className="ml-auto" />}
             </button>
           ))}
         </div>
       </div>
 
       {/* Security Summary */}
-      <div className="border rounded-xl p-4 mb-6" style={{ 
+      <div className="border rounded-lg p-4 mb-6" style={{ 
         borderColor: colors.border,
         backgroundColor: colors.card
       }}>
@@ -996,19 +1078,19 @@ const APISecurity = () => {
       <div>
         <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Quick Actions</h3>
         <div className="space-y-2">
-          {/* <button className="w-full text-left px-3 py-2 rounded flex items-center gap-3 text-sm hover-lift"
-            style={{ backgroundColor: colors.hover, color: colors.text }}>
-            <ShieldPlus size={14} />
-            Run Security Scan
-          </button> */}
           <button 
-            onClick={() => setShowSecurityReport(true)}
+            onClick={() => {
+              showToast('Generating security report...', 'info');
+              setShowSecurityReport(true);
+            }}
             className="w-full text-left px-3 py-2 rounded flex items-center gap-3 text-sm hover-lift"
             style={{ backgroundColor: colors.hover, color: colors.text }}>
             <FileText size={14} />
             Generate Report
           </button>
-          <button className="w-full text-left px-3 py-2 rounded flex items-center gap-3 text-sm hover-lift"
+          <button 
+            onClick={() => showToast('Configuring security alerts', 'info')}
+            className="w-full text-left px-3 py-2 rounded flex items-center gap-3 text-sm hover-lift"
             style={{ backgroundColor: colors.hover, color: colors.text }}>
             <Bell size={14} />
             Configure Alerts
@@ -1037,8 +1119,8 @@ const APISecurity = () => {
   // Add Rule Modal
   const renderAddRuleModal = () => (
     showAddRuleModal && (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="border rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto" style={{ 
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="border rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto" style={{ 
           borderColor: colors.modalBorder,
           backgroundColor: colors.modalBg
         }}>
@@ -1047,7 +1129,7 @@ const APISecurity = () => {
               <h3 className="text-lg font-semibold" style={{ color: colors.text }}>Add Rate Limit Rule</h3>
               <button 
                 onClick={() => setShowAddRuleModal(false)}
-                className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover }}
               >
                 <X size={20} style={{ color: colors.text }} />
@@ -1059,7 +1141,7 @@ const APISecurity = () => {
                 <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Rule Name</label>
                 <input 
                   type="text" 
-                  className="w-full px-3 py-2 rounded-lg text-sm"
+                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
                   style={{ 
                     backgroundColor: colors.inputBg,
                     border: `1px solid ${colors.inputBorder}`,
@@ -1073,7 +1155,7 @@ const APISecurity = () => {
                 <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Endpoint Pattern</label>
                 <input 
                   type="text" 
-                  className="w-full px-3 py-2 rounded-lg text-sm font-mono"
+                  className="w-full px-3 py-2 rounded-lg text-sm font-mono focus:outline-none"
                   style={{ 
                     backgroundColor: colors.inputBg,
                     border: `1px solid ${colors.inputBorder}`,
@@ -1088,7 +1170,7 @@ const APISecurity = () => {
                   <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Limit</label>
                   <input 
                     type="number" 
-                    className="w-full px-3 py-2 rounded-lg text-sm"
+                    className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
                     style={{ 
                       backgroundColor: colors.inputBg,
                       border: `1px solid ${colors.inputBorder}`,
@@ -1100,7 +1182,7 @@ const APISecurity = () => {
                 <div>
                   <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Window</label>
                   <select 
-                    className="w-full px-3 py-2 rounded-lg text-sm"
+                    className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
                     style={{ 
                       backgroundColor: colors.inputBg,
                       border: `1px solid ${colors.inputBorder}`,
@@ -1119,7 +1201,7 @@ const APISecurity = () => {
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Action</label>
                 <select 
-                  className="w-full px-3 py-2 rounded-lg text-sm"
+                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
                   style={{ 
                     backgroundColor: colors.inputBg,
                     border: `1px solid ${colors.inputBorder}`,
@@ -1136,14 +1218,17 @@ const APISecurity = () => {
             <div className="flex items-center justify-end gap-3 mt-8">
               <button 
                 onClick={() => setShowAddRuleModal(false)}
-                className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-opacity-50 transition-colors"
+                className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover, color: colors.text }}
               >
                 Cancel
               </button>
               <button 
-                onClick={() => setShowAddRuleModal(false)}
-                className="px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-colors"
+                onClick={() => {
+                  setShowAddRuleModal(false);
+                  showToast('Rate limit rule added successfully!', 'success');
+                }}
+                className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                 style={{ backgroundColor: colors.primaryDark, color: colors.white }}
               >
                 Add Rule
@@ -1158,8 +1243,8 @@ const APISecurity = () => {
   // Security Report Modal
   const renderSecurityReportModal = () => (
     showSecurityReport && (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="border rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" style={{ 
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="border rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto" style={{ 
           borderColor: colors.modalBorder,
           backgroundColor: colors.modalBg
         }}>
@@ -1168,7 +1253,7 @@ const APISecurity = () => {
               <h3 className="text-lg font-semibold" style={{ color: colors.text }}>Security Report</h3>
               <button 
                 onClick={() => setShowSecurityReport(false)}
-                className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover }}
               >
                 <X size={20} style={{ color: colors.text }} />
@@ -1225,7 +1310,8 @@ const APISecurity = () => {
             
             <div className="flex items-center justify-end gap-3 mt-8">
               <button 
-                className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2"
+                onClick={() => showToast('Downloading security report...', 'info')}
+                className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift flex items-center gap-2"
                 style={{ backgroundColor: colors.hover, color: colors.text }}
               >
                 <Download size={14} />
@@ -1233,7 +1319,7 @@ const APISecurity = () => {
               </button>
               <button 
                 onClick={() => setShowSecurityReport(false)}
-                className="px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-colors"
+                className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                 style={{ backgroundColor: colors.primaryDark, color: colors.white }}
               >
                 Close
@@ -1245,37 +1331,230 @@ const APISecurity = () => {
     )
   );
 
-  // Add CSS for hover effects
-  const hoverStyles = `
-    .hover-lift {
-      transition: all 0.2s ease;
-    }
-    .hover-lift:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    }
-  `;
+  const renderToast = () => {
+    if (!toast) return null;
+    
+    const bgColor = toast.type === 'error' ? colors.error : 
+                   toast.type === 'success' ? colors.success : 
+                   toast.type === 'warning' ? colors.warning : 
+                   colors.info;
+    
+    return (
+      <div className="fixed bottom-4 right-4 px-4 py-2 rounded text-sm font-medium z-50 animate-fade-in-up"
+        style={{ 
+          backgroundColor: bgColor,
+          color: 'white'
+        }}>
+        {toast.message}
+      </div>
+    );
+  };
 
   return (
-    <>
-      <style>{hoverStyles}</style>
-      <div className="min-h-screen" style={{ backgroundColor: colors.bg }}>
+    <div className="flex flex-col h-screen overflow-hidden" style={{ 
+      backgroundColor: colors.bg,
+      color: colors.text,
+      fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+      fontSize: '13px'
+    }}>
+      <style>{`
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        
+        .animate-fade-in-up {
+          animation: fadeInUp 0.2s ease-out;
+        }
+        
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
+        
+        .text-blue-400 { color: #60a5fa; }
+        .text-green-400 { color: #34d399; }
+        .text-purple-400 { color: #a78bfa; }
+        .text-orange-400 { color: #fb923c; }
+        .text-red-400 { color: #f87171; }
+        .text-gray-500 { color: #9ca3af; }
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+          background: ${colors.border};
+          border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+          background: ${colors.textTertiary};
+          border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+          background: ${colors.textSecondary};
+        }
+        
+        .prose {
+          color: ${colors.textSecondary};
+          line-height: 1.6;
+        }
+        
+        .prose p {
+          margin-bottom: 1em;
+        }
+        
+        .prose strong {
+          color: ${colors.text};
+          font-weight: 600;
+        }
+        
+        code {
+          font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Segoe UI Mono', 'Roboto Mono', monospace;
+          font-size: 0.875em;
+        }
+        
+        /* Focus styles */
+        input:focus, button:focus, select:focus {
+          outline: 2px solid ${colors.primary}40;
+          outline-offset: 2px;
+        }
+        
+        /* Hover effects */
+        .hover-lift:hover {
+          transform: translateY(-2px);
+          transition: transform 0.2s ease;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        
+        .gradient-bg {
+          background: linear-gradient(135deg, ${colors.primary}20 0%, ${colors.info}20 100%);
+        }
+      `}</style>
 
-        <div className="flex">
-          {/* Sidebar */}
-          {renderSidebar()}
-          
-          {/* Main Content */}
-          <div className="flex-1 p-6 overflow-y-auto" style={{ backgroundColor: colors.main }}>
+      {/* TOP NAVIGATION */}
+      <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
+        backgroundColor: colors.header,
+        borderColor: colors.border
+      }}>
+
+        <div className="flex items-center gap-2"></div>
+
+        <div className="flex items-center gap-2">
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
+            <input 
+              type="text" 
+              placeholder="Search security rules, events..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8 pr-3 py-1.5 rounded text-sm focus:outline-none w-64 hover-lift"
+              style={{ 
+                backgroundColor: colors.inputBg, 
+                border: `1px solid ${colors.border}`, 
+                color: colors.text 
+              }} 
+            />
+            {searchQuery && (
+              <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                <button onClick={() => setSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                  style={{ backgroundColor: colors.hover }}>
+                  <X size={12} style={{ color: colors.textSecondary }} />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Settings */}
+          <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+            onClick={() => showToast('Opening settings', 'info')}
+            style={{ backgroundColor: colors.hover }}>
+            <Settings size={14} style={{ color: colors.textSecondary }} />
+          </button>
+        </div>
+      </div>
+
+      {/* MAIN CONTENT */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Sidebar */}
+        {renderSidebar()}
+
+        {/* Main Content Area */}
+        <div className="flex-1 overflow-auto p-6">
+          <div className="max-w-7xl mx-auto">
+            {/* Security Overview */}
+            <div className="mb-8">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h1 className="text-2xl font-semibold" style={{ color: colors.text }}>API Security Dashboard</h1>
+                  <p className="text-sm" style={{ color: colors.textSecondary }}>
+                    Monitor and manage security policies for your APIs
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
+                    onClick={() => showToast('Scanning for security issues...', 'info')}
+                    style={{ backgroundColor: colors.hover, color: colors.text }}>
+                    <ShieldCheck size={14} className="inline mr-2" />
+                    Run Scan
+                  </button>
+                  <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                    onClick={() => setShowSecurityReport(true)}
+                    style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
+                    Generate Report
+                  </button>
+                </div>
+              </div>
+
+              {/* Stats Overview */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                {[
+                  { label: 'Security Score', value: '92%', icon: <ShieldCheck size={20} />, color: colors.success, change: '+2%' },
+                  { label: 'Active Threats', value: '3', icon: <AlertTriangle size={20} />, color: colors.warning, change: '-1' },
+                  { label: 'Protected Endpoints', value: '42/45', icon: <Lock size={20} />, color: colors.info, change: '+3' },
+                  { label: 'Avg Response Time', value: '42ms', icon: <Activity size={20} />, color: colors.primary, change: '-5ms' }
+                ].map((stat, index) => (
+                  <div key={index} className="border rounded-lg p-4 hover-lift" style={{ 
+                    borderColor: colors.border,
+                    backgroundColor: colors.card
+                  }}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="p-2 rounded" style={{ backgroundColor: `${stat.color}20` }}>
+                        {React.cloneElement(stat.icon, { size: 16, style: { color: stat.color } })}
+                      </div>
+                      <span className={`text-xs ${stat.change.startsWith('+') || stat.change.includes('ms') ? 'text-green-500' : 'text-red-500'}`}>
+                        {stat.change}
+                      </span>
+                    </div>
+                    <div className="text-2xl font-bold mb-1" style={{ color: colors.text }}>{stat.value}</div>
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>{stat.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Main Content */}
             {renderMainContent()}
           </div>
         </div>
-        
-        {/* Modals */}
-        {renderAddRuleModal()}
-        {renderSecurityReportModal()}
       </div>
-    </>
+
+      {/* MODALS */}
+      {renderAddRuleModal()}
+      {renderSecurityReportModal()}
+
+      {/* TOAST */}
+      {renderToast()}
+    </div>
   );
 };
 
