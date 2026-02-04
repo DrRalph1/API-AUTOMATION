@@ -49,6 +49,19 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
     primaryLight: 'rgb(147 197 253)',
     primaryDark: 'rgb(37 99 235)',
     
+    // Method colors - EXACTLY matching Dashboard
+    method: {
+      GET: 'rgb(52 211 153)',
+      POST: 'rgb(96 165 250)',
+      PUT: 'rgb(251 191 36)',
+      DELETE: 'rgb(248 113 113)',
+      PATCH: 'rgb(167 139 250)',
+      HEAD: 'rgb(148 163 184)',
+      OPTIONS: 'rgb(167 139 250)',
+      LINK: 'rgb(34 211 238)',
+      UNLINK: 'rgb(251 191 36)'
+    },
+    
     // Status colors - EXACTLY matching Dashboard
     success: 'rgb(52 211 153)',
     warning: 'rgb(251 191 36)',
@@ -81,19 +94,6 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
     accentPink: 'rgb(244 114 182)',
     accentCyan: 'rgb(34 211 238)',
     
-    // Method colors - EXACTLY matching Dashboard
-    method: {
-      GET: 'rgb(52 211 153)',
-      POST: 'rgb(96 165 250)',
-      PUT: 'rgb(251 191 36)',
-      DELETE: 'rgb(248 113 113)',
-      PATCH: 'rgb(167 139 250)',
-      HEAD: 'rgb(148 163 184)',
-      OPTIONS: 'rgb(167 139 250)',
-      LINK: 'rgb(34 211 238)',
-      UNLINK: 'rgb(251 191 36)'
-    },
-    
     // Object type colors - using Dashboard's color palette
     objectType: {
       table: 'rgb(96 165 250)',      // primary color
@@ -113,7 +113,10 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
     gridRowEven: 'rgb(41 53 72 / 39%)',
     gridRowOdd: 'rgb(45 46 72 / 33%)',
     gridHeader: 'rgb(41 53 72 / 39%)',
-    gridBorder: 'rgb(51 65 85)'
+    gridBorder: 'rgb(51 65 85)',
+    
+    // Gradient - updated to match the new color scheme
+    gradient: 'from-blue-500/20 via-violet-500/20 to-orange-500/20'
   } : {
     // LIGHT MODE - EXACTLY matching Dashboard's light mode
     bg: '#f8fafc',
@@ -134,6 +137,19 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
     primary: '#1e293b',
     primaryLight: '#60a5fa',
     primaryDark: '#2563eb',
+    
+    // Method colors for light mode
+    method: {
+      GET: '#10b981',
+      POST: '#3b82f6',
+      PUT: '#f59e0b',
+      DELETE: '#ef4444',
+      PATCH: '#8b5cf6',
+      HEAD: '#6b7280',
+      OPTIONS: '#8b5cf6',
+      LINK: '#06b6d4',
+      UNLINK: '#f97316'
+    },
     
     // Status colors for light mode
     success: '#10b981',
@@ -167,19 +183,6 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
     accentPink: '#ec4899',
     accentCyan: '#06b6d4',
     
-    // Method colors for light mode
-    method: {
-      GET: '#10b981',
-      POST: '#3b82f6',
-      PUT: '#f59e0b',
-      DELETE: '#ef4444',
-      PATCH: '#8b5cf6',
-      HEAD: '#6b7280',
-      OPTIONS: '#8b5cf6',
-      LINK: '#06b6d4',
-      UNLINK: '#f97316'
-    },
-    
     // Object type colors for light mode
     objectType: {
       table: '#3b82f6',
@@ -199,7 +202,9 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
     gridRowEven: '#ffffff',
     gridRowOdd: '#f8fafc',
     gridHeader: '#f1f5f9',
-    gridBorder: '#e2e8f0'
+    gridBorder: '#e2e8f0',
+    
+    gradient: 'from-blue-400/20 via-violet-400/20 to-orange-400/20'
   };
 
   const [showApiModal, setShowApiModal] = useState(false);
