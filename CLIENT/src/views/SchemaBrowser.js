@@ -21,7 +21,7 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
 
   // Using EXACT Dashboard color system for consistency
   const colors = isDark ? {
-    // Using your shade as base
+    // Using your shade as base - EXACTLY matching Dashboard
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
     sidebar: 'rgb(41 53 72 / 39%)',
@@ -29,33 +29,33 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
     header: 'rgb(20 26 38)',
     card: 'rgb(41 53 72 / 39%)',
     
-    // Text - coordinating grays (EXACT from Dashboard)
+    // Text - coordinating grays - EXACTLY matching Dashboard
     text: '#F1F5F9',
     textSecondary: 'rgb(148 163 184)',
     textTertiary: 'rgb(100 116 139)',
     
-    // Borders - variations of your shade
+    // Borders - variations of your shade - EXACTLY matching Dashboard
     border: 'rgb(51 65 85)',
     borderLight: 'rgb(45 55 72)',
     borderDark: 'rgb(71 85 105)',
     
-    // Interactive - layered transparency
+    // Interactive - layered transparency - EXACTLY matching Dashboard
     hover: 'rgb(45 46 72 / 33%)',
     active: 'rgb(59 74 99)',
     selected: 'rgb(44 82 130)',
     
-    // Primary colors (EXACT from Dashboard)
+    // Primary colors - EXACTLY matching Dashboard
     primary: 'rgb(96 165 250)',
     primaryLight: 'rgb(147 197 253)',
     primaryDark: 'rgb(37 99 235)',
     
-    // Status colors (EXACT from Dashboard)
+    // Status colors - EXACTLY matching Dashboard
     success: 'rgb(52 211 153)',
     warning: 'rgb(251 191 36)',
     error: 'rgb(248 113 113)',
     info: 'rgb(96 165 250)',
     
-    // UI Components (EXACT from Dashboard)
+    // UI Components - EXACTLY matching Dashboard
     tabActive: 'rgb(96 165 250)',
     tabInactive: 'rgb(148 163 184)',
     sidebarActive: 'rgb(96 165 250)',
@@ -71,33 +71,51 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
     modalBorder: 'rgb(51 65 85)',
     codeBg: 'rgb(41 53 72 / 39%)',
     
-    // Connection status (EXACT from Dashboard)
+    // Connection status - EXACTLY matching Dashboard
     connectionOnline: 'rgb(52 211 153)',
     connectionOffline: 'rgb(248 113 113)',
     connectionIdle: 'rgb(251 191 36)',
     
-    // Object type colors - updated to match Dashboard's aesthetic
-    objectType: {
-      table: 'rgb(96 165 250)',      // Blue - matches primary
-      view: 'rgb(52 211 153)',       // Green - matches success
-      procedure: 'rgb(167 139 250)', // Purple - using Dashboard's accentPurple
-      function: 'rgb(251 191 36)',   // Orange - matches warning
-      package: 'rgb(148 163 184)',   // Gray - matches textSecondary
-      sequence: 'rgb(100 116 139)',  // Dark blue gray - matches textTertiary
-      synonym: 'rgb(34 211 238)',    // Teal - using Dashboard's accentCyan
-      type: 'rgb(139 92 246)',       // Indigo purple
-      trigger: 'rgb(244 114 182)',   // Pink - using Dashboard's accentPink
-      index: 'rgb(16 185 129)',      // Teal green
-      constraint: 'rgb(248 113 113)' // Red - matches error
+    // Accent colors - EXACTLY matching Dashboard
+    accentPurple: 'rgb(167 139 250)',
+    accentPink: 'rgb(244 114 182)',
+    accentCyan: 'rgb(34 211 238)',
+    
+    // Method colors - EXACTLY matching Dashboard
+    method: {
+      GET: 'rgb(52 211 153)',
+      POST: 'rgb(96 165 250)',
+      PUT: 'rgb(251 191 36)',
+      DELETE: 'rgb(248 113 113)',
+      PATCH: 'rgb(167 139 250)',
+      HEAD: 'rgb(148 163 184)',
+      OPTIONS: 'rgb(167 139 250)',
+      LINK: 'rgb(34 211 238)',
+      UNLINK: 'rgb(251 191 36)'
     },
     
-    // Grid colors for tables (matching Dashboard's structure)
+    // Object type colors - using Dashboard's color palette
+    objectType: {
+      table: 'rgb(96 165 250)',      // primary color
+      view: 'rgb(52 211 153)',       // success color
+      procedure: 'rgb(167 139 250)', // accentPurple
+      function: 'rgb(251 191 36)',   // warning color
+      package: 'rgb(148 163 184)',   // textSecondary
+      sequence: 'rgb(100 116 139)',  // textTertiary
+      synonym: 'rgb(34 211 238)',    // accentCyan
+      type: 'rgb(139 92 246)',       // purple variant
+      trigger: 'rgb(244 114 182)',   // accentPink
+      index: 'rgb(16 185 129)',      // teal green
+      constraint: 'rgb(248 113 113)' // error color
+    },
+    
+    // Grid colors for tables - matching Dashboard's structure
     gridRowEven: 'rgb(41 53 72 / 39%)',
     gridRowOdd: 'rgb(45 46 72 / 33%)',
     gridHeader: 'rgb(41 53 72 / 39%)',
     gridBorder: 'rgb(51 65 85)'
   } : {
-    // KEEP THE ORIGINAL LIGHT MODE (EXACT from Dashboard)
+    // LIGHT MODE - EXACTLY matching Dashboard's light mode
     bg: '#f8fafc',
     white: '#f8fafc',
     sidebar: '#ffffff',
@@ -116,10 +134,14 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
     primary: '#1e293b',
     primaryLight: '#60a5fa',
     primaryDark: '#2563eb',
+    
+    // Status colors for light mode
     success: '#10b981',
     warning: '#f59e0b',
     error: '#ef4444',
     info: '#3b82f6',
+    
+    // UI Components for light mode
     tabActive: '#3b82f6',
     tabInactive: '#64748b',
     sidebarActive: '#3b82f6',
@@ -134,9 +156,31 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
     modalBg: '#ffffff',
     modalBorder: '#e2e8f0',
     codeBg: '#f1f5f9',
+    
+    // Connection status for light mode
     connectionOnline: '#10b981',
     connectionOffline: '#ef4444',
     connectionIdle: '#f59e0b',
+    
+    // Accent colors for light mode
+    accentPurple: '#8b5cf6',
+    accentPink: '#ec4899',
+    accentCyan: '#06b6d4',
+    
+    // Method colors for light mode
+    method: {
+      GET: '#10b981',
+      POST: '#3b82f6',
+      PUT: '#f59e0b',
+      DELETE: '#ef4444',
+      PATCH: '#8b5cf6',
+      HEAD: '#6b7280',
+      OPTIONS: '#8b5cf6',
+      LINK: '#06b6d4',
+      UNLINK: '#f97316'
+    },
+    
+    // Object type colors for light mode
     objectType: {
       table: '#3b82f6',
       view: '#10b981',
@@ -150,6 +194,8 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
       index: '#0d9488',
       constraint: '#ef4444'
     },
+    
+    // Grid colors for light mode
     gridRowEven: '#ffffff',
     gridRowOdd: '#f8fafc',
     gridHeader: '#f1f5f9',
@@ -1580,7 +1626,7 @@ END BIU_EMPLOYEES;`
           </div>
           <select className="w-full px-3 py-2 rounded text-sm focus:outline-none hover-lift"
             style={{ 
-              backgroundColor: colors.inputBg,
+              backgroundColor: colors.border,
               border: `1px solid ${colors.inputBorder}`,
               color: colors.text
             }}>

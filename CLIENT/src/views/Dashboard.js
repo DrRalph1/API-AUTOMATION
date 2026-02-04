@@ -158,7 +158,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme }) => {
 
   // Pagination for recent activities
   const [activityPage, setActivityPage] = useState(1);
-  const [activitiesPerPage, setActivitiesPerPage] = useState(4);
+  const [activitiesPerPage, setActivitiesPerPage] = useState(6);
 
   // Mobile state
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -676,34 +676,34 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme }) => {
         color: colors.success,
         icon: <Code size={14} />
       },
-      { 
-        name: 'Database Objects', 
-        items: [
-          { 
-            key: 'triggers', 
-            value: schemaData.triggers, 
-            icon: <Zap size={12} />,
-            change: schemaData.triggerChange || 0,
-            description: 'Event-driven actions'
-          },
-          { 
-            key: 'indexes', 
-            value: schemaData.indexes, 
-            icon: <BarChart3 size={12} />,
-            change: schemaData.indexChange || 0,
-            description: 'Query performance'
-          },
-          { 
-            key: 'sequences', 
-            value: schemaData.sequences || 0, 
-            icon: <TrendingUp size={12} />,
-            change: schemaData.sequenceChange || 0,
-            description: 'Auto-increment values'
-          }
-        ],
-        color: colors.warning,
-        icon: <Database size={14} />
-      }
+      // { 
+      //   name: 'Database Objects', 
+      //   items: [
+      //     { 
+      //       key: 'triggers', 
+      //       value: schemaData.triggers, 
+      //       icon: <Zap size={12} />,
+      //       change: schemaData.triggerChange || 0,
+      //       description: 'Event-driven actions'
+      //     },
+      //     { 
+      //       key: 'indexes', 
+      //       value: schemaData.indexes, 
+      //       icon: <BarChart3 size={12} />,
+      //       change: schemaData.indexChange || 0,
+      //       description: 'Query performance'
+      //     },
+      //     { 
+      //       key: 'sequences', 
+      //       value: schemaData.sequences || 0, 
+      //       icon: <TrendingUp size={12} />,
+      //       change: schemaData.sequenceChange || 0,
+      //       description: 'Auto-increment values'
+      //     }
+      //   ],
+      //   color: colors.warning,
+      //   icon: <Database size={14} />
+      // }
     ];
 
     return (
@@ -752,7 +752,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme }) => {
         </div>
 
         {/* Category Overview Bar */}
-        <div className="mb-6">
+        {/* <div className="mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
             <span className="text-xs font-medium" style={{ color: colors.text }}>
               Object Distribution
@@ -781,7 +781,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme }) => {
               />
             ))}
           </div>
-        </div>
+        </div> */}
 
         {/* Schema categories with enhanced details */}
         <div className="space-y-4">
@@ -1235,11 +1235,6 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme }) => {
           {/* Main Grid - Use flex for better height distribution */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 min-h-[calc(100vh-200px)]">
             {/* Left Column - Schema Statistics */}
-            <div className="flex flex-col">
-              <SchemaStatsCard />
-            </div>
-
-            {/* Right Column - Connections and Activity */}
             <div className="flex flex-col gap-4 md:gap-6">
               {/* Active Connections */}
               <div className="border rounded-xl" style={{ 
@@ -1270,8 +1265,12 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme }) => {
                   </div>
                 </div>
               </div>
+             <SchemaStatsCard />
+            </div>
 
-              {/* Recent Activity */}
+            {/* Right Column - Connections and Activity */}
+            <div className="flex flex-col gap-4 md:gap-6">
+               {/* Recent Activity */}
               <div className="border rounded-xl flex flex-col" style={{ 
                 borderColor: colors.border,
                 backgroundColor: colors.card
@@ -1299,7 +1298,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme }) => {
                     </div>
                   </div>
                 </div>
-                <div className="flex-1 overflow-auto min-h-0">
+                <div className="flex-1 overflow-auto min-h-0 space-y-3">
                   {paginatedActivities.map(activity => (
                     <ActivityItem key={activity.id} activity={activity} />
                   ))}

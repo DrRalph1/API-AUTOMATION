@@ -1493,7 +1493,7 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme }) => {
               placeholder="Search security rules, events..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 pr-3 py-1.5 rounded text-sm focus:outline-none w-64 hover-lift"
+              className="pl-8 pr-3 py-1.5 rounded text-xs focus:outline-none w-64 hover-lift"
               style={{ 
                 backgroundColor: colors.inputBg, 
                 border: `1px solid ${colors.border}`, 

@@ -5,8 +5,409 @@ import {
   Settings, Database, Map, FileJson, TestTube, Wrench, 
   RefreshCw, Eye, EyeOff, Download, Upload, Play, Key, 
   Shield, Hash, Calendar, Clock, Type, List, Link, ExternalLink,
-  Check, AlertCircle, Star, Zap, Terminal, Package
+  Check, AlertCircle, Star, Zap, Terminal, Package,
+  CheckCircle, ChevronRight, Info, Layers, Cpu, Sparkles
 } from 'lucide-react';
+
+// New component for the confirmation modal
+function ApiConfirmationModal({ 
+  isOpen, 
+  onClose, 
+  apiData,
+  colors = {},
+  theme = 'dark' 
+}) {
+  const themeColors = colors || {
+    bg: theme === 'dark' ? 'rgb(1 14 35)' : '#f8fafc',
+    text: theme === 'dark' ? '#E8ECF1' : '#1e293b',
+    textSecondary: theme === 'dark' ? 'rgb(168 178 192)' : '#64748b',
+    border: theme === 'dark' ? 'rgb(61 73 92)' : '#e2e8f0',
+    hover: theme === 'dark' ? 'rgb(51 63 82)' : '#f1f5f9',
+    primary: theme === 'dark' ? '#E8ECF1' : '#1e293b',
+    primaryDark: theme === 'dark' ? 'rgb(37 99 235)' : '#2563eb',
+    card: theme === 'dark' ? '#010e23' : '#ffffff',
+    modalBg: theme === 'dark' ? '#010e23' : '#ffffff',
+    modalBorder: theme === 'dark' ? 'rgb(61 73 92)' : '#e2e8f0',
+    error: theme === 'dark' ? 'rgb(239 68 68)' : '#ef4444',
+    success: theme === 'dark' ? 'rgb(16 185 129)' : '#10b981',
+    warning: theme === 'dark' ? 'rgb(245 158 11)' : '#f59e0b',
+    info: theme === 'dark' ? 'rgb(59 130 246)' : '#3b82f6',
+  };
+
+  if (!isOpen || !apiData) return null;
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleString();
+  };
+
+  const copyApiDetails = () => {
+    navigator.clipboard.writeText(JSON.stringify(apiData, null, 2));
+    // You can add a toast notification here
+  };
+
+  const downloadApiDetails = () => {
+    const blob = new Blob([JSON.stringify(apiData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${apiData.apiCode || 'api'}_configuration.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" style={{ zIndex: 1001 }}>
+      <div className="rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" style={{ 
+        backgroundColor: themeColors.modalBg,
+        border: `1px solid ${themeColors.modalBorder}`
+      }}>
+        {/* Header */}
+        <div className="px-6 py-4 border-b flex items-center justify-between" style={{ 
+          borderColor: themeColors.border,
+          backgroundColor: themeColors.card
+        }}>
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg" style={{ backgroundColor: themeColors.success + '20' }}>
+              <CheckCircle className="h-6 w-6" style={{ color: themeColors.success }} />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold" style={{ color: themeColors.text }}>
+                API Generated Successfully!
+              </h2>
+              <p className="text-sm" style={{ color: themeColors.textSecondary }}>
+                Your API has been created and is ready to use
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg transition-colors hover-lift"
+            style={{ backgroundColor: themeColors.hover, color: themeColors.textSecondary }}
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="space-y-6">
+            {/* API Summary */}
+            <div className="p-4 rounded-lg border" style={{ 
+              borderColor: themeColors.success + '40',
+              backgroundColor: themeColors.success + '10'
+            }}>
+              <div className="flex items-start justify-between">
+                <div className="space-y-2">
+                  <h3 className="font-semibold flex items-center gap-2" style={{ color: themeColors.success }}>
+                    <Sparkles className="h-5 w-5" />
+                    {apiData.apiName}
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span style={{ color: themeColors.textSecondary }}>API Code:</span>
+                      <span className="ml-2 font-medium font-mono" style={{ color: themeColors.text }}>
+                        {apiData.apiCode}
+                      </span>
+                    </div>
+                    <div>
+                      <span style={{ color: themeColors.textSecondary }}>Version:</span>
+                      <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                        {apiData.version}
+                      </span>
+                    </div>
+                    <div>
+                      <span style={{ color: themeColors.textSecondary }}>Status:</span>
+                      <span className="ml-2 px-2 py-1 rounded text-xs font-medium" style={{ 
+                        backgroundColor: apiData.status === 'ACTIVE' ? themeColors.success + '30' : 
+                                       apiData.status === 'DRAFT' ? themeColors.warning + '30' : 
+                                       themeColors.error + '30',
+                        color: apiData.status === 'ACTIVE' ? themeColors.success : 
+                               apiData.status === 'DRAFT' ? themeColors.warning : 
+                               themeColors.error
+                      }}>
+                        {apiData.status}
+                      </span>
+                    </div>
+                    <div>
+                      <span style={{ color: themeColors.textSecondary }}>Created:</span>
+                      <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                        {formatDate(apiData.createdAt)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium" style={{ 
+                    backgroundColor: themeColors.info + '20',
+                    color: themeColors.info
+                  }}>
+                    <Globe className="h-4 w-4 mr-1" />
+                    API Endpoint
+                  </div>
+                  <div className="mt-2 font-mono text-sm" style={{ color: themeColors.text }}>
+                    {apiData.httpMethod} {apiData.basePath}{apiData.endpointPath}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Generated Files */}
+            <div className="space-y-4">
+              <h4 className="font-semibold flex items-center gap-2" style={{ color: themeColors.text }}>
+                <Layers className="h-5 w-5" />
+                Generated Files
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="p-4 rounded-lg border" style={{ 
+                  borderColor: themeColors.border,
+                  backgroundColor: themeColors.card
+                }}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="p-2 rounded-lg" style={{ backgroundColor: themeColors.info + '20' }}>
+                      <Code className="h-5 w-5" style={{ color: themeColors.info }} />
+                    </div>
+                    <div>
+                      <h5 className="font-medium" style={{ color: themeColors.text }}>PL/SQL Package</h5>
+                      <p className="text-xs" style={{ color: themeColors.textSecondary }}>Oracle Database</p>
+                    </div>
+                  </div>
+                  <div className="text-xs font-mono p-2 rounded border" style={{ 
+                    backgroundColor: themeColors.hover,
+                    borderColor: themeColors.border,
+                    color: themeColors.textSecondary
+                  }}>
+                    {apiData.schemaConfig.schemaName}_{apiData.apiCode}_PKG.sql
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-lg border" style={{ 
+                  borderColor: themeColors.border,
+                  backgroundColor: themeColors.card
+                }}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="p-2 rounded-lg" style={{ backgroundColor: themeColors.success + '20' }}>
+                      <FileJson className="h-5 w-5" style={{ color: themeColors.success }} />
+                    </div>
+                    <div>
+                      <h5 className="font-medium" style={{ color: themeColors.text }}>OpenAPI Spec</h5>
+                      <p className="text-xs" style={{ color: themeColors.textSecondary }}>API Documentation</p>
+                    </div>
+                  </div>
+                  <div className="text-xs font-mono p-2 rounded border" style={{ 
+                    backgroundColor: themeColors.hover,
+                    borderColor: themeColors.border,
+                    color: themeColors.textSecondary
+                  }}>
+                    {apiData.apiCode}_openapi.json
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-lg border" style={{ 
+                  borderColor: themeColors.border,
+                  backgroundColor: themeColors.card
+                }}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="p-2 rounded-lg" style={{ backgroundColor: themeColors.warning + '20' }}>
+                      <Database className="h-5 w-5" style={{ color: themeColors.warning }} />
+                    </div>
+                    <div>
+                      <h5 className="font-medium" style={{ color: themeColors.text }}>Postman Collection</h5>
+                      <p className="text-xs" style={{ color: themeColors.textSecondary }}>API Testing</p>
+                    </div>
+                  </div>
+                  <div className="text-xs font-mono p-2 rounded border" style={{ 
+                    backgroundColor: themeColors.hover,
+                    borderColor: themeColors.border,
+                    color: themeColors.textSecondary
+                  }}>
+                    {apiData.apiCode}_postman.json
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Source Object Information */}
+            <div className="space-y-4">
+              <h4 className="font-semibold flex items-center gap-2" style={{ color: themeColors.text }}>
+                <Database className="h-5 w-5" />
+                Source Object
+              </h4>
+              <div className="p-4 rounded-lg border" style={{ 
+                borderColor: themeColors.border,
+                backgroundColor: themeColors.card
+              }}>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <span style={{ color: themeColors.textSecondary }}>Schema:</span>
+                    <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                      {apiData.sourceObject?.owner || apiData.schemaConfig.schemaName}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: themeColors.textSecondary }}>Object:</span>
+                    <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                      {apiData.sourceObject?.name || apiData.schemaConfig.objectName}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: themeColors.textSecondary }}>Type:</span>
+                    <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                      {apiData.sourceObject?.type || apiData.schemaConfig.objectType}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: themeColors.textSecondary }}>Operation:</span>
+                    <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                      {apiData.schemaConfig.operation}
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span style={{ color: themeColors.textSecondary }}>Parameters:</span>
+                    <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                      {apiData.parameters?.length || 0}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: themeColors.textSecondary }}>Response Fields:</span>
+                    <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                      {apiData.responseMappings?.length || 0}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Next Steps */}
+            <div className="space-y-4">
+              <h4 className="font-semibold flex items-center gap-2" style={{ color: themeColors.text }}>
+                <ChevronRight className="h-5 w-5" />
+                Next Steps
+              </h4>
+              <div className="p-4 rounded-lg border" style={{ 
+                borderColor: themeColors.border,
+                backgroundColor: themeColors.card
+              }}>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-1.5 rounded-full" style={{ backgroundColor: themeColors.info + '20' }}>
+                      <div className="w-6 h-6 flex items-center justify-center rounded-full" style={{ 
+                        backgroundColor: themeColors.info,
+                        color: themeColors.white
+                      }}>
+                        1
+                      </div>
+                    </div>
+                    <div>
+                      <h5 className="font-medium" style={{ color: themeColors.text }}>Execute PL/SQL Package</h5>
+                      <p className="text-sm" style={{ color: themeColors.textSecondary }}>
+                        Run the generated SQL script in your Oracle Database
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-3">
+                    <div className="p-1.5 rounded-full" style={{ backgroundColor: themeColors.info + '20' }}>
+                      <div className="w-6 h-6 flex items-center justify-center rounded-full" style={{ 
+                        backgroundColor: themeColors.info,
+                        color: themeColors.white
+                      }}>
+                        2
+                      </div>
+                    </div>
+                    <div>
+                      <h5 className="font-medium" style={{ color: themeColors.text }}>Configure API Gateway</h5>
+                      <p className="text-sm" style={{ color: themeColors.textSecondary }}>
+                        Deploy the OpenAPI spec to your API Gateway
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-3">
+                    <div className="p-1.5 rounded-full" style={{ backgroundColor: themeColors.info + '20' }}>
+                      <div className="w-6 h-6 flex items-center justify-center rounded-full" style={{ 
+                        backgroundColor: themeColors.info,
+                        color: themeColors.white
+                      }}>
+                        3
+                      </div>
+                    </div>
+                    <div>
+                      <h5 className="font-medium" style={{ color: themeColors.text }}>Test with Postman</h5>
+                      <p className="text-sm" style={{ color: themeColors.textSecondary }}>
+                        Import and test the API using the generated Postman collection
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4" style={{ 
+          borderColor: themeColors.border,
+          backgroundColor: themeColors.card
+        }}>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={copyApiDetails}
+              className="px-3 py-2 border rounded-lg flex items-center gap-2 transition-colors hover-lift"
+              style={{ 
+                backgroundColor: themeColors.hover,
+                borderColor: themeColors.border,
+                color: themeColors.text
+              }}
+            >
+              <Copy className="h-4 w-4" />
+              Copy Details
+            </button>
+            <button
+              onClick={downloadApiDetails}
+              className="px-3 py-2 border rounded-lg flex items-center gap-2 transition-colors hover-lift"
+              style={{ 
+                backgroundColor: themeColors.info,
+                borderColor: themeColors.info,
+                color: themeColors.white
+              }}
+            >
+              <Download className="h-4 w-4" />
+              Download Configuration
+            </button>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 border rounded-lg transition-colors hover-lift"
+              style={{ 
+                backgroundColor: themeColors.hover,
+                borderColor: themeColors.border,
+                color: themeColors.text
+              }}
+            >
+              Close
+            </button>
+            <button
+              onClick={() => {
+                // You can add functionality to deploy/test the API
+                onClose();
+              }}
+              className="px-4 py-2 rounded-lg flex items-center gap-2 transition-colors hover-lift"
+              style={{ backgroundColor: themeColors.success, color: themeColors.white }}
+            >
+              <Cpu className="h-4 w-4" />
+              Deploy API
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function ApiGenerationModal({
   isOpen,
@@ -239,6 +640,10 @@ export default function ApiGenerationModal({
 
   const [generatedCode, setGeneratedCode] = useState('');
   const [previewMode, setPreviewMode] = useState('json');
+
+  // State for confirmation modal
+  const [confirmationOpen, setConfirmationOpen] = useState(false);
+  const [newApiData, setNewApiData] = useState(null);
 
   // Tab definitions
   const tabs = [
@@ -674,29 +1079,25 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
       }
     };
     
+    // Save the generated data first
+    setNewApiData(apiData);
+    
+    // Call the parent onSave if provided
     if (onSave) {
       onSave(apiData);
     }
-    onClose();
+    
+    // Show the confirmation modal
+    setConfirmationOpen(true);
+    
+    // Don't close the generation modal yet, let user see confirmation
+    // The user will close it from the confirmation modal
   };
 
-  // Copy generated code to clipboard
-  const copyGeneratedCode = () => {
-    navigator.clipboard.writeText(generatedCode);
-    // You can add a toast notification here
-  };
-
-  // Download generated code
-  const downloadGeneratedCode = () => {
-    const blob = new Blob([generatedCode], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${apiDetails.apiCode || 'api'}_${previewMode}.${previewMode === 'json' ? 'json' : 'sql'}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  // Handle confirmation modal close
+  const handleConfirmationClose = () => {
+    setConfirmationOpen(false);
+    onClose(); // Close the generation modal too
   };
 
   if (!isOpen) return null;
@@ -720,1010 +1121,1021 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" style={{ zIndex: 1000 }}>
-      <div className="rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col" style={{ 
-        backgroundColor: themeColors.modalBg,
-        border: `1px solid ${themeColors.modalBorder}`
-      }}>
-        {/* Header */}
-        <div className="px-6 py-4 border-b flex items-center justify-between" style={{ 
-          borderColor: themeColors.border,
-          backgroundColor: themeColors.card
+    <>
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" style={{ zIndex: 1000 }}>
+        <div className="rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col" style={{ 
+          backgroundColor: themeColors.modalBg,
+          border: `1px solid ${themeColors.modalBorder}`
         }}>
-          <div className="flex items-center gap-3">
-            {selectedObject?.type === 'TABLE' ? <Database className="h-6 w-6" style={{ color: themeColors.info }} /> :
-             selectedObject?.type === 'VIEW' ? <FileText className="h-6 w-6" style={{ color: themeColors.success }} /> :
-             selectedObject?.type === 'PROCEDURE' ? <Terminal className="h-6 w-6" style={{ color: themeColors.info }} /> :
-             selectedObject?.type === 'FUNCTION' ? <Code className="h-6 w-6" style={{ color: themeColors.warning }} /> :
-             selectedObject?.type === 'PACKAGE' ? <Package className="h-6 w-6" style={{ color: themeColors.textSecondary }} /> :
-             selectedObject?.type === 'TRIGGER' ? <Zap className="h-6 w-6" style={{ color: themeColors.error }} /> :
-             <Globe className="h-6 w-6" style={{ color: themeColors.info }} />}
-            <div>
-              <h2 className="text-xl font-bold" style={{ color: themeColors.text }}>
-                Generate API from {selectedObject?.type || 'Object'}: {selectedObject?.name || ''}
-              </h2>
-              <p className="text-sm" style={{ color: themeColors.textSecondary }}>
-                {selectedObject?.owner}.{selectedObject?.name} • {selectedObject?.type} • 
-                {selectedObject?.columns ? ` ${selectedObject.columns.length} columns` : ''}
-                {selectedObject?.parameters ? ` ${selectedObject.parameters.length} parameters` : ''}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg transition-colors hover-lift"
-              style={{ backgroundColor: themeColors.hover, color: themeColors.textSecondary }}
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* API Details Section */}
-        <div className="px-6 py-4 border-b" style={{ 
-          borderColor: themeColors.border,
-          backgroundColor: themeColors.modalBg
-        }}>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                API Name *
-              </label>
-              <input
-                type="text"
-                value={apiDetails.apiName}
-                onChange={(e) => handleApiDetailChange('apiName', e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
-                style={{ 
-                  backgroundColor: themeColors.card,
-                  borderColor: themeColors.border,
-                  color: themeColors.text
-                }}
-                placeholder="Users API"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                API Code *
-              </label>
-              <input
-                type="text"
-                value={apiDetails.apiCode}
-                onChange={(e) => handleApiDetailChange('apiCode', e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
-                style={{ 
-                  backgroundColor: themeColors.card,
-                  borderColor: themeColors.border,
-                  color: themeColors.text
-                }}
-                placeholder="GET_USERS"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                HTTP Method
-              </label>
-              <select
-                value={apiDetails.httpMethod}
-                onChange={(e) => handleApiDetailChange('httpMethod', e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
-                style={{ 
-                  backgroundColor: themeColors.card,
-                  borderColor: themeColors.border,
-                  color: themeColors.text
-                }}
-              >
-                <option value="GET">GET</option>
-                <option value="POST">POST</option>
-                <option value="PUT">PUT</option>
-                <option value="DELETE">DELETE</option>
-                <option value="PATCH">PATCH</option>
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                Status
-              </label>
-              <select
-                value={apiDetails.status}
-                onChange={(e) => handleApiDetailChange('status', e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
-                style={{ 
-                  backgroundColor: themeColors.card,
-                  borderColor: themeColors.border,
-                  color: themeColors.text
-                }}
-              >
-                <option value="DRAFT">Draft</option>
-                <option value="ACTIVE">Active</option>
-                <option value="DEPRECATED">Deprecated</option>
-                <option value="ARCHIVED">Archived</option>
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                Base Path
-              </label>
-              <input
-                type="text"
-                value={apiDetails.basePath}
-                onChange={(e) => handleApiDetailChange('basePath', e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
-                style={{ 
-                  backgroundColor: themeColors.card,
-                  borderColor: themeColors.border,
-                  color: themeColors.text
-                }}
-                placeholder="/api/v1"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                Endpoint Path *
-              </label>
-              <input
-                type="text"
-                value={apiDetails.endpointPath}
-                onChange={(e) => handleApiDetailChange('endpointPath', e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
-                style={{ 
-                  backgroundColor: themeColors.card,
-                  borderColor: themeColors.border,
-                  color: themeColors.text
-                }}
-                placeholder="/users"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                Version
-              </label>
-              <input
-                type="text"
-                value={apiDetails.version}
-                onChange={(e) => handleApiDetailChange('version', e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
-                style={{ 
-                  backgroundColor: themeColors.card,
-                  borderColor: themeColors.border,
-                  color: themeColors.text
-                }}
-                placeholder="1.0.0"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                Owner
-              </label>
-              <input
-                type="text"
-                value={apiDetails.owner}
-                onChange={(e) => handleApiDetailChange('owner', e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
-                style={{ 
-                  backgroundColor: themeColors.card,
-                  borderColor: themeColors.border,
-                  color: themeColors.text
-                }}
-                placeholder="HR"
-                disabled
-              />
-            </div>
-
-            <div className="space-y-2 md:col-span-2 lg:col-span-4">
-              <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                Description
-              </label>
-              <textarea
-                value={apiDetails.description}
-                onChange={(e) => handleApiDetailChange('description', e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
-                style={{ 
-                  backgroundColor: themeColors.card,
-                  borderColor: themeColors.border,
-                  color: themeColors.text
-                }}
-                rows="2"
-                placeholder="API description..."
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="border-b" style={{ 
-          borderColor: themeColors.border,
-          backgroundColor: themeColors.card
-        }}>
-          <div className="px-6 flex space-x-1 overflow-x-auto">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-3 py-2 flex items-center gap-2 border-b-2 text-sm font-medium transition-colors whitespace-nowrap hover-lift ${
-                  activeTab === tab.id
-                    ? '' : 'hover:bg-opacity-50'
-                }`}
-                style={{ 
-                  borderBottomColor: activeTab === tab.id ? themeColors.info : 'transparent',
-                  color: activeTab === tab.id ? themeColors.info : themeColors.textSecondary,
-                  backgroundColor: 'transparent'
-                }}
-              >
-                {tab.icon}
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Tab Content */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="p-4 md:p-6">
-            {/* Definition Tab */}
-            {activeTab === 'definition' && (
-              <div className="space-y-6">
-                <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                  API Definition
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                        Category
-                      </label>
-                      <select
-                        value={apiDetails.category}
-                        onChange={(e) => handleApiDetailChange('category', e.target.value)}
-                        className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
-                        style={{ 
-                          backgroundColor: themeColors.card,
-                          borderColor: themeColors.border,
-                          color: themeColors.text
-                        }}
-                      >
-                        <option value="general">General</option>
-                        <option value="data">Data Access</option>
-                        <option value="admin">Administrative</option>
-                        <option value="report">Reporting</option>
-                        <option value="integration">Integration</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                        Tags
-                      </label>
-                      <input
-                        type="text"
-                        value={apiDetails.tags.join(', ')}
-                        onChange={(e) => handleApiDetailChange('tags', e.target.value.split(',').map(tag => tag.trim()))}
-                        className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
-                        style={{ 
-                          backgroundColor: themeColors.card,
-                          borderColor: themeColors.border,
-                          color: themeColors.text
-                        }}
-                        placeholder="users, data, public"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="p-4 rounded-lg border" style={{ 
-                    borderColor: themeColors.info + '40',
-                    backgroundColor: themeColors.info + '10'
-                  }}>
-                    <h4 className="font-medium mb-2 flex items-center gap-2" style={{ color: themeColors.info }}>
-                      <Globe className="h-4 w-4" />
-                      API Endpoint Preview
-                    </h4>
-                    <div className="font-mono text-sm p-3 rounded border" style={{ 
-                      backgroundColor: themeColors.card,
-                      borderColor: themeColors.border
-                    }}>
-                      <div style={{ color: themeColors.textSecondary }}>
-                        {apiDetails.httpMethod} {apiDetails.basePath}{apiDetails.endpointPath}
-                      </div>
-                      {parameters.filter(p => p.parameterType === 'path').length > 0 && (
-                        <div className="mt-2 text-sm" style={{ color: themeColors.textTertiary }}>
-                          Path Parameters: {parameters.filter(p => p.parameterType === 'path').map(p => `{${p.key}}`).join('/')}
-                        </div>
-                      )}
-                      <div className="mt-2 text-sm" style={{ color: themeColors.textTertiary }}>
-                        Source: {schemaConfig.schemaName}.{schemaConfig.objectName} ({schemaConfig.objectType})
-                      </div>
-                    </div>
-                  </div>
-                </div>
+          {/* Header */}
+          <div className="px-6 py-4 border-b flex items-center justify-between" style={{ 
+            borderColor: themeColors.border,
+            backgroundColor: themeColors.card
+          }}>
+            <div className="flex items-center gap-3">
+              {selectedObject?.type === 'TABLE' ? <Database className="h-6 w-6" style={{ color: themeColors.info }} /> :
+               selectedObject?.type === 'VIEW' ? <FileText className="h-6 w-6" style={{ color: themeColors.success }} /> :
+               selectedObject?.type === 'PROCEDURE' ? <Terminal className="h-6 w-6" style={{ color: themeColors.info }} /> :
+               selectedObject?.type === 'FUNCTION' ? <Code className="h-6 w-6" style={{ color: themeColors.warning }} /> :
+               selectedObject?.type === 'PACKAGE' ? <Package className="h-6 w-6" style={{ color: themeColors.textSecondary }} /> :
+               selectedObject?.type === 'TRIGGER' ? <Zap className="h-6 w-6" style={{ color: themeColors.error }} /> :
+               <Globe className="h-6 w-6" style={{ color: themeColors.info }} />}
+              <div>
+                <h2 className="text-xl font-bold" style={{ color: themeColors.text }}>
+                  Generate API from {selectedObject?.type || 'Object'}: {selectedObject?.name || ''}
+                </h2>
+                <p className="text-sm" style={{ color: themeColors.textSecondary }}>
+                  {selectedObject?.owner}.{selectedObject?.name} • {selectedObject?.type} • 
+                  {selectedObject?.columns ? ` ${selectedObject.columns.length} columns` : ''}
+                  {selectedObject?.parameters ? ` ${selectedObject.parameters.length} parameters` : ''}
+                </p>
               </div>
-            )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onClose}
+                className="p-2 rounded-lg transition-colors hover-lift"
+                style={{ backgroundColor: themeColors.hover, color: themeColors.textSecondary }}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
 
-            {/* Schema Tab */}
-            {activeTab === 'schema' && (
-              <div className="space-y-6">
-                <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                  Oracle Schema Configuration
-                </h3>
+          {/* API Details Section */}
+          <div className="px-6 py-4 border-b" style={{ 
+            borderColor: themeColors.border,
+            backgroundColor: themeColors.modalBg
+          }}>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                  API Name *
+                </label>
+                <input
+                  type="text"
+                  value={apiDetails.apiName}
+                  onChange={(e) => handleApiDetailChange('apiName', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="Users API"
+                />
+              </div>
 
-                <div className="mb-4 p-4 rounded-lg border" style={{ 
-                  borderColor: themeColors.info + '40',
-                  backgroundColor: themeColors.info + '10'
-                }}>
-                  <h4 className="font-medium mb-2 flex items-center gap-2" style={{ color: themeColors.info }}>
-                    <Database className="h-4 w-4" />
-                    Selected Object Information
-                  </h4>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span style={{ color: themeColors.textSecondary }}>Object:</span>
-                      <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                        {selectedObject?.owner}.{selectedObject?.name}
-                      </span>
-                    </div>
-                    <div>
-                      <span style={{ color: themeColors.textSecondary }}>Type:</span>
-                      <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                        {selectedObject?.type}
-                      </span>
-                    </div>
-                    {selectedObject?.columns && (
-                      <div>
-                        <span style={{ color: themeColors.textSecondary }}>Columns:</span>
-                        <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                          {selectedObject.columns.length}
-                        </span>
-                      </div>
-                    )}
-                    {selectedObject?.parameters && (
-                      <div>
-                        <span style={{ color: themeColors.textSecondary }}>Parameters:</span>
-                        <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                          {selectedObject.parameters.length}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                  API Code *
+                </label>
+                <input
+                  type="text"
+                  value={apiDetails.apiCode}
+                  onChange={(e) => handleApiDetailChange('apiCode', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="GET_USERS"
+                />
+              </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                        Schema Name *
-                      </label>
-                      <input
-                        type="text"
-                        value={schemaConfig.schemaName}
-                        onChange={(e) => handleSchemaConfigChange('schemaName', e.target.value)}
-                        className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
-                        style={{ 
-                          backgroundColor: themeColors.card,
-                          borderColor: themeColors.border,
-                          color: themeColors.text
-                        }}
-                        placeholder="HR"
-                      />
-                    </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                  HTTP Method
+                </label>
+                <select
+                  value={apiDetails.httpMethod}
+                  onChange={(e) => handleApiDetailChange('httpMethod', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                >
+                  <option value="GET">GET</option>
+                  <option value="POST">POST</option>
+                  <option value="PUT">PUT</option>
+                  <option value="DELETE">DELETE</option>
+                  <option value="PATCH">PATCH</option>
+                </select>
+              </div>
 
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                        Object Type
-                      </label>
-                      <select
-                        value={schemaConfig.objectType}
-                        onChange={(e) => handleSchemaConfigChange('objectType', e.target.value)}
-                        className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
-                        style={{ 
-                          backgroundColor: themeColors.card,
-                          borderColor: themeColors.border,
-                          color: themeColors.text
-                        }}
-                      >
-                        <option value="TABLE">Table</option>
-                        <option value="VIEW">View</option>
-                        <option value="PROCEDURE">Procedure</option>
-                        <option value="FUNCTION">Function</option>
-                        <option value="PACKAGE">Package</option>
-                        <option value="TRIGGER">Trigger</option>
-                      </select>
-                    </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                  Status
+                </label>
+                <select
+                  value={apiDetails.status}
+                  onChange={(e) => handleApiDetailChange('status', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                >
+                  <option value="DRAFT">Draft</option>
+                  <option value="ACTIVE">Active</option>
+                  <option value="DEPRECATED">Deprecated</option>
+                  <option value="ARCHIVED">Archived</option>
+                </select>
+              </div>
 
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                        Object Name *
-                      </label>
-                      <input
-                        type="text"
-                        value={schemaConfig.objectName}
-                        onChange={(e) => handleSchemaConfigChange('objectName', e.target.value)}
-                        className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
-                        style={{ 
-                          backgroundColor: themeColors.card,
-                          borderColor: themeColors.border,
-                          color: themeColors.text
-                        }}
-                        placeholder="EMPLOYEES"
-                      />
-                    </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                  Base Path
+                </label>
+                <input
+                  type="text"
+                  value={apiDetails.basePath}
+                  onChange={(e) => handleApiDetailChange('basePath', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="/api/v1"
+                />
+              </div>
 
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                        Operation
-                      </label>
-                      <select
-                        value={schemaConfig.operation}
-                        onChange={(e) => handleSchemaConfigChange('operation', e.target.value)}
-                        className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
-                        style={{ 
-                          backgroundColor: themeColors.card,
-                          borderColor: themeColors.border,
-                          color: themeColors.text
-                        }}
-                      >
-                        <option value="SELECT">SELECT (Read)</option>
-                        <option value="INSERT">INSERT (Create)</option>
-                        <option value="UPDATE">UPDATE (Update)</option>
-                        <option value="DELETE">DELETE (Delete)</option>
-                        <option value="EXECUTE">EXECUTE (Procedure/Function)</option>
-                      </select>
-                    </div>
-                  </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                  Endpoint Path *
+                </label>
+                <input
+                  type="text"
+                  value={apiDetails.endpointPath}
+                  onChange={(e) => handleApiDetailChange('endpointPath', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="/users"
+                />
+              </div>
 
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                        Primary Key Column
-                      </label>
-                      <input
-                        type="text"
-                        value={schemaConfig.primaryKeyColumn}
-                        onChange={(e) => handleSchemaConfigChange('primaryKeyColumn', e.target.value)}
-                        className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
-                        style={{ 
-                          backgroundColor: themeColors.card,
-                          borderColor: themeColors.border,
-                          color: themeColors.text
-                        }}
-                        placeholder="ID"
-                      />
-                    </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                  Version
+                </label>
+                <input
+                  type="text"
+                  value={apiDetails.version}
+                  onChange={(e) => handleApiDetailChange('version', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="1.0.0"
+                />
+              </div>
 
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                        Sequence Name (for INSERT)
-                      </label>
-                      <input
-                        type="text"
-                        value={schemaConfig.sequenceName}
-                        onChange={(e) => handleSchemaConfigChange('sequenceName', e.target.value)}
-                        className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
-                        style={{ 
-                          backgroundColor: themeColors.card,
-                          borderColor: themeColors.border,
-                          color: themeColors.text
-                        }}
-                        placeholder="SEQ_TABLE_NAME"
-                      />
-                    </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                  Owner
+                </label>
+                <input
+                  type="text"
+                  value={apiDetails.owner}
+                  onChange={(e) => handleApiDetailChange('owner', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="HR"
+                  disabled
+                />
+              </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2 md:col-span-2 lg:col-span-4">
+                <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                  Description
+                </label>
+                <textarea
+                  value={apiDetails.description}
+                  onChange={(e) => handleApiDetailChange('description', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  rows="2"
+                  placeholder="API description..."
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div className="border-b" style={{ 
+            borderColor: themeColors.border,
+            backgroundColor: themeColors.card
+          }}>
+            <div className="px-6 flex space-x-1 overflow-x-auto">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`px-3 py-2 flex items-center gap-2 border-b-2 text-sm font-medium transition-colors whitespace-nowrap hover-lift ${
+                    activeTab === tab.id
+                      ? '' : 'hover:bg-opacity-50'
+                  }`}
+                  style={{ 
+                    borderBottomColor: activeTab === tab.id ? themeColors.info : 'transparent',
+                    color: activeTab === tab.id ? themeColors.info : themeColors.textSecondary,
+                    backgroundColor: 'transparent'
+                  }}
+                >
+                  {tab.icon}
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Tab Content */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-4 md:p-6">
+              {/* Definition Tab */}
+              {activeTab === 'definition' && (
+                <div className="space-y-6">
+                  <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+                    API Definition
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-4">
                       <div className="space-y-2">
                         <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                          Enable Pagination
+                          Category
                         </label>
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={schemaConfig.enablePagination}
-                            onChange={(e) => handleSchemaConfigChange('enablePagination', e.target.checked)}
-                            className="h-4 w-4 rounded"
-                            style={{ 
-                              accentColor: themeColors.info,
-                              backgroundColor: themeColors.card
-                            }}
-                          />
-                          <span className="ml-2 text-sm" style={{ color: themeColors.textSecondary }}>Yes</span>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                          Page Size
-                        </label>
-                        <input
-                          type="number"
-                          value={schemaConfig.pageSize}
-                          onChange={(e) => handleSchemaConfigChange('pageSize', parseInt(e.target.value))}
+                        <select
+                          value={apiDetails.category}
+                          onChange={(e) => handleApiDetailChange('category', e.target.value)}
                           className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
                             color: themeColors.text
                           }}
-                          min="1"
-                          max="1000"
+                        >
+                          <option value="general">General</option>
+                          <option value="data">Data Access</option>
+                          <option value="admin">Administrative</option>
+                          <option value="report">Reporting</option>
+                          <option value="integration">Integration</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          Tags
+                        </label>
+                        <input
+                          type="text"
+                          value={apiDetails.tags.join(', ')}
+                          onChange={(e) => handleApiDetailChange('tags', e.target.value.split(',').map(tag => tag.trim()))}
+                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          style={{ 
+                            backgroundColor: themeColors.card,
+                            borderColor: themeColors.border,
+                            color: themeColors.text
+                          }}
+                          placeholder="users, data, public"
                         />
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-lg border" style={{ 
+                      borderColor: themeColors.info + '40',
+                      backgroundColor: themeColors.info + '10'
+                    }}>
+                      <h4 className="font-medium mb-2 flex items-center gap-2" style={{ color: themeColors.info }}>
+                        <Globe className="h-4 w-4" />
+                        API Endpoint Preview
+                      </h4>
+                      <div className="font-mono text-sm p-3 rounded border" style={{ 
+                        backgroundColor: themeColors.card,
+                        borderColor: themeColors.border
+                      }}>
+                        <div style={{ color: themeColors.textSecondary }}>
+                          {apiDetails.httpMethod} {apiDetails.basePath}{apiDetails.endpointPath}
+                        </div>
+                        {parameters.filter(p => p.parameterType === 'path').length > 0 && (
+                          <div className="mt-2 text-sm" style={{ color: themeColors.textTertiary }}>
+                            Path Parameters: {parameters.filter(p => p.parameterType === 'path').map(p => `{${p.key}}`).join('/')}
+                          </div>
+                        )}
+                        <div className="mt-2 text-sm" style={{ color: themeColors.textTertiary }}>
+                          Source: {schemaConfig.schemaName}.{schemaConfig.objectName} ({schemaConfig.objectType})
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Parameters Tab - Show auto-generated parameters */}
-            {activeTab === 'parameters' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
+              {/* Schema Tab */}
+              {activeTab === 'schema' && (
+                <div className="space-y-6">
                   <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                    API Parameters ({parameters.length})
-                    {selectedObject?.columns && (
-                      <span className="text-sm font-normal ml-2" style={{ color: themeColors.textSecondary }}>
-                        (Auto-generated from {selectedObject.columns.length} columns)
-                      </span>
-                    )}
-                    {selectedObject?.parameters && (
-                      <span className="text-sm font-normal ml-2" style={{ color: themeColors.textSecondary }}>
-                        (Auto-generated from {selectedObject.parameters.length} parameters)
-                      </span>
-                    )}
+                    Oracle Schema Configuration
                   </h3>
-                  <button
-                    onClick={handleAddParameter}
-                    className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-sm transition-colors hover-lift"
-                    style={{ backgroundColor: themeColors.info, color: themeColors.white }}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add Parameter
-                  </button>
+
+                  <div className="mb-4 p-4 rounded-lg border" style={{ 
+                    borderColor: themeColors.info + '40',
+                    backgroundColor: themeColors.info + '10'
+                  }}>
+                    <h4 className="font-medium mb-2 flex items-center gap-2" style={{ color: themeColors.info }}>
+                      <Database className="h-4 w-4" />
+                      Selected Object Information
+                    </h4>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span style={{ color: themeColors.textSecondary }}>Object:</span>
+                        <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                          {selectedObject?.owner}.{selectedObject?.name}
+                        </span>
+                      </div>
+                      <div>
+                        <span style={{ color: themeColors.textSecondary }}>Type:</span>
+                        <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                          {selectedObject?.type}
+                        </span>
+                      </div>
+                      {selectedObject?.columns && (
+                        <div>
+                          <span style={{ color: themeColors.textSecondary }}>Columns:</span>
+                          <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                            {selectedObject.columns.length}
+                          </span>
+                        </div>
+                      )}
+                      {selectedObject?.parameters && (
+                        <div>
+                          <span style={{ color: themeColors.textSecondary }}>Parameters:</span>
+                          <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                            {selectedObject.parameters.length}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          Schema Name *
+                        </label>
+                        <input
+                          type="text"
+                          value={schemaConfig.schemaName}
+                          onChange={(e) => handleSchemaConfigChange('schemaName', e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          style={{ 
+                            backgroundColor: themeColors.card,
+                            borderColor: themeColors.border,
+                            color: themeColors.text
+                          }}
+                          placeholder="HR"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          Object Type
+                        </label>
+                        <select
+                          value={schemaConfig.objectType}
+                          onChange={(e) => handleSchemaConfigChange('objectType', e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          style={{ 
+                            backgroundColor: themeColors.card,
+                            borderColor: themeColors.border,
+                            color: themeColors.text
+                          }}
+                        >
+                          <option value="TABLE">Table</option>
+                          <option value="VIEW">View</option>
+                          <option value="PROCEDURE">Procedure</option>
+                          <option value="FUNCTION">Function</option>
+                          <option value="PACKAGE">Package</option>
+                          <option value="TRIGGER">Trigger</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          Object Name *
+                        </label>
+                        <input
+                          type="text"
+                          value={schemaConfig.objectName}
+                          onChange={(e) => handleSchemaConfigChange('objectName', e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          style={{ 
+                            backgroundColor: themeColors.card,
+                            borderColor: themeColors.border,
+                            color: themeColors.text
+                          }}
+                          placeholder="EMPLOYEES"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          Operation
+                        </label>
+                        <select
+                          value={schemaConfig.operation}
+                          onChange={(e) => handleSchemaConfigChange('operation', e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          style={{ 
+                            backgroundColor: themeColors.card,
+                            borderColor: themeColors.border,
+                            color: themeColors.text
+                          }}
+                        >
+                          <option value="SELECT">SELECT (Read)</option>
+                          <option value="INSERT">INSERT (Create)</option>
+                          <option value="UPDATE">UPDATE (Update)</option>
+                          <option value="DELETE">DELETE (Delete)</option>
+                          <option value="EXECUTE">EXECUTE (Procedure/Function)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          Primary Key Column
+                        </label>
+                        <input
+                          type="text"
+                          value={schemaConfig.primaryKeyColumn}
+                          onChange={(e) => handleSchemaConfigChange('primaryKeyColumn', e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          style={{ 
+                            backgroundColor: themeColors.card,
+                            borderColor: themeColors.border,
+                            color: themeColors.text
+                          }}
+                          placeholder="ID"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          Sequence Name (for INSERT)
+                        </label>
+                        <input
+                          type="text"
+                          value={schemaConfig.sequenceName}
+                          onChange={(e) => handleSchemaConfigChange('sequenceName', e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          style={{ 
+                            backgroundColor: themeColors.card,
+                            borderColor: themeColors.border,
+                            color: themeColors.text
+                          }}
+                          placeholder="SEQ_TABLE_NAME"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                            Enable Pagination
+                          </label>
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={schemaConfig.enablePagination}
+                              onChange={(e) => handleSchemaConfigChange('enablePagination', e.target.checked)}
+                              className="h-4 w-4 rounded"
+                              style={{ 
+                                accentColor: themeColors.info,
+                                backgroundColor: themeColors.card
+                              }}
+                            />
+                            <span className="ml-2 text-sm" style={{ color: themeColors.textSecondary }}>Yes</span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                            Page Size
+                          </label>
+                          <input
+                            type="number"
+                            value={schemaConfig.pageSize}
+                            onChange={(e) => handleSchemaConfigChange('pageSize', parseInt(e.target.value))}
+                            className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.card,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                            min="1"
+                            max="1000"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
+              )}
 
-                {parameters.length === 0 ? (
-                  <div className="text-center py-8 border rounded-lg" style={{ 
-                    borderColor: themeColors.border,
-                    backgroundColor: themeColors.card
-                  }}>
-                    <Code className="h-12 w-12 mx-auto mb-3" style={{ color: themeColors.textSecondary }} />
-                    <p style={{ color: themeColors.textSecondary }}>
-                      No parameters defined. Add parameters or they will be auto-generated from the selected object.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto border rounded-lg" style={{ 
-                    borderColor: themeColors.border,
-                    backgroundColor: themeColors.card
-                  }}>
-                    <table className="w-full min-w-[1000px]">
-                      <thead>
-                        <tr style={{ backgroundColor: themeColors.hover }}>
-                          <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
-                            borderColor: themeColors.border,
-                            color: themeColors.textSecondary
-                          }}>Parameter</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
-                            borderColor: themeColors.border,
-                            color: themeColors.textSecondary
-                          }}>DB Column</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
-                            borderColor: themeColors.border,
-                            color: themeColors.textSecondary
-                          }}>Type</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
-                            borderColor: themeColors.border,
-                            color: themeColors.textSecondary
-                          }}>Parameter Type</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
-                            borderColor: themeColors.border,
-                            color: themeColors.textSecondary
-                          }}>Required</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
-                            borderColor: themeColors.border,
-                            color: themeColors.textSecondary
-                          }}>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {parameters.map((param, index) => (
-                          <tr key={param.id} style={{ 
-                            backgroundColor: index % 2 === 0 ? themeColors.card : themeColors.hover,
-                            borderBottom: `1px solid ${themeColors.border}`
-                          }}>
-                            <td className="px-3 py-2">
-                              <input
-                                type="text"
-                                value={param.key}
-                                onChange={(e) => handleParameterChange(param.id, 'key', e.target.value)}
-                                className="w-full px-2 py-1 border rounded text-sm hover-lift"
-                                style={{ 
-                                  backgroundColor: themeColors.modalBg,
-                                  borderColor: themeColors.border,
-                                  color: themeColors.text
-                                }}
-                                placeholder="parameter_key"
-                              />
-                            </td>
-                            <td className="px-3 py-2">
-                              <input
-                                type="text"
-                                value={param.dbColumn}
-                                onChange={(e) => handleParameterChange(param.id, 'dbColumn', e.target.value)}
-                                className="w-full px-2 py-1 border rounded text-sm hover-lift"
-                                style={{ 
-                                  backgroundColor: themeColors.modalBg,
-                                  borderColor: themeColors.border,
-                                  color: themeColors.text
-                                }}
-                                placeholder="DB_COLUMN"
-                              />
-                            </td>
-                            <td className="px-3 py-2">
-                              <select
-                                value={param.oracleType}
-                                onChange={(e) => handleParameterChange(param.id, 'oracleType', e.target.value)}
-                                className="w-full px-2 py-1 border rounded text-sm hover-lift"
-                                style={{ 
-                                  backgroundColor: themeColors.modalBg,
-                                  borderColor: themeColors.border,
-                                  color: themeColors.text
-                                }}
-                              >
-                                {oracleDataTypes.map(type => (
-                                  <option key={type} value={type}>{type}</option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="px-3 py-2">
-                              <select
-                                value={param.parameterType}
-                                onChange={(e) => handleParameterChange(param.id, 'parameterType', e.target.value)}
-                                className="w-full px-2 py-1 border rounded text-sm hover-lift"
-                                style={{ 
-                                  backgroundColor: themeColors.modalBg,
-                                  borderColor: themeColors.border,
-                                  color: themeColors.text
-                                }}
-                              >
-                                {parameterTypes.map(type => (
-                                  <option key={type.value} value={type.value}>{type.label}</option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <input
-                                type="checkbox"
-                                checked={param.required}
-                                onChange={(e) => handleParameterChange(param.id, 'required', e.target.checked)}
-                                className="h-4 w-4 rounded"
-                                style={{ accentColor: themeColors.info }}
-                              />
-                            </td>
-                            <td className="px-3 py-2">
-                              <button
-                                onClick={() => handleRemoveParameter(param.id)}
-                                className="p-1.5 rounded transition-colors hover-lift"
-                                style={{ backgroundColor: themeColors.error + '20', color: themeColors.error }}
-                                title="Delete parameter"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Mapping Tab */}
-            {activeTab === 'mapping' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                    Response Field Mapping ({responseMappings.length})
-                    {selectedObject?.columns && (
-                      <span className="text-sm font-normal ml-2" style={{ color: themeColors.textSecondary }}>
-                        (Auto-generated from {selectedObject.columns.length} columns)
-                      </span>
-                    )}
-                  </h3>
-                  <button
-                    onClick={handleAddResponseMapping}
-                    className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-sm transition-colors hover-lift"
-                    style={{ backgroundColor: themeColors.info, color: themeColors.white }}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add Mapping
-                  </button>
-                </div>
-
-                {responseMappings.length === 0 ? (
-                  <div className="text-center py-8 border rounded-lg" style={{ 
-                    borderColor: themeColors.border,
-                    backgroundColor: themeColors.card
-                  }}>
-                    <Map className="h-12 w-12 mx-auto mb-3" style={{ color: themeColors.textSecondary }} />
-                    <p style={{ color: themeColors.textSecondary }}>
-                      No response mappings defined. They will be auto-generated from the selected object's columns.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto border rounded-lg" style={{ 
-                    borderColor: themeColors.border,
-                    backgroundColor: themeColors.card
-                  }}>
-                    <table className="w-full min-w-[800px]">
-                      <thead>
-                        <tr style={{ backgroundColor: themeColors.hover }}>
-                          <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>API Field</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>DB Column</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Oracle Type</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>API Type</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Nullable</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {responseMappings.map((mapping, index) => (
-                          <tr key={mapping.id} style={{ 
-                            backgroundColor: index % 2 === 0 ? themeColors.card : themeColors.hover,
-                            borderBottom: `1px solid ${themeColors.border}`
-                          }}>
-                            <td className="px-3 py-2">
-                              <input
-                                type="text"
-                                value={mapping.apiField}
-                                onChange={(e) => handleResponseMappingChange(mapping.id, 'apiField', e.target.value)}
-                                className="w-full px-2 py-1 border rounded text-sm hover-lift"
-                                style={{ 
-                                  backgroundColor: themeColors.modalBg,
-                                  borderColor: themeColors.border,
-                                  color: themeColors.text
-                                }}
-                                placeholder="fieldName"
-                              />
-                            </td>
-                            <td className="px-3 py-2">
-                              <input
-                                type="text"
-                                value={mapping.dbColumn}
-                                onChange={(e) => handleResponseMappingChange(mapping.id, 'dbColumn', e.target.value)}
-                                className="w-full px-2 py-1 border rounded text-sm hover-lift"
-                                style={{ 
-                                  backgroundColor: themeColors.modalBg,
-                                  borderColor: themeColors.border,
-                                  color: themeColors.text
-                                }}
-                                placeholder="DB_COLUMN"
-                              />
-                            </td>
-                            <td className="px-3 py-2">
-                              <select
-                                value={mapping.oracleType}
-                                onChange={(e) => handleResponseMappingChange(mapping.id, 'oracleType', e.target.value)}
-                                className="w-full px-2 py-1 border rounded text-sm hover-lift"
-                                style={{ 
-                                  backgroundColor: themeColors.modalBg,
-                                  borderColor: themeColors.border,
-                                  color: themeColors.text
-                                }}
-                              >
-                                {oracleDataTypes.map(type => (
-                                  <option key={type} value={type}>{type}</option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="px-3 py-2">
-                              <select
-                                value={mapping.apiType}
-                                onChange={(e) => handleResponseMappingChange(mapping.id, 'apiType', e.target.value)}
-                                className="w-full px-2 py-1 border rounded text-sm hover-lift"
-                                style={{ 
-                                  backgroundColor: themeColors.modalBg,
-                                  borderColor: themeColors.border,
-                                  color: themeColors.text
-                                }}
-                              >
-                                {apiDataTypes.map(type => (
-                                  <option key={type} value={type}>{type}</option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <input
-                                type="checkbox"
-                                checked={mapping.nullable}
-                                onChange={(e) => handleResponseMappingChange(mapping.id, 'nullable', e.target.checked)}
-                                className="h-4 w-4 rounded"
-                                style={{ accentColor: themeColors.info }}
-                              />
-                            </td>
-                            <td className="px-3 py-2">
-                              <button
-                                onClick={() => handleRemoveResponseMapping(mapping.id)}
-                                className="p-1.5 rounded transition-colors hover-lift"
-                                style={{ backgroundColor: themeColors.error + '20', color: themeColors.error }}
-                                title="Delete mapping"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Preview Tab */}
-            {activeTab === 'preview' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                    Generated Code Preview
-                    <span className="text-sm font-normal ml-2" style={{ color: themeColors.textSecondary }}>
-                      (Based on {selectedObject?.name || 'selected object'})
-                    </span>
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={previewMode}
-                      onChange={(e) => setPreviewMode(e.target.value)}
-                      className="px-3 py-1.5 border rounded-lg text-sm hover-lift"
-                      style={{ 
-                        backgroundColor: themeColors.card,
-                        borderColor: themeColors.border,
-                        color: themeColors.text
-                      }}
-                    >
-                      <option value="json">Configuration JSON</option>
-                      <option value="plsql">PL/SQL Package</option>
-                      <option value="openapi">OpenAPI Spec</option>
-                      <option value="postman">Postman Collection</option>
-                    </select>
+              {/* Parameters Tab - Show auto-generated parameters */}
+              {activeTab === 'parameters' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+                      API Parameters ({parameters.length})
+                      {selectedObject?.columns && (
+                        <span className="text-sm font-normal ml-2" style={{ color: themeColors.textSecondary }}>
+                          (Auto-generated from {selectedObject.columns.length} columns)
+                        </span>
+                      )}
+                      {selectedObject?.parameters && (
+                        <span className="text-sm font-normal ml-2" style={{ color: themeColors.textSecondary }}>
+                          (Auto-generated from {selectedObject.parameters.length} parameters)
+                        </span>
+                      )}
+                    </h3>
                     <button
-                      onClick={copyGeneratedCode}
-                      className="px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors hover-lift"
-                      style={{ backgroundColor: themeColors.hover, color: themeColors.text }}
-                    >
-                      <Copy className="h-4 w-4" />
-                      Copy
-                    </button>
-                    <button
-                      onClick={downloadGeneratedCode}
-                      className="px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors hover-lift"
+                      onClick={handleAddParameter}
+                      className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-sm transition-colors hover-lift"
                       style={{ backgroundColor: themeColors.info, color: themeColors.white }}
                     >
-                      <Download className="h-4 w-4" />
-                      Download
+                      <Plus className="h-4 w-4" />
+                      Add Parameter
                     </button>
                   </div>
-                </div>
 
-                <div className="border rounded-lg" style={{ 
-                  borderColor: themeColors.border,
-                  backgroundColor: themeColors.card
-                }}>
-                  <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: themeColors.border }}>
-                    <span className="text-sm font-medium" style={{ color: themeColors.text }}>
-                      {previewMode === 'plsql' ? 'PL/SQL Package' : 
-                       previewMode === 'openapi' ? 'OpenAPI Specification' :
-                       previewMode === 'postman' ? 'Postman Collection' : 'Configuration'}
-                      <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
-                        (Source: {schemaConfig.schemaName}.{schemaConfig.objectName})
-                      </span>
-                    </span>
-                    <span className="text-xs font-mono" style={{ color: themeColors.textSecondary }}>
-                      {previewMode === 'plsql' ? '.sql' : '.json'}
-                    </span>
+                  {parameters.length === 0 ? (
+                    <div className="text-center py-8 border rounded-lg" style={{ 
+                      borderColor: themeColors.border,
+                      backgroundColor: themeColors.card
+                    }}>
+                      <Code className="h-12 w-12 mx-auto mb-3" style={{ color: themeColors.textSecondary }} />
+                      <p style={{ color: themeColors.textSecondary }}>
+                        No parameters defined. Add parameters or they will be auto-generated from the selected object.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto border rounded-lg" style={{ 
+                      borderColor: themeColors.border,
+                      backgroundColor: themeColors.card
+                    }}>
+                      <table className="w-full min-w-[1000px]">
+                        <thead>
+                          <tr style={{ backgroundColor: themeColors.hover }}>
+                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
+                              borderColor: themeColors.border,
+                              color: themeColors.textSecondary
+                            }}>Parameter</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
+                              borderColor: themeColors.border,
+                              color: themeColors.textSecondary
+                            }}>DB Column</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
+                              borderColor: themeColors.border,
+                              color: themeColors.textSecondary
+                            }}>Type</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
+                              borderColor: themeColors.border,
+                              color: themeColors.textSecondary
+                            }}>Parameter Type</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
+                              borderColor: themeColors.border,
+                              color: themeColors.textSecondary
+                            }}>Required</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
+                              borderColor: themeColors.border,
+                              color: themeColors.textSecondary
+                            }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {parameters.map((param, index) => (
+                            <tr key={param.id} style={{ 
+                              backgroundColor: index % 2 === 0 ? themeColors.card : themeColors.hover,
+                              borderBottom: `1px solid ${themeColors.border}`
+                            }}>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="text"
+                                  value={param.key}
+                                  onChange={(e) => handleParameterChange(param.id, 'key', e.target.value)}
+                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  style={{ 
+                                    backgroundColor: themeColors.modalBg,
+                                    borderColor: themeColors.border,
+                                    color: themeColors.text
+                                  }}
+                                  placeholder="parameter_key"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="text"
+                                  value={param.dbColumn}
+                                  onChange={(e) => handleParameterChange(param.id, 'dbColumn', e.target.value)}
+                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  style={{ 
+                                    backgroundColor: themeColors.modalBg,
+                                    borderColor: themeColors.border,
+                                    color: themeColors.text
+                                  }}
+                                  placeholder="DB_COLUMN"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <select
+                                  value={param.oracleType}
+                                  onChange={(e) => handleParameterChange(param.id, 'oracleType', e.target.value)}
+                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  style={{ 
+                                    backgroundColor: themeColors.modalBg,
+                                    borderColor: themeColors.border,
+                                    color: themeColors.text
+                                  }}
+                                >
+                                  {oracleDataTypes.map(type => (
+                                    <option key={type} value={type}>{type}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="px-3 py-2">
+                                <select
+                                  value={param.parameterType}
+                                  onChange={(e) => handleParameterChange(param.id, 'parameterType', e.target.value)}
+                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  style={{ 
+                                    backgroundColor: themeColors.modalBg,
+                                    borderColor: themeColors.border,
+                                    color: themeColors.text
+                                  }}
+                                >
+                                  {parameterTypes.map(type => (
+                                    <option key={type.value} value={type.value}>{type.label}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={param.required}
+                                  onChange={(e) => handleParameterChange(param.id, 'required', e.target.checked)}
+                                  className="h-4 w-4 rounded"
+                                  style={{ accentColor: themeColors.info }}
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <button
+                                  onClick={() => handleRemoveParameter(param.id)}
+                                  className="p-1.5 rounded transition-colors hover-lift"
+                                  style={{ backgroundColor: themeColors.error + '20', color: themeColors.error }}
+                                  title="Delete parameter"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Mapping Tab */}
+              {activeTab === 'mapping' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+                      Response Field Mapping ({responseMappings.length})
+                      {selectedObject?.columns && (
+                        <span className="text-sm font-normal ml-2" style={{ color: themeColors.textSecondary }}>
+                          (Auto-generated from {selectedObject.columns.length} columns)
+                        </span>
+                      )}
+                    </h3>
+                    <button
+                      onClick={handleAddResponseMapping}
+                      className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-sm transition-colors hover-lift"
+                      style={{ backgroundColor: themeColors.info, color: themeColors.white }}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add Mapping
+                    </button>
                   </div>
-                  <pre className="w-full h-[400px] px-4 py-3 overflow-auto text-sm" style={{ 
-                    backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
-                    color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
-                  }}>
-                    {generatedCode}
-                  </pre>
-                </div>
-              </div>
-            )}
 
-            {/* Other tabs content can be added similarly... */}
-            {activeTab === 'auth' && (
-              <div className="space-y-6">
-                <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                  Authentication & Authorization
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium" style={{ color: themeColors.text }}>
-                        Authentication Type
-                      </label>
+                  {responseMappings.length === 0 ? (
+                    <div className="text-center py-8 border rounded-lg" style={{ 
+                      borderColor: themeColors.border,
+                      backgroundColor: themeColors.card
+                    }}>
+                      <Map className="h-12 w-12 mx-auto mb-3" style={{ color: themeColors.textSecondary }} />
+                      <p style={{ color: themeColors.textSecondary }}>
+                        No response mappings defined. They will be auto-generated from the selected object's columns.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto border rounded-lg" style={{ 
+                      borderColor: themeColors.border,
+                      backgroundColor: themeColors.card
+                    }}>
+                      <table className="w-full min-w-[800px]">
+                        <thead>
+                          <tr style={{ backgroundColor: themeColors.hover }}>
+                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>API Field</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>DB Column</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Oracle Type</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>API Type</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Nullable</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {responseMappings.map((mapping, index) => (
+                            <tr key={mapping.id} style={{ 
+                              backgroundColor: index % 2 === 0 ? themeColors.card : themeColors.hover,
+                              borderBottom: `1px solid ${themeColors.border}`
+                            }}>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="text"
+                                  value={mapping.apiField}
+                                  onChange={(e) => handleResponseMappingChange(mapping.id, 'apiField', e.target.value)}
+                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  style={{ 
+                                    backgroundColor: themeColors.modalBg,
+                                    borderColor: themeColors.border,
+                                    color: themeColors.text
+                                  }}
+                                  placeholder="fieldName"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="text"
+                                  value={mapping.dbColumn}
+                                  onChange={(e) => handleResponseMappingChange(mapping.id, 'dbColumn', e.target.value)}
+                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  style={{ 
+                                    backgroundColor: themeColors.modalBg,
+                                    borderColor: themeColors.border,
+                                    color: themeColors.text
+                                  }}
+                                  placeholder="DB_COLUMN"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <select
+                                  value={mapping.oracleType}
+                                  onChange={(e) => handleResponseMappingChange(mapping.id, 'oracleType', e.target.value)}
+                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  style={{ 
+                                    backgroundColor: themeColors.modalBg,
+                                    borderColor: themeColors.border,
+                                    color: themeColors.text
+                                  }}
+                                >
+                                  {oracleDataTypes.map(type => (
+                                    <option key={type} value={type}>{type}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="px-3 py-2">
+                                <select
+                                  value={mapping.apiType}
+                                  onChange={(e) => handleResponseMappingChange(mapping.id, 'apiType', e.target.value)}
+                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  style={{ 
+                                    backgroundColor: themeColors.modalBg,
+                                    borderColor: themeColors.border,
+                                    color: themeColors.text
+                                  }}
+                                >
+                                  {apiDataTypes.map(type => (
+                                    <option key={type} value={type}>{type}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={mapping.nullable}
+                                  onChange={(e) => handleResponseMappingChange(mapping.id, 'nullable', e.target.checked)}
+                                  className="h-4 w-4 rounded"
+                                  style={{ accentColor: themeColors.info }}
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <button
+                                  onClick={() => handleRemoveResponseMapping(mapping.id)}
+                                  className="p-1.5 rounded transition-colors hover-lift"
+                                  style={{ backgroundColor: themeColors.error + '20', color: themeColors.error }}
+                                  title="Delete mapping"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Preview Tab */}
+              {activeTab === 'preview' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+                      Generated Code Preview
+                      <span className="text-sm font-normal ml-2" style={{ color: themeColors.textSecondary }}>
+                        (Based on {selectedObject?.name || 'selected object'})
+                      </span>
+                    </h3>
+                    <div className="flex items-center gap-2">
                       <select
-                        value={authConfig.authType}
-                        onChange={(e) => setAuthConfig(prev => ({ ...prev, authType: e.target.value }))}
-                        className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                        value={previewMode}
+                        onChange={(e) => setPreviewMode(e.target.value)}
+                        className="px-3 py-1.5 border rounded-lg text-sm hover-lift"
                         style={{ 
                           backgroundColor: themeColors.card,
                           borderColor: themeColors.border,
                           color: themeColors.text
                         }}
                       >
-                        <option value="NONE">None (Public)</option>
-                        <option value="ORACLE_ROLES">Oracle Database Roles</option>
-                        <option value="API_KEY">API Key</option>
-                        <option value="JWT">JWT Token</option>
-                        <option value="OAUTH2">OAuth 2.0</option>
+                        <option value="json">Configuration JSON</option>
+                        <option value="plsql">PL/SQL Package</option>
+                        <option value="openapi">OpenAPI Spec</option>
+                        <option value="postman">Postman Collection</option>
                       </select>
+                      <button
+                        onClick={copyGeneratedCode}
+                        className="px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors hover-lift"
+                        style={{ backgroundColor: themeColors.hover, color: themeColors.text }}
+                      >
+                        <Copy className="h-4 w-4" />
+                        Copy
+                      </button>
+                      <button
+                        onClick={downloadGeneratedCode}
+                        className="px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors hover-lift"
+                        style={{ backgroundColor: themeColors.info, color: themeColors.white }}
+                      >
+                        <Download className="h-4 w-4" />
+                        Download
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="border rounded-lg" style={{ 
+                    borderColor: themeColors.border,
+                    backgroundColor: themeColors.card
+                  }}>
+                    <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: themeColors.border }}>
+                      <span className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        {previewMode === 'plsql' ? 'PL/SQL Package' : 
+                         previewMode === 'openapi' ? 'OpenAPI Specification' :
+                         previewMode === 'postman' ? 'Postman Collection' : 'Configuration'}
+                        <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
+                          (Source: {schemaConfig.schemaName}.{schemaConfig.objectName})
+                        </span>
+                      </span>
+                      <span className="text-xs font-mono" style={{ color: themeColors.textSecondary }}>
+                        {previewMode === 'plsql' ? '.sql' : '.json'}
+                      </span>
+                    </div>
+                    <pre className="w-full h-[400px] px-4 py-3 overflow-auto text-sm" style={{ 
+                      backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
+                      color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
+                    }}>
+                      {generatedCode}
+                    </pre>
+                  </div>
+                </div>
+              )}
+
+              {/* Other tabs content can be added similarly... */}
+              {activeTab === 'auth' && (
+                <div className="space-y-6">
+                  <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+                    Authentication & Authorization
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          Authentication Type
+                        </label>
+                        <select
+                          value={authConfig.authType}
+                          onChange={(e) => setAuthConfig(prev => ({ ...prev, authType: e.target.value }))}
+                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          style={{ 
+                            backgroundColor: themeColors.card,
+                            borderColor: themeColors.border,
+                            color: themeColors.text
+                          }}
+                        >
+                          <option value="NONE">None (Public)</option>
+                          <option value="ORACLE_ROLES">Oracle Database Roles</option>
+                          <option value="API_KEY">API Key</option>
+                          <option value="JWT">JWT Token</option>
+                          <option value="OAUTH2">OAuth 2.0</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {['request', 'response', 'tests', 'settings'].includes(activeTab) && (
-              <div className="text-center py-12">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full mb-4" style={{ backgroundColor: themeColors.info + '20' }}>
-                  <Settings className="h-8 w-8" style={{ color: themeColors.info }} />
+              {['request', 'response', 'tests', 'settings'].includes(activeTab) && (
+                <div className="text-center py-12">
+                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full mb-4" style={{ backgroundColor: themeColors.info + '20' }}>
+                    <Settings className="h-8 w-8" style={{ color: themeColors.info }} />
+                  </div>
+                  <h3 className="text-lg font-semibold mb-2" style={{ color: themeColors.text }}>
+                    {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Configuration
+                  </h3>
+                  <p style={{ color: themeColors.textSecondary }}>
+                    This section will be implemented in the next phase.
+                  </p>
                 </div>
-                <h3 className="text-lg font-semibold mb-2" style={{ color: themeColors.text }}>
-                  {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Configuration
-                </h3>
-                <p style={{ color: themeColors.textSecondary }}>
-                  This section will be implemented in the next phase.
-                </p>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4" style={{ 
-          borderColor: themeColors.border,
-          backgroundColor: themeColors.card
-        }}>
-          <div className="text-sm" style={{ color: themeColors.textSecondary }}>
-            Endpoint: <span className="font-mono font-medium" style={{ color: themeColors.text }}>
-              {apiDetails.httpMethod} {apiDetails.basePath}{apiDetails.endpointPath}
-            </span>
-            <br />
-            <span className="text-xs" style={{ color: themeColors.textTertiary }}>
-              Source: {schemaConfig.schemaName}.{schemaConfig.objectName} ({schemaConfig.objectType})
-            </span>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 border rounded-lg transition-colors hover-lift"
-              style={{ 
-                backgroundColor: themeColors.hover,
-                borderColor: themeColors.border,
-                color: themeColors.text
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              className="px-4 py-2 rounded-lg flex items-center gap-2 transition-colors hover-lift"
-              style={{ backgroundColor: themeColors.success, color: themeColors.white }}
-            >
-              <Save className="h-4 w-4" />
-              Generate & Save API
-            </button>
+          {/* Footer */}
+          <div className="px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4" style={{ 
+            borderColor: themeColors.border,
+            backgroundColor: themeColors.card
+          }}>
+            <div className="text-sm" style={{ color: themeColors.textSecondary }}>
+              Endpoint: <span className="font-mono font-medium" style={{ color: themeColors.text }}>
+                {apiDetails.httpMethod} {apiDetails.basePath}{apiDetails.endpointPath}
+              </span>
+              <br />
+              <span className="text-xs" style={{ color: themeColors.textTertiary }}>
+                Source: {schemaConfig.schemaName}.{schemaConfig.objectName} ({schemaConfig.objectType})
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={onClose}
+                className="px-4 py-2 border rounded-lg transition-colors hover-lift"
+                style={{ 
+                  backgroundColor: themeColors.hover,
+                  borderColor: themeColors.border,
+                  color: themeColors.text
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                className="px-4 py-2 rounded-lg flex items-center gap-2 transition-colors hover-lift"
+                style={{ backgroundColor: themeColors.success, color: themeColors.white }}
+              >
+                <Save className="h-4 w-4" />
+                Generate & Save API
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+
+      {/* Add the confirmation modal */}
+      <ApiConfirmationModal
+        isOpen={confirmationOpen}
+        onClose={handleConfirmationClose}
+        apiData={newApiData}
+        colors={colors}
+        theme={theme}
+      />
+    </>
   );
 }

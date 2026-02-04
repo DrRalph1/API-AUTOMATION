@@ -77,9 +77,9 @@ export default function Login() {
 
   const isDark = theme === 'dark';
 
-  // Color scheme - updated to match provided theme
+  // Color scheme - UPDATED TO MATCH DASHBOARD COMPONENT EXACTLY
   const colors = isDark ? {
-    // Using your shade as base
+    // Using exact same colors as Dashboard
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
     sidebar: 'rgb(41 53 72 / 39%)',
@@ -87,33 +87,33 @@ export default function Login() {
     header: 'rgb(20 26 38)',
     card: 'rgb(41 53 72 / 39%)',
     
-    // Text - coordinating grays
+    // Text - coordinating grays - UPDATED
     text: '#F1F5F9',
     textSecondary: 'rgb(148 163 184)',
     textTertiary: 'rgb(100 116 139)',
     
-    // Borders - variations of your shade
+    // Borders - UPDATED to match Dashboard
     border: 'rgb(51 65 85)',
     borderLight: 'rgb(45 55 72)',
     borderDark: 'rgb(71 85 105)',
     
-    // Interactive - layered transparency
+    // Interactive - UPDATED
     hover: 'rgb(45 46 72 / 33%)',
     active: 'rgb(59 74 99)',
     selected: 'rgb(44 82 130)',
     
-    // Primary colors
+    // Primary colors - UPDATED
     primary: 'rgb(96 165 250)',
     primaryLight: 'rgb(147 197 253)',
     primaryDark: 'rgb(37 99 235)',
     
-    // Status colors
+    // Status colors - UPDATED
     success: 'rgb(52 211 153)',
     warning: 'rgb(251 191 36)',
     error: 'rgb(248 113 113)',
     info: 'rgb(96 165 250)',
     
-    // UI Components
+    // UI Components - UPDATED
     tabActive: 'rgb(96 165 250)',
     tabInactive: 'rgb(148 163 184)',
     sidebarActive: 'rgb(96 165 250)',
@@ -129,20 +129,20 @@ export default function Login() {
     modalBorder: 'rgb(51 65 85)',
     codeBg: 'rgb(41 53 72 / 39%)',
     
-    // Connection status
+    // Connection status - UPDATED
     connectionOnline: 'rgb(52 211 153)',
     connectionOffline: 'rgb(248 113 113)',
     connectionIdle: 'rgb(251 191 36)',
     
-    // Accent colors
+    // Accent colors - UPDATED
     accentPurple: 'rgb(167 139 250)',
     accentPink: 'rgb(244 114 182)',
     accentCyan: 'rgb(34 211 238)',
     
-    // Additional for login component
+    // Additional for login component - UPDATED
     gradient: 'from-blue-500/20 via-violet-500/20 to-orange-500/20'
   } : {
-    // KEEP THE ORIGINAL LIGHT MODE
+    // Light mode - kept consistent
     bg: '#f8fafc',
     white: '#f8fafc',
     sidebar: '#ffffff',
@@ -571,14 +571,14 @@ const globalStyles = `
   transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar - UPDATED TO MATCH DASHBOARD */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgb(45 55 72);
+  background: rgb(51 65 85);
   border-radius: 4px;
 }
 
@@ -589,6 +589,15 @@ const globalStyles = `
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgb(148 163 184);
+}
+
+/* Mobile optimizations */
+@media (max-width: 640px) {
+  .text-xs { font-size: 11px; }
+  .text-sm { font-size: 12px; }
+  .text-lg { font-size: 16px; }
+  .text-xl { font-size: 18px; }
+  .text-2xl { font-size: 20px; }
 }
 `;
 

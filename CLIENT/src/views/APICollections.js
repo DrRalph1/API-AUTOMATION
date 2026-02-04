@@ -157,7 +157,7 @@ const APICollections = ({ theme, isDark, customTheme, toggleTheme }) => {
 
   // Matching the exact color scheme from the first component
   const colors = isDark ? {
-    // Using your shade as base
+    // Using your shade as base - EXACTLY matching Dashboard
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
     sidebar: 'rgb(41 53 72 / 39%)',
@@ -165,65 +165,75 @@ const APICollections = ({ theme, isDark, customTheme, toggleTheme }) => {
     header: 'rgb(20 26 38)',
     card: 'rgb(41 53 72 / 39%)',
     
-    // Text - coordinating grays
-    text: '#E8ECF1',
-    textSecondary: 'rgb(168 178 192)',
-    textTertiary: 'rgb(128 140 158)',
+    // Text - coordinating grays - EXACTLY matching Dashboard
+    text: '#F1F5F9',
+    textSecondary: 'rgb(148 163 184)',
+    textTertiary: 'rgb(100 116 139)',
     
-    // Borders - variations of your shade
-    border: 'rgb(61 73 92)',
-    borderLight: 'rgb(51 63 82)',
-    borderDark: 'rgb(71 83 102)',
+    // Borders - variations of your shade - EXACTLY matching Dashboard
+    border: 'rgb(51 65 85)',
+    borderLight: 'rgb(45 55 72)',
+    borderDark: 'rgb(71 85 105)',
     
-    // Interactive - layered transparency
-    hover: 'rgb(51 63 82)',
-    active: 'rgb(61 73 92)',
+    // Interactive - layered transparency - EXACTLY matching Dashboard
+    hover: 'rgb(45 46 72 / 33%)',
+    active: 'rgb(59 74 99)',
     selected: 'rgb(44 82 130)',
     
-    // Primary colors
-    primary: '#E8ECF1',
-    primaryLight: 'rgb(96 165 250)',
+    // Primary colors - EXACTLY matching Dashboard
+    primary: 'rgb(96 165 250)',
+    primaryLight: 'rgb(147 197 253)',
     primaryDark: 'rgb(37 99 235)',
     
-    // HTTP Method colors
+    // Method colors - EXACTLY matching Dashboard
     method: {
-      GET: 'rgb(16 185 129)',
-      POST: 'rgb(59 130 246)',
-      PUT: 'rgb(245 158 11)',
-      DELETE: 'rgb(239 68 68)',
-      PATCH: 'rgb(139 92 246)',
-      HEAD: 'rgb(107 114 128)',
-      OPTIONS: 'rgb(139 92 246)',
-      LINK: 'rgb(6 182 212)',
-      UNLINK: 'rgb(249 115 22)'
+      GET: 'rgb(52 211 153)',
+      POST: 'rgb(96 165 250)',
+      PUT: 'rgb(251 191 36)',
+      DELETE: 'rgb(248 113 113)',
+      PATCH: 'rgb(167 139 250)',
+      HEAD: 'rgb(148 163 184)',
+      OPTIONS: 'rgb(167 139 250)',
+      LINK: 'rgb(34 211 238)',
+      UNLINK: 'rgb(251 191 36)'
     },
     
-    // Status colors
-    success: 'rgb(16 185 129)',
-    warning: 'rgb(245 158 11)',
-    error: 'rgb(239 68 68)',
-    info: 'rgb(59 130 246)',
+    // Status colors - EXACTLY matching Dashboard
+    success: 'rgb(52 211 153)',
+    warning: 'rgb(251 191 36)',
+    error: 'rgb(248 113 113)',
+    info: 'rgb(96 165 250)',
     
-    // UI Components
-    tabActive: 'rgb(59 130 246)',
+    // UI Components - EXACTLY matching Dashboard
+    tabActive: 'rgb(96 165 250)',
     tabInactive: 'rgb(148 163 184)',
-    sidebarActive: 'rgb(59 130 246)',
-    sidebarHover: 'rgb(51 63 82)',
+    sidebarActive: 'rgb(96 165 250)',
+    sidebarHover: 'rgb(45 46 72 / 33%)',
     inputBg: 'rgb(41 53 72 / 39%)',
-    inputBorder: 'rgb(61 73 92)',
-    tableHeader: 'rgb(51 63 82)',
+    inputBorder: 'rgb(51 65 85)',
+    tableHeader: 'rgb(41 53 72 / 39%)',
     tableRow: 'rgb(41 53 72 / 39%)',
-    tableRowHover: 'rgb(51 63 82)',
+    tableRowHover: 'rgb(45 46 72 / 33%)',
     dropdownBg: 'rgb(41 53 72 / 39%)',
-    dropdownBorder: 'rgb(61 73 92)',
+    dropdownBorder: 'rgb(51 65 85)',
     modalBg: 'rgb(41 53 72 / 39%)',
-    modalBorder: 'rgb(61 73 92)',
+    modalBorder: 'rgb(51 65 85)',
     codeBg: 'rgb(41 53 72 / 39%)',
+    
+    // Connection status - EXACTLY matching Dashboard
+    connectionOnline: 'rgb(52 211 153)',
+    connectionOffline: 'rgb(248 113 113)',
+    connectionIdle: 'rgb(251 191 36)',
+    
+    // Accent colors - EXACTLY matching Dashboard
+    accentPurple: 'rgb(167 139 250)',
+    accentPink: 'rgb(244 114 182)',
+    accentCyan: 'rgb(34 211 238)',
     
     // Gradient - updated to match the new color scheme
     gradient: 'from-blue-500/20 via-violet-500/20 to-orange-500/20'
   } : {
-    // KEEP THE ORIGINAL LIGHT MODE
+    // LIGHT MODE - EXACTLY matching Dashboard's light mode
     bg: '#f8fafc',
     white: '#f8fafc',
     sidebar: '#ffffff',
@@ -242,6 +252,8 @@ const APICollections = ({ theme, isDark, customTheme, toggleTheme }) => {
     primary: '#1e293b',
     primaryLight: '#60a5fa',
     primaryDark: '#2563eb',
+    
+    // Method colors for light mode
     method: {
       GET: '#10b981',
       POST: '#3b82f6',
@@ -253,6 +265,7 @@ const APICollections = ({ theme, isDark, customTheme, toggleTheme }) => {
       LINK: '#06b6d4',
       UNLINK: '#f97316'
     },
+    
     success: '#10b981',
     warning: '#f59e0b',
     error: '#ef4444',
@@ -271,6 +284,17 @@ const APICollections = ({ theme, isDark, customTheme, toggleTheme }) => {
     modalBg: '#ffffff',
     modalBorder: '#e2e8f0',
     codeBg: '#f1f5f9',
+    
+    // Connection status for light mode
+    connectionOnline: '#10b981',
+    connectionOffline: '#ef4444',
+    connectionIdle: '#f59e0b',
+    
+    // Accent colors for light mode
+    accentPurple: '#8b5cf6',
+    accentPink: '#ec4899',
+    accentCyan: '#06b6d4',
+    
     gradient: 'from-blue-400/20 via-violet-400/20 to-orange-400/20'
   };
 
