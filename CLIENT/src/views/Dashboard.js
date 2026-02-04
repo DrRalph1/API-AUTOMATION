@@ -160,12 +160,16 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme }) => {
   const [activityPage, setActivityPage] = useState(1);
   const [activitiesPerPage, setActivitiesPerPage] = useState(4);
 
+  // Mobile state
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isRightSidebarVisible, setIsRightSidebarVisible] = useState(false);
+
   // Color scheme matching your other components
   const colors = isDark ? {
     // Using your shade as base
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
-    sidebar: 'rgb(20 26 38)',
+    sidebar: 'rgb(41 53 72 / 39%)',
     main: 'rgb(1 14 35)',
     header: 'rgb(20 26 38)',
     card: 'rgb(41 53 72 / 39%)',
@@ -181,7 +185,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme }) => {
     borderDark: 'rgb(71 85 105)',
     
     // Interactive - layered transparency
-    hover: 'rgb(45 55 72)',
+    hover: 'rgb(45 46 72 / 33%)',
     active: 'rgb(59 74 99)',
     selected: 'rgb(44 82 130)',
     
@@ -200,12 +204,12 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme }) => {
     tabActive: 'rgb(96 165 250)',
     tabInactive: 'rgb(148 163 184)',
     sidebarActive: 'rgb(96 165 250)',
-    sidebarHover: 'rgb(45 55 72)',
+    sidebarhover: 'rgb(45 46 72 / 33%)',
     inputBg: 'rgb(41 53 72 / 39%)',
     inputBorder: 'rgb(51 65 85)',
     tableHeader: 'rgb(41 53 72 / 39%)',
     tableRow: 'rgb(41 53 72 / 39%)',
-    tableRowHover: 'rgb(45 55 72)',
+    tableRowhover: 'rgb(45 46 72 / 33%)',
     dropdownBg: 'rgb(41 53 72 / 39%)',
     dropdownBorder: 'rgb(51 65 85)',
     modalBg: 'rgb(41 53 72 / 39%)',
@@ -514,24 +518,24 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme }) => {
 
   // Stat Card Component
   const StatCard = ({ title, value, icon: Icon, change, color }) => (
-    <div className="border rounded-xl p-4 hover-lift" style={{ 
+    <div className="border rounded-xl p-3 sm:p-4 hover-lift" style={{ 
       borderColor: colors.border,
       backgroundColor: colors.card
     }}>
       <div className="flex items-center justify-between mb-2">
-        <div className="text-sm font-medium" style={{ color: colors.textSecondary }}>
+        <div className="text-xs sm:text-sm font-medium" style={{ color: colors.textSecondary }}>
           {title}
         </div>
-        <div className="p-2 rounded-lg" style={{ backgroundColor: `${color}20` }}>
-          <Icon size={16} style={{ color }} />
+        <div className="p-1.5 sm:p-2 rounded-lg" style={{ backgroundColor: `${color}20` }}>
+          <Icon size={14} style={{ color }} />
         </div>
       </div>
       <div className="flex items-end justify-between">
-        <div className="text-2xl font-bold" style={{ color: colors.text }}>
+        <div className="text-lg sm:text-xl md:text-2xl font-bold" style={{ color: colors.text }}>
           {value}
         </div>
         {change && (
-          <div className={`text-xs px-2 py-1 rounded-full ${change > 0 ? 'text-green-600 bg-green-100' : 'text-red-600 bg-red-100'}`}>
+          <div className={`text-xs px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full ${change > 0 ? 'text-green-600 bg-green-100' : 'text-red-600 bg-red-100'}`}>
             {change > 0 ? '+' : ''}{change}%
           </div>
         )}
@@ -548,18 +552,18 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme }) => {
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           {getDatabaseIcon(connection.type)}
-          <span className="text-sm font-medium" style={{ color: colors.text }}>
+          <span className="text-sm font-medium truncate" style={{ color: colors.text }}>
             {connection.name}
           </span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0">
           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(connection.status) }} />
           <span className="text-xs" style={{ color: colors.textSecondary }}>
             {connection.status}
           </span>
         </div>
       </div>
-      <div className="text-xs mb-2" style={{ color: colors.textSecondary }}>
+      <div className="text-xs mb-2 truncate" style={{ color: colors.textSecondary }}>
         {connection.host}:{connection.port}/{connection.service}
       </div>
       <div className="flex items-center justify-between text-xs">
@@ -573,12 +577,11 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme }) => {
     </div>
   );
 
-
   // Activity Item
   const ActivityItem = ({ activity }) => (
-    <div className="flex items-start gap-3 p-3 border-b last:border-b-0 hover:bg-opacity-50 transition-colors hover-lift"
+    <div className="flex items-start cursor-pointer gap-3 p-3 border-b last:border-b-0 hover:bg-opacity-50 transition-colors hover-lift"
       style={{ borderColor: colors.border }}>
-      <div className="relative">
+      <div className="relative shrink-0">
         <div className="p-1.5 rounded" style={{ backgroundColor: colors.hover }}>
           {getIconForActivity(activity.icon)}
         </div>
@@ -586,24 +589,24 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme }) => {
           <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full" style={{ backgroundColor: getPriorityColor(activity.priority) }} />
         )}
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium" style={{ color: colors.text }}>
+      <div className="flex-1 min-w-0 overflow-hidden">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-medium truncate" style={{ color: colors.text }}>
             {activity.action}
           </span>
-          <span className="text-xs" style={{ color: colors.textSecondary }}>
+          <span className="text-xs shrink-0" style={{ color: colors.textSecondary }}>
             {activity.time}
           </span>
         </div>
-        <p className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+        <p className="text-xs mt-1 truncate" style={{ color: colors.textSecondary }}>
           {activity.description}
         </p>
-        <div className="flex items-center justify-between mt-1">
-          <div className="text-xs" style={{ color: colors.textTertiary }}>
+        <div className="flex items-center justify-between mt-1 gap-2">
+          <div className="text-xs truncate" style={{ color: colors.textTertiary }}>
             by {activity.user}
           </div>
           {activity.priority !== 'low' && (
-            <div className={`text-xs px-2 py-0.5 rounded-full capitalize ${
+            <div className={`text-xs px-2 py-0.5 rounded-full capitalize shrink-0 ${
               activity.priority === 'high' ? 'bg-red-500/10 text-red-500' : 'bg-yellow-500/10 text-yellow-500'
             }`}>
               {activity.priority}
@@ -616,338 +619,271 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme }) => {
 
   // Enhanced Schema Stats Card
   const SchemaStatsCard = () => {
-  const schemaCategories = [
-    { 
-      name: 'Tables & Views', 
-      items: [
-        { 
-          key: 'tables', 
-          value: schemaData.tables, 
-          icon: <Table size={12} />,
-          change: schemaData.tableChange || 0,
-          description: 'Data storage structures'
-        },
-        { 
-          key: 'views', 
-          value: schemaData.views, 
-          icon: <Eye size={12} />,
-          change: schemaData.viewChange || 0,
-          description: 'Virtual tables'
-        },
-        { 
-          key: 'materializedViews', 
-          value: schemaData.materializedViews || 0, 
-          icon: <Database size={12} />,
-          change: schemaData.materializedViewChange || 0,
-          description: 'Pre-computed views'
-        }
-      ],
-      color: colors.info,
-      icon: <Table size={14} />
-    },
-    { 
-      name: 'Program Units', 
-      items: [
-        { 
-          key: 'procedures', 
-          value: schemaData.procedures, 
-          icon: <FileCode size={12} />,
-          change: schemaData.procedureChange || 0,
-          description: 'Stored procedures'
-        },
-        { 
-          key: 'functions', 
-          value: schemaData.functions, 
-          icon: <Code size={12} />,
-          change: schemaData.functionChange || 0,
-          description: 'Return-value routines'
-        },
-        { 
-          key: 'packages', 
-          value: schemaData.packages, 
-          icon: <Package size={12} />,
-          change: schemaData.packageChange || 0,
-          description: 'Logical groupings'
-        }
-      ],
-      color: colors.success,
-      icon: <Code size={14} />
-    },
-    { 
-      name: 'Database Objects', 
-      items: [
-        { 
-          key: 'triggers', 
-          value: schemaData.triggers, 
-          icon: <Zap size={12} />,
-          change: schemaData.triggerChange || 0,
-          description: 'Event-driven actions'
-        },
-        { 
-          key: 'indexes', 
-          value: schemaData.indexes, 
-          icon: <BarChart3 size={12} />,
-          change: schemaData.indexChange || 0,
-          description: 'Query performance'
-        },
-        { 
-          key: 'sequences', 
-          value: schemaData.sequences || 0, 
-          icon: <TrendingUp size={12} />,
-          change: schemaData.sequenceChange || 0,
-          description: 'Auto-increment values'
-        }
-      ],
-      color: colors.warning,
-      icon: <Database size={14} />
-    }
-  ];
+    const schemaCategories = [
+      { 
+        name: 'Tables & Views', 
+        items: [
+          { 
+            key: 'tables', 
+            value: schemaData.tables, 
+            icon: <Table size={12} />,
+            change: schemaData.tableChange || 0,
+            description: 'Data storage structures'
+          },
+          { 
+            key: 'views', 
+            value: schemaData.views, 
+            icon: <Eye size={12} />,
+            change: schemaData.viewChange || 0,
+            description: 'Virtual tables'
+          },
+          { 
+            key: 'materializedViews', 
+            value: schemaData.materializedViews || 0, 
+            icon: <Database size={12} />,
+            change: schemaData.materializedViewChange || 0,
+            description: 'Pre-computed views'
+          }
+        ],
+        color: colors.info,
+        icon: <Table size={14} />
+      },
+      { 
+        name: 'Program Units', 
+        items: [
+          { 
+            key: 'procedures', 
+            value: schemaData.procedures, 
+            icon: <FileCode size={12} />,
+            change: schemaData.procedureChange || 0,
+            description: 'Stored procedures'
+          },
+          { 
+            key: 'functions', 
+            value: schemaData.functions, 
+            icon: <Code size={12} />,
+            change: schemaData.functionChange || 0,
+            description: 'Return-value routines'
+          },
+          { 
+            key: 'packages', 
+            value: schemaData.packages, 
+            icon: <Package size={12} />,
+            change: schemaData.packageChange || 0,
+            description: 'Logical groupings'
+          }
+        ],
+        color: colors.success,
+        icon: <Code size={14} />
+      },
+      { 
+        name: 'Database Objects', 
+        items: [
+          { 
+            key: 'triggers', 
+            value: schemaData.triggers, 
+            icon: <Zap size={12} />,
+            change: schemaData.triggerChange || 0,
+            description: 'Event-driven actions'
+          },
+          { 
+            key: 'indexes', 
+            value: schemaData.indexes, 
+            icon: <BarChart3 size={12} />,
+            change: schemaData.indexChange || 0,
+            description: 'Query performance'
+          },
+          { 
+            key: 'sequences', 
+            value: schemaData.sequences || 0, 
+            icon: <TrendingUp size={12} />,
+            change: schemaData.sequenceChange || 0,
+            description: 'Auto-increment values'
+          }
+        ],
+        color: colors.warning,
+        icon: <Database size={14} />
+      }
+    ];
 
-  // Calculate category totals with change percentages
-  const categoryStats = schemaCategories.map(category => ({
-    name: category.name,
-    total: category.items.reduce((sum, item) => sum + item.value, 0),
-    previousTotal: category.items.reduce((sum, item) => sum + (item.value - item.change), 0),
-    color: category.color
-  }));
-
-  // Calculate growth percentage
-  const calculateGrowth = (current, previous) => {
-    if (previous === 0) return 100;
-    return ((current - previous) / previous * 100).toFixed(1);
-  };
-
-  return (
-    <div className="border rounded-xl p-4 hover-lift transition-all duration-300" style={{ 
-      borderColor: colors.border,
-      backgroundColor: colors.card,
-      boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-    }}>
-      {/* Header with more stats */}
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
-              Schema Statistics
-            </h3>
-            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs" 
-              style={{ 
-                backgroundColor: schemaData.totalObjectsChange >= 0 ? `${colors.success}20` : `${colors.error}20`,
-                color: schemaData.totalObjectsChange >= 0 ? colors.success : colors.error
-              }}>
-              <TrendingUp size={10} />
-              <span>{Math.abs(schemaData.totalObjectsChange || 0)}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <p className="text-xs" style={{ color: colors.textSecondary }}>
-              {schemaData.totalObjects} total objects
-            </p>
-            <div className="text-xs flex items-center gap-1" style={{ color: colors.textTertiary }}>
-              <Database size={10} />
-              <span>{schemaData.databaseName || 'Main Database'}</span>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="p-2 rounded-lg" style={{ backgroundColor: `${colors.primaryDark}15` }}>
-            <Database size={18} style={{ color: colors.primaryDark }} />
-          </div>
-          <div className="text-right">
-            <div className="text-xs" style={{ color: colors.textSecondary }}>Size</div>
-            <div className="text-sm font-semibold" style={{ color: colors.text }}>
-              {schemaData.databaseSize || '2.4 GB'}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Category Overview Bar */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-medium" style={{ color: colors.text }}>
-            Object Distribution
-          </span>
-          <div className="flex items-center gap-3">
-            {categoryStats.map((cat, idx) => (
-              <div key={idx} className="flex items-center gap-1">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />
-                <span className="text-xs" style={{ color: colors.textSecondary }}>
-                  {cat.name}
-                </span>
+    return (
+      <div className="border rounded-xl p-4 hover-lift transition-all duration-300" style={{ 
+        borderColor: colors.border,
+        backgroundColor: colors.card,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+      }}>
+        {/* Header with more stats */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
+                Schema Statistics
+              </h3>
+              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs" 
+                style={{ 
+                  backgroundColor: schemaData.totalObjectsChange >= 0 ? `${colors.success}20` : `${colors.error}20`,
+                  color: schemaData.totalObjectsChange >= 0 ? colors.success : colors.error
+                }}>
+                <TrendingUp size={10} />
+                <span>{Math.abs(schemaData.totalObjectsChange || 0)}</span>
               </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+              <p className="text-xs" style={{ color: colors.textSecondary }}>
+                {schemaData.totalObjects} total objects
+              </p>
+              <div className="text-xs flex items-center gap-1" style={{ color: colors.textTertiary }}>
+                <Database size={10} />
+                <span>{schemaData.databaseName || 'Main Database'}</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="p-2 rounded-lg" style={{ backgroundColor: `${colors.primaryDark}15` }}>
+              <Database size={18} style={{ color: colors.primaryDark }} />
+            </div>
+            <div className="text-right">
+              <div className="text-xs" style={{ color: colors.textSecondary }}>Size</div>
+              <div className="text-sm font-semibold" style={{ color: colors.text }}>
+                {schemaData.databaseSize || '2.4 GB'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Category Overview Bar */}
+        <div className="mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+            <span className="text-xs font-medium" style={{ color: colors.text }}>
+              Object Distribution
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              {schemaCategories.map((cat, idx) => (
+                <div key={idx} className="flex items-center gap-1">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />
+                  <span className="text-xs" style={{ color: colors.textSecondary }}>
+                    {cat.name}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="h-2 rounded-full overflow-hidden flex">
+            {schemaCategories.map((cat, idx) => (
+              <div 
+                key={idx}
+                className="h-full transition-all duration-300"
+                style={{ 
+                  width: `${(cat.items.reduce((sum, item) => sum + item.value, 0) / schemaData.totalObjects) * 100}%`,
+                  backgroundColor: cat.color,
+                  marginRight: idx < schemaCategories.length - 1 ? '2px' : '0'
+                }}
+              />
             ))}
           </div>
         </div>
-        <div className="h-2 rounded-full overflow-hidden flex">
-          {categoryStats.map((cat, idx) => (
-            <div 
-              key={idx}
-              className="h-full transition-all duration-300"
-              style={{ 
-                width: `${(cat.total / schemaData.totalObjects) * 100}%`,
-                backgroundColor: cat.color,
-                marginRight: idx < categoryStats.length - 1 ? '2px' : '0'
-              }}
-              title={`${cat.name}: ${cat.total} objects (${((cat.total / schemaData.totalObjects) * 100).toFixed(1)}%)`}
-            />
-          ))}
-        </div>
-      </div>
 
-      {/* Enhanced Progress bar */}
-      {/* <div className="mb-6 p-3 rounded-lg" style={{ backgroundColor: colors.hover }}>
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <span className="text-xs font-medium" style={{ color: colors.text }}>
-              Database Capacity
-            </span>
-            <div className="text-xs" style={{ color: colors.textSecondary }}>
-              {schemaData.totalObjects} of 500 objects • {Math.round((schemaData.totalObjects / 500) * 100)}% used
-            </div>
-          </div>
-          <div className="text-right">
-            <div className="text-xs font-medium" style={{ color: colors.text }}>
-              {500 - schemaData.totalObjects} available
-            </div>
-            <div className="text-xs" style={{ color: colors.textSecondary }}>
-              Recommended: ≤ 400 objects
-            </div>
-          </div>
-        </div>
-        <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: colors.border }}>
-          <div 
-            className="h-full rounded-full transition-all duration-300 relative"
-            style={{ 
-              width: `${Math.min((schemaData.totalObjects / 500) * 100, 100)}%`,
-              background: `linear-gradient(90deg, ${colors.info}, ${colors.primaryDark})`
-            }}
-          >
-            {schemaData.totalObjects > 400 && (
-              <div 
-                className="absolute top-0 right-0 w-1 h-3 -mt-0.5 rounded"
-                style={{ backgroundColor: colors.warning }}
-              />
-            )}
-          </div>
-        </div>
-        <div className="flex justify-between mt-1">
-          <span className="text-xs" style={{ color: colors.textSecondary }}>0%</span>
-          <span className="text-xs font-medium" style={{ color: schemaData.totalObjects > 400 ? colors.warning : colors.text }}>
-            {schemaData.totalObjects > 400 ? '⚠️ Near Capacity' : 'Optimal'}
-          </span>
-          <span className="text-xs" style={{ color: colors.textSecondary }}>100%</span>
-        </div>
-      </div> */}
-
-      {/* Schema categories with enhanced details */}
-      <div className="space-y-4">
-        {schemaCategories.map((category, index) => {
-          const categoryTotal = category.items.reduce((sum, item) => sum + item.value, 0);
-          const previousTotal = category.items.reduce((sum, item) => sum + (item.value - item.change), 0);
-          const growth = calculateGrowth(categoryTotal, previousTotal);
-          
-          return (
-            <div key={index} className="space-y-2 p-3 rounded-lg hover-lift" 
-              style={{ backgroundColor: colors.hover }}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="p-1 rounded" style={{ backgroundColor: `${category.color}20` }}>
-                    {category.icon}
-                  </div>
-                  <div>
-                    <span className="text-xs font-semibold" style={{ color: colors.text }}>
-                      {category.name}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs" style={{ color: colors.textSecondary }}>
-                        {categoryTotal} objects
-                      </span>
-                      <div className={`text-xs flex items-center gap-0.5 ${Number(growth) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {Number(growth) >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                        <span>{Math.abs(Number(growth))}%</span>
-                      </div>
+        {/* Schema categories with enhanced details */}
+        <div className="space-y-4">
+          {schemaCategories.map((category, index) => {
+            const categoryTotal = category.items.reduce((sum, item) => sum + item.value, 0);
+            
+            return (
+              <div key={index} className="space-y-2 p-3 rounded-lg hover-lift" 
+                style={{ backgroundColor: colors.hover }}>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1 rounded" style={{ backgroundColor: `${category.color}20` }}>
+                      {category.icon}
                     </div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>
-                    {((categoryTotal / schemaData.totalObjects) * 100).toFixed(1)}% of total
-                  </div>
-                  <div className="text-xs font-medium" style={{ color: category.color }}>
-                    Δ {category.items.reduce((sum, item) => sum + item.change, 0)} this month
-                  </div>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-3 gap-2">
-                {category.items.map((item, idx) => (
-                  <div key={idx} 
-                    className="border rounded-lg p-2 text-center hover-lift transition-all duration-200"
-                    style={{ 
-                      borderColor: colors.borderLight,
-                      backgroundColor: colors.card,
-                    }}>
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-1">
-                        {item.icon}
-                        <span className="text-xs font-bold" style={{ color: colors.text }}>
-                          {item.value}
+                    <div className="min-w-0">
+                      <span className="text-xs font-semibold truncate" style={{ color: colors.text }}>
+                        {category.name}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs" style={{ color: colors.textSecondary }}>
+                          {categoryTotal} objects
                         </span>
                       </div>
-                      {item.change !== 0 && (
-                        <div className={`text-xs ${item.change > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {item.change > 0 ? '+' : ''}{item.change}
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-xs font-medium capitalize mb-0.5" style={{ color: colors.text }}>
-                      {item.key.replace(/([A-Z])/g, ' $1').trim()}
-                    </div>
-                    <div className="text-xs opacity-75 truncate" style={{ color: colors.textSecondary }}>
-                      {item.description}
                     </div>
                   </div>
-                ))}
+                  <div className="text-right shrink-0">
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>
+                      {((categoryTotal / schemaData.totalObjects) * 100).toFixed(1)}% of total
+                    </div>
+                    <div className="text-xs font-medium" style={{ color: category.color }}>
+                      Δ {category.items.reduce((sum, item) => sum + item.change, 0)} this month
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-3 gap-2">
+                  {category.items.map((item, idx) => (
+                    <div key={idx} 
+                      className="border rounded-lg p-2 text-center hover-lift transition-all duration-200"
+                      style={{ 
+                        borderColor: colors.borderLight,
+                        backgroundColor: colors.card,
+                      }}>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-1">
+                          {item.icon}
+                          <span className="text-xs font-bold" style={{ color: colors.text }}>
+                            {item.value}
+                          </span>
+                        </div>
+                        {item.change !== 0 && (
+                          <div className={`text-xs ${item.change > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {item.change > 0 ? '+' : ''}{item.change}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-xs font-medium capitalize mb-0.5 truncate" style={{ color: colors.text }}>
+                        {item.key.replace(/([A-Z])/g, ' $1').trim()}
+                      </div>
+                      <div className="text-xs opacity-75 truncate" style={{ color: colors.textSecondary }}>
+                        {item.description}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Enhanced Footer with more metrics */}
+        <div className="mt-6 pt-4 border-t" style={{ borderColor: colors.border }}>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <div className="text-xs" style={{ color: colors.textSecondary }}>Last Updated</div>
+              <div className="text-sm font-medium flex items-center gap-1 truncate" style={{ color: colors.text }}>
+                <Clock size={12} />
+                Today, 10:30 AM
               </div>
             </div>
-          );
-        })}
-      </div>
-
-      {/* Enhanced Footer with more metrics */}
-      <div className="mt-6 pt-4 border-t" style={{ borderColor: colors.border }}>
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <div className="text-xs" style={{ color: colors.textSecondary }}>Last Updated</div>
-            <div className="text-sm font-medium flex items-center gap-1" style={{ color: colors.text }}>
-              <Clock size={12} />
-              Today, 10:30 AM
+            <div>
+              <div className="text-xs" style={{ color: colors.textSecondary }}>Growth Rate</div>
+              <div className="text-sm font-medium flex items-center gap-1" style={{ color: colors.success }}>
+                <TrendingUp size={12} />
+                +{schemaData.monthlyGrowth || 12}%
+              </div>
             </div>
-          </div>
-          <div>
-            <div className="text-xs" style={{ color: colors.textSecondary }}>Growth Rate</div>
-            <div className="text-sm font-medium flex items-center gap-1" style={{ color: colors.success }}>
-              <TrendingUp size={12} />
-              +{schemaData.monthlyGrowth || 12}% this month
-            </div>
-          </div>
-          <div>
-            <div className="text-xs" style={{ color: colors.textSecondary }}>Schema Version</div>
-            <div className="text-sm font-medium" style={{ color: colors.text }}>
-              v{schemaData.version || '1.2.3'}
+            <div>
+              <div className="text-xs" style={{ color: colors.textSecondary }}>Schema Version</div>
+              <div className="text-sm font-medium truncate" style={{ color: colors.text }}>
+                v{schemaData.version || '1.2.3'}
+              </div>
             </div>
           </div>
         </div>
-        
       </div>
-    </div>
-  );
-};
+    );
+  };
 
   // Activity Pagination Component
   const ActivityPagination = () => (
-    <div className="flex items-center justify-between p-4 border-t" style={{ borderColor: colors.border }}>
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 border-t" style={{ borderColor: colors.border }}>
       <div className="text-xs" style={{ color: colors.textSecondary }}>
         Showing {((activityPage - 1) * activitiesPerPage) + 1} - {Math.min(activityPage * activitiesPerPage, recentActivity.length)} of {recentActivity.length} activities
       </div>
@@ -1030,418 +966,350 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme }) => {
 
   // Right Sidebar Component
   const RightSidebar = () => (
-    <div className="w-80 border-l flex flex-col" style={{ 
-      backgroundColor: colors.bg,
+    <div className={`w-full md:w-80 border-l flex flex-col absolute md:relative inset-y-0 right-0 z-30 transform transition-transform duration-300 ease-in-out ${
+      isRightSidebarVisible ? 'translate-x-0' : 'translate-x-full md:translate-x-0'
+    }`} style={{ 
+      backgroundColor: colors.sidebar,
       borderColor: colors.border
     }}>
-      {/* System Health */}
-      {/* <div className="border-b p-4" style={{ borderColor: colors.border }}>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
-            System Health
-          </h3>
-          <Activity size={14} style={{ color: colors.textSecondary }} />
-        </div>
-        <div className="space-y-3">
-          {[
-            { label: 'CPU Usage', value: systemHealth.cpu, icon: <Cpu size={12} /> },
-            { label: 'Memory', value: systemHealth.memory, icon: <HardDrive size={12} /> },
-            { label: 'Disk I/O', value: systemHealth.disk, icon: <Database size={12} /> },
-            { label: 'Network', value: systemHealth.network, icon: <Network size={12} /> }
-          ].map((metric, index) => (
-            <div key={index} className="space-y-1">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-xs" style={{ color: colors.textSecondary }}>
-                  {metric.icon}
-                  {metric.label}
-                </div>
-                <span className="text-xs font-medium" style={{ 
-                  color: metric.value > 80 ? colors.error : 
-                         metric.value > 60 ? colors.warning : 
-                         colors.success 
-                }}>
-                  {metric.value}%
-                </span>
-              </div>
-              <div className="h-1 rounded-full overflow-hidden" style={{ backgroundColor: colors.border }}>
-                <div 
-                  className="h-full rounded-full transition-all duration-300"
-                  style={{ 
-                    width: `${metric.value}%`,
-                    backgroundColor: metric.value > 80 ? colors.error : 
-                                   metric.value > 60 ? colors.warning : 
-                                   colors.success
-                  }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div> */}
-
-      {/* Code Generation Stats */}
-      {/* <div className="border-b p-4" style={{ borderColor: colors.border }}>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
-            Code Generation
-          </h3>
-          <Code size={14} style={{ color: colors.textSecondary }} />
-        </div>
-        <div className="space-y-2">
-          {Object.entries(codeGenerationStats).map(([lang, count]) => (
-            <div key={lang} className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium capitalize" style={{ color: colors.text }}>
-                  {lang}
-                </span>
-              </div>
-              <span className="text-xs" style={{ color: colors.textSecondary }}>
-                {count} APIs
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="mt-3 h-2 rounded-full overflow-hidden flex">
-          {Object.entries(codeGenerationStats).map(([lang, count], index) => {
-            const total = Object.values(codeGenerationStats).reduce((a, b) => a + b, 0);
-            const percentage = (count / total) * 100;
-            const colorsMap = {
-              java: '#f89820',
-              javascript: '#f0db4f',
-              python: '#3776ab',
-              csharp: '#9b4993'
-            };
-            
-            return (
-              <div
-                key={lang}
-                className="h-full"
-                style={{ 
-                  width: `${percentage}%`,
-                  backgroundColor: colorsMap[lang] || colors.textSecondary
-                }}
-                title={`${lang}: ${count} APIs (${percentage.toFixed(1)}%)`}
-              />
-            );
-          })}
-        </div>
-      </div> */}
-
-      {/* Recent Deployments */}
-      <div className="border-b p-4" style={{ borderColor: colors.border }}>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
-            Recent API's Generated
-          </h3>
-          <Rocket size={14} style={{ color: colors.textSecondary }} />
-        </div>
-        <div className="space-y-2">
-          {[
-            { name: 'User API v2.1', env: 'Production', status: 'success', time: '2 hours ago' },
-            { name: 'Payment API v1.5', env: 'Staging', status: 'success', time: '1 day ago' },
-            { name: 'Inventory API', env: 'Development', status: 'pending', time: '2 days ago' }
-          ].map((deployment, index) => (
-            <div key={index} className="flex items-center justify-between p-2 rounded hover-lift"
-              style={{ backgroundColor: colors.hover }}>
-              <div>
-                <div className="text-xs font-medium" style={{ color: colors.text }}>{deployment.name}</div>
-                <div className="text-xs" style={{ color: colors.textSecondary }}>{deployment.env}</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${
-                  deployment.status === 'success' ? 'bg-green-500' :
-                  deployment.status === 'pending' ? 'bg-yellow-500' : 'bg-red-500'
-                }`} />
-                <span className="text-xs" style={{ color: colors.textSecondary }}>{deployment.time}</span>
-              </div>
-            </div>
-          ))}
-        </div>
+      {/* Mobile sidebar header */}
+      <div className="flex items-center justify-between p-4 border-b md:hidden" style={{ borderColor: colors.border }}>
+        <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
+          Side Panel
+        </h3>
+        <button 
+          onClick={() => setIsRightSidebarVisible(false)}
+          className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+          style={{ backgroundColor: colors.hover }}
+        >
+          <X size={16} style={{ color: colors.text }} />
+        </button>
       </div>
 
-      {/* Quick Actions */}
-      <div className="p-4">
-        <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>
-          Quick Actions
-        </h3>
-        <div className="space-y-2">
-          <button className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift"
-            style={{ backgroundColor: colors.hover, color: colors.text }}>
-            <Database size={14} />
-            New Database Connection
-          </button>
-          <button className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift"
-            style={{ backgroundColor: colors.hover, color: colors.text }}>
-            <FileCode size={14} />
-            Generate New API
-          </button>
-          <button className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift"
-            style={{ backgroundColor: colors.hover, color: colors.text }}>
-            <Code size={14} />
-            View Code Base
-          </button>
-          <button className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift"
-            style={{ backgroundColor: colors.hover, color: colors.text }}>
-            <BookOpen size={14} />
-            View Documentation
-          </button>
+      <div className="flex-1 overflow-auto">
+        {/* System Health */}
+        {/* <div className="border-b p-4" style={{ borderColor: colors.border }}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
+              System Health
+            </h3>
+            <Activity size={14} style={{ color: colors.textSecondary }} />
+          </div>
+          <div className="space-y-3">
+            {[
+              { label: 'CPU Usage', value: systemHealth.cpu, icon: <Cpu size={12} /> },
+              { label: 'Memory', value: systemHealth.memory, icon: <HardDrive size={12} /> },
+              { label: 'Disk I/O', value: systemHealth.disk, icon: <Database size={12} /> },
+              { label: 'Network', value: systemHealth.network, icon: <Network size={12} /> }
+            ].map((metric, index) => (
+              <div key={index} className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs" style={{ color: colors.textSecondary }}>
+                    {metric.icon}
+                    {metric.label}
+                  </div>
+                  <span className="text-xs font-medium" style={{ 
+                    color: metric.value > 80 ? colors.error : 
+                          metric.value > 60 ? colors.warning : 
+                          colors.success 
+                  }}>
+                    {metric.value}%
+                  </span>
+                </div>
+                <div className="h-1 rounded-full overflow-hidden" style={{ backgroundColor: colors.border }}>
+                  <div 
+                    className="h-full rounded-full transition-all duration-300"
+                    style={{ 
+                      width: `${metric.value}%`,
+                      backgroundColor: metric.value > 80 ? colors.error : 
+                                    metric.value > 60 ? colors.warning : 
+                                    colors.success
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div> */}
+
+        {/* Code Generation Stats */}
+        {/* <div className="border-b p-4" style={{ borderColor: colors.border }}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
+              Code Generation
+            </h3>
+            <Code size={14} style={{ color: colors.textSecondary }} />
+          </div>
+          <div className="space-y-2">
+            {Object.entries(codeGenerationStats).map(([lang, count]) => (
+              <div key={lang} className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium capitalize" style={{ color: colors.text }}>
+                    {lang}
+                  </span>
+                </div>
+                <span className="text-xs" style={{ color: colors.textSecondary }}>
+                  {count} APIs
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 h-2 rounded-full overflow-hidden flex">
+            {Object.entries(codeGenerationStats).map(([lang, count], index) => {
+              const total = Object.values(codeGenerationStats).reduce((a, b) => a + b, 0);
+              const percentage = (count / total) * 100;
+              const colorsMap = {
+                java: '#f89820',
+                javascript: '#f0db4f',
+                python: '#3776ab',
+                csharp: '#9b4993'
+              };
+              
+              return (
+                <div
+                  key={lang}
+                  className="h-full"
+                  style={{ 
+                    width: `${percentage}%`,
+                    backgroundColor: colorsMap[lang] || colors.textSecondary
+                  }}
+                  title={`${lang}: ${count} APIs (${percentage.toFixed(1)}%)`}
+                />
+              );
+            })}
+          </div>
+        </div> */}
+
+        {/* Recent Deployments */}
+        <div className="border-b p-4 mt-3" style={{ borderColor: colors.border }}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
+              Recent Activities
+            </h3>
+            <Rocket size={14} style={{ color: colors.textSecondary }} />
+          </div>
+          <div className="space-y-4">
+            {[
+              { name: 'User API v2.1', env: 'Production', status: 'success', time: '2 hours ago' },
+              { name: 'Payment API v1.5', env: 'Staging', status: 'success', time: '1 day ago' },
+              { name: 'Inventory API', env: 'Development', status: 'pending', time: '2 days ago' }
+            ].map((deployment, index) => (
+              <div key={index} className="flex items-center justify-between p-2 rounded hover-lift"
+                style={{ backgroundColor: colors.hover }}>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-medium truncate" style={{ color: colors.text }}>{deployment.name}</div>
+                  <div className="text-xs truncate" style={{ color: colors.textSecondary }}>{deployment.env}</div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className={`w-2 h-2 rounded-full ${
+                    deployment.status === 'success' ? 'bg-green-500' :
+                    deployment.status === 'pending' ? 'bg-yellow-500' : 'bg-red-500'
+                  }`} />
+                  <span className="text-xs" style={{ color: colors.textSecondary }}>{deployment.time}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="p-4">
+          <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>
+            Quick Actions
+          </h3>
+          <div className="space-y-4">
+            <button className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift"
+              style={{ backgroundColor: colors.hover, color: colors.text }}>
+              <Database size={14} />
+              <span className="truncate">New Database Connection</span>
+            </button>
+            <button className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift"
+              style={{ backgroundColor: colors.hover, color: colors.text }}>
+              <FileCode size={14} />
+              <span className="truncate">Generate New API</span>
+            </button>
+            <button className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift"
+              style={{ backgroundColor: colors.hover, color: colors.text }}>
+              <Code size={14} />
+              <span className="truncate">View Code Base</span>
+            </button>
+            <button className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift"
+              style={{ backgroundColor: colors.hover, color: colors.text }}>
+              <BookOpen size={14} />
+              <span className="truncate">View Documentation</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
 
   return (
-    <div className="flex flex-col h-full overflow-hidden" style={{ 
-      backgroundColor: colors.bg,
-      color: colors.text,
-      fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
-      fontSize: '13px'
-    }}>
-      <style>{`
-        .hover-lift:hover {
-          transform: translateY(-2px);
-          transition: transform 0.2s ease;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-        
-        ::-webkit-scrollbar {
-          width: 8px;
-          height: 8px;
-        }
-        
-        ::-webkit-scrollbar-track {
-          background: ${colors.border};
-          border-radius: 4px;
-        }
-        
-        ::-webkit-scrollbar-thumb {
-          background: ${colors.textTertiary};
-          border-radius: 4px;
-        }
-        
-        ::-webkit-scrollbar-thumb:hover {
-          background: ${colors.textSecondary};
-        }
-      `}</style>
+  <div className="flex flex-col h-full" style={{ 
+    backgroundColor: colors.bg,
+    color: colors.text,
+    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+    fontSize: '13px'
+  }}>
+    <style>{`
+      .hover-lift:hover {
+        transform: translateY(-2px);
+        transition: transform 0.2s ease;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      }
+      
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      
+      ::-webkit-scrollbar-track {
+        background: ${colors.border};
+        border-radius: 4px;
+      }
+      
+      ::-webkit-scrollbar-thumb {
+        background: ${colors.textTertiary};
+        border-radius: 4px;
+      }
+      
+      ::-webkit-scrollbar-thumb:hover {
+        background: ${colors.textSecondary};
+      }
 
-      {/* Main Content - Shifted to the left */}
-      <div className="flex-1 overflow-hidden flex">
-        <div className="flex-1 overflow-auto p-4">
-          <div className="max-w-8xl mx-auto pl-8 pr-8">
-            {/* Key Metrics */} 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              <StatCard
-                title="Total Connections"
-                value={stats.totalConnections}
-                icon={Database}
-                change={+5}
-                color={colors.success}
-              />
-              <StatCard
-                title="Active APIs"
-                value={stats.activeApis}
-                icon={FileCode}
-                change={+12}
-                color={colors.info}
-              />
-              <StatCard
-                title="Total API Calls"
-                value={stats.totalCalls.toLocaleString()}
-                icon={Activity}
-                change={+8.5}
-                color={colors.primaryDark}
-              />
-              <StatCard
-                title="Success Rate"
-                value={stats.successRate}
-                icon={CheckCircle}
-                change={+0.2}
-                color={colors.success}
-              />
+      /* Mobile optimizations */
+      @media (max-width: 640px) {
+        .text-xs { font-size: 11px; }
+        .text-sm { font-size: 12px; }
+        .text-lg { font-size: 16px; }
+        .text-xl { font-size: 18px; }
+        .text-2xl { font-size: 20px; }
+      }
+    `}</style>
+
+    {/* Main Content */}
+    <div className="flex-1 overflow-hidden flex">
+      {/* Mobile sidebar overlay */}
+      {isRightSidebarVisible && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden"
+          onClick={() => setIsRightSidebarVisible(false)}
+        />
+      )}
+
+      {/* Main content area */}
+      <div className="flex-1 overflow-auto p-3 md:p-4">
+        <div className="max-w-9xl mt-2 mx-auto pl-0 md:pl-8 pr-0 md:pr-8">
+          {/* Key Metrics */}
+          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-6">
+            <StatCard
+              title="Total Connections"
+              value={stats.totalConnections}
+              icon={Database}
+              change={+5}
+              color={colors.success}
+            />
+            <StatCard
+              title="Active APIs"
+              value={stats.activeApis}
+              icon={FileCode}
+              change={+12}
+              color={colors.info}
+            />
+            <StatCard
+              title="Total API Calls"
+              value={stats.totalCalls.toLocaleString()}
+              icon={Activity}
+              change={+8.5}
+              color={colors.primaryDark}
+            />
+            <StatCard
+              title="Success Rate"
+              value={stats.successRate}
+              icon={CheckCircle}
+              change={+0.2}
+              color={colors.success}
+            />
+          </div>
+
+          {/* Main Grid - Use flex for better height distribution */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 min-h-[calc(100vh-200px)]">
+            {/* Left Column - Schema Statistics */}
+            <div className="flex flex-col">
+              <SchemaStatsCard />
             </div>
 
-            {/* Main Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Schema Statistics */}
-                <SchemaStatsCard />
-
-              {/* Right Column - Schema Stats and Recent Activity */}
-              <div className="space-y-6">
-
-                {/* Left Column - Active Connections */}
-                <div className="space-y-6">
-                  <div className="border rounded-xl" style={{ 
-                    borderColor: colors.border,
-                    backgroundColor: colors.card
-                  }}>
-                    <div className="p-4 border-b" style={{ borderColor: colors.border }}>
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
-                          Active Database Connections
-                        </h3>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs" style={{ color: colors.textSecondary }}>
-                            {connections.length} connections
-                          </span>
-                          <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                            style={{ backgroundColor: colors.hover }}>
-                            <Plus size={14} style={{ color: colors.textSecondary }} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="p-4">
-                      <div className="space-y-3">
-                        {connections.map(conn => (
-                          <ConnectionCard key={conn.id} connection={conn} />
-                        ))}
-                      </div>
+            {/* Right Column - Connections and Activity */}
+            <div className="flex flex-col gap-4 md:gap-6">
+              {/* Active Connections */}
+              <div className="border rounded-xl" style={{ 
+                borderColor: colors.border,
+                backgroundColor: colors.card
+              }}>
+                <div className="p-3 md:p-4 border-b" style={{ borderColor: colors.border }}>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
+                      Active Database Connections
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs hidden sm:inline" style={{ color: colors.textSecondary }}>
+                        {connections.length} connections
+                      </span>
+                      <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                        style={{ backgroundColor: colors.hover }}>
+                        <Plus size={14} style={{ color: colors.textSecondary }} />
+                      </button>
                     </div>
                   </div>
                 </div>
-
-                {/* Recent Activity */}
-                <div className="border rounded-xl" style={{ 
-                  borderColor: colors.border,
-                  backgroundColor: colors.card
-                }}>
-                  <div className="p-4 border-b" style={{ borderColor: colors.border }}>
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
-                        Recent Activity
-                      </h3>
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={activitiesPerPage}
-                          onChange={(e) => setActivitiesPerPage(Number(e.target.value))}
-                          className="text-xs px-2 py-1 rounded border bg-transparent"
-                          style={{ 
-                            borderColor: colors.border,
-                            color: colors.text
-                          }}
-                        >
-                          <option value={5}>5 per page</option>
-                          <option value={10}>10 per page</option>
-                          <option value={15}>15 per page</option>
-                        </select>
-                        <Clock size={14} style={{ color: colors.textSecondary }} />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="max-h-96 overflow-auto">
-                    {paginatedActivities.map(activity => (
-                      <ActivityItem key={activity.id} activity={activity} />
+                <div className="p-3 md:p-4">
+                  <div className="space-y-3">
+                    {connections.map(conn => (
+                      <ConnectionCard key={conn.id} connection={conn} />
                     ))}
                   </div>
-                  <ActivityPagination />
-                </div>
-
-              </div>
-            </div>
-
-            {/* Bottom Stats */}
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="border rounded-xl p-4 hover-lift" style={{ 
-                borderColor: colors.border,
-                backgroundColor: colors.card
-              }}>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 rounded" style={{ backgroundColor: '#3b82f620' }}>
-                    <Shield size={16} style={{ color: colors.info }} />
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium" style={{ color: colors.text }}>
-                      Security Status
-                    </div>
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>
-                      All connections secured
-                    </div>
-                  </div>
-                </div>
-                <div className="text-xs space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span style={{ color: colors.textSecondary }}>SSL Enabled</span>
-                    <span style={{ color: colors.success }}>100%</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span style={{ color: colors.textSecondary }}>API Keys</span>
-                    <span style={{ color: colors.text }}>24 active</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span style={{ color: colors.textSecondary }}>Last Audit</span>
-                    <span style={{ color: colors.text }}>Today</span>
-                  </div>
                 </div>
               </div>
 
-              <div className="border rounded-xl p-4 hover-lift" style={{ 
+              {/* Recent Activity */}
+              <div className="border rounded-xl flex flex-col" style={{ 
                 borderColor: colors.border,
                 backgroundColor: colors.card
               }}>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 rounded" style={{ backgroundColor: '#10b98120' }}>
-                    <Activity size={16} style={{ color: colors.success }} />
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium" style={{ color: colors.text }}>
-                      System Health
-                    </div>
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>
-                      All systems operational
-                    </div>
-                  </div>
-                </div>
-                <div className="text-xs space-y-1">
+                <div className="p-3 md:p-4 border-b flex-shrink-0" style={{ borderColor: colors.border }}>
                   <div className="flex items-center justify-between">
-                    <span style={{ color: colors.textSecondary }}>Uptime</span>
-                    <span style={{ color: colors.success }}>{stats.uptime}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span style={{ color: colors.textSecondary }}>Avg Latency</span>
-                    <span style={{ color: colors.text }}>{stats.avgLatency}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span style={{ color: colors.textSecondary }}>CPU Usage</span>
-                    <span style={{ color: colors.text }}>24%</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="border rounded-xl p-4 hover-lift" style={{ 
-                borderColor: colors.border,
-                backgroundColor: colors.card
-              }}>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 rounded" style={{ backgroundColor: '#8b5cf620' }}>
-                    <TrendingUp size={16} style={{ color: '#8b5cf6' }} />
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium" style={{ color: colors.text }}>
-                      Growth Metrics
-                    </div>
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>
-                      Last 30 days
+                    <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
+                      Recent Activity
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={activitiesPerPage}
+                        onChange={(e) => setActivitiesPerPage(Number(e.target.value))}
+                        className="text-xs px-2 py-1 rounded border bg-transparent hidden sm:block"
+                        style={{ 
+                          borderColor: colors.border,
+                          color: colors.text
+                        }}
+                      >
+                        <option value={5}>5 per page</option>
+                        <option value={10}>10 per page</option>
+                        <option value={15}>15 per page</option>
+                      </select>
+                      <Clock size={14} style={{ color: colors.textSecondary }} />
                     </div>
                   </div>
                 </div>
-                <div className="text-xs space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span style={{ color: colors.textSecondary }}>API Growth</span>
-                    <span style={{ color: colors.success }}>+12%</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span style={{ color: colors.textSecondary }}>Usage Growth</span>
-                    <span style={{ color: colors.success }}>+25%</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span style={{ color: colors.textSecondary }}>New Schemas</span>
-                    <span style={{ color: colors.success }}>+3</span>
-                  </div>
+                <div className="flex-1 overflow-auto min-h-0">
+                  {paginatedActivities.map(activity => (
+                    <ActivityItem key={activity.id} activity={activity} />
+                  ))}
                 </div>
+                <ActivityPagination />
               </div>
             </div>
           </div>
         </div>
+      </div>
 
         {/* Right Sidebar */}
         <RightSidebar />

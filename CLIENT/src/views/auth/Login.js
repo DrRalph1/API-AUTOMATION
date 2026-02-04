@@ -82,7 +82,7 @@ export default function Login() {
     // Using your shade as base
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
-    sidebar: 'rgb(20 26 38)',
+    sidebar: 'rgb(41 53 72 / 39%)',
     main: 'rgb(1 14 35)',
     header: 'rgb(20 26 38)',
     card: 'rgb(41 53 72 / 39%)',
@@ -98,7 +98,7 @@ export default function Login() {
     borderDark: 'rgb(71 85 105)',
     
     // Interactive - layered transparency
-    hover: 'rgb(45 55 72)',
+    hover: 'rgb(45 46 72 / 33%)',
     active: 'rgb(59 74 99)',
     selected: 'rgb(44 82 130)',
     
@@ -117,12 +117,12 @@ export default function Login() {
     tabActive: 'rgb(96 165 250)',
     tabInactive: 'rgb(148 163 184)',
     sidebarActive: 'rgb(96 165 250)',
-    sidebarHover: 'rgb(45 55 72)',
+    sidebarhover: 'rgb(45 46 72 / 33%)',
     inputBg: 'rgb(41 53 72 / 39%)',
     inputBorder: 'rgb(51 65 85)',
     tableHeader: 'rgb(41 53 72 / 39%)',
     tableRow: 'rgb(41 53 72 / 39%)',
-    tableRowHover: 'rgb(45 55 72)',
+    tableRowhover: 'rgb(45 46 72 / 33%)',
     dropdownBg: 'rgb(41 53 72 / 39%)',
     dropdownBorder: 'rgb(51 65 85)',
     modalBg: 'rgb(41 53 72 / 39%)',
@@ -216,7 +216,7 @@ export default function Login() {
       </div>
 
       {/* Theme Toggle - Top Right */}
-      <button
+      {/* <button
         onClick={toggle}
         className={`fixed top-6 right-6 p-2.5 rounded-xl border transition-all duration-300 z-10 group hover-lift`}
         style={{ 
@@ -233,7 +233,7 @@ export default function Login() {
             <Moon className="h-5 w-5 transform group-hover:-rotate-12 transition-transform group-hover:text-blue-600" />
           )}
         </div>
-      </button>
+      </button> */}
 
       {/* Main Content */}
       <div className="w-full max-w-md relative z-10">
@@ -249,7 +249,7 @@ export default function Login() {
           <div className="h-1 bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500"></div>
           
           {/* Card Header */}
-          <div className="p-7 pb-4">
+          <div className="p-7 pb-4" onClick={toggle}>
             <div className="flex items-center justify-between mb-1">
               <div>
                 <h2 className="text-xl font-bold" style={{ color: colors.text }}>

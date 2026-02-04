@@ -77,10 +77,10 @@ const OtpForm = ({ state, inputsRef, colors, isMobile, isDark, onOtpActions }) =
 
       {/* OTP Inputs */}
       <form onSubmit={verifyOtp} className="space-y-6">
-        <div>
-          <div className="flex justify-center gap-3">
+        <div className="px-4">
+          <div className="flex justify-between max-w-xs sm:max-w-sm md:max-w-md mx-auto gap-1.5 sm:gap-2 md:gap-3">
             {otp.map((digit, idx) => (
-              <div key={idx} className="relative">
+              <div key={idx} className="relative flex-1">
                 <input
                   ref={(el) => {
                     inputsRef.current[idx] = el;
@@ -97,7 +97,7 @@ const OtpForm = ({ state, inputsRef, colors, isMobile, isDark, onOtpActions }) =
                     setTimeout(() => e.target.select(), 10);
                   }}
                   onPaste={handlePaste}
-                  className="w-14 h-14 text-center text-xl font-semibold rounded-xl border transition-all duration-300 outline-none hover-lift focus:ring-2"
+                  className="w-full aspect-square max-w-[50px] sm:max-w-[60px] md:max-w-[70px] text-center text-lg sm:text-xl font-semibold rounded-lg sm:rounded-xl border transition-all duration-300 outline-none hover-lift focus:ring-2"
                   style={{ 
                     backgroundColor: colors.inputBg,
                     borderColor: colors.inputBorder,
@@ -109,7 +109,7 @@ const OtpForm = ({ state, inputsRef, colors, isMobile, isDark, onOtpActions }) =
                   autoFocus={idx === 0}
                 />
                 {idx < 5 && (
-                  <div className="absolute -right-2 top-1/2 transform -translate-y-1/2 h-px w-4" 
+                  <div className="absolute -right-1 sm:-right-1.5 md:-right-2 top-1/2 transform -translate-y-1/2 h-px w-2 sm:w-3 md:w-4" 
                     style={{ backgroundColor: colors.border }} />
                 )}
               </div>
@@ -184,7 +184,7 @@ const OtpForm = ({ state, inputsRef, colors, isMobile, isDark, onOtpActions }) =
       </form>
 
       {/* Security Note */}
-      <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+      <div className="pt-4 border-t hidden sm:block" style={{ borderColor: colors.border }}>
         <div className="flex items-start gap-3">
           <div className="p-1.5 rounded-lg" style={{ backgroundColor: colors.hover }}>
             <Key className="h-4 w-4" style={{ color: colors.primary }} />

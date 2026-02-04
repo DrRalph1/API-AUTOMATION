@@ -98,60 +98,88 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme }) => {
 
   // Updated color scheme to match APIDocs
   const colors = isDark ? {
-    bg: '#0f172a',
-    white: '#f8fafc',
-    sidebar: '#1e293b',
-    main: '#0f172a',
-    header: '#1e293b',
-    card: '#1e293b',
-    text: '#f1f5f9',
-    textSecondary: '#94a3b8',
-    textTertiary: '#64748b',
-    border: '#334155',
-    borderLight: '#2d3748',
-    borderDark: '#475569',
-    hover: '#334155',
-    active: '#475569',
-    selected: '#2c5282',
-    primary: '#f1f5f9',
-    primaryLight: '#60a5fa',
-    primaryDark: '#2563eb',
+    // Using your shade as base - EXACTLY matching Dashboard
+    bg: 'rgb(1 14 35)',
+    white: '#FFFFFF',
+    sidebar: 'rgb(41 53 72 / 39%)',
+    main: 'rgb(1 14 35)',
+    header: 'rgb(20 26 38)',
+    card: 'rgb(41 53 72 / 39%)',
+    
+    // Text - coordinating grays - EXACTLY matching Dashboard
+    text: '#F1F5F9',
+    textSecondary: 'rgb(148 163 184)',
+    textTertiary: 'rgb(100 116 139)',
+    
+    // Borders - variations of your shade - EXACTLY matching Dashboard
+    border: 'rgb(51 65 85)',
+    borderLight: 'rgb(45 55 72)',
+    borderDark: 'rgb(71 85 105)',
+    
+    // Interactive - layered transparency - EXACTLY matching Dashboard
+    hover: 'rgb(45 46 72 / 33%)',
+    active: 'rgb(59 74 99)',
+    selected: 'rgb(44 82 130)',
+    
+    // Primary colors - EXACTLY matching Dashboard
+    primary: 'rgb(96 165 250)',
+    primaryLight: 'rgb(147 197 253)',
+    primaryDark: 'rgb(37 99 235)',
+    
+    // Status colors - EXACTLY matching Dashboard
+    success: 'rgb(52 211 153)',
+    warning: 'rgb(251 191 36)',
+    error: 'rgb(248 113 113)',
+    info: 'rgb(96 165 250)',
+    
+    // UI Components - EXACTLY matching Dashboard
+    tabActive: 'rgb(96 165 250)',
+    tabInactive: 'rgb(148 163 184)',
+    sidebarActive: 'rgb(96 165 250)',
+    sidebarHover: 'rgb(45 46 72 / 33%)',
+    inputBg: 'rgb(41 53 72 / 39%)',
+    inputBorder: 'rgb(51 65 85)',
+    tableHeader: 'rgb(41 53 72 / 39%)',
+    tableRow: 'rgb(41 53 72 / 39%)',
+    tableRowHover: 'rgb(45 46 72 / 33%)',
+    dropdownBg: 'rgb(41 53 72 / 39%)',
+    dropdownBorder: 'rgb(51 65 85)',
+    modalBg: 'rgb(41 53 72 / 39%)',
+    modalBorder: 'rgb(51 65 85)',
+    codeBg: 'rgb(41 53 72 / 39%)',
+    
+    // Connection status - EXACTLY matching Dashboard
+    connectionOnline: 'rgb(52 211 153)',
+    connectionOffline: 'rgb(248 113 113)',
+    connectionIdle: 'rgb(251 191 36)',
+    
+    // Method colors (specific to API docs) - using Dashboard's color palette
     method: {
-      GET: '#10b981',
-      POST: '#3b82f6',
-      PUT: '#f59e0b',
-      DELETE: '#ef4444',
-      PATCH: '#8b5cf6',
-      HEAD: '#6b7280',
-      OPTIONS: '#8b5cf6',
-      LINK: '#06b6d4',
-      UNLINK: '#f97316'
+      GET: 'rgb(52 211 153)',      // success color
+      POST: 'rgb(96 165 250)',     // info/primary color
+      PUT: 'rgb(251 191 36)',      // warning color
+      DELETE: 'rgb(248 113 113)',  // error color
+      PATCH: 'rgb(167 139 250)',   // accentPurple from Dashboard
+      HEAD: 'rgb(148 163 184)',    // textSecondary
+      OPTIONS: 'rgb(167 139 250)', // accentPurple
+      LINK: 'rgb(34 211 238)',     // accentCyan from Dashboard
+      UNLINK: 'rgb(251 191 36)'    // warning color
     },
-    success: '#10b981',
-    warning: '#f59e0b',
-    error: '#ef4444',
-    info: '#3b82f6',
-    tabActive: '#3b82f6',
-    tabInactive: '#94a3b8',
-    sidebarActive: '#3b82f6',
-    sidebarHover: '#334155',
-    inputBg: '#1e293b',
-    inputBorder: '#334155',
-    tableHeader: '#334155',
-    tableRow: '#1e293b',
-    tableRowHover: '#2d3748',
-    dropdownBg: '#1e293b',
-    dropdownBorder: '#334155',
-    modalBg: '#1e293b',
-    modalBorder: '#334155',
-    codeBg: '#1e293b',
+    
+    // Security severity colors - using Dashboard's color palette
     security: {
-      high: '#10b981',
-      medium: '#f59e0b',
-      low: '#ef4444',
-      critical: '#dc2626'
-    }
+      high: 'rgb(52 211 153)',      // success color
+      medium: 'rgb(251 191 36)',    // warning color
+      low: 'rgb(248 113 113)',      // error color
+      critical: 'rgb(220 38 38)'    // darker red for critical
+    },
+    
+    // Accent colors - EXACTLY matching Dashboard
+    accentPurple: 'rgb(167 139 250)',
+    accentPink: 'rgb(244 114 182)',
+    accentCyan: 'rgb(34 211 238)'
   } : {
+    // LIGHT MODE - EXACTLY matching Dashboard's light mode
     bg: '#f8fafc',
     white: '#f8fafc',
     sidebar: '#ffffff',
@@ -170,6 +198,8 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme }) => {
     primary: '#1e293b',
     primaryLight: '#60a5fa',
     primaryDark: '#2563eb',
+    
+    // Method colors for light mode
     method: {
       GET: '#10b981',
       POST: '#3b82f6',
@@ -181,6 +211,15 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme }) => {
       LINK: '#06b6d4',
       UNLINK: '#f97316'
     },
+    
+    // Security severity colors for light mode
+    security: {
+      high: '#10b981',
+      medium: '#f59e0b',
+      low: '#ef4444',
+      critical: '#dc2626'
+    },
+    
     success: '#10b981',
     warning: '#f59e0b',
     error: '#ef4444',
@@ -198,14 +237,9 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme }) => {
     dropdownBorder: '#e2e8f0',
     modalBg: '#ffffff',
     modalBorder: '#e2e8f0',
-    codeBg: '#f1f5f9',
-    security: {
-      high: '#10b981',
-      medium: '#f59e0b',
-      low: '#ef4444',
-      critical: '#dc2626'
-    }
+    codeBg: '#f1f5f9'
   };
+
 
   // Sample Rate Limit Rules
   const [rateLimitRules, setRateLimitRules] = useState([
@@ -386,12 +420,12 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme }) => {
 
   // Render Rate Limits Tab
   const renderRateLimitsTab = () => (
-    <div className="space-y-6">
+    <div className="space-y-6 mt-1">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold" style={{ color: colors.text }}>Rate Limiting Rules</h2>
-          <p className="text-sm" style={{ color: colors.textSecondary }}>
+          <h2 className="text-lg font-semibold" style={{ color: colors.text }}>Rate Limiting Rules</h2>
+          <p className="text-xs" style={{ color: colors.textSecondary }}>
             Configure request rate limits for API endpoints
           </p>
         </div>
@@ -1004,10 +1038,10 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme }) => {
       backgroundColor: colors.sidebar
     }}>
       <div className="mb-6">
-        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: colors.text }}>
+        {/* <h2 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: colors.text }}>
           <ShieldCheck size={20} />
           API Security
-        </h2>
+        </h2> */}
         <div className="space-y-1">
           {[
             { id: 'rate-limits', label: 'Rate Limits', icon: <Filter size={16} /> },
@@ -1446,7 +1480,9 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme }) => {
         borderColor: colors.border
       }}>
 
-        <div className="flex items-center gap-2"></div>
+        <div className="flex items-center gap-2">
+            <span className="px-3 py-1.5 text-sm font-medium -ml-3 uppercase">API Security</span>
+        </div>
 
         <div className="flex items-center gap-2">
           {/* Search */}
@@ -1475,11 +1511,11 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme }) => {
           </div>
 
           {/* Settings */}
-          <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+          {/* <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
             onClick={() => showToast('Opening settings', 'info')}
             style={{ backgroundColor: colors.hover }}>
             <Settings size={14} style={{ color: colors.textSecondary }} />
-          </button>
+          </button> */}
         </div>
       </div>
 
@@ -1490,12 +1526,12 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme }) => {
 
         {/* Main Content Area */}
         <div className="flex-1 overflow-auto p-6">
-          <div className="max-w-7xl mx-auto">
+          <div className="max-w-8xl mx-auto ml-2 mr-2">
             {/* Security Overview */}
             <div className="mb-8">
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h1 className="text-2xl font-semibold" style={{ color: colors.text }}>API Security Dashboard</h1>
+                  <h1 className="text-xl font-semibold" style={{ color: colors.text }}>API Security</h1>
                   <p className="text-sm" style={{ color: colors.textSecondary }}>
                     Monitor and manage security policies for your APIs
                   </p>

@@ -160,7 +160,7 @@ const APICollections = ({ theme, isDark, customTheme, toggleTheme }) => {
     // Using your shade as base
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
-    sidebar: 'rgb(20 26 38)',
+    sidebar: 'rgb(41 53 72 / 39%)',
     main: 'rgb(1 14 35)',
     header: 'rgb(20 26 38)',
     card: 'rgb(41 53 72 / 39%)',

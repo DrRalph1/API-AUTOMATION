@@ -604,6 +604,9 @@ export default function EntryPage() {
   const [selectedNotification, setSelectedNotification] = useState(null);
   const [selectedMetric, setSelectedMetric] = useState(null);
 
+  // NEW: Add user menu state
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+
   const isDark = theme === 'dark';
 
   // Check screen size on mount and resize
@@ -622,6 +625,20 @@ export default function EntryPage() {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (userMenuOpen && !event.target.closest('.user-menu-container')) {
+        setUserMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [userMenuOpen]);
 
   // Initialize comprehensive data
   useEffect(() => {
@@ -951,6 +968,18 @@ export default function EntryPage() {
     if (isMobile) {
       setMobileMenuOpen(false);
     }
+  };
+
+  // Handle logout
+  const handleLogout = () => {
+    setUserMenuOpen(false);
+    // Add your actual logout logic here
+    console.log("Logging out...");
+    alert("You have been logged out successfully!");
+    // In a real app, you would:
+    // 1. Clear authentication tokens
+    // 2. Reset user state
+    // 3. Redirect to login page
   };
 
   // Get current active component
@@ -1405,18 +1434,160 @@ export default function EntryPage() {
               
               <div className="h-6 w-px mx-2 bg-gray-300 dark:bg-gray-700"></div>
               
-              <div className="flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-xl ${isDark ? 'bg-gray-800' : 'bg-gray-100'} flex items-center justify-center`}>
-                  <UserCheck className={`h-5 w-5 ${isDark ? 'text-gray-300' : 'text-gray-600'}`} />
-                </div>
-                <div className="hidden sm:block">
-                  <p className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                    Admin User
-                  </p>
-                  <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                    admin@example.com
-                  </p>
-                </div>
+              {/* UPDATED USER SECTION WITH DROPDOWN */}
+              <div className="relative user-menu-container">
+                <button
+                  onClick={() => setUserMenuOpen(!userMenuOpen)}
+                  className="flex items-center gap-3 p-1 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                  <div className={`w-9 h-9 rounded-xl ${isDark ? 'bg-gray-800' : 'bg-gray-100'} flex items-center justify-center`}>
+                    <UserCheck className={`h-5 w-5 ${isDark ? 'text-gray-300' : 'text-gray-600'}`} />
+                  </div>
+                  <div className="hidden sm:block text-left">
+                    <p className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                      Admin User
+                    </p>
+                    <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                      admin@example.com
+                    </p>
+                  </div>
+                  <ChevronDown className={`h-4 w-4 transition-transform ${userMenuOpen ? 'rotate-180' : ''} ${isDark ? 'text-gray-400' : 'text-gray-500'}`} />
+                </button>
+
+                {/* User Dropdown Menu */}
+                {userMenuOpen && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-50" 
+                      onClick={() => setUserMenuOpen(false)}
+                    />
+                    <div className={`absolute right-0 top-full mt-2 w-64 rounded-xl shadow-lg z-60 ${
+                      isDark ? 'bg-gray-900 border border-gray-800' : 'bg-white border border-gray-200'
+                    }`}>
+                      {/* User Info Section */}
+                      <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className={`w-12 h-12 rounded-full ${isDark ? 'bg-gray-800' : 'bg-gray-100'} flex items-center justify-center`}>
+                            <UserCheck className={`h-6 w-6 ${isDark ? 'text-gray-300' : 'text-gray-600'}`} />
+                          </div>
+                          <div>
+                            <h3 className={`font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                              Admin User
+                            </h3>
+                            <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                              admin@example.com
+                            </p>
+                          </div>
+                        </div>
+                        {/* <div className={`flex items-center justify-between text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                          <span>Administrator</span>
+                          <StatusBadge status="active" size="sm" />
+                        </div> */}
+                      </div>
+
+                      {/* Details Section */}
+                      {/* <div className={`p-3 border-b ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>User ID:</span>
+                            <span className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-900'}`}>USR-001</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Role:</span>
+                            <span className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-900'}`}>Super Admin</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Last Login:</span>
+                            <span className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-900'}`}>2 hours ago</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Session Duration:</span>
+                            <span className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-900'}`}>3h 42m</span>
+                          </div>
+                        </div>
+                      </div> */}
+
+                      {/* Actions Section */}
+                      <div className="p-2">
+                        <button
+                          onClick={() => {
+                            console.log('View Profile clicked');
+                            setUserMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                            isDark 
+                              ? 'hover:bg-gray-800 text-gray-300' 
+                              : 'hover:bg-gray-100 text-gray-700'
+                          }`}
+                        >
+                          <UserCircle className="h-4 w-4" />
+                          <span>View Profile</span>
+                        </button>
+                        
+                        <button
+                          onClick={() => {
+                            console.log('Account Settings clicked');
+                            setUserMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                            isDark 
+                              ? 'hover:bg-gray-800 text-gray-300' 
+                              : 'hover:bg-gray-100 text-gray-700'
+                          }`}
+                        >
+                          <Settings className="h-4 w-4" />
+                          <span>Account Settings</span>
+                        </button>
+{/*                         
+                        <button
+                          onClick={() => {
+                            console.log('API Keys clicked');
+                            setUserMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                            isDark 
+                              ? 'hover:bg-gray-800 text-gray-300' 
+                              : 'hover:bg-gray-100 text-gray-700'
+                          }`}
+                        >
+                          <Key className="h-4 w-4" />
+                          <span>API Keys</span>
+                        </button> 
+                        
+                        <button
+                          onClick={() => {
+                            console.log('Security Settings clicked');
+                            setUserMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                            isDark 
+                              ? 'hover:bg-gray-800 text-gray-300' 
+                              : 'hover:bg-gray-100 text-gray-700'
+                          }`}
+                        >
+                          <Shield className="h-4 w-4" />
+                          <span>Security Settings</span>
+                        </button>
+
+                        */}
+
+                        <div className={`h-px my-1 ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`} />
+
+                        <button
+                          onClick={handleLogout}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                            isDark 
+                              ? 'hover:bg-red-900/30 text-red-400' 
+                              : 'hover:bg-red-50 text-red-600'
+                          }`}
+                        >
+                          <LogOut className="h-4 w-4" />
+                          <span>Logout</span>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1425,7 +1596,6 @@ export default function EntryPage() {
 
       {/* Main Content */}
       <div className="flex">
-
         {/* Main Content Area */}
         <div className="flex-1">
           {getActiveComponent()}

@@ -13,103 +13,91 @@ import {
   ExternalLink, UploadCloud, DownloadCloud, ShieldCheck, LayoutDashboard,
   BookOpen, Zap, History, Terminal as TerminalIcon,
   ChevronsLeft, ChevronsRight, GripVertical, Circle, Dot, Type as TypeIcon,
-  FileCode, ChevronsUp, ChevronsDown, AlertTriangle
+  FileCode, ChevronsUp, ChevronsDown, AlertTriangle, Menu
 } from 'lucide-react';
+import ApiGenerationModal from '@/components/modals/ApiGenerationModal.js';
 
 const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
 
-  // Using APICodeBase's exact color system for consistency
+  // Using EXACT Dashboard color system for consistency
   const colors = isDark ? {
     // Using your shade as base
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
-    sidebar: 'rgb(20 26 38)',
+    sidebar: 'rgb(41 53 72 / 39%)',
     main: 'rgb(1 14 35)',
     header: 'rgb(20 26 38)',
     card: 'rgb(41 53 72 / 39%)',
     
-    // Text - coordinating grays
-    text: '#E8ECF1',
-    textSecondary: 'rgb(168 178 192)',
-    textTertiary: 'rgb(128 140 158)',
+    // Text - coordinating grays (EXACT from Dashboard)
+    text: '#F1F5F9',
+    textSecondary: 'rgb(148 163 184)',
+    textTertiary: 'rgb(100 116 139)',
     
     // Borders - variations of your shade
-    border: 'rgb(61 73 92)',
-    borderLight: 'rgb(51 63 82)',
-    borderDark: 'rgb(71 83 102)',
+    border: 'rgb(51 65 85)',
+    borderLight: 'rgb(45 55 72)',
+    borderDark: 'rgb(71 85 105)',
     
     // Interactive - layered transparency
-    hover: 'rgb(51 63 82)',
-    active: 'rgb(61 73 92)',
+    hover: 'rgb(45 46 72 / 33%)',
+    active: 'rgb(59 74 99)',
     selected: 'rgb(44 82 130)',
     
-    // Primary colors
-    primary: '#E8ECF1',
-    primaryLight: 'rgb(96 165 250)',
+    // Primary colors (EXACT from Dashboard)
+    primary: 'rgb(96 165 250)',
+    primaryLight: 'rgb(147 197 253)',
     primaryDark: 'rgb(37 99 235)',
     
-    // HTTP Method colors
-    method: {
-      GET: 'rgb(16 185 129)',
-      POST: 'rgb(59 130 246)',
-      PUT: 'rgb(245 158 11)',
-      DELETE: 'rgb(239 68 68)',
-      PATCH: 'rgb(139 92 246)',
-      HEAD: 'rgb(107 114 128)',
-      OPTIONS: 'rgb(139 92 246)',
-      LINK: 'rgb(6 182 212)',
-      UNLINK: 'rgb(249 115 22)'
-    },
+    // Status colors (EXACT from Dashboard)
+    success: 'rgb(52 211 153)',
+    warning: 'rgb(251 191 36)',
+    error: 'rgb(248 113 113)',
+    info: 'rgb(96 165 250)',
     
-    // Status colors
-    success: 'rgb(16 185 129)',
-    warning: 'rgb(245 158 11)',
-    error: 'rgb(239 68 68)',
-    info: 'rgb(59 130 246)',
-    
-    // UI Components
-    tabActive: 'rgb(59 130 246)',
+    // UI Components (EXACT from Dashboard)
+    tabActive: 'rgb(96 165 250)',
     tabInactive: 'rgb(148 163 184)',
-    sidebarActive: 'rgb(59 130 246)',
-    sidebarHover: 'rgb(51 63 82)',
+    sidebarActive: 'rgb(96 165 250)',
+    sidebarHover: 'rgb(45 46 72 / 33%)',
     inputBg: 'rgb(41 53 72 / 39%)',
-    inputBorder: 'rgb(61 73 92)',
-    tableHeader: 'rgb(51 63 82)',
+    inputBorder: 'rgb(51 65 85)',
+    tableHeader: 'rgb(41 53 72 / 39%)',
     tableRow: 'rgb(41 53 72 / 39%)',
-    tableRowHover: 'rgb(51 63 82)',
+    tableRowHover: 'rgb(45 46 72 / 33%)',
     dropdownBg: 'rgb(41 53 72 / 39%)',
-    dropdownBorder: 'rgb(61 73 92)',
+    dropdownBorder: 'rgb(51 65 85)',
     modalBg: 'rgb(41 53 72 / 39%)',
-    modalBorder: 'rgb(61 73 92)',
+    modalBorder: 'rgb(51 65 85)',
     codeBg: 'rgb(41 53 72 / 39%)',
     
-    // Schema Browser specific colors
-    gridRowEven: 'rgb(41 53 72 / 39%)',
-    gridRowOdd: 'rgb(51 63 82)',
-    gridHeader: 'rgb(51 63 82)',
-    gridBorder: 'rgb(61 73 92)',
+    // Connection status (EXACT from Dashboard)
+    connectionOnline: 'rgb(52 211 153)',
+    connectionOffline: 'rgb(248 113 113)',
+    connectionIdle: 'rgb(251 191 36)',
     
-    // Connection status
-    connectionOnline: 'rgb(16 185 129)',
-    connectionOffline: 'rgb(239 68 68)',
-    connectionIdle: 'rgb(245 158 11)',
-    
-    // Object type colors
+    // Object type colors - updated to match Dashboard's aesthetic
     objectType: {
-      table: 'rgb(59 130 246)', // Blue
-      view: 'rgb(16 185 129)', // Green
-      procedure: 'rgb(139 92 246)', // Purple
-      function: 'rgb(245 158 11)', // Orange
-      package: 'rgb(107 114 128)', // Gray
-      sequence: 'rgb(100 116 139)', // Dark blue gray
-      synonym: 'rgb(6 182 212)', // Teal
-      type: 'rgb(99 102 241)', // Indigo
-      trigger: 'rgb(236 72 153)', // Pink
-      index: 'rgb(13 148 136)', // Teal
-      constraint: 'rgb(239 68 68)' // Red
-    }
+      table: 'rgb(96 165 250)',      // Blue - matches primary
+      view: 'rgb(52 211 153)',       // Green - matches success
+      procedure: 'rgb(167 139 250)', // Purple - using Dashboard's accentPurple
+      function: 'rgb(251 191 36)',   // Orange - matches warning
+      package: 'rgb(148 163 184)',   // Gray - matches textSecondary
+      sequence: 'rgb(100 116 139)',  // Dark blue gray - matches textTertiary
+      synonym: 'rgb(34 211 238)',    // Teal - using Dashboard's accentCyan
+      type: 'rgb(139 92 246)',       // Indigo purple
+      trigger: 'rgb(244 114 182)',   // Pink - using Dashboard's accentPink
+      index: 'rgb(16 185 129)',      // Teal green
+      constraint: 'rgb(248 113 113)' // Red - matches error
+    },
+    
+    // Grid colors for tables (matching Dashboard's structure)
+    gridRowEven: 'rgb(41 53 72 / 39%)',
+    gridRowOdd: 'rgb(45 46 72 / 33%)',
+    gridHeader: 'rgb(41 53 72 / 39%)',
+    gridBorder: 'rgb(51 65 85)'
   } : {
-    // KEEP THE ORIGINAL LIGHT MODE
+    // KEEP THE ORIGINAL LIGHT MODE (EXACT from Dashboard)
     bg: '#f8fafc',
     white: '#f8fafc',
     sidebar: '#ffffff',
@@ -128,17 +116,6 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
     primary: '#1e293b',
     primaryLight: '#60a5fa',
     primaryDark: '#2563eb',
-    method: {
-      GET: '#10b981',
-      POST: '#3b82f6',
-      PUT: '#f59e0b',
-      DELETE: '#ef4444',
-      PATCH: '#8b5cf6',
-      HEAD: '#6b7280',
-      OPTIONS: '#8b5cf6',
-      LINK: '#06b6d4',
-      UNLINK: '#f97316'
-    },
     success: '#10b981',
     warning: '#f59e0b',
     error: '#ef4444',
@@ -157,28 +134,34 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
     modalBg: '#ffffff',
     modalBorder: '#e2e8f0',
     codeBg: '#f1f5f9',
-    // Schema Browser specific colors matching APICodeBase's style
-    gridRowEven: '#ffffff',
-    gridRowOdd: '#f8fafc',
-    gridHeader: '#f1f5f9',
-    gridBorder: '#e2e8f0',
     connectionOnline: '#10b981',
     connectionOffline: '#ef4444',
     connectionIdle: '#f59e0b',
     objectType: {
-      table: '#3b82f6', // Blue
-      view: '#10b981', // Green
-      procedure: '#8b5cf6', // Purple
-      function: '#f59e0b', // Orange
-      package: '#6b7280', // Gray
-      sequence: '#64748b', // Dark blue gray
-      synonym: '#06b6d4', // Teal
-      type: '#6366f1', // Indigo
-      trigger: '#ec4899', // Pink
-      index: '#0d9488', // Teal
-      constraint: '#ef4444' // Red
-    }
+      table: '#3b82f6',
+      view: '#10b981',
+      procedure: '#8b5cf6',
+      function: '#f59e0b',
+      package: '#6b7280',
+      sequence: '#64748b',
+      synonym: '#06b6d4',
+      type: '#6366f1',
+      trigger: '#ec4899',
+      index: '#0d9488',
+      constraint: '#ef4444'
+    },
+    gridRowEven: '#ffffff',
+    gridRowOdd: '#f8fafc',
+    gridHeader: '#f1f5f9',
+    gridBorder: '#e2e8f0'
   };
+
+  const [showApiModal, setShowApiModal] = useState(false);
+  const [selectedForApiGeneration, setSelectedForApiGeneration] = useState(null);
+
+  // Mobile state
+  const [isLeftSidebarVisible, setIsLeftSidebarVisible] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Professional Data Structures - Oracle Standards
   const [connections, setConnections] = useState([
@@ -736,21 +719,23 @@ END BIU_EMPLOYEES;`
     ]
   };
 
-  // Get Object Icon with color scheme from APICodeBase
+  // Get Object Icon with color scheme from Dashboard
   const getObjectIcon = (type) => {
-    const iconProps = { size: 14, style: { color: colors.objectType[type.toLowerCase()] || colors.textSecondary } };
+    const objectType = type.toLowerCase();
+    const iconColor = colors.objectType[objectType] || colors.textSecondary;
+    const iconProps = { size: 14, style: { color: iconColor } };
     
-    switch(type.toUpperCase()) {
-      case 'TABLE': return <Table {...iconProps} />;
-      case 'VIEW': return <FileText {...iconProps} />;
-      case 'PROCEDURE': return <Terminal {...iconProps} />;
-      case 'FUNCTION': return <Code {...iconProps} />;
-      case 'PACKAGE': return <Package {...iconProps} />;
-      case 'SEQUENCE': return <Hash {...iconProps} />;
-      case 'SYNONYM': return <Link {...iconProps} />;
-      case 'TYPE': return <Type {...iconProps} />;
-      case 'TRIGGER': return <Zap {...iconProps} />;
-      case 'INDEX': return <BarChart {...iconProps} />;
+    switch(objectType) {
+      case 'table': return <Table {...iconProps} />;
+      case 'view': return <FileText {...iconProps} />;
+      case 'procedure': return <Terminal {...iconProps} />;
+      case 'function': return <Code {...iconProps} />;
+      case 'package': return <Package {...iconProps} />;
+      case 'sequence': return <Hash {...iconProps} />;
+      case 'synonym': return <Link {...iconProps} />;
+      case 'type': return <Type {...iconProps} />;
+      case 'trigger': return <Zap {...iconProps} />;
+      case 'index': return <BarChart {...iconProps} />;
       default: return <Database {...iconProps} />;
     }
   };
@@ -758,6 +743,7 @@ END BIU_EMPLOYEES;`
   // Handle Object Selection
   const handleObjectSelect = (object, type) => {
     setActiveObject(object);
+    setSelectedForApiGeneration(object);
     
     // Check if tab already exists
     const tabId = `${type}_${object.id}`;
@@ -797,6 +783,11 @@ END BIU_EMPLOYEES;`
       default:
         setActiveTab('properties');
     }
+
+    // Close sidebar on mobile
+    if (window.innerWidth < 768) {
+      setIsLeftSidebarVisible(false);
+    }
   };
 
   // Handle Context Menu
@@ -829,9 +820,9 @@ END BIU_EMPLOYEES;`
               <ChevronRight size={12} style={{ color: colors.textSecondary }} />
             }
             {getObjectIcon(type.slice(0, -1))}
-            <span>{title}</span>
+            <span className="truncate">{title}</span>
           </div>
-          <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
+          <span className="text-xs px-1.5 py-0.5 rounded shrink-0" style={{ 
             backgroundColor: colors.border,
             color: colors.textSecondary
           }}>
@@ -855,16 +846,16 @@ END BIU_EMPLOYEES;`
                   color: activeObject?.id === obj.id ? colors.primary : colors.text
                 }}
               >
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 min-w-0">
                   {getObjectIcon(type.slice(0, -1))}
                   <span className="text-sm truncate">{obj.name}</span>
                   {obj.status !== 'VALID' && (
-                    <AlertCircle size={10} style={{ color: colors.error }} />
+                    <AlertCircle size={10} style={{ color: colors.error }} className="shrink-0" />
                   )}
                 </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                   {obj.isFavorite && (
-                    <Star size={10} fill="#FFB300" style={{ color: '#FFB300' }} />
+                    <Star size={10} fill={colors.warning} style={{ color: colors.warning }} />
                   )}
                   {obj.rowCount && (
                     <span className="text-xs" style={{ color: activeObject?.id === obj.id ? colors.primary : colors.textSecondary }}>
@@ -885,12 +876,12 @@ END BIU_EMPLOYEES;`
     <div className="flex-1 overflow-auto">
       <div className="border rounded" style={{ 
         borderColor: colors.gridBorder,
-        backgroundColor: colors.bg
+        backgroundColor: colors.card
       }}>
         {/* Toolbar */}
-        <div className="flex items-center justify-between p-2 border-b" style={{ 
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 border-b" style={{ 
           borderColor: colors.gridBorder,
-          backgroundColor: colors.bg
+          backgroundColor: colors.card
         }}>
           <div className="text-sm font-medium" style={{ color: colors.text }}>
             Columns ({activeObject.columns?.length || 0})
@@ -899,21 +890,21 @@ END BIU_EMPLOYEES;`
             <button className="px-2 py-1 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover, color: colors.text }}>
               <Copy size={10} className="inline mr-1" />
-              Copy
+              <span className="hidden sm:inline">Copy</span>
             </button>
             <button className="px-2 py-1 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover, color: colors.text }}>
               <Download size={10} className="inline mr-1" />
-              Export
+              <span className="hidden sm:inline">Export</span>
             </button>
           </div>
         </div>
 
         {/* Columns Grid */}
         <div className="overflow-auto">
-          <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+          <table className="w-full min-w-[600px]" style={{ borderCollapse: 'collapse' }}>
             <thead style={{ 
-              backgroundColor: colors.gridHeader,
+              backgroundColor: colors.tableHeader,
               position: 'sticky',
               top: 0,
               zIndex: 10
@@ -927,22 +918,22 @@ END BIU_EMPLOYEES;`
                 <th className="text-left p-2 text-xs font-medium border-b" style={{ 
                   borderColor: colors.gridBorder,
                   color: colors.textSecondary,
-                  minWidth: '150px'
+                  minWidth: '120px'
                 }}>Column Name</th>
                 <th className="text-left p-2 text-xs font-medium border-b" style={{ 
                   borderColor: colors.gridBorder,
                   color: colors.textSecondary,
-                  minWidth: '120px'
+                  minWidth: '100px'
                 }}>Data Type</th>
                 <th className="text-left p-2 text-xs font-medium border-b" style={{ 
                   borderColor: colors.gridBorder,
                   color: colors.textSecondary,
-                  width: '60px'
+                  width: '50px'
                 }}>Null</th>
                 <th className="text-left p-2 text-xs font-medium border-b" style={{ 
                   borderColor: colors.gridBorder,
                   color: colors.textSecondary,
-                  width: '80px'
+                  width: '70px'
                 }}>Key</th>
                 <th className="text-left p-2 text-xs font-medium border-b" style={{ 
                   borderColor: colors.gridBorder,
@@ -965,8 +956,8 @@ END BIU_EMPLOYEES;`
                   }}
                 >
                   <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{col.position}</td>
-                  <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{col.name}</td>
-                  <td className="p-2 text-xs font-mono" style={{ color: colors.text }}>{col.type}</td>
+                  <td className="p-2 text-xs font-medium truncate" style={{ color: colors.text }}>{col.name}</td>
+                  <td className="p-2 text-xs font-mono truncate" style={{ color: colors.text }}>{col.type}</td>
                   <td className="p-2 text-xs text-center">
                     <div className={`inline-flex items-center justify-center w-5 h-5 rounded ${
                       col.nullable === 'Y' ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'
@@ -985,10 +976,10 @@ END BIU_EMPLOYEES;`
                       </span>
                     )}
                   </td>
-                  <td className="p-2 text-xs font-mono" style={{ color: colors.textSecondary }}>
+                  <td className="p-2 text-xs font-mono truncate" style={{ color: colors.textSecondary }}>
                     {col.defaultValue || <span className="italic">NULL</span>}
                   </td>
-                  <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>
+                  <td className="p-2 text-xs truncate" style={{ color: colors.textSecondary }}>
                     {col.comment || '-'}
                   </td>
                 </tr>
@@ -1007,29 +998,25 @@ END BIU_EMPLOYEES;`
     return (
       <div className="flex-1 flex flex-col">
         {/* Data Grid Toolbar */}
-        <div className="flex items-center justify-between p-2 border-b" style={{ 
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 border-b" style={{ 
           borderColor: colors.border,
-          backgroundColor: colors.bg
+          backgroundColor: colors.card
         }}>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 hover-lift"
               style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
               <Play size={12} />
-              Execute
+              <span className="hidden sm:inline">Execute</span>
             </button>
             <button className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover, color: colors.text }}>
-              Commit
+              <span className="hidden sm:inline">Commit</span>
             </button>
-            <button className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
-              style={{ backgroundColor: colors.hover, color: colors.text }}>
-              Rollback
-            </button>
-            <div className="ml-4 flex items-center gap-2">
-              <span className="text-sm" style={{ color: colors.textSecondary }}>Auto-refresh:</span>
+            <div className="ml-0 sm:ml-4 flex items-center gap-2">
+              <span className="text-sm hidden sm:inline" style={{ color: colors.textSecondary }}>Auto-refresh:</span>
               <select className="px-2 py-1 border rounded text-sm focus:outline-none hover-lift"
                 style={{ 
-                  backgroundColor: colors.bg,
+                  backgroundColor: colors.card,
                   borderColor: colors.border,
                   color: colors.text
                 }}>
@@ -1040,8 +1027,8 @@ END BIU_EMPLOYEES;`
               </select>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm" style={{ color: colors.textSecondary }}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm hidden sm:inline" style={{ color: colors.textSecondary }}>
               Page: 1 of 1 | Rows: 1-{data.length} of {activeObject.rowCount?.toLocaleString()}
             </span>
             <div className="flex items-center gap-2">
@@ -1061,32 +1048,34 @@ END BIU_EMPLOYEES;`
         <div className="flex-1 overflow-auto">
           <div className="border rounded" style={{ 
             borderColor: colors.gridBorder,
-            backgroundColor: colors.bg
+            backgroundColor: colors.card
           }}>
-            <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+            <table className="w-full min-w-[800px]" style={{ borderCollapse: 'collapse' }}>
               <thead style={{ 
-                backgroundColor: colors.gridHeader,
+                backgroundColor: colors.tableHeader,
                 position: 'sticky',
                 top: 0,
                 zIndex: 10
               }}>
                 <tr>
-                  {activeObject.columns?.slice(0, 8).map(col => (
+                  {activeObject.columns?.slice(0, 6).map(col => (
                     <th key={col.name} className="text-left p-2 text-xs font-medium border-b" style={{ 
                       borderColor: colors.gridBorder,
                       color: colors.textSecondary,
                       whiteSpace: 'nowrap'
                     }}>
-                      {col.name}
-                      {col.key && (
-                        <span className={`ml-1 px-1 py-0.5 rounded text-xs ${
-                          col.key === 'PK' ? 'bg-blue-500/10' :
-                          col.key === 'FK' ? 'bg-purple-500/10 text-purple-400' :
-                          'bg-green-500/10 text-green-400'
-                        }`}>
-                          {col.key}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1">
+                        <span className="truncate">{col.name}</span>
+                        {col.key && (
+                          <span className={`px-1 py-0.5 rounded text-xs hidden sm:inline ${
+                            col.key === 'PK' ? 'bg-blue-500/10' :
+                            col.key === 'FK' ? 'bg-purple-500/10 text-purple-400' :
+                            'bg-green-500/10 text-green-400'
+                          }`}>
+                            {col.key}
+                          </span>
+                        )}
+                      </div>
                     </th>
                   ))}
                 </tr>
@@ -1101,15 +1090,17 @@ END BIU_EMPLOYEES;`
                       borderBottom: `1px solid ${colors.gridBorder}`
                     }}
                   >
-                    {activeObject.columns?.slice(0, 8).map(col => (
+                    {activeObject.columns?.slice(0, 6).map(col => (
                       <td key={col.name} className="p-2 text-xs border-r" style={{ 
                         borderColor: colors.gridBorder,
                         color: colors.text,
                         whiteSpace: 'nowrap'
                       }}>
-                        {row[col.name] !== null && row[col.name] !== undefined ? row[col.name] : (
-                          <span className="italic" style={{ color: colors.textTertiary }}>NULL</span>
-                        )}
+                        <div className="truncate max-w-[150px] sm:max-w-none">
+                          {row[col.name] !== null && row[col.name] !== undefined ? row[col.name] : (
+                            <span className="italic" style={{ color: colors.textTertiary }}>NULL</span>
+                          )}
+                        </div>
                       </td>
                     ))}
                   </tr>
@@ -1122,9 +1113,9 @@ END BIU_EMPLOYEES;`
         {/* Status Bar */}
         <div className="p-2 border-t" style={{ 
           borderColor: colors.border,
-          backgroundColor: colors.bg
+          backgroundColor: colors.card
         }}>
-          <div className="text-xs" style={{ color: colors.textSecondary }}>
+          <div className="text-xs truncate" style={{ color: colors.textSecondary }}>
             {data.length} rows fetched in 0.023 seconds | 
             Table: {activeObject.name} | 
             Total Rows: {activeObject.rowCount?.toLocaleString()}
@@ -1139,90 +1130,92 @@ END BIU_EMPLOYEES;`
     <div className="flex-1 overflow-auto">
       <div className="border rounded" style={{ 
         borderColor: colors.gridBorder,
-        backgroundColor: colors.bg
+        backgroundColor: colors.card
       }}>
         <div className="p-2 border-b" style={{ 
           borderColor: colors.gridBorder,
-          backgroundColor: colors.bg
+          backgroundColor: colors.card
         }}>
           <div className="text-sm font-medium" style={{ color: colors.text }}>
             Parameters ({activeObject.parameters?.length || 0})
           </div>
         </div>
-        <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ backgroundColor: colors.gridHeader }}>
-              <th className="text-left p-2 text-xs font-medium border-b" style={{ 
-                borderColor: colors.gridBorder,
-                color: colors.textSecondary,
-                width: '40px'
-              }}>#</th>
-              <th className="text-left p-2 text-xs font-medium border-b" style={{ 
-                borderColor: colors.gridBorder,
-                color: colors.textSecondary
-              }}>Parameter Name</th>
-              <th className="text-left p-2 text-xs font-medium border-b" style={{ 
-                borderColor: colors.gridBorder,
-                color: colors.textSecondary,
-                width: '80px'
-              }}>Mode</th>
-              <th className="text-left p-2 text-xs font-medium border-b" style={{ 
-                borderColor: colors.gridBorder,
-                color: colors.textSecondary
-              }}>Data Type</th>
-              <th className="text-left p-2 text-xs font-medium border-b" style={{ 
-                borderColor: colors.gridBorder,
-                color: colors.textSecondary
-              }}>Default Value</th>
-            </tr>
-          </thead>
-          <tbody>
-            {activeObject.parameters?.map((param, index) => (
-              <tr 
-                key={param.name}
-                className="hover:bg-opacity-50 transition-colors"
-                style={{ 
-                  backgroundColor: index % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                  borderBottom: `1px solid ${colors.gridBorder}`
-                }}
-              >
-                <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{param.position}</td>
-                <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{param.name}</td>
-                <td className="p-2">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                    param.type === 'IN' ? 'bg-blue-500/10' :
-                    param.type === 'OUT' ? 'bg-purple-500/10 text-purple-400' :
-                    'bg-green-500/10 text-green-400'
-                  }`}>
-                    {param.type}
-                  </span>
-                </td>
-                <td className="p-2 text-xs font-mono" style={{ color: colors.text }}>{param.datatype}</td>
-                <td className="p-2 text-xs font-mono" style={{ color: colors.textSecondary }}>
-                  {param.defaultValue || <span className="italic">NULL</span>}
-                </td>
+        <div className="overflow-auto">
+          <table className="w-full min-w-[600px]" style={{ borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ backgroundColor: colors.tableHeader }}>
+                <th className="text-left p-2 text-xs font-medium border-b" style={{ 
+                  borderColor: colors.gridBorder,
+                  color: colors.textSecondary,
+                  width: '40px'
+                }}>#</th>
+                <th className="text-left p-2 text-xs font-medium border-b" style={{ 
+                  borderColor: colors.gridBorder,
+                  color: colors.textSecondary
+                }}>Parameter Name</th>
+                <th className="text-left p-2 text-xs font-medium border-b" style={{ 
+                  borderColor: colors.gridBorder,
+                  color: colors.textSecondary,
+                  width: '70px'
+                }}>Mode</th>
+                <th className="text-left p-2 text-xs font-medium border-b" style={{ 
+                  borderColor: colors.gridBorder,
+                  color: colors.textSecondary
+                }}>Data Type</th>
+                <th className="text-left p-2 text-xs font-medium border-b" style={{ 
+                  borderColor: colors.gridBorder,
+                  color: colors.textSecondary
+                }}>Default Value</th>
               </tr>
-            ))}
-            {activeObject.type === 'FUNCTION' && activeObject.returnType && (
-              <tr className="border-t" style={{ borderColor: colors.gridBorder }}>
-                <td className="p-2 text-xs font-medium" style={{ color: colors.textSecondary }}>-</td>
-                <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>RETURN</td>
-                <td className="p-2">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-500/10 text-green-400">
-                    OUT
-                  </span>
-                </td>
-                <td className="p-2 text-xs font-mono font-medium" style={{ color: colors.text }}>
-                  {activeObject.returnType}
-                </td>
-                <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>
-                  {activeObject.deterministic ? 'DETERMINISTIC' : ''}
-                  {activeObject.pipelined ? ' | PIPELINED' : ''}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {activeObject.parameters?.map((param, index) => (
+                <tr 
+                  key={param.name}
+                  className="hover:bg-opacity-50 transition-colors"
+                  style={{ 
+                    backgroundColor: index % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                    borderBottom: `1px solid ${colors.gridBorder}`
+                  }}
+                >
+                  <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{param.position}</td>
+                  <td className="p-2 text-xs font-medium truncate" style={{ color: colors.text }}>{param.name}</td>
+                  <td className="p-2">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                      param.type === 'IN' ? 'bg-blue-500/10' :
+                      param.type === 'OUT' ? 'bg-purple-500/10 text-purple-400' :
+                      'bg-green-500/10 text-green-400'
+                    }`}>
+                      {param.type}
+                    </span>
+                  </td>
+                  <td className="p-2 text-xs font-mono truncate" style={{ color: colors.text }}>{param.datatype}</td>
+                  <td className="p-2 text-xs font-mono truncate" style={{ color: colors.textSecondary }}>
+                    {param.defaultValue || <span className="italic">NULL</span>}
+                  </td>
+                </tr>
+              ))}
+              {activeObject.type === 'FUNCTION' && activeObject.returnType && (
+                <tr className="border-t" style={{ borderColor: colors.gridBorder }}>
+                  <td className="p-2 text-xs font-medium" style={{ color: colors.textSecondary }}>-</td>
+                  <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>RETURN</td>
+                  <td className="p-2">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-500/10 text-green-400">
+                      OUT
+                    </span>
+                  </td>
+                  <td className="p-2 text-xs font-mono font-medium truncate" style={{ color: colors.text }}>
+                    {activeObject.returnType}
+                  </td>
+                  <td className="p-2 text-xs truncate" style={{ color: colors.textSecondary }}>
+                    {activeObject.deterministic ? 'DETERMINISTIC' : ''}
+                    {activeObject.pipelined ? ' | PIPELINED' : ''}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -1232,9 +1225,9 @@ END BIU_EMPLOYEES;`
     <div className="flex-1 overflow-auto">
       <div className="border rounded p-4" style={{ 
         borderColor: colors.border,
-        backgroundColor: colors.card
+        backgroundColor: colors.codeBg
       }}>
-        <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed" style={{ 
+        <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto" style={{ 
           color: colors.text,
           fontFamily: 'Consolas, "Courier New", monospace'
         }}>
@@ -1249,122 +1242,64 @@ END BIU_EMPLOYEES;`
     <div className="flex-1 overflow-auto">
       <div className="border rounded" style={{ 
         borderColor: colors.gridBorder,
-        backgroundColor: colors.bg
+        backgroundColor: colors.card
       }}>
         <div className="p-2 border-b" style={{ 
           borderColor: colors.gridBorder,
-          backgroundColor: colors.bg
+          backgroundColor: colors.card
         }}>
           <div className="text-sm font-medium" style={{ color: colors.text }}>
             Constraints ({activeObject.constraints?.length || 0})
           </div>
         </div>
-        <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ backgroundColor: colors.gridHeader }}>
-              <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Constraint Name</th>
-              <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Type</th>
-              <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Columns</th>
-              <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Referenced Table</th>
-              <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {activeObject.constraints?.map((con, index) => (
-              <tr 
-                key={con.name}
-                className="hover:bg-opacity-50 transition-colors"
-                style={{ 
-                  backgroundColor: index % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                  borderBottom: `1px solid ${colors.gridBorder}`
-                }}
-              >
-                <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{con.name}</td>
-                <td className="p-2">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                    con.type === 'PRIMARY KEY' ? 'bg-blue-500/10' :
-                    con.type === 'FOREIGN KEY' ? 'bg-purple-500/10 text-purple-400' :
-                    con.type === 'UNIQUE' ? 'bg-green-500/10 text-green-400' :
-                    'bg-yellow-500/10 text-yellow-400'
-                  }`}>
-                    {con.type}
-                  </span>
-                </td>
-                <td className="p-2 text-xs" style={{ color: colors.text }}>{con.columns}</td>
-                <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>
-                  {con.refTable || '-'}
-                </td>
-                <td className="p-2">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                    con.status === 'ENABLED' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
-                  }`}>
-                    {con.status}
-                  </span>
-                </td>
+        <div className="overflow-auto">
+          <table className="w-full min-w-[600px]" style={{ borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ backgroundColor: colors.tableHeader }}>
+                <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Constraint Name</th>
+                <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Type</th>
+                <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Columns</th>
+                <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Referenced Table</th>
+                <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-
-  // Render Indexes Tab
-  const renderIndexesTab = () => (
-    <div className="flex-1 overflow-auto">
-      <div className="border rounded" style={{ 
-        borderColor: colors.gridBorder,
-        backgroundColor: colors.bg
-      }}>
-        <div className="p-2 border-b" style={{ 
-          borderColor: colors.gridBorder,
-          backgroundColor: colors.bg
-        }}>
-          <div className="text-sm font-medium" style={{ color: colors.text }}>
-            Indexes ({activeObject.indexes?.length || 0})
-          </div>
+            </thead>
+            <tbody>
+              {activeObject.constraints?.map((con, index) => (
+                <tr 
+                  key={con.name}
+                  className="hover:bg-opacity-50 transition-colors"
+                  style={{ 
+                    backgroundColor: index % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                    borderBottom: `1px solid ${colors.gridBorder}`
+                  }}
+                >
+                  <td className="p-2 text-xs font-medium truncate" style={{ color: colors.text }}>{con.name}</td>
+                  <td className="p-2">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                      con.type === 'PRIMARY KEY' ? 'bg-blue-500/10' :
+                      con.type === 'FOREIGN KEY' ? 'bg-purple-500/10 text-purple-400' :
+                      con.type === 'UNIQUE' ? 'bg-green-500/10 text-green-400' :
+                      'bg-yellow-500/10 text-yellow-400'
+                    }`}>
+                      {con.type}
+                    </span>
+                  </td>
+                  <td className="p-2 text-xs truncate" style={{ color: colors.text }}>{con.columns}</td>
+                  <td className="p-2 text-xs truncate" style={{ color: colors.textSecondary }}>
+                    {con.refTable || '-'}
+                  </td>
+                  <td className="p-2">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                      con.status === 'ENABLED' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                    }`}>
+                      {con.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ backgroundColor: colors.gridHeader }}>
-              <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Index Name</th>
-              <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Type</th>
-              <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Columns</th>
-              <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Uniqueness</th>
-              <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {activeObject.indexes?.map((idx, index) => (
-              <tr 
-                key={idx.name}
-                className="hover:bg-opacity-50 transition-colors"
-                style={{ 
-                  backgroundColor: index % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                  borderBottom: `1px solid ${colors.gridBorder}`
-                }}
-              >
-                <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{idx.name}</td>
-                <td className="p-2 text-xs" style={{ color: colors.text }}>{idx.type}</td>
-                <td className="p-2 text-xs" style={{ color: colors.text }}>{idx.columns}</td>
-                <td className="p-2">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                    idx.uniqueness === 'UNIQUE' ? 'bg-green-500/10 text-green-400' : 'bg-blue-500/10'
-                  }`}>
-                    {idx.uniqueness}
-                  </span>
-                </td>
-                <td className="p-2">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                    idx.status === 'VALID' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
-                  }`}>
-                    {idx.status}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
     </div>
   );
@@ -1394,13 +1329,13 @@ END BIU_EMPLOYEES;`
             <h3 className="text-sm font-medium mb-4" style={{ color: colors.text }}>
               Object Properties
             </h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {properties.map((prop, index) => (
                 <div key={index} className="space-y-1">
                   <div className="text-xs font-medium" style={{ color: colors.textSecondary }}>
                     {prop.label}
                   </div>
-                  <div className="text-sm" style={{ color: colors.text }}>
+                  <div className="text-sm truncate" style={{ color: colors.text }}>
                     {prop.value}
                   </div>
                 </div>
@@ -1416,15 +1351,15 @@ END BIU_EMPLOYEES;`
   const getTabsForObject = () => {
     switch(activeObject?.type) {
       case 'TABLE':
-        return ['Columns', 'Data', 'Constraints', 'Indexes', 'Grants', 'Triggers', 'DDL', 'Properties'];
+        return ['Columns', 'Data', 'Constraints', 'Indexes', 'DDL', 'Properties'];
       case 'VIEW':
-        return ['Definition', 'Columns', 'Dependencies', 'DDL', 'Properties'];
+        return ['Definition', 'Columns', 'DDL', 'Properties'];
       case 'PROCEDURE':
-        return ['Parameters', 'Dependencies', 'DDL', 'Properties'];
+        return ['Parameters', 'DDL', 'Properties'];
       case 'FUNCTION':
-        return ['Parameters', 'Dependencies', 'DDL', 'Properties'];
+        return ['Parameters', 'DDL', 'Properties'];
       case 'PACKAGE':
-        return ['Specification', 'Body', 'Dependencies', 'DDL', 'Properties'];
+        return ['Specification', 'Body', 'DDL', 'Properties'];
       case 'SEQUENCE':
         return ['DDL', 'Properties'];
       case 'SYNONYM':
@@ -1449,8 +1384,6 @@ END BIU_EMPLOYEES;`
         return renderParametersTab();
       case 'constraints':
         return renderConstraintsTab();
-      case 'indexes':
-        return renderIndexesTab();
       case 'ddl':
         return renderDDLTab();
       case 'properties':
@@ -1477,12 +1410,13 @@ END BIU_EMPLOYEES;`
     const menuItems = [
       { label: 'Open', icon: <ExternalLink size={12} />, action: () => handleObjectSelect(contextObject, contextObject.type) },
       { separator: true },
-      { label: 'Generate API', icon: <Code size={12} />, action: () => console.log('Generate API') },
+      { label: 'Generate API', icon: <Code size={12} />, action: () => {
+        setShowApiModal(true);
+        setShowContextMenu(false);
+      }},
       { label: 'Describe', icon: <FileText size={12} />, action: () => console.log('Describe') },
       { label: 'Edit Data', icon: <Edit2 size={12} />, action: () => console.log('Edit Data') },
-      { label: 'Export Data', icon: <Download size={12} />, submenu: ['CSV', 'JSON', 'Excel'] },
       { label: 'Copy DDL', icon: <Copy size={12} />, action: () => console.log('Copy DDL') },
-      { label: 'Create Synonym', icon: <Link size={12} />, action: () => console.log('Create Synonym') },
       { label: contextObject.isFavorite ? 'Remove from Favorites' : 'Add to Favorites', 
         icon: <Star size={12} />, action: () => console.log('Toggle Favorite') },
       { label: 'Properties', icon: <Settings size={12} />, action: () => console.log('Properties') },
@@ -1495,7 +1429,7 @@ END BIU_EMPLOYEES;`
           backgroundColor: colors.dropdownBg,
           borderColor: colors.dropdownBorder,
           top: contextMenuPosition.y,
-          left: contextMenuPosition.x,
+          left: Math.min(contextMenuPosition.x, window.innerWidth - 200),
           boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
         }}
         onClick={() => setShowContextMenu(false)}
@@ -1503,30 +1437,6 @@ END BIU_EMPLOYEES;`
         {menuItems.map((item, index) => (
           item.separator ? (
             <div key={`sep-${index}`} className="border-t my-1" style={{ borderColor: colors.border }} />
-          ) : item.submenu ? (
-            <div key={item.label} className="relative group">
-              <div className="flex items-center justify-between px-3 py-2 text-sm hover:bg-opacity-50 transition-colors cursor-pointer hover-lift"
-                style={{ backgroundColor: colors.hover, color: colors.text }}>
-                <div className="flex items-center gap-2">
-                  {item.icon}
-                  {item.label}
-                </div>
-                <ChevronRight size={12} style={{ color: colors.textSecondary }} />
-              </div>
-              <div className="absolute left-full top-0 hidden group-hover:block ml-1">
-                <div className="rounded border shadow-lg py-1 min-w-32" style={{ 
-                  backgroundColor: colors.dropdownBg,
-                  borderColor: colors.dropdownBorder
-                }}>
-                  {item.submenu.map(sub => (
-                    <button key={sub} className="w-full px-3 py-2 text-sm text-left hover:bg-opacity-50 transition-colors hover-lift"
-                      style={{ backgroundColor: colors.hover, color: colors.text }}>
-                      {sub}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
           ) : (
             <button
               key={item.label}
@@ -1549,11 +1459,11 @@ END BIU_EMPLOYEES;`
 
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="rounded w-full max-w-2xl" style={{ 
+        <div className="rounded w-full max-w-2xl max-h-[80vh] overflow-auto" style={{ 
           backgroundColor: colors.modalBg,
           border: `1px solid ${colors.modalBorder}`
         }}>
-          <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: colors.border }}>
+          <div className="flex items-center justify-between p-4 border-b sticky top-0" style={{ borderColor: colors.border, backgroundColor: colors.modalBg }}>
             <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Connection Manager</h3>
             <button onClick={() => setShowConnectionManager(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover }}>
@@ -1581,8 +1491,8 @@ END BIU_EMPLOYEES;`
                     <div className="flex items-center gap-3">
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: conn.color }} />
                       <div>
-                        <div className="text-sm font-medium" style={{ color: colors.text }}>{conn.name}</div>
-                        <div className="text-xs" style={{ color: colors.textSecondary }}>
+                        <div className="text-sm font-medium truncate" style={{ color: colors.text }}>{conn.name}</div>
+                        <div className="text-xs truncate" style={{ color: colors.textSecondary }}>
                           {conn.username}@{conn.host}:{conn.port}/{conn.service}
                         </div>
                       </div>
@@ -1603,6 +1513,98 @@ END BIU_EMPLOYEES;`
       </div>
     );
   };
+
+  // Left Sidebar Component
+  const LeftSidebar = () => (
+    <div className={`w-full md:w-64 border-r flex flex-col absolute md:relative inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out ${
+      isLeftSidebarVisible ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+    }`} style={{ 
+      backgroundColor: colors.sidebar,
+      borderColor: colors.border
+    }}>
+      {/* Mobile sidebar header */}
+      <div className="flex items-center justify-between p-3 border-b md:hidden" style={{ borderColor: colors.border }}>
+        <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
+          Schema Explorer
+        </h3>
+        <button 
+          onClick={() => setIsLeftSidebarVisible(false)}
+          className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+          style={{ backgroundColor: colors.hover }}
+        >
+          <X size={16} style={{ color: colors.text }} />
+        </button>
+      </div>
+
+      {/* Connection Info */}
+      <div className="p-3 border-b" style={{ borderColor: colors.border }}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors.connectionOnline }} />
+            <span className="text-sm font-medium truncate" style={{ color: colors.text }}>
+              CBX_DMX
+            </span>
+          </div>
+          <div className="flex gap-1">
+            <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+              style={{ backgroundColor: colors.hover }}
+              onClick={() => setShowConnectionManager(true)}>
+              <Server size={12} style={{ color: colors.textSecondary }} />
+            </button>
+            <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+              style={{ backgroundColor: colors.hover }}>
+              <RefreshCw size={12} style={{ color: colors.textSecondary }} />
+            </button>
+          </div>
+        </div>
+        <div className="text-xs truncate" style={{ color: colors.textSecondary }}>
+          db-prod.company.com:1521/ORCL
+        </div>
+      </div>
+
+      {/* Filter Controls */}
+      <div className="p-3 border-b" style={{ borderColor: colors.border }}>
+        <div className="space-y-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
+            <input
+              type="text"
+              placeholder="Filter objects..."
+              className="w-full pl-8 pr-3 py-2 rounded text-sm focus:outline-none hover-lift"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                border: `1px solid ${colors.inputBorder}`,
+                color: colors.text
+              }}
+            />
+          </div>
+          <select className="w-full px-3 py-2 rounded text-sm focus:outline-none hover-lift"
+            style={{ 
+              backgroundColor: colors.inputBg,
+              border: `1px solid ${colors.inputBorder}`,
+              color: colors.text
+            }}>
+            <option>Owner: All</option>
+            <option>Owner: HR</option>
+            <option>Owner: SCOTT</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Object Tree */}
+      <div className="flex-1 overflow-auto p-2">
+        {renderObjectTreeSection('Tables', 'tables', schemaObjects.tables)}
+        {renderObjectTreeSection('Views', 'views', schemaObjects.views)}
+        {renderObjectTreeSection('Procedures', 'procedures', schemaObjects.procedures)}
+        {renderObjectTreeSection('Functions', 'functions', schemaObjects.functions)}
+        {renderObjectTreeSection('Packages', 'packages', schemaObjects.packages)}
+        {renderObjectTreeSection('Sequences', 'sequences', schemaObjects.sequences)}
+        {renderObjectTreeSection('Synonyms', 'synonyms', schemaObjects.synonyms)}
+        {renderObjectTreeSection('Types', 'types', schemaObjects.types)}
+        {renderObjectTreeSection('Triggers', 'triggers', schemaObjects.triggers)}
+      </div>
+    </div>
+  );
 
   // Close context menu on outside click
   useEffect(() => {
@@ -1637,17 +1639,17 @@ END BIU_EMPLOYEES;`
           animation: spin 1s linear infinite;
         }
         
-         { color: #60a5fa; }
-        .text-green-400 { color: #34d399; }
-        .text-purple-400 { color: #a78bfa; }
-        .text-orange-400 { color: #fb923c; }
-        .text-red-400 { color: #f87171; }
-        .text-gray-500 { color: #9ca3af; }
+        .text-blue-400 { color: ${colors.primaryLight}; }
+        .text-green-400 { color: ${colors.success}; }
+        .text-purple-400 { color: ${isDark ? 'rgb(167 139 250)' : '#8b5cf6'}; }
+        .text-orange-400 { color: ${colors.warning}; }
+        .text-red-400 { color: ${colors.error}; }
+        .text-gray-500 { color: ${colors.textTertiary}; }
         
-        /* Custom scrollbar */
+        /* Custom scrollbar - EXACT from Dashboard */
         ::-webkit-scrollbar {
-          width: 8px;
-          height: 8px;
+          width: 6px;
+          height: 6px;
         }
         
         ::-webkit-scrollbar-track {
@@ -1664,23 +1666,13 @@ END BIU_EMPLOYEES;`
           background: ${colors.textSecondary};
         }
         
-        .prose {
-          color: ${colors.textSecondary};
-          line-height: 1.6;
-        }
-        
-        .prose p {
-          margin-bottom: 1em;
-        }
-        
-        .prose strong {
-          color: ${colors.text};
-          font-weight: 600;
-        }
-        
-        code {
-          font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Segoe UI Mono', 'Roboto Mono', monospace;
-          font-size: 0.875em;
+        /* Mobile optimizations - EXACT from Dashboard */
+        @media (max-width: 640px) {
+          .text-xs { font-size: 11px; }
+          .text-sm { font-size: 12px; }
+          .text-lg { font-size: 16px; }
+          .text-xl { font-size: 18px; }
+          .text-2xl { font-size: 20px; }
         }
         
         /* Focus styles */
@@ -1689,29 +1681,29 @@ END BIU_EMPLOYEES;`
           outline-offset: 2px;
         }
         
-        /* Hover effects */
+        /* Hover effects - EXACT from Dashboard */
         .hover-lift:hover {
           transform: translateY(-2px);
           transition: transform 0.2s ease;
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
         
+        /* Dashboard-like styling for consistency */
         .gradient-bg {
           background: linear-gradient(135deg, ${colors.primary}20 0%, ${colors.info}20 100%);
         }
       `}</style>
 
-      {/* HEADER - Professional Style */}
-      <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
+      {/* Desktop Header */}
+      <div className="hidden md:flex items-center justify-between h-10 px-4 border-b" style={{ 
         backgroundColor: colors.header,
         borderColor: colors.border
       }}>
-        <div className="flex items-center gap-4">
-
-          {/* Main Menu */}
-          <div className="flex items-center gap-1 -ml-4 text-nowrap uppercase">
-            <span className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift`}>API Code Base</span>
-          </div>
+        <div className="flex -ml-3 items-center gap-4">
+          <span className="px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift uppercase"
+            style={{ color: colors.text, backgroundColor: colors.hover }}>
+            Schema Browser
+          </span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -1734,7 +1726,7 @@ END BIU_EMPLOYEES;`
 
           {/* Theme Toggle */}
           <button
-            onClick={() => setTheme(isDark ? 'light' : 'dark')}
+            onClick={toggleTheme}
             className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
             style={{ backgroundColor: colors.hover }}
           >
@@ -1744,83 +1736,20 @@ END BIU_EMPLOYEES;`
       </div>
 
       {/* MAIN CONTENT AREA */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Left sidebar overlay */}
+        {isLeftSidebarVisible && (
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden"
+            onClick={() => setIsLeftSidebarVisible(false)}
+          />
+        )}
+
         {/* LEFT SIDEBAR - Object Explorer */}
-        <div className="w-64 border-r flex flex-col" style={{ 
-          backgroundColor: colors.sidebar,
-          borderColor: colors.border
-        }}>
-          {/* Connection Info */}
-          <div className="p-3 border-b" style={{ borderColor: colors.border }}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors.connectionOnline }} />
-                <span className="text-sm font-medium" style={{ color: colors.text }}>
-                  CBX_DMX
-                </span>
-              </div>
-              <div className="flex gap-1">
-                <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.hover }}
-                  onClick={() => setShowConnectionManager(true)}>
-                  <Server size={12} style={{ color: colors.textSecondary }} />
-                </button>
-                <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.hover }}>
-                  <RefreshCw size={12} style={{ color: colors.textSecondary }} />
-                </button>
-              </div>
-            </div>
-            <div className="text-xs" style={{ color: colors.textSecondary }}>
-              db-prod.company.com:1521/ORCL
-            </div>
-          </div>
-
-          {/* Filter Controls */}
-          <div className="p-3 border-b" style={{ borderColor: colors.border }}>
-            <div className="space-y-2">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
-                <input
-                  type="text"
-                  placeholder="Filter objects..."
-                  className="w-full pl-8 pr-3 py-2 rounded text-sm focus:outline-none hover-lift"
-                  style={{ 
-                    backgroundColor: colors.inputBg,
-                    border: `1px solid ${colors.inputBorder}`,
-                    color: colors.text
-                  }}
-                />
-              </div>
-              <select className="w-full px-3 py-2 rounded text-sm focus:outline-none hover-lift"
-                style={{ 
-                  backgroundColor: colors.inputBg,
-                  border: `1px solid ${colors.inputBorder}`,
-                  color: colors.text
-                }}>
-                <option>Owner: All</option>
-                <option>Owner: HR</option>
-                <option>Owner: SCOTT</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Object Tree */}
-          <div className="flex-1 overflow-auto p-2">
-            {renderObjectTreeSection('Tables', 'tables', schemaObjects.tables)}
-            {renderObjectTreeSection('Views', 'views', schemaObjects.views)}
-            {renderObjectTreeSection('Procedures', 'procedures', schemaObjects.procedures)}
-            {renderObjectTreeSection('Functions', 'functions', schemaObjects.functions)}
-            {renderObjectTreeSection('Packages', 'packages', schemaObjects.packages)}
-            {renderObjectTreeSection('Sequences', 'sequences', schemaObjects.sequences)}
-            {renderObjectTreeSection('Synonyms', 'synonyms', schemaObjects.synonyms)}
-            {renderObjectTreeSection('Types', 'types', schemaObjects.types)}
-            {renderObjectTreeSection('Triggers', 'triggers', schemaObjects.triggers)}
-          </div>
-        </div>
+        <LeftSidebar />
 
         {/* MAIN WORK AREA */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 flex flex-col overflow-hidden" style={{ backgroundColor: colors.main }}>
           {/* TAB BAR */}
           <div className="flex items-center border-b h-9" style={{ 
             backgroundColor: colors.card,
@@ -1830,13 +1759,13 @@ END BIU_EMPLOYEES;`
               {tabs.map(tab => (
                 <div
                   key={tab.id}
-                  className={`flex items-center gap-2 px-4 py-2 border-r cursor-pointer min-w-40 hover-lift ${
+                  className={`flex items-center gap-2 px-3 sm:px-4 py-2 border-r cursor-pointer min-w-32 sm:min-w-40 hover-lift ${
                     tab.isActive ? '' : 'hover:bg-opacity-50 transition-colors'
                   }`}
                   style={{ 
                     backgroundColor: tab.isActive ? colors.selected : 'transparent',
                     borderRightColor: colors.border,
-                    borderTop: tab.isActive ? `2px solid ${colors.primary}` : 'none'
+                    borderTop: tab.isActive ? `2px solid ${colors.tabActive}` : 'none'
                   }}
                   onClick={() => {
                     // Find and activate the tab's object
@@ -1850,17 +1779,17 @@ END BIU_EMPLOYEES;`
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     {getObjectIcon(tab.type)}
                     <span className="text-sm truncate" style={{ 
-                      color: tab.isActive ? colors.primary : colors.textSecondary,
+                      color: tab.isActive ? colors.tabActive : colors.tabInactive,
                       fontWeight: tab.isActive ? '600' : '400'
                     }}>
                       {tab.name}
                       {tab.isDirty && ' *'}
                     </span>
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (tabs.length > 1) {
+                  {tabs.length > 1 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setTabs(tabs.filter(t => t.id !== tab.id));
                         if (tab.isActive) {
                           const remainingTab = tabs.find(t => t.id !== tab.id);
@@ -1872,17 +1801,17 @@ END BIU_EMPLOYEES;`
                             }
                           }
                         }
-                      }
-                    }}
-                    className="p-0.5 rounded opacity-0 hover:opacity-100 hover:bg-opacity-50 transition-colors hover-lift"
-                    style={{ backgroundColor: colors.hover }}
-                  >
-                    <X size={12} style={{ color: colors.textSecondary }} />
-                  </button>
+                      }}
+                      className="p-0.5 rounded opacity-0 hover:opacity-100 hover:bg-opacity-50 transition-colors hover-lift"
+                      style={{ backgroundColor: colors.hover }}
+                    >
+                      <X size={12} style={{ color: colors.textSecondary }} />
+                    </button>
+                  )}
                 </div>
               ))}
               <button
-                className="px-4 py-2 border-r hover:bg-opacity-50 transition-colors hover-lift"
+                className="px-3 sm:px-4 py-2 border-r hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ borderRightColor: colors.border, backgroundColor: colors.hover }}
                 onClick={() => console.log('New tab')}
               >
@@ -1895,45 +1824,50 @@ END BIU_EMPLOYEES;`
           <div className="flex-1 overflow-hidden flex flex-col">
             {/* Object Properties Header */}
             {activeObject && (
-              <div className="p-4 border-b" style={{ 
+              <div className="p-3 sm:p-4 border-b" style={{ 
                 borderColor: colors.border,
                 backgroundColor: colors.card
               }}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 sm:gap-4">
                     <div className="flex items-center gap-2">
                       {getObjectIcon(activeObject.type)}
-                      <span className="text-base font-semibold" style={{ color: colors.text }}>
+                      <span className="text-sm sm:text-base font-semibold truncate" style={{ color: colors.text }}>
                         {activeObject.owner}.{activeObject.name}
                       </span>
-                      <span className="text-xs px-2 py-0.5 rounded" style={{ 
-                        backgroundColor: activeObject.status === 'VALID' ? '#10b98120' : '#ef444420',
+                      <span className="text-xs px-2 py-0.5 rounded shrink-0" style={{ 
+                        backgroundColor: activeObject.status === 'VALID' ? `${colors.success}20` : `${colors.error}20`,
                         color: activeObject.status === 'VALID' ? colors.success : colors.error
                       }}>
                         {activeObject.status}
                       </span>
                     </div>
-                    {activeObject.rowCount && (
-                      <span className="text-sm" style={{ color: colors.textSecondary }}>
-                        {activeObject.rowCount.toLocaleString()} rows
-                      </span>
-                    )}
-                    {activeObject.size && (
-                      <span className="text-sm" style={{ color: colors.textSecondary }}>
-                        {activeObject.size}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2 sm:gap-4">
+                      {activeObject.rowCount && (
+                        <span className="text-xs sm:text-sm truncate" style={{ color: colors.textSecondary }}>
+                          {activeObject.rowCount.toLocaleString()} rows
+                        </span>
+                      )}
+                      {activeObject.size && (
+                        <span className="text-xs sm:text-sm truncate" style={{ color: colors.textSecondary }}>
+                          {activeObject.size}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button className="px-3 py-1.5 text-sm rounded hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift"
+                  <div className="flex items-center gap-2 mt-2 sm:mt-0">
+                    <button onClick={() => setShowContextMenu(!showContextMenu)} className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm rounded hover:bg-opacity-50 transition-colors flex items-center gap-1 sm:gap-2 hover-lift"
                       style={{ backgroundColor: colors.hover, color: colors.text }}>
                       <Star size={12} />
-                      Favorite
+                      <span className="hidden sm:inline">Favorite</span>
                     </button>
-                    <button className="px-3 py-1.5 text-sm rounded hover:opacity-90 transition-colors flex items-center gap-2 hover-lift"
-                      style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
+                    <button 
+                      onClick={() => setShowApiModal(true)} 
+                      className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm rounded hover:opacity-90 transition-colors flex items-center gap-1 sm:gap-2 hover-lift"
+                      style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+                    >
                       <Code size={12} />
-                      Generate API
+                      <span className="hidden sm:inline">Generate API</span>
                     </button>
                   </div>
                 </div>
@@ -1942,7 +1876,7 @@ END BIU_EMPLOYEES;`
 
             {/* Detail Tabs */}
             {activeObject && (
-              <div className="flex items-center border-b" style={{ 
+              <div className="flex items-center border-b overflow-x-auto" style={{ 
                 backgroundColor: colors.card,
                 borderColor: colors.border
               }}>
@@ -1950,12 +1884,12 @@ END BIU_EMPLOYEES;`
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab.toLowerCase())}
-                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors hover-lift ${
+                    className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors hover-lift whitespace-nowrap ${
                       activeTab === tab.toLowerCase() ? '' : 'hover:bg-opacity-50'
                     }`}
                     style={{ 
-                      borderBottomColor: activeTab === tab.toLowerCase() ? colors.primary : 'transparent',
-                      color: activeTab === tab.toLowerCase() ? colors.primary : colors.textSecondary,
+                      borderBottomColor: activeTab === tab.toLowerCase() ? colors.tabActive : 'transparent',
+                      color: activeTab === tab.toLowerCase() ? colors.tabActive : colors.tabInactive,
                       backgroundColor: 'transparent'
                     }}
                   >
@@ -1966,11 +1900,11 @@ END BIU_EMPLOYEES;`
             )}
 
             {/* Tab Content */}
-            <div className="flex-1 overflow-hidden p-4" style={{ backgroundColor: colors.card }}>
+            <div className="flex-1 overflow-hidden p-3 sm:p-4" style={{ backgroundColor: colors.card }}>
               {activeObject ? renderTabContent() : (
-                <div className="h-full flex flex-col items-center justify-center">
+                <div className="h-full flex flex-col items-center justify-center p-4">
                   <Database size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mb-4" />
-                  <p className="text-sm" style={{ color: colors.textSecondary }}>
+                  <p className="text-sm text-center" style={{ color: colors.textSecondary }}>
                     Select an object from the schema browser to view details
                   </p>
                 </div>
@@ -1981,19 +1915,19 @@ END BIU_EMPLOYEES;`
       </div>
 
       {/* STATUS BAR */}
-      <div className="flex items-center justify-between h-8 px-4 text-xs border-t" style={{ 
+      <div className="hidden sm:flex items-center justify-between h-8 px-4 text-xs border-t" style={{ 
         backgroundColor: colors.header,
         color: colors.textSecondary,
         borderColor: colors.border
       }}>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 overflow-x-auto">
           <span>HR @ db-prod.company.com:1521/ORCL</span>
           <span className="opacity-75">|</span>
           <span>{Object.values(schemaObjects).flat().length} Objects</span>
           <span className="opacity-75">|</span>
           <span>Ready</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="hidden md:flex items-center gap-4">
           <span>F4: Describe</span>
           <span>F5: Refresh</span>
           <span>F6: Switch Panels</span>
@@ -2001,9 +1935,34 @@ END BIU_EMPLOYEES;`
         </div>
       </div>
 
+      {/* Mobile Status Bar */}
+      <div className="sm:hidden flex items-center justify-between h-8 px-3 text-xs border-t" style={{ 
+        backgroundColor: colors.header,
+        color: colors.textSecondary,
+        borderColor: colors.border
+      }}>
+        <div className="truncate">
+          HR @ db-prod.company.com
+        </div>
+        <div>
+          {Object.values(schemaObjects).flat().length} Objects
+        </div>
+      </div>
+
       {/* MODALS & CONTEXT MENUS */}
       {renderContextMenu()}
       {renderConnectionManager()}
+
+      {showApiModal && (
+        <ApiGenerationModal
+          isOpen={showApiModal}
+          onClose={() => setShowApiModal(false)}
+          selectedObject={selectedForApiGeneration || activeObject}
+          colors={colors}
+          theme={theme}
+        />
+      )}
+
     </div>
   );
 };
