@@ -1324,7 +1324,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
           <h3 className="text-sm font-semibold mb-3 hidden md:block" style={{ color: colors.text }}>
             Quick Actions
           </h3>
-          <div className="space-y-2 sm:space-y-4">
+          <div className="space-y-6 sm:space-y-4 ">
             <button 
               onClick={handleNewConnection}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
@@ -1368,7 +1368,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
             </h3>
             <Rocket size={14} style={{ color: colors.textSecondary }} />
           </div>
-          <div className="space-y-4">
+          <div className="space-y-6 mt-2">
             {[
               { name: 'User API v2.1', env: 'Production', status: 'success', time: '2 hours ago' },
               { name: 'Payment API v1.5', env: 'Staging', status: 'success', time: '1 day ago' },
