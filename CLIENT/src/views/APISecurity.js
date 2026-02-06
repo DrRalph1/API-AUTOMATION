@@ -96,7 +96,7 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme }) => {
   const [expandedSections, setExpandedSections] = useState(['rate-limits', 'ip-whitelist']);
   const [showNotifications, setShowNotifications] = useState(false);
 
-  // Updated color scheme to match APIDocs
+  // Updated color scheme to match Documentation
   const colors = isDark ? {
     // Using your shade as base - EXACTLY matching Dashboard
     bg: 'rgb(1 14 35)',
@@ -1033,7 +1033,7 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme }) => {
 
   // Render Sidebar
   const renderSidebar = () => (
-    <div className="w-64 border-r p-4" style={{ 
+    <div className="w-80 border-r p-4" style={{ 
       borderColor: colors.border,
       backgroundColor: colors.sidebar
     }}>

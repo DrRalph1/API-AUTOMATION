@@ -945,7 +945,7 @@ const NOTIFICATIONS = [
   { id: 'notif-3', title: 'Download Ready', message: 'Complete Node.js package ready for download', time: '1 day ago', read: true, type: 'success' }
 ];
 
-const APICodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
+const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
   const [activeTab, setActiveTab] = useState('implementations');
   const [showCodePanel, setShowCodePanel] = useState(true);
   const [selectedLanguage, setSelectedLanguage] = useState('java');
@@ -2378,8 +2378,8 @@ const APICodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
       {/* MAIN CONTENT */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left Sidebar - Collections */}
-        <div className="w-64 border-r flex flex-col" style={{ 
-          backgroundColor: colors.sidebar,
+        <div className="w-80 border-r flex flex-col" style={{ 
+          // backgroundColor: colors.sidebar,
           borderColor: colors.border
         }}>
           <div className="p-4 border-b" style={{ borderColor: colors.border }}>
@@ -2541,4 +2541,4 @@ const APICodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
   );
 };
 
-export default APICodeBase;
+export default CodeBase;

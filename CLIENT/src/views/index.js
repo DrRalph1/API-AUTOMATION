@@ -553,11 +553,11 @@ import {
 } from "lucide-react";
 
 // Import your empty components
-import APICodeBase from "./APICodeBase.js";
-import APICollections from "./APICollections.js";
+import CodeBase from "./CodeBase.js";
+import Collections from "./Collections.js";
 import APISecurity from "./APISecurity.js";
 import Dashboard from "./Dashboard.js";
-import APIDocs from "./APIDocs.js";
+import Documentation from "./Documentation.js";
 import SchemaBrowser from "./SchemaBrowser.js";
 
 import ConnectionDetailsModal from "@/components/modals/ConnectionDetailsModal";
@@ -845,9 +845,9 @@ export default function EntryPage() {
   const navItems = [
     { id: "overview", label: "Dashboard", icon: LayoutDashboard, component: <Dashboard /> },
     { id: "schema-browser", label: "Schema Browser", icon: DatabaseBackup, component: <SchemaBrowser /> },
-    { id: "apis", label: "Collections", icon: FileCode, component: <APICollections /> },
-    { id: "api-docs", label: "Documenation", icon: Activity, component: <APIDocs /> },
-    { id: "api-script", label: "Code Base", icon: Code, component: <APICodeBase /> },
+    { id: "apis", label: "Collections", icon: FileCode, component: <Collections /> },
+    { id: "api-docs", label: "Documenation", icon: Activity, component: <Documentation /> },
+    { id: "api-script", label: "Code Base", icon: Code, component: <CodeBase /> },
     { id: "security", label: "API Security", icon: Shield, component: <APISecurity /> },
   ];
 

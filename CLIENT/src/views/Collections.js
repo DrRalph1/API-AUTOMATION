@@ -153,7 +153,7 @@ const SyntaxHighlighter = ({ language, code }) => {
   );
 };
 
-const APICollections = ({ theme, isDark, customTheme, toggleTheme }) => {
+const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
 
   // Matching the exact color scheme from the first component
   const colors = isDark ? {
@@ -3056,8 +3056,8 @@ return (
       {/* MAIN CONTENT */}
       <div className="flex flex-1 overflow-hidden">
         {/* LEFT SIDEBAR - Collections */}
-        <div className="w-64 border-r flex flex-col" style={{ 
-          backgroundColor: colors.sidebar,
+        <div className="w-80 border-r flex flex-col" style={{ 
+          // backgroundColor: colors.sidebar,
           borderColor: colors.border
         }}>
           <div className="p-3 border-b" style={{ borderColor: colors.border }}>
@@ -3552,4 +3552,4 @@ return (
   );
 };
 
-export default APICollections;
+export default Collections;

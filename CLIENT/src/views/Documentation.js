@@ -534,7 +534,7 @@ const NOTIFICATIONS = [
 ];
 
 // Main component
-const APIDocs = ({ theme, isDark, customTheme, toggleTheme }) => {
+const Documentation = ({ theme, isDark, customTheme, toggleTheme }) => {
   const [activeTab, setActiveTab] = useState('documentation');
   const [showCodePanel, setShowCodePanel] = useState(true);
   const [selectedLanguage, setSelectedLanguage] = useState('curl');
@@ -561,7 +561,7 @@ const APIDocs = ({ theme, isDark, customTheme, toggleTheme }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showEnvironmentMenu, setShowEnvironmentMenu] = useState(false);
 
-  // Updated color scheme to match APICodeBase
+  // Updated color scheme to match CodeBase
   const colors = isDark ? {
     // Using your shade as base - EXACTLY matching Dashboard
     bg: 'rgb(1 14 35)',
@@ -2107,8 +2107,8 @@ req.end();`}`
       <div className="flex flex-1 overflow-hidden">
         {/* Left Sidebar - Collections (only shown for Collections tab) */}
         {activeMainTab === 'Collections' && (
-          <div className="w-64 border-r flex flex-col" style={{ 
-            backgroundColor: colors.sidebar,
+          <div className="w-80 border-r flex flex-col" style={{ 
+            // backgroundColor: colors.sidebar,
             borderColor: colors.border
           }}>
             <div className="p-4 border-b" style={{ borderColor: colors.border }}>
@@ -2286,4 +2286,4 @@ req.end();`}`
   );
 };
 
-export default APIDocs;
+export default Documentation;
