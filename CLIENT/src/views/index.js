@@ -1,6 +1,7 @@
 // views/index.js
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useTheme } from "@/context/ThemeContext.js";
+import { useAuth } from "@/context/AuthContext"; // Import auth context
 import { Button } from "@/components/ui/button";
 import { 
   Database,
@@ -568,8 +569,13 @@ import UserDetailsModal from "@/components/modals/UserDetailsModal";
 import NotificationDetailsModal from "@/components/modals/NotificationDetailsModal";
 import PerformanceMetricsModal from "@/components/modals/PerformanceMetricsModal";
 
+import { useNavigate } from "react-router-dom"; // Import useNavigate
+
 export default function EntryPage() {
   const { theme, toggle, customTheme, setCustomTheme } = useTheme();
+  const { logout, user } = useAuth(); // Get auth context
+  const navigate = useNavigate(); // Get navigate function
+  
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
@@ -604,8 +610,10 @@ export default function EntryPage() {
   const [selectedNotification, setSelectedNotification] = useState(null);
   const [selectedMetric, setSelectedMetric] = useState(null);
 
-  // NEW: Add user menu state
+  // Session management states
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   const isDark = theme === 'dark';
 
@@ -970,17 +978,23 @@ export default function EntryPage() {
     }
   };
 
-  // Handle logout
-  const handleLogout = () => {
+  // UPDATED: Handle logout using auth context
+  const handleManualLogout = () => {
     setUserMenuOpen(false);
-    // Add your actual logout logic here
-    console.log("Logging out...");
-    alert("You have been logged out successfully!");
-    // In a real app, you would:
-    // 1. Clear authentication tokens
-    // 2. Reset user state
-    // 3. Redirect to login page
+    setShowLogoutConfirm(true);
   };
+
+  // UPDATED: Confirm logout
+  const confirmLogout = useCallback(() => {
+    setShowLogoutConfirm(false);
+    setSessionExpired('manual');
+    
+    // Use the auth context logout
+    setTimeout(() => {
+      logout(); // This should handle clearing tokens and redirecting
+      navigate('/login', { replace: true });
+    }, 1000);
+  }, [logout, navigate]);
 
   // Get current active component
   const getActiveComponent = () => {
@@ -1187,7 +1201,7 @@ export default function EntryPage() {
                         isDark 
                           ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500 focus:border-orange-500' 
                           : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-orange-500'
-                      }`}
+                    }`}
                     />
                   </div>
                   <div>
@@ -1201,7 +1215,7 @@ export default function EntryPage() {
                         isDark 
                           ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500 focus:border-orange-500' 
                           : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-orange-500'
-                      }`}
+                    }`}
                     />
                   </div>
                 </div>
@@ -1345,9 +1359,133 @@ export default function EntryPage() {
     );
   };
 
+  // Logout Confirmation Modal
+  const LogoutConfirmationModal = () => {
+    if (!showLogoutConfirm) return null;
+
+    return (
+      <>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" onClick={() => setShowLogoutConfirm(false)} />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className={`w-full max-w-md rounded-2xl shadow-2xl ${
+            isDark ? 'bg-gray-900/95 backdrop-blur-lg border-gray-800' : 'bg-white/95 backdrop-blur-lg border-gray-200'
+          } border ${isDark ? 'text-white' : 'text-gray-900'}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative p-6">
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                className="absolute right-4 top-4 p-2 rounded-full hover:bg-gray-500/20 transition-colors"
+              >
+                <X size={20} />
+              </button>
+
+              <div className="text-center space-y-4">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-500/20 mb-2">
+                  <Shield className={isDark ? "text-red-400" : "text-red-500"} size={32} />
+                </div>
+                
+                <h2 className="text-xl font-bold">Confirm Logout</h2>
+                
+                <p className={isDark ? "text-gray-400" : "text-gray-600"}>
+                  Are you sure you want to logout from the API Platform? 
+                  Any unsaved changes will be lost.
+                </p>
+
+                <div className={`rounded-lg p-3 ${
+                  isDark ? "bg-red-500/10 border-red-500/20" : "bg-red-50 border-red-200"
+                } border`}>
+                  <p className={`text-sm ${isDark ? "text-red-400" : "text-red-600"}`}>
+                    <span className="font-semibold">Security Note:</span> This will end your current session and clear all temporary data.
+                  </p>
+                </div>
+
+                <div className="flex gap-3 pt-6">
+                  <button
+                    onClick={() => setShowLogoutConfirm(false)}
+                    className={`flex-1 py-3 px-4 rounded-lg border ${
+                      isDark 
+                        ? "border-gray-700 hover:bg-gray-800" 
+                        : "border-gray-300 hover:bg-gray-100"
+                    } transition-colors font-medium`}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmLogout}
+                    className={`flex-1 py-3 px-4 rounded-lg ${
+                      isDark ? "bg-red-600 hover:bg-red-700" : "bg-red-500 hover:bg-red-600"
+                    } text-white font-medium transition-colors`}
+                  >
+                    Logout Now
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  };
+
+  // Session Expired Overlay
+  const SessionExpiredOverlay = () => {
+    if (!sessionExpired) return null;
+
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+        <div className={`bg-gradient-to-br ${
+          sessionExpired === 'manual' 
+            ? 'from-red-500/10 to-red-600/20 border-red-500/30' 
+            : 'from-blue-500/10 to-cyan-600/20 border-cyan-500/30'
+        } backdrop-blur-xl border rounded-2xl p-8 max-w-md mx-4 text-center`}>
+          <div className={`w-20 h-20 mx-auto mb-6 ${
+            sessionExpired === 'manual' 
+              ? 'bg-red-500/20' 
+              : 'bg-cyan-500/20'
+          } rounded-full flex items-center justify-center`}>
+            <AlertTriangle className={
+              sessionExpired === 'manual' 
+                ? 'text-red-400' 
+                : 'text-cyan-400'
+            } size={40} />
+          </div>
+          <h2 className={`text-2xl font-bold ${
+            sessionExpired === 'manual' 
+              ? 'text-red-400' 
+              : 'text-cyan-400'
+          } mb-4`}>
+            {sessionExpired === 'manual' ? 'Logging Out' : 'Session Expired'}
+          </h2>
+          <p
+            className={`${isDark ? "text-gray-300" : "text-gray-700"} mb-6`}
+          >
+            {sessionExpired === "manual"
+              ? "You are being logged out..."
+              : "Your session has expired due to inactivity. Redirecting to login..."}
+          </p>
+
+          <div className="flex justify-center">
+            <div className={`w-8 h-8 border-2 ${
+              sessionExpired === 'manual' 
+                ? 'border-red-400' 
+                : 'border-cyan-400'
+            } border-t-transparent rounded-full animate-spin`}></div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className={`min-h-screen ${isDark ? 'bg-gray-950' : 'bg-gray-50'} transition-colors`}>
       
+      {/* Session Expired Overlay */}
+      <SessionExpiredOverlay />
+      
+      {/* Logout Confirmation Modal */}
+      <LogoutConfirmationModal />
+
       {/* Top Navigation - Modern Design */}
       <div className={`sticky top-0 z-40 ${isDark ? 'bg-gray-900/80 backdrop-blur-xl border-gray-800' : 'bg-white/80 backdrop-blur-xl border-gray-300'} border-b`}>
         <div className="px-4 sm:px-6 py-3">
@@ -1405,18 +1543,6 @@ export default function EntryPage() {
 
             {/* Right */}
             <div className="flex items-center gap-2">
-              {/* <button
-                onClick={() => setShowNotificationCenter(true)}
-                className={`p-2 rounded-xl relative transition-colors ${
-                  isDark ? 'hover:bg-gray-800' : 'hover:bg-gray-100'
-                }`}
-              >
-                <Bell className={`h-5 w-5 ${isDark ? 'text-gray-300' : 'text-gray-700'}`} />
-                {notifications.filter(n => !n.read).length > 0 && (
-                  <span className="absolute top-1 right-1 h-2 w-2 bg-orange-500 rounded-full"></span>
-                )}
-              </button> */}
-
               {/* Theme toggle */}
               <button
                 onClick={toggle}
@@ -1445,10 +1571,10 @@ export default function EntryPage() {
                   </div>
                   <div className="hidden sm:block text-left">
                     <p className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                      Admin User
+                      {user?.name || "Admin User"}
                     </p>
                     <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                      admin@example.com
+                      {user?.email || "admin@example.com"}
                     </p>
                   </div>
                   <ChevronDown className={`h-4 w-4 transition-transform ${userMenuOpen ? 'rotate-180' : ''} ${isDark ? 'text-gray-400' : 'text-gray-500'}`} />
@@ -1467,45 +1593,20 @@ export default function EntryPage() {
                       {/* User Info Section */}
                       <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
                         <div className="flex items-center gap-3 mb-3">
-                          <div className={`w-12 h-12 rounded-full ${isDark ? 'bg-gray-800' : 'bg-gray-100'} flex items-center justify-center`}>
+                          {/* <div className={`w-12 h-12 rounded-full ${isDark ? 'bg-gray-800' : 'bg-gray-100'} flex items-center justify-center`}>
                             <UserCheck className={`h-6 w-6 ${isDark ? 'text-gray-300' : 'text-gray-600'}`} />
-                          </div>
+                          </div> */}
                           <div>
                             <h3 className={`font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                              Admin User
+                              {user?.name || "Admin User"}
                             </h3>
                             <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                              admin@example.com
+                              {user?.email || "admin@example.com"}
                             </p>
                           </div>
                         </div>
-                        {/* <div className={`flex items-center justify-between text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                          <span>Administrator</span>
-                          <StatusBadge status="active" size="sm" />
-                        </div> */}
+                        {/* Status can be added here if needed */}
                       </div>
-
-                      {/* Details Section */}
-                      {/* <div className={`p-3 border-b ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>User ID:</span>
-                            <span className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-900'}`}>USR-001</span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Role:</span>
-                            <span className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-900'}`}>Super Admin</span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Last Login:</span>
-                            <span className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-900'}`}>2 hours ago</span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Session Duration:</span>
-                            <span className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-900'}`}>3h 42m</span>
-                          </div>
-                        </div>
-                      </div> */}
 
                       {/* Actions Section */}
                       <div className="p-2">
@@ -1538,43 +1639,11 @@ export default function EntryPage() {
                           <Settings className="h-4 w-4" />
                           <span>Account Settings</span>
                         </button>
-{/*                         
-                        <button
-                          onClick={() => {
-                            console.log('API Keys clicked');
-                            setUserMenuOpen(false);
-                          }}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                            isDark 
-                              ? 'hover:bg-gray-800 text-gray-300' 
-                              : 'hover:bg-gray-100 text-gray-700'
-                          }`}
-                        >
-                          <Key className="h-4 w-4" />
-                          <span>API Keys</span>
-                        </button> 
-                        
-                        <button
-                          onClick={() => {
-                            console.log('Security Settings clicked');
-                            setUserMenuOpen(false);
-                          }}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                            isDark 
-                              ? 'hover:bg-gray-800 text-gray-300' 
-                              : 'hover:bg-gray-100 text-gray-700'
-                          }`}
-                        >
-                          <Shield className="h-4 w-4" />
-                          <span>Security Settings</span>
-                        </button>
-
-                        */}
 
                         <div className={`h-px my-1 ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`} />
 
                         <button
-                          onClick={handleLogout}
+                          onClick={handleManualLogout}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
                             isDark 
                               ? 'hover:bg-red-900/30 text-red-400' 

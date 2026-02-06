@@ -162,10 +162,17 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
   const [selectedApi, setSelectedApi] = useState(null);
   const [selectedSchemaItem, setSelectedSchemaItem] = useState(null);
   const [selectedNotification, setSelectedNotification] = useState(null);
+  const [selectedApiStats, setSelectedApiStats] = useState(null);
+  const [selectedApiCalls, setSelectedApiCalls] = useState(null);
 
   // Pagination for recent activities
   const [activityPage, setActivityPage] = useState(1);
   const [activitiesPerPage, setActivitiesPerPage] = useState(6);
+  
+  // Pagination for API modals
+  const [apiStatsPage, setApiStatsPage] = useState(1);
+  const [apiCallsPage, setApiCallsPage] = useState(1);
+  const [itemsPerModalPage, setItemsPerModalPage] = useState(10);
 
   // Mobile state
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -314,7 +321,13 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
           documentation: 'https://docs.example.com/api/v2.1',
           supportedMethods: ['GET', 'POST', 'PUT', 'DELETE'],
           security: 'JWT Authentication',
-          rateLimit: '1000 requests/hour'
+          rateLimit: '1000 requests/hour',
+          errors: 5,
+          avgResponseTime: '42ms',
+          uptime: '99.9%',
+          lastDeployed: '2024-01-14T08:00:00Z',
+          owner: 'John Doe',
+          category: 'Authentication'
         },
         {
           id: 'api-2',
@@ -331,7 +344,151 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
           documentation: 'https://docs.example.com/api/v1.5',
           supportedMethods: ['POST'],
           security: 'API Key + SSL',
-          rateLimit: '500 requests/hour'
+          rateLimit: '500 requests/hour',
+          errors: 2,
+          avgResponseTime: '30ms',
+          uptime: '100%',
+          lastDeployed: '2024-01-13T10:00:00Z',
+          owner: 'Jane Smith',
+          category: 'Payments'
+        },
+        {
+          id: 'api-3',
+          name: 'Inventory Management API',
+          description: 'Manage product inventory and stock levels',
+          version: 'v1.2',
+          status: 'active',
+          endpointCount: 15,
+          lastUpdated: '2024-01-13T09:15:00Z',
+          calls: 2100,
+          latency: '38ms',
+          successRate: '99.5%',
+          baseUrl: 'https://api.example.com/v1.2/inventory',
+          documentation: 'https://docs.example.com/api/v1.2',
+          supportedMethods: ['GET', 'POST', 'PUT', 'PATCH'],
+          security: 'OAuth 2.0',
+          rateLimit: '2000 requests/hour',
+          errors: 12,
+          avgResponseTime: '35ms',
+          uptime: '99.7%',
+          lastDeployed: '2024-01-12T14:30:00Z',
+          owner: 'Bob Johnson',
+          category: 'Inventory'
+        },
+        {
+          id: 'api-4',
+          name: 'Order Processing API',
+          description: 'Handle customer orders and order tracking',
+          version: 'v2.0',
+          status: 'active',
+          endpointCount: 10,
+          lastUpdated: '2024-01-12T16:45:00Z',
+          calls: 1850,
+          latency: '50ms',
+          successRate: '99.7%',
+          baseUrl: 'https://api.example.com/v2.0/orders',
+          documentation: 'https://docs.example.com/api/v2.0',
+          supportedMethods: ['GET', 'POST', 'PUT'],
+          security: 'API Key + JWT',
+          rateLimit: '1500 requests/hour',
+          errors: 8,
+          avgResponseTime: '48ms',
+          uptime: '99.8%',
+          lastDeployed: '2024-01-11T09:00:00Z',
+          owner: 'Alice Brown',
+          category: 'Orders'
+        },
+        {
+          id: 'api-5',
+          name: 'Customer Support API',
+          description: 'Customer support ticket management',
+          version: 'v1.0',
+          status: 'active',
+          endpointCount: 6,
+          lastUpdated: '2024-01-11T11:20:00Z',
+          calls: 750,
+          latency: '28ms',
+          successRate: '99.9%',
+          baseUrl: 'https://api.example.com/v1.0/support',
+          documentation: 'https://docs.example.com/api/v1.0',
+          supportedMethods: ['GET', 'POST', 'PUT', 'DELETE'],
+          security: 'API Key',
+          rateLimit: '800 requests/hour',
+          errors: 3,
+          avgResponseTime: '25ms',
+          uptime: '100%',
+          lastDeployed: '2024-01-10T13:45:00Z',
+          owner: 'Charlie Wilson',
+          category: 'Support'
+        },
+        {
+          id: 'api-6',
+          name: 'Analytics API',
+          description: 'Data analytics and reporting endpoints',
+          version: 'v3.1',
+          status: 'active',
+          endpointCount: 20,
+          lastUpdated: '2024-01-10T15:30:00Z',
+          calls: 3100,
+          latency: '65ms',
+          successRate: '99.3%',
+          baseUrl: 'https://api.example.com/v3.1/analytics',
+          documentation: 'https://docs.example.com/api/v3.1',
+          supportedMethods: ['GET', 'POST'],
+          security: 'JWT + IP Whitelist',
+          rateLimit: '3000 requests/hour',
+          errors: 22,
+          avgResponseTime: '60ms',
+          uptime: '99.5%',
+          lastDeployed: '2024-01-09T10:15:00Z',
+          owner: 'David Lee',
+          category: 'Analytics'
+        },
+        {
+          id: 'api-7',
+          name: 'Notification API',
+          description: 'Send email and push notifications',
+          version: 'v1.3',
+          status: 'active',
+          endpointCount: 5,
+          lastUpdated: '2024-01-09T14:00:00Z',
+          calls: 4200,
+          latency: '25ms',
+          successRate: '99.6%',
+          baseUrl: 'https://api.example.com/v1.3/notifications',
+          documentation: 'https://docs.example.com/api/v1.3',
+          supportedMethods: ['POST'],
+          security: 'API Key',
+          rateLimit: '5000 requests/hour',
+          errors: 17,
+          avgResponseTime: '22ms',
+          uptime: '99.9%',
+          lastDeployed: '2024-01-08T08:30:00Z',
+          owner: 'Emma Davis',
+          category: 'Notifications'
+        },
+        {
+          id: 'api-8',
+          name: 'Content Management API',
+          description: 'Manage website content and media',
+          version: 'v2.2',
+          status: 'active',
+          endpointCount: 14,
+          lastUpdated: '2024-01-08T12:45:00Z',
+          calls: 1650,
+          latency: '40ms',
+          successRate: '99.8%',
+          baseUrl: 'https://api.example.com/v2.2/content',
+          documentation: 'https://docs.example.com/api/v2.2',
+          supportedMethods: ['GET', 'POST', 'PUT', 'DELETE'],
+          security: 'JWT Authentication',
+          rateLimit: '1200 requests/hour',
+          errors: 9,
+          avgResponseTime: '38ms',
+          uptime: '99.9%',
+          lastDeployed: '2024-01-07T11:00:00Z',
+          owner: 'Frank Miller',
+          category: 'Content'
         }
       ];
 
@@ -544,6 +701,49 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
     setSelectedApi(null);
     setSelectedSchemaItem(null);
     setSelectedNotification(null);
+    setSelectedApiStats(null);
+    setSelectedApiCalls(null);
+    // Reset pagination
+    setApiStatsPage(1);
+    setApiCallsPage(1);
+  };
+
+  // Add new handlers for API card clicks
+  const handleApiStatsClick = () => {
+    console.log('Opening API Stats modal');
+    setSelectedApiStats({
+      title: 'Active APIs',
+      data: apis.filter(api => api.status === 'active'),
+      totalItems: apis.filter(api => api.status === 'active').length
+    });
+  };
+
+  const handleApiCallsClick = () => {
+    console.log('Opening API Calls modal');
+    setSelectedApiCalls({
+      title: 'API Calls Analytics',
+      data: apis.map(api => ({
+        id: api.id,
+        name: api.name,
+        calls: api.calls,
+        latency: api.latency,
+        successRate: api.successRate,
+        errors: api.errors || 0,
+        avgResponseTime: api.avgResponseTime || 'N/A',
+        lastUpdated: api.lastUpdated,
+        owner: api.owner || 'N/A'
+      })),
+      totalItems: apis.length
+    });
+  };
+
+  // Add pagination handlers for modals
+  const handleApiStatsPageChange = (newPage) => {
+    setApiStatsPage(newPage);
+  };
+
+  const handleApiCallsPageChange = (newPage) => {
+    setApiCallsPage(newPage);
   };
 
   const getIconForActivity = (icon) => {
@@ -601,7 +801,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
     }
   };
 
-  // Stat Card Component - Fixed namespace error
+  // Stat Card Component
   const StatCard = ({ title, value, icon: Icon, change, color, onClick }) => {
     const iconSize = getResponsiveIconSize();
     return (
@@ -1007,45 +1207,6 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
     );
   };
 
-  // Mobile Header Component
-  const MobileHeader = () => {
-    const iconSize = getResponsiveIconSize();
-    return (
-      <div className="md:hidden flex items-center justify-between p-3 border-b" style={{ borderColor: colors.border, backgroundColor: colors.header }}>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={toggleMobileMenu}
-            className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
-            style={{ backgroundColor: colors.hover }}
-          >
-            <Menu size={18} style={{ color: colors.text }} />
-          </button>
-          <div>
-            <h1 className="text-base font-bold" style={{ color: colors.text }}>Dashboard</h1>
-            <p className="text-xs truncate" style={{ color: colors.textSecondary }}>API connections & activity</p>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-2">
-          <button
-            onClick={toggleMobileSearch}
-            className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
-            style={{ backgroundColor: colors.hover }}
-          >
-            <Search size={16} style={{ color: colors.text }} />
-          </button>
-          <button
-            onClick={toggleRightSidebar}
-            className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
-            style={{ backgroundColor: colors.hover }}
-          >
-            <SlidersHorizontal size={16} style={{ color: colors.text }} />
-          </button>
-        </div>
-      </div>
-    );
-  };
-
   // Mobile Search Bar
   const MobileSearchBar = () => (
     <div className={`md:hidden p-3 border-b transition-all duration-300 ${isMobileSearchOpen ? 'block' : 'hidden'}`} 
@@ -1074,8 +1235,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
     const iconSize = getResponsiveIconSize();
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
-        <div className="border rounded-xl w-full max-h-[90vh] overflow-auto animate-fade-in" style={{ 
-          backgroundColor: colors.modalBg,
+        <div className="border rounded-xl w-[55rem] max-h-[90vh] overflow-auto animate-fade-in" style={{ 
+          backgroundColor: colors.bg,
           borderColor: colors.modalBorder
         }}>
           <div className="sticky top-0 p-3 sm:p-4 border-b flex items-center justify-between backdrop-blur-sm" style={{ 
@@ -1098,6 +1259,514 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
           </div>
         </div>
       </div>
+    );
+  };
+
+  // API Stats Modal Component
+  const ApiStatsModal = () => {
+    const totalPages = Math.ceil(selectedApiStats.data.length / itemsPerModalPage);
+    const startIndex = (apiStatsPage - 1) * itemsPerModalPage;
+    const endIndex = startIndex + itemsPerModalPage;
+    const currentPageData = selectedApiStats.data.slice(startIndex, endIndex);
+
+    return (
+      <MobileModal title={selectedApiStats.title} onClose={closeModal}>
+        <div className="space-y-4">
+          {/* Summary */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total APIs</div>
+              <div className="text-lg font-bold" style={{ color: colors.text }}>
+                {selectedApiStats.totalItems}
+              </div>
+            </div>
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Endpoints</div>
+              <div className="text-lg font-bold" style={{ color: colors.text }}>
+                {selectedApiStats.data.reduce((sum, api) => sum + api.endpointCount, 0)}
+              </div>
+            </div>
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Success Rate</div>
+              <div className="text-lg font-bold" style={{ color: colors.success }}>
+                {(
+                  selectedApiStats.data.reduce((sum, api) => {
+                    const rate = parseFloat(api.successRate);
+                    return sum + (isNaN(rate) ? 0 : rate);
+                  }, 0) / selectedApiStats.data.length
+                ).toFixed(1)}%
+              </div>
+            </div>
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Latency</div>
+              <div className="text-lg font-bold" style={{ color: colors.text }}>
+                {(
+                  selectedApiStats.data.reduce((sum, api) => {
+                    const latency = parseInt(api.latency) || 0;
+                    return sum + latency;
+                  }, 0) / selectedApiStats.data.length
+                ).toFixed(0)}ms
+              </div>
+            </div>
+          </div>
+
+          {/* API Table */}
+          <div className="border rounded-lg overflow-hidden" style={{ borderColor: colors.border }}>
+            <div className="overflow-x-auto">
+              <table className="w-full" style={{ borderColor: colors.border }}>
+                <thead>
+                  <tr style={{ backgroundColor: colors.tableHeader }}>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      <div className="flex items-center gap-1">
+                        <FileCode size={12} />
+                        API Name
+                      </div>
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Version
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Calls
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Success Rate
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Latency
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Last Updated
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentPageData.map((api, index) => (
+                    <tr 
+                      key={api.id}
+                      className="border-t hover-lift cursor-pointer transition-colors"
+                      style={{ 
+                        borderColor: colors.border,
+                        backgroundColor: index % 2 === 0 ? colors.tableRow : colors.tableRowHover
+                      }}
+                      onClick={() => {
+                        setSelectedApi(api);
+                        setSelectedApiStats(null);
+                      }}
+                    >
+                      <td className="p-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(api.status) }} />
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium truncate" style={{ color: colors.text }}>
+                              {api.name}
+                            </div>
+                            <div className="text-sm truncate" style={{ color: colors.textSecondary }}>
+                              {api.description}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="text-sm font-mono" style={{ color: colors.text }}>
+                          {api.version}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="text-sm font-medium" style={{ color: colors.text }}>
+                          {api.calls.toLocaleString()}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-1">
+                          <div className="text-sm font-medium" style={{ 
+                            color: parseFloat(api.successRate) >= 99 ? colors.success : 
+                                  parseFloat(api.successRate) >= 95 ? colors.warning : colors.error 
+                          }}>
+                            {api.successRate}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="text-sm" style={{ color: colors.text }}>
+                          {api.latency}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="text-sm" style={{ color: colors.textSecondary }}>
+                          {new Date(api.lastUpdated).toLocaleDateString()}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Pagination */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="text-xs" style={{ color: colors.textSecondary }}>
+              Showing {startIndex + 1} - {Math.min(endIndex, selectedApiStats.data.length)} of {selectedApiStats.data.length} APIs
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => handleApiStatsPageChange(apiStatsPage - 1)}
+                disabled={apiStatsPage === 1}
+                className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
+                style={{ 
+                  backgroundColor: apiStatsPage === 1 ? 'transparent' : colors.hover,
+                  color: colors.text,
+                  cursor: apiStatsPage === 1 ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <ChevronLeft size={14} />
+              </button>
+              
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 3) {
+                    pageNum = i + 1;
+                  } else if (apiStatsPage === 1) {
+                    pageNum = i + 1;
+                  } else if (apiStatsPage === totalPages) {
+                    pageNum = totalPages - 2 + i;
+                  } else {
+                    pageNum = apiStatsPage - 1 + i;
+                  }
+                  
+                  if (pageNum > totalPages) return null;
+                  
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => handleApiStatsPageChange(pageNum)}
+                      className="w-6 h-6 rounded text-xs font-medium transition-colors"
+                      style={{ 
+                        backgroundColor: apiStatsPage === pageNum ? colors.selected : 'transparent',
+                        color: apiStatsPage === pageNum ? colors.primaryDark : colors.textSecondary
+                      }}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+                
+                {totalPages > 3 && apiStatsPage < totalPages - 1 && (
+                  <>
+                    <span className="text-xs" style={{ color: colors.textSecondary }}>...</span>
+                    <button
+                      onClick={() => handleApiStatsPageChange(totalPages)}
+                      className="w-6 h-6 rounded text-xs font-medium transition-colors"
+                      style={{ 
+                        backgroundColor: apiStatsPage === totalPages ? colors.selected : 'transparent',
+                        color: apiStatsPage === totalPages ? colors.primaryDark : colors.textSecondary
+                      }}
+                    >
+                      {totalPages}
+                    </button>
+                  </>
+                )}
+              </div>
+              
+              <button
+                onClick={() => handleApiStatsPageChange(apiStatsPage + 1)}
+                disabled={apiStatsPage === totalPages}
+                className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
+                style={{ 
+                  backgroundColor: apiStatsPage === totalPages ? 'transparent' : colors.hover,
+                  color: colors.text,
+                  cursor: apiStatsPage === totalPages ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <ChevronRightIcon size={14} />
+              </button>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button 
+                onClick={() => {
+                  handleNavigateToApiBuilder();
+                  closeModal();
+                }}
+                className="px-3 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                style={{ 
+                  backgroundColor: colors.primaryDark,
+                  color: 'white'
+                }}
+              >
+                <div className="flex items-center justify-center gap-1">
+                  <FileCode size={14} />
+                  <span>Go to API Builder</span>
+                </div>
+              </button>
+              <button 
+                onClick={closeModal}
+                className="px-3 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                style={{ 
+                  backgroundColor: colors.hover,
+                  color: colors.text
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </MobileModal>
+    );
+  };
+
+  // API Calls Modal Component
+  const ApiCallsModal = () => {
+    const totalPages = Math.ceil(selectedApiCalls.data.length / itemsPerModalPage);
+    const startIndex = (apiCallsPage - 1) * itemsPerModalPage;
+    const endIndex = startIndex + itemsPerModalPage;
+    const currentPageData = selectedApiCalls.data.slice(startIndex, endIndex);
+
+    return (
+      <MobileModal title={selectedApiCalls.title} onClose={closeModal}>
+        <div className="space-y-4">
+          {/* Summary */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Calls</div>
+              <div className="text-lg font-bold" style={{ color: colors.text }}>
+                {selectedApiCalls.data.reduce((sum, api) => sum + api.calls, 0).toLocaleString()}
+              </div>
+            </div>
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Errors</div>
+              <div className="text-lg font-bold" style={{ color: colors.error }}>
+                {selectedApiCalls.data.reduce((sum, api) => sum + api.errors, 0).toLocaleString()}
+              </div>
+            </div>
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Response Time</div>
+              <div className="text-lg font-bold" style={{ color: colors.text }}>
+                {(
+                  selectedApiCalls.data.reduce((sum, api) => {
+                    const time = parseInt(api.avgResponseTime) || 0;
+                    return sum + time;
+                  }, 0) / selectedApiCalls.data.length
+                ).toFixed(0)}ms
+              </div>
+            </div>
+          </div>
+
+          {/* API Calls Table */}
+          <div className="border rounded-lg overflow-hidden" style={{ borderColor: colors.border }}>
+            <div className="overflow-x-auto">
+              <table className="w-full" style={{ borderColor: colors.border }}>
+                <thead>
+                  <tr style={{ backgroundColor: colors.tableHeader }}>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      <div className="flex items-center gap-1">
+                        <Activity size={12} />
+                        API Name
+                      </div>
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Calls
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Errors
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Avg Response
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Success Rate
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Owner
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentPageData.map((api, index) => (
+                    <tr 
+                      key={api.id}
+                      className="border-t hover-lift cursor-pointer transition-colors"
+                      style={{ 
+                        borderColor: colors.border,
+                        backgroundColor: index % 2 === 0 ? colors.tableRow : colors.tableRowHover
+                      }}
+                      onClick={() => {
+                        const fullApi = apis.find(a => a.id === api.id);
+                        if (fullApi) {
+                          setSelectedApi(fullApi);
+                          setSelectedApiCalls(null);
+                        }
+                      }}
+                    >
+                      <td className="p-4">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium truncate" style={{ color: colors.text }}>
+                            {api.name}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="text-sm font-medium" style={{ color: colors.primaryDark }}>
+                          {api.calls.toLocaleString()}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-1">
+                          <div className="text-sm font-medium" style={{ 
+                            color: api.errors === 0 ? colors.success : 
+                                  api.errors < 10 ? colors.warning : colors.error 
+                          }}>
+                            {api.errors}
+                          </div>
+                          {api.errors > 0 && (
+                            <AlertCircle size={10} style={{ color: colors.warning }} />
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="text-sm" style={{ color: colors.text }}>
+                          {api.avgResponseTime}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="text-sm font-medium" style={{ 
+                          color: parseFloat(api.successRate) >= 99 ? colors.success : 
+                                parseFloat(api.successRate) >= 95 ? colors.warning : colors.error 
+                        }}>
+                          {api.successRate}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="text-sm" style={{ color: colors.textSecondary }}>
+                          {api.owner}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Pagination */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="text-xs" style={{ color: colors.textSecondary }}>
+              Showing {startIndex + 1} - {Math.min(endIndex, selectedApiCalls.data.length)} of {selectedApiCalls.data.length} APIs
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => handleApiCallsPageChange(apiCallsPage - 1)}
+                disabled={apiCallsPage === 1}
+                className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
+                style={{ 
+                  backgroundColor: apiCallsPage === 1 ? 'transparent' : colors.hover,
+                  color: colors.text,
+                  cursor: apiCallsPage === 1 ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <ChevronLeft size={14} />
+              </button>
+              
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 3) {
+                    pageNum = i + 1;
+                  } else if (apiCallsPage === 1) {
+                    pageNum = i + 1;
+                  } else if (apiCallsPage === totalPages) {
+                    pageNum = totalPages - 2 + i;
+                  } else {
+                    pageNum = apiCallsPage - 1 + i;
+                  }
+                  
+                  if (pageNum > totalPages) return null;
+                  
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => handleApiCallsPageChange(pageNum)}
+                      className="w-6 h-6 rounded text-xs font-medium transition-colors"
+                      style={{ 
+                        backgroundColor: apiCallsPage === pageNum ? colors.selected : 'transparent',
+                        color: apiCallsPage === pageNum ? colors.primaryDark : colors.textSecondary
+                      }}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+                
+                {totalPages > 3 && apiCallsPage < totalPages - 1 && (
+                  <>
+                    <span className="text-xs" style={{ color: colors.textSecondary }}>...</span>
+                    <button
+                      onClick={() => handleApiCallsPageChange(totalPages)}
+                      className="w-6 h-6 rounded text-xs font-medium transition-colors"
+                      style={{ 
+                        backgroundColor: apiCallsPage === totalPages ? colors.selected : 'transparent',
+                        color: apiCallsPage === totalPages ? colors.primaryDark : colors.textSecondary
+                      }}
+                    >
+                      {totalPages}
+                    </button>
+                  </>
+                )}
+              </div>
+              
+              <button
+                onClick={() => handleApiCallsPageChange(apiCallsPage + 1)}
+                disabled={apiCallsPage === totalPages}
+                className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
+                style={{ 
+                  backgroundColor: apiCallsPage === totalPages ? 'transparent' : colors.hover,
+                  color: colors.text,
+                  cursor: apiCallsPage === totalPages ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <ChevronRightIcon size={14} />
+              </button>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button 
+                onClick={() => {
+                  console.log('Exporting API calls data');
+                  alert('Export functionality would be implemented here');
+                }}
+                className="px-3 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                style={{ 
+                  backgroundColor: colors.info,
+                  color: 'white'
+                }}
+              >
+                <div className="flex items-center justify-center gap-1">
+                  <Download size={14} />
+                  <span>Export Data</span>
+                </div>
+              </button>
+              <button 
+                onClick={closeModal}
+                className="px-3 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                style={{ 
+                  backgroundColor: colors.hover,
+                  color: colors.text
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </MobileModal>
     );
   };
 
@@ -1296,6 +1965,82 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
     </MobileModal>
   );
 
+  // API Detail Modal
+  const ApiDetailModal = () => (
+    <MobileModal title="API Details" onClose={closeModal}>
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded" style={{ backgroundColor: colors.hover }}>
+            <FileCode size={20} style={{ color: colors.primary }} />
+          </div>
+          <div className="min-w-0">
+            <h4 className="text-lg font-semibold truncate" style={{ color: colors.text }}>
+              {selectedApi?.name}
+            </h4>
+            <p className="text-sm truncate" style={{ color: colors.textSecondary }}>
+              {selectedApi?.description}
+            </p>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className="text-xs font-medium mb-1" style={{ color: colors.textSecondary }}>Version</div>
+            <div className="text-sm" style={{ color: colors.text }}>{selectedApi?.version}</div>
+          </div>
+          <div>
+            <div className="text-xs font-medium mb-1" style={{ color: colors.textSecondary }}>Status</div>
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(selectedApi?.status) }} />
+              <span className="text-sm capitalize" style={{ color: colors.text }}>{selectedApi?.status}</span>
+            </div>
+          </div>
+          <div>
+            <div className="text-xs font-medium mb-1" style={{ color: colors.textSecondary }}>Total Calls</div>
+            <div className="text-sm font-medium" style={{ color: colors.text }}>{selectedApi?.calls?.toLocaleString()}</div>
+          </div>
+          <div>
+            <div className="text-xs font-medium mb-1" style={{ color: colors.textSecondary }}>Success Rate</div>
+            <div className="text-sm font-medium" style={{ 
+              color: parseFloat(selectedApi?.successRate) >= 99 ? colors.success : 
+                    parseFloat(selectedApi?.successRate) >= 95 ? colors.warning : colors.error 
+            }}>
+              {selectedApi?.successRate}
+            </div>
+          </div>
+        </div>
+        
+        <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+          <div className="flex flex-col gap-2">
+            <button 
+              onClick={() => {
+                handleNavigateToApiBuilder();
+                closeModal();
+              }}
+              className="px-3 py-2 rounded text-sm font-medium transition-colors hover-lift"
+              style={{ 
+                backgroundColor: colors.primaryDark,
+                color: 'white'
+              }}
+            >
+              Edit API
+            </button>
+            <button 
+              onClick={closeModal}
+              className="px-3 py-2 rounded text-sm font-medium transition-colors hover-lift"
+              style={{ 
+                backgroundColor: colors.hover,
+                color: colors.text
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </MobileModal>
+  );
+
   // Right Sidebar Component
   const RightSidebar = () => (
     <div className={`w-full md:w-80 border-l flex flex-col fixed md:relative inset-y-0 right-0 z-40 transform transition-transform duration-300 ease-in-out ${
@@ -1305,7 +2050,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
       borderColor: colors.border
     }}>
       {/* Mobile sidebar header */}
-      <div className="flex items-center justify-between p-3 border-b md:hidden" style={{ borderColor: colors.border }}>
+      <div className="flex items-center justify-between p-3 border-b md:hidden mb-2" style={{ borderColor: colors.border }}>
         <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
           Quick Actions
         </h3>
@@ -1464,13 +2209,14 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
         }
       `}</style>
 
-      {/* Mobile Header */}
-      <MobileHeader />
       <MobileSearchBar />
 
       {/* Modals */}
       {selectedActivity && <ActivityModal />}
       {selectedConnection && <ConnectionModal />}
+      {selectedApi && <ApiDetailModal />}
+      {selectedApiStats && <ApiStatsModal />}
+      {selectedApiCalls && <ApiCallsModal />}
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden flex">
@@ -1535,7 +2281,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
                 icon={FileCode}
                 change={+12}
                 color={colors.info}
-                onClick={() => handleNavigateToApiBuilder()}
+                onClick={handleApiStatsClick}
               />
               <StatCard
                 title="API Calls"
@@ -1543,7 +2289,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
                 icon={Activity}
                 change={+8.5}
                 color={colors.primaryDark}
-                onClick={() => console.log('View API analytics')}
+                onClick={handleApiCallsClick}
               />
               <StatCard
                 title="Success Rate"
