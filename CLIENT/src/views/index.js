@@ -851,11 +851,11 @@ export default function EntryPage() {
 
   // Navigation items with icons
   const navItems = [
-    { id: "overview", label: "Dashboard", icon: LayoutDashboard, component: <Dashboard /> },
+    { id: "overview", label: "Dashboard", icon: LayoutDashboard, component: <Dashboard setActiveTab={setActiveTab} /> },
     { id: "schema-browser", label: "Schema Browser", icon: DatabaseBackup, component: <SchemaBrowser /> },
-    { id: "apis", label: "Collections", icon: FileCode, component: <Collections /> },
+    { id: "api-collections", label: "Collections", icon: FileCode, component: <Collections /> },
     { id: "api-docs", label: "Documenation", icon: Activity, component: <Documentation /> },
-    { id: "api-script", label: "Code Base", icon: Code, component: <CodeBase /> },
+    { id: "code-base", label: "Code Base", icon: Code, component: <CodeBase /> },
     { id: "security", label: "API Security", icon: Shield, component: <APISecurity /> },
   ];
 

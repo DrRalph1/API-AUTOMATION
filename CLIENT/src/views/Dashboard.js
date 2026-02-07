@@ -12,7 +12,7 @@ import {
   BarChart, LineChart as LineChartIcon, Terminal, Cpu as CpuIcon,
   FileJson, BookOpen, Share2, Upload, EyeOff, Type, Palette, TrendingDown,
   Contrast, VolumeX, ZapOff, GitPullRequest, ShieldAlert,
-  CalendarDays, DatabaseZap, Network as NetworkIcon, FileOutput,
+  CalendarDays, DatabaseZap, Network as NetworkIcon, FileOutput,TestTube,
   Code2, Search as SearchIcon, DownloadCloud, UploadCloud,
   UserCheck, KeyRound, FolderTree, FolderTree as FolderTreeIcon,
   BookMarked, LayoutDashboard, Sliders, ChevronRight,
@@ -123,7 +123,7 @@ import {
   Brain as BrainIcon2
 } from "lucide-react";
 
-const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
+const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setActiveTab }) => {
   const [loading, setLoading] = useState(false);
   const [timeRange, setTimeRange] = useState("24h");
   const [stats, setStats] = useState({
@@ -166,7 +166,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
   // Pagination for API modals
   const [apiStatsPage, setApiStatsPage] = useState(1);
   const [apiCallsPage, setApiCallsPage] = useState(1);
-  const [itemsPerModalPage, setItemsPerModalPage] = useState(5);
+  const [itemsPerModalPage, setItemsPerModalPage] = useState(6);
 
   // Mobile state
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -619,100 +619,73 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
     }, 1000);
   };
 
-  // Navigation handlers
+  // UPDATED: Navigation handlers - Now navigate to pages
   const handleNavigateToSchemaBrowser = () => {
     console.log('Navigating to Schema Browser');
     closeAllModals();
-    if (navigateTo) {
-      navigateTo('schema-browser');
-    } else {
-      window.location.href = '#/schema-browser';
-      alert('Navigate to Schema Browser (simulated)');
-    }
+    setActiveTab('schema-browser');
   };
 
   const handleNavigateToApiBuilder = () => {
-    console.log('Navigating to API Builder');
+    console.log('Navigating to Collections (API Builder)');
     closeAllModals();
-    if (navigateTo) {
-      navigateTo('api-builder');
-    } else {
-      window.location.href = '#/api-builder';
-      alert('Navigate to API Builder (simulated)');
-    }
+    setActiveTab('api-collections');
   };
 
   const handleNavigateToCodeBase = () => {
     console.log('Navigating to Code Base');
     closeAllModals();
-    if (navigateTo) {
-      navigateTo('code-base');
-    } else {
-      window.location.href = '#/code-base';
-      alert('Navigate to Code Base (simulated)');
-    }
+    setActiveTab('code-base');
   };
 
   const handleNavigateToDocumentation = () => {
     console.log('Navigating to Documentation');
     closeAllModals();
-    if (navigateTo) {
-      navigateTo('documentation');
-    } else {
-      window.open('https://docs.example.com', '_blank');
-      alert('Opening documentation (simulated)');
-    }
+    setActiveTab('api-docs');
   };
 
-  const handleNewConnection = () => {
-    console.log('Opening New Connection Form');
+  const handleNavigateToAPISecurity = () => {
+    console.log('Navigating to API Security');
     closeAllModals();
-    if (navigateTo) {
-      navigateTo('connections');
-    } else {
-      alert('Open New Connection Form (simulated)');
-    }
+    setActiveTab('security')
   };
 
-  const handleViewConnectionDetails = (connection) => {
-    openModal('connection', connection);
-    console.log('Viewing connection details:', connection.name);
+  // NEW: Navigate to Connections page
+  const handleNavigateToConnections = () => {
+    console.log('Navigating to Connections');
+    closeAllModals();
+    setActiveTab('api-collections');
   };
 
-  const handleActivityClick = (activity) => {
-    openModal('activity', activity);
-    console.log('Viewing activity:', activity.action);
-  };
-
-  const handleSchemaItemClick = (itemType, count) => {
-    openModal('schemaItem', { type: itemType, count });
-    console.log('Viewing schema item:', itemType);
-  };
-
+  // Generate API should navigate to Schema Browser
   const handleApiGeneration = () => {
-    console.log('Starting API Generation process');
+    console.log('Generating API - Navigating to Schema Browser');
     closeAllModals();
-    if (navigateTo) {
-      navigateTo('api-generator');
-    } else {
-      alert('Starting API Generation (simulated)');
-    }
+    handleNavigateToSchemaBrowser();
   };
 
-  // Mobile menu handlers
-  const toggleMobileMenu = () => {
-    setIsMobileMenuOpen(!isMobileMenuOpen);
+  // Export data should navigate to Documentation
+  const handleExportData = () => {
+    console.log('Exporting data - Navigating to Documentation');
+    closeAllModals();
+    handleNavigateToDocumentation();
   };
 
-  const toggleRightSidebar = () => {
-    setIsRightSidebarVisible(!isRightSidebarVisible);
+  // View all connections should navigate to Connections
+  const handleViewAllConnections = () => {
+    console.log('Viewing all connections - Navigating to Connections');
+    closeAllModals();
+    handleNavigateToConnections();
   };
 
-  const toggleMobileSearch = () => {
-    setIsMobileSearchOpen(!isMobileSearchOpen);
+  // View performance metrics should navigate to Collections
+  const handleViewPerformanceMetrics = () => {
+    console.log('Viewing performance metrics - Navigating to Collections');
+    closeAllModals();
+    handleNavigateToApiBuilder();
   };
 
-  // Add new handlers for API card clicks
+  // View API stats should show modal
   const handleApiStatsClick = () => {
     console.log('Opening API Stats modal');
     openModal('apiStats', {
@@ -722,6 +695,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
     });
   };
 
+  // View API calls should show modal
   const handleApiCallsClick = () => {
     console.log('Opening API Calls modal');
     openModal('apiCalls', {
@@ -739,6 +713,98 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
       })),
       totalItems: apis.length
     });
+  };
+
+  const handleNavigateToAPICollection = () => {
+    console.log('Creating new connection - Navigating to Schema Browser');
+    closeAllModals();
+    setActiveTab('api-collections');
+  };
+
+  const handleViewConnectionDetails = (connection) => {
+    // Open connection modal
+    openModal('connection', connection);
+    console.log('Viewing connection details:', connection.name);
+  };
+
+  const handleActivityClick = (activity) => {
+    // Open activity modal
+    openModal('activity', activity);
+    console.log('Viewing activity:', activity.action);
+  };
+
+  const handleSchemaItemClick = (itemType, count) => {
+    // Open schema item modal
+    openModal('schemaItem', { type: itemType, count });
+    console.log('Viewing schema item:', itemType);
+  };
+
+  // Test connection - keep as modal since it's an action
+  const handleTestConnection = (connection) => {
+    console.log('Testing connection:', connection?.name);
+    openModal('testConnection', {
+      connection: connection,
+      status: 'testing',
+      progress: 0
+    });
+    
+    // Simulate testing progress
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += 25;
+      if (progress >= 100) {
+        clearInterval(interval);
+        setTimeout(() => {
+          closeModal();
+          openModal('testResults', {
+            connection: connection,
+            status: 'success',
+            message: 'Connection test successful!'
+          });
+        }, 500);
+      }
+    }, 300);
+  };
+
+  // Settings - navigate to Collections
+  const handleOpenSettings = () => {
+    console.log('Opening settings - Navigating to Collections');
+    closeAllModals();
+    handleNavigateToApiBuilder();
+  };
+
+  // Security scan - navigate to API Security
+  const handleRunSecurityScan = () => {
+    console.log('Running security scan - Navigating to API Security');
+    closeAllModals();
+    handleNavigateToAPISecurity();
+  };
+
+  // Test results - navigate to Collections
+  const handleViewTestResults = () => {
+    console.log('Viewing test results - Navigating to Collections');
+    closeAllModals();
+    handleNavigateToApiBuilder();
+  };
+
+  // Configure backup - navigate to Collections
+  const handleConfigureBackup = () => {
+    console.log('Configuring backup - Navigating to Collections');
+    closeAllModals();
+    handleNavigateToApiBuilder();
+  };
+
+  // Mobile menu handlers
+  const toggleMobileMenu = () => {
+    setIsMobileMenuOpen(!isMobileMenuOpen);
+  };
+
+  const toggleRightSidebar = () => {
+    setIsRightSidebarVisible(!isRightSidebarVisible);
+  };
+
+  const toggleMobileSearch = () => {
+    setIsMobileSearchOpen(!isMobileSearchOpen);
   };
 
   // Add pagination handlers for modals
@@ -1289,529 +1355,6 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
     );
   };
 
-  // API Stats Modal Component
-  const ApiStatsModal = ({ data }) => {
-    const totalPages = Math.ceil(data.data.length / itemsPerModalPage);
-    const startIndex = (apiStatsPage - 1) * itemsPerModalPage;
-    const endIndex = startIndex + itemsPerModalPage;
-    const currentPageData = data.data.slice(startIndex, endIndex);
-
-    const handleApiClick = (apiId) => {
-      const fullApi = apis.find(a => a.id === apiId);
-      if (fullApi) {
-        openModal('api', fullApi);
-      }
-    };
-
-    return (
-      <MobileModal 
-        title={data.title} 
-        onClose={closeModal}
-        showBackButton={modalStack.length > 1}
-        onBack={closeModal}
-      >
-        <div className="space-y-4">
-          {/* Summary */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
-              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total APIs</div>
-              <div className="text-lg font-bold" style={{ color: colors.text }}>
-                {data.totalItems}
-              </div>
-            </div>
-            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
-              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Endpoints</div>
-              <div className="text-lg font-bold" style={{ color: colors.text }}>
-                {data.data.reduce((sum, api) => sum + api.endpointCount, 0)}
-              </div>
-            </div>
-            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
-              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Success Rate</div>
-              <div className="text-lg font-bold" style={{ color: colors.success }}>
-                {(
-                  data.data.reduce((sum, api) => {
-                    const rate = parseFloat(api.successRate);
-                    return sum + (isNaN(rate) ? 0 : rate);
-                  }, 0) / data.data.length
-                ).toFixed(1)}%
-              </div>
-            </div>
-            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
-              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Latency</div>
-              <div className="text-lg font-bold" style={{ color: colors.text }}>
-                {(
-                  data.data.reduce((sum, api) => {
-                    const latency = parseInt(api.latency) || 0;
-                    return sum + latency;
-                  }, 0) / data.data.length
-                ).toFixed(0)}ms
-              </div>
-            </div>
-          </div>
-
-          {/* API Table */}
-          <div className="border rounded-lg overflow-hidden" style={{ borderColor: colors.border }}>
-            <div className="overflow-x-auto">
-              <table className="w-full" style={{ borderColor: colors.border }}>
-                <thead>
-                  <tr style={{ backgroundColor: colors.tableHeader }}>
-                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
-                      <div className="flex items-center gap-1">
-                        <FileCode size={12} />
-                        API Name
-                      </div>
-                    </th>
-                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
-                      Version
-                    </th>
-                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
-                      Calls
-                    </th>
-                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
-                      Success Rate
-                    </th>
-                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
-                      Latency
-                    </th>
-                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
-                      Last Updated
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {currentPageData.map((api, index) => (
-                    <tr 
-                      key={api.id}
-                      className="border-t hover-lift cursor-pointer transition-colors"
-                      style={{ 
-                        borderColor: colors.border,
-                        backgroundColor: index % 2 === 0 ? colors.tableRow : colors.tableRowHover
-                      }}
-                      onClick={() => handleApiClick(api.id)}
-                    >
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(api.status) }} />
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium truncate" style={{ color: colors.text }}>
-                              {api.name}
-                            </div>
-                            <div className="text-sm truncate" style={{ color: colors.textSecondary }}>
-                              {api.description}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div className="text-sm font-mono" style={{ color: colors.text }}>
-                          {api.version}
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div className="text-sm font-medium" style={{ color: colors.text }}>
-                          {api.calls.toLocaleString()}
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div className="flex items-center gap-1">
-                          <div className="text-sm font-medium" style={{ 
-                            color: parseFloat(api.successRate) >= 99 ? colors.success : 
-                                  parseFloat(api.successRate) >= 95 ? colors.warning : colors.error 
-                          }}>
-                            {api.successRate}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div className="text-sm" style={{ color: colors.text }}>
-                          {api.latency}
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div className="text-sm" style={{ color: colors.textSecondary }}>
-                          {new Date(api.lastUpdated).toLocaleDateString()}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Pagination */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-4 border-t" style={{ borderColor: colors.border }}>
-            <div className="text-xs" style={{ color: colors.textSecondary }}>
-              Showing {startIndex + 1} - {Math.min(endIndex, data.data.length)} of {data.data.length} APIs
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => handleApiStatsPageChange(apiStatsPage - 1)}
-                disabled={apiStatsPage === 1}
-                className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
-                style={{ 
-                  backgroundColor: apiStatsPage === 1 ? 'transparent' : colors.hover,
-                  color: colors.text,
-                  cursor: apiStatsPage === 1 ? 'not-allowed' : 'pointer'
-                }}
-              >
-                <ChevronLeft size={14} />
-              </button>
-              
-              <div className="flex items-center gap-1">
-                {Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
-                  let pageNum;
-                  if (totalPages <= 3) {
-                    pageNum = i + 1;
-                  } else if (apiStatsPage === 1) {
-                    pageNum = i + 1;
-                  } else if (apiStatsPage === totalPages) {
-                    pageNum = totalPages - 2 + i;
-                  } else {
-                    pageNum = apiStatsPage - 1 + i;
-                  }
-                  
-                  if (pageNum > totalPages) return null;
-                  
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => handleApiStatsPageChange(pageNum)}
-                      className="w-6 h-6 rounded text-xs font-medium transition-colors"
-                      style={{ 
-                        backgroundColor: apiStatsPage === pageNum ? colors.selected : 'transparent',
-                        color: apiStatsPage === pageNum ? colors.primaryDark : colors.textSecondary
-                      }}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
-                
-                {totalPages > 3 && apiStatsPage < totalPages - 1 && (
-                  <>
-                    <span className="text-xs" style={{ color: colors.textSecondary }}>...</span>
-                    <button
-                      onClick={() => handleApiStatsPageChange(totalPages)}
-                      className="w-6 h-6 rounded text-xs font-medium transition-colors"
-                      style={{ 
-                        backgroundColor: apiStatsPage === totalPages ? colors.selected : 'transparent',
-                        color: apiStatsPage === totalPages ? colors.primaryDark : colors.textSecondary
-                      }}
-                    >
-                      {totalPages}
-                    </button>
-                  </>
-                )}
-              </div>
-              
-              <button
-                onClick={() => handleApiStatsPageChange(apiStatsPage + 1)}
-                disabled={apiStatsPage === totalPages}
-                className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
-                style={{ 
-                  backgroundColor: apiStatsPage === totalPages ? 'transparent' : colors.hover,
-                  color: colors.text,
-                  cursor: apiStatsPage === totalPages ? 'not-allowed' : 'pointer'
-                }}
-              >
-                <ChevronRightIcon size={14} />
-              </button>
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <button 
-                onClick={() => {
-                  handleNavigateToApiBuilder();
-                  closeAllModals();
-                }}
-                className="px-3 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
-                style={{ 
-                  backgroundColor: colors.primaryDark,
-                  color: 'white'
-                }}
-              >
-                <div className="flex items-center justify-center gap-1">
-                  <FileCode size={14} />
-                  <span>Go to API Builder</span>
-                </div>
-              </button>
-              <button 
-                onClick={closeModal}
-                className="px-3 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
-                style={{ 
-                  backgroundColor: colors.hover,
-                  color: colors.text
-                }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      </MobileModal>
-    );
-  };
-
-  // API Calls Modal Component
-  const ApiCallsModal = ({ data }) => {
-    const totalPages = Math.ceil(data.data.length / itemsPerModalPage);
-    const startIndex = (apiCallsPage - 1) * itemsPerModalPage;
-    const endIndex = startIndex + itemsPerModalPage;
-    const currentPageData = data.data.slice(startIndex, endIndex);
-
-    const handleApiClick = (apiId) => {
-      const fullApi = apis.find(a => a.id === apiId);
-      if (fullApi) {
-        openModal('api', fullApi);
-      }
-    };
-
-    return (
-      <MobileModal 
-        title={data.title} 
-        onClose={closeModal}
-        showBackButton={modalStack.length > 1}
-        onBack={closeModal}
-      >
-        <div className="space-y-4">
-          {/* Summary */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
-              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Calls</div>
-              <div className="text-lg font-bold" style={{ color: colors.text }}>
-                {data.data.reduce((sum, api) => sum + api.calls, 0).toLocaleString()}
-              </div>
-            </div>
-            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
-              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Errors</div>
-              <div className="text-lg font-bold" style={{ color: colors.error }}>
-                {data.data.reduce((sum, api) => sum + api.errors, 0).toLocaleString()}
-              </div>
-            </div>
-            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
-              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Response Time</div>
-              <div className="text-lg font-bold" style={{ color: colors.text }}>
-                {(
-                  data.data.reduce((sum, api) => {
-                    const time = parseInt(api.avgResponseTime) || 0;
-                    return sum + time;
-                  }, 0) / data.data.length
-                ).toFixed(0)}ms
-              </div>
-            </div>
-          </div>
-
-          {/* API Calls Table */}
-          <div className="border rounded-lg overflow-hidden" style={{ borderColor: colors.border }}>
-            <div className="overflow-x-auto">
-              <table className="w-full" style={{ borderColor: colors.border }}>
-                <thead>
-                  <tr style={{ backgroundColor: colors.tableHeader }}>
-                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
-                      <div className="flex items-center gap-1">
-                        <Activity size={12} />
-                        API Name
-                      </div>
-                    </th>
-                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
-                      Calls
-                    </th>
-                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
-                      Errors
-                    </th>
-                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
-                      Avg Response
-                    </th>
-                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
-                      Success Rate
-                    </th>
-                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
-                      Owner
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {currentPageData.map((api, index) => (
-                    <tr 
-                      key={api.id}
-                      className="border-t hover-lift cursor-pointer transition-colors"
-                      style={{ 
-                        borderColor: colors.border,
-                        backgroundColor: index % 2 === 0 ? colors.tableRow : colors.tableRowHover
-                      }}
-                      onClick={() => handleApiClick(api.id)}
-                    >
-                      <td className="p-4">
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium truncate" style={{ color: colors.text }}>
-                            {api.name}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div className="text-sm font-medium" style={{ color: colors.primaryDark }}>
-                          {api.calls.toLocaleString()}
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div className="flex items-center gap-1">
-                          <div className="text-sm font-medium" style={{ 
-                            color: api.errors === 0 ? colors.success : 
-                                  api.errors < 10 ? colors.warning : colors.error 
-                          }}>
-                            {api.errors}
-                          </div>
-                          {api.errors > 0 && (
-                            <AlertCircle size={10} style={{ color: colors.warning }} />
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div className="text-sm" style={{ color: colors.text }}>
-                          {api.avgResponseTime}
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div className="text-sm font-medium" style={{ 
-                          color: parseFloat(api.successRate) >= 99 ? colors.success : 
-                                parseFloat(api.successRate) >= 95 ? colors.warning : colors.error 
-                        }}>
-                          {api.successRate}
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <div className="text-sm" style={{ color: colors.textSecondary }}>
-                          {api.owner}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Pagination */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-4 border-t" style={{ borderColor: colors.border }}>
-            <div className="text-xs" style={{ color: colors.textSecondary }}>
-              Showing {startIndex + 1} - {Math.min(endIndex, data.data.length)} of {data.data.length} APIs
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => handleApiCallsPageChange(apiCallsPage - 1)}
-                disabled={apiCallsPage === 1}
-                className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
-                style={{ 
-                  backgroundColor: apiCallsPage === 1 ? 'transparent' : colors.hover,
-                  color: colors.text,
-                  cursor: apiCallsPage === 1 ? 'not-allowed' : 'pointer'
-                }}
-              >
-                <ChevronLeft size={14} />
-              </button>
-              
-              <div className="flex items-center gap-1">
-                {Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
-                  let pageNum;
-                  if (totalPages <= 3) {
-                    pageNum = i + 1;
-                  } else if (apiCallsPage === 1) {
-                    pageNum = i + 1;
-                  } else if (apiCallsPage === totalPages) {
-                    pageNum = totalPages - 2 + i;
-                  } else {
-                    pageNum = apiCallsPage - 1 + i;
-                  }
-                  
-                  if (pageNum > totalPages) return null;
-                  
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => handleApiCallsPageChange(pageNum)}
-                      className="w-6 h-6 rounded text-xs font-medium transition-colors"
-                      style={{ 
-                        backgroundColor: apiCallsPage === pageNum ? colors.selected : 'transparent',
-                        color: apiCallsPage === pageNum ? colors.primaryDark : colors.textSecondary
-                      }}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
-                
-                {totalPages > 3 && apiCallsPage < totalPages - 1 && (
-                  <>
-                    <span className="text-xs" style={{ color: colors.textSecondary }}>...</span>
-                    <button
-                      onClick={() => handleApiCallsPageChange(totalPages)}
-                      className="w-6 h-6 rounded text-xs font-medium transition-colors"
-                      style={{ 
-                        backgroundColor: apiCallsPage === totalPages ? colors.selected : 'transparent',
-                        color: apiCallsPage === totalPages ? colors.primaryDark : colors.textSecondary
-                      }}
-                    >
-                      {totalPages}
-                    </button>
-                  </>
-                )}
-              </div>
-              
-              <button
-                onClick={() => handleApiCallsPageChange(apiCallsPage + 1)}
-                disabled={apiCallsPage === totalPages}
-                className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
-                style={{ 
-                  backgroundColor: apiCallsPage === totalPages ? 'transparent' : colors.hover,
-                  color: colors.text,
-                  cursor: apiCallsPage === totalPages ? 'not-allowed' : 'pointer'
-                }}
-              >
-                <ChevronRightIcon size={14} />
-              </button>
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <button 
-                onClick={() => {
-                  console.log('Exporting API calls data');
-                  alert('Export functionality would be implemented here');
-                }}
-                className="px-3 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
-                style={{ 
-                  backgroundColor: colors.info,
-                  color: 'white'
-                }}
-              >
-                <div className="flex items-center justify-center gap-1">
-                  <Download size={14} />
-                  <span>Export Data</span>
-                </div>
-              </button>
-              <button 
-                onClick={closeModal}
-                className="px-3 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
-                style={{ 
-                  backgroundColor: colors.hover,
-                  color: colors.text
-                }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      </MobileModal>
-    );
-  };
-
   // Activity Modal
   const ActivityModal = ({ data }) => (
     <MobileModal 
@@ -1905,113 +1448,197 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
       showBackButton={modalStack.length > 1}
       onBack={closeModal}
     >
-      <div className="space-y-3 sm:space-y-4">
-        <div className="flex items-center gap-2 sm:gap-3">
-          <div className="p-2 sm:p-3 rounded" style={{ backgroundColor: colors.hover }}>
-            <Database size={20} style={{ color: colors.primary }} />
+      <div className="space-y-4 sm:space-y-6">
+        {/* Header Section */}
+        <div className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl" style={{ 
+          backgroundColor: colors.hover,
+          border: `1px solid ${colors.border}`
+        }}>
+          <div className="flex-shrink-0 p-3 rounded-lg" style={{ 
+            backgroundColor: colors.primary + '15',
+            border: `1px solid ${colors.primary}20`
+          }}>
+            <Database size={22} style={{ color: colors.primary }} />
           </div>
-          <div className="min-w-0">
-            <h4 className="text-sm sm:text-lg font-semibold truncate" style={{ color: colors.text }}>
+          <div className="min-w-0 flex-1">
+            <h4 className="text-base sm:text-lg font-bold truncate" style={{ color: colors.text }}>
               {data?.name}
             </h4>
-            <p className="text-xs sm:text-sm truncate" style={{ color: colors.textSecondary }}>
-              {data?.description}
+            <p className="text-xs sm:text-sm text-gray-500 truncate mt-0.5">
+              {data?.description || 'No description provided'}
             </p>
           </div>
-        </div>
-        
-        <div className="grid grid-cols-2 gap-2 sm:gap-4">
-          <div>
-            <div className="text-xs font-medium mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Host</div>
-            <div className="text-sm font-mono truncate" style={{ color: colors.text }}>{data?.host}</div>
-          </div>
-          <div>
-            <div className="text-xs font-medium mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Port</div>
-            <div className="text-sm truncate" style={{ color: colors.text }}>{data?.port}</div>
-          </div>
-          <div>
-            <div className="text-xs font-medium mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Service</div>
-            <div className="text-sm truncate" style={{ color: colors.text }}>{data?.service}</div>
-          </div>
-          <div>
-            <div className="text-xs font-medium mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Username</div>
-            <div className="text-sm truncate" style={{ color: colors.text }}>{data?.username}</div>
-          </div>
-          <div>
-            <div className="text-xs font-medium mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Status</div>
-            <div className="flex items-center gap-1 sm:gap-2">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(data?.status) }} />
-              <span className="text-sm capitalize truncate" style={{ color: colors.text }}>{data?.status}</span>
-            </div>
-          </div>
-          <div>
-            <div className="text-xs font-medium mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Type</div>
-            <div className="text-sm capitalize truncate" style={{ color: colors.text }}>{data?.type}</div>
+          <div className="flex items-center gap-2 px-2 py-1 rounded-full text-xs font-medium" style={{ 
+            backgroundColor: getStatusColor(data?.status) + '20',
+            color: getStatusColor(data?.status),
+            border: `1px solid ${getStatusColor(data?.status)}30`
+          }}>
+            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: getStatusColor(data?.status) }} />
+            <span className="capitalize">{data?.status}</span>
           </div>
         </div>
-        
-        <div className="pt-3 sm:pt-4 border-t" style={{ borderColor: colors.border }}>
-          <div className="text-xs font-medium mb-1" style={{ color: colors.textSecondary }}>Performance</div>
-          <div className="grid grid-cols-3 gap-2 sm:gap-4">
-            <div className="text-center p-2 sm:p-3 rounded border" style={{ borderColor: colors.border }}>
-              <div className="text-xs mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Latency</div>
-              <div className="text-sm sm:text-lg font-semibold" style={{ color: colors.text }}>{data?.latency}</div>
+
+        {/* Connection Details Grid */}
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 p-4 rounded-xl" style={{ 
+          backgroundColor: colors.hover + '40',
+          border: `1px solid ${colors.border}`
+        }}>
+          <div className="space-y-1">
+            <div className="text-xs font-medium uppercase tracking-wider" style={{ color: colors.textSecondary }}>
+              Host
             </div>
-            <div className="text-center p-2 sm:p-3 rounded border" style={{ borderColor: colors.border }}>
-              <div className="text-xs mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Uptime</div>
-              <div className="text-sm sm:text-lg font-semibold" style={{ color: colors.text }}>{data?.uptime}</div>
+            <div className="text-sm font-mono truncate p-1.5 rounded bg-white/10" style={{ color: colors.text }}>
+              {data?.host}
             </div>
-            <div className="text-center p-2 sm:p-3 rounded border" style={{ borderColor: colors.border }}>
-              <div className="text-xs mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Connections</div>
-              <div className="text-sm sm:text-lg font-semibold" style={{ color: colors.text }}>
-                {data?.currentConnections}/{data?.maxConnections}
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs font-medium uppercase tracking-wider" style={{ color: colors.textSecondary }}>
+              Port
+            </div>
+            <div className="text-sm truncate p-1.5 rounded bg-white/10" style={{ color: colors.text }}>
+              {data?.port}
+            </div>
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs font-medium uppercase tracking-wider" style={{ color: colors.textSecondary }}>
+              Service
+            </div>
+            <div className="text-sm truncate p-1.5 rounded bg-white/10" style={{ color: colors.text }}>
+              {data?.service || 'N/A'}
+            </div>
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs font-medium uppercase tracking-wider" style={{ color: colors.textSecondary }}>
+              Username
+            </div>
+            <div className="text-sm truncate p-1.5 rounded bg-white/10" style={{ color: colors.text }}>
+              {data?.username}
+            </div>
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs font-medium uppercase tracking-wider" style={{ color: colors.textSecondary }}>
+              Type
+            </div>
+            <div className="text-sm truncate p-1.5 rounded bg-white/10" style={{ color: colors.text }}>
+              {data?.type}
+            </div>
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs font-medium uppercase tracking-wider" style={{ color: colors.textSecondary }}>
+              SSL
+            </div>
+            <div className="text-sm truncate p-1.5 rounded bg-white/10" style={{ color: colors.text }}>
+              {data?.ssl ? 'Enabled' : 'Disabled'}
+            </div>
+          </div>
+        </div>
+
+        {/* Performance Metrics */}
+        <div className="p-4 rounded-xl" style={{ 
+          backgroundColor: colors.hover + '40',
+          border: `1px solid ${colors.border}`
+        }}>
+          <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
+            <Activity size={16} />
+            Performance Metrics
+          </h5>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="text-center p-3 rounded-lg border" style={{ 
+              borderColor: colors.border,
+              backgroundColor: colors.card
+            }}>
+              <div className="text-xs font-medium mb-1.5" style={{ color: colors.textSecondary }}>Latency</div>
+              <div className="text-lg font-bold" style={{ color: colors.text }}>
+                {data?.latency ? `${data.latency}ms` : 'N/A'}
+              </div>
+            </div>
+            <div className="text-center p-3 rounded-lg border" style={{ 
+              borderColor: colors.border,
+              backgroundColor: colors.card
+            }}>
+              <div className="text-xs font-medium mb-1.5" style={{ color: colors.textSecondary }}>Uptime</div>
+              <div className="text-lg font-bold" style={{ color: colors.text }}>
+                {data?.uptime ? `${data.uptime}%` : 'N/A'}
+              </div>
+            </div>
+            <div className="text-center p-3 rounded-lg border" style={{ 
+              borderColor: colors.border,
+              backgroundColor: colors.card
+            }}>
+              <div className="text-xs font-medium mb-1.5" style={{ color: colors.textSecondary }}>Connections</div>
+              <div className="text-lg font-bold" style={{ color: colors.text }}>
+                {data?.currentConnections || 0}/{data?.maxConnections || 0}
               </div>
             </div>
           </div>
         </div>
-        
-        <div className="pt-3 sm:pt-4 border-t" style={{ borderColor: colors.border }}>
-          <div className="flex flex-col gap-2">
+
+        {/* Action Buttons - All in one row */}
+        <div className="pt-2">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
             <button 
-              onClick={() => {
-                console.log('Test connection:', data?.name);
-                alert('Testing connection...');
-              }}
-              className="px-3 py-2 rounded text-sm font-medium transition-colors"
+              onClick={() => handleTestConnection(data)}
+              className="flex flex-col items-center justify-center p-3 rounded-lg transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
               style={{ 
                 backgroundColor: colors.info,
                 color: 'white'
               }}
             >
-              Test Connection
+              <div className="flex items-center gap-1.5">
+                <TestTube size={16} />
+                <span className="text-xs font-medium">Test</span>
+              </div>
+              <div className="text-[10px] opacity-90 mt-0.5">Connection</div>
             </button>
+            
             <button 
               onClick={() => {
                 console.log('Edit connection:', data?.name);
                 closeAllModals();
-                if (navigateTo) navigateTo('connections');
+                handleNavigateToSchemaBrowser();
               }}
-              className="px-3 py-2 rounded text-sm font-medium transition-colors"
+              className="flex flex-col items-center justify-center p-3 rounded-lg transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
               style={{ 
                 backgroundColor: colors.warning,
                 color: 'white'
               }}
             >
-              Edit Connection
+              <div className="flex items-center gap-1.5">
+                <Edit size={16} />
+                <span className="text-xs font-medium">Edit</span>
+              </div>
+              <div className="text-[10px] opacity-90 mt-0.5">Settings</div>
             </button>
+            
             <button 
-              onClick={() => {
-                console.log('Browse schema for:', data?.name);
-                closeAllModals();
-                handleNavigateToSchemaBrowser();
-              }}
-              className="px-3 py-2 rounded text-sm font-medium transition-colors"
+              onClick={handleNavigateToSchemaBrowser}
+              className="flex flex-col items-center justify-center p-3 rounded-lg transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
               style={{ 
                 backgroundColor: colors.primaryDark,
                 color: 'white'
               }}
             >
-              Browse Schema
+              <div className="flex items-center gap-1.5">
+                <Database size={16} />
+                <span className="text-xs font-medium">Browse</span>
+              </div>
+              <div className="text-[10px] opacity-90 mt-0.5">Schema</div>
+            </button>
+          </div>
+          
+          {/* Optional: Additional actions if needed */}
+          <div className="mt-3 pt-3 border-t" style={{ borderColor: colors.border }}>
+            <button 
+              onClick={() => console.log('Export connection config')}
+              className="w-full py-2 px-4 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2"
+              style={{ 
+                backgroundColor: colors.hover,
+                color: colors.textSecondary,
+                border: `1px solid ${colors.border}`
+              }}
+            >
+              <Download size={14} />
+              Export Configuration
             </button>
           </div>
         </div>
@@ -2072,10 +1699,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
         <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
           <div className="flex flex-col gap-2">
             <button 
-              onClick={() => {
-                closeAllModals();
-                handleNavigateToApiBuilder();
-              }}
+              onClick={handleNavigateToApiBuilder}
               className="px-3 py-2 rounded text-sm font-medium transition-colors hover-lift"
               style={{ 
                 backgroundColor: colors.primaryDark,
@@ -2100,6 +1724,704 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
     </MobileModal>
   );
 
+  // API Stats Modal Component
+  const ApiStatsModal = ({ data }) => {
+    const [localApiStatsPage, setLocalApiStatsPage] = useState(1);
+    const totalPages = Math.ceil(data.data.length / itemsPerModalPage);
+    const startIndex = (localApiStatsPage - 1) * itemsPerModalPage;
+    const endIndex = startIndex + itemsPerModalPage;
+    const currentPageData = data.data.slice(startIndex, endIndex);
+
+    const handleApiStatsPageChange = (newPage) => {
+      setLocalApiStatsPage(newPage);
+    };
+
+    const handleViewApiDetails = (api) => {
+      openModal('api', api);
+    };
+
+    return (
+      <MobileModal 
+        title={data.title} 
+        onClose={closeModal}
+        showBackButton={modalStack.length > 1}
+        onBack={closeModal}
+      >
+        <div className="space-y-4">
+          {/* Summary */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total APIs</div>
+              <div className="text-lg font-bold" style={{ color: colors.text }}>
+                {data.totalItems}
+              </div>
+            </div>
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Endpoints</div>
+              <div className="text-lg font-bold" style={{ color: colors.text }}>
+                {data.data.reduce((sum, api) => sum + api.endpointCount, 0)}
+              </div>
+            </div>
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Success Rate</div>
+              <div className="text-lg font-bold" style={{ color: colors.success }}>
+                {(
+                  data.data.reduce((sum, api) => {
+                    const rate = parseFloat(api.successRate);
+                    return sum + (isNaN(rate) ? 0 : rate);
+                  }, 0) / data.data.length
+                ).toFixed(1)}%
+              </div>
+            </div>
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Latency</div>
+              <div className="text-lg font-bold" style={{ color: colors.text }}>
+                {(
+                  data.data.reduce((sum, api) => {
+                    const latency = parseInt(api.latency) || 0;
+                    return sum + latency;
+                  }, 0) / data.data.length
+                ).toFixed(0)}ms
+              </div>
+            </div>
+          </div>
+
+          {/* API Table */}
+          <div className="border rounded-lg overflow-hidden" style={{ borderColor: colors.border }}>
+            <div className="overflow-x-auto">
+              <table className="w-full" style={{ borderColor: colors.border }}>
+                <thead>
+                  <tr style={{ backgroundColor: colors.tableHeader }}>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      <div className="flex items-center gap-1">
+                        <FileCode size={12} />
+                        API Name
+                      </div>
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Version
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Calls
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Success Rate
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Latency
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Last Updated
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentPageData.map((api, index) => (
+                    <tr 
+                      key={api.id}
+                      className="border-t hover-lift cursor-pointer transition-colors"
+                      style={{ 
+                        borderColor: colors.border,
+                        backgroundColor: index % 2 === 0 ? colors.tableRow : colors.tableRowHover
+                      }}
+                      onClick={() => handleViewApiDetails(api)}
+                    >
+                      <td className="p-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(api.status) }} />
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium truncate" style={{ color: colors.text }}>
+                              {api.name}
+                            </div>
+                            <div className="text-sm truncate" style={{ color: colors.textSecondary }}>
+                              {api.description}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="text-sm font-mono" style={{ color: colors.text }}>
+                          {api.version}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="text-sm font-medium" style={{ color: colors.text }}>
+                          {api.calls.toLocaleString()}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-1">
+                          <div className="text-sm font-medium" style={{ 
+                            color: parseFloat(api.successRate) >= 99 ? colors.success : 
+                                  parseFloat(api.successRate) >= 95 ? colors.warning : colors.error 
+                          }}>
+                            {api.successRate}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="text-sm" style={{ color: colors.text }}>
+                          {api.latency}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="text-sm" style={{ color: colors.textSecondary }}>
+                          {new Date(api.lastUpdated).toLocaleDateString()}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Pagination */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="text-xs" style={{ color: colors.textSecondary }}>
+              Showing {startIndex + 1} - {Math.min(endIndex, data.data.length)} of {data.data.length} APIs
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => handleApiStatsPageChange(localApiStatsPage - 1)}
+                disabled={localApiStatsPage === 1}
+                className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
+                style={{ 
+                  backgroundColor: localApiStatsPage === 1 ? 'transparent' : colors.hover,
+                  color: colors.text,
+                  cursor: localApiStatsPage === 1 ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <ChevronLeft size={14} />
+              </button>
+              
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 3) {
+                    pageNum = i + 1;
+                  } else if (localApiStatsPage === 1) {
+                    pageNum = i + 1;
+                  } else if (localApiStatsPage === totalPages) {
+                    pageNum = totalPages - 2 + i;
+                  } else {
+                    pageNum = localApiStatsPage - 1 + i;
+                  }
+                  
+                  if (pageNum > totalPages) return null;
+                  
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => handleApiStatsPageChange(pageNum)}
+                      className="w-6 h-6 rounded text-xs font-medium transition-colors"
+                      style={{ 
+                        backgroundColor: localApiStatsPage === pageNum ? colors.selected : 'transparent',
+                        color: localApiStatsPage === pageNum ? colors.primaryDark : colors.textSecondary
+                      }}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+                
+                {totalPages > 3 && localApiStatsPage < totalPages - 1 && (
+                  <>
+                    <span className="text-xs" style={{ color: colors.textSecondary }}>...</span>
+                    <button
+                      onClick={() => handleApiStatsPageChange(totalPages)}
+                      className="w-6 h-6 rounded text-xs font-medium transition-colors"
+                      style={{ 
+                        backgroundColor: localApiStatsPage === totalPages ? colors.selected : 'transparent',
+                        color: localApiStatsPage === totalPages ? colors.primaryDark : colors.textSecondary
+                      }}
+                    >
+                      {totalPages}
+                    </button>
+                  </>
+                )}
+              </div>
+              
+              <button
+                onClick={() => handleApiStatsPageChange(localApiStatsPage + 1)}
+                disabled={localApiStatsPage === totalPages}
+                className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
+                style={{ 
+                  backgroundColor: localApiStatsPage === totalPages ? 'transparent' : colors.hover,
+                  color: colors.text,
+                  cursor: localApiStatsPage === totalPages ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <ChevronRightIcon size={14} />
+              </button>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button 
+                onClick={() => {
+                  handleNavigateToApiBuilder();
+                  closeModal();
+                }}
+                className="px-3 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                style={{ 
+                  backgroundColor: colors.primaryDark,
+                  color: 'white'
+                }}
+              >
+                <div className="flex items-center justify-center gap-1">
+                  <FileCode size={14} />
+                  <span>Go to API Builder</span>
+                </div>
+              </button>
+              <button 
+                onClick={closeModal}
+                className="px-3 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                style={{ 
+                  backgroundColor: colors.hover,
+                  color: colors.text
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </MobileModal>
+    );
+  };
+
+  // API Calls Modal Component
+  const ApiCallsModal = ({ data }) => {
+    const [localApiCallsPage, setLocalApiCallsPage] = useState(1);
+    const totalPages = Math.ceil(data.data.length / itemsPerModalPage);
+    const startIndex = (localApiCallsPage - 1) * itemsPerModalPage;
+    const endIndex = startIndex + itemsPerModalPage;
+    const currentPageData = data.data.slice(startIndex, endIndex);
+
+    const handleApiCallsPageChange = (newPage) => {
+      setLocalApiCallsPage(newPage);
+    };
+
+    const handleViewApiDetailsFromCalls = (apiData) => {
+      const fullApi = apis.find(a => a.id === apiData.id);
+      if (fullApi) {
+        openModal('api', fullApi);
+      }
+    };
+
+    return (
+      <MobileModal 
+        title={data.title} 
+        onClose={closeModal}
+        showBackButton={modalStack.length > 1}
+        onBack={closeModal}
+      >
+        <div className="space-y-4">
+          {/* Summary */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Calls</div>
+              <div className="text-lg font-bold" style={{ color: colors.text }}>
+                {data.data.reduce((sum, api) => sum + api.calls, 0).toLocaleString()}
+              </div>
+            </div>
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Errors</div>
+              <div className="text-lg font-bold" style={{ color: colors.error }}>
+                {data.data.reduce((sum, api) => sum + api.errors, 0).toLocaleString()}
+              </div>
+            </div>
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+              <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Response Time</div>
+              <div className="text-lg font-bold" style={{ color: colors.text }}>
+                {(
+                  data.data.reduce((sum, api) => {
+                    const time = parseInt(api.avgResponseTime) || 0;
+                    return sum + time;
+                  }, 0) / data.data.length
+                ).toFixed(0)}ms
+              </div>
+            </div>
+          </div>
+
+          {/* API Calls Table */}
+          <div className="border rounded-lg overflow-hidden" style={{ borderColor: colors.border }}>
+            <div className="overflow-x-auto">
+              <table className="w-full" style={{ borderColor: colors.border }}>
+                <thead>
+                  <tr style={{ backgroundColor: colors.tableHeader }}>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      <div className="flex items-center gap-1">
+                        <Activity size={12} />
+                        API Name
+                      </div>
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Calls
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Errors
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Avg Response
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Success Rate
+                    </th>
+                    <th className="text-left p-3 text-xs font-medium" style={{ color: colors.textSecondary }}>
+                      Owner
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentPageData.map((api, index) => (
+                    <tr 
+                      key={api.id}
+                      className="border-t hover-lift cursor-pointer transition-colors"
+                      style={{ 
+                        borderColor: colors.border,
+                        backgroundColor: index % 2 === 0 ? colors.tableRow : colors.tableRowHover
+                      }}
+                      onClick={() => handleViewApiDetailsFromCalls(api)}
+                    >
+                      <td className="p-4">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium truncate" style={{ color: colors.text }}>
+                            {api.name}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="text-sm font-medium" style={{ color: colors.primaryDark }}>
+                          {api.calls.toLocaleString()}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-1">
+                          <div className="text-sm font-medium" style={{ 
+                            color: api.errors === 0 ? colors.success : 
+                                  api.errors < 10 ? colors.warning : colors.error 
+                          }}>
+                            {api.errors}
+                          </div>
+                          {api.errors > 0 && (
+                            <AlertCircle size={10} style={{ color: colors.warning }} />
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="text-sm" style={{ color: colors.text }}>
+                          {api.avgResponseTime}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="text-sm font-medium" style={{ 
+                          color: parseFloat(api.successRate) >= 99 ? colors.success : 
+                                parseFloat(api.successRate) >= 95 ? colors.warning : colors.error 
+                        }}>
+                          {api.successRate}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <div className="text-sm" style={{ color: colors.textSecondary }}>
+                          {api.owner}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Pagination */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="text-xs" style={{ color: colors.textSecondary }}>
+              Showing {startIndex + 1} - {Math.min(endIndex, data.data.length)} of {data.data.length} APIs
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => handleApiCallsPageChange(localApiCallsPage - 1)}
+                disabled={localApiCallsPage === 1}
+                className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
+                style={{ 
+                  backgroundColor: localApiCallsPage === 1 ? 'transparent' : colors.hover,
+                  color: colors.text,
+                  cursor: localApiCallsPage === 1 ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <ChevronLeft size={14} />
+              </button>
+              
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 3) {
+                    pageNum = i + 1;
+                  } else if (localApiCallsPage === 1) {
+                    pageNum = i + 1;
+                  } else if (localApiCallsPage === totalPages) {
+                    pageNum = totalPages - 2 + i;
+                  } else {
+                    pageNum = localApiCallsPage - 1 + i;
+                  }
+                  
+                  if (pageNum > totalPages) return null;
+                  
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => handleApiCallsPageChange(pageNum)}
+                      className="w-6 h-6 rounded text-xs font-medium transition-colors"
+                      style={{ 
+                        backgroundColor: localApiCallsPage === pageNum ? colors.selected : 'transparent',
+                        color: localApiCallsPage === pageNum ? colors.primaryDark : colors.textSecondary
+                      }}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+                
+                {totalPages > 3 && localApiCallsPage < totalPages - 1 && (
+                  <>
+                    <span className="text-xs" style={{ color: colors.textSecondary }}>...</span>
+                    <button
+                      onClick={() => handleApiCallsPageChange(totalPages)}
+                      className="w-6 h-6 rounded text-xs font-medium transition-colors"
+                      style={{ 
+                        backgroundColor: localApiCallsPage === totalPages ? colors.selected : 'transparent',
+                        color: localApiCallsPage === totalPages ? colors.primaryDark : colors.textSecondary
+                      }}
+                    >
+                      {totalPages}
+                    </button>
+                  </>
+                )}
+              </div>
+              
+              <button
+                onClick={() => handleApiCallsPageChange(localApiCallsPage + 1)}
+                disabled={localApiCallsPage === totalPages}
+                className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
+                style={{ 
+                  backgroundColor: localApiCallsPage === totalPages ? 'transparent' : colors.hover,
+                  color: colors.text,
+                  cursor: localApiCallsPage === totalPages ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <ChevronRightIcon size={14} />
+              </button>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button 
+                onClick={() => {
+                  console.log('Exporting API calls data');
+                  alert('Export functionality would be implemented here');
+                }}
+                className="px-3 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                style={{ 
+                  backgroundColor: colors.info,
+                  color: 'white'
+                }}
+              >
+                <div className="flex items-center justify-center gap-1">
+                  <Download size={14} />
+                  <span>Export Data</span>
+                </div>
+              </button>
+              <button 
+                onClick={closeModal}
+                className="px-3 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                style={{ 
+                  backgroundColor: colors.hover,
+                  color: colors.text
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </MobileModal>
+    );
+  };
+
+  // Test Connection Modal
+  const TestConnectionModal = ({ data }) => {
+    const [progress, setProgress] = useState(data.progress);
+    
+    useEffect(() => {
+      if (data.status === 'testing') {
+        const interval = setInterval(() => {
+          setProgress(prev => {
+            if (prev >= 100) {
+              clearInterval(interval);
+              setTimeout(() => {
+                closeModal();
+                openModal('testResults', {
+                  connection: data.connection,
+                  status: 'success',
+                  message: 'Connection test successful!'
+                });
+              }, 500);
+              return 100;
+            }
+            return prev + 25;
+          });
+        }, 300);
+        
+        return () => clearInterval(interval);
+      }
+    }, [data.status]);
+
+    return (
+      <MobileModal 
+        title="Testing Connection" 
+        onClose={closeModal}
+        showBackButton={modalStack.length > 1}
+        onBack={closeModal}
+      >
+        <div className="space-y-4">
+          <div className="text-center">
+            <div className="w-16 h-16 mx-auto mb-4 relative">
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Database size={24} style={{ color: colors.primary }} />
+              </div>
+            </div>
+            <div className="text-sm font-medium mb-2" style={{ color: colors.text }}>
+              Testing connection to {data.connection?.name}
+            </div>
+            <div className="text-xs" style={{ color: colors.textSecondary }}>
+              Checking connectivity, authentication, and permissions...
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-green-500 transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <div className="text-xs text-center" style={{ color: colors.textSecondary }}>
+              {progress}% complete
+            </div>
+          </div>
+
+          <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+            <button 
+              onClick={closeModal}
+              className="w-full px-4 py-2 rounded text-sm font-medium transition-colors hover-lift"
+              style={{ 
+                backgroundColor: colors.hover,
+                color: colors.text
+              }}
+            >
+              Cancel Test
+            </button>
+          </div>
+        </div>
+      </MobileModal>
+    );
+  };
+
+  // Test Results Modal
+  const TestResultsModal = ({ data }) => {
+    return (
+      <MobileModal 
+        title="Test Results" 
+        onClose={closeModal}
+        showBackButton={modalStack.length > 1}
+        onBack={closeModal}
+      >
+        <div className="space-y-4">
+          <div className="text-center">
+            <div className={`w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center ${colors.success}20`}>
+              <CheckCircle size={32} style={{ color: colors.success }} />
+            </div>
+            <div className="text-sm font-medium mb-2" style={{ color: colors.text }}>
+              {data.message}
+            </div>
+            <div className="text-xs" style={{ color: colors.textSecondary }}>
+              Connection to {data.connection?.name} was successful
+            </div>
+          </div>
+
+          <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+            <button 
+              onClick={closeModal}
+              className="w-full px-4 py-2 rounded text-sm font-medium transition-colors hover-lift"
+              style={{ 
+                backgroundColor: colors.success,
+                color: 'white'
+              }}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      </MobileModal>
+    );
+  };
+
+  // Schema Item Modal
+  const SchemaItemModal = ({ data }) => {
+    const itemName = data.type.replace(/([A-Z])/g, ' $1').trim();
+    
+    return (
+      <MobileModal 
+        title={itemName} 
+        onClose={closeModal}
+        showBackButton={modalStack.length > 1}
+        onBack={closeModal}
+      >
+        <div className="space-y-4">
+          <div className="text-center p-4 rounded border" style={{ borderColor: colors.border }}>
+            <div className="text-2xl font-bold" style={{ color: colors.text }}>
+              {data.count}
+            </div>
+            <div className="text-sm capitalize" style={{ color: colors.textSecondary }}>
+              {itemName}s in Database
+            </div>
+          </div>
+
+          <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button 
+                onClick={handleNavigateToSchemaBrowser}
+                className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                style={{ 
+                  backgroundColor: colors.primaryDark,
+                  color: 'white'
+                }}
+              >
+                Browse {itemName}s
+              </button>
+              <button 
+                onClick={closeModal}
+                className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                style={{ 
+                  backgroundColor: colors.hover,
+                  color: colors.text
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </MobileModal>
+    );
+  };
+
   // Modal Renderer Component
   const ModalRenderer = () => {
     if (modalStack.length === 0) return null;
@@ -2119,6 +2441,12 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
           return <ApiStatsModal key={index} data={modal.data} />;
         case 'apiCalls':
           return <ApiCallsModal key={index} data={modal.data} />;
+        case 'testConnection':
+          return <TestConnectionModal key={index} data={modal.data} />;
+        case 'testResults':
+          return <TestResultsModal key={index} data={modal.data} />;
+        case 'schemaItem':
+          return <SchemaItemModal key={index} data={modal.data} />;
         default:
           return null;
       }
@@ -2155,14 +2483,6 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
           </h3>
           <div className="space-y-6 sm:space-y-6 ">
             <button 
-              onClick={handleNewConnection}
-              className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.hover, color: colors.text }}
-            >
-              <Database size={14} />
-              <span className="truncate">New Database Connection</span>
-            </button>
-            <button 
               onClick={handleApiGeneration}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
               style={{ backgroundColor: colors.hover, color: colors.text }}
@@ -2171,12 +2491,12 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
               <span className="truncate">Generate New API</span>
             </button>
             <button 
-              onClick={handleNavigateToCodeBase}
+              onClick={handleNavigateToAPICollection}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
               style={{ backgroundColor: colors.hover, color: colors.text }}
             >
-              <Code size={14} />
-              <span className="truncate">View Code Base</span>
+              <Database size={14} />
+              <span className="truncate">API Collections</span>
             </button>
             <button 
               onClick={handleNavigateToDocumentation}
@@ -2184,7 +2504,23 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
               style={{ backgroundColor: colors.hover, color: colors.text }}
             >
               <BookOpen size={14} />
-              <span className="truncate">View Documentation</span>
+              <span className="truncate">API Documentation</span>
+            </button>
+            <button 
+              onClick={handleNavigateToCodeBase}
+              className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
+              style={{ backgroundColor: colors.hover, color: colors.text }}
+            >
+              <Code size={14} />
+              <span className="truncate">API Code Base</span>
+            </button>
+            <button 
+              onClick={handleNavigateToAPISecurity}
+              className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
+              style={{ backgroundColor: colors.hover, color: colors.text }}
+            >
+              <Shield size={14} />
+              <span className="truncate">API Security</span>
             </button>
           </div>
         </div>
@@ -2206,7 +2542,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
               <div 
                 key={index} 
                 className="flex items-center justify-between p-2 rounded hover-lift cursor-pointer"
-                onClick={() => handleNavigateToApiBuilder()}
+                onClick={handleNavigateToApiBuilder}
                 style={{ backgroundColor: colors.hover }}
               >
                 <div className="min-w-0 flex-1">
@@ -2356,7 +2692,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
                 icon={Database}
                 change={+5}
                 color={colors.success}
-                onClick={() => console.log('View all connections')}
+                onClick={handleViewAllConnections}
               />
               <StatCard
                 title="Active APIs"
@@ -2380,7 +2716,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
                 icon={CheckCircle}
                 change={+0.2}
                 color={colors.success}
-                onClick={() => console.log('View performance metrics')}
+                onClick={handleViewPerformanceMetrics}
               />
             </div>
 
@@ -2403,7 +2739,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
                           {connections.length} connections
                         </span>
                         <button 
-                          onClick={handleNewConnection}
+                          onClick={handleNavigateToAPICollection}
                           className="p-0.5 sm:p-1 rounded hover:bg-opacity-50 transition-colors hover-lift shrink-0"
                           style={{ backgroundColor: colors.hover }}
                         >

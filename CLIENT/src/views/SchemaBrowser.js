@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Database, Table, Columns, FileText, Code, Package, Hash, Link, Type,
   Search, Filter, Star, ChevronDown, ChevronRight, ChevronUp, ChevronLeft,
@@ -17,10 +17,555 @@ import {
 } from 'lucide-react';
 import ApiGenerationModal from '@/components/modals/ApiGenerationModal.js';
 
+// Create a separate FilterInput component to prevent re-renders
+const FilterInput = React.memo(({ 
+  filterQuery, 
+  selectedOwner, 
+  onFilterChange, 
+  onOwnerChange, 
+  onClearFilters,
+  colors 
+}) => {
+  const searchInputRef = useRef(null);
+
+  const handleFilterChange = useCallback((e) => {
+    onFilterChange(e.target.value);
+  }, [onFilterChange]);
+
+  const handleOwnerChange = useCallback((e) => {
+    onOwnerChange(e.target.value);
+  }, [onOwnerChange]);
+
+  const handleClearFilter = useCallback(() => {
+    onFilterChange('');
+    // Focus the input after clearing
+    setTimeout(() => {
+      if (searchInputRef.current) {
+        searchInputRef.current.focus();
+      }
+    }, 10);
+  }, [onFilterChange]);
+
+  const handleClearAllFilters = useCallback(() => {
+    onFilterChange('');
+    onOwnerChange('ALL');
+    // Focus the input after clearing
+    setTimeout(() => {
+      if (searchInputRef.current) {
+        searchInputRef.current.focus();
+      }
+    }, 10);
+  }, [onFilterChange, onOwnerChange]);
+
+  return (
+    <>
+      <div className="p-3 border-b" style={{ borderColor: colors.border }}>
+        <div className="space-y-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2" size={14} style={{ color: colors.textSecondary }} />
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Filter objects..."
+              value={filterQuery}
+              onChange={handleFilterChange}
+              className="w-full pl-10 pr-3 py-2.5 rounded text-sm focus:outline-none hover-lift touch-target"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                border: `1px solid ${colors.inputBorder}`,
+                color: colors.text
+              }}
+              aria-label="Search objects"
+            />
+            {filterQuery && (
+              <button 
+                onClick={handleClearFilter}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 p-0.5 rounded hover:bg-opacity-50 transition-colors"
+                style={{ backgroundColor: colors.hover }}
+                aria-label="Clear search"
+              >
+                <X size={12} style={{ color: colors.textSecondary }} />
+              </button>
+            )}
+          </div>
+          <select 
+            className="w-full px-3 py-2.5 rounded text-sm focus:outline-none hover-lift touch-target"
+            style={{ 
+              backgroundColor: colors.inputBg,
+              border: `1px solid ${colors.inputBorder}`,
+              color: colors.text
+            }}
+            value={selectedOwner}
+            onChange={handleOwnerChange}
+            aria-label="Filter by owner"
+          >
+            <option value="ALL">Owner: All</option>
+            <option value="HR">Owner: HR</option>
+            <option value="SCOTT">Owner: SCOTT</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Filter status indicator */}
+      {(filterQuery || selectedOwner !== 'ALL') && (
+        <div className="px-3 py-2 border-b" style={{ borderColor: colors.border, backgroundColor: colors.hover }}>
+          <div className="flex items-center justify-between">
+            <span className="text-xs" style={{ color: colors.textSecondary }}>
+              Filtering {filterQuery && `by: "${filterQuery}"`} {filterQuery && selectedOwner !== 'ALL' && ' • '} 
+              {selectedOwner !== 'ALL' && `Owner: ${selectedOwner}`}
+            </span>
+            <button 
+              onClick={handleClearAllFilters}
+              className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors"
+              style={{ backgroundColor: colors.border, color: colors.text }}
+              aria-label="Clear all filters"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+});
+
+FilterInput.displayName = 'FilterInput';
+
+// Create a separate ObjectTreeSection component
+const ObjectTreeSection = React.memo(({ 
+  title, 
+  type, 
+  objects, 
+  isExpanded, 
+  onToggle,
+  onSelectObject,
+  activeObjectId,
+  filterQuery,
+  selectedOwner,
+  colors,
+  getObjectIcon,
+  handleContextMenu
+}) => {
+  
+  // Simple filter function inside the component - doesn't cause re-renders of parent
+  const searchObjects = useCallback((objects, type) => {
+    if (!filterQuery && selectedOwner === 'ALL') {
+      return objects;
+    }
+    
+    const searchLower = filterQuery.toLowerCase();
+    
+    return objects.filter(obj => {
+      // Apply owner filter
+      const ownerMatch = selectedOwner === 'ALL' || obj.owner === selectedOwner;
+      if (!ownerMatch) return false;
+      
+      // If no search query, return true
+      if (!filterQuery) return true;
+      
+      // Simple search in key properties
+      return (
+        (obj.name && obj.name.toLowerCase().includes(searchLower)) ||
+        (obj.owner && obj.owner.toLowerCase().includes(searchLower)) ||
+        (obj.comment && obj.comment.toLowerCase().includes(searchLower)) ||
+        (obj.columns && obj.columns.some(col => 
+          col.name && col.name.toLowerCase().includes(searchLower)
+        )) ||
+        (obj.parameters && obj.parameters.some(param => 
+          param.name && param.name.toLowerCase().includes(searchLower)
+        ))
+      );
+    });
+  }, [filterQuery, selectedOwner]);
+
+  const filteredObjects = searchObjects(objects, type);
+  
+  return (
+    <div className="mb-1">
+      <button
+        onClick={onToggle}
+        className="flex items-center justify-between w-full px-2 py-2 hover:bg-opacity-50 transition-colors rounded-sm text-sm font-medium touch-target hover-lift"
+        style={{ backgroundColor: colors.hover }}
+        aria-label={`Toggle ${title} section`}
+      >
+        <div className="flex items-center gap-2">
+          {isExpanded ? 
+            <ChevronDown size={14} style={{ color: colors.textSecondary }} /> :
+            <ChevronRight size={14} style={{ color: colors.textSecondary }} />
+          }
+          {getObjectIcon(type.slice(0, -1))}
+          <span className="truncate text-xs sm:text-sm">{title}</span>
+        </div>
+        <span className="text-xs px-1.5 py-0.5 rounded shrink-0 min-w-6 text-center" style={{ 
+          backgroundColor: colors.border,
+          color: colors.textSecondary
+        }}>
+          {filteredObjects.length}
+        </span>
+      </button>
+      
+      {isExpanded && (
+        <div className="ml-6 mt-0.5 space-y-0.5">
+          {filteredObjects.length === 0 ? (
+            <div className="px-2 py-3 text-center">
+              <span className="text-xs" style={{ color: colors.textTertiary }}>
+                {filterQuery || selectedOwner !== 'ALL' ? 'No objects match your filter' : 'No objects found'}
+              </span>
+            </div>
+          ) : (
+            filteredObjects.map(obj => (
+              <button
+                key={obj.id}
+                onDoubleClick={() => onSelectObject(obj, type.slice(0, -1).toUpperCase())}
+                onContextMenu={(e) => handleContextMenu(e, obj, type.slice(0, -1).toUpperCase())}
+                onClick={() => onSelectObject(obj, type.slice(0, -1).toUpperCase())}
+                className={`flex items-center justify-between w-full px-2 py-2 rounded-sm cursor-pointer group hover-lift touch-target text-left ${
+                  activeObjectId === obj.id ? 'font-medium' : ''
+                }`}
+                style={{
+                  backgroundColor: activeObjectId === obj.id ? colors.selected : 'transparent',
+                  color: activeObjectId === obj.id ? colors.primary : colors.text
+                }}
+                aria-label={`Select ${obj.name}`}
+              >
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  {getObjectIcon(type.slice(0, -1))}
+                  <span className="text-xs sm:text-sm truncate">{obj.name}</span>
+                  {obj.status !== 'VALID' && (
+                    <AlertCircle size={10} style={{ color: colors.error }} className="shrink-0" />
+                  )}
+                </div>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2">
+                  {obj.isFavorite && (
+                    <Star size={10} fill={colors.warning} style={{ color: colors.warning }} />
+                  )}
+                  {obj.rowCount && (
+                    <span className="text-xs hidden sm:inline" style={{ color: activeObjectId === obj.id ? colors.primary : colors.textSecondary }}>
+                      ({obj.rowCount})
+                    </span>
+                  )}
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
+ObjectTreeSection.displayName = 'ObjectTreeSection';
+
+// Left Sidebar Component - Fully mobile responsive (MOVED OUTSIDE)
+const LeftSidebar = React.memo(({ 
+  isLeftSidebarVisible, 
+  setIsLeftSidebarVisible,
+  showConnectionManager,
+  setShowConnectionManager,
+  filterQuery,
+  selectedOwner,
+  handleFilterChange,
+  handleOwnerChange,
+  handleClearFilters,
+  colors,
+  objectTree,
+  handleToggleSection,
+  schemaObjects,
+  activeObject,
+  handleObjectSelect,
+  getObjectIcon,
+  handleContextMenu
+}) => {
+  return (
+    <div className={`w-full md:w-64 border-r flex flex-col absolute md:relative inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out ${
+      isLeftSidebarVisible ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+    }`} style={{ 
+      borderColor: colors.border,
+      width: '16vw',
+      maxWidth: '320px'
+    }}>
+
+      {/* Mobile sidebar header */}
+      <div className="flex items-center justify-between p-4 border-b" style={{ backgroundColor: colors.sidebar, borderColor: colors.border }}>
+        <div className="flex items-center gap-3">
+          <Database size={18} style={{ color: colors.primary }} />
+          <h3 className="text-sm font-semibold truncate" style={{ color: colors.text }}>
+            Schema Explorer
+          </h3>
+        </div>
+        <button 
+          onClick={() => setIsLeftSidebarVisible(false)}
+          className="rounded hover:bg-opacity-50 transition-colors touch-target flex items-center justify-center w-8 h-8"
+          style={{ backgroundColor: colors.hover }}
+          aria-label="Close sidebar"
+        >
+          <X size={16} style={{ color: colors.text }} />
+        </button>
+      </div>
+
+      {/* Connection Info */}
+      <div className="p-3 border-b" style={{ borderColor: colors.border }}>
+        <div className="flex items-center justify-between mb-2">
+          <button 
+            className="flex items-center gap-2 flex-1 text-left touch-target"
+            onClick={() => setShowConnectionManager(true)}
+            aria-label="Open connection manager"
+          >
+            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors.connectionOnline }} />
+            <span className="text-sm font-medium truncate" style={{ color: colors.text }}>
+              CBX_DMX
+            </span>
+            <ChevronRight size={12} style={{ color: colors.textSecondary }} className="ml-1" />
+          </button>
+          <div className="flex gap-1">
+            <button 
+              className="rounded hover:bg-opacity-50 transition-colors hover-lift touch-target flex items-center justify-center w-8 h-8"
+              style={{ backgroundColor: colors.hover }}
+              onClick={() => setShowConnectionManager(true)}
+              aria-label="Server settings"
+            >
+              <Server size={12} style={{ color: colors.textSecondary }} />
+            </button>
+
+            <button 
+              className="rounded hover:bg-opacity-50 transition-colors hover-lift touch-target flex items-center justify-center w-8 h-8"
+              style={{ backgroundColor: colors.hover }}
+              onClick={handleClearFilters}
+              aria-label="Refresh and clear filters"
+            >
+              <RefreshCw size={12} style={{ color: colors.textSecondary }} />
+            </button>
+          </div>
+        </div>
+        <div className="text-xs truncate" style={{ color: colors.textSecondary }}>
+          db-prod.company.com
+        </div>
+      </div>
+
+      {/* Filter Input Component - Isolated */}
+      <FilterInput
+        filterQuery={filterQuery}
+        selectedOwner={selectedOwner}
+        onFilterChange={handleFilterChange}
+        onOwnerChange={handleOwnerChange}
+        onClearFilters={handleClearFilters}
+        colors={colors}
+      />
+
+      {/* Object Tree */}
+      <div className="flex-1 overflow-auto p-3">
+        <ObjectTreeSection
+          title="Tables"
+          type="tables"
+          objects={schemaObjects.tables}
+          isExpanded={objectTree.tables}
+          onToggle={() => handleToggleSection('tables')}
+          onSelectObject={handleObjectSelect}
+          activeObjectId={activeObject?.id}
+          filterQuery={filterQuery}
+          selectedOwner={selectedOwner}
+          colors={colors}
+          getObjectIcon={getObjectIcon}
+          handleContextMenu={handleContextMenu}
+        />
+        <ObjectTreeSection
+          title="Views"
+          type="views"
+          objects={schemaObjects.views}
+          isExpanded={objectTree.views}
+          onToggle={() => handleToggleSection('views')}
+          onSelectObject={handleObjectSelect}
+          activeObjectId={activeObject?.id}
+          filterQuery={filterQuery}
+          selectedOwner={selectedOwner}
+          colors={colors}
+          getObjectIcon={getObjectIcon}
+          handleContextMenu={handleContextMenu}
+        />
+        <ObjectTreeSection
+          title="Procedures"
+          type="procedures"
+          objects={schemaObjects.procedures}
+          isExpanded={objectTree.procedures}
+          onToggle={() => handleToggleSection('procedures')}
+          onSelectObject={handleObjectSelect}
+          activeObjectId={activeObject?.id}
+          filterQuery={filterQuery}
+          selectedOwner={selectedOwner}
+          colors={colors}
+          getObjectIcon={getObjectIcon}
+          handleContextMenu={handleContextMenu}
+        />
+        <ObjectTreeSection
+          title="Functions"
+          type="functions"
+          objects={schemaObjects.functions}
+          isExpanded={objectTree.functions}
+          onToggle={() => handleToggleSection('functions')}
+          onSelectObject={handleObjectSelect}
+          activeObjectId={activeObject?.id}
+          filterQuery={filterQuery}
+          selectedOwner={selectedOwner}
+          colors={colors}
+          getObjectIcon={getObjectIcon}
+          handleContextMenu={handleContextMenu}
+        />
+        <ObjectTreeSection
+          title="Packages"
+          type="packages"
+          objects={schemaObjects.packages}
+          isExpanded={objectTree.packages}
+          onToggle={() => handleToggleSection('packages')}
+          onSelectObject={handleObjectSelect}
+          activeObjectId={activeObject?.id}
+          filterQuery={filterQuery}
+          selectedOwner={selectedOwner}
+          colors={colors}
+          getObjectIcon={getObjectIcon}
+          handleContextMenu={handleContextMenu}
+        />
+        <ObjectTreeSection
+          title="Sequences"
+          type="sequences"
+          objects={schemaObjects.sequences}
+          isExpanded={objectTree.sequences}
+          onToggle={() => handleToggleSection('sequences')}
+          onSelectObject={handleObjectSelect}
+          activeObjectId={activeObject?.id}
+          filterQuery={filterQuery}
+          selectedOwner={selectedOwner}
+          colors={colors}
+          getObjectIcon={getObjectIcon}
+          handleContextMenu={handleContextMenu}
+        />
+        <ObjectTreeSection
+          title="Synonyms"
+          type="synonyms"
+          objects={schemaObjects.synonyms}
+          isExpanded={objectTree.synonyms}
+          onToggle={() => handleToggleSection('synonyms')}
+          onSelectObject={handleObjectSelect}
+          activeObjectId={activeObject?.id}
+          filterQuery={filterQuery}
+          selectedOwner={selectedOwner}
+          colors={colors}
+          getObjectIcon={getObjectIcon}
+          handleContextMenu={handleContextMenu}
+        />
+        <ObjectTreeSection
+          title="Types"
+          type="types"
+          objects={schemaObjects.types}
+          isExpanded={objectTree.types}
+          onToggle={() => handleToggleSection('types')}
+          onSelectObject={handleObjectSelect}
+          activeObjectId={activeObject?.id}
+          filterQuery={filterQuery}
+          selectedOwner={selectedOwner}
+          colors={colors}
+          getObjectIcon={getObjectIcon}
+          handleContextMenu={handleContextMenu}
+        />
+        <ObjectTreeSection
+          title="Triggers"
+          type="triggers"
+          objects={schemaObjects.triggers}
+          isExpanded={objectTree.triggers}
+          onToggle={() => handleToggleSection('triggers')}
+          onSelectObject={handleObjectSelect}
+          activeObjectId={activeObject?.id}
+          filterQuery={filterQuery}
+          selectedOwner={selectedOwner}
+          colors={colors}
+          getObjectIcon={getObjectIcon}
+          handleContextMenu={handleContextMenu}
+        />
+      </div>
+    </div>
+  );
+});
+
+LeftSidebar.displayName = 'LeftSidebar';
+
+// Mobile bottom navigation
+const MobileBottomNav = React.memo(({ 
+  isLeftSidebarVisible, 
+  setIsLeftSidebarVisible, 
+  setShowApiModal, 
+  schemaObjects, 
+  tabs, 
+  handleObjectSelect,
+  toggleTheme,
+  isDark,
+  colors 
+}) => (
+  <div className="md:hidden fixed bottom-0 left-0 right-0 border-t z-20" style={{ 
+    backgroundColor: colors.card,
+    borderColor: colors.border
+  }}>
+    <div className="flex items-center justify-around p-2">
+      <button 
+        onClick={() => setIsLeftSidebarVisible(true)}
+        className="rounded hover:bg-opacity-50 transition-colors touch-target flex flex-col items-center justify-center w-14 h-14 p-1"
+        style={{ backgroundColor: isLeftSidebarVisible ? colors.selected : 'transparent' }}
+        aria-label="Open schema browser"
+      >
+        <div className="flex-1 flex items-center justify-center">
+          <Database size={16} style={{ color: colors.text }} />
+        </div>
+        <span className="text-xs" style={{ color: colors.textSecondary }}>Schema</span>
+      </button>
+
+      <button 
+        onClick={() => setShowApiModal(true)}
+        className="rounded hover:bg-opacity-50 transition-colors touch-target flex flex-col items-center justify-center w-14 h-14 p-1"
+        style={{ backgroundColor: 'transparent' }}
+        aria-label="Generate API"
+      >
+        <div className="flex-1 flex items-center justify-center">
+          <Code size={16} style={{ color: colors.primary }} />
+        </div>
+        <span className="text-xs" style={{ color: colors.primary }}>Generate API</span>
+      </button>
+      
+      <button 
+        onClick={() => {
+          const allObjects = Object.values(schemaObjects).flat();
+          const activeTabObj = tabs.find(tab => tab.isActive);
+          if (activeTabObj) {
+            const found = allObjects.find(obj => obj.id === activeTabObj.objectId);
+            if (found) handleObjectSelect(found, activeTabObj.type);
+          }
+        }}
+        className="flex flex-col items-center p-2 rounded hover:bg-opacity-50 transition-colors touch-target"
+        aria-label="Refresh"
+      >
+        <RefreshCw size={16} style={{ color: colors.text }} />
+        <span className="text-xs mt-1" style={{ color: colors.textSecondary }}>Refresh</span>
+      </button>
+      
+      <button 
+        onClick={toggleTheme}
+        className="flex flex-col items-center p-2 rounded hover:bg-opacity-50 transition-colors touch-target"
+        aria-label="Toggle theme"
+      >
+        {isDark ? (
+          <Sun size={16} style={{ color: colors.text }} />
+        ) : (
+          <Moon size={16} style={{ color: colors.text }} />
+        )}
+        <span className="text-xs mt-1" style={{ color: colors.textSecondary }}>Theme</span>
+      </button>
+    </div>
+  </div>
+));
+
+MobileBottomNav.displayName = 'MobileBottomNav';
+
 const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
 
   // Using EXACT Dashboard color system for consistency - UPDATED to match Collections
-  const colors = isDark ? {
+  const colors = useMemo(() => isDark ? {
     // Using your shade as base - EXACTLY matching Collections
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
@@ -205,7 +750,7 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
     gridBorder: '#e2e8f0',
     
     gradient: 'from-blue-400/20 via-violet-400/20 to-orange-400/20'
-  };
+  }, [isDark]);
 
   const [showApiModal, setShowApiModal] = useState(false);
   const [selectedForApiGeneration, setSelectedForApiGeneration] = useState(null);
@@ -221,6 +766,24 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
   const [showCodePanel, setShowCodePanel] = useState(true);
   
   const [loading, setLoading] = useState(false);
+
+  // Filter state
+  const [filterQuery, setFilterQuery] = useState('');
+  const [selectedOwner, setSelectedOwner] = useState('ALL');
+
+  // Create stable callback functions for filter
+  const handleFilterChange = useCallback((value) => {
+    setFilterQuery(value);
+  }, []);
+
+  const handleOwnerChange = useCallback((value) => {
+    setSelectedOwner(value);
+  }, []);
+
+  const handleClearFilters = useCallback(() => {
+    setFilterQuery('');
+    setSelectedOwner('ALL');
+  }, []);
 
   // Check screen orientation
   useEffect(() => {
@@ -369,6 +932,20 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
         created: '2023-06-15T08:00:00Z',
         status: 'VALID',
         isFavorite: false,
+        isExpanded: false,
+        comment: 'Company departments'
+      },
+      {
+        id: 'T_JOB',
+        name: 'JOBS',
+        owner: 'HR',
+        type: 'TABLE',
+        rowCount: 19,
+        size: '128 KB',
+        tablespace: 'USERS',
+        created: '2023-06-15T08:00:00Z',
+        status: 'VALID',
+        isFavorite: false,
         isExpanded: false
       }
     ],
@@ -381,6 +958,7 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
         status: 'VALID',
         isFavorite: true,
         isExpanded: false,
+        comment: 'Detailed employee information view',
         text: `CREATE OR REPLACE FORCE VIEW HR.EMP_DETAILS_VIEW AS
 SELECT 
     e.employee_id,
@@ -403,6 +981,15 @@ FROM
 WHERE 
     e.status = 'ACTIVE'
 WITH READ ONLY;`
+      },
+      {
+        id: 'V_DEPT_SUMMARY',
+        name: 'DEPARTMENT_SUMMARY',
+        owner: 'HR',
+        type: 'VIEW',
+        status: 'VALID',
+        isFavorite: false,
+        isExpanded: false
       }
     ],
     procedures: [
@@ -472,6 +1059,16 @@ EXCEPTION
         ROLLBACK;
         RAISE;
 END ADD_EMPLOYEE;`
+      },
+      {
+        id: 'P_UPDATE_SALARY',
+        name: 'UPDATE_SALARY',
+        owner: 'HR',
+        type: 'PROCEDURE',
+        status: 'VALID',
+        isFavorite: false,
+        isExpanded: false,
+        comment: 'Update employee salary procedure'
       }
     ],
     functions: [
@@ -508,6 +1105,16 @@ EXCEPTION
     WHEN OTHERS THEN
         RAISE;
 END GET_EMPLOYEE_SALARY;`
+      },
+      {
+        id: 'F_CALC_BONUS',
+        name: 'CALCULATE_BONUS',
+        owner: 'HR',
+        type: 'FUNCTION',
+        returnType: 'NUMBER',
+        status: 'VALID',
+        isFavorite: false,
+        isExpanded: false
       }
     ],
     packages: [
@@ -519,6 +1126,7 @@ END GET_EMPLOYEE_SALARY;`
         status: 'VALID',
         isFavorite: true,
         isExpanded: true,
+        comment: 'Employee management package',
         spec: `CREATE OR REPLACE PACKAGE HR.EMP_PKG
 AUTHID CURRENT_USER
 AS
@@ -713,6 +1321,17 @@ END EMP_PKG;`
         status: 'VALID',
         isFavorite: false,
         isExpanded: false
+      },
+      {
+        id: 'SEQ_DEPT',
+        name: 'DEPARTMENTS_SEQ',
+        owner: 'HR',
+        type: 'SEQUENCE',
+        lastNumber: 300,
+        incrementBy: 10,
+        status: 'VALID',
+        isFavorite: false,
+        isExpanded: false
       }
     ],
     synonyms: [
@@ -723,6 +1342,18 @@ END EMP_PKG;`
         type: 'SYNONYM',
         tableOwner: 'HR',
         tableName: 'EMPLOYEES',
+        dbLink: null,
+        status: 'VALID',
+        isFavorite: false,
+        isExpanded: false
+      },
+      {
+        id: 'SYN_DEPT',
+        name: 'DEPT',
+        owner: 'SCOTT',
+        type: 'SYNONYM',
+        tableOwner: 'HR',
+        tableName: 'DEPARTMENTS',
         dbLink: null,
         status: 'VALID',
         isFavorite: false,
@@ -785,6 +1416,15 @@ BEGIN
         RAISE_APPLICATION_ERROR(-20011, 'Salary cannot be negative');
     END IF;
 END BIU_EMPLOYEES;`
+      },
+      {
+        id: 'TRG_DEPT_AUD',
+        name: 'DEPARTMENT_AUDIT',
+        owner: 'HR',
+        type: 'TRIGGER',
+        status: 'ENABLED',
+        isFavorite: false,
+        isExpanded: false
       }
     ]
   });
@@ -807,7 +1447,6 @@ END BIU_EMPLOYEES;`
     { id: 'tab-1', name: 'EMPLOYEES', type: 'TABLE', objectId: 'T_EMP', isActive: true, isDirty: false }
   ]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedOwner, setSelectedOwner] = useState('HR');
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
   const [contextObject, setContextObject] = useState(null);
@@ -828,11 +1467,16 @@ END BIU_EMPLOYEES;`
       { EMPLOYEE_ID: 102, FIRST_NAME: 'Lex', LAST_NAME: 'De Haan', EMAIL: 'LDEHAAN', HIRE_DATE: '2001-01-13', SALARY: 17000, JOB_ID: 'AD_VP', DEPARTMENT_ID: 90 },
       { EMPLOYEE_ID: 103, FIRST_NAME: 'Alexander', LAST_NAME: 'Hunold', EMAIL: 'AHUNOLD', HIRE_DATE: '2006-01-03', SALARY: 9000, JOB_ID: 'IT_PROG', DEPARTMENT_ID: 60 },
       { EMPLOYEE_ID: 104, FIRST_NAME: 'Bruce', LAST_NAME: 'Ernst', EMAIL: 'BERNST', HIRE_DATE: '2007-05-21', SALARY: 6000, JOB_ID: 'IT_PROG', DEPARTMENT_ID: 60 }
+    ],
+    DEPARTMENTS: [
+      { DEPARTMENT_ID: 10, DEPARTMENT_NAME: 'Administration', MANAGER_ID: 200, LOCATION_ID: 1700 },
+      { DEPARTMENT_ID: 20, DEPARTMENT_NAME: 'Marketing', MANAGER_ID: 201, LOCATION_ID: 1800 },
+      { DEPARTMENT_ID: 30, DEPARTMENT_NAME: 'Purchasing', MANAGER_ID: 114, LOCATION_ID: 1700 }
     ]
   };
 
   // Get Object Icon with color scheme from Collections
-  const getObjectIcon = (type) => {
+  const getObjectIcon = useCallback((type) => {
     const objectType = type.toLowerCase();
     const iconColor = colors.objectType[objectType] || colors.textSecondary;
     const iconProps = { size: 14, style: { color: iconColor } };
@@ -850,10 +1494,10 @@ END BIU_EMPLOYEES;`
       case 'index': return <BarChart {...iconProps} />;
       default: return <Database {...iconProps} />;
     }
-  };
+  }, [colors]);
 
   // Handle Object Selection
-  const handleObjectSelect = (object, type) => {
+  const handleObjectSelect = useCallback((object, type) => {
     setActiveObject(object);
     setSelectedForApiGeneration(object);
     
@@ -900,87 +1544,22 @@ END BIU_EMPLOYEES;`
     if (window.innerWidth < 768) {
       setIsLeftSidebarVisible(false);
     }
-  };
+  }, [tabs]);
 
   // Handle Context Menu
-  const handleContextMenu = (e, object, type) => {
+  const handleContextMenu = useCallback((e, object, type) => {
     e.preventDefault();
     e.stopPropagation();
     
     setContextObject({ ...object, type });
     setContextMenuPosition({ x: e.clientX, y: e.clientY });
     setShowContextMenu(true);
-  };
+  }, []);
 
-  // Render Object Tree Section - Optimized for mobile
-  const renderObjectTreeSection = (title, type, objects) => {
-    const isExpanded = objectTree[type];
-    
-    return (
-      <div className="mb-1">
-        <button
-          onClick={() => setObjectTree({ ...objectTree, [type]: !isExpanded })}
-          className="flex items-center justify-between w-full px-2 py-2 hover:bg-opacity-50 transition-colors rounded-sm text-sm font-medium touch-target hover-lift"
-          style={{ backgroundColor: colors.hover }}
-          aria-label={`Toggle ${title} section`}
-        >
-          <div className="flex items-center gap-2">
-            {isExpanded ? 
-              <ChevronDown size={14} style={{ color: colors.textSecondary }} /> :
-              <ChevronRight size={14} style={{ color: colors.textSecondary }} />
-            }
-            {getObjectIcon(type.slice(0, -1))}
-            <span className="truncate text-xs sm:text-sm">{title}</span>
-          </div>
-          <span className="text-xs px-1.5 py-0.5 rounded shrink-0 min-w-6 text-center" style={{ 
-            backgroundColor: colors.border,
-            color: colors.textSecondary
-          }}>
-            {objects.length}
-          </span>
-        </button>
-        
-        {isExpanded && (
-          <div className="ml-6 mt-0.5 space-y-0.5">
-            {objects.map(obj => (
-              <button
-                key={obj.id}
-                onDoubleClick={() => handleObjectSelect(obj, type.slice(0, -1).toUpperCase())}
-                onContextMenu={(e) => handleContextMenu(e, obj, type.slice(0, -1).toUpperCase())}
-                onClick={() => handleObjectSelect(obj, type.slice(0, -1).toUpperCase())}
-                className={`flex items-center justify-between w-full px-2 py-2 rounded-sm cursor-pointer group hover-lift touch-target text-left ${
-                  activeObject?.id === obj.id ? 'font-medium' : ''
-                }`}
-                style={{
-                  backgroundColor: activeObject?.id === obj.id ? colors.selected : 'transparent',
-                  color: activeObject?.id === obj.id ? colors.primary : colors.text
-                }}
-                aria-label={`Select ${obj.name}`}
-              >
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  {getObjectIcon(type.slice(0, -1))}
-                  <span className="text-xs sm:text-sm truncate">{obj.name}</span>
-                  {obj.status !== 'VALID' && (
-                    <AlertCircle size={10} style={{ color: colors.error }} className="shrink-0" />
-                  )}
-                </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2">
-                  {obj.isFavorite && (
-                    <Star size={10} fill={colors.warning} style={{ color: colors.warning }} />
-                  )}
-                  {obj.rowCount && (
-                    <span className="text-xs hidden sm:inline" style={{ color: activeObject?.id === obj.id ? colors.primary : colors.textSecondary }}>
-                      ({obj.rowCount})
-                    </span>
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
+  // Handle toggle section
+  const handleToggleSection = useCallback((type) => {
+    setObjectTree(prev => ({ ...prev, [type]: !prev[type] }));
+  }, []);
 
   // Render Columns Tab (Optimized for mobile)
   const renderColumnsTab = () => (
@@ -1001,6 +1580,12 @@ END BIU_EMPLOYEES;`
             <button 
               className="px-2 py-1 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift touch-target"
               style={{ backgroundColor: colors.hover, color: colors.text }}
+              onClick={() => {
+                const columnsText = activeObject.columns?.map(col => 
+                  `${col.name} ${col.type} ${col.nullable === 'Y' ? 'NULL' : 'NOT NULL'}`
+                ).join('\n');
+                navigator.clipboard.writeText(columnsText || '');
+              }}
               aria-label="Copy columns"
             >
               <Copy size={12} className="inline sm:mr-1" />
@@ -1729,205 +2314,6 @@ END BIU_EMPLOYEES;`
     );
   };
 
-  // Left Sidebar Component - Fully mobile responsive
-  const LeftSidebar = () => (
-    <div className={`w-full md:w-64 border-r flex flex-col absolute md:relative inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out ${
-      isLeftSidebarVisible ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-    }`} style={{ 
-      borderColor: colors.border,
-      width: '16vw',
-      maxWidth: '320px'
-    }}>
-
-      {/* Mobile sidebar header */}
-      <div className="flex items-center justify-between p-4 border-b" style={{ backgroundColor: colors.sidebar, borderColor: colors.border }}>
-        <div className="flex items-center gap-3">
-          <Database size={18} style={{ color: colors.primary }} />
-          <h3 className="text-sm font-semibold truncate" style={{ color: colors.text }}>
-            Schema Explorer
-          </h3>
-        </div>
-        <button 
-          onClick={() => setIsLeftSidebarVisible(false)}
-          className="rounded hover:bg-opacity-50 transition-colors touch-target flex items-center justify-center w-8 h-8"
-          style={{ backgroundColor: colors.hover }}
-          aria-label="Close sidebar"
-        >
-          <X size={16} style={{ color: colors.text }} />
-        </button>
-      </div>
-
-      {/* Connection Info */}
-      <div className="p-3 border-b" style={{ borderColor: colors.border }}>
-        <div className="flex items-center justify-between mb-2">
-          <button 
-            className="flex items-center gap-2 flex-1 text-left touch-target"
-            onClick={() => setShowConnectionManager(true)}
-            aria-label="Open connection manager"
-          >
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors.connectionOnline }} />
-            <span className="text-sm font-medium truncate" style={{ color: colors.text }}>
-              CBX_DMX
-            </span>
-            <ChevronRight size={12} style={{ color: colors.textSecondary }} className="ml-1" />
-          </button>
-          <div className="flex gap-1">
-           <button 
-              className="rounded hover:bg-opacity-50 transition-colors hover-lift touch-target flex items-center justify-center w-8 h-8"
-              style={{ backgroundColor: colors.hover }}
-              onClick={() => setShowConnectionManager(true)}
-              aria-label="Server settings"
-            >
-              <Server size={12} style={{ color: colors.textSecondary }} />
-            </button>
-
-            <button 
-              className="rounded hover:bg-opacity-50 transition-colors hover-lift touch-target flex items-center justify-center w-8 h-8"
-              style={{ backgroundColor: colors.hover }}
-              aria-label="Refresh"
-            >
-              <RefreshCw size={12} style={{ color: colors.textSecondary }} />
-            </button>
-          </div>
-        </div>
-        <div className="text-xs truncate" style={{ color: colors.textSecondary }}>
-          db-prod.company.com
-        </div>
-      </div>
-
-      {/* Filter Controls */}
-      <div className="p-3 border-b" style={{ borderColor: colors.border }}>
-        <div className="space-y-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2" size={14} style={{ color: colors.textSecondary }} />
-            <input
-              type="text"
-              placeholder="Filter objects..."
-              className="w-full pl-10 pr-3 py-2.5 rounded text-sm focus:outline-none hover-lift touch-target"
-              style={{ 
-                backgroundColor: colors.inputBg,
-                border: `1px solid ${colors.inputBorder}`,
-                color: colors.text
-              }}
-              aria-label="Search objects"
-            />
-          </div>
-          <select 
-            className="w-full px-3 py-2.5 rounded text-sm focus:outline-none hover-lift touch-target"
-            style={{ 
-              backgroundColor: colors.border,
-              border: `1px solid ${colors.inputBorder}`,
-              color: colors.text
-            }}
-            aria-label="Filter by owner"
-          >
-            <option>Owner: All</option>
-            <option>Owner: HR</option>
-            <option>Owner: SCOTT</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Object Tree */}
-      <div className="flex-1 overflow-auto p-3">
-        {renderObjectTreeSection('Tables', 'tables', schemaObjects.tables)}
-        {renderObjectTreeSection('Views', 'views', schemaObjects.views)}
-        {renderObjectTreeSection('Procedures', 'procedures', schemaObjects.procedures)}
-        {renderObjectTreeSection('Functions', 'functions', schemaObjects.functions)}
-        {renderObjectTreeSection('Packages', 'packages', schemaObjects.packages)}
-        {renderObjectTreeSection('Sequences', 'sequences', schemaObjects.sequences)}
-        {renderObjectTreeSection('Synonyms', 'synonyms', schemaObjects.synonyms)}
-        {renderObjectTreeSection('Types', 'types', schemaObjects.types)}
-        {renderObjectTreeSection('Triggers', 'triggers', schemaObjects.triggers)}
-      </div>
-      
-      {/* Mobile sidebar footer */}
-      {/* <div className="p-3 border-t" style={{ borderColor: colors.border }}>
-        <button 
-          onClick={toggleTheme}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded hover:bg-opacity-50 transition-colors touch-target"
-          style={{ backgroundColor: colors.hover, color: colors.text }}
-          aria-label="Toggle theme"
-        >
-          {isDark ? (
-            <>
-              <Sun size={14} />
-              <span className="text-sm">Light Mode</span>
-            </>
-          ) : (
-            <>
-              <Moon size={14} />
-              <span className="text-sm">Dark Mode</span>
-            </>
-          )}
-        </button>
-      </div> */}
-    </div>
-  );
-
-  // Mobile bottom navigation
-  const MobileBottomNav = () => (
-    <div className="md:hidden fixed bottom-0 left-0 right-0 border-t z-20" style={{ 
-      backgroundColor: colors.card,
-      borderColor: colors.border
-    }}>
-      <div className="flex items-center justify-around p-2">
-        <button 
-          onClick={() => setIsLeftSidebarVisible(true)}
-          className="rounded hover:bg-opacity-50 transition-colors touch-target flex flex-col items-center justify-center w-14 h-14 p-1"
-          style={{ backgroundColor: isLeftSidebarVisible ? colors.selected : 'transparent' }}
-          aria-label="Open schema browser"
-        >
-          <div className="flex-1 flex items-center justify-center">
-            <Database size={16} style={{ color: colors.text }} />
-          </div>
-          <span className="text-xs" style={{ color: colors.textSecondary }}>Schema</span>
-        </button>
-
-        <button 
-          onClick={() => setShowApiModal(true)}
-          className="rounded hover:bg-opacity-50 transition-colors touch-target flex flex-col items-center justify-center w-14 h-14 p-1"
-          style={{ backgroundColor: 'transparent' }}
-          aria-label="Generate API"
-        >
-          <div className="flex-1 flex items-center justify-center">
-            <Code size={16} style={{ color: colors.primary }} />
-          </div>
-          <span className="text-xs" style={{ color: colors.primary }}>Generate API</span>
-        </button>
-        
-        <button 
-          onClick={() => {
-            const allObjects = Object.values(schemaObjects).flat();
-            const activeTabObj = tabs.find(tab => tab.isActive);
-            if (activeTabObj) {
-              const found = allObjects.find(obj => obj.id === activeTabObj.objectId);
-              if (found) handleObjectSelect(found, activeTabObj.type);
-            }
-          }}
-          className="flex flex-col items-center p-2 rounded hover:bg-opacity-50 transition-colors touch-target"
-          aria-label="Refresh"
-        >
-          <RefreshCw size={16} style={{ color: colors.text }} />
-          <span className="text-xs mt-1" style={{ color: colors.textSecondary }}>Refresh</span>
-        </button>
-        
-        <button 
-          onClick={toggleTheme}
-          className="flex flex-col items-center p-2 rounded hover:bg-opacity-50 transition-colors touch-target"
-          aria-label="Toggle theme"
-        >
-          {isDark ? (
-            <Sun size={16} style={{ color: colors.text }} />
-          ) : (
-            <Moon size={16} style={{ color: colors.text }} />
-          )}
-          <span className="text-xs mt-1" style={{ color: colors.textSecondary }}>Theme</span>
-        </button>
-      </div>
-    </div>
-  );
-
   // Close context menu on outside click
   useEffect(() => {
     const handleClickOutside = () => setShowContextMenu(false);
@@ -2154,7 +2540,25 @@ END BIU_EMPLOYEES;`
         )}
 
         {/* LEFT SIDEBAR - Object Explorer */}
-        <LeftSidebar />
+        <LeftSidebar
+          isLeftSidebarVisible={isLeftSidebarVisible}
+          setIsLeftSidebarVisible={setIsLeftSidebarVisible}
+          showConnectionManager={showConnectionManager}
+          setShowConnectionManager={setShowConnectionManager}
+          filterQuery={filterQuery}
+          selectedOwner={selectedOwner}
+          handleFilterChange={handleFilterChange}
+          handleOwnerChange={handleOwnerChange}
+          handleClearFilters={handleClearFilters}
+          colors={colors}
+          objectTree={objectTree}
+          handleToggleSection={handleToggleSection}
+          schemaObjects={schemaObjects}
+          activeObject={activeObject}
+          handleObjectSelect={handleObjectSelect}
+          getObjectIcon={getObjectIcon}
+          handleContextMenu={handleContextMenu}
+        />
 
         {/* MAIN WORK AREA */}
         <div className="flex-1 flex flex-col overflow-hidden" style={{ backgroundColor: colors.main }}>
@@ -2337,7 +2741,17 @@ END BIU_EMPLOYEES;`
       </div>
 
       {/* Mobile Bottom Navigation */}
-      <MobileBottomNav />
+      <MobileBottomNav
+        isLeftSidebarVisible={isLeftSidebarVisible}
+        setIsLeftSidebarVisible={setIsLeftSidebarVisible}
+        setShowApiModal={setShowApiModal}
+        schemaObjects={schemaObjects}
+        tabs={tabs}
+        handleObjectSelect={handleObjectSelect}
+        toggleTheme={toggleTheme}
+        isDark={isDark}
+        colors={colors}
+      />
 
       {/* STATUS BAR - Desktop only */}
       <div className="hidden md:flex items-center justify-between h-8 px-4 text-xs border-t" style={{ 
