@@ -1430,52 +1430,66 @@ export default function EntryPage() {
 
   // Session Expired Overlay
   const SessionExpiredOverlay = () => {
-    if (!sessionExpired) return null;
+  if (!sessionExpired) return null;
 
-    return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-        <div className={`bg-gradient-to-br ${
-          sessionExpired === 'manual' 
-            ? 'from-red-500/10 to-red-600/20 border-red-500/30' 
-            : 'from-blue-500/10 to-cyan-600/20 border-cyan-500/30'
-        } backdrop-blur-xl border rounded-2xl p-8 max-w-md mx-4 text-center`}>
-          <div className={`w-20 h-20 mx-auto mb-6 ${
-            sessionExpired === 'manual' 
-              ? 'bg-red-500/20' 
-              : 'bg-cyan-500/20'
-          } rounded-full flex items-center justify-center`}>
-            <AlertTriangle className={
-              sessionExpired === 'manual' 
-                ? 'text-red-400' 
-                : 'text-cyan-400'
-            } size={40} />
-          </div>
-          <h2 className={`text-2xl font-bold ${
-            sessionExpired === 'manual' 
-              ? 'text-red-400' 
-              : 'text-cyan-400'
-          } mb-4`}>
-            {sessionExpired === 'manual' ? 'Logging Out' : 'Session Expired'}
-          </h2>
-          <p
-            className={`${isDark ? "text-gray-300" : "text-gray-700"} mb-6`}
-          >
-            {sessionExpired === "manual"
-              ? "You are being logged out..."
-              : "Your session has expired due to inactivity. Redirecting to login..."}
-          </p>
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className={`w-full max-w-md rounded-2xl shadow-2xl ${
+          isDark ? 'bg-gray-900/95 backdrop-blur-lg border-gray-800' : 'bg-white/95 backdrop-blur-lg border-gray-200'
+        } border ${isDark ? 'text-white' : 'text-gray-900'}`}>
+          <div className="relative p-6">
+            <div className="text-center space-y-4">
+              <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full mb-2 ${
+                sessionExpired === 'manual'
+                  ? isDark ? 'bg-red-500/20' : 'bg-red-500/20'
+                  : isDark ? 'bg-blue-500/20' : 'bg-blue-500/20'
+              }`}>
+                <AlertTriangle
+                  size={32}
+                  className={
+                    sessionExpired === 'manual'
+                      ? isDark ? "text-red-400" : "text-red-500"
+                      : isDark ? "text-blue-400" : "text-blue-500"
+                  }
+                />
+              </div>
+              
+              <h2 className="text-xl font-bold">
+                {sessionExpired === 'manual' ? 'Logging Out' : 'Session Expired'}
+              </h2>
+              
+              <p className={isDark ? "text-gray-400" : "text-gray-600"}>
+                {sessionExpired === "manual"
+                  ? "You are being logged out..."
+                  : "Your session has expired due to inactivity. Redirecting to login..."}
+              </p>
 
-          <div className="flex justify-center">
-            <div className={`w-8 h-8 border-2 ${
-              sessionExpired === 'manual' 
-                ? 'border-red-400' 
-                : 'border-cyan-400'
-            } border-t-transparent rounded-full animate-spin`}></div>
+              {sessionExpired === 'manual' && (
+                <div className={`rounded-lg p-3 ${
+                  isDark ? "bg-red-500/10 border-red-500/20" : "bg-red-50 border-red-200"
+                } border`}>
+                  <p className={`text-sm ${isDark ? "text-red-400" : "text-red-600"}`}>
+                    <span className="font-semibold">Security Note:</span> This will end your current session and clear all temporary data.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex justify-center pt-4">
+                <div className={`w-8 h-8 border-2 rounded-full animate-spin ${
+                  sessionExpired === 'manual'
+                    ? isDark ? 'border-red-400 border-t-transparent' : 'border-red-500 border-t-transparent'
+                    : isDark ? 'border-blue-400 border-t-transparent' : 'border-blue-500 border-t-transparent'
+                }`}></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    );
-  };
+    </>
+  );
+};
 
   return (
     <div className={`min-h-screen ${isDark ? 'bg-gray-950' : 'bg-gray-50'} transition-colors`}>
@@ -1509,7 +1523,7 @@ export default function EntryPage() {
                     API Automation Platform
                   </h1>
                   <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                    Dashboard
+                    Oracle Schema to API Endpoint
                   </p>
                 </div>
               </div>

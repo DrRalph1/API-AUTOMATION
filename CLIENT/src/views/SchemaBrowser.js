@@ -24,10 +24,10 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
     // Using your shade as base - EXACTLY matching Collections
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
-    sidebar: 'rgb(41 53 72 / 39%)',
+    sidebar: 'rgb(41 53 72 / 19%)',
     main: 'rgb(1 14 35)',
     header: 'rgb(20 26 38)',
-    card: 'rgb(41 53 72 / 39%)',
+    card: 'rgb(41 53 72 / 19%)',
     
     // Text - coordinating grays - EXACTLY matching Collections
     text: '#F1F5F9',
@@ -35,7 +35,7 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
     textTertiary: 'rgb(100 116 139)',
     
     // Borders - variations of your shade - EXACTLY matching Collections
-    border: 'rgb(51 65 85)',
+    border: 'rgb(51 65 85 / 19%)',
     borderLight: 'rgb(45 55 72)',
     borderDark: 'rgb(71 85 105)',
     
@@ -73,16 +73,16 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
     tabInactive: 'rgb(148 163 184)',
     sidebarActive: 'rgb(96 165 250)',
     sidebarHover: 'rgb(45 46 72 / 33%)',
-    inputBg: 'rgb(41 53 72 / 39%)',
-    inputBorder: 'rgb(51 65 85)',
-    tableHeader: 'rgb(41 53 72 / 39%)',
-    tableRow: 'rgb(41 53 72 / 39%)',
+    inputBg: 'rgb(41 53 72 / 19%)',
+    inputborder: 'rgb(51 65 85 / 19%)',
+    tableHeader: 'rgb(41 53 72 / 19%)',
+    tableRow: 'rgb(41 53 72 / 19%)',
     tableRowHover: 'rgb(45 46 72 / 33%)',
-    dropdownBg: 'rgb(41 53 72 / 39%)',
-    dropdownBorder: 'rgb(51 65 85)',
-    modalBg: 'rgb(41 53 72 / 39%)',
-    modalBorder: 'rgb(51 65 85)',
-    codeBg: 'rgb(41 53 72 / 39%)',
+    dropdownBg: 'rgb(41 53 72 / 19%)',
+    dropdownborder: 'rgb(51 65 85 / 19%)',
+    modalBg: 'rgb(41 53 72 / 19%)',
+    modalborder: 'rgb(51 65 85 / 19%)',
+    codeBg: 'rgb(41 53 72 / 19%)',
     
     // Connection status - EXACTLY matching Collections
     connectionOnline: 'rgb(52 211 153)',
@@ -110,10 +110,10 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
     },
     
     // Grid colors for tables - matching Collections's structure
-    gridRowEven: 'rgb(41 53 72 / 39%)',
+    gridRowEven: 'rgb(41 53 72 / 19%)',
     gridRowOdd: 'rgb(45 46 72 / 33%)',
-    gridHeader: 'rgb(41 53 72 / 39%)',
-    gridBorder: 'rgb(51 65 85)',
+    gridHeader: 'rgb(41 53 72 / 19%)',
+    gridborder: 'rgb(51 65 85 / 19%)',
     
     // Gradient - EXACTLY matching Collections
     gradient: 'from-blue-500/20 via-violet-500/20 to-orange-500/20'
@@ -216,6 +216,9 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [touchStart, setTouchStart] = useState(null);
   const [isLandscape, setIsLandscape] = useState(false);
+
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  const [showCodePanel, setShowCodePanel] = useState(true);
   
   const [loading, setLoading] = useState(false);
 
@@ -2083,6 +2086,61 @@ END BIU_EMPLOYEES;`
         >
           <Code size={18} style={{ color: colors.primary }} />
         </button>
+      </div>
+
+
+      {/* TOP NAVIGATION */}
+      <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
+        backgroundColor: colors.header,
+        borderColor: colors.border
+      }}>
+        <div className="flex items-center gap-4 -ml-4 text-nowrap uppercase">
+          <span className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift`} style={{ color: colors.text }}>Schema Browser</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+
+          {/* Global Search */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
+            <input 
+              type="text" 
+              placeholder="Search"
+              value={globalSearchQuery}
+              onChange={(e) => {}}
+              className="pl-8 pr-3 py-1.5 rounded text-sm focus:outline-none w-48 hover-lift"
+              style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }} 
+            />
+            {globalSearchQuery && (
+              <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                <button onClick={() => {}} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                  style={{ backgroundColor: colors.hover }}>
+                  <X size={12} style={{ color: colors.textSecondary }} />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Code Panel Toggle */}
+          <button onClick={() => {}} 
+            className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+            style={{ backgroundColor: showCodePanel ? colors.selected : colors.hover }}>
+            <Code size={14} style={{ color: showCodePanel ? colors.primary : colors.textSecondary }} />
+          </button>
+
+          {/* Share Button */}
+          <button onClick={() => {}} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+            style={{ backgroundColor: colors.hover }}>
+            <Share2 size={14} style={{ color: colors.textSecondary }} />
+          </button>
+
+          {/* Settings */}
+          <button onClick={() => {}} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+            style={{ backgroundColor: colors.hover }}>
+            <Settings size={14} style={{ color: colors.textSecondary }} />
+          </button>
+
+        </div>
       </div>
 
       {/* MAIN CONTENT AREA */}

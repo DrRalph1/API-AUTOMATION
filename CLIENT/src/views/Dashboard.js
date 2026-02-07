@@ -156,14 +156,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
     csharp: 5
   });
 
-  // Modal states
-  const [selectedActivity, setSelectedActivity] = useState(null);
-  const [selectedConnection, setSelectedConnection] = useState(null);
-  const [selectedApi, setSelectedApi] = useState(null);
-  const [selectedSchemaItem, setSelectedSchemaItem] = useState(null);
-  const [selectedNotification, setSelectedNotification] = useState(null);
-  const [selectedApiStats, setSelectedApiStats] = useState(null);
-  const [selectedApiCalls, setSelectedApiCalls] = useState(null);
+  // Modal states - now using a stack to handle nested modals
+  const [modalStack, setModalStack] = useState([]);
 
   // Pagination for recent activities
   const [activityPage, setActivityPage] = useState(1);
@@ -172,7 +166,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
   // Pagination for API modals
   const [apiStatsPage, setApiStatsPage] = useState(1);
   const [apiCallsPage, setApiCallsPage] = useState(1);
-  const [itemsPerModalPage, setItemsPerModalPage] = useState(10);
+  const [itemsPerModalPage, setItemsPerModalPage] = useState(5);
 
   // Mobile state
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -193,14 +187,14 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
   const colors = isDark ? {
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
-    sidebar: 'rgb(41 53 72 / 39%)',
+    sidebar: 'rgb(41 53 72 / 19%)',
     main: 'rgb(1 14 35)',
     header: 'rgb(20 26 38)',
-    card: 'rgb(41 53 72 / 39%)',
+    card: 'rgb(41 53 72 / 19%)',
     text: '#F1F5F9',
     textSecondary: 'rgb(148 163 184)',
     textTertiary: 'rgb(100 116 139)',
-    border: 'rgb(51 65 85)',
+    border: 'rgb(51 65 85 / 19%)',
     borderLight: 'rgb(45 55 72)',
     borderDark: 'rgb(71 85 105)',
     hover: 'rgb(45 46 72 / 33%)',
@@ -217,16 +211,16 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
     tabInactive: 'rgb(148 163 184)',
     sidebarActive: 'rgb(96 165 250)',
     sidebarhover: 'rgb(45 46 72 / 33%)',
-    inputBg: 'rgb(41 53 72 / 39%)',
-    inputBorder: 'rgb(51 65 85)',
-    tableHeader: 'rgb(41 53 72 / 39%)',
-    tableRow: 'rgb(41 53 72 / 39%)',
+    inputBg: 'rgb(41 53 72 / 19%)',
+    inputborder: 'rgb(51 65 85 / 19%)',
+    tableHeader: 'rgb(41 53 72 / 19%)',
+    tableRow: 'rgb(41 53 72 / 19%)',
     tableRowhover: 'rgb(45 46 72 / 33%)',
-    dropdownBg: 'rgb(41 53 72 / 39%)',
-    dropdownBorder: 'rgb(51 65 85)',
-    modalBg: 'rgb(41 53 72 / 39%)',
-    modalBorder: 'rgb(51 65 85)',
-    codeBg: 'rgb(41 53 72 / 39%)',
+    dropdownBg: 'rgb(41 53 72 / 19%)',
+    dropdownborder: 'rgb(51 65 85 / 19%)',
+    modalBg: 'rgb(41 53 72 / 19%)',
+    modalborder: 'rgb(51 65 85 / 19%)',
+    codeBg: 'rgb(41 53 72 / 19%)',
     connectionOnline: 'rgb(52 211 153)',
     connectionOffline: 'rgb(248 113 113)',
     connectionIdle: 'rgb(251 191 36)',
@@ -273,6 +267,24 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
     connectionOnline: '#10b981',
     connectionOffline: '#ef4444',
     connectionIdle: '#f59e0b'
+  };
+
+  // Modal management functions
+  const openModal = (type, data) => {
+    setModalStack(prev => [...prev, { type, data }]);
+  };
+
+  const closeModal = () => {
+    setModalStack(prev => prev.slice(0, -1));
+  };
+
+  const closeAllModals = () => {
+    setModalStack([]);
+  };
+
+  const getCurrentModal = () => {
+    if (modalStack.length === 0) return null;
+    return modalStack[modalStack.length - 1];
   };
 
   // Initialize dashboard data
@@ -610,6 +622,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
   // Navigation handlers
   const handleNavigateToSchemaBrowser = () => {
     console.log('Navigating to Schema Browser');
+    closeAllModals();
     if (navigateTo) {
       navigateTo('schema-browser');
     } else {
@@ -620,6 +633,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
 
   const handleNavigateToApiBuilder = () => {
     console.log('Navigating to API Builder');
+    closeAllModals();
     if (navigateTo) {
       navigateTo('api-builder');
     } else {
@@ -630,6 +644,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
 
   const handleNavigateToCodeBase = () => {
     console.log('Navigating to Code Base');
+    closeAllModals();
     if (navigateTo) {
       navigateTo('code-base');
     } else {
@@ -640,6 +655,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
 
   const handleNavigateToDocumentation = () => {
     console.log('Navigating to Documentation');
+    closeAllModals();
     if (navigateTo) {
       navigateTo('documentation');
     } else {
@@ -650,6 +666,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
 
   const handleNewConnection = () => {
     console.log('Opening New Connection Form');
+    closeAllModals();
     if (navigateTo) {
       navigateTo('connections');
     } else {
@@ -658,22 +675,23 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
   };
 
   const handleViewConnectionDetails = (connection) => {
-    setSelectedConnection(connection);
+    openModal('connection', connection);
     console.log('Viewing connection details:', connection.name);
   };
 
   const handleActivityClick = (activity) => {
-    setSelectedActivity(activity);
+    openModal('activity', activity);
     console.log('Viewing activity:', activity.action);
   };
 
   const handleSchemaItemClick = (itemType, count) => {
-    setSelectedSchemaItem({ type: itemType, count });
+    openModal('schemaItem', { type: itemType, count });
     console.log('Viewing schema item:', itemType);
   };
 
   const handleApiGeneration = () => {
     console.log('Starting API Generation process');
+    closeAllModals();
     if (navigateTo) {
       navigateTo('api-generator');
     } else {
@@ -694,24 +712,10 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
     setIsMobileSearchOpen(!isMobileSearchOpen);
   };
 
-  // Modal close handlers
-  const closeModal = () => {
-    setSelectedActivity(null);
-    setSelectedConnection(null);
-    setSelectedApi(null);
-    setSelectedSchemaItem(null);
-    setSelectedNotification(null);
-    setSelectedApiStats(null);
-    setSelectedApiCalls(null);
-    // Reset pagination
-    setApiStatsPage(1);
-    setApiCallsPage(1);
-  };
-
   // Add new handlers for API card clicks
   const handleApiStatsClick = () => {
     console.log('Opening API Stats modal');
-    setSelectedApiStats({
+    openModal('apiStats', {
       title: 'Active APIs',
       data: apis.filter(api => api.status === 'active'),
       totalItems: apis.filter(api => api.status === 'active').length
@@ -720,7 +724,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
 
   const handleApiCallsClick = () => {
     console.log('Opening API Calls modal');
-    setSelectedApiCalls({
+    openModal('apiCalls', {
       title: 'API Calls Analytics',
       data: apis.map(api => ({
         id: api.id,
@@ -1231,21 +1235,44 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
   );
 
   // Mobile Modal Component
-  const MobileModal = ({ children, title, onClose }) => {
+  const MobileModal = ({ children, title, onClose, showBackButton = false, onBack }) => {
     const iconSize = getResponsiveIconSize();
+    const modalCount = modalStack.length;
+    const zIndex = 1000 + (modalCount * 10);
+    
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
-        <div className="border rounded-xl w-[55rem] max-h-[90vh] overflow-auto animate-fade-in" style={{ 
-          backgroundColor: colors.bg,
-          borderColor: colors.modalBorder
-        }}>
+      <div 
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4"
+        style={{ zIndex: zIndex - 5 }}
+        onClick={onClose}
+      >
+        <div 
+          className="border rounded-xl w-[55rem] max-h-[90vh] overflow-auto animate-fade-in"
+          onClick={(e) => e.stopPropagation()}
+          style={{ 
+            backgroundColor: colors.bg,
+            borderColor: colors.modalBorder,
+            zIndex: zIndex
+          }}
+        >
           <div className="sticky top-0 p-3 sm:p-4 border-b flex items-center justify-between backdrop-blur-sm" style={{ 
             borderColor: colors.border,
             backgroundColor: colors.modalBg
           }}>
-            <h3 className="text-base sm:text-lg font-semibold truncate" style={{ color: colors.text }}>
-              {title}
-            </h3>
+            <div className="flex items-center gap-2">
+              {showBackButton && (
+                <button 
+                  onClick={onBack}
+                  className="p-1 sm:p-1.5 rounded hover:bg-opacity-50 transition-colors shrink-0"
+                  style={{ backgroundColor: colors.hover }}
+                >
+                  <ChevronLeft size={16} style={{ color: colors.text }} />
+                </button>
+              )}
+              <h3 className="text-base sm:text-lg font-semibold truncate" style={{ color: colors.text }}>
+                {title}
+              </h3>
+            </div>
             <button 
               onClick={onClose}
               className="p-1 sm:p-1.5 rounded hover:bg-opacity-50 transition-colors shrink-0"
@@ -1263,37 +1290,49 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
   };
 
   // API Stats Modal Component
-  const ApiStatsModal = () => {
-    const totalPages = Math.ceil(selectedApiStats.data.length / itemsPerModalPage);
+  const ApiStatsModal = ({ data }) => {
+    const totalPages = Math.ceil(data.data.length / itemsPerModalPage);
     const startIndex = (apiStatsPage - 1) * itemsPerModalPage;
     const endIndex = startIndex + itemsPerModalPage;
-    const currentPageData = selectedApiStats.data.slice(startIndex, endIndex);
+    const currentPageData = data.data.slice(startIndex, endIndex);
+
+    const handleApiClick = (apiId) => {
+      const fullApi = apis.find(a => a.id === apiId);
+      if (fullApi) {
+        openModal('api', fullApi);
+      }
+    };
 
     return (
-      <MobileModal title={selectedApiStats.title} onClose={closeModal}>
+      <MobileModal 
+        title={data.title} 
+        onClose={closeModal}
+        showBackButton={modalStack.length > 1}
+        onBack={closeModal}
+      >
         <div className="space-y-4">
           {/* Summary */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
               <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total APIs</div>
               <div className="text-lg font-bold" style={{ color: colors.text }}>
-                {selectedApiStats.totalItems}
+                {data.totalItems}
               </div>
             </div>
             <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
               <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Endpoints</div>
               <div className="text-lg font-bold" style={{ color: colors.text }}>
-                {selectedApiStats.data.reduce((sum, api) => sum + api.endpointCount, 0)}
+                {data.data.reduce((sum, api) => sum + api.endpointCount, 0)}
               </div>
             </div>
             <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
               <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Success Rate</div>
               <div className="text-lg font-bold" style={{ color: colors.success }}>
                 {(
-                  selectedApiStats.data.reduce((sum, api) => {
+                  data.data.reduce((sum, api) => {
                     const rate = parseFloat(api.successRate);
                     return sum + (isNaN(rate) ? 0 : rate);
-                  }, 0) / selectedApiStats.data.length
+                  }, 0) / data.data.length
                 ).toFixed(1)}%
               </div>
             </div>
@@ -1301,10 +1340,10 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
               <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Latency</div>
               <div className="text-lg font-bold" style={{ color: colors.text }}>
                 {(
-                  selectedApiStats.data.reduce((sum, api) => {
+                  data.data.reduce((sum, api) => {
                     const latency = parseInt(api.latency) || 0;
                     return sum + latency;
-                  }, 0) / selectedApiStats.data.length
+                  }, 0) / data.data.length
                 ).toFixed(0)}ms
               </div>
             </div>
@@ -1348,10 +1387,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
                         borderColor: colors.border,
                         backgroundColor: index % 2 === 0 ? colors.tableRow : colors.tableRowHover
                       }}
-                      onClick={() => {
-                        setSelectedApi(api);
-                        setSelectedApiStats(null);
-                      }}
+                      onClick={() => handleApiClick(api.id)}
                     >
                       <td className="p-4">
                         <div className="flex items-center gap-2">
@@ -1406,7 +1442,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
           {/* Pagination */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-4 border-t" style={{ borderColor: colors.border }}>
             <div className="text-xs" style={{ color: colors.textSecondary }}>
-              Showing {startIndex + 1} - {Math.min(endIndex, selectedApiStats.data.length)} of {selectedApiStats.data.length} APIs
+              Showing {startIndex + 1} - {Math.min(endIndex, data.data.length)} of {data.data.length} APIs
             </div>
             <div className="flex items-center gap-1">
               <button
@@ -1490,7 +1526,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
               <button 
                 onClick={() => {
                   handleNavigateToApiBuilder();
-                  closeModal();
+                  closeAllModals();
                 }}
                 className="px-3 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
                 style={{ 
@@ -1521,37 +1557,49 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
   };
 
   // API Calls Modal Component
-  const ApiCallsModal = () => {
-    const totalPages = Math.ceil(selectedApiCalls.data.length / itemsPerModalPage);
+  const ApiCallsModal = ({ data }) => {
+    const totalPages = Math.ceil(data.data.length / itemsPerModalPage);
     const startIndex = (apiCallsPage - 1) * itemsPerModalPage;
     const endIndex = startIndex + itemsPerModalPage;
-    const currentPageData = selectedApiCalls.data.slice(startIndex, endIndex);
+    const currentPageData = data.data.slice(startIndex, endIndex);
+
+    const handleApiClick = (apiId) => {
+      const fullApi = apis.find(a => a.id === apiId);
+      if (fullApi) {
+        openModal('api', fullApi);
+      }
+    };
 
     return (
-      <MobileModal title={selectedApiCalls.title} onClose={closeModal}>
+      <MobileModal 
+        title={data.title} 
+        onClose={closeModal}
+        showBackButton={modalStack.length > 1}
+        onBack={closeModal}
+      >
         <div className="space-y-4">
           {/* Summary */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
               <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Calls</div>
               <div className="text-lg font-bold" style={{ color: colors.text }}>
-                {selectedApiCalls.data.reduce((sum, api) => sum + api.calls, 0).toLocaleString()}
+                {data.data.reduce((sum, api) => sum + api.calls, 0).toLocaleString()}
               </div>
             </div>
             <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
               <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Errors</div>
               <div className="text-lg font-bold" style={{ color: colors.error }}>
-                {selectedApiCalls.data.reduce((sum, api) => sum + api.errors, 0).toLocaleString()}
+                {data.data.reduce((sum, api) => sum + api.errors, 0).toLocaleString()}
               </div>
             </div>
             <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
               <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Response Time</div>
               <div className="text-lg font-bold" style={{ color: colors.text }}>
                 {(
-                  selectedApiCalls.data.reduce((sum, api) => {
+                  data.data.reduce((sum, api) => {
                     const time = parseInt(api.avgResponseTime) || 0;
                     return sum + time;
-                  }, 0) / selectedApiCalls.data.length
+                  }, 0) / data.data.length
                 ).toFixed(0)}ms
               </div>
             </div>
@@ -1595,13 +1643,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
                         borderColor: colors.border,
                         backgroundColor: index % 2 === 0 ? colors.tableRow : colors.tableRowHover
                       }}
-                      onClick={() => {
-                        const fullApi = apis.find(a => a.id === api.id);
-                        if (fullApi) {
-                          setSelectedApi(fullApi);
-                          setSelectedApiCalls(null);
-                        }
-                      }}
+                      onClick={() => handleApiClick(api.id)}
                     >
                       <td className="p-4">
                         <div className="min-w-0">
@@ -1656,7 +1698,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
           {/* Pagination */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-4 border-t" style={{ borderColor: colors.border }}>
             <div className="text-xs" style={{ color: colors.textSecondary }}>
-              Showing {startIndex + 1} - {Math.min(endIndex, selectedApiCalls.data.length)} of {selectedApiCalls.data.length} APIs
+              Showing {startIndex + 1} - {Math.min(endIndex, data.data.length)} of {data.data.length} APIs
             </div>
             <div className="flex items-center gap-1">
               <button
@@ -1770,20 +1812,25 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
     );
   };
 
-  // Responsive Modals
-  const ActivityModal = () => (
-    <MobileModal title="Activity Details" onClose={closeModal}>
+  // Activity Modal
+  const ActivityModal = ({ data }) => (
+    <MobileModal 
+      title="Activity Details" 
+      onClose={closeModal}
+      showBackButton={modalStack.length > 1}
+      onBack={closeModal}
+    >
       <div className="space-y-3 sm:space-y-4">
         <div className="flex items-center gap-2 sm:gap-3">
           <div className="p-1.5 sm:p-2 rounded" style={{ backgroundColor: colors.hover }}>
-            {getIconForActivity(selectedActivity?.icon)}
+            {getIconForActivity(data?.icon)}
           </div>
           <div className="min-w-0">
             <h4 className="text-sm sm:text-lg font-semibold truncate" style={{ color: colors.text }}>
-              {selectedActivity?.action}
+              {data?.action}
             </h4>
             <p className="text-xs sm:text-sm truncate" style={{ color: colors.textSecondary }}>
-              {selectedActivity?.description}
+              {data?.description}
             </p>
           </div>
         </div>
@@ -1791,21 +1838,21 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
         <div className="grid grid-cols-2 gap-2 sm:gap-4">
           <div>
             <div className="text-xs font-medium mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>User</div>
-            <div className="text-sm truncate" style={{ color: colors.text }}>{selectedActivity?.user}</div>
+            <div className="text-sm truncate" style={{ color: colors.text }}>{data?.user}</div>
           </div>
           <div>
             <div className="text-xs font-medium mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Time</div>
-            <div className="text-sm truncate" style={{ color: colors.text }}>{selectedActivity?.time}</div>
+            <div className="text-sm truncate" style={{ color: colors.text }}>{data?.time}</div>
           </div>
           <div>
             <div className="text-xs font-medium mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Priority</div>
-            <div className="text-sm capitalize truncate" style={{ color: getPriorityColor(selectedActivity?.priority) }}>
-              {selectedActivity?.priority}
+            <div className="text-sm capitalize truncate" style={{ color: getPriorityColor(data?.priority) }}>
+              {data?.priority}
             </div>
           </div>
           <div>
             <div className="text-xs font-medium mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Resource</div>
-            <div className="text-sm truncate" style={{ color: colors.text }}>{selectedActivity?.affectedResource}</div>
+            <div className="text-sm truncate" style={{ color: colors.text }}>{data?.affectedResource}</div>
           </div>
         </div>
         
@@ -1816,7 +1863,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
             borderColor: colors.border,
             color: colors.text
           }}>
-            {selectedActivity?.details || 'No additional details available.'}
+            {data?.details || 'No additional details available.'}
           </div>
         </div>
         
@@ -1824,8 +1871,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
           <div className="flex flex-col sm:flex-row gap-2">
             <button 
               onClick={() => {
-                console.log('View related resources for:', selectedActivity?.action);
-                closeModal();
+                console.log('View related resources for:', data?.action);
+                closeAllModals();
               }}
               className="px-3 py-2 rounded text-sm font-medium transition-colors flex-1"
               style={{ 
@@ -1851,8 +1898,13 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
     </MobileModal>
   );
 
-  const ConnectionModal = () => (
-    <MobileModal title="Connection Details" onClose={closeModal}>
+  const ConnectionModal = ({ data }) => (
+    <MobileModal 
+      title="Connection Details" 
+      onClose={closeModal}
+      showBackButton={modalStack.length > 1}
+      onBack={closeModal}
+    >
       <div className="space-y-3 sm:space-y-4">
         <div className="flex items-center gap-2 sm:gap-3">
           <div className="p-2 sm:p-3 rounded" style={{ backgroundColor: colors.hover }}>
@@ -1860,10 +1912,10 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
           </div>
           <div className="min-w-0">
             <h4 className="text-sm sm:text-lg font-semibold truncate" style={{ color: colors.text }}>
-              {selectedConnection?.name}
+              {data?.name}
             </h4>
             <p className="text-xs sm:text-sm truncate" style={{ color: colors.textSecondary }}>
-              {selectedConnection?.description}
+              {data?.description}
             </p>
           </div>
         </div>
@@ -1871,30 +1923,30 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
         <div className="grid grid-cols-2 gap-2 sm:gap-4">
           <div>
             <div className="text-xs font-medium mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Host</div>
-            <div className="text-sm font-mono truncate" style={{ color: colors.text }}>{selectedConnection?.host}</div>
+            <div className="text-sm font-mono truncate" style={{ color: colors.text }}>{data?.host}</div>
           </div>
           <div>
             <div className="text-xs font-medium mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Port</div>
-            <div className="text-sm truncate" style={{ color: colors.text }}>{selectedConnection?.port}</div>
+            <div className="text-sm truncate" style={{ color: colors.text }}>{data?.port}</div>
           </div>
           <div>
             <div className="text-xs font-medium mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Service</div>
-            <div className="text-sm truncate" style={{ color: colors.text }}>{selectedConnection?.service}</div>
+            <div className="text-sm truncate" style={{ color: colors.text }}>{data?.service}</div>
           </div>
           <div>
             <div className="text-xs font-medium mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Username</div>
-            <div className="text-sm truncate" style={{ color: colors.text }}>{selectedConnection?.username}</div>
+            <div className="text-sm truncate" style={{ color: colors.text }}>{data?.username}</div>
           </div>
           <div>
             <div className="text-xs font-medium mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Status</div>
             <div className="flex items-center gap-1 sm:gap-2">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(selectedConnection?.status) }} />
-              <span className="text-sm capitalize truncate" style={{ color: colors.text }}>{selectedConnection?.status}</span>
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(data?.status) }} />
+              <span className="text-sm capitalize truncate" style={{ color: colors.text }}>{data?.status}</span>
             </div>
           </div>
           <div>
             <div className="text-xs font-medium mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Type</div>
-            <div className="text-sm capitalize truncate" style={{ color: colors.text }}>{selectedConnection?.type}</div>
+            <div className="text-sm capitalize truncate" style={{ color: colors.text }}>{data?.type}</div>
           </div>
         </div>
         
@@ -1903,16 +1955,16 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
           <div className="grid grid-cols-3 gap-2 sm:gap-4">
             <div className="text-center p-2 sm:p-3 rounded border" style={{ borderColor: colors.border }}>
               <div className="text-xs mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Latency</div>
-              <div className="text-sm sm:text-lg font-semibold" style={{ color: colors.text }}>{selectedConnection?.latency}</div>
+              <div className="text-sm sm:text-lg font-semibold" style={{ color: colors.text }}>{data?.latency}</div>
             </div>
             <div className="text-center p-2 sm:p-3 rounded border" style={{ borderColor: colors.border }}>
               <div className="text-xs mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Uptime</div>
-              <div className="text-sm sm:text-lg font-semibold" style={{ color: colors.text }}>{selectedConnection?.uptime}</div>
+              <div className="text-sm sm:text-lg font-semibold" style={{ color: colors.text }}>{data?.uptime}</div>
             </div>
             <div className="text-center p-2 sm:p-3 rounded border" style={{ borderColor: colors.border }}>
               <div className="text-xs mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Connections</div>
               <div className="text-sm sm:text-lg font-semibold" style={{ color: colors.text }}>
-                {selectedConnection?.currentConnections}/{selectedConnection?.maxConnections}
+                {data?.currentConnections}/{data?.maxConnections}
               </div>
             </div>
           </div>
@@ -1922,7 +1974,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
           <div className="flex flex-col gap-2">
             <button 
               onClick={() => {
-                console.log('Test connection:', selectedConnection?.name);
+                console.log('Test connection:', data?.name);
                 alert('Testing connection...');
               }}
               className="px-3 py-2 rounded text-sm font-medium transition-colors"
@@ -1935,7 +1987,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
             </button>
             <button 
               onClick={() => {
-                console.log('Edit connection:', selectedConnection?.name);
+                console.log('Edit connection:', data?.name);
+                closeAllModals();
                 if (navigateTo) navigateTo('connections');
               }}
               className="px-3 py-2 rounded text-sm font-medium transition-colors"
@@ -1948,7 +2001,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
             </button>
             <button 
               onClick={() => {
-                console.log('Browse schema for:', selectedConnection?.name);
+                console.log('Browse schema for:', data?.name);
+                closeAllModals();
                 handleNavigateToSchemaBrowser();
               }}
               className="px-3 py-2 rounded text-sm font-medium transition-colors"
@@ -1966,8 +2020,13 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
   );
 
   // API Detail Modal
-  const ApiDetailModal = () => (
-    <MobileModal title="API Details" onClose={closeModal}>
+  const ApiDetailModal = ({ data }) => (
+    <MobileModal 
+      title="API Details" 
+      onClose={closeModal}
+      showBackButton={modalStack.length > 1}
+      onBack={closeModal}
+    >
       <div className="space-y-4">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded" style={{ backgroundColor: colors.hover }}>
@@ -1975,10 +2034,10 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
           </div>
           <div className="min-w-0">
             <h4 className="text-lg font-semibold truncate" style={{ color: colors.text }}>
-              {selectedApi?.name}
+              {data?.name}
             </h4>
             <p className="text-sm truncate" style={{ color: colors.textSecondary }}>
-              {selectedApi?.description}
+              {data?.description}
             </p>
           </div>
         </div>
@@ -1986,26 +2045,26 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <div className="text-xs font-medium mb-1" style={{ color: colors.textSecondary }}>Version</div>
-            <div className="text-sm" style={{ color: colors.text }}>{selectedApi?.version}</div>
+            <div className="text-sm" style={{ color: colors.text }}>{data?.version}</div>
           </div>
           <div>
             <div className="text-xs font-medium mb-1" style={{ color: colors.textSecondary }}>Status</div>
             <div className="flex items-center gap-1">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(selectedApi?.status) }} />
-              <span className="text-sm capitalize" style={{ color: colors.text }}>{selectedApi?.status}</span>
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(data?.status) }} />
+              <span className="text-sm capitalize" style={{ color: colors.text }}>{data?.status}</span>
             </div>
           </div>
           <div>
             <div className="text-xs font-medium mb-1" style={{ color: colors.textSecondary }}>Total Calls</div>
-            <div className="text-sm font-medium" style={{ color: colors.text }}>{selectedApi?.calls?.toLocaleString()}</div>
+            <div className="text-sm font-medium" style={{ color: colors.text }}>{data?.calls?.toLocaleString()}</div>
           </div>
           <div>
             <div className="text-xs font-medium mb-1" style={{ color: colors.textSecondary }}>Success Rate</div>
             <div className="text-sm font-medium" style={{ 
-              color: parseFloat(selectedApi?.successRate) >= 99 ? colors.success : 
-                    parseFloat(selectedApi?.successRate) >= 95 ? colors.warning : colors.error 
+              color: parseFloat(data?.successRate) >= 99 ? colors.success : 
+                    parseFloat(data?.successRate) >= 95 ? colors.warning : colors.error 
             }}>
-              {selectedApi?.successRate}
+              {data?.successRate}
             </div>
           </div>
         </div>
@@ -2014,8 +2073,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
           <div className="flex flex-col gap-2">
             <button 
               onClick={() => {
+                closeAllModals();
                 handleNavigateToApiBuilder();
-                closeModal();
               }}
               className="px-3 py-2 rounded text-sm font-medium transition-colors hover-lift"
               style={{ 
@@ -2041,6 +2100,31 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
     </MobileModal>
   );
 
+  // Modal Renderer Component
+  const ModalRenderer = () => {
+    if (modalStack.length === 0) return null;
+    
+    return modalStack.map((modal, index) => {
+      const isActive = index === modalStack.length - 1;
+      if (!isActive) return null;
+      
+      switch(modal.type) {
+        case 'activity':
+          return <ActivityModal key={index} data={modal.data} />;
+        case 'connection':
+          return <ConnectionModal key={index} data={modal.data} />;
+        case 'api':
+          return <ApiDetailModal key={index} data={modal.data} />;
+        case 'apiStats':
+          return <ApiStatsModal key={index} data={modal.data} />;
+        case 'apiCalls':
+          return <ApiCallsModal key={index} data={modal.data} />;
+        default:
+          return null;
+      }
+    });
+  };
+
   // Right Sidebar Component
   const RightSidebar = () => (
     <div className={`w-full md:w-80 border-l flex flex-col fixed md:relative inset-y-0 right-0 z-40 transform transition-transform duration-300 ease-in-out ${
@@ -2050,7 +2134,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
       borderColor: colors.border
     }}>
       {/* Mobile sidebar header */}
-      <div className="flex items-center justify-between p-3 border-b md:hidden mb-2" style={{ borderColor: colors.border }}>
+      <div className="flex items-center justify-between p-3 border-b md:hidden mb-1 mt-2" style={{ borderColor: colors.border }}>
         <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
           Quick Actions
         </h3>
@@ -2066,10 +2150,10 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
       <div className="flex-1 overflow-auto">
         {/* Quick Actions */}
         <div className="p-3 md:p-4">
-          <h3 className="text-sm font-semibold mb-3 hidden md:block" style={{ color: colors.text }}>
+          <h3 className="text-sm font-semibold mb-6 hidden md:block" style={{ color: colors.text }}>
             Quick Actions
           </h3>
-          <div className="space-y-6 sm:space-y-4 ">
+          <div className="space-y-6 sm:space-y-6 ">
             <button 
               onClick={handleNewConnection}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
@@ -2107,13 +2191,13 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
 
         {/* Recent Deployments */}
         <div className="border-t p-3 md:p-4 hidden md:block" style={{ borderColor: colors.border }}>
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-6 mt-6">
             <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
               Recent Deployments
             </h3>
             <Rocket size={14} style={{ color: colors.textSecondary }} />
           </div>
-          <div className="space-y-6 mt-2">
+          <div className="space-y-5 mt-2">
             {[
               { name: 'User API v2.1', env: 'Production', status: 'success', time: '2 hours ago' },
               { name: 'Payment API v1.5', env: 'Staging', status: 'success', time: '1 day ago' },
@@ -2210,16 +2294,12 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
       `}</style>
 
       <MobileSearchBar />
-
-      {/* Modals */}
-      {selectedActivity && <ActivityModal />}
-      {selectedConnection && <ConnectionModal />}
-      {selectedApi && <ApiDetailModal />}
-      {selectedApiStats && <ApiStatsModal />}
-      {selectedApiCalls && <ApiCallsModal />}
+      
+      {/* Render all active modals */}
+      <ModalRenderer />
 
       {/* Main Content */}
-      <div className="flex-1 overflow-hidden flex">
+      <div className="flex-1 overflow-hidden flex z-20">
         {/* Mobile sidebar overlay */}
         {isRightSidebarVisible && (
           <div 
@@ -2227,6 +2307,9 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
             onClick={() => setIsRightSidebarVisible(false)}
           />
         )}
+
+        {/* Right Sidebar */}
+        <RightSidebar />
 
         {/* Main content area */}
         <div className="flex-1 overflow-auto p-2 sm:p-3 md:p-4">
@@ -2380,9 +2463,6 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
             </div>
           </div>
         </div>
-
-        {/* Right Sidebar */}
-        <RightSidebar />
       </div>
 
       {/* Mobile Bottom Navigation */}

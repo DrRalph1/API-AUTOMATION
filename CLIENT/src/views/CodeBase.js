@@ -979,10 +979,10 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
     // Using your shade as base - EXACTLY matching Dashboard
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
-    sidebar: 'rgb(41 53 72 / 39%)',
+    sidebar: 'rgb(41 53 72 / 19%)',
     main: 'rgb(1 14 35)',
     header: 'rgb(20 26 38)',
-    card: 'rgb(41 53 72 / 39%)',
+    card: 'rgb(41 53 72 / 19%)',
     
     // Text - coordinating grays - EXACTLY matching Dashboard
     text: '#F1F5F9',
@@ -990,7 +990,7 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
     textTertiary: 'rgb(100 116 139)',
     
     // Borders - variations of your shade - EXACTLY matching Dashboard
-    border: 'rgb(51 65 85)',
+    border: 'rgb(51 65 85 / 19%)',
     borderLight: 'rgb(45 55 72)',
     borderDark: 'rgb(71 85 105)',
     
@@ -1015,16 +1015,16 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
     tabInactive: 'rgb(148 163 184)',
     sidebarActive: 'rgb(96 165 250)',
     sidebarHover: 'rgb(45 46 72 / 33%)',
-    inputBg: 'rgb(41 53 72 / 39%)',
-    inputBorder: 'rgb(51 65 85)',
-    tableHeader: 'rgb(41 53 72 / 39%)',
-    tableRow: 'rgb(41 53 72 / 39%)',
+    inputBg: 'rgb(41 53 72 / 19%)',
+    inputborder: 'rgb(51 65 85 / 19%)',
+    tableHeader: 'rgb(41 53 72 / 19%)',
+    tableRow: 'rgb(41 53 72 / 19%)',
     tableRowHover: 'rgb(45 46 72 / 33%)',
-    dropdownBg: 'rgb(41 53 72 / 39%)',
-    dropdownBorder: 'rgb(51 65 85)',
-    modalBg: 'rgb(41 53 72 / 39%)',
-    modalBorder: 'rgb(51 65 85)',
-    codeBg: 'rgb(41 53 72 / 39%)',
+    dropdownBg: 'rgb(41 53 72 / 19%)',
+    dropdownborder: 'rgb(51 65 85 / 19%)',
+    modalBg: 'rgb(41 53 72 / 19%)',
+    modalborder: 'rgb(51 65 85 / 19%)',
+    codeBg: 'rgb(41 53 72 / 19%)',
     
     // Connection status - EXACTLY matching Dashboard
     connectionOnline: 'rgb(52 211 153)',
