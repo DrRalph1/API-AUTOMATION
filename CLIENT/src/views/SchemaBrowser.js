@@ -88,21 +88,6 @@ const FilterInput = React.memo(({
               </button>
             )}
           </div>
-          <select 
-            className="w-full px-3 py-2.5 rounded text-sm focus:outline-none hover-lift touch-target"
-            style={{ 
-              backgroundColor: colors.inputBg,
-              border: `1px solid ${colors.inputBorder}`,
-              color: colors.text
-            }}
-            value={selectedOwner}
-            onChange={handleOwnerChange}
-            aria-label="Filter by owner"
-          >
-            <option value="ALL">Owner: All</option>
-            <option value="HR">Owner: HR</option>
-            <option value="SCOTT">Owner: SCOTT</option>
-          </select>
         </div>
       </div>
 
@@ -284,24 +269,6 @@ const LeftSidebar = React.memo(({
       width: '16vw',
       maxWidth: '320px'
     }}>
-
-      {/* Mobile sidebar header */}
-      <div className="flex items-center justify-between p-4 border-b" style={{ backgroundColor: colors.sidebar, borderColor: colors.border }}>
-        <div className="flex items-center gap-3">
-          <Database size={18} style={{ color: colors.primary }} />
-          <h3 className="text-sm font-semibold truncate" style={{ color: colors.text }}>
-            Schema Explorer
-          </h3>
-        </div>
-        <button 
-          onClick={() => setIsLeftSidebarVisible(false)}
-          className="rounded hover:bg-opacity-50 transition-colors touch-target flex items-center justify-center w-8 h-8"
-          style={{ backgroundColor: colors.hover }}
-          aria-label="Close sidebar"
-        >
-          <X size={16} style={{ color: colors.text }} />
-        </button>
-      </div>
 
       {/* Connection Info */}
       <div className="p-3 border-b" style={{ borderColor: colors.border }}>

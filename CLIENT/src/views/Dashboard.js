@@ -161,7 +161,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
 
   // Pagination for recent activities
   const [activityPage, setActivityPage] = useState(1);
-  const [activitiesPerPage, setActivitiesPerPage] = useState(6);
+  const [activitiesPerPage, setActivitiesPerPage] = useState(5);
   
   // Pagination for API modals
   const [apiStatsPage, setApiStatsPage] = useState(1);
@@ -648,6 +648,12 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     console.log('Navigating to API Security');
     closeAllModals();
     setActiveTab('security')
+  };
+
+  const handleNavigateToUserManagement = () => {
+    console.log('Navigating to API Security');
+    closeAllModals();
+    setActiveTab('user-mgt')
   };
 
   // NEW: Navigate to Connections page
@@ -1750,19 +1756,19 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
         <div className="space-y-4">
           {/* Summary */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
               <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total APIs</div>
               <div className="text-lg font-bold" style={{ color: colors.text }}>
                 {data.totalItems}
               </div>
             </div>
-            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
               <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Endpoints</div>
               <div className="text-lg font-bold" style={{ color: colors.text }}>
                 {data.data.reduce((sum, api) => sum + api.endpointCount, 0)}
               </div>
             </div>
-            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
               <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Success Rate</div>
               <div className="text-lg font-bold" style={{ color: colors.success }}>
                 {(
@@ -1773,7 +1779,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                 ).toFixed(1)}%
               </div>
             </div>
-            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
               <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Latency</div>
               <div className="text-lg font-bold" style={{ color: colors.text }}>
                 {(
@@ -2022,19 +2028,19 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
         <div className="space-y-4">
           {/* Summary */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
               <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Calls</div>
               <div className="text-lg font-bold" style={{ color: colors.text }}>
                 {data.data.reduce((sum, api) => sum + api.calls, 0).toLocaleString()}
               </div>
             </div>
-            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
               <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Errors</div>
               <div className="text-lg font-bold" style={{ color: colors.error }}>
                 {data.data.reduce((sum, api) => sum + api.errors, 0).toLocaleString()}
               </div>
             </div>
-            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border }}>
+            <div className="text-center p-3 rounded border" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
               <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Response Time</div>
               <div className="text-lg font-bold" style={{ color: colors.text }}>
                 {(
@@ -2485,7 +2491,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleApiGeneration}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.hover, color: colors.text }}
+              style={{ backgroundColor: colors.card, color: colors.text }}
             >
               <FileCode size={14} />
               <span className="truncate">Generate New API</span>
@@ -2493,7 +2499,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToAPICollection}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.hover, color: colors.text }}
+              style={{ backgroundColor: colors.card, color: colors.text }}
             >
               <Database size={14} />
               <span className="truncate">API Collections</span>
@@ -2501,7 +2507,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToDocumentation}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.hover, color: colors.text }}
+              style={{ backgroundColor: colors.card, color: colors.text }}
             >
               <BookOpen size={14} />
               <span className="truncate">API Documentation</span>
@@ -2509,7 +2515,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToCodeBase}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.hover, color: colors.text }}
+              style={{ backgroundColor: colors.card, color: colors.text }}
             >
               <Code size={14} />
               <span className="truncate">API Code Base</span>
@@ -2517,10 +2523,18 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToAPISecurity}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.hover, color: colors.text }}
+              style={{ backgroundColor: colors.card, color: colors.text }}
             >
               <Shield size={14} />
               <span className="truncate">API Security</span>
+            </button>
+            <button 
+              onClick={handleNavigateToUserManagement}
+              className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
+              style={{ backgroundColor: colors.card, color: colors.text }}
+            >
+              <UserCog size={14} />
+              <span className="truncate">User Management</span>
             </button>
           </div>
         </div>
@@ -2649,11 +2663,11 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
 
         {/* Main content area */}
         <div className="flex-1 overflow-auto p-2 sm:p-3 md:p-4">
-          <div className="max-w-9xl mx-auto px-1 sm:px-2 md:pl-8 md:pr-8">
+          <div className="max-w-9xl mx-auto px-1 sm:px-2 md:pl-5 md:pr-5">
             {/* Desktop Header */}
             <div className="hidden md:flex items-center justify-between mb-4 md:mb-6">
               <div>
-                <h1 className="text-xl md:text-2xl font-bold" style={{ color: colors.text }}>
+                <h1 className="text-xl md:text-xl font-bold" style={{ color: colors.text }}>
                   Dashboard
                 </h1>
                 <p className="text-xs md:text-sm" style={{ color: colors.textSecondary }}>
@@ -2670,6 +2684,14 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                   }}
                 >
                   <SlidersHorizontal size={18} />
+                </button>
+                <button 
+                  onClick={handleApiGeneration}
+                  className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
+                  style={{ backgroundColor: colors.card, color: colors.text }}
+                >
+                  <FileCode size={14} />
+                  <span className="truncate">Generate New API</span>
                 </button>
                 <button 
                   onClick={handleRefresh}

@@ -557,6 +557,7 @@ import {
 import CodeBase from "./CodeBase.js";
 import Collections from "./Collections.js";
 import APISecurity from "./APISecurity.js";
+import UserMangement from "./UserMangement.js";
 import Dashboard from "./Dashboard.js";
 import Documentation from "./Documentation.js";
 import SchemaBrowser from "./SchemaBrowser.js";
@@ -857,6 +858,7 @@ export default function EntryPage() {
     { id: "api-docs", label: "Documenation", icon: Activity, component: <Documentation /> },
     { id: "code-base", label: "Code Base", icon: Code, component: <CodeBase /> },
     { id: "security", label: "API Security", icon: Shield, component: <APISecurity /> },
+    { id: "user-mgt", label: "User Mgt", icon: UserCog, component: <UserMangement /> },
   ];
 
   // Quick actions
