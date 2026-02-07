@@ -2150,7 +2150,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo }) => {
       <div className="flex-1 overflow-auto">
         {/* Quick Actions */}
         <div className="p-3 md:p-4">
-          <h3 className="text-sm font-semibold mb-6 hidden md:block" style={{ color: colors.text }}>
+          <h3 className="text-sm font-semibold mb-4 mt-1 hidden md:block" style={{ color: colors.text }}>
             Quick Actions
           </h3>
           <div className="space-y-6 sm:space-y-6 ">
