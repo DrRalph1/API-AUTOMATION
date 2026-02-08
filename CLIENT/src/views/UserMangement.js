@@ -1561,16 +1561,27 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
           { id: 'suspended-users', label: 'Suspended Users', icon: <UserX size={12} /> }
         ]
       },
-    //   {
-    //     id: 'roles',
-    //     label: 'Roles & Permissions',
-    //     icon: <Shield size={16} />,
-    //     subItems: [
-    //       { id: 'role-management', label: 'Role Management', icon: <ShieldIcon size={12} /> },
-    //       { id: 'permission-sets', label: 'Permission Sets', icon: <KeyRound size={12} /> },
-    //       { id: 'access-control', label: 'Access Control', icon: <Lock size={12} /> }
-    //     ]
-    //   }
+      {
+        id: 'roles',
+        label: 'Roles & Permissions',
+        icon: <Shield size={16} />,
+        subItems: [
+          { id: 'role-management', label: 'Role Management', icon: <ShieldIcon size={12} /> },
+          { id: 'permission-sets', label: 'Permission Sets', icon: <KeyRound size={12} /> },
+          { id: 'access-control', label: 'Access Control', icon: <Lock size={12} /> }
+        ]
+      },
+      {
+        id: 'security',
+        label: 'Security',
+        icon: <ShieldCheck size={16} />,
+        subItems: [
+          { id: 'mfa-settings', label: 'MFA Settings', icon: <ShieldCheckIcon size={12} /> },
+          { id: 'password-policies', label: 'Password Policies', icon: <KeyIcon size={12} /> },
+          { id: 'login-security', label: 'Login Security', icon: <LogIn size={12} /> },
+          { id: 'session-management', label: 'Session Management', icon: <ClockIcon size={12} /> }
+        ]
+      }
     ];
 
     const toggleSection = (sectionId) => {
