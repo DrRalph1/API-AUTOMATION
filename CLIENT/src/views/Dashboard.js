@@ -161,7 +161,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
 
   // Pagination for recent activities
   const [activityPage, setActivityPage] = useState(1);
-  const [activitiesPerPage, setActivitiesPerPage] = useState(5);
+  const [activitiesPerPage, setActivitiesPerPage] = useState(7);
   
   // Pagination for API modals
   const [apiStatsPage, setApiStatsPage] = useState(1);
@@ -2503,7 +2503,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleApiGeneration}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.card, color: colors.text }}
+              style={{ backgroundColor: colors.hover, color: colors.text }}
             >
               <FileCode size={14} />
               <span className="truncate">Generate New API</span>
@@ -2511,7 +2511,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToAPICollection}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.card, color: colors.text }}
+              style={{ backgroundColor: colors.hover, color: colors.text }}
             >
               <Database size={14} />
               <span className="truncate">API Collections</span>
@@ -2519,7 +2519,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToDocumentation}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.card, color: colors.text }}
+              style={{ backgroundColor: colors.hover, color: colors.text }}
             >
               <BookOpen size={14} />
               <span className="truncate">API Documentation</span>
@@ -2527,7 +2527,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToCodeBase}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.card, color: colors.text }}
+              style={{ backgroundColor: colors.hover, color: colors.text }}
             >
               <Code size={14} />
               <span className="truncate">API Code Base</span>
@@ -2535,7 +2535,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToAPISecurity}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.card, color: colors.text }}
+              style={{ backgroundColor: colors.hover, color: colors.text }}
             >
               <Shield size={14} />
               <span className="truncate">API Security</span>
@@ -2543,7 +2543,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToUserManagement}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.card, color: colors.text }}
+              style={{ backgroundColor: colors.hover, color: colors.text }}
             >
               <UserCog size={14} />
               <span className="truncate">User Management</span>

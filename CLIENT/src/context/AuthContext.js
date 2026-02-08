@@ -16,7 +16,7 @@ import {
   deleteUser,
   findUser,
   getUsers
-} from "../controllers/AuthController.js";
+} from "../controllers/UserManagementController.js";
 
 import {
   verifyOTP,

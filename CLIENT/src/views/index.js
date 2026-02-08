@@ -574,7 +574,7 @@ import { useNavigate } from "react-router-dom"; // Import useNavigate
 
 export default function EntryPage() {
   const { theme, toggle, customTheme, setCustomTheme } = useTheme();
-  const { logout, user } = useAuth(); // Get auth context
+  const { logout, user, token, isAuthenticated } = useAuth(); // Get auth context including token
   const navigate = useNavigate(); // Get navigate function
   
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -852,13 +852,13 @@ export default function EntryPage() {
 
   // Navigation items with icons
   const navItems = [
-    { id: "overview", label: "Dashboard", icon: LayoutDashboard, component: <Dashboard setActiveTab={setActiveTab} /> },
-    { id: "schema-browser", label: "Schema Browser", icon: DatabaseBackup, component: <SchemaBrowser /> },
-    { id: "api-collections", label: "Collections", icon: FileCode, component: <Collections /> },
-    { id: "api-docs", label: "Documenation", icon: Activity, component: <Documentation /> },
-    { id: "code-base", label: "Code Base", icon: Code, component: <CodeBase /> },
-    { id: "security", label: "API Security", icon: Shield, component: <APISecurity /> },
-    { id: "user-mgt", label: "User Mgt", icon: UserCog, component: <UserMangement /> },
+    { id: "overview", label: "Dashboard", icon: LayoutDashboard, component: <Dashboard setActiveTab={setActiveTab} authToken={`Bearer ${token}`} /> },
+    { id: "schema-browser", label: "Schema Browser", icon: DatabaseBackup, component: <SchemaBrowser authToken={`Bearer ${token}`} /> },
+    { id: "api-collections", label: "Collections", icon: FileCode, component: <Collections authToken={`Bearer ${token}`} /> },
+    { id: "api-docs", label: "Documenation", icon: Activity, component: <Documentation authToken={`Bearer ${token}`} /> },
+    { id: "code-base", label: "Code Base", icon: Code, component: <CodeBase authToken={`Bearer ${token}`} /> },
+    { id: "security", label: "API Security", icon: Shield, component: <APISecurity authToken={`Bearer ${token}`} /> },
+    { id: "user-mgt", label: "User Mgt", icon: UserCog, component: <UserMangement authToken={`Bearer ${token}`} /> },
   ];
 
   // Quick actions

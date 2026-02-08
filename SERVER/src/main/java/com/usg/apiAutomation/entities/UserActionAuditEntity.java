@@ -31,7 +31,7 @@ public class UserActionAuditEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false, foreignKey = @ForeignKey(name = "fk_user_action_user"))
-    private AppUserEntity user;
+    private UserEntity user;
 
     @Column(name = "action", nullable = false, length = 200)
     private String action;

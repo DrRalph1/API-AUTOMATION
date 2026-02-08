@@ -1,7 +1,7 @@
 // controllers/SystemLogsController.js
 import { API_CONFIG } from "../config/APIConfig.js";
 import { apiCall } from "@/helpers/APIHelper";
-import { apiCallWithTokenRefresh, extractTokenFromHeader } from "./AuthController.js"
+import { apiCallWithTokenRefresh, extractTokenFromHeader } from "./UserManagementController.js"
 
 // Helper function to get authorization header
 const getAuthHeaders = (jwtToken) => ({

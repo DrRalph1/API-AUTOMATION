@@ -1,7 +1,7 @@
 package com.usg.apiAutomation.repositories;
 
-import com.usg.apiAutomation.dtos.user.AppUserDTO;
-import com.usg.apiAutomation.entities.AppUserEntity;
+import com.usg.apiAutomation.dtos.user.UserDTO;
+import com.usg.apiAutomation.entities.UserEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
@@ -14,26 +14,26 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
-public interface AppUserRepository extends JpaRepository<AppUserEntity, String>,
-        JpaSpecificationExecutor<AppUserEntity> {
+public interface AppUserRepository extends JpaRepository<UserEntity, String>,
+        JpaSpecificationExecutor<UserEntity> {
 
     // ✅ Already used elsewhere
-    Optional<AppUserEntity> findByUsername(String username);
+    Optional<UserEntity> findByUsername(String username);
 
-    Optional<AppUserEntity> findByEmailAddress(String emailAddress);
+    Optional<UserEntity> findByEmailAddress(String emailAddress);
 
     // ✅ Used in AccountLockService
-    Optional<AppUserEntity> findByUserIdIgnoreCase(String userId);
+    Optional<UserEntity> findByUserIdIgnoreCase(String userId);
 
-    @Query("SELECT u.username FROM AppUserEntity u WHERE u.userId = :userId")
+    @Query("SELECT u.username FROM UserEntity u WHERE u.userId = :userId")
     String getUsernameByUserId(@Param("userId") String userId);
 
-    @Query("SELECT u.emailAddress FROM AppUserEntity u WHERE u.userId = :userId")
+    @Query("SELECT u.emailAddress FROM UserEntity u WHERE u.userId = :userId")
     String getEmailAddressByUserId(@Param("userId") String userId);
 
     // Query to update the password for an existing user by userId
     @Modifying
-    @Query("UPDATE AppUserEntity u SET " +
+    @Query("UPDATE UserEntity u SET " +
             "u.password = COALESCE(:new_password, u.password), " +
             "u.isDefaultPassword = true, u.lastModifiedDate = :updatedAt " +
             "WHERE u.userId = :userId " +
@@ -45,7 +45,7 @@ public interface AppUserRepository extends JpaRepository<AppUserEntity, String>,
 
 
     @Modifying
-    @Query("UPDATE AppUserEntity u SET u.password = :newPassword, " +
+    @Query("UPDATE UserEntity u SET u.password = :newPassword, " +
             "u.isDefaultPassword = false, " +
             "u.lastModifiedDate = :updatedAt " +
             "WHERE u.userId = :userId")
@@ -55,19 +55,19 @@ public interface AppUserRepository extends JpaRepository<AppUserEntity, String>,
             @Param("updatedAt") LocalDateTime updatedAt);
 
 
-    @Query("SELECT u.phoneNumber FROM AppUserEntity u WHERE u.userId = :userId")
+    @Query("SELECT u.phoneNumber FROM UserEntity u WHERE u.userId = :userId")
     String getPhoneNumberByUserId(@Param("userId") String userId);
 
-    @Query("SELECT u.role.roleName FROM AppUserEntity u WHERE u.userId = :userId")
+    @Query("SELECT u.role.roleName FROM UserEntity u WHERE u.userId = :userId")
     String getUserRoleByUserId(@Param("userId") String userId);
 
-    @Query("SELECT u FROM AppUserEntity u JOIN FETCH u.role WHERE LOWER(u.userId) = LOWER(:userId)")
-    Optional<AppUserEntity> findByUserIdWithRole(@Param("userId") String userId);
+    @Query("SELECT u FROM UserEntity u JOIN FETCH u.role WHERE LOWER(u.userId) = LOWER(:userId)")
+    Optional<UserEntity> findByUserIdWithRole(@Param("userId") String userId);
 
     @Modifying
     @Transactional
     @Query("""
-    UPDATE AppUserEntity u 
+    UPDATE UserEntity u 
     SET u.lastLogin = :lastLogin, 
         u.lastModifiedDate = :lastModifiedDate,
         u.failedLoginAttempts = 0
@@ -80,7 +80,7 @@ public interface AppUserRepository extends JpaRepository<AppUserEntity, String>,
     );
 
     @Query("""
-    SELECT NEW com.usg.apiAutomation.dtos.user.AppUserDTO(
+    SELECT NEW com.usg.apiAutomation.dtos.user.UserDTO(
         u.userId,
         u.username,
         u.password,
@@ -98,17 +98,17 @@ public interface AppUserRepository extends JpaRepository<AppUserEntity, String>,
         u.phoneNumber,
         u.lastLogin
     )
-    FROM AppUserEntity u
+    FROM UserEntity u
     WHERE LOWER(u.userId) = LOWER(:userId)
 """)
-    Optional<AppUserDTO> getUserByUserId(@Param("userId") String userId);
+    Optional<UserDTO> getUserByUserId(@Param("userId") String userId);
 
 
     // ✅ Add this query to reset failed login attempts
     @Modifying
     @Transactional
     @Query("""
-        UPDATE AppUserEntity u 
+        UPDATE UserEntity u 
         SET u.failedLoginAttempts = 0,
             u.accountLockedUntil = null,
             u.lastModifiedDate = CURRENT_TIMESTAMP
@@ -120,7 +120,7 @@ public interface AppUserRepository extends JpaRepository<AppUserEntity, String>,
     @Modifying
     @Transactional
     @Query("""
-        UPDATE AppUserEntity u 
+        UPDATE UserEntity u 
         SET u.accountLockedUntil = :lockUntil, 
             u.failedLoginAttempts = :maxAttempts,
             u.lastModifiedDate = CURRENT_TIMESTAMP
@@ -141,17 +141,17 @@ public interface AppUserRepository extends JpaRepository<AppUserEntity, String>,
      * These are used to populate filter dropdowns on the UI when listing users.
      */
 
-    @Query("SELECT DISTINCT TRIM(u.role.roleName) FROM AppUserEntity u WHERE u.role.roleName IS NOT NULL AND TRIM(u.role.roleName) <> '' ORDER BY TRIM(u.role.roleName)")
+    @Query("SELECT DISTINCT TRIM(u.role.roleName) FROM UserEntity u WHERE u.role.roleName IS NOT NULL AND TRIM(u.role.roleName) <> '' ORDER BY TRIM(u.role.roleName)")
     List<String> findDistinctRoleNames();
 
     @Query("""
     SELECT DISTINCT u.isActive 
-    FROM AppUserEntity u
+    FROM UserEntity u
     WHERE u.role IS NOT NULL
 """)
     List<Boolean> findDistinctStatuses();
 
 
-    @Query("SELECT DISTINCT TRIM(u.username) FROM AppUserEntity u WHERE u.username IS NOT NULL AND TRIM(u.username) <> '' ORDER BY TRIM(u.username)")
+    @Query("SELECT DISTINCT TRIM(u.username) FROM UserEntity u WHERE u.username IS NOT NULL AND TRIM(u.username) <> '' ORDER BY TRIM(u.username)")
     List<String> findDistinctUsernames();
 }

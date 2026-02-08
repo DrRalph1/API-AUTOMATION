@@ -1,7 +1,7 @@
 // controllers/OTPController.js
 import { API_CONFIG } from "../config/APIConfig.js";
 import { apiCall } from "@/helpers/APIHelper";
-import { refreshToken } from "./AuthController.js";
+import { refreshToken } from "./UserManagementController.js";
 
 // Helper function to get authorization header
 const getAuthHeaders = (jwtToken) => ({
