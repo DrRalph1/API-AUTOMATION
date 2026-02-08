@@ -1315,7 +1315,16 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     return (
       <div 
         className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4"
-        style={{ zIndex: zIndex - 5 }}
+        style={{ 
+          zIndex: zIndex - 5,
+          width: '100vw',
+          height: '100vh',
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0
+        }}
         onClick={onClose}
       >
         <div 
@@ -2465,7 +2474,10 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
       isRightSidebarVisible ? 'translate-x-0' : 'translate-x-full md:translate-x-0'
     }`} style={{ 
       backgroundColor: colors.sidebar,
-      borderColor: colors.border
+      borderColor: colors.border,
+      height: '100vh',
+      maxHeight: '100vh',
+      top: 0
     }}>
       {/* Mobile sidebar header */}
       <div className="flex items-center justify-between p-3 border-b md:hidden mb-1 mt-2" style={{ borderColor: colors.border }}>
@@ -2579,7 +2591,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
   );
 
   return (
-    <div className="flex flex-col h-full" style={{ 
+    <div className="flex flex-col h-screen min-h-screen" style={{ 
       backgroundColor: colors.bg,
       color: colors.text,
       fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
@@ -2662,7 +2674,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
         <RightSidebar />
 
         {/* Main content area */}
-        <div className="flex-1 overflow-auto p-2 sm:p-3 md:p-4">
+        <div className="flex-1 overflow-auto p-2 sm:p-3 md:p-4 h-[calc(100vh-4rem)]">
           <div className="max-w-9xl mx-auto px-1 sm:px-2 md:pl-5 md:pr-5">
             {/* Desktop Header */}
             <div className="hidden md:flex items-center justify-between mb-4 md:mb-6">

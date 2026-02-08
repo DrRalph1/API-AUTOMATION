@@ -86,7 +86,7 @@ import {
 } from 'lucide-react';
 
 const APISecurity = ({ theme, isDark, customTheme, toggleTheme }) => {
-  const [activeTab, setActiveTab] = useState('rate-limits');
+  const [activeTab, setActiveTab] = useState('ip-whitelist');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddRuleModal, setShowAddRuleModal] = useState(false);
   const [showSecurityReport, setShowSecurityReport] = useState(false);
@@ -1044,8 +1044,8 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme }) => {
         </h2> */}
         <div className="space-y-1">
           {[
-            { id: 'rate-limits', label: 'Rate Limits', icon: <Filter size={16} /> },
             { id: 'ip-whitelist', label: 'IP Whitelist', icon: <Globe size={16} /> },
+            { id: 'rate-limits', label: 'Rate Limits', icon: <Filter size={16} /> },
             { id: 'load-balancers', label: 'Load Balancers', icon: <Server size={16} /> },
             { id: 'security-events', label: 'Security Events', icon: <AlertTriangle size={16} /> },
           ].map(item => (

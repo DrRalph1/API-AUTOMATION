@@ -68,7 +68,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   const [selectedRole, setSelectedRole] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
-  const [usersPerPage, setUsersPerPage] = useState(10);
+  const [usersPerPage, setUsersPerPage] = useState(7);
   const [sortField, setSortField] = useState('lastActive');
   const [sortDirection, setSortDirection] = useState('desc');
   const [selectedUsers, setSelectedUsers] = useState([]);
@@ -666,6 +666,885 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     }
   };
 
+  // NEW: Handle row click to show modal
+  const handleRowClick = (user) => {
+    handleViewUserDetails(user);
+  };
+
+  // Responsive icon size function
+  const getResponsiveIconSize = () => {
+    if (typeof window !== 'undefined') {
+      if (window.innerWidth < 480) return 12;
+      if (window.innerWidth < 768) return 14;
+      return 14;
+    }
+    return 14;
+  };
+
+  // Modal Components
+  const MobileModal = ({ children, title, onClose, showBackButton = false, onBack }) => {
+      const iconSize = getResponsiveIconSize();
+      const modalCount = modalStack.length;
+      const zIndex = 1000 + (modalCount * 10);
+      
+      return (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4"
+          style={{ zIndex: zIndex - 5 }}
+          onClick={onClose}
+        >
+          <div 
+            className="border rounded-xl w-[55rem] max-h-[90vh] overflow-auto animate-fade-in"
+            onClick={(e) => e.stopPropagation()}
+            style={{ 
+              backgroundColor: colors.bg,
+              borderColor: colors.modalBorder,
+              zIndex: zIndex
+            }}
+          >
+            <div className="sticky top-0 p-3 sm:p-4 border-b flex items-center justify-between backdrop-blur-sm" style={{ 
+              borderColor: colors.border,
+              backgroundColor: colors.modalBg
+            }}>
+              <div className="flex items-center gap-2">
+                {showBackButton && (
+                  <button 
+                    onClick={onBack}
+                    className="p-1 sm:p-1.5 rounded hover:bg-opacity-50 transition-colors shrink-0"
+                    style={{ backgroundColor: colors.hover }}
+                  >
+                    <ChevronLeft size={16} style={{ color: colors.text }} />
+                  </button>
+                )}
+                <h3 className="text-base sm:text-lg font-semibold truncate" style={{ color: colors.text }}>
+                  {title}
+                </h3>
+              </div>
+              <button 
+                onClick={onClose}
+                className="p-1 sm:p-1.5 rounded hover:bg-opacity-50 transition-colors shrink-0"
+                style={{ backgroundColor: colors.hover }}
+              >
+                <X size={18} style={{ color: colors.text }} />
+              </button>
+            </div>
+            <div className="p-3 sm:p-4 overflow-auto">
+              {children}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+  // User Details Modal
+  const UserDetailsModal = ({ data: user }) => {
+    const formatDate = (dateString) => {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    };
+
+    const getPermissionColor = (permission) => {
+      switch(permission) {
+        case 'admin': return colors.error;
+        case 'write': return colors.warning;
+        case 'delete': return colors.error;
+        case 'read': return colors.success;
+        default: return colors.textSecondary;
+      }
+    };
+
+    return (
+      <MobileModal 
+        title="User Details" 
+        onClose={closeModal}
+        showBackButton={modalStack.length > 1}
+        onBack={closeModal}
+      >
+        <div className="space-y-6">
+          {/* Header Section */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 rounded-xl" style={{ 
+            backgroundColor: colors.card,
+            border: `1px solid ${colors.border}`
+          }}>
+            <div 
+              className="w-16 h-16 rounded-full flex items-center justify-center text-white font-medium text-xl"
+              style={{ backgroundColor: user?.avatarColor }}
+            >
+              {user?.fullName?.split(' ').map(n => n[0]).join('')}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h4 className="text-xl font-bold truncate" style={{ color: colors.text }}>
+                {user?.fullName}
+              </h4>
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                <div className="flex items-center gap-1 text-sm">
+                  <UserCircle size={14} style={{ color: colors.textSecondary }} />
+                  <span style={{ color: colors.textSecondary }}>@{user?.username}</span>
+                </div>
+                <div 
+                  className="px-2 py-0.5 rounded-full text-xs font-medium"
+                  style={{ 
+                    backgroundColor: `${roleColors[user?.role]}20`,
+                    color: roleColors[user?.role]
+                  }}
+                >
+                  {user?.role}
+                </div>
+                <div 
+                  className="px-2 py-0.5 rounded-full text-xs font-medium"
+                  style={{ 
+                    backgroundColor: `${statusColors[user?.status]}20`,
+                    color: statusColors[user?.status]
+                  }}
+                >
+                  {user?.status}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* User Information Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Basic Information */}
+            <div className="space-y-4">
+              <div>
+                <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
+                  <UserCircle size={16} />
+                  Basic Information
+                </h5>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Mail size={14} style={{ color: colors.textSecondary }} />
+                    <div className="flex-1">
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>Email</div>
+                      <div className="text-sm truncate" style={{ color: colors.text }}>{user?.email}</div>
+                    </div>
+                    {user?.emailVerified ? (
+                      <CheckCircle size={14} style={{ color: colors.success }} />
+                    ) : (
+                      <XCircle size={14} style={{ color: colors.error }} />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Phone size={14} style={{ color: colors.textSecondary }} />
+                    <div className="flex-1">
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>Phone</div>
+                      <div className="text-sm" style={{ color: colors.text }}>+1 (555) 123-4567</div>
+                    </div>
+                    {user?.phoneVerified ? (
+                      <CheckCircle size={14} style={{ color: colors.success }} />
+                    ) : (
+                      <XCircle size={14} style={{ color: colors.error }} />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Building size={14} style={{ color: colors.textSecondary }} />
+                    <div className="flex-1">
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>Department</div>
+                      <div className="text-sm" style={{ color: colors.text }}>{user?.department}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Security Information */}
+              <div>
+                <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
+                  <Shield size={16} />
+                  Security
+                </h5>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck size={14} style={{ color: colors.textSecondary }} />
+                      <span className="text-sm" style={{ color: colors.text }}>MFA Enabled</span>
+                    </div>
+                    {user?.mfaEnabled ? (
+                      <CheckCircle size={14} style={{ color: colors.success }} />
+                    ) : (
+                      <XCircle size={14} style={{ color: colors.error }} />
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Key size={14} style={{ color: colors.textSecondary }} />
+                      <span className="text-sm" style={{ color: colors.text }}>API Keys</span>
+                    </div>
+                    <span className="text-sm font-medium" style={{ color: colors.text }}>{user?.apiKeys || 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Database size={14} style={{ color: colors.textSecondary }} />
+                      <span className="text-sm" style={{ color: colors.text }}>API Access Count</span>
+                    </div>
+                    <span className="text-sm font-medium" style={{ color: colors.text }}>{user?.apiAccessCount || 0}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Activity Information */}
+            <div className="space-y-4">
+              <div>
+                <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
+                  <Activity size={16} />
+                  Activity
+                </h5>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Clock size={14} style={{ color: colors.textSecondary }} />
+                    <div className="flex-1">
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>Last Active</div>
+                      <div className="text-sm" style={{ color: colors.text }}>{formatDate(user?.lastActive)}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Calendar size={14} style={{ color: colors.textSecondary }} />
+                    <div className="flex-1">
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>Joined Date</div>
+                      <div className="text-sm" style={{ color: colors.text }}>{formatDate(user?.joinedDate)}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <MapPin size={14} style={{ color: colors.textSecondary }} />
+                    <div className="flex-1">
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>Location</div>
+                      <div className="text-sm" style={{ color: colors.text }}>{user?.location}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Security Score */}
+              <div>
+                <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
+                  <ShieldCheck size={16} />
+                  Security Score
+                </h5>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm" style={{ color: colors.text }}>Score</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold" style={{ 
+                        color: user?.securityScore >= 80 ? colors.success : 
+                               user?.securityScore >= 60 ? colors.warning : colors.error 
+                      }}>
+                        {user?.securityScore}/100
+                      </span>
+                    </div>
+                  </div>
+                  <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full rounded-full transition-all duration-300"
+                      style={{ 
+                        width: `${user?.securityScore || 0}%`,
+                        backgroundColor: user?.securityScore >= 80 ? colors.success : 
+                                       user?.securityScore >= 60 ? colors.warning : colors.error
+                      }}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <div style={{ color: colors.textSecondary }}>Total Logins</div>
+                      <div style={{ color: colors.text }}>{user?.totalLogins || 0}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: colors.textSecondary }}>Failed Logins</div>
+                      <div style={{ color: colors.error }}>{user?.failedLogins || 0}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Permissions Section */}
+          <div>
+            <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
+              <KeyRound size={16} />
+              Permissions
+            </h5>
+            <div className="flex flex-wrap gap-2">
+              {user?.permissions?.map((permission, index) => (
+                <div 
+                  key={index}
+                  className="px-3 py-1 rounded-full text-xs font-medium"
+                  style={{ 
+                    backgroundColor: `${getPermissionColor(permission)}20`,
+                    color: getPermissionColor(permission)
+                  }}
+                >
+                  {permission}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Tags Section */}
+          {user?.tags && user.tags.length > 0 && (
+            <div>
+              <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
+                <Tag size={16} />
+                Tags
+              </h5>
+              <div className="flex flex-wrap gap-2">
+                {user.tags.map((tag, index) => (
+                  <div 
+                    key={index}
+                    className="px-2 py-1 rounded text-xs"
+                    style={{ 
+                      backgroundColor: colors.hover,
+                      color: colors.textSecondary
+                    }}
+                  >
+                    {tag}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <button 
+                onClick={() => {
+                  handleEditUser(user);
+                }}
+                className="px-4 py-2 rounded text-sm font-medium transition-colors hover-lift flex items-center justify-center gap-2"
+                style={{ 
+                  backgroundColor: colors.primaryDark,
+                  color: 'white'
+                }}
+              >
+                <Edit size={14} />
+                Edit User
+              </button>
+              <button 
+                onClick={() => {
+                  handleResetPassword(user);
+                }}
+                className="px-4 py-2 rounded text-sm font-medium transition-colors hover-lift flex items-center justify-center gap-2"
+                style={{ 
+                  backgroundColor: colors.warning,
+                  color: 'white'
+                }}
+              >
+                <Key size={14} />
+                Reset Password
+              </button>
+              <button 
+                onClick={() => {
+                  handleDeleteUser(user);
+                  closeModal();
+                }}
+                className="px-4 py-2 rounded text-sm font-medium transition-colors hover-lift flex items-center justify-center gap-2"
+                style={{ 
+                  backgroundColor: colors.error,
+                  color: 'white'
+                }}
+              >
+                <Trash2 size={14} />
+                Delete User
+              </button>
+            </div>
+          </div>
+        </div>
+      </MobileModal>
+    );
+  };
+
+  // Edit User Modal
+  const EditUserModal = ({ data: user }) => {
+    const [formData, setFormData] = useState({
+      username: user?.username || '',
+      email: user?.email || '',
+      fullName: user?.fullName || '',
+      role: user?.role || 'viewer',
+      status: user?.status || 'pending',
+      department: user?.department || '',
+      mfaEnabled: user?.mfaEnabled || false,
+      emailVerified: user?.emailVerified || false,
+      phoneVerified: user?.phoneVerified || false
+    });
+
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      console.log('Updating user:', formData);
+      // Update user logic would go here
+      closeModal();
+    };
+
+    return (
+      <MobileModal 
+        title={user?.id === 'new' ? "Add New User" : "Edit User"} 
+        onClose={closeModal}
+        showBackButton={modalStack.length > 1}
+        onBack={closeModal}
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+                Full Name
+              </label>
+              <input
+                type="text"
+                value={formData.fullName}
+                onChange={(e) => setFormData(prev => ({ ...prev, fullName: e.target.value }))}
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
+                }}
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+                Username
+              </label>
+              <input
+                type="text"
+                value={formData.username}
+                onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
+                }}
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+                Email
+              </label>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
+                }}
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+                Role
+              </label>
+              <select
+                value={formData.role}
+                onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
+                }}
+              >
+                <option value="admin">Admin</option>
+                <option value="developer">Developer</option>
+                <option value="viewer">Viewer</option>
+                <option value="moderator">Moderator</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+                Status
+              </label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
+                }}
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="pending">Pending</option>
+                <option value="suspended">Suspended</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+                Department
+              </label>
+              <input
+                type="text"
+                value={formData.department}
+                onChange={(e) => setFormData(prev => ({ ...prev, department: e.target.value }))}
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="mfaEnabled"
+                checked={formData.mfaEnabled}
+                onChange={(e) => setFormData(prev => ({ ...prev, mfaEnabled: e.target.checked }))}
+                className="rounded"
+              />
+              <label htmlFor="mfaEnabled" className="text-sm" style={{ color: colors.text }}>
+                MFA Enabled
+              </label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="emailVerified"
+                checked={formData.emailVerified}
+                onChange={(e) => setFormData(prev => ({ ...prev, emailVerified: e.target.checked }))}
+                className="rounded"
+              />
+              <label htmlFor="emailVerified" className="text-sm" style={{ color: colors.text }}>
+                Email Verified
+              </label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="phoneVerified"
+                checked={formData.phoneVerified}
+                onChange={(e) => setFormData(prev => ({ ...prev, phoneVerified: e.target.checked }))}
+                className="rounded"
+              />
+              <label htmlFor="phoneVerified" className="text-sm" style={{ color: colors.text }}>
+                Phone Verified
+              </label>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button 
+                type="submit"
+                className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                style={{ 
+                  backgroundColor: colors.success,
+                  color: 'white'
+                }}
+              >
+                {user?.id === 'new' ? 'Create User' : 'Update User'}
+              </button>
+              <button 
+                type="button"
+                onClick={closeModal}
+                className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                style={{ 
+                  backgroundColor: colors.hover,
+                  color: colors.text
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </form>
+      </MobileModal>
+    );
+  };
+
+  // Reset Password Modal
+  const ResetPasswordModal = ({ data: user }) => {
+    const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [forceLogout, setForceLogout] = useState(true);
+
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      if (password !== confirmPassword) {
+        alert('Passwords do not match!');
+        return;
+      }
+      console.log('Resetting password for:', user?.fullName);
+      console.log('Force logout:', forceLogout);
+      // Reset password logic would go here
+      closeModal();
+      alert('Password has been reset successfully!');
+    };
+
+    const generatePassword = () => {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+      let password = '';
+      for (let i = 0; i < 12; i++) {
+        password += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      setPassword(password);
+      setConfirmPassword(password);
+    };
+
+    return (
+      <MobileModal 
+        title="Reset Password" 
+        onClose={closeModal}
+        showBackButton={modalStack.length > 1}
+        onBack={closeModal}
+      >
+        <div className="space-y-4">
+          <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
+            <div className="text-sm font-medium" style={{ color: colors.text }}>
+              Resetting password for: {user?.fullName}
+            </div>
+            <div className="text-xs" style={{ color: colors.textSecondary }}>
+              {user?.email}
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+                New Password
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="flex-1 px-3 py-2 rounded border text-sm"
+                  style={{ 
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.inputBorder,
+                    color: colors.text
+                  }}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={generatePassword}
+                  className="px-3 py-2 rounded text-xs font-medium hover-lift"
+                  style={{ 
+                    backgroundColor: colors.info,
+                    color: 'white'
+                  }}
+                >
+                  Generate
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+                Confirm Password
+              </label>
+              <input
+                type="text"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
+                }}
+                required
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="forceLogout"
+                checked={forceLogout}
+                onChange={(e) => setForceLogout(e.target.checked)}
+                className="rounded"
+              />
+              <label htmlFor="forceLogout" className="text-sm" style={{ color: colors.text }}>
+                Force logout from all devices
+              </label>
+            </div>
+
+            <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button 
+                  type="submit"
+                  className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                  style={{ 
+                    backgroundColor: colors.warning,
+                    color: 'white'
+                  }}
+                >
+                  Reset Password
+                </button>
+                <button 
+                  type="button"
+                  onClick={closeModal}
+                  className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                  style={{ 
+                    backgroundColor: colors.hover,
+                    color: colors.text
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </MobileModal>
+    );
+  };
+
+  // Import Users Modal
+  const ImportUsersModal = () => {
+    const [file, setFile] = useState(null);
+    const [importType, setImportType] = useState('csv');
+
+    const handleFileChange = (e) => {
+      setFile(e.target.files[0]);
+    };
+
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      if (!file) {
+        alert('Please select a file to import');
+        return;
+      }
+      console.log('Importing file:', file.name);
+      console.log('Import type:', importType);
+      // Import logic would go here
+      closeModal();
+      alert('Users imported successfully!');
+    };
+
+    return (
+      <MobileModal 
+        title="Import Users" 
+        onClose={closeModal}
+        showBackButton={modalStack.length > 1}
+        onBack={closeModal}
+      >
+        <div className="space-y-4">
+          <div className="p-3 rounded border" style={{ 
+            borderColor: colors.border,
+            backgroundColor: colors.hover
+          }}>
+            <div className="text-sm font-medium mb-1" style={{ color: colors.text }}>
+              Supported Formats
+            </div>
+            <div className="text-xs" style={{ color: colors.textSecondary }}>
+              • CSV (Comma-separated values)<br/>
+              • Excel (.xlsx, .xls)<br/>
+              • JSON (JavaScript Object Notation)
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+                File Type
+              </label>
+              <select
+                value={importType}
+                onChange={(e) => setImportType(e.target.value)}
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
+                }}
+              >
+                <option value="csv">CSV</option>
+                <option value="excel">Excel</option>
+                <option value="json">JSON</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+                File
+              </label>
+              <input
+                type="file"
+                onChange={handleFileChange}
+                accept=".csv,.xlsx,.xls,.json"
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
+                }}
+                required
+              />
+            </div>
+
+            <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button 
+                  type="submit"
+                  className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                  style={{ 
+                    backgroundColor: colors.success,
+                    color: 'white'
+                  }}
+                >
+                  Import Users
+                </button>
+                <button 
+                  type="button"
+                  onClick={closeModal}
+                  className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                  style={{ 
+                    backgroundColor: colors.hover,
+                    color: colors.text
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </MobileModal>
+    );
+  };
+
+  // Modal Renderer Component
+  const ModalRenderer = () => {
+    if (modalStack.length === 0) return null;
+    
+    return modalStack.map((modal, index) => {
+      const isActive = index === modalStack.length - 1;
+      if (!isActive) return null;
+      
+      switch(modal.type) {
+        case 'userDetails':
+          return <UserDetailsModal key={index} data={modal.data} />;
+        case 'editUser':
+          return <EditUserModal key={index} data={modal.data} />;
+        case 'resetPassword':
+          return <ResetPasswordModal key={index} data={modal.data} />;
+        case 'importUsers':
+          return <ImportUsersModal key={index} />;
+        default:
+          return null;
+      }
+    });
+  };
+
   // Side Navigation Component
   const SideNavigation = () => {
     const [expandedSections, setExpandedSections] = useState(['users', 'security', 'roles']);
@@ -679,21 +1558,19 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
           { id: 'all-users', label: 'All Users', icon: <UsersIcon size={12} /> },
           { id: 'active-users', label: 'Active Users', icon: <UserCheck size={12} /> },
           { id: 'pending-users', label: 'Pending Users', icon: <Clock size={12} /> },
-          { id: 'suspended-users', label: 'Suspended Users', icon: <UserX size={12} /> },
-          { id: 'user-groups', label: 'User Groups', icon: <UserCog size={12} /> }
+          { id: 'suspended-users', label: 'Suspended Users', icon: <UserX size={12} /> }
         ]
       },
-      {
-        id: 'roles',
-        label: 'Roles & Permissions',
-        icon: <Shield size={16} />,
-        subItems: [
-          { id: 'role-management', label: 'Role Management', icon: <ShieldIcon size={12} /> },
-          { id: 'permission-sets', label: 'Permission Sets', icon: <KeyRound size={12} /> },
-          { id: 'access-control', label: 'Access Control', icon: <Lock size={12} /> },
-          { id: 'api-permissions', label: 'API Permissions', icon: <FileCode size={12} /> }
-        ]
-      }
+    //   {
+    //     id: 'roles',
+    //     label: 'Roles & Permissions',
+    //     icon: <Shield size={16} />,
+    //     subItems: [
+    //       { id: 'role-management', label: 'Role Management', icon: <ShieldIcon size={12} /> },
+    //       { id: 'permission-sets', label: 'Permission Sets', icon: <KeyRound size={12} /> },
+    //       { id: 'access-control', label: 'Access Control', icon: <Lock size={12} /> }
+    //     ]
+    //   }
     ];
 
     const toggleSection = (sectionId) => {
@@ -705,7 +1582,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     };
 
     return (
-      <div className="w-80 border-r flex flex-col" style={{ 
+      <div className="w-80 border-r flex flex-col h-full" style={{ 
         backgroundColor: colors.sidebar,
         borderColor: colors.border
       }}>
@@ -873,9 +1750,11 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     return (
       <div 
         className="border rounded-xl p-3 hover-lift transition-all duration-200"
+        onClick={() => handleRowClick(user)}
         style={{ 
           borderColor: colors.border,
-          backgroundColor: colors.card
+          backgroundColor: colors.card,
+          cursor: 'pointer'
         }}
       >
         <div className="flex items-start justify-between mb-3">
@@ -906,7 +1785,10 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
               {user.role}
             </div>
             <button
-              onClick={() => handleViewUserDetails(user)}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleViewUserDetails(user);
+              }}
               className="p-1 rounded hover:bg-opacity-50 transition-colors"
               style={{ backgroundColor: colors.hover }}
             >
@@ -967,7 +1849,10 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
 
           <div className="flex gap-2 pt-2">
             <button
-              onClick={() => handleEditUser(user)}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEditUser(user);
+              }}
               className="flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors hover-lift"
               style={{ 
                 backgroundColor: colors.hover,
@@ -977,7 +1862,10 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
               Edit
             </button>
             <button
-              onClick={() => handleResetPassword(user)}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleResetPassword(user);
+              }}
               className="flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors hover-lift"
               style={{ 
                 backgroundColor: colors.primaryDark,
@@ -1085,7 +1973,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   };
 
   return (
-    <div className="flex flex-col h-full" style={{ 
+    <div className="flex flex-col h-screen overflow-hidden" style={{ 
       backgroundColor: colors.bg,
       color: colors.text,
       fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
@@ -1147,50 +2035,45 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
         }
       `}</style>
 
+      {/* Render all active modals */}
+      <ModalRenderer />
+
       {/* TOP NAVIGATION */}
-            <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
-              backgroundColor: colors.header,
-              borderColor: colors.border
-            }}>
-      
-              <div className="flex items-center gap-2">
-                  <span className="px-3 py-1.5 text-sm font-medium -ml-3 uppercase">User Management</span>
-              </div>
-      
-              <div className="flex items-center gap-2">
-                {/* Search */}
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
-                  <input 
-                    type="text" 
-                    placeholder="Search user details..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-8 pr-3 py-1.5 rounded text-xs focus:outline-none w-64 hover-lift"
-                    style={{ 
-                      backgroundColor: colors.inputBg, 
-                      border: `1px solid ${colors.border}`, 
-                      color: colors.text 
-                    }} 
-                  />
-                  {searchQuery && (
-                    <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                      <button onClick={() => setSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                        style={{ backgroundColor: colors.hover }}>
-                        <X size={12} style={{ color: colors.textSecondary }} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-      
-                {/* Settings */}
-                {/* <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  onClick={() => showToast('Opening settings', 'info')}
+      <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
+        backgroundColor: colors.header,
+        borderColor: colors.border
+      }}>
+        <div className="flex items-center gap-2">
+          <span className="px-3 py-1.5 text-sm font-medium -ml-3 uppercase">User Management</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
+            <input 
+              type="text" 
+              placeholder="Search user details..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8 pr-3 py-1.5 rounded text-xs focus:outline-none w-64 hover-lift"
+              style={{ 
+                backgroundColor: colors.inputBg, 
+                border: `1px solid ${colors.border}`, 
+                color: colors.text 
+              }} 
+            />
+            {searchQuery && (
+              <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                <button onClick={() => setSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                   style={{ backgroundColor: colors.hover }}>
-                  <Settings size={14} style={{ color: colors.textSecondary }} />
-                </button> */}
+                  <X size={12} style={{ color: colors.textSecondary }} />
+                </button>
               </div>
-            </div>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden flex">
@@ -1198,210 +2081,120 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
         <SideNavigation />
 
         {/* Main content area */}
-        <div className="flex-1 overflow-auto p-6">
-          <div className="max-w-8xl mx-auto ml-2 mr-2">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-              <div>
-                <h1 className="text-xl font-bold" style={{ color: colors.text }}>
-                  User Management
-                </h1>
-                <p className="text-xs" style={{ color: colors.textSecondary }}>
-                  Manage user accounts, roles, and permissions
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <button 
-                  onClick={handleRefresh}
-                  className="p-2 rounded-lg hover-lift transition-all duration-200"
-                  style={{ 
-                    backgroundColor: colors.hover,
-                    color: colors.text
-                  }}
-                  title="Refresh"
-                >
-                  <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-                </button>
-                <button 
-                  onClick={handleExportData}
-                  className="px-3 py-2 rounded-lg text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2"
-                  style={{ 
-                    backgroundColor: colors.hover,
-                    color: colors.text
-                  }}
-                >
-                  <Download size={14} />
-                  <span className="hidden sm:inline">Export</span>
-                </button>
-                <button 
-                  onClick={handleImportUsers}
-                  className="px-3 py-2 rounded-lg text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2"
-                  style={{ 
-                    backgroundColor: colors.primaryDark,
-                    color: 'white'
-                  }}
-                >
-                  <Upload size={14} />
-                  <span className="hidden sm:inline">Import Users</span>
-                  <span className="sm:hidden">Import</span>
-                </button>
-                <button 
-                  onClick={() => openModal('editUser', {
-                    id: 'new',
-                    username: '',
-                    email: '',
-                    fullName: '',
-                    role: 'viewer',
-                    status: 'pending'
-                  })}
-                  className="px-3 py-2 rounded-lg text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2"
-                  style={{ 
-                    backgroundColor: colors.success,
-                    color: 'white'
-                  }}
-                >
-                  <UserPlus size={14} />
-                  <span className="hidden sm:inline">Add User</span>
-                  <span className="sm:hidden">Add</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Stats Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-              <StatCard
-                title="Total Users"
-                value={stats.totalUsers}
-                icon={Users}
-                color={colors.primary}
-              />
-              <StatCard
-                title="Active Users"
-                value={stats.activeUsers}
-                icon={UserCheck}
-                color={colors.success}
-                change={+12}
-              />
-              <StatCard
-                title="Admins"
-                value={stats.admins}
-                icon={Shield}
-                color={colors.error}
-              />
-              <StatCard
-                title="Security Score"
-                value={`${stats.avgSecurityScore}/100`}
-                icon={ShieldCheck}
-                color={colors.warning}
-              />
-            </div>
-
-            {/* Search and Filters */}
-            <div className="border rounded-xl mb-6" style={{ 
-              borderColor: colors.border,
-              backgroundColor: colors.card
-            }}>
-              <div className="p-4 border-b" style={{ borderColor: colors.border }}>
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <div className="flex-1 relative">
-                    <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2" style={{ color: colors.textSecondary }} />
-                    <input
-                      type="text"
-                      placeholder="Search users by name, email, or username..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-10 pr-3 py-2 rounded border text-sm"
-                      style={{ 
-                        backgroundColor: colors.inputBg,
-                        borderColor: colors.inputBorder,
-                        color: colors.text
-                      }}
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <select
-                      value={selectedRole}
-                      onChange={(e) => setSelectedRole(e.target.value)}
-                      className="px-3 py-2 rounded border text-sm"
-                      style={{ 
-                        backgroundColor: colors.inputBg,
-                        borderColor: colors.inputBorder,
-                        color: colors.text
-                      }}
-                    >
-                      <option value="all">All Roles</option>
-                      <option value="admin">Admin</option>
-                      <option value="developer">Developer</option>
-                      <option value="viewer">Viewer</option>
-                      <option value="moderator">Moderator</option>
-                    </select>
-                    <select
-                      value={selectedStatus}
-                      onChange={(e) => setSelectedStatus(e.target.value)}
-                      className="px-3 py-2 rounded border text-sm"
-                      style={{ 
-                        backgroundColor: colors.inputBg,
-                        borderColor: colors.inputBorder,
-                        color: colors.text
-                      }}
-                    >
-                      <option value="all">All Status</option>
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
-                      <option value="pending">Pending</option>
-                      <option value="suspended">Suspended</option>
-                    </select>
-                    <button
-                      onClick={() => setShowFilters(!showFilters)}
-                      className="px-3 py-2 rounded border text-sm font-medium hover-lift transition-colors"
-                      style={{ 
-                        backgroundColor: colors.hover,
-                        borderColor: colors.border,
-                        color: colors.text
-                      }}
-                    >
-                      <Filter size={14} />
-                    </button>
-                  </div>
+        <div className="flex-1 overflow-hidden">
+          <div className="h-full overflow-auto p-6">
+            <div className="max-w-8xl mx-auto ml-2 mr-2">
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <div>
+                  <h1 className="text-xl font-bold" style={{ color: colors.text }}>
+                    User Management
+                  </h1>
+                  <p className="text-xs" style={{ color: colors.textSecondary }}>
+                    Manage user accounts, roles, and permissions
+                  </p>
                 </div>
+                <div className="flex items-center gap-3">
+                  {/* <button 
+                    onClick={handleRefresh}
+                    className="p-2 rounded-lg hover-lift transition-all duration-200"
+                    style={{ 
+                      backgroundColor: colors.hover,
+                      color: colors.text
+                    }}
+                    title="Refresh"
+                  >
+                    <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+                  </button> */}
+                  {/* <button 
+                    onClick={handleExportData}
+                    className="px-3 py-2 rounded-lg text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2"
+                    style={{ 
+                      backgroundColor: colors.hover,
+                      color: colors.text
+                    }}
+                  >
+                    <Download size={14} />
+                    <span className="hidden sm:inline">Export</span>
+                  </button> */}
+                  <button 
+                    onClick={handleImportUsers}
+                    className="px-3 py-2 rounded-lg text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2"
+                    style={{ 
+                      backgroundColor: colors.primaryDark,
+                      color: 'white'
+                    }}
+                  >
+                    <Upload size={14} />
+                    <span className="hidden sm:inline">Import Users</span>
+                    <span className="sm:hidden">Import</span>
+                  </button>
+                  <button 
+                    onClick={() => openModal('editUser', {
+                      id: 'new',
+                      username: '',
+                      email: '',
+                      fullName: '',
+                      role: 'viewer',
+                      status: 'pending'
+                    })}
+                    className="px-3 py-2 rounded-lg text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2"
+                    style={{ 
+                      backgroundColor: colors.success,
+                      color: 'white'
+                    }}
+                  >
+                    <UserPlus size={14} />
+                    <span className="hidden sm:inline">Add User</span>
+                    <span className="sm:hidden">Add</span>
+                  </button>
+                </div>
+              </div>
 
-                {showFilters && (
-                  <div className="mt-4 p-3 rounded border" style={{ 
-                    borderColor: colors.border,
-                    backgroundColor: colors.hover
-                  }}>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      <select className="px-2 py-1 rounded border text-xs" style={{ 
-                        backgroundColor: colors.inputBg,
-                        borderColor: colors.inputBorder,
-                        color: colors.text
-                      }}>
-                        <option>Department</option>
-                        <option>Engineering</option>
-                        <option>Marketing</option>
-                        <option>Sales</option>
-                      </select>
-                      <select className="px-2 py-1 rounded border text-xs" style={{ 
-                        backgroundColor: colors.inputBg,
-                        borderColor: colors.inputBorder,
-                        color: colors.text
-                      }}>
-                        <option>MFA Status</option>
-                        <option>Enabled</option>
-                        <option>Disabled</option>
-                      </select>
-                      <select className="px-2 py-1 rounded border text-xs" style={{ 
-                        backgroundColor: colors.inputBg,
-                        borderColor: colors.inputBorder,
-                        color: colors.text
-                      }}>
-                        <option>Email Verified</option>
-                        <option>Yes</option>
-                        <option>No</option>
-                      </select>
+              {/* Stats Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                <StatCard
+                  title="Total Users"
+                  value={stats.totalUsers}
+                  icon={Users}
+                  color={colors.primary}
+                />
+                <StatCard
+                  title="Active Users"
+                  value={stats.activeUsers}
+                  icon={UserCheck}
+                  color={colors.success}
+                  change={+12}
+                />
+                <StatCard
+                  title="Admins"
+                  value={stats.admins}
+                  icon={Shield}
+                  color={colors.error}
+                />
+                <StatCard
+                  title="Security Score"
+                  value={`${stats.avgSecurityScore}/100`}
+                  icon={ShieldCheck}
+                  color={colors.warning}
+                />
+              </div>
+
+              {/* Search and Filters */}
+              <div className="border rounded-xl mb-6" style={{ 
+                borderColor: colors.border,
+                backgroundColor: colors.card
+              }}>
+                <div className="p-4 border-b" style={{ borderColor: colors.border }}>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="flex-1 relative">
+                      <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2" style={{ color: colors.textSecondary }} />
                       <input
-                        type="date"
-                        className="px-2 py-1 rounded border text-xs"
+                        type="text"
+                        placeholder="Search users by name, email, or username..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full pl-10 pr-3 py-2 rounded border text-sm"
                         style={{ 
                           backgroundColor: colors.inputBg,
                           borderColor: colors.inputBorder,
@@ -1409,243 +2202,336 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                         }}
                       />
                     </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Bulk Actions */}
-              {selectedUsers.length > 0 && (
-                <div className="p-3 border-b flex items-center justify-between" style={{ 
-                  borderColor: colors.border,
-                  backgroundColor: colors.selected
-                }}>
-                  <div className="text-sm font-medium" style={{ color: colors.text }}>
-                    {selectedUsers.length} user{selectedUsers.length > 1 ? 's' : ''} selected
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleBulkAction('activate')}
-                      className="px-2 py-1 rounded text-xs font-medium hover-lift transition-colors"
-                      style={{ 
-                        backgroundColor: colors.success,
-                        color: 'white'
-                      }}
-                    >
-                      Activate
-                    </button>
-                    <button
-                      onClick={() => handleBulkAction('suspend')}
-                      className="px-2 py-1 rounded text-xs font-medium hover-lift transition-colors"
-                      style={{ 
-                        backgroundColor: colors.warning,
-                        color: 'white'
-                      }}
-                    >
-                      Suspend
-                    </button>
-                    <button
-                      onClick={() => handleBulkAction('delete')}
-                      className="px-2 py-1 rounded text-xs font-medium hover-lift transition-colors"
-                      style={{ 
-                        backgroundColor: colors.error,
-                        color: 'white'
-                      }}
-                    >
-                      Delete
-                    </button>
-                    <button
-                      onClick={() => setSelectedUsers([])}
-                      className="px-2 py-1 rounded text-xs font-medium hover-lift transition-colors"
-                      style={{ 
-                        backgroundColor: colors.hover,
-                        color: colors.text
-                      }}
-                    >
-                      Clear
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Users Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full" style={{ borderColor: colors.border }}>
-                  <thead>
-                    <tr style={{ backgroundColor: colors.tableHeader }}>
-                      <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedUsers.length === currentUsers.length && currentUsers.length > 0}
-                          onChange={handleSelectAll}
-                          className="rounded border-gray-300"
-                          style={{ borderColor: colors.border }}
-                        />
-                      </th>
-                      <th 
-                        className="p-3 text-left text-xs font-medium cursor-pointer hover:bg-opacity-50 transition-colors"
-                        onClick={() => handleSort('fullName')}
-                        style={{ color: colors.textSecondary }}
-                      >
-                        <div className="flex items-center gap-1">
-                          User
-                          {sortField === 'fullName' && (
-                            sortDirection === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
-                          )}
-                        </div>
-                      </th>
-                      <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
-                        Email
-                      </th>
-                      <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
-                        Role
-                      </th>
-                      <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
-                        Status
-                      </th>
-                      <th 
-                        className="p-3 text-left text-xs font-medium cursor-pointer hover:bg-opacity-50 transition-colors"
-                        onClick={() => handleSort('lastActive')}
-                        style={{ color: colors.textSecondary }}
-                      >
-                        <div className="flex items-center gap-1">
-                          Last Active
-                          {sortField === 'lastActive' && (
-                            sortDirection === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
-                          )}
-                        </div>
-                      </th>
-                      <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
-                        Security Score
-                      </th>
-                      <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {currentUsers.map(user => (
-                      <tr 
-                        key={user.id}
-                        className="border-t hover-lift transition-colors"
+                    <div className="flex gap-2">
+                      <select
+                        value={selectedRole}
+                        onChange={(e) => setSelectedRole(e.target.value)}
+                        className="px-3 py-2 rounded border text-sm"
                         style={{ 
-                          borderColor: colors.border,
-                          backgroundColor: selectedUsers.includes(user.id) ? colors.selected : 'transparent'
+                          backgroundColor: colors.inputBg,
+                          borderColor: colors.inputBorder,
+                          color: colors.text
                         }}
                       >
-                        <td className="p-3">
+                        <option value="all">All Roles</option>
+                        <option value="admin">Admin</option>
+                        <option value="developer">Developer</option>
+                        <option value="viewer">Viewer</option>
+                        <option value="moderator">Moderator</option>
+                      </select>
+                      <select
+                        value={selectedStatus}
+                        onChange={(e) => setSelectedStatus(e.target.value)}
+                        className="px-3 py-2 rounded border text-sm"
+                        style={{ 
+                          backgroundColor: colors.inputBg,
+                          borderColor: colors.inputBorder,
+                          color: colors.text
+                        }}
+                      >
+                        <option value="all">All Status</option>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                        <option value="pending">Pending</option>
+                        <option value="suspended">Suspended</option>
+                      </select>
+                      <button
+                        onClick={() => setShowFilters(!showFilters)}
+                        className="px-3 py-2 rounded border text-sm font-medium hover-lift transition-colors"
+                        style={{ 
+                          backgroundColor: colors.hover,
+                          borderColor: colors.border,
+                          color: colors.text
+                        }}
+                      >
+                        <Filter size={14} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {showFilters && (
+                    <div className="mt-4 p-3 rounded border" style={{ 
+                      borderColor: colors.border,
+                      backgroundColor: colors.hover
+                    }}>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <select className="px-2 py-1 rounded border text-xs" style={{ 
+                          backgroundColor: colors.inputBg,
+                          borderColor: colors.inputBorder,
+                          color: colors.text
+                        }}>
+                          <option>Department</option>
+                          <option>Engineering</option>
+                          <option>Marketing</option>
+                          <option>Sales</option>
+                        </select>
+                        <select className="px-2 py-1 rounded border text-xs" style={{ 
+                          backgroundColor: colors.inputBg,
+                          borderColor: colors.inputBorder,
+                          color: colors.text
+                        }}>
+                          <option>MFA Status</option>
+                          <option>Enabled</option>
+                          <option>Disabled</option>
+                        </select>
+                        <select className="px-2 py-1 rounded border text-xs" style={{ 
+                          backgroundColor: colors.inputBg,
+                          borderColor: colors.inputBorder,
+                          color: colors.text
+                        }}>
+                          <option>Email Verified</option>
+                          <option>Yes</option>
+                          <option>No</option>
+                        </select>
+                        <input
+                          type="date"
+                          className="px-2 py-1 rounded border text-xs"
+                          style={{ 
+                            backgroundColor: colors.inputBg,
+                            borderColor: colors.inputBorder,
+                            color: colors.text
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Bulk Actions */}
+                {selectedUsers.length > 0 && (
+                  <div className="p-3 border-b flex items-center justify-between" style={{ 
+                    borderColor: colors.border,
+                    backgroundColor: colors.selected
+                  }}>
+                    <div className="text-sm font-medium" style={{ color: colors.text }}>
+                      {selectedUsers.length} user{selectedUsers.length > 1 ? 's' : ''} selected
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleBulkAction('activate')}
+                        className="px-2 py-1 rounded text-xs font-medium hover-lift transition-colors"
+                        style={{ 
+                          backgroundColor: colors.success,
+                          color: 'white'
+                        }}
+                      >
+                        Activate
+                      </button>
+                      <button
+                        onClick={() => handleBulkAction('suspend')}
+                        className="px-2 py-1 rounded text-xs font-medium hover-lift transition-colors"
+                        style={{ 
+                          backgroundColor: colors.warning,
+                          color: 'white'
+                        }}
+                      >
+                        Suspend
+                      </button>
+                      <button
+                        onClick={() => handleBulkAction('delete')}
+                        className="px-2 py-1 rounded text-xs font-medium hover-lift transition-colors"
+                        style={{ 
+                          backgroundColor: colors.error,
+                          color: 'white'
+                        }}
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={() => setSelectedUsers([])}
+                        className="px-2 py-1 rounded text-xs font-medium hover-lift transition-colors"
+                        style={{ 
+                          backgroundColor: colors.hover,
+                          color: colors.text
+                        }}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Users Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full" style={{ borderColor: colors.border }}>
+                    <thead>
+                      <tr style={{ backgroundColor: colors.tableHeader }}>
+                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
                           <input
                             type="checkbox"
-                            checked={selectedUsers.includes(user.id)}
-                            onChange={() => handleSelectUser(user.id)}
+                            checked={selectedUsers.length === currentUsers.length && currentUsers.length > 0}
+                            onChange={handleSelectAll}
                             className="rounded border-gray-300"
                             style={{ borderColor: colors.border }}
                           />
-                        </td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-3">
-                            <div 
-                              className="w-8 h-8 rounded-full flex items-center justify-center text-white font-medium text-sm"
-                              style={{ backgroundColor: user.avatarColor }}
-                            >
-                              {user.fullName.split(' ').map(n => n[0]).join('')}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="text-sm font-semibold truncate" style={{ color: colors.text }}>
-                                {user.fullName}
-                              </div>
-                              <div className="text-xs truncate" style={{ color: colors.textSecondary }}>
-                                @{user.username}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <div className="text-sm truncate" style={{ color: colors.text }}>
-                            {user.email}
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <div 
-                            className="px-2 py-1 rounded-full text-xs font-medium w-fit"
-                            style={{ 
-                              backgroundColor: `${roleColors[user.role]}20`,
-                              color: roleColors[user.role]
-                            }}
-                          >
-                            {user.role}
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <div 
-                            className="px-2 py-1 rounded-full text-xs font-medium w-fit"
-                            style={{ 
-                              backgroundColor: `${statusColors[user.status]}20`,
-                              color: statusColors[user.status]
-                            }}
-                          >
-                            {user.status}
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <div className="text-sm" style={{ color: colors.text }}>
-                            {new Date(user.lastActive).toLocaleDateString()}
-                          </div>
-                        </td>
-                        <td className="p-3">
+                        </th>
+                        <th 
+                          className="p-3 text-left text-xs font-medium cursor-pointer hover:bg-opacity-50 transition-colors"
+                          onClick={() => handleSort('fullName')}
+                          style={{ color: colors.textSecondary }}
+                        >
                           <div className="flex items-center gap-1">
-                            <div className="text-sm font-medium" style={{ color: colors.text }}>
-                              {user.securityScore}
-                            </div>
-                            <div className="w-16 h-1 rounded-full bg-gray-200">
-                              <div 
-                                className="h-full rounded-full"
-                                style={{ 
-                                  width: `${user.securityScore}%`,
-                                  backgroundColor: user.securityScore >= 80 ? colors.success : 
-                                                 user.securityScore >= 60 ? colors.warning : colors.error
-                                }}
-                              />
-                            </div>
+                            User
+                            {sortField === 'fullName' && (
+                              sortDirection === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                            )}
                           </div>
-                        </td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleViewUserDetails(user)}
-                              className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
-                              style={{ backgroundColor: colors.hover }}
-                              title="View Details"
-                            >
-                              <Eye size={14} style={{ color: colors.textSecondary }} />
-                            </button>
-                            <button
-                              onClick={() => handleEditUser(user)}
-                              className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
-                              style={{ backgroundColor: colors.hover }}
-                              title="Edit User"
-                            >
-                              <Edit size={14} style={{ color: colors.textSecondary }} />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteUser(user)}
-                              className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
-                              style={{ backgroundColor: colors.hover }}
-                              title="Delete User"
-                            >
-                              <Trash2 size={14} style={{ color: colors.error }} />
-                            </button>
+                        </th>
+                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
+                          Email
+                        </th>
+                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
+                          Role
+                        </th>
+                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
+                          Status
+                        </th>
+                        <th 
+                          className="p-3 text-left text-xs font-medium cursor-pointer hover:bg-opacity-50 transition-colors"
+                          onClick={() => handleSort('lastActive')}
+                          style={{ color: colors.textSecondary }}
+                        >
+                          <div className="flex items-center gap-1">
+                            Last Active
+                            {sortField === 'lastActive' && (
+                              sortDirection === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                            )}
                           </div>
-                        </td>
+                        </th>
+                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
+                          Security Score
+                        </th>
+                        <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
+                          Actions
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {currentUsers.map(user => (
+                        <tr 
+                          key={user.id}
+                          className="border-t hover-lift transition-colors cursor-pointer"
+                          style={{ 
+                            borderColor: colors.border,
+                            backgroundColor: selectedUsers.includes(user.id) ? colors.selected : 'transparent'
+                          }}
+                          onClick={() => handleRowClick(user)}
+                        >
+                          <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={selectedUsers.includes(user.id)}
+                              onChange={() => handleSelectUser(user.id)}
+                              className="rounded border-gray-300"
+                              style={{ borderColor: colors.border }}
+                            />
+                          </td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-3">
+                              <div 
+                                className="w-8 h-8 rounded-full flex items-center justify-center text-white font-medium text-sm"
+                                style={{ backgroundColor: user.avatarColor }}
+                              >
+                                {user.fullName.split(' ').map(n => n[0]).join('')}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold truncate" style={{ color: colors.text }}>
+                                  {user.fullName}
+                                </div>
+                                <div className="text-xs truncate" style={{ color: colors.textSecondary }}>
+                                  @{user.username}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <div className="text-sm truncate" style={{ color: colors.text }}>
+                              {user.email}
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <div 
+                              className="px-2 py-1 rounded-full text-xs font-medium w-fit"
+                              style={{ 
+                                backgroundColor: `${roleColors[user.role]}20`,
+                                color: roleColors[user.role]
+                              }}
+                            >
+                              {user.role}
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <div 
+                              className="px-2 py-1 rounded-full text-xs font-medium w-fit"
+                              style={{ 
+                                backgroundColor: `${statusColors[user.status]}20`,
+                                color: statusColors[user.status]
+                              }}
+                            >
+                              {user.status}
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <div className="text-sm" style={{ color: colors.text }}>
+                              {new Date(user.lastActive).toLocaleDateString()}
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-1">
+                              <div className="text-sm font-medium" style={{ color: colors.text }}>
+                                {user.securityScore}
+                              </div>
+                              <div className="w-16 h-1 rounded-full bg-gray-200">
+                                <div 
+                                  className="h-full rounded-full"
+                                  style={{ 
+                                    width: `${user.securityScore}%`,
+                                    backgroundColor: user.securityScore >= 80 ? colors.success : 
+                                                   user.securityScore >= 60 ? colors.warning : colors.error
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleViewUserDetails(user)}
+                                className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+                                style={{ backgroundColor: colors.hover }}
+                                title="View Details"
+                              >
+                                <Eye size={14} style={{ color: colors.textSecondary }} />
+                              </button>
+                              <button
+                                onClick={() => handleEditUser(user)}
+                                className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+                                style={{ backgroundColor: colors.hover }}
+                                title="Edit User"
+                              >
+                                <Edit size={14} style={{ color: colors.textSecondary }} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteUser(user)}
+                                className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+                                style={{ backgroundColor: colors.hover }}
+                                title="Delete User"
+                              >
+                                <Trash2 size={14} style={{ color: colors.error }} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination */}
+                <Pagination />
               </div>
 
-              {/* Pagination */}
-              <Pagination />
             </div>
-
           </div>
         </div>
       </div>
