@@ -59,9 +59,9 @@ public class SystemLogService {
 
     public List<LogFileResponse> getLogFiles(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting systemActivities log files for userManagement: {}", requestId, performedBy);
+            log.info("Request ID: {}, Getting systemActivities log files for user: {}", requestId, performedBy);
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Getting systemActivities log files for userManagement: " + performedBy);
+                    "Request ID: " + requestId + ", Getting systemActivities log files for user: " + performedBy);
 
             Path logsPath = Paths.get(logsDirectory);
             if (!Files.exists(logsPath) || !Files.isDirectory(logsPath)) {
@@ -225,7 +225,7 @@ public class SystemLogService {
             return logsDir.toAbsolutePath().toString();
         } catch (Exception e) {
             log.error("Failed to resolve or create systemActivities logs directory", e);
-            Path fallback = Paths.get(System.getProperty("userManagement.home"), "webApplicationFirewall", "logs");
+            Path fallback = Paths.get(System.getProperty("user.home"), "webApplicationFirewall", "logs");
             try {
                 Files.createDirectories(fallback);
                 log.warn("Using fallback systemActivities logs directory: {}", fallback.toAbsolutePath());

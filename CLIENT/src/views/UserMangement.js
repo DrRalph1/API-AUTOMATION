@@ -62,7 +62,57 @@ import {
   UserCog as UserCogIcon2, UserCircle2, UserSquare as UserSquareIcon
 } from "lucide-react";
 
-const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setActiveTab }) => {
+// Import the API controller
+import UserManagementAPI, {
+  getUsersList,
+  getUserDetails,
+  createUser,
+  updateUser,
+  deleteUser,
+  bulkUserOperation,
+  resetUserPassword,
+  getUserStatistics,
+  searchUsers,
+  importUsers,
+  exportUsers,
+  getUserActivity,
+  updateUserStatus,
+  getRolesAndPermissions,
+  validateUserData,
+  handleUserManagementResponse,
+  extractUsersList,
+  extractUserDetails,
+  extractCreateUserResults,
+  extractUpdateUserResults,
+  extractDeleteUserResults,
+  extractBulkOperationResults,
+  extractResetPasswordResults,
+  extractUserStatistics as extractStats,
+  extractSearchUsersResults,
+  extractImportUsersResults,
+  extractExportUsersResults,
+  extractUserActivityResults,
+  extractUpdateStatusResults,
+  extractRolesAndPermissions as extractRoles,
+  extractValidationResults,
+  validateCreateUser,
+  validateUpdateUser,
+  validateBulkOperation,
+  validateSearchUsers,
+  validateImportUsers,
+  validateExportUsers,
+  validateUpdateStatus,
+  validateUserDataRequest,
+  getUserRoleDisplayName,
+  getUserStatusDisplayName,
+  getStatusColor,
+  getRoleColor,
+  getSecurityScoreColor,
+  formatDateForDisplay,
+  getDefaultUserFilters
+} from '@/controllers/UserManagementController.js';
+
+const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setActiveTab, authToken }) => {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRole, setSelectedRole] = useState('all');
@@ -74,311 +124,8 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
   
-  // Modal states
-  const [modalStack, setModalStack] = useState([]);
-  
-  // Mobile states
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
-  const [isRightSidebarVisible, setIsRightSidebarVisible] = useState(false);
-
-  // Static user data
-  const [users, setUsers] = useState([
-    {
-      id: 'user-1',
-      username: 'john.doe',
-      email: 'john.doe@example.com',
-      fullName: 'John Doe',
-      role: 'admin',
-      status: 'active',
-      lastActive: '2024-01-15T14:30:00Z',
-      joinedDate: '2023-06-15T10:00:00Z',
-      avatarColor: '#3B82F6',
-      department: 'Engineering',
-      permissions: ['read', 'write', 'delete', 'admin'],
-      mfaEnabled: true,
-      emailVerified: true,
-      phoneVerified: true,
-      apiAccessCount: 24,
-      lastLoginIp: '192.168.1.100',
-      location: 'San Francisco, CA',
-      timezone: 'PST',
-      totalLogins: 156,
-      failedLogins: 3,
-      securityScore: 95,
-      tags: ['core-team', 'backend', 'devops'],
-      devices: [
-        { type: 'laptop', lastUsed: '2024-01-15T10:30:00Z' },
-        { type: 'phone', lastUsed: '2024-01-15T09:15:00Z' }
-      ],
-      apiKeys: 3,
-      sessions: 2
-    },
-    {
-      id: 'user-2',
-      username: 'jane.smith',
-      email: 'jane.smith@example.com',
-      fullName: 'Jane Smith',
-      role: 'developer',
-      status: 'active',
-      lastActive: '2024-01-15T12:45:00Z',
-      joinedDate: '2023-08-20T09:30:00Z',
-      avatarColor: '#10B981',
-      department: 'Frontend',
-      permissions: ['read', 'write'],
-      mfaEnabled: true,
-      emailVerified: true,
-      phoneVerified: false,
-      apiAccessCount: 12,
-      lastLoginIp: '192.168.1.101',
-      location: 'New York, NY',
-      timezone: 'EST',
-      totalLogins: 89,
-      failedLogins: 1,
-      securityScore: 88,
-      tags: ['frontend', 'ui-ux'],
-      devices: [
-        { type: 'laptop', lastUsed: '2024-01-15T08:45:00Z' }
-      ],
-      apiKeys: 2,
-      sessions: 1
-    },
-    {
-      id: 'user-3',
-      username: 'bob.johnson',
-      email: 'bob.johnson@example.com',
-      fullName: 'Bob Johnson',
-      role: 'viewer',
-      status: 'active',
-      lastActive: '2024-01-14T16:20:00Z',
-      joinedDate: '2023-11-05T14:15:00Z',
-      avatarColor: '#F59E0B',
-      department: 'Marketing',
-      permissions: ['read'],
-      mfaEnabled: false,
-      emailVerified: true,
-      phoneVerified: true,
-      apiAccessCount: 5,
-      lastLoginIp: '192.168.1.102',
-      location: 'Chicago, IL',
-      timezone: 'CST',
-      totalLogins: 42,
-      failedLogins: 0,
-      securityScore: 75,
-      tags: ['marketing', 'analytics'],
-      devices: [
-        { type: 'desktop', lastUsed: '2024-01-14T15:30:00Z' }
-      ],
-      apiKeys: 1,
-      sessions: 1
-    },
-    {
-      id: 'user-4',
-      username: 'alice.brown',
-      email: 'alice.brown@example.com',
-      fullName: 'Alice Brown',
-      role: 'admin',
-      status: 'inactive',
-      lastActive: '2024-01-10T11:15:00Z',
-      joinedDate: '2023-09-12T13:45:00Z',
-      avatarColor: '#8B5CF6',
-      department: 'Engineering',
-      permissions: ['read', 'write', 'delete', 'admin'],
-      mfaEnabled: true,
-      emailVerified: true,
-      phoneVerified: true,
-      apiAccessCount: 18,
-      lastLoginIp: '192.168.1.103',
-      location: 'Seattle, WA',
-      timezone: 'PST',
-      totalLogins: 112,
-      failedLogins: 2,
-      securityScore: 92,
-      tags: ['core-team', 'fullstack'],
-      devices: [
-        { type: 'laptop', lastUsed: '2024-01-10T10:00:00Z' },
-        { type: 'tablet', lastUsed: '2024-01-09T16:45:00Z' }
-      ],
-      apiKeys: 2,
-      sessions: 0
-    },
-    {
-      id: 'user-5',
-      username: 'charlie.wilson',
-      email: 'charlie.wilson@example.com',
-      fullName: 'Charlie Wilson',
-      role: 'developer',
-      status: 'pending',
-      lastActive: '2024-01-13T09:30:00Z',
-      joinedDate: '2024-01-02T08:00:00Z',
-      avatarColor: '#EF4444',
-      department: 'Backend',
-      permissions: ['read', 'write'],
-      mfaEnabled: false,
-      emailVerified: false,
-      phoneVerified: false,
-      apiAccessCount: 0,
-      lastLoginIp: '192.168.1.104',
-      location: 'Austin, TX',
-      timezone: 'CST',
-      totalLogins: 3,
-      failedLogins: 0,
-      securityScore: 45,
-      tags: ['new-user', 'onboarding'],
-      devices: [],
-      apiKeys: 0,
-      sessions: 1
-    },
-    {
-      id: 'user-6',
-      username: 'david.lee',
-      email: 'david.lee@example.com',
-      fullName: 'David Lee',
-      role: 'viewer',
-      status: 'suspended',
-      lastActive: '2024-01-05T14:20:00Z',
-      joinedDate: '2023-10-18T11:30:00Z',
-      avatarColor: '#6B7280',
-      department: 'Sales',
-      permissions: ['read'],
-      mfaEnabled: false,
-      emailVerified: true,
-      phoneVerified: false,
-      apiAccessCount: 8,
-      lastLoginIp: '192.168.1.105',
-      location: 'Miami, FL',
-      timezone: 'EST',
-      totalLogins: 67,
-      failedLogins: 5,
-      securityScore: 60,
-      tags: ['sales', 'external'],
-      devices: [
-        { type: 'laptop', lastUsed: '2024-01-05T13:15:00Z' }
-      ],
-      apiKeys: 1,
-      sessions: 0
-    },
-    {
-      id: 'user-7',
-      username: 'emma.davis',
-      email: 'emma.davis@example.com',
-      fullName: 'Emma Davis',
-      role: 'developer',
-      status: 'active',
-      lastActive: '2024-01-15T08:15:00Z',
-      joinedDate: '2023-07-22T09:45:00Z',
-      avatarColor: '#EC4899',
-      department: 'Mobile',
-      permissions: ['read', 'write'],
-      mfaEnabled: true,
-      emailVerified: true,
-      phoneVerified: true,
-      apiAccessCount: 15,
-      lastLoginIp: '192.168.1.106',
-      location: 'Boston, MA',
-      timezone: 'EST',
-      totalLogins: 134,
-      failedLogins: 1,
-      securityScore: 91,
-      tags: ['mobile', 'ios', 'android'],
-      devices: [
-        { type: 'phone', lastUsed: '2024-01-15T07:30:00Z' },
-        { type: 'tablet', lastUsed: '2024-01-14T18:45:00Z' }
-      ],
-      apiKeys: 2,
-      sessions: 2
-    },
-    {
-      id: 'user-8',
-      username: 'frank.miller',
-      email: 'frank.miller@example.com',
-      fullName: 'Frank Miller',
-      role: 'admin',
-      status: 'active',
-      lastActive: '2024-01-15T16:45:00Z',
-      joinedDate: '2023-05-10T14:20:00Z',
-      avatarColor: '#14B8A6',
-      department: 'DevOps',
-      permissions: ['read', 'write', 'delete', 'admin'],
-      mfaEnabled: true,
-      emailVerified: true,
-      phoneVerified: true,
-      apiAccessCount: 32,
-      lastLoginIp: '192.168.1.107',
-      location: 'Denver, CO',
-      timezone: 'MST',
-      totalLogins: 201,
-      failedLogins: 0,
-      securityScore: 98,
-      tags: ['core-team', 'infrastructure', 'security'],
-      devices: [
-        { type: 'laptop', lastUsed: '2024-01-15T15:00:00Z' },
-        { type: 'desktop', lastUsed: '2024-01-14T12:30:00Z' }
-      ],
-      apiKeys: 4,
-      sessions: 3
-    },
-    {
-      id: 'user-9',
-      username: 'grace.wilson',
-      email: 'grace.wilson@example.com',
-      fullName: 'Grace Wilson',
-      role: 'viewer',
-      status: 'active',
-      lastActive: '2024-01-14T10:30:00Z',
-      joinedDate: '2023-12-01T10:00:00Z',
-      avatarColor: '#F97316',
-      department: 'Support',
-      permissions: ['read'],
-      mfaEnabled: false,
-      emailVerified: true,
-      phoneVerified: false,
-      apiAccessCount: 3,
-      lastLoginIp: '192.168.1.108',
-      location: 'Portland, OR',
-      timezone: 'PST',
-      totalLogins: 28,
-      failedLogins: 0,
-      securityScore: 70,
-      tags: ['support', 'customer-service'],
-      devices: [
-        { type: 'laptop', lastUsed: '2024-01-14T09:15:00Z' }
-      ],
-      apiKeys: 1,
-      sessions: 1
-    },
-    {
-      id: 'user-10',
-      username: 'henry.clark',
-      email: 'henry.clark@example.com',
-      fullName: 'Henry Clark',
-      role: 'developer',
-      status: 'inactive',
-      lastActive: '2024-01-08T15:45:00Z',
-      joinedDate: '2023-11-20T16:30:00Z',
-      avatarColor: '#8B5CF6',
-      department: 'QA',
-      permissions: ['read', 'write'],
-      mfaEnabled: true,
-      emailVerified: true,
-      phoneVerified: true,
-      apiAccessCount: 7,
-      lastLoginIp: '192.168.1.109',
-      location: 'Atlanta, GA',
-      timezone: 'EST',
-      totalLogins: 56,
-      failedLogins: 2,
-      securityScore: 82,
-      tags: ['qa', 'testing'],
-      devices: [
-        { type: 'desktop', lastUsed: '2024-01-08T14:30:00Z' }
-      ],
-      apiKeys: 1,
-      sessions: 0
-    }
-  ]);
-
-  // Statistics
+  // API states
+  const [users, setUsers] = useState([]);
   const [stats, setStats] = useState({
     totalUsers: 0,
     activeUsers: 0,
@@ -389,8 +136,538 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     mfaEnabled: 0,
     avgSecurityScore: 0
   });
+  
+  // Modal states
+  const [modalStack, setModalStack] = useState([]);
+  
+  // Mobile states
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const [isRightSidebarVisible, setIsRightSidebarVisible] = useState(false);
 
-  // Color scheme - EXACTLY matching Dashboard
+  // Load users on component mount
+  useEffect(() => {
+    if (authToken) {
+      loadUsers();
+      loadStatistics();
+    } else {
+      console.warn('No auth token available');
+    }
+  }, [authToken]);
+
+  // Load users with filters
+  const loadUsers = async (filters = {}) => {
+    const authHeader = authToken;
+    if (!authHeader) {
+      showToast('error', 'Authentication required. Please log in.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await getUsersList(authHeader, {
+        searchQuery: filters.searchQuery || searchQuery,
+        roleFilter: filters.roleFilter || selectedRole,
+        statusFilter: filters.statusFilter || selectedStatus,
+        sortField: filters.sortField || sortField,
+        sortDirection: filters.sortDirection || sortDirection,
+        page: filters.page || currentPage,
+        pageSize: filters.pageSize || usersPerPage
+      });
+      
+      const processedResponse = handleUserManagementResponse(response);
+      const userList = extractUsersList(processedResponse);
+      setUsers(userList || []);
+      
+    } catch (error) {
+      console.error('Error loading users:', error);
+      showToast('error', error.message || 'Failed to load users');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load statistics
+  const loadStatistics = async () => {
+    const authHeader = authToken;
+    if (!authHeader) {
+      showToast('error', 'Authentication required. Please log in.');
+      return;
+    }
+
+    try {
+      const response = await getUserStatistics(authHeader);
+      const processedResponse = handleUserManagementResponse(response);
+      const statistics = extractStats(processedResponse);
+      setStats(statistics || {
+        totalUsers: 0,
+        activeUsers: 0,
+        admins: 0,
+        developers: 0,
+        pendingUsers: 0,
+        suspendedUsers: 0,
+        mfaEnabled: 0,
+        avgSecurityScore: 0
+      });
+    } catch (error) {
+      console.error('Error loading statistics:', error);
+      showToast('error', error.message || 'Failed to load statistics');
+    }
+  };
+
+  // Load user details
+  const loadUserDetails = async (userId) => {
+    const authHeader = authToken;
+    if (!authHeader) {
+      showToast('error', 'Authentication required. Please log in.');
+      return null;
+    }
+
+    setLoading(true);
+    try {
+      const response = await getUserDetails(authHeader, userId);
+      const processedResponse = handleUserManagementResponse(response);
+      return extractUserDetails(processedResponse);
+    } catch (error) {
+      console.error('Error loading user details:', error);
+      showToast('error', error.message || 'Failed to load user details');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle create user
+  const handleCreateUser = async (userData) => {
+    const authHeader = authToken;
+    if (!authHeader) {
+      showToast('error', 'Authentication required. Please log in.');
+      return false;
+    }
+
+    setLoading(true);
+    try {
+      const validationErrors = validateCreateUser(userData);
+      if (validationErrors.length > 0) {
+        showToast('error', validationErrors.join(', '));
+        return false;
+      }
+
+      const response = await createUser(authHeader, userData);
+      const processedResponse = handleUserManagementResponse(response);
+      const result = extractCreateUserResults(processedResponse);
+      
+      if (result.success) {
+        showToast('success', result.message);
+        loadUsers();
+        loadStatistics();
+        return true;
+      } else {
+        showToast('error', result.message || 'Failed to create user');
+        return false;
+      }
+    } catch (error) {
+      console.error('Error creating user:', error);
+      showToast('error', error.message || 'Failed to create user');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle update user
+  const handleUpdateUser = async (userId, userData) => {
+    const authHeader = authToken;
+    if (!authHeader) {
+      showToast('error', 'Authentication required. Please log in.');
+      return false;
+    }
+
+    setLoading(true);
+    try {
+      const validationErrors = validateUpdateUser(userData);
+      if (validationErrors.length > 0) {
+        showToast('error', validationErrors.join(', '));
+        return false;
+      }
+
+      const response = await updateUser(authHeader, userId, userData);
+      const processedResponse = handleUserManagementResponse(response);
+      const result = extractUpdateUserResults(processedResponse);
+      
+      if (result.success) {
+        showToast('success', result.message);
+        loadUsers();
+        return true;
+      } else {
+        showToast('error', result.message || 'Failed to update user');
+        return false;
+      }
+    } catch (error) {
+      console.error('Error updating user:', error);
+      showToast('error', error.message || 'Failed to update user');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle delete user
+  const handleDeleteUser = async (user) => {
+    if (!window.confirm(`Are you sure you want to delete ${user.fullName || user.username}?`)) {
+      return;
+    }
+
+    const authHeader = authToken;
+    if (!authHeader) {
+      showToast('error', 'Authentication required. Please log in.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await deleteUser(authHeader, user.id);
+      const processedResponse = handleUserManagementResponse(response);
+      const result = extractDeleteUserResults(processedResponse);
+      
+      if (result.success) {
+        showToast('success', result.message);
+        setSelectedUsers(prev => prev.filter(id => id !== user.id));
+        loadUsers();
+        loadStatistics();
+      } else {
+        showToast('error', result.message || 'Failed to delete user');
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      showToast('error', error.message || 'Failed to delete user');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle bulk operations
+  const handleBulkAction = async (action) => {
+    if (selectedUsers.length === 0) {
+      showToast('warning', 'No users selected');
+      return;
+    }
+
+    const authHeader = authToken;
+    if (!authHeader) {
+      showToast('error', 'Authentication required. Please log in.');
+      return;
+    }
+
+    const validationErrors = validateBulkOperation({
+      operation: action,
+      userIds: selectedUsers
+    });
+    
+    if (validationErrors.length > 0) {
+      showToast('error', validationErrors.join(', '));
+      return;
+    }
+
+    const confirmationMessages = {
+      activate: `Activate ${selectedUsers.length} selected user(s)?`,
+      suspend: `Suspend ${selectedUsers.length} selected user(s)?`,
+      deactivate: `Deactivate ${selectedUsers.length} selected user(s)?`,
+      delete: `Delete ${selectedUsers.length} selected user(s)?`,
+      reset_password: `Reset password for ${selectedUsers.length} selected user(s)?`
+    };
+
+    if (!window.confirm(confirmationMessages[action] || 'Confirm action?')) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await bulkUserOperation(authHeader, {
+        operation: action,
+        userIds: selectedUsers
+      });
+      
+      const processedResponse = handleUserManagementResponse(response);
+      const result = extractBulkOperationResults(processedResponse);
+      
+      if (result.processedCount > 0) {
+        showToast('success', `${action} completed for ${result.processedCount} user(s)`);
+        if (result.failedCount > 0) {
+          showToast('warning', `${result.failedCount} user(s) failed: ${result.failedUsers?.join(', ') || 'Unknown'}`);
+        }
+        loadUsers();
+        loadStatistics();
+        
+        if (action === 'delete') {
+          setSelectedUsers([]);
+        }
+      } else {
+        showToast('error', 'No users were processed');
+      }
+    } catch (error) {
+      console.error('Error performing bulk operation:', error);
+      showToast('error', error.message || 'Failed to perform bulk operation');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle reset password
+  const handleResetPassword = async (user, resetData) => {
+    const authHeader = authToken;
+    if (!authHeader) {
+      showToast('error', 'Authentication required. Please log in.');
+      return false;
+    }
+
+    setLoading(true);
+    try {
+      const response = await resetUserPassword(authHeader, user.id, resetData);
+      const processedResponse = handleUserManagementResponse(response);
+      const result = extractResetPasswordResults(processedResponse);
+      
+      if (result.success) {
+        showToast('success', result.message);
+        return true;
+      } else {
+        showToast('error', result.message || 'Failed to reset password');
+        return false;
+      }
+    } catch (error) {
+      console.error('Error resetting password:', error);
+      showToast('error', error.message || 'Failed to reset password');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle search users
+  const handleSearchUsers = async (searchData) => {
+    const authHeader = authToken;
+    if (!authHeader) {
+      showToast('error', 'Authentication required. Please log in.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const validationErrors = validateSearchUsers(searchData);
+      if (validationErrors.length > 0) {
+        showToast('error', validationErrors.join(', '));
+        return;
+      }
+
+      const response = await searchUsers(authHeader, searchData);
+      const processedResponse = handleUserManagementResponse(response);
+      const result = extractSearchUsersResults(processedResponse);
+      
+      setUsers(result.results || []);
+      setCurrentPage(1);
+      
+    } catch (error) {
+      console.error('Error searching users:', error);
+      showToast('error', error.message || 'Failed to search users');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle import users
+  const handleImportUsersFromFile = async (importData) => {
+    const authHeader = authToken;
+    if (!authHeader) {
+      showToast('error', 'Authentication required. Please log in.');
+      return false;
+    }
+
+    setLoading(true);
+    try {
+      const validationErrors = validateImportUsers(importData);
+      if (validationErrors.length > 0) {
+        showToast('error', validationErrors.join(', '));
+        return false;
+      }
+
+      const response = await importUsers(authHeader, importData);
+      const processedResponse = handleUserManagementResponse(response);
+      const result = extractImportUsersResults(processedResponse);
+      
+      if (result.status === 'completed') {
+        showToast('success', `Imported ${result.importedCount} users successfully`);
+        loadUsers();
+        loadStatistics();
+        return true;
+      } else {
+        showToast('error', `Import failed: ${result.summary?.validationErrors || 'Unknown error'}`);
+        return false;
+      }
+    } catch (error) {
+      console.error('Error importing users:', error);
+      showToast('error', error.message || 'Failed to import users');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle export users
+  const handleExportData = async (exportData) => {
+    const authHeader = authToken;
+    if (!authHeader) {
+      showToast('error', 'Authentication required. Please log in.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const validationErrors = validateExportUsers(exportData);
+      if (validationErrors.length > 0) {
+        showToast('error', validationErrors.join(', '));
+        return;
+      }
+
+      const response = await exportUsers(authHeader, exportData);
+      const processedResponse = handleUserManagementResponse(response);
+      const result = extractExportUsersResults(processedResponse);
+      
+      if (result.status === 'ready') {
+        const downloadLink = document.createElement('a');
+        downloadLink.href = result.exportData?.downloadUrl || '#';
+        downloadLink.download = `users-export-${new Date().toISOString().split('T')[0]}.${exportData.format}`;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+        
+        showToast('success', 'Export completed successfully');
+      } else {
+        showToast('error', 'Export failed');
+      }
+    } catch (error) {
+      console.error('Error exporting users:', error);
+      showToast('error', error.message || 'Failed to export users');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle update user status
+  const handleToggleUserStatus = async (user, newStatus) => {
+    const authHeader = authToken;
+    if (!authHeader) {
+      showToast('error', 'Authentication required. Please log in.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const validationErrors = validateUpdateStatus(newStatus);
+      if (validationErrors.length > 0) {
+        showToast('error', validationErrors.join(', '));
+        return;
+      }
+
+      const response = await updateUserStatus(authHeader, user.id, newStatus);
+      const processedResponse = handleUserManagementResponse(response);
+      const result = extractUpdateStatusResults(processedResponse);
+      
+      if (result.success) {
+        showToast('success', result.message);
+        loadUsers();
+        loadStatistics();
+      } else {
+        showToast('error', result.message || 'Failed to update status');
+      }
+    } catch (error) {
+      console.error('Error updating user status:', error);
+      showToast('error', error.message || 'Failed to update user status');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle load roles and permissions
+  const handleLoadRolesAndPermissions = async () => {
+    const authHeader = authToken;
+    if (!authHeader) {
+      showToast('error', 'Authentication required. Please log in.');
+      return null;
+    }
+
+    setLoading(true);
+    try {
+      const response = await getRolesAndPermissions(authHeader);
+      const processedResponse = handleUserManagementResponse(response);
+      return extractRoles(processedResponse);
+    } catch (error) {
+      console.error('Error loading roles and permissions:', error);
+      showToast('error', error.message || 'Failed to load roles and permissions');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle validate user data
+  const handleValidateUserData = async (validationData) => {
+    const authHeader = authToken;
+    if (!authHeader) {
+      showToast('error', 'Authentication required. Please log in.');
+      return null;
+    }
+
+    try {
+      const validationErrors = validateUserDataRequest(validationData);
+      if (validationErrors.length > 0) {
+        showToast('error', validationErrors.join(', '));
+        return null;
+      }
+
+      const response = await validateUserData(authHeader, validationData);
+      const processedResponse = handleUserManagementResponse(response);
+      return extractValidationResults(processedResponse);
+    } catch (error) {
+      console.error('Error validating user data:', error);
+      showToast('error', error.message || 'Failed to validate user data');
+      return null;
+    }
+  };
+
+  // Load user activity
+  const handleLoadUserActivity = async (userId, startDate = null, endDate = null) => {
+    const authHeader = authToken;
+    if (!authHeader) {
+      showToast('error', 'Authentication required. Please log in.');
+      return null;
+    }
+
+    setLoading(true);
+    try {
+      const response = await getUserActivity(authHeader, userId, startDate, endDate);
+      const processedResponse = handleUserManagementResponse(response);
+      return extractUserActivityResults(processedResponse);
+    } catch (error) {
+      console.error('Error loading user activity:', error);
+      showToast('error', error.message || 'Failed to load user activity');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Toast notification
+  const showToast = (type, message) => {
+    if (type === 'error') {
+      alert(`Error: ${message}`);
+    } else if (type === 'warning') {
+      alert(`Warning: ${message}`);
+    } else {
+      alert(`Success: ${message}`);
+    }
+  };
+
+  // Color scheme
   const colors = isDark ? {
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
@@ -477,6 +754,29 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   };
 
   // Role colors
+  const getRoleColorStyle = (role) => {
+    const color = getRoleColor(role) || colors.textSecondary;
+    return {
+      backgroundColor: `${color}20`,
+      color: color
+    };
+  };
+
+  // Status colors
+  const getStatusColorStyle = (status) => {
+    const color = getStatusColor(status) || colors.textSecondary;
+    return {
+      backgroundColor: `${color}20`,
+      color: color
+    };
+  };
+
+  // Security score color
+  const getSecurityColor = (score) => {
+    return getSecurityScoreColor(score) || colors.textSecondary;
+  };
+
+  // Role colors object
   const roleColors = {
     admin: colors.error,
     developer: colors.primary,
@@ -485,7 +785,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     guest: colors.textSecondary
   };
 
-  // Status colors
+  // Status colors object
   const statusColors = {
     active: colors.success,
     inactive: colors.warning,
@@ -494,34 +794,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     archived: colors.textSecondary
   };
 
-  // Initialize stats
-  useEffect(() => {
-    const calculateStats = () => {
-      const totalUsers = users.length;
-      const activeUsers = users.filter(u => u.status === 'active').length;
-      const admins = users.filter(u => u.role === 'admin').length;
-      const developers = users.filter(u => u.role === 'developer').length;
-      const pendingUsers = users.filter(u => u.status === 'pending').length;
-      const suspendedUsers = users.filter(u => u.status === 'suspended').length;
-      const mfaEnabled = users.filter(u => u.mfaEnabled).length;
-      const avgSecurityScore = users.reduce((sum, u) => sum + u.securityScore, 0) / totalUsers;
-
-      setStats({
-        totalUsers,
-        activeUsers,
-        admins,
-        developers,
-        pendingUsers,
-        suspendedUsers,
-        mfaEnabled,
-        avgSecurityScore: Math.round(avgSecurityScore)
-      });
-    };
-
-    calculateStats();
-  }, [users]);
-
-  // Modal management functions
+  // Modal management
   const openModal = (type, data) => {
     setModalStack(prev => [...prev, { type, data }]);
   };
@@ -542,9 +815,9 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   // Filter and sort users
   const filteredUsers = users.filter(user => {
     const matchesSearch = searchQuery === '' || 
-      user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.fullName.toLowerCase().includes(searchQuery.toLowerCase());
+      (user.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.fullName?.toLowerCase().includes(searchQuery.toLowerCase()));
     
     const matchesRole = selectedRole === 'all' || user.role === selectedRole;
     const matchesStatus = selectedStatus === 'all' || user.status === selectedStatus;
@@ -555,18 +828,18 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   const sortedUsers = [...filteredUsers].sort((a, b) => {
     if (sortField === 'lastActive') {
       return sortDirection === 'asc' 
-        ? new Date(a.lastActive) - new Date(b.lastActive)
-        : new Date(b.lastActive) - new Date(a.lastActive);
+        ? new Date(a.lastActive || 0) - new Date(b.lastActive || 0)
+        : new Date(b.lastActive || 0) - new Date(a.lastActive || 0);
     }
     if (sortField === 'fullName') {
       return sortDirection === 'asc'
-        ? a.fullName.localeCompare(b.fullName)
-        : b.fullName.localeCompare(a.fullName);
+        ? (a.fullName || '').localeCompare(b.fullName || '')
+        : (b.fullName || '').localeCompare(a.fullName || '');
     }
     if (sortField === 'joinedDate') {
       return sortDirection === 'asc'
-        ? new Date(a.joinedDate) - new Date(b.joinedDate)
-        : new Date(b.joinedDate) - new Date(a.joinedDate);
+        ? new Date(a.joinedDate || 0) - new Date(b.joinedDate || 0)
+        : new Date(b.joinedDate || 0) - new Date(a.joinedDate || 0);
     }
     return 0;
   });
@@ -594,84 +867,72 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     );
   };
 
-  const handleDeleteUser = (user) => {
-    if (window.confirm(`Are you sure you want to delete ${user.fullName}?`)) {
-      setUsers(prev => prev.filter(u => u.id !== user.id));
-      setSelectedUsers(prev => prev.filter(id => id !== user.id));
-    }
-  };
-
-  const handleToggleUserStatus = (user, newStatus) => {
-    setUsers(prev => prev.map(u => 
-      u.id === user.id ? { ...u, status: newStatus } : u
-    ));
-  };
-
-  const handleRefresh = () => {
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      console.log('User list refreshed');
-    }, 1000);
+  const handleRefresh = async () => {
+    await loadUsers();
+    await loadStatistics();
   };
 
   const handleSort = (field) => {
     if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+      const newDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+      setSortDirection(newDirection);
+      
+      loadUsers({
+        sortField: field,
+        sortDirection: newDirection
+      });
     } else {
       setSortField(field);
       setSortDirection('asc');
+      
+      loadUsers({
+        sortField: field,
+        sortDirection: 'asc'
+      });
     }
   };
 
-  const handleExportData = () => {
-    console.log('Exporting user data...');
-    alert('Export functionality would generate a CSV file in a real application');
+  const handleSearchChange = (value) => {
+    setSearchQuery(value);
+    clearTimeout(window.searchTimeout);
+    window.searchTimeout = setTimeout(() => {
+      if (value.trim()) {
+        handleSearchUsers({ query: value });
+      } else {
+        loadUsers({ searchQuery: '' });
+      }
+    }, 500);
   };
 
-  const handleImportUsers = () => {
-    openModal('importUsers', {});
+  const handleRoleFilterChange = (value) => {
+    setSelectedRole(value);
+    loadUsers({ roleFilter: value });
   };
 
-  const handleViewUserDetails = (user) => {
-    openModal('userDetails', user);
+  const handleStatusFilterChange = (value) => {
+    setSelectedStatus(value);
+    loadUsers({ statusFilter: value });
+  };
+
+  const handleViewUserDetails = async (user) => {
+    const userDetails = await loadUserDetails(user.id);
+    if (userDetails) {
+      openModal('userDetails', userDetails);
+    }
   };
 
   const handleEditUser = (user) => {
     openModal('editUser', user);
   };
 
-  const handleResetPassword = (user) => {
-    openModal('resetPassword', user);
+  const handleImportUsers = () => {
+    openModal('importUsers', {});
   };
 
-  const handleBulkAction = (action) => {
-    switch(action) {
-      case 'activate':
-        setUsers(prev => prev.map(user => 
-          selectedUsers.includes(user.id) ? { ...user, status: 'active' } : user
-        ));
-        break;
-      case 'suspend':
-        setUsers(prev => prev.map(user => 
-          selectedUsers.includes(user.id) ? { ...user, status: 'suspended' } : user
-        ));
-        break;
-      case 'delete':
-        if (window.confirm(`Delete ${selectedUsers.length} selected users?`)) {
-          setUsers(prev => prev.filter(user => !selectedUsers.includes(user.id)));
-          setSelectedUsers([]);
-        }
-        break;
-    }
+  const handleRowClick = async (user) => {
+    await handleViewUserDetails(user);
   };
 
-  // NEW: Handle row click to show modal
-  const handleRowClick = (user) => {
-    handleViewUserDetails(user);
-  };
-
-  // Responsive icon size function
   const getResponsiveIconSize = () => {
     if (typeof window !== 'undefined') {
       if (window.innerWidth < 480) return 12;
@@ -679,6 +940,167 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
       return 14;
     }
     return 14;
+  };
+
+  // Side Navigation Component
+  const SideNavigation = () => {
+    const [expandedSections, setExpandedSections] = useState(['users', 'security', 'roles']);
+    
+    const sideNavItems = [
+      {
+        id: 'users',
+        label: 'User Management',
+        icon: <Users size={16} />,
+        subItems: [
+          { id: 'all-users', label: 'All Users', icon: <UsersIcon size={12} /> },
+          { id: 'active-users', label: 'Active Users', icon: <UserCheck size={12} /> },
+          { id: 'pending-users', label: 'Pending Users', icon: <Clock size={12} /> },
+          { id: 'suspended-users', label: 'Suspended Users', icon: <UserX size={12} /> }
+        ]
+      },
+      {
+        id: 'roles',
+        label: 'Roles & Permissions',
+        icon: <Shield size={16} />,
+        subItems: [
+          { id: 'role-management', label: 'Role Management', icon: <ShieldIcon size={12} /> },
+          { id: 'permission-sets', label: 'Permission Sets', icon: <KeyRound size={12} /> },
+          { id: 'access-control', label: 'Access Control', icon: <Lock size={12} /> }
+        ]
+      },
+      {
+        id: 'security',
+        label: 'Security',
+        icon: <ShieldCheck size={16} />,
+        subItems: [
+          { id: 'mfa-settings', label: 'MFA Settings', icon: <ShieldCheckIcon size={12} /> },
+          { id: 'password-policies', label: 'Password Policies', icon: <KeyIcon size={12} /> },
+          { id: 'login-security', label: 'Login Security', icon: <LogIn size={12} /> },
+          { id: 'session-management', label: 'Session Management', icon: <ClockIcon size={12} /> }
+        ]
+      }
+    ];
+
+    const toggleSection = (sectionId) => {
+      setExpandedSections(prev =>
+        prev.includes(sectionId)
+          ? prev.filter(id => id !== sectionId)
+          : [...prev, sectionId]
+      );
+    };
+
+    return (
+      <div className="w-80 border-r flex flex-col h-full" style={{ 
+        backgroundColor: colors.sidebar,
+        borderColor: colors.border
+      }}>
+        <div className="p-4 border-b" style={{ borderColor: colors.border }}>
+          <div className="relative mb-3">
+            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
+            <input 
+              type="text" 
+              placeholder="Search users..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-8 pr-3 py-2 rounded text-sm focus:outline-none hover-lift"
+              style={{ 
+                backgroundColor: colors.inputBg, 
+                border: `1px solid ${colors.border}`, 
+                color: colors.text 
+              }} 
+            />
+          </div>
+          
+          <div className="flex gap-2">
+            <button 
+              onClick={() => openModal('editUser', { id: 'new' })}
+              className="flex-1 px-3 py-2 rounded text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2 justify-center"
+              style={{ 
+                backgroundColor: colors.primaryDark,
+                color: 'white'
+              }}
+            >
+              <UserPlus size={12} />
+              <span>Add User</span>
+            </button>
+            <button 
+              onClick={handleImportUsers}
+              className="px-3 py-2 rounded text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2"
+              style={{ 
+                backgroundColor: colors.hover,
+                color: colors.text
+              }}
+            >
+              <Upload size={12} />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-auto p-2">
+          {sideNavItems.map((item) => (
+            <div key={item.id} className="mb-1">
+              <button
+                onClick={() => toggleSection(item.id)}
+                className={`w-full flex items-center gap-2 px-3 py-2.5 rounded text-sm transition-all duration-200 hover-lift mb-1`}
+                style={{ 
+                  backgroundColor: expandedSections.includes(item.id) ? colors.selected : colors.hover,
+                  color: expandedSections.includes(item.id) ? colors.primary : colors.text
+                }}
+              >
+                <span style={{ 
+                  color: expandedSections.includes(item.id) ? colors.primary : colors.textSecondary 
+                }}>
+                  {item.icon}
+                </span>
+                <span className="flex-1 text-left truncate">{item.label}</span>
+                {item.subItems && (
+                  <ChevronDown 
+                    size={12} 
+                    className={`transition-transform duration-200 ${
+                      expandedSections.includes(item.id) ? 'rotate-0' : '-rotate-90'
+                    }`}
+                    style={{ color: colors.textSecondary }}
+                  />
+                )}
+              </button>
+
+              {item.subItems && expandedSections.includes(item.id) && (
+                <div className="ml-6 mb-2 border-l-2" style={{ borderColor: colors.border }}>
+                  {item.subItems.map((subItem) => (
+                    <button
+                      key={subItem.id}
+                      onClick={() => {
+                        console.log(`Navigating to ${subItem.label}`);
+                        if (subItem.id === 'all-users') {
+                          setSelectedRole('all');
+                          setSelectedStatus('all');
+                        } else if (subItem.id === 'active-users') {
+                          setSelectedStatus('active');
+                        } else if (subItem.id === 'pending-users') {
+                          setSelectedStatus('pending');
+                        } else if (subItem.id === 'suspended-users') {
+                          setSelectedStatus('suspended');
+                        }
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors hover:bg-opacity-50 ml-2 mt-0.5 hover-lift"
+                      style={{ 
+                        backgroundColor: colors.hover,
+                        color: colors.textSecondary
+                      }}
+                    >
+                      <span style={{ color: colors.textTertiary }}>
+                        {subItem.icon}
+                      </span>
+                      <span className="truncate">{subItem.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   // Modal Components
@@ -738,15 +1160,21 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
 
   // User Details Modal
   const UserDetailsModal = ({ data: user }) => {
+    const [userDetails, setUserDetails] = useState(user);
+    const [activityLog, setActivityLog] = useState([]);
+
+    useEffect(() => {
+      if (user?.id) {
+        handleLoadUserActivity(user.id).then(data => {
+          if (data) {
+            setActivityLog(data.activities || []);
+          }
+        });
+      }
+    }, [user?.id]);
+
     const formatDate = (dateString) => {
-      const date = new Date(dateString);
-      return date.toLocaleDateString('en-US', { 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
+      return formatDateForDisplay(dateString, true) || '';
     };
 
     const getPermissionColor = (permission) => {
@@ -767,51 +1195,42 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
         onBack={closeModal}
       >
         <div className="space-y-6">
-          {/* Header Section */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 rounded-xl" style={{ 
             backgroundColor: colors.card,
             border: `1px solid ${colors.border}`
           }}>
             <div 
               className="w-16 h-16 rounded-full flex items-center justify-center text-white font-medium text-xl"
-              style={{ backgroundColor: user?.avatarColor }}
+              style={{ backgroundColor: userDetails?.avatarColor || colors.primary }}
             >
-              {user?.fullName?.split(' ').map(n => n[0]).join('')}
+              {userDetails?.fullName?.split(' ').map(n => n[0]).join('') || '??'}
             </div>
             <div className="flex-1 min-w-0">
               <h4 className="text-xl font-bold truncate" style={{ color: colors.text }}>
-                {user?.fullName}
+                {userDetails?.fullName || 'Unknown User'}
               </h4>
               <div className="flex flex-wrap items-center gap-2 mt-1">
                 <div className="flex items-center gap-1 text-sm">
                   <UserCircle size={14} style={{ color: colors.textSecondary }} />
-                  <span style={{ color: colors.textSecondary }}>@{user?.username}</span>
+                  <span style={{ color: colors.textSecondary }}>@{userDetails?.username || 'unknown'}</span>
                 </div>
                 <div 
                   className="px-2 py-0.5 rounded-full text-xs font-medium"
-                  style={{ 
-                    backgroundColor: `${roleColors[user?.role]}20`,
-                    color: roleColors[user?.role]
-                  }}
+                  style={getRoleColorStyle(userDetails?.role)}
                 >
-                  {user?.role}
+                  {getUserRoleDisplayName(userDetails?.role)}
                 </div>
                 <div 
                   className="px-2 py-0.5 rounded-full text-xs font-medium"
-                  style={{ 
-                    backgroundColor: `${statusColors[user?.status]}20`,
-                    color: statusColors[user?.status]
-                  }}
+                  style={getStatusColorStyle(userDetails?.status)}
                 >
-                  {user?.status}
+                  {getUserStatusDisplayName(userDetails?.status)}
                 </div>
               </div>
             </div>
           </div>
 
-          {/* User Information Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Basic Information */}
             <div className="space-y-4">
               <div>
                 <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
@@ -823,21 +1242,9 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                     <Mail size={14} style={{ color: colors.textSecondary }} />
                     <div className="flex-1">
                       <div className="text-xs" style={{ color: colors.textSecondary }}>Email</div>
-                      <div className="text-sm truncate" style={{ color: colors.text }}>{user?.email}</div>
+                      <div className="text-sm truncate" style={{ color: colors.text }}>{userDetails?.email || 'No email'}</div>
                     </div>
-                    {user?.emailVerified ? (
-                      <CheckCircle size={14} style={{ color: colors.success }} />
-                    ) : (
-                      <XCircle size={14} style={{ color: colors.error }} />
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Phone size={14} style={{ color: colors.textSecondary }} />
-                    <div className="flex-1">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Phone</div>
-                      <div className="text-sm" style={{ color: colors.text }}>+1 (555) 123-4567</div>
-                    </div>
-                    {user?.phoneVerified ? (
+                    {userDetails?.emailVerified ? (
                       <CheckCircle size={14} style={{ color: colors.success }} />
                     ) : (
                       <XCircle size={14} style={{ color: colors.error }} />
@@ -847,13 +1254,26 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                     <Building size={14} style={{ color: colors.textSecondary }} />
                     <div className="flex-1">
                       <div className="text-xs" style={{ color: colors.textSecondary }}>Department</div>
-                      <div className="text-sm" style={{ color: colors.text }}>{user?.department}</div>
+                      <div className="text-sm" style={{ color: colors.text }}>{userDetails?.department || 'Not specified'}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <MapPin size={14} style={{ color: colors.textSecondary }} />
+                    <div className="flex-1">
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>Location</div>
+                      <div className="text-sm" style={{ color: colors.text }}>{userDetails?.location || 'Not specified'}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Globe size={14} style={{ color: colors.textSecondary }} />
+                    <div className="flex-1">
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>Timezone</div>
+                      <div className="text-sm" style={{ color: colors.text }}>{userDetails?.timezone || 'Not specified'}</div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Security Information */}
               <div>
                 <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
                   <Shield size={16} />
@@ -865,7 +1285,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                       <ShieldCheck size={14} style={{ color: colors.textSecondary }} />
                       <span className="text-sm" style={{ color: colors.text }}>MFA Enabled</span>
                     </div>
-                    {user?.mfaEnabled ? (
+                    {userDetails?.mfaEnabled ? (
                       <CheckCircle size={14} style={{ color: colors.success }} />
                     ) : (
                       <XCircle size={14} style={{ color: colors.error }} />
@@ -876,20 +1296,26 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                       <Key size={14} style={{ color: colors.textSecondary }} />
                       <span className="text-sm" style={{ color: colors.text }}>API Keys</span>
                     </div>
-                    <span className="text-sm font-medium" style={{ color: colors.text }}>{user?.apiKeys || 0}</span>
+                    <span className="text-sm font-medium" style={{ color: colors.text }}>{userDetails?.apiKeys || 0}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Database size={14} style={{ color: colors.textSecondary }} />
                       <span className="text-sm" style={{ color: colors.text }}>API Access Count</span>
                     </div>
-                    <span className="text-sm font-medium" style={{ color: colors.text }}>{user?.apiAccessCount || 0}</span>
+                    <span className="text-sm font-medium" style={{ color: colors.text }}>{userDetails?.apiAccessCount || 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Server size={14} style={{ color: colors.textSecondary }} />
+                      <span className="text-sm" style={{ color: colors.text }}>Active Sessions</span>
+                    </div>
+                    <span className="text-sm font-medium" style={{ color: colors.text }}>{userDetails?.activeSessions || 0}</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Activity Information */}
             <div className="space-y-4">
               <div>
                 <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
@@ -901,27 +1327,33 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                     <Clock size={14} style={{ color: colors.textSecondary }} />
                     <div className="flex-1">
                       <div className="text-xs" style={{ color: colors.textSecondary }}>Last Active</div>
-                      <div className="text-sm" style={{ color: colors.text }}>{formatDate(user?.lastActive)}</div>
+                      <div className="text-sm" style={{ color: colors.text }}>{formatDate(userDetails?.lastActive)}</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Calendar size={14} style={{ color: colors.textSecondary }} />
                     <div className="flex-1">
                       <div className="text-xs" style={{ color: colors.textSecondary }}>Joined Date</div>
-                      <div className="text-sm" style={{ color: colors.text }}>{formatDate(user?.joinedDate)}</div>
+                      <div className="text-sm" style={{ color: colors.text }}>{formatDate(userDetails?.joinedDate)}</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <MapPin size={14} style={{ color: colors.textSecondary }} />
+                    <LogIn size={14} style={{ color: colors.textSecondary }} />
                     <div className="flex-1">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Location</div>
-                      <div className="text-sm" style={{ color: colors.text }}>{user?.location}</div>
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>Total Logins</div>
+                      <div className="text-sm" style={{ color: colors.text }}>{userDetails?.totalLogins || 0}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert size={14} style={{ color: colors.textSecondary }} />
+                    <div className="flex-1">
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>Failed Logins</div>
+                      <div className="text-sm" style={{ color: colors.error }}>{userDetails?.failedLogins || 0}</div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Security Score */}
               <div>
                 <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
                   <ShieldCheck size={16} />
@@ -932,10 +1364,9 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                     <span className="text-sm" style={{ color: colors.text }}>Score</span>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold" style={{ 
-                        color: user?.securityScore >= 80 ? colors.success : 
-                               user?.securityScore >= 60 ? colors.warning : colors.error 
+                        color: getSecurityColor(userDetails?.securityScore)
                       }}>
-                        {user?.securityScore}/100
+                        {userDetails?.securityScore || 0}/100
                       </span>
                     </div>
                   </div>
@@ -943,20 +1374,19 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                     <div 
                       className="h-full rounded-full transition-all duration-300"
                       style={{ 
-                        width: `${user?.securityScore || 0}%`,
-                        backgroundColor: user?.securityScore >= 80 ? colors.success : 
-                                       user?.securityScore >= 60 ? colors.warning : colors.error
+                        width: `${userDetails?.securityScore || 0}%`,
+                        backgroundColor: getSecurityColor(userDetails?.securityScore)
                       }}
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div>
                       <div style={{ color: colors.textSecondary }}>Total Logins</div>
-                      <div style={{ color: colors.text }}>{user?.totalLogins || 0}</div>
+                      <div style={{ color: colors.text }}>{userDetails?.totalLogins || 0}</div>
                     </div>
                     <div>
                       <div style={{ color: colors.textSecondary }}>Failed Logins</div>
-                      <div style={{ color: colors.error }}>{user?.failedLogins || 0}</div>
+                      <div style={{ color: colors.error }}>{userDetails?.failedLogins || 0}</div>
                     </div>
                   </div>
                 </div>
@@ -964,37 +1394,37 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
             </div>
           </div>
 
-          {/* Permissions Section */}
-          <div>
-            <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
-              <KeyRound size={16} />
-              Permissions
-            </h5>
-            <div className="flex flex-wrap gap-2">
-              {user?.permissions?.map((permission, index) => (
-                <div 
-                  key={index}
-                  className="px-3 py-1 rounded-full text-xs font-medium"
-                  style={{ 
-                    backgroundColor: `${getPermissionColor(permission)}20`,
-                    color: getPermissionColor(permission)
-                  }}
-                >
-                  {permission}
-                </div>
-              ))}
+          {userDetails?.permissions && userDetails.permissions.length > 0 && (
+            <div>
+              <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
+                <KeyRound size={16} />
+                Permissions
+              </h5>
+              <div className="flex flex-wrap gap-2">
+                {userDetails.permissions.map((permission, index) => (
+                  <div 
+                    key={index}
+                    className="px-3 py-1 rounded-full text-xs font-medium"
+                    style={{ 
+                      backgroundColor: `${getPermissionColor(permission)}20`,
+                      color: getPermissionColor(permission)
+                    }}
+                  >
+                    {permission}
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Tags Section */}
-          {user?.tags && user.tags.length > 0 && (
+          {userDetails?.tags && userDetails.tags.length > 0 && (
             <div>
               <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
                 <Tag size={16} />
                 Tags
               </h5>
               <div className="flex flex-wrap gap-2">
-                {user.tags.map((tag, index) => (
+                {userDetails.tags.map((tag, index) => (
                   <div 
                     key={index}
                     className="px-2 py-1 rounded text-xs"
@@ -1010,12 +1440,39 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
             </div>
           )}
 
-          {/* Action Buttons */}
+          {activityLog.length > 0 && (
+            <div>
+              <h5 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: colors.text }}>
+                <Activity size={16} />
+                Recent Activity
+              </h5>
+              <div className="space-y-2">
+                {activityLog.slice(0, 5).map((activity, index) => (
+                  <div key={index} className="flex items-center gap-2 p-2 rounded border" style={{ 
+                    borderColor: colors.border,
+                    backgroundColor: colors.hover
+                  }}>
+                    <div className="w-2 h-2 rounded-full" style={{ 
+                      backgroundColor: activity.success ? colors.success : colors.error 
+                    }} />
+                    <div className="flex-1">
+                      <div className="text-xs" style={{ color: colors.text }}>{activity.description}</div>
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>
+                        {formatDateForDisplay(activity.timestamp, true)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <button 
                 onClick={() => {
-                  handleEditUser(user);
+                  closeModal();
+                  setTimeout(() => handleEditUser(userDetails), 100);
                 }}
                 className="px-4 py-2 rounded text-sm font-medium transition-colors hover-lift flex items-center justify-center gap-2"
                 style={{ 
@@ -1028,7 +1485,8 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
               </button>
               <button 
                 onClick={() => {
-                  handleResetPassword(user);
+                  closeModal();
+                  setTimeout(() => openModal('resetPassword', userDetails), 100);
                 }}
                 className="px-4 py-2 rounded text-sm font-medium transition-colors hover-lift flex items-center justify-center gap-2"
                 style={{ 
@@ -1040,9 +1498,9 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                 Reset Password
               </button>
               <button 
-                onClick={() => {
-                  handleDeleteUser(user);
+                onClick={async () => {
                   closeModal();
+                  await handleDeleteUser(userDetails);
                 }}
                 className="px-4 py-2 rounded text-sm font-medium transition-colors hover-lift flex items-center justify-center gap-2"
                 style={{ 
@@ -1069,16 +1527,78 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
       role: user?.role || 'viewer',
       status: user?.status || 'pending',
       department: user?.department || '',
+      location: user?.location || '',
       mfaEnabled: user?.mfaEnabled || false,
       emailVerified: user?.emailVerified || false,
-      phoneVerified: user?.phoneVerified || false
+      phoneVerified: user?.phoneVerified || false,
+      tags: user?.tags || []
     });
 
-    const handleSubmit = (e) => {
+    const [roles, setRoles] = useState([]);
+    const [validationResult, setValidationResult] = useState(null);
+
+    useEffect(() => {
+      handleLoadRolesAndPermissions().then(data => {
+        if (data && data.roles) {
+          setRoles(data.roles);
+        }
+      });
+    }, []);
+
+    useEffect(() => {
+      if (formData.email || formData.username) {
+        const validate = async () => {
+          const result = await handleValidateUserData({
+            email: formData.email,
+            username: formData.username,
+            userId: user?.id || null
+          });
+          setValidationResult(result);
+        };
+        validate();
+      }
+    }, [formData.email, formData.username]);
+
+    const handleSubmit = async (e) => {
       e.preventDefault();
-      console.log('Updating user:', formData);
-      // Update user logic would go here
-      closeModal();
+      
+      if (user?.id === 'new') {
+        const success = await handleCreateUser({
+          ...formData,
+          password: 'TemporaryPassword123!',
+          department: formData.department || 'Engineering',
+          location: formData.location || 'New York, NY'
+        });
+        
+        if (success) {
+          closeModal();
+        }
+      } else {
+        const success = await handleUpdateUser(user.id, formData);
+        if (success) {
+          closeModal();
+        }
+      }
+    };
+
+    const handleTagInput = (e) => {
+      if (e.key === 'Enter' && e.target.value.trim()) {
+        const newTag = e.target.value.trim();
+        if (!formData.tags.includes(newTag)) {
+          setFormData(prev => ({
+            ...prev,
+            tags: [...prev.tags, newTag]
+          }));
+        }
+        e.target.value = '';
+      }
+    };
+
+    const removeTag = (tagToRemove) => {
+      setFormData(prev => ({
+        ...prev,
+        tags: prev.tags.filter(tag => tag !== tagToRemove)
+      }));
     };
 
     return (
@@ -1089,10 +1609,28 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
         onBack={closeModal}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
+          {validationResult && !validationResult.valid && (
+            <div className="p-3 rounded border" style={{ 
+              borderColor: colors.error,
+              backgroundColor: `${colors.error}20`
+            }}>
+              <div className="text-sm font-medium mb-1" style={{ color: colors.error }}>
+                Validation Issues
+              </div>
+              <ul className="text-xs space-y-1">
+                {validationResult.issues.map((issue, index) => (
+                  <li key={index} style={{ color: colors.textSecondary }}>
+                    • {issue.field}: {issue.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
-                Full Name
+                Full Name *
               </label>
               <input
                 type="text"
@@ -1109,7 +1647,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
             </div>
             <div>
               <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
-                Username
+                Username *
               </label>
               <input
                 type="text"
@@ -1126,7 +1664,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
             </div>
             <div>
               <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
-                Email
+                Email *
               </label>
               <input
                 type="email"
@@ -1143,7 +1681,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
             </div>
             <div>
               <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
-                Role
+                Role *
               </label>
               <select
                 value={formData.role}
@@ -1154,16 +1692,19 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                   borderColor: colors.inputBorder,
                   color: colors.text
                 }}
+                required
               >
-                <option value="admin">Admin</option>
-                <option value="developer">Developer</option>
-                <option value="viewer">Viewer</option>
-                <option value="moderator">Moderator</option>
+                <option value="">Select Role</option>
+                {roles.map(role => (
+                  <option key={role.id} value={role.id}>
+                    {role.name}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
               <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
-                Status
+                Status *
               </label>
               <select
                 value={formData.status}
@@ -1174,6 +1715,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                   borderColor: colors.inputBorder,
                   color: colors.text
                 }}
+                required
               >
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
@@ -1197,6 +1739,61 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                 }}
               />
             </div>
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+                Location
+              </label>
+              <input
+                type="text"
+                value={formData.location}
+                onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
+                }}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+              Tags
+            </label>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {formData.tags.map((tag, index) => (
+                <div 
+                  key={index}
+                  className="px-2 py-1 rounded flex items-center gap-1 text-xs"
+                  style={{ 
+                    backgroundColor: colors.hover,
+                    color: colors.textSecondary
+                  }}
+                >
+                  {tag}
+                  <button
+                    type="button"
+                    onClick={() => removeTag(tag)}
+                    className="p-0.5 rounded hover:bg-opacity-50 transition-colors"
+                    style={{ backgroundColor: colors.hover }}
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <input
+              type="text"
+              placeholder="Type tag and press Enter..."
+              onKeyDown={handleTagInput}
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                borderColor: colors.inputBorder,
+                color: colors.text
+              }}
+            />
           </div>
 
           <div className="space-y-2">
@@ -1224,18 +1821,6 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                 Email Verified
               </label>
             </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="phoneVerified"
-                checked={formData.phoneVerified}
-                onChange={(e) => setFormData(prev => ({ ...prev, phoneVerified: e.target.checked }))}
-                className="rounded"
-              />
-              <label htmlFor="phoneVerified" className="text-sm" style={{ color: colors.text }}>
-                Phone Verified
-              </label>
-            </div>
           </div>
 
           <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
@@ -1247,6 +1832,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                   backgroundColor: colors.success,
                   color: 'white'
                 }}
+                disabled={validationResult && !validationResult.valid}
               >
                 {user?.id === 'new' ? 'Create User' : 'Update User'}
               </button>
@@ -1270,31 +1856,20 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
 
   // Reset Password Modal
   const ResetPasswordModal = ({ data: user }) => {
-    const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
     const [forceLogout, setForceLogout] = useState(true);
+    const [resetMethod, setResetMethod] = useState('email');
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
       e.preventDefault();
-      if (password !== confirmPassword) {
-        alert('Passwords do not match!');
-        return;
+      
+      const success = await handleResetPassword(user, {
+        forceLogout,
+        resetMethod
+      });
+      
+      if (success) {
+        closeModal();
       }
-      console.log('Resetting password for:', user?.fullName);
-      console.log('Force logout:', forceLogout);
-      // Reset password logic would go here
-      closeModal();
-      alert('Password has been reset successfully!');
-    };
-
-    const generatePassword = () => {
-      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
-      let password = '';
-      for (let i = 0; i < 12; i++) {
-        password += chars.charAt(Math.floor(Math.random() * chars.length));
-      }
-      setPassword(password);
-      setConfirmPassword(password);
     };
 
     return (
@@ -1307,61 +1882,32 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
         <div className="space-y-4">
           <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
             <div className="text-sm font-medium" style={{ color: colors.text }}>
-              Resetting password for: {user?.fullName}
+              Resetting password for: {user?.fullName || user?.username}
             </div>
             <div className="text-xs" style={{ color: colors.textSecondary }}>
-              {user?.email}
+              {user?.email || 'No email'}
             </div>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
-                New Password
+                Reset Method
               </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="flex-1 px-3 py-2 rounded border text-sm"
-                  style={{ 
-                    backgroundColor: colors.inputBg,
-                    borderColor: colors.inputBorder,
-                    color: colors.text
-                  }}
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={generatePassword}
-                  className="px-3 py-2 rounded text-xs font-medium hover-lift"
-                  style={{ 
-                    backgroundColor: colors.info,
-                    color: 'white'
-                  }}
-                >
-                  Generate
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
-                Confirm Password
-              </label>
-              <input
-                type="text"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
+              <select
+                value={resetMethod}
+                onChange={(e) => setResetMethod(e.target.value)}
                 className="w-full px-3 py-2 rounded border text-sm"
                 style={{ 
                   backgroundColor: colors.inputBg,
                   borderColor: colors.inputBorder,
                   color: colors.text
                 }}
-                required
-              />
+              >
+                <option value="email">Email Reset Link</option>
+                <option value="temporary">Generate Temporary Password</option>
+                <option value="sms">SMS Reset Code</option>
+              </select>
             </div>
 
             <div className="flex items-center gap-2">
@@ -1375,6 +1921,16 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
               <label htmlFor="forceLogout" className="text-sm" style={{ color: colors.text }}>
                 Force logout from all devices
               </label>
+            </div>
+
+            <div className="p-3 rounded border" style={{ 
+              borderColor: colors.warning,
+              backgroundColor: `${colors.warning}20`
+            }}>
+              <div className="text-xs" style={{ color: colors.warning }}>
+                <strong>Note:</strong> User will receive password reset instructions via {resetMethod}.
+                {forceLogout && ' All active sessions will be terminated.'}
+              </div>
             </div>
 
             <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
@@ -1412,22 +1968,40 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   const ImportUsersModal = () => {
     const [file, setFile] = useState(null);
     const [importType, setImportType] = useState('csv');
+    const [importOptions, setImportOptions] = useState({
+      sendWelcomeEmail: true,
+      generatePasswords: true,
+      defaultRole: 'viewer'
+    });
 
     const handleFileChange = (e) => {
       setFile(e.target.files[0]);
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
       e.preventDefault();
       if (!file) {
-        alert('Please select a file to import');
+        showToast('error', 'Please select a file to import');
         return;
       }
-      console.log('Importing file:', file.name);
-      console.log('Import type:', importType);
-      // Import logic would go here
-      closeModal();
-      alert('Users imported successfully!');
+
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const base64Content = event.target.result.split(',')[1];
+        
+        const importData = {
+          fileName: file.name,
+          fileType: importType,
+          fileContent: base64Content,
+          options: importOptions
+        };
+
+        const success = await handleImportUsersFromFile(importData);
+        if (success) {
+          closeModal();
+        }
+      };
+      reader.readAsDataURL(file);
     };
 
     return (
@@ -1475,7 +2049,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
 
             <div>
               <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
-                File
+                File *
               </label>
               <input
                 type="file"
@@ -1489,6 +2063,52 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                 }}
                 required
               />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="sendWelcomeEmail"
+                  checked={importOptions.sendWelcomeEmail}
+                  onChange={(e) => setImportOptions(prev => ({ ...prev, sendWelcomeEmail: e.target.checked }))}
+                  className="rounded"
+                />
+                <label htmlFor="sendWelcomeEmail" className="text-sm" style={{ color: colors.text }}>
+                  Send welcome email
+                </label>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="generatePasswords"
+                  checked={importOptions.generatePasswords}
+                  onChange={(e) => setImportOptions(prev => ({ ...prev, generatePasswords: e.target.checked }))}
+                  className="rounded"
+                />
+                <label htmlFor="generatePasswords" className="text-sm" style={{ color: colors.text }}>
+                  Generate passwords automatically
+                </label>
+              </div>
+              <div>
+                <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+                  Default Role
+                </label>
+                <select
+                  value={importOptions.defaultRole}
+                  onChange={(e) => setImportOptions(prev => ({ ...prev, defaultRole: e.target.value }))}
+                  className="w-full px-3 py-2 rounded border text-sm"
+                  style={{ 
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.inputBorder,
+                    color: colors.text
+                  }}
+                >
+                  <option value="viewer">Viewer</option>
+                  <option value="developer">Developer</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
             </div>
 
             <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
@@ -1522,6 +2142,204 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     );
   };
 
+  // Export Users Modal
+  const ExportUsersModal = () => {
+    const [exportFormat, setExportFormat] = useState('csv');
+    const [exportFields, setExportFields] = useState([
+      'id', 'username', 'email', 'fullName', 'role', 'status', 'department', 'lastActive', 'joinedDate', 'securityScore'
+    ]);
+    const [filters, setFilters] = useState({
+      role: '',
+      status: '',
+      department: '',
+      createdAfter: ''
+    });
+
+    const availableFields = [
+      { value: 'id', label: 'ID' },
+      { value: 'username', label: 'Username' },
+      { value: 'email', label: 'Email' },
+      { value: 'fullName', label: 'Full Name' },
+      { value: 'role', label: 'Role' },
+      { value: 'status', label: 'Status' },
+      { value: 'department', label: 'Department' },
+      { value: 'lastActive', label: 'Last Active' },
+      { value: 'joinedDate', label: 'Joined Date' },
+      { value: 'securityScore', label: 'Security Score' },
+      { value: 'mfaEnabled', label: 'MFA Enabled' },
+      { value: 'emailVerified', label: 'Email Verified' },
+      { value: 'location', label: 'Location' },
+      { value: 'timezone', label: 'Timezone' }
+    ];
+
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      
+      const exportData = {
+        format: exportFormat,
+        fields: exportFields,
+        filters: Object.keys(filters).reduce((acc, key) => {
+          if (filters[key]) acc[key] = filters[key];
+          return acc;
+        }, {})
+      };
+
+      await handleExportData(exportData);
+      closeModal();
+    };
+
+    const toggleField = (field) => {
+      if (exportFields.includes(field)) {
+        setExportFields(prev => prev.filter(f => f !== field));
+      } else {
+        setExportFields(prev => [...prev, field]);
+      }
+    };
+
+    return (
+      <MobileModal 
+        title="Export Users" 
+        onClose={closeModal}
+        showBackButton={modalStack.length > 1}
+        onBack={closeModal}
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+              Export Format *
+            </label>
+            <select
+              value={exportFormat}
+              onChange={(e) => setExportFormat(e.target.value)}
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                borderColor: colors.inputBorder,
+                color: colors.text
+              }}
+              required
+            >
+              <option value="csv">CSV</option>
+              <option value="json">JSON</option>
+              <option value="excel">Excel</option>
+              <option value="pdf">PDF</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium mb-2 block" style={{ color: colors.textSecondary }}>
+              Fields to Export
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {availableFields.map(field => (
+                <div key={field.value} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id={`field-${field.value}`}
+                    checked={exportFields.includes(field.value)}
+                    onChange={() => toggleField(field.value)}
+                    className="rounded"
+                  />
+                  <label htmlFor={`field-${field.value}`} className="text-xs" style={{ color: colors.text }}>
+                    {field.label}
+                  </label>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="text-xs font-medium" style={{ color: colors.textSecondary }}>
+              Filter Export Data (Optional)
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={filters.role}
+                onChange={(e) => setFilters(prev => ({ ...prev, role: e.target.value }))}
+                className="px-2 py-1 rounded border text-xs"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
+                }}
+              >
+                <option value="">All Roles</option>
+                <option value="admin">Admin</option>
+                <option value="developer">Developer</option>
+                <option value="viewer">Viewer</option>
+              </select>
+              <select
+                value={filters.status}
+                onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+                className="px-2 py-1 rounded border text-xs"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
+                }}
+              >
+                <option value="">All Status</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="pending">Pending</option>
+                <option value="suspended">Suspended</option>
+              </select>
+              <input
+                type="text"
+                placeholder="Department"
+                value={filters.department}
+                onChange={(e) => setFilters(prev => ({ ...prev, department: e.target.value }))}
+                className="px-2 py-1 rounded border text-xs"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
+                }}
+              />
+              <input
+                type="date"
+                value={filters.createdAfter}
+                onChange={(e) => setFilters(prev => ({ ...prev, createdAfter: e.target.value }))}
+                className="px-2 py-1 rounded border text-xs"
+                style={{ 
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button 
+                type="submit"
+                className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                style={{ 
+                  backgroundColor: colors.success,
+                  color: 'white'
+                }}
+              >
+                Export Users
+              </button>
+              <button 
+                type="button"
+                onClick={closeModal}
+                className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+                style={{ 
+                  backgroundColor: colors.hover,
+                  color: colors.text
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </form>
+      </MobileModal>
+    );
+  };
+
   // Modal Renderer Component
   const ModalRenderer = () => {
     if (modalStack.length === 0) return null;
@@ -1539,176 +2357,24 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
           return <ResetPasswordModal key={index} data={modal.data} />;
         case 'importUsers':
           return <ImportUsersModal key={index} />;
+        case 'exportUsers':
+          return <ExportUsersModal key={index} />;
         default:
           return null;
       }
     });
   };
 
-  // Side Navigation Component
-  const SideNavigation = () => {
-    const [expandedSections, setExpandedSections] = useState(['users', 'security', 'roles']);
+  // Loading Overlay
+  const LoadingOverlay = () => {
+    if (!loading) return null;
     
-    const sideNavItems = [
-      {
-        id: 'users',
-        label: 'User Management',
-        icon: <Users size={16} />,
-        subItems: [
-          { id: 'all-users', label: 'All Users', icon: <UsersIcon size={12} /> },
-          { id: 'active-users', label: 'Active Users', icon: <UserCheck size={12} /> },
-          { id: 'pending-users', label: 'Pending Users', icon: <Clock size={12} /> },
-          { id: 'suspended-users', label: 'Suspended Users', icon: <UserX size={12} /> }
-        ]
-      },
-      {
-        id: 'roles',
-        label: 'Roles & Permissions',
-        icon: <Shield size={16} />,
-        subItems: [
-          { id: 'role-management', label: 'Role Management', icon: <ShieldIcon size={12} /> },
-          { id: 'permission-sets', label: 'Permission Sets', icon: <KeyRound size={12} /> },
-          { id: 'access-control', label: 'Access Control', icon: <Lock size={12} /> }
-        ]
-      },
-      {
-        id: 'security',
-        label: 'Security',
-        icon: <ShieldCheck size={16} />,
-        subItems: [
-          { id: 'mfa-settings', label: 'MFA Settings', icon: <ShieldCheckIcon size={12} /> },
-          { id: 'password-policies', label: 'Password Policies', icon: <KeyIcon size={12} /> },
-          { id: 'login-security', label: 'Login Security', icon: <LogIn size={12} /> },
-          { id: 'session-management', label: 'Session Management', icon: <ClockIcon size={12} /> }
-        ]
-      }
-    ];
-
-    const toggleSection = (sectionId) => {
-      setExpandedSections(prev =>
-        prev.includes(sectionId)
-          ? prev.filter(id => id !== sectionId)
-          : [...prev, sectionId]
-      );
-    };
-
     return (
-      <div className="w-80 border-r flex flex-col h-full" style={{ 
-        backgroundColor: colors.sidebar,
-        borderColor: colors.border
-      }}>
-        {/* Header */}
-        <div className="p-4 border-b" style={{ borderColor: colors.border }}>
-      
-          {/* Search */}
-          <div className="relative mb-3">
-            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
-            <input 
-              type="text" 
-              placeholder="Search users..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-2 rounded text-sm focus:outline-none hover-lift"
-              style={{ 
-                backgroundColor: colors.inputBg, 
-                border: `1px solid ${colors.border}`, 
-                color: colors.text 
-              }} 
-            />
-          </div>
-          
-          {/* Quick Actions */}
-          <div className="flex gap-2">
-            <button 
-              onClick={() => openModal('editUser', { id: 'new' })}
-              className="flex-1 px-3 py-2 rounded text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2 justify-center"
-              style={{ 
-                backgroundColor: colors.primaryDark,
-                color: 'white'
-              }}
-            >
-              <UserPlus size={12} />
-              <span>Add User</span>
-            </button>
-            <button 
-              onClick={handleImportUsers}
-              className="px-3 py-2 rounded text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2"
-              style={{ 
-                backgroundColor: colors.hover,
-                color: colors.text
-              }}
-            >
-              <Upload size={12} />
-            </button>
-          </div>
+      <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="bg-white p-6 rounded-lg shadow-lg flex flex-col items-center gap-3">
+          <RefreshCw className="animate-spin" size={24} style={{ color: colors.primary }} />
+          <div className="text-sm" style={{ color: colors.text }}>Loading...</div>
         </div>
-
-        {/* Navigation Items */}
-        <div className="flex-1 overflow-auto p-2">
-          {sideNavItems.map((item) => (
-            <div key={item.id} className="mb-1">
-              <button
-                onClick={() => toggleSection(item.id)}
-                className={`w-full flex items-center gap-2 px-3 py-2.5 rounded text-sm transition-all duration-200 hover-lift mb-1`}
-                style={{ 
-                  backgroundColor: expandedSections.includes(item.id) ? colors.selected : colors.hover,
-                  color: expandedSections.includes(item.id) ? colors.primary : colors.text
-                }}
-              >
-                <span style={{ 
-                  color: expandedSections.includes(item.id) ? colors.primary : colors.textSecondary 
-                }}>
-                  {item.icon}
-                </span>
-                <span className="flex-1 text-left truncate">{item.label}</span>
-                {item.subItems && (
-                  <ChevronDown 
-                    size={12} 
-                    className={`transition-transform duration-200 ${
-                      expandedSections.includes(item.id) ? 'rotate-0' : '-rotate-90'
-                    }`}
-                    style={{ color: colors.textSecondary }}
-                  />
-                )}
-              </button>
-
-              {item.subItems && expandedSections.includes(item.id) && (
-                <div className="ml-6 mb-2 border-l-2" style={{ borderColor: colors.border }}>
-                  {item.subItems.map((subItem) => (
-                    <button
-                      key={subItem.id}
-                      onClick={() => {
-                        console.log(`Navigating to ${subItem.label}`);
-                        // Filter users based on selection
-                        if (subItem.id === 'all-users') {
-                          setSelectedRole('all');
-                          setSelectedStatus('all');
-                        } else if (subItem.id === 'active-users') {
-                          setSelectedStatus('active');
-                        } else if (subItem.id === 'pending-users') {
-                          setSelectedStatus('pending');
-                        } else if (subItem.id === 'suspended-users') {
-                          setSelectedStatus('suspended');
-                        }
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors hover:bg-opacity-50 ml-2 mt-0.5 hover-lift"
-                      style={{ 
-                        backgroundColor: colors.hover,
-                        color: colors.textSecondary
-                      }}
-                    >
-                      <span style={{ color: colors.textTertiary }}>
-                        {subItem.icon}
-                      </span>
-                      <span className="truncate">{subItem.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
       </div>
     );
   };
@@ -1772,16 +2438,16 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
           <div className="flex items-center gap-3">
             <div 
               className="w-10 h-10 rounded-full flex items-center justify-center text-white font-medium text-sm"
-              style={{ backgroundColor: user.avatarColor }}
+              style={{ backgroundColor: user.avatarColor || colors.primary }}
             >
-              {user.fullName.split(' ').map(n => n[0]).join('')}
+              {user.fullName?.split(' ').map(n => n[0]).join('') || '??'}
             </div>
             <div className="min-w-0">
               <div className="text-sm font-semibold truncate" style={{ color: colors.text }}>
-                {user.fullName}
+                {user.fullName || 'Unknown User'}
               </div>
               <div className="text-xs truncate" style={{ color: colors.textSecondary }}>
-                @{user.username}
+                @{user.username || 'unknown'}
               </div>
             </div>
           </div>
@@ -1789,11 +2455,11 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
             <div 
               className="px-2 py-1 rounded-full text-xs font-medium"
               style={{ 
-                backgroundColor: `${roleColors[user.role]}20`,
-                color: roleColors[user.role]
+                backgroundColor: `${roleColors[user.role] || colors.textSecondary}20`,
+                color: roleColors[user.role] || colors.textSecondary
               }}
             >
-              {user.role}
+              {user.role || 'unknown'}
             </div>
             <button
               onClick={(e) => {
@@ -1813,7 +2479,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
             <div className="flex items-center gap-1">
               <Mail size={12} style={{ color: colors.textSecondary }} />
               <span className="text-xs truncate" style={{ color: colors.textSecondary }}>
-                {user.email}
+                {user.email || 'No email'}
               </span>
             </div>
             {user.emailVerified ? (
@@ -1827,17 +2493,17 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
             <div className="flex items-center gap-1">
               <Building size={12} style={{ color: colors.textSecondary }} />
               <span className="text-xs" style={{ color: colors.textSecondary }}>
-                {user.department}
+                {user.department || 'Not specified'}
               </span>
             </div>
             <div 
               className="px-2 py-0.5 rounded-full text-xs"
               style={{ 
-                backgroundColor: `${statusColors[user.status]}20`,
-                color: statusColors[user.status]
+                backgroundColor: `${statusColors[user.status] || colors.textSecondary}20`,
+                color: statusColors[user.status] || colors.textSecondary
               }}
             >
-              {user.status}
+              {user.status || 'unknown'}
             </div>
           </div>
 
@@ -1852,8 +2518,8 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
               {user.mfaEnabled && (
                 <Shield size={12} style={{ color: colors.success }} title="MFA Enabled" />
               )}
-              {user.apiKeys > 0 && (
-                <Key size={12} style={{ color: colors.info }} title={`${user.apiKeys} API keys`} />
+              {(user.apiKeys > 0) && (
+                <Key size={12} style={{ color: colors.info }} title={`${user.apiKeys || 0} API keys`} />
               )}
             </div>
           </div>
@@ -1875,7 +2541,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                handleResetPassword(user);
+                openModal('resetPassword', user);
               }}
               className="flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors hover-lift"
               style={{ 
@@ -1983,6 +2649,16 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     );
   };
 
+  const handleExportClick = () => {
+    openModal('exportUsers', {});
+  };
+
+  const handleSearchInputChange = (e) => {
+    const value = e.target.value;
+    setSearchQuery(value);
+    handleSearchChange(value);
+  };
+
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ 
       backgroundColor: colors.bg,
@@ -2046,10 +2722,10 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
         }
       `}</style>
 
-      {/* Render all active modals */}
+      <LoadingOverlay />
+
       <ModalRenderer />
 
-      {/* TOP NAVIGATION */}
       <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
         backgroundColor: colors.header,
         borderColor: colors.border
@@ -2059,14 +2735,13 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Search */}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
             <input 
               type="text" 
               placeholder="Search user details..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={handleSearchInputChange}
               className="pl-8 pr-3 py-1.5 rounded text-xs focus:outline-none w-64 hover-lift"
               style={{ 
                 backgroundColor: colors.inputBg, 
@@ -2076,7 +2751,10 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
             />
             {searchQuery && (
               <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                <button onClick={() => setSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                <button onClick={() => {
+                  setSearchQuery('');
+                  handleSearchChange('');
+                }} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                   style={{ backgroundColor: colors.hover }}>
                   <X size={12} style={{ color: colors.textSecondary }} />
                 </button>
@@ -2086,16 +2764,12 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="flex-1 overflow-hidden flex">
-        {/* Side Navigation */}
         <SideNavigation />
 
-        {/* Main content area */}
         <div className="flex-1 overflow-hidden">
           <div className="h-full overflow-auto p-6">
             <div className="max-w-8xl mx-auto ml-2 mr-2">
-              {/* Header */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div>
                   <h1 className="text-xl font-bold" style={{ color: colors.text }}>
@@ -2106,7 +2780,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  {/* <button 
+                  <button 
                     onClick={handleRefresh}
                     className="p-2 rounded-lg hover-lift transition-all duration-200"
                     style={{ 
@@ -2114,20 +2788,22 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                       color: colors.text
                     }}
                     title="Refresh"
+                    disabled={loading}
                   >
                     <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-                  </button> */}
-                  {/* <button 
-                    onClick={handleExportData}
+                  </button>
+                  <button 
+                    onClick={handleExportClick}
                     className="px-3 py-2 rounded-lg text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2"
                     style={{ 
                       backgroundColor: colors.hover,
                       color: colors.text
                     }}
+                    disabled={loading}
                   >
                     <Download size={14} />
                     <span className="hidden sm:inline">Export</span>
-                  </button> */}
+                  </button>
                   <button 
                     onClick={handleImportUsers}
                     className="px-3 py-2 rounded-lg text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2"
@@ -2135,6 +2811,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                       backgroundColor: colors.primaryDark,
                       color: 'white'
                     }}
+                    disabled={loading}
                   >
                     <Upload size={14} />
                     <span className="hidden sm:inline">Import Users</span>
@@ -2154,6 +2831,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                       backgroundColor: colors.success,
                       color: 'white'
                     }}
+                    disabled={loading}
                   >
                     <UserPlus size={14} />
                     <span className="hidden sm:inline">Add User</span>
@@ -2162,7 +2840,6 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                 </div>
               </div>
 
-              {/* Stats Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                 <StatCard
                   title="Total Users"
@@ -2191,7 +2868,6 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                 />
               </div>
 
-              {/* Search and Filters */}
               <div className="border rounded-xl mb-6" style={{ 
                 borderColor: colors.border,
                 backgroundColor: colors.card
@@ -2204,25 +2880,27 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                         type="text"
                         placeholder="Search users by name, email, or username..."
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={handleSearchInputChange}
                         className="w-full pl-10 pr-3 py-2 rounded border text-sm"
                         style={{ 
                           backgroundColor: colors.inputBg,
                           borderColor: colors.inputBorder,
                           color: colors.text
                         }}
+                        disabled={loading}
                       />
                     </div>
                     <div className="flex gap-2">
                       <select
                         value={selectedRole}
-                        onChange={(e) => setSelectedRole(e.target.value)}
+                        onChange={(e) => handleRoleFilterChange(e.target.value)}
                         className="px-3 py-2 rounded border text-sm"
                         style={{ 
                           backgroundColor: colors.inputBg,
                           borderColor: colors.inputBorder,
                           color: colors.text
                         }}
+                        disabled={loading}
                       >
                         <option value="all">All Roles</option>
                         <option value="admin">Admin</option>
@@ -2232,13 +2910,14 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                       </select>
                       <select
                         value={selectedStatus}
-                        onChange={(e) => setSelectedStatus(e.target.value)}
+                        onChange={(e) => handleStatusFilterChange(e.target.value)}
                         className="px-3 py-2 rounded border text-sm"
                         style={{ 
                           backgroundColor: colors.inputBg,
                           borderColor: colors.inputBorder,
                           color: colors.text
                         }}
+                        disabled={loading}
                       >
                         <option value="all">All Status</option>
                         <option value="active">Active</option>
@@ -2254,6 +2933,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                           borderColor: colors.border,
                           color: colors.text
                         }}
+                        disabled={loading}
                       >
                         <Filter size={14} />
                       </button>
@@ -2308,7 +2988,6 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                   )}
                 </div>
 
-                {/* Bulk Actions */}
                 {selectedUsers.length > 0 && (
                   <div className="p-3 border-b flex items-center justify-between" style={{ 
                     borderColor: colors.border,
@@ -2325,6 +3004,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                           backgroundColor: colors.success,
                           color: 'white'
                         }}
+                        disabled={loading}
                       >
                         Activate
                       </button>
@@ -2335,6 +3015,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                           backgroundColor: colors.warning,
                           color: 'white'
                         }}
+                        disabled={loading}
                       >
                         Suspend
                       </button>
@@ -2345,6 +3026,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                           backgroundColor: colors.error,
                           color: 'white'
                         }}
+                        disabled={loading}
                       >
                         Delete
                       </button>
@@ -2355,6 +3037,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                           backgroundColor: colors.hover,
                           color: colors.text
                         }}
+                        disabled={loading}
                       >
                         Clear
                       </button>
@@ -2362,7 +3045,6 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                   </div>
                 )}
 
-                {/* Users Table */}
                 <div className="overflow-x-auto">
                   <table className="w-full" style={{ borderColor: colors.border }}>
                     <thead>
@@ -2374,6 +3056,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                             onChange={handleSelectAll}
                             className="rounded border-gray-300"
                             style={{ borderColor: colors.border }}
+                            disabled={loading}
                           />
                         </th>
                         <th 
@@ -2435,70 +3118,64 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                               onChange={() => handleSelectUser(user.id)}
                               className="rounded border-gray-300"
                               style={{ borderColor: colors.border }}
+                              disabled={loading}
                             />
                           </td>
                           <td className="p-3">
                             <div className="flex items-center gap-3">
                               <div 
                                 className="w-8 h-8 rounded-full flex items-center justify-center text-white font-medium text-sm"
-                                style={{ backgroundColor: user.avatarColor }}
+                                style={{ backgroundColor: user.avatarColor || colors.primary }}
                               >
-                                {user.fullName.split(' ').map(n => n[0]).join('')}
+                                {user.fullName?.split(' ').map(n => n[0]).join('') || '??'}
                               </div>
                               <div className="min-w-0">
                                 <div className="text-sm font-semibold truncate" style={{ color: colors.text }}>
-                                  {user.fullName}
+                                  {user.fullName || 'Unknown User'}
                                 </div>
                                 <div className="text-xs truncate" style={{ color: colors.textSecondary }}>
-                                  @{user.username}
+                                  @{user.username || 'unknown'}
                                 </div>
                               </div>
                             </div>
                           </td>
                           <td className="p-3">
                             <div className="text-sm truncate" style={{ color: colors.text }}>
-                              {user.email}
+                              {user.email || 'No email'}
                             </div>
                           </td>
                           <td className="p-3">
                             <div 
                               className="px-2 py-1 rounded-full text-xs font-medium w-fit"
-                              style={{ 
-                                backgroundColor: `${roleColors[user.role]}20`,
-                                color: roleColors[user.role]
-                              }}
+                              style={getRoleColorStyle(user.role)}
                             >
-                              {user.role}
+                              {getUserRoleDisplayName(user.role)}
                             </div>
                           </td>
                           <td className="p-3">
                             <div 
                               className="px-2 py-1 rounded-full text-xs font-medium w-fit"
-                              style={{ 
-                                backgroundColor: `${statusColors[user.status]}20`,
-                                color: statusColors[user.status]
-                              }}
+                              style={getStatusColorStyle(user.status)}
                             >
-                              {user.status}
+                              {getUserStatusDisplayName(user.status)}
                             </div>
                           </td>
                           <td className="p-3">
                             <div className="text-sm" style={{ color: colors.text }}>
-                              {new Date(user.lastActive).toLocaleDateString()}
+                              {formatDateForDisplay(user.lastActive, false)}
                             </div>
                           </td>
                           <td className="p-3">
                             <div className="flex items-center gap-1">
                               <div className="text-sm font-medium" style={{ color: colors.text }}>
-                                {user.securityScore}
+                                {user.securityScore || 0}
                               </div>
                               <div className="w-16 h-1 rounded-full bg-gray-200">
                                 <div 
                                   className="h-full rounded-full"
                                   style={{ 
-                                    width: `${user.securityScore}%`,
-                                    backgroundColor: user.securityScore >= 80 ? colors.success : 
-                                                   user.securityScore >= 60 ? colors.warning : colors.error
+                                    width: `${user.securityScore || 0}%`,
+                                    backgroundColor: getSecurityColor(user.securityScore)
                                   }}
                                 />
                               </div>
@@ -2511,6 +3188,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                                 className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
                                 style={{ backgroundColor: colors.hover }}
                                 title="View Details"
+                                disabled={loading}
                               >
                                 <Eye size={14} style={{ color: colors.textSecondary }} />
                               </button>
@@ -2519,6 +3197,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                                 className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
                                 style={{ backgroundColor: colors.hover }}
                                 title="Edit User"
+                                disabled={loading}
                               >
                                 <Edit size={14} style={{ color: colors.textSecondary }} />
                               </button>
@@ -2527,6 +3206,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                                 className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
                                 style={{ backgroundColor: colors.hover }}
                                 title="Delete User"
+                                disabled={loading}
                               >
                                 <Trash2 size={14} style={{ color: colors.error }} />
                               </button>
@@ -2538,10 +3218,8 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                   </table>
                 </div>
 
-                {/* Pagination */}
                 <Pagination />
               </div>
-
             </div>
           </div>
         </div>

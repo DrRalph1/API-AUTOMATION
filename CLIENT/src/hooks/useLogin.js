@@ -10,7 +10,7 @@ import {
   resetDefaultPassword,
   findUser,
   forgotPassword 
-} from "../controllers/UserManagementController.js";
+} from "../controllers/AuthController.js";
 import {
   verifyOTP,
   sendOTP

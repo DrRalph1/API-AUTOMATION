@@ -39,7 +39,7 @@ public class AuditService {
 
         // Log the audit action itself
 //        auditLogHelper.logAuditAction("CREATE_AUDIT_LOG", performedBy,
-//                String.format("Created audit log for userManagement %s: %s - %s",
+//                String.format("Created audit log for user %s: %s - %s",
 //                        dto.getUserId(), dto.getAction(), dto.getOperation()),
 //                requestId);
 

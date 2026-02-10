@@ -88,7 +88,7 @@ public class SystemLogController {
             return authValidation;
         }
 
-        // Extract userManagement from token
+        // Extract user from token
         String token = jwtHelper.extractTokenFromHeader(req);
         String userId = jwtUtil.extractUserId(token);
 
@@ -162,7 +162,7 @@ public class SystemLogController {
             return authValidation;
         }
 
-        // Extract userManagement from token
+        // Extract user from token
         String token = jwtHelper.extractTokenFromHeader(req);
         String userId = jwtUtil.extractUserId(token);
 
@@ -240,7 +240,7 @@ public class SystemLogController {
             return authValidation;
         }
 
-        // Extract userManagement from token
+        // Extract user from token
         String token = jwtHelper.extractTokenFromHeader(req);
         String userId = jwtUtil.extractUserId(token);
 
@@ -311,7 +311,7 @@ public class SystemLogController {
             return authValidation;
         }
 
-        // Extract userManagement from token
+        // Extract user from token
         String token = jwtHelper.extractTokenFromHeader(req);
         String userId = jwtUtil.extractUserId(token);
 
@@ -371,7 +371,7 @@ public class SystemLogController {
             return authValidation;
         }
 
-        // Extract userManagement from token
+        // Extract user from token
         String token = jwtHelper.extractTokenFromHeader(req);
         String userId = jwtUtil.extractUserId(token);
 
@@ -431,7 +431,7 @@ public class SystemLogController {
             return authValidation;
         }
 
-        // Extract userManagement from token
+        // Extract user from token
         String token = jwtHelper.extractTokenFromHeader(req);
         String userId = jwtUtil.extractUserId(token);
 

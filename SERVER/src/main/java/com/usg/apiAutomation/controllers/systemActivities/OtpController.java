@@ -1,7 +1,7 @@
 package com.usg.apiAutomation.controllers.systemActivities;
 
-import com.usg.apiAutomation.dtos.userManagement.OtpVerificationRequestDTO;
-import com.usg.apiAutomation.dtos.userManagement.UserDTO;
+import com.usg.apiAutomation.dtos.systemActivities.user.OtpVerificationRequestDTO;
+import com.usg.apiAutomation.dtos.systemActivities.user.UserDTO;
 import com.usg.apiAutomation.entities.UserEntity;
 import com.usg.apiAutomation.helpers.JwtHelper;
 import com.usg.apiAutomation.helpers.AuditLogHelper;
@@ -50,7 +50,7 @@ public class OtpController {
     @PostMapping("/verify-otp")
     @Operation(
             summary = "Verify OTP",
-            description = "Verifies the OTP code for userManagement authentication. Requires JWT authentication.",
+            description = "Verifies the OTP code for user authentication. Requires JWT authentication.",
             parameters = {
                     @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
             }
@@ -76,7 +76,7 @@ public class OtpController {
             loggerUtil.log("otp-controller",
                     "Request ID: " + requestId + ", Authorization failed for OTP verification - User: " + request.getUserId());
             auditLogHelper.logAuditAction("VERIFY_OTP_AUTH_FAILED", null,
-                    String.format("Authorization failed for OTP verification for target userManagement %s", request.getUserId()), requestId);
+                    String.format("Authorization failed for OTP verification for target user %s", request.getUserId()), requestId);
             return authValidation;
         }
 
@@ -89,7 +89,7 @@ public class OtpController {
             loggerUtil.log("otp-controller",
                     "Request ID: " + requestId + ", OTP verification requested - User: " + performedBy + ", Target User: " + request.getUserId());
             auditLogHelper.logAuditAction("VERIFY_OTP_REQUEST", performedBy,
-                    String.format("OTP verification requested for target userManagement %s by %s", request.getUserId(), performedBy), requestId);
+                    String.format("OTP verification requested for target user %s by %s", request.getUserId(), performedBy), requestId);
 
             // Validate request body
             if (bindingResult.hasErrors()) {
@@ -100,7 +100,7 @@ public class OtpController {
                 loggerUtil.log("otp-controller",
                         "Request ID: " + requestId + ", Validation errors: " + validationErrors);
                 auditLogHelper.logAuditAction("VERIFY_OTP_VALIDATION_FAILED", performedBy,
-                        String.format("Validation errors for OTP verification of userManagement %s: %s", request.getUserId(), validationErrors),
+                        String.format("Validation errors for OTP verification of user %s: %s", request.getUserId(), validationErrors),
                         requestId);
 
                 Map<String, Object> errorResponse = new HashMap<>();
@@ -113,10 +113,10 @@ public class OtpController {
 
             loggerUtil.log("otp-controller",
                     "Request ID: " + requestId +
-                            ", Verifying OTP for userManagement: " + request.getUserId() +
+                            ", Verifying OTP for user: " + request.getUserId() +
                             ", Requested by: " + performedBy);
             auditLogHelper.logAuditAction("VERIFY_OTP", performedBy,
-                    String.format("Verifying OTP for target userManagement %s", request.getUserId()), requestId);
+                    String.format("Verifying OTP for target user %s", request.getUserId()), requestId);
 
             // Verify OTP first
             boolean isValid = otpService.verifyOtp(request.getUserId(), request.getOtp());
@@ -124,7 +124,7 @@ public class OtpController {
                 loggerUtil.log("otp-controller",
                         "Request ID: " + requestId + ", Invalid OTP - User: " + performedBy + ", Target User: " + request.getUserId());
                 auditLogHelper.logAuditAction("VERIFY_OTP_FAILED", performedBy,
-                        String.format("Invalid or expired OTP for target userManagement %s", request.getUserId()), requestId);
+                        String.format("Invalid or expired OTP for target user %s", request.getUserId()), requestId);
 
                 Map<String, Object> errorResponse = new HashMap<>();
                 errorResponse.put("responseCode", 401);
@@ -134,7 +134,7 @@ public class OtpController {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponse);
             }
 
-            // Get userManagement details if OTP is valid
+            // Get user details if OTP is valid
             Optional<UserDTO> userOptional = appUserRepository.getUserByUserId(request.getUserId());
             if (userOptional.isEmpty()) {
                 loggerUtil.log("otp-controller",
@@ -157,7 +157,7 @@ public class OtpController {
                 loggerUtil.log("otp-controller",
                         "Request ID: " + requestId + ", Account deactivated - User: " + performedBy + ", Target User: " + request.getUserId());
                 auditLogHelper.logAuditAction("VERIFY_OTP_ACCOUNT_DEACTIVATED", performedBy,
-                        String.format("Account deactivated for target userManagement %s", request.getUserId()), requestId);
+                        String.format("Account deactivated for target user %s", request.getUserId()), requestId);
 
                 Map<String, Object> errorResponse = new HashMap<>();
                 errorResponse.put("responseCode", 403);
@@ -167,7 +167,7 @@ public class OtpController {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
             }
 
-            // Prepare userManagement data response
+            // Prepare user data response
             Map<String, Object> userData = new HashMap<>();
             userData.put("user_id", user.getUserId());
             userData.put("staff_id", user.getStaffId());
@@ -186,12 +186,12 @@ public class OtpController {
                 loggerUtil.log("otp-controller",
                         "Request ID: " + requestId + ", Last login updated - User: " + performedBy + ", Target User: " + request.getUserId());
                 auditLogHelper.logAuditAction("VERIFY_OTP_LAST_LOGIN_UPDATED", performedBy,
-                        String.format("Last login updated for target userManagement %s", request.getUserId()), requestId);
+                        String.format("Last login updated for target user %s", request.getUserId()), requestId);
             } catch (Exception e) {
                 loggerUtil.log("otp-controller",
                         "Request ID: " + requestId + ", Failed to update last login - User: " + performedBy + ", Target User: " + request.getUserId() + ", Error: " + e.getMessage());
                 auditLogHelper.logAuditAction("VERIFY_OTP_LAST_LOGIN_UPDATE_FAILED", performedBy,
-                        String.format("Failed to update last login for target userManagement %s: %s", request.getUserId(), e.getMessage()), requestId);
+                        String.format("Failed to update last login for target user %s: %s", request.getUserId(), e.getMessage()), requestId);
             }
 
             // Create success response
@@ -204,7 +204,7 @@ public class OtpController {
             loggerUtil.log("otp-controller",
                     "Request ID: " + requestId + ", OTP verified successfully - User: " + performedBy + ", Target User: " + request.getUserId());
             auditLogHelper.logAuditAction("VERIFY_OTP_SUCCESS", performedBy,
-                    String.format("OTP verified successfully for target userManagement %s", request.getUserId()), requestId);
+                    String.format("OTP verified successfully for target user %s", request.getUserId()), requestId);
 
             return ResponseEntity.ok(successResponse);
 
@@ -212,7 +212,7 @@ public class OtpController {
             loggerUtil.log("otp-controller",
                     "Request ID: " + requestId + ", Error verifying OTP - User: " + performedBy + ", Target User: " + request.getUserId() + ", Error: " + e.getMessage());
             auditLogHelper.logAuditAction("VERIFY_OTP_ERROR", performedBy,
-                    String.format("Error verifying OTP for target userManagement %s: %s", request.getUserId(), e.getMessage()), requestId);
+                    String.format("Error verifying OTP for target user %s: %s", request.getUserId(), e.getMessage()), requestId);
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
@@ -225,7 +225,7 @@ public class OtpController {
     @PostMapping("/send-otp")
     @Operation(
             summary = "Send OTP",
-            description = "Sends OTP code to userManagement's registered phone number. Requires JWT authentication.",
+            description = "Sends OTP code to user's registered phone number. Requires JWT authentication.",
             parameters = {
                     @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
             }
@@ -249,7 +249,7 @@ public class OtpController {
             loggerUtil.log("otp-controller",
                     "Request ID: " + requestId + ", Authorization failed for sending OTP - Target User: " + userId);
             auditLogHelper.logAuditAction("SEND_OTP_AUTH_FAILED", null,
-                    String.format("Authorization failed for sending OTP to target userManagement %s", userId), requestId);
+                    String.format("Authorization failed for sending OTP to target user %s", userId), requestId);
             return authValidation;
         }
 
@@ -261,7 +261,7 @@ public class OtpController {
             loggerUtil.log("otp-controller",
                     "Request ID: " + requestId + ", OTP send requested - User: " + performedBy + ", Target User: " + userId);
             auditLogHelper.logAuditAction("SEND_OTP_REQUEST", performedBy,
-                    String.format("Send OTP requested for target userManagement %s by %s", userId, performedBy), requestId);
+                    String.format("Send OTP requested for target user %s by %s", userId, performedBy), requestId);
 
             // Validate userId parameter
             if (userId == null || userId.trim().isEmpty()) {
@@ -277,12 +277,12 @@ public class OtpController {
 
             loggerUtil.log("otp-controller",
                     "Request ID: " + requestId +
-                            ", Sending OTP to userManagement: " + userId +
+                            ", Sending OTP to user: " + userId +
                             ", Requested by: " + performedBy);
             auditLogHelper.logAuditAction("SEND_OTP", performedBy,
-                    String.format("Sending OTP to target userManagement %s", userId), requestId);
+                    String.format("Sending OTP to target user %s", userId), requestId);
 
-            // Fetch userManagement details from DB
+            // Fetch user details from DB
             UserEntity user = appUserRepository.findByUserIdIgnoreCase(userId)
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -302,7 +302,7 @@ public class OtpController {
             loggerUtil.log("otp-controller",
                     "Request ID: " + requestId + ", OTP sent successfully - User: " + performedBy + ", Target User: " + userId + ", Phone: " + user.getPhoneNumber());
             auditLogHelper.logAuditAction("SEND_OTP_SUCCESS", performedBy,
-                    String.format("OTP sent successfully to target userManagement %s at phone %s", userId, user.getPhoneNumber()), requestId);
+                    String.format("OTP sent successfully to target user %s at phone %s", userId, user.getPhoneNumber()), requestId);
 
             return ResponseEntity.ok(successResponse);
 
@@ -310,7 +310,7 @@ public class OtpController {
             loggerUtil.log("otp-controller",
                     "Request ID: " + requestId + ", Failed to send OTP email - User: " + performedBy + ", Target User: " + userId + ", Error: " + e.getMessage());
             auditLogHelper.logAuditAction("SEND_OTP_EMAIL_FAILED", performedBy,
-                    String.format("Failed to send OTP email for target userManagement %s: %s", userId, e.getMessage()), requestId);
+                    String.format("Failed to send OTP email for target user %s: %s", userId, e.getMessage()), requestId);
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
@@ -334,7 +334,7 @@ public class OtpController {
             loggerUtil.log("otp-controller",
                     "Request ID: " + requestId + ", Error sending OTP - User: " + performedBy + ", Target User: " + userId + ", Error: " + e.getMessage());
             auditLogHelper.logAuditAction("SEND_OTP_ERROR", performedBy,
-                    String.format("Error sending OTP to target userManagement %s: %s", userId, e.getMessage()), requestId);
+                    String.format("Error sending OTP to target user %s: %s", userId, e.getMessage()), requestId);
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);

@@ -1,6 +1,6 @@
 package com.usg.apiAutomation.services.systemActivities;
 
-import com.usg.apiAutomation.dtos.userManagement.UserDTO;
+import com.usg.apiAutomation.dtos.systemActivities.user.UserDTO;
 import com.usg.apiAutomation.repositories.AppUserRepository;
 import com.usg.apiAutomation.utils.JwtUtil;
 import com.usg.apiAutomation.utils.LoggerUtil;
@@ -43,10 +43,10 @@ public class JWTService {
                 throw new RuntimeException("Refresh token has expired");
             }
 
-            // Extract userManagement ID from refresh token
+            // Extract user ID from refresh token
             String userId = jwtUtil.extractUserId(refreshToken);
 
-            // Verify userManagement exists and is active
+            // Verify user exists and is active
             Optional<UserDTO> userOptional = appUserRepository.getUserByUserId(userId);
             if (userOptional.isEmpty()) {
                 throw new RuntimeException("User not found");
@@ -75,7 +75,7 @@ public class JWTService {
 
             // Log the token refresh activity
             loggerUtil.log("api-gateway",
-                    String.format("Token refreshed for userManagement %s. Request ID: %s", userId, requestId));
+                    String.format("Token refreshed for user %s. Request ID: %s", userId, requestId));
 
         } catch (Exception e) {
             loggerUtil.log("api-gateway",

@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.dtos.userManagement;
+package com.usg.apiAutomation.dtos.systemActivities.user;
 
 public class SMSRequestDTO {
         private String to;

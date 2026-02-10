@@ -58,7 +58,7 @@ public class AccountLockService {
         }
 
         // Commented out email sending temporarily
-        // sendAccountLockedEmail(userManagement);
+        // sendAccountLockedEmail(user);
     }
 
 

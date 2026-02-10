@@ -22,11 +22,11 @@ public class AuditLogDTO {
     private UUID auditId;
 
     @NotNull(message = "User ID cannot be null")
-    @Schema(description = "ID of the userManagement performing the action", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+    @Schema(description = "ID of the user performing the action", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
     private String userId;
 
     @NotBlank(message = "Action cannot be blank")
-    @Schema(description = "Action performed by the userManagement", example = "CREATE_TRANSACTION")
+    @Schema(description = "Action performed by the user", example = "CREATE_TRANSACTION")
     private String action;
 
     @NotBlank(message = "Operation cannot be blank")

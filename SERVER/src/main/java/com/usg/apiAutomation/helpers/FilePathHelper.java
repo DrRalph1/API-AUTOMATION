@@ -11,13 +11,13 @@ public class FilePathHelper {
      * @return The full path to the log file.
      */
     public static String getLogFilePath(String filename) {
-        String userHome = System.getProperty("userManagement.home");
+        String userHome = System.getProperty("user.home");
         String os = System.getProperty("os.name").toLowerCase();
         String separator = File.separator;
 
         // Adjust file path based on the OS
         if (os.contains("win")) {
-            // For Windows, the path is typically something like C:\Users\<userManagement>\masterAPIGateway
+            // For Windows, the path is typically something like C:\Users\<user>\masterAPIGateway
             return userHome + separator + "apiAutomation" + separator + filename;
         } else {
             // For Linux, use the same home directory approach but adjust for typical Linux

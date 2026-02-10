@@ -29,7 +29,7 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
         }
 
         // Allow login tpartyAPI without JWT
-        if ("/userManagement-login".equals(path) || "/userManagement-login/".equals(path)) {
+        if ("/user-login".equals(path) || "/user-login/".equals(path)) {
             return true;
         }
 

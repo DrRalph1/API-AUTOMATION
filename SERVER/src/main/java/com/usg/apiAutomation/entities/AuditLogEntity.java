@@ -29,7 +29,7 @@ public class AuditLogEntity {
     private UUID auditId;
 
     @Column(name = "user_id", nullable = false)
-    private String userId;  // ID of the userManagement who performed the action
+    private String userId;  // ID of the user who performed the action
 
     @Column(name = "action", nullable = false, length = 200)
     private String action;  // action performed

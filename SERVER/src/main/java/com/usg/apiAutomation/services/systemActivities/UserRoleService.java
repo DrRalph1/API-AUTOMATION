@@ -416,7 +416,7 @@ public class UserRoleService {
     // Helper method (if needed for role usage check)
     private boolean checkIfRoleIsInUse(UUID roleId) {
         // Implement logic to check if role is assigned to any users
-        // This would require a userManagement-role relationship repository
+        // This would require a user-role relationship repository
         // For now, return false (allow deletion)
         return false;
     }

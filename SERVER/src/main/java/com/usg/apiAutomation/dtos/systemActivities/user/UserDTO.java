@@ -1,8 +1,8 @@
-package com.usg.apiAutomation.dtos.userManagement;
+package com.usg.apiAutomation.dtos.systemActivities.user;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.usg.apiAutomation.entities.UserEntity;
+import com.usg.apiAutomation.entities.*;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -16,48 +16,48 @@ import java.util.UUID;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = "Data Transfer Object for application users")
+@Builder(builderClassName = "UserDTOBuilder", toBuilder = true)
 public class UserDTO {
 
-    @Schema(description = "Unique identifier of the userManagement", example = "USER001")
+    @Schema(description = "Unique identifier of the user", example = "USER001")
     private String userId;
 
     @NotBlank(message = "Username cannot be blank")
-    @Schema(description = "Username of the userManagement", example = "johndoe")
+    @Schema(description = "Username of the user", example = "johndoe")
     private String username;
 
-    @Schema(description = "Password of the userManagement (only for create/update operations)", example = "securePassword123!")
+    @Schema(description = "Password of the user (only for create/update operations)", example = "securePassword123!")
     private String password;
 
     @NotBlank(message = "Email address cannot be blank")
-    @Schema(description = "Email address of the userManagement", example = "johndoe@gmail.com")
+    @Schema(description = "Email address of the user", example = "johndoe@gmail.com")
     private String emailAddress;
 
     // ✅ ADDED
-    @Schema(description = "Phone number of the userManagement", example = "+233241234567")
+    @Schema(description = "Phone number of the user", example = "+233241234567")
     private String phoneNumber;
 
     @NotBlank(message = "Full name cannot be blank")
-    @Schema(description = "Full name of the userManagement", example = "John Doe")
+    @Schema(description = "Full name of the user", example = "John Doe")
     private String fullName;
 
     // ✅ ADDED
-    @Schema(description = "Staff ID of the userManagement", example = "STF001")
+    @Schema(description = "Staff ID of the user", example = "STF001")
     private String staffId;
 
     @NotNull(message = "Role ID is required")
-    @Schema(description = "Role ID assigned to the userManagement", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+    @Schema(description = "Role ID assigned to the user", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
     private UUID roleId;
 
-    @Schema(description = "Role name assigned to the userManagement", example = "ADMIN")
+    @Schema(description = "Role name assigned to the user", example = "ADMIN")
     private String roleName;
 
-    @Schema(description = "Indicates if the userManagement account is active", example = "true")
+    @Schema(description = "Indicates if the user account is active", example = "true")
     private Boolean isActive;
 
-    @Schema(description = "Indicates if the userManagement is still using the default password", example = "true")
+    @Schema(description = "Indicates if the user is still using the default password", example = "true")
     @JsonProperty("isDefaultPassword")
     private Boolean isDefaultPassword;
 
@@ -75,10 +75,10 @@ public class UserDTO {
     @Schema(description = "JWT token for authenticated session")
     private String token;
 
-    @Schema(description = "Date and time when the userManagement was created", example = "2024-01-01T09:00:00")
+    @Schema(description = "Date and time when the user was created", example = "2024-01-01T09:00:00")
     private LocalDateTime createdDate;
 
-    @Schema(description = "Date and time when the userManagement was last modified", example = "2024-01-15T09:30:00")
+    @Schema(description = "Date and time when the user was last modified", example = "2024-01-15T09:30:00")
     private LocalDateTime lastModifiedDate;
 
     // Constructor for create operations (without systemActivities fields)
@@ -247,7 +247,7 @@ public class UserDTO {
     }
 
     // Helper method to check if password needs to be changed
-    @Schema(description = "Indicates if the userManagement needs to change their password", example = "true")
+    @Schema(description = "Indicates if the user needs to change their password", example = "true")
     public Boolean isPasswordChangeRequired() {
         return Boolean.TRUE.equals(isDefaultPassword);
     }

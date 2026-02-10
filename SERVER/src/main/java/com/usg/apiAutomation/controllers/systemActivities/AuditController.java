@@ -42,7 +42,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/plx/api/audit")
 @RequiredArgsConstructor
-//@Tag(name = "AUDIT LOGS", description = "Endpoints for logging and retrieving userManagement actions")
+//@Tag(name = "AUDIT LOGS", description = "Endpoints for logging and retrieving user actions")
 @Tag(name = "SYSTEM ACTIVITIES", description = "System-level endpoints")
 public class AuditController {
 
@@ -352,7 +352,7 @@ public class AuditController {
     @GetMapping("/search")
     @Operation(summary = "Search audit logs using query parameters", parameters = {
             @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER),
-            @Parameter(name = "userId", description = "Filter by userManagement ID", in = ParameterIn.QUERY),
+            @Parameter(name = "userId", description = "Filter by user ID", in = ParameterIn.QUERY),
             @Parameter(name = "action", description = "Filter by action", in = ParameterIn.QUERY),
             @Parameter(name = "operation", description = "Filter by operation", in = ParameterIn.QUERY),
             @Parameter(name = "details", description = "Search in details", in = ParameterIn.QUERY),

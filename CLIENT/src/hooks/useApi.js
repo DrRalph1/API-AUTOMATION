@@ -2,7 +2,7 @@
 import { useSetRecoilState } from 'recoil';
 import { tokenAtom } from '@/recoil/tokenAtom';
 import useAuthToken from './useAuthToken';
-import { refreshToken } from '@/controllers/UserManagementController';
+import { refreshToken } from '@/controllers/AuthController.js';
 import { tokenAtom } from '@/recoil/tokenAtom';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 

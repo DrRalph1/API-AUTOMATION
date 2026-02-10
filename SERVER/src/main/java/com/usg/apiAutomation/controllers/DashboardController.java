@@ -61,7 +61,7 @@ public class DashboardController {
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
             loggerUtil.log("dashboard", "Request ID: " + requestId +
-                    ", Getting dashboard statistics for userManagement: " + performedBy);
+                    ", Getting dashboard statistics for user: " + performedBy);
 
             DashboardStatsResponse stats = dashboardService.getDashboardStats(requestId, req, performedBy);
 

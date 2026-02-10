@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.dtos.userManagement;
+package com.usg.apiAutomation.dtos.systemActivities.user;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;

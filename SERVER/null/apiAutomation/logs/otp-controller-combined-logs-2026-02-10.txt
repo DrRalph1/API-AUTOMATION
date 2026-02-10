@@ -162,3 +162,6 @@
 [2026-02-10T10:54:22.350269300Z] [650a4b84] [INFO] [OtpController.verifyOtp] http-nio-4789-exec-7: Request ID: fdc604ba-797e-4875-bbde-5f97d69b0178, Verifying OTP for userManagement: RDK006, Requested by: RDK006
 [2026-02-10T10:54:22.382771900Z] [120803f8] [INFO] [OtpController.verifyOtp] http-nio-4789-exec-7: Request ID: fdc604ba-797e-4875-bbde-5f97d69b0178, Last login updated - User: RDK006, Target User: RDK006
 [2026-02-10T10:54:22.391044500Z] [8402d636] [INFO] [OtpController.verifyOtp] http-nio-4789-exec-7: Request ID: fdc604ba-797e-4875-bbde-5f97d69b0178, OTP verified successfully - User: RDK006, Target User: RDK006
+[2026-02-10T11:21:14.673674600Z] [f1e4e262] [INFO] [OtpController.sendOtp] http-nio-4789-exec-2: Request ID: 8d8a34db-b2f5-4e00-ab01-3b21f371313a, OTP send requested - User: RDK006, Target User: RDK006
+[2026-02-10T11:21:14.695202Z] [01406d0e] [INFO] [OtpController.sendOtp] http-nio-4789-exec-2: Request ID: 8d8a34db-b2f5-4e00-ab01-3b21f371313a, Sending OTP to userManagement: RDK006, Requested by: RDK006
+[2026-02-10T11:21:15.226963700Z] [d1f787d9] [INFO] [OtpController.sendOtp] http-nio-4789-exec-2: Request ID: 8d8a34db-b2f5-4e00-ab01-3b21f371313a, OTP sent successfully - User: RDK006, Target User: RDK006, Phone: +233555442117

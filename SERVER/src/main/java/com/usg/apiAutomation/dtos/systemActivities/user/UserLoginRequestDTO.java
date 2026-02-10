@@ -1,9 +1,9 @@
-package com.usg.apiAutomation.dtos.userManagement;
+package com.usg.apiAutomation.dtos.systemActivities.user;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * DTO for userManagement login requests containing authentication credentials.
+ * DTO for user login requests containing authentication credentials.
  * Extends BaseUserRequestDTO to include device and channel information.
  */
 public class UserLoginRequestDTO {
