@@ -284,8 +284,8 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     setTimeout(() => setToast(null), 3000);
   };
 
-   // Load collections from codebase - SIMPLIFIED VERSION
-  const fetchCollectionsList = useCallback(async () => {
+  // Load collections from codebase
+   const fetchCollectionsList = useCallback(async () => {
     console.log('🔥 [CodeBase] fetchCollectionsList called');
     
     if (!authToken) {
@@ -327,52 +327,14 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
         cacheCodebaseData(userId, 'collections', formattedCollections);
       }
       
-      // AUTO-SELECT FIRST ENDPOINT HERE - SIMPLE VERSION
+      // Auto-select and load first collection if available
       if (formattedCollections.length > 0) {
         const firstCollection = formattedCollections[0];
         setSelectedCollection(firstCollection);
+        
+        // Expand and load details for first collection
         setExpandedCollections([firstCollection.id]);
-        
-        // Create mock folder with requests
-        const mockFolderId = 'folder-1';
-        const mockRequests = [
-          {
-            id: 'register-user',
-            name: 'Register User',
-            method: 'POST',
-            url: 'https://api.example.com/v2.1/users/register',
-            description: 'Create a new user account with email and password',
-            tags: ['auth', 'register', 'signup'],
-            lastModified: 'Today, 9:00 AM'
-          },
-          {
-            id: 'get-user',
-            name: 'Get User Profile',
-            method: 'GET',
-            url: 'https://api.example.com/v2.1/users/{id}',
-            description: 'Retrieve user profile information by ID',
-            tags: ['users', 'profile', 'read'],
-            lastModified: 'Yesterday, 3:45 PM'
-          }
-        ];
-        
-        // Add folder to folderRequests
-        setFolderRequests(prev => ({
-          ...prev,
-          [mockFolderId]: mockRequests
-        }));
-        
-        // Select the first request
-        if (mockRequests.length > 0) {
-          const firstRequest = mockRequests[0];
-          console.log('🎯 [CodeBase] Auto-selecting first endpoint:', firstRequest.name);
-          
-          setSelectedRequest(firstRequest);
-          setExpandedFolders([mockFolderId]);
-          
-          // Show toast
-          showToast(`Auto-selected: ${firstRequest.name}`, 'info');
-        }
+        await fetchCollectionDetails(firstCollection.id);
       }
       
       showToast('Collections loaded successfully', 'success');
@@ -385,9 +347,9 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
       setIsLoading(prev => ({ ...prev, collections: false }));
       console.log('🏁 [CodeBase] fetchCollectionsList completed');
     }
-  }, [authToken]); // Removed unnecessary dependencies
+  }, [authToken]);
 
-  // Load collection details - KEEP SIMPLE
+  // Load collection details
   const fetchCollectionDetails = useCallback(async (collectionId) => {
     console.log(`📡 [CodeBase] Fetching details for collection ${collectionId}`);
     
@@ -413,8 +375,19 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
               const updatedCollection = { 
                 ...collection, 
                 ...details,
-                folders: details.folders || []
+                folders: details.folders || [] // Ensure folders array exists
               };
+              
+              // Initialize folder requests if they have requests
+              if (details.folders && details.folders.length > 0) {
+                details.folders.forEach(folder => {
+                  if (folder.hasRequests) {
+                    // We'll load these requests when the folder is expanded
+                    console.log(`📁 [CodeBase] Folder ${folder.id} has requests`);
+                  }
+                });
+              }
+              
               return updatedCollection;
             }
             return collection;
@@ -429,6 +402,8 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
             folders: details.folders || []
           }));
         }
+        
+        console.log('📊 [CodeBase] Updated collection details:', details.name);
       }
       
     } catch (error) {
@@ -437,7 +412,7 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     }
   }, [authToken, selectedCollection]);
 
-  // Load requests for a specific folder - KEEP SIMPLE
+  // Load requests for a specific folder
   const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
     console.log(`📡 [CodeBase] Fetching requests for folder ${folderId} in collection ${collectionId}`);
     
@@ -446,13 +421,18 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
       return;
     }
 
+    // Set loading state for this specific folder
     setIsLoading(prev => ({ 
       ...prev, 
       folderRequests: { ...prev.folderRequests, [folderId]: true }
     }));
 
     try {
-      // Use mock requests
+      // Note: We need to get request details for each request in the folder
+      // Since we don't have a direct API to get all requests in a folder,
+      // we'll use a workaround or wait for the API to be implemented
+      
+      // For now, simulate fetching requests
       const mockRequests = [
         {
           id: 'register-user',
@@ -474,15 +454,19 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
         }
       ];
       
+      // Update folder requests in state
       setFolderRequests(prev => ({
         ...prev,
         [folderId]: mockRequests
       }));
       
+      console.log(`📊 [CodeBase] Loaded ${mockRequests.length} requests for folder ${folderId}`);
+      
     } catch (error) {
       console.error(`❌ [CodeBase] Error loading requests for folder ${folderId}:`, error);
       showToast(`Failed to load folder requests: ${error.message}`, 'error');
     } finally {
+      // Clear loading state for this folder
       setIsLoading(prev => ({ 
         ...prev, 
         folderRequests: { ...prev.folderRequests, [folderId]: false }
@@ -490,7 +474,7 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     }
   }, [authToken]);
 
-  // Load request details - ONLY CALL WHEN USER CLICKS
+  // Load request details
   const fetchRequestDetails = useCallback(async (collectionId, requestId) => {
     console.log(`📡 [CodeBase] Fetching details for request ${requestId}`);
     
@@ -513,7 +497,7 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
       if (details) {
         setSelectedRequest(details);
         
-        // Load implementation details
+        // Load implementation details for current language
         await fetchImplementationDetails(collectionId, requestId, selectedLanguage, selectedComponent);
       }
       
@@ -525,8 +509,7 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     } finally {
       setIsLoading(prev => ({ ...prev, requestDetails: false }));
     }
-  }, [authToken, selectedLanguage, selectedComponent, fetchImplementationDetails]);
-
+  }, [authToken, selectedLanguage, selectedComponent]);
 
   // Load implementation details
   const fetchImplementationDetails = useCallback(async (collectionId, requestId, language, component) => {
@@ -919,7 +902,7 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
               {showLanguageDropdown && (
                 <div className="absolute left-0 right-0 top-full mt-1 py-2 rounded shadow-lg z-50 border"
                   style={{ 
-                    backgroundColor: colors.dropdownBg,
+                    backgroundColor: colors.bg,
                     borderColor: colors.border
                   }}>
                   {availableLanguages.map(lang => (
@@ -1287,8 +1270,45 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     switch (activeTab) {
       case 'generate':
         return (
-          <div className="flex-1 p-8">
+
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Implementation Tabs */}
+            <div className="flex items-center border-b h-9" style={{ 
+              backgroundColor: colors.card,
+              borderColor: colors.border
+            }}>
+              <div className="flex items-center px-2">
+                <button
+                  onClick={() => setActiveTab('implementations')}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors hover-lift ${
+                    activeTab === 'implementations' ? '' : 'hover:bg-opacity-50'
+                  }`}
+                  style={{ 
+                    borderBottomColor: activeTab === 'implementations' ? colors.primary : 'transparent',
+                    color: activeTab === 'implementations' ? colors.primary : colors.textSecondary,
+                    backgroundColor: 'transparent'
+                  }}>
+                  Implementations
+                </button>
+                
+                <button
+                  onClick={() => setActiveTab('generate')}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors hover-lift ${
+                    activeTab === 'generate' ? '' : 'hover:bg-opacity-50'
+                  }`}
+                  style={{ 
+                    borderBottomColor: activeTab === 'generate' ? colors.primary : 'transparent',
+                    color: activeTab === 'generate' ? colors.primary : colors.textSecondary,
+                    backgroundColor: 'transparent'
+                  }}>
+                  Generate Code
+                </button>
+              </div>
+            </div>
+
+          
             <div className="max-w-4xl mx-auto">
+              <br /><br />
               <h2 className="text-2xl font-semibold mb-6" style={{ color: colors.text }}>Generate Code</h2>
               <p className="mb-6" style={{ color: colors.textSecondary }}>Generate complete implementations for your APIs in any language.</p>
               
