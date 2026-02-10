@@ -17,6 +17,51 @@ import {
 } from 'lucide-react';
 import ApiGenerationModal from '@/components/modals/ApiGenerationModal.js';
 
+// Import SchemaBrowserController
+import {
+  getSchemaConnections,
+  getSchemaObjects,
+  getObjectDetails,
+  getTableData,
+  getObjectDDL,
+  searchSchema,
+  executeQuery,
+  generateAPIFromObject,
+  getComprehensiveSchemaData,
+  clearSchemaCache,
+  getObjectHierarchy,
+  exportSchemaData,
+  advancedSearch,
+  healthCheck,
+  handleSchemaBrowserResponse,
+  extractSchemaConnections,
+  extractSchemaObjects,
+  extractObjectDetails,
+  extractTableData,
+  extractDDL,
+  extractSearchResults,
+  extractQueryResults,
+  extractAPIGenerationResults,
+  extractComprehensiveSchemaData,
+  extractObjectHierarchy,
+  extractExportResults,
+  extractHealthCheck,
+  formatObjectDetails,
+  formatTableData,
+  formatBytes,
+  formatDateForDisplay,
+  formatDataType,
+  getObjectTypeIcon,
+  getObjectTypeColor,
+  isSupportedForAPIGeneration,
+  generateSampleQuery,
+  refreshSchemaData,
+  downloadExportedSchema,
+  cacheSchemaData,
+  getCachedSchemaData,
+  clearCachedSchemaData
+} from "../controllers/SchemaBrowserController.js";
+
 // Create a separate FilterInput component to prevent re-renders
 const FilterInput = React.memo(({ 
   filterQuery, 
@@ -38,7 +83,6 @@ const FilterInput = React.memo(({
 
   const handleClearFilter = useCallback(() => {
     onFilterChange('');
-    // Focus the input after clearing
     setTimeout(() => {
       if (searchInputRef.current) {
         searchInputRef.current.focus();
@@ -49,7 +93,6 @@ const FilterInput = React.memo(({
   const handleClearAllFilters = useCallback(() => {
     onFilterChange('');
     onOwnerChange('ALL');
-    // Focus the input after clearing
     setTimeout(() => {
       if (searchInputRef.current) {
         searchInputRef.current.focus();
@@ -132,7 +175,7 @@ const ObjectTreeSection = React.memo(({
   handleContextMenu
 }) => {
   
-  // Simple filter function inside the component - doesn't cause re-renders of parent
+  // Simple filter function inside the component
   const searchObjects = useCallback((objects, type) => {
     if (!filterQuery && selectedOwner === 'ALL') {
       return objects;
@@ -241,7 +284,7 @@ const ObjectTreeSection = React.memo(({
 
 ObjectTreeSection.displayName = 'ObjectTreeSection';
 
-// Left Sidebar Component - Fully mobile responsive (MOVED OUTSIDE)
+// Left Sidebar Component
 const LeftSidebar = React.memo(({ 
   isLeftSidebarVisible, 
   setIsLeftSidebarVisible,
@@ -259,8 +302,13 @@ const LeftSidebar = React.memo(({
   activeObject,
   handleObjectSelect,
   getObjectIcon,
-  handleContextMenu
+  handleContextMenu,
+  activeConnection,
+  connections,
+  loading
 }) => {
+  const activeConnectionData = connections.find(c => c.id === activeConnection) || connections[0] || {};
+
   return (
     <div className={`w-full md:w-64 border-r flex flex-col absolute md:relative inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out ${
       isLeftSidebarVisible ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
@@ -277,10 +325,14 @@ const LeftSidebar = React.memo(({
             className="flex items-center gap-2 flex-1 text-left touch-target"
             onClick={() => setShowConnectionManager(true)}
             aria-label="Open connection manager"
+            disabled={loading}
           >
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors.connectionOnline }} />
+            <div className="w-2 h-2 rounded-full" style={{ 
+              backgroundColor: activeConnectionData.status === 'connected' ? colors.connectionOnline : 
+                             activeConnectionData.status === 'disconnected' ? colors.connectionOffline : colors.connectionIdle 
+            }} />
             <span className="text-sm font-medium truncate" style={{ color: colors.text }}>
-              CBX_DMX
+              {activeConnectionData.name || 'Loading...'}
             </span>
             <ChevronRight size={12} style={{ color: colors.textSecondary }} className="ml-1" />
           </button>
@@ -290,6 +342,7 @@ const LeftSidebar = React.memo(({
               style={{ backgroundColor: colors.hover }}
               onClick={() => setShowConnectionManager(true)}
               aria-label="Server settings"
+              disabled={loading}
             >
               <Server size={12} style={{ color: colors.textSecondary }} />
             </button>
@@ -299,17 +352,18 @@ const LeftSidebar = React.memo(({
               style={{ backgroundColor: colors.hover }}
               onClick={handleClearFilters}
               aria-label="Refresh and clear filters"
+              disabled={loading}
             >
-              <RefreshCw size={12} style={{ color: colors.textSecondary }} />
+              <RefreshCw size={12} style={{ color: colors.textSecondary }} className={loading ? 'animate-spin' : ''} />
             </button>
           </div>
         </div>
         <div className="text-xs truncate" style={{ color: colors.textSecondary }}>
-          db-prod.company.com
+          {activeConnectionData.host ? `${activeConnectionData.host}:${activeConnectionData.port}` : 'Loading connection...'}
         </div>
       </div>
 
-      {/* Filter Input Component - Isolated */}
+      {/* Filter Input Component */}
       <FilterInput
         filterQuery={filterQuery}
         selectedOwner={selectedOwner}
@@ -321,132 +375,140 @@ const LeftSidebar = React.memo(({
 
       {/* Object Tree */}
       <div className="flex-1 overflow-auto p-3">
-        <ObjectTreeSection
-          title="Tables"
-          type="tables"
-          objects={schemaObjects.tables}
-          isExpanded={objectTree.tables}
-          onToggle={() => handleToggleSection('tables')}
-          onSelectObject={handleObjectSelect}
-          activeObjectId={activeObject?.id}
-          filterQuery={filterQuery}
-          selectedOwner={selectedOwner}
-          colors={colors}
-          getObjectIcon={getObjectIcon}
-          handleContextMenu={handleContextMenu}
-        />
-        <ObjectTreeSection
-          title="Views"
-          type="views"
-          objects={schemaObjects.views}
-          isExpanded={objectTree.views}
-          onToggle={() => handleToggleSection('views')}
-          onSelectObject={handleObjectSelect}
-          activeObjectId={activeObject?.id}
-          filterQuery={filterQuery}
-          selectedOwner={selectedOwner}
-          colors={colors}
-          getObjectIcon={getObjectIcon}
-          handleContextMenu={handleContextMenu}
-        />
-        <ObjectTreeSection
-          title="Procedures"
-          type="procedures"
-          objects={schemaObjects.procedures}
-          isExpanded={objectTree.procedures}
-          onToggle={() => handleToggleSection('procedures')}
-          onSelectObject={handleObjectSelect}
-          activeObjectId={activeObject?.id}
-          filterQuery={filterQuery}
-          selectedOwner={selectedOwner}
-          colors={colors}
-          getObjectIcon={getObjectIcon}
-          handleContextMenu={handleContextMenu}
-        />
-        <ObjectTreeSection
-          title="Functions"
-          type="functions"
-          objects={schemaObjects.functions}
-          isExpanded={objectTree.functions}
-          onToggle={() => handleToggleSection('functions')}
-          onSelectObject={handleObjectSelect}
-          activeObjectId={activeObject?.id}
-          filterQuery={filterQuery}
-          selectedOwner={selectedOwner}
-          colors={colors}
-          getObjectIcon={getObjectIcon}
-          handleContextMenu={handleContextMenu}
-        />
-        <ObjectTreeSection
-          title="Packages"
-          type="packages"
-          objects={schemaObjects.packages}
-          isExpanded={objectTree.packages}
-          onToggle={() => handleToggleSection('packages')}
-          onSelectObject={handleObjectSelect}
-          activeObjectId={activeObject?.id}
-          filterQuery={filterQuery}
-          selectedOwner={selectedOwner}
-          colors={colors}
-          getObjectIcon={getObjectIcon}
-          handleContextMenu={handleContextMenu}
-        />
-        <ObjectTreeSection
-          title="Sequences"
-          type="sequences"
-          objects={schemaObjects.sequences}
-          isExpanded={objectTree.sequences}
-          onToggle={() => handleToggleSection('sequences')}
-          onSelectObject={handleObjectSelect}
-          activeObjectId={activeObject?.id}
-          filterQuery={filterQuery}
-          selectedOwner={selectedOwner}
-          colors={colors}
-          getObjectIcon={getObjectIcon}
-          handleContextMenu={handleContextMenu}
-        />
-        <ObjectTreeSection
-          title="Synonyms"
-          type="synonyms"
-          objects={schemaObjects.synonyms}
-          isExpanded={objectTree.synonyms}
-          onToggle={() => handleToggleSection('synonyms')}
-          onSelectObject={handleObjectSelect}
-          activeObjectId={activeObject?.id}
-          filterQuery={filterQuery}
-          selectedOwner={selectedOwner}
-          colors={colors}
-          getObjectIcon={getObjectIcon}
-          handleContextMenu={handleContextMenu}
-        />
-        <ObjectTreeSection
-          title="Types"
-          type="types"
-          objects={schemaObjects.types}
-          isExpanded={objectTree.types}
-          onToggle={() => handleToggleSection('types')}
-          onSelectObject={handleObjectSelect}
-          activeObjectId={activeObject?.id}
-          filterQuery={filterQuery}
-          selectedOwner={selectedOwner}
-          colors={colors}
-          getObjectIcon={getObjectIcon}
-          handleContextMenu={handleContextMenu}
-        />
-        <ObjectTreeSection
-          title="Triggers"
-          type="triggers"
-          objects={schemaObjects.triggers}
-          isExpanded={objectTree.triggers}
-          onToggle={() => handleToggleSection('triggers')}
-          onSelectObject={handleObjectSelect}
-          activeObjectId={activeObject?.id}
-          filterQuery={filterQuery}
-          selectedOwner={selectedOwner}
-          colors={colors}
-          getObjectIcon={getObjectIcon}
-          handleContextMenu={handleContextMenu}
-        />
+        {loading ? (
+          <div className="flex items-center justify-center h-32">
+            <RefreshCw className="animate-spin" size={16} style={{ color: colors.textSecondary }} />
+          </div>
+        ) : (
+          <>
+            <ObjectTreeSection
+              title="Tables"
+              type="tables"
+              objects={schemaObjects.tables || []}
+              isExpanded={objectTree.tables}
+              onToggle={() => handleToggleSection('tables')}
+              onSelectObject={handleObjectSelect}
+              activeObjectId={activeObject?.id}
+              filterQuery={filterQuery}
+              selectedOwner={selectedOwner}
+              colors={colors}
+              getObjectIcon={getObjectIcon}
+              handleContextMenu={handleContextMenu}
+            />
+            <ObjectTreeSection
+              title="Views"
+              type="views"
+              objects={schemaObjects.views || []}
+              isExpanded={objectTree.views}
+              onToggle={() => handleToggleSection('views')}
+              onSelectObject={handleObjectSelect}
+              activeObjectId={activeObject?.id}
+              filterQuery={filterQuery}
+              selectedOwner={selectedOwner}
+              colors={colors}
+              getObjectIcon={getObjectIcon}
+              handleContextMenu={handleContextMenu}
+            />
+            <ObjectTreeSection
+              title="Procedures"
+              type="procedures"
+              objects={schemaObjects.procedures || []}
+              isExpanded={objectTree.procedures}
+              onToggle={() => handleToggleSection('procedures')}
+              onSelectObject={handleObjectSelect}
+              activeObjectId={activeObject?.id}
+              filterQuery={filterQuery}
+              selectedOwner={selectedOwner}
+              colors={colors}
+              getObjectIcon={getObjectIcon}
+              handleContextMenu={handleContextMenu}
+            />
+            <ObjectTreeSection
+              title="Functions"
+              type="functions"
+              objects={schemaObjects.functions || []}
+              isExpanded={objectTree.functions}
+              onToggle={() => handleToggleSection('functions')}
+              onSelectObject={handleObjectSelect}
+              activeObjectId={activeObject?.id}
+              filterQuery={filterQuery}
+              selectedOwner={selectedOwner}
+              colors={colors}
+              getObjectIcon={getObjectIcon}
+              handleContextMenu={handleContextMenu}
+            />
+            <ObjectTreeSection
+              title="Packages"
+              type="packages"
+              objects={schemaObjects.packages || []}
+              isExpanded={objectTree.packages}
+              onToggle={() => handleToggleSection('packages')}
+              onSelectObject={handleObjectSelect}
+              activeObjectId={activeObject?.id}
+              filterQuery={filterQuery}
+              selectedOwner={selectedOwner}
+              colors={colors}
+              getObjectIcon={getObjectIcon}
+              handleContextMenu={handleContextMenu}
+            />
+            <ObjectTreeSection
+              title="Sequences"
+              type="sequences"
+              objects={schemaObjects.sequences || []}
+              isExpanded={objectTree.sequences}
+              onToggle={() => handleToggleSection('sequences')}
+              onSelectObject={handleObjectSelect}
+              activeObjectId={activeObject?.id}
+              filterQuery={filterQuery}
+              selectedOwner={selectedOwner}
+              colors={colors}
+              getObjectIcon={getObjectIcon}
+              handleContextMenu={handleContextMenu}
+            />
+            <ObjectTreeSection
+              title="Synonyms"
+              type="synonyms"
+              objects={schemaObjects.synonyms || []}
+              isExpanded={objectTree.synonyms}
+              onToggle={() => handleToggleSection('synonyms')}
+              onSelectObject={handleObjectSelect}
+              activeObjectId={activeObject?.id}
+              filterQuery={filterQuery}
+              selectedOwner={selectedOwner}
+              colors={colors}
+              getObjectIcon={getObjectIcon}
+              handleContextMenu={handleContextMenu}
+            />
+            <ObjectTreeSection
+              title="Types"
+              type="types"
+              objects={schemaObjects.types || []}
+              isExpanded={objectTree.types}
+              onToggle={() => handleToggleSection('types')}
+              onSelectObject={handleObjectSelect}
+              activeObjectId={activeObject?.id}
+              filterQuery={filterQuery}
+              selectedOwner={selectedOwner}
+              colors={colors}
+              getObjectIcon={getObjectIcon}
+              handleContextMenu={handleContextMenu}
+            />
+            <ObjectTreeSection
+              title="Triggers"
+              type="triggers"
+              objects={schemaObjects.triggers || []}
+              isExpanded={objectTree.triggers}
+              onToggle={() => handleToggleSection('triggers')}
+              onSelectObject={handleObjectSelect}
+              activeObjectId={activeObject?.id}
+              filterQuery={filterQuery}
+              selectedOwner={selectedOwner}
+              colors={colors}
+              getObjectIcon={getObjectIcon}
+              handleContextMenu={handleContextMenu}
+            />
+          </>
+        )}
       </div>
     </div>
   );
@@ -464,7 +526,9 @@ const MobileBottomNav = React.memo(({
   handleObjectSelect,
   toggleTheme,
   isDark,
-  colors 
+  colors,
+  loading,
+  onRefreshSchema
 }) => (
   <div className="md:hidden fixed bottom-0 left-0 right-0 border-t z-20" style={{ 
     backgroundColor: colors.card,
@@ -476,6 +540,7 @@ const MobileBottomNav = React.memo(({
         className="rounded hover:bg-opacity-50 transition-colors touch-target flex flex-col items-center justify-center w-14 h-14 p-1"
         style={{ backgroundColor: isLeftSidebarVisible ? colors.selected : 'transparent' }}
         aria-label="Open schema browser"
+        disabled={loading}
       >
         <div className="flex-1 flex items-center justify-center">
           <Database size={16} style={{ color: colors.text }} />
@@ -488,6 +553,7 @@ const MobileBottomNav = React.memo(({
         className="rounded hover:bg-opacity-50 transition-colors touch-target flex flex-col items-center justify-center w-14 h-14 p-1"
         style={{ backgroundColor: 'transparent' }}
         aria-label="Generate API"
+        disabled={loading}
       >
         <div className="flex-1 flex items-center justify-center">
           <Code size={16} style={{ color: colors.primary }} />
@@ -496,18 +562,12 @@ const MobileBottomNav = React.memo(({
       </button>
       
       <button 
-        onClick={() => {
-          const allObjects = Object.values(schemaObjects).flat();
-          const activeTabObj = tabs.find(tab => tab.isActive);
-          if (activeTabObj) {
-            const found = allObjects.find(obj => obj.id === activeTabObj.objectId);
-            if (found) handleObjectSelect(found, activeTabObj.type);
-          }
-        }}
+        onClick={onRefreshSchema}
         className="flex flex-col items-center p-2 rounded hover:bg-opacity-50 transition-colors touch-target"
         aria-label="Refresh"
+        disabled={loading}
       >
-        <RefreshCw size={16} style={{ color: colors.text }} />
+        <RefreshCw size={16} style={{ color: colors.text }} className={loading ? 'animate-spin' : ''} />
         <span className="text-xs mt-1" style={{ color: colors.textSecondary }}>Refresh</span>
       </button>
       
@@ -529,9 +589,8 @@ const MobileBottomNav = React.memo(({
 
 MobileBottomNav.displayName = 'MobileBottomNav';
 
-const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
-
-  // Using EXACT Dashboard color system for consistency - UPDATED to match Collections
+const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
+  // Using EXACT Dashboard color system for consistency
   const colors = useMemo(() => isDark ? {
     // Using your shade as base - EXACTLY matching Collections
     bg: 'rgb(1 14 35)',
@@ -733,10 +792,63 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
   const [showCodePanel, setShowCodePanel] = useState(true);
   
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [tableDataLoading, setTableDataLoading] = useState(false);
+  const [executingQuery, setExecutingQuery] = useState(false);
 
   // Filter state
   const [filterQuery, setFilterQuery] = useState('');
   const [selectedOwner, setSelectedOwner] = useState('ALL');
+
+  // State for API data
+  const [connections, setConnections] = useState([]);
+  const [activeConnection, setActiveConnection] = useState('');
+  const [schemaObjects, setSchemaObjects] = useState({
+    tables: [],
+    views: [],
+    procedures: [],
+    functions: [],
+    packages: [],
+    sequences: [],
+    synonyms: [],
+    types: [],
+    triggers: []
+  });
+  const [activeObject, setActiveObject] = useState(null);
+  const [activeTab, setActiveTab] = useState('columns');
+  const [objectTree, setObjectTree] = useState({
+    tables: true,
+    views: false,
+    procedures: false,
+    functions: false,
+    packages: true,
+    sequences: false,
+    synonyms: false,
+    types: false,
+    triggers: false
+  });
+  const [tabs, setTabs] = useState([]);
+  const [tableData, setTableData] = useState(null);
+  const [objectDDL, setObjectDDL] = useState('');
+  const [searchResults, setSearchResults] = useState(null);
+  const [objectDetails, setObjectDetails] = useState(null);
+  const [objectHierarchy, setObjectHierarchy] = useState(null);
+
+  // Context menu state
+  const [showContextMenu, setShowContextMenu] = useState(false);
+  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
+  const [contextObject, setContextObject] = useState(null);
+  const [showConnectionManager, setShowConnectionManager] = useState(false);
+  const [dataView, setDataView] = useState({
+    page: 1,
+    pageSize: 50,
+    sortColumn: '',
+    sortDirection: 'ASC',
+    filters: []
+  });
+
+  // Add a flag to track if we've already auto-selected an object
+  const [hasAutoSelected, setHasAutoSelected] = useState(false);
 
   // Create stable callback functions for filter
   const handleFilterChange = useCallback((value) => {
@@ -750,6 +862,56 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
   const handleClearFilters = useCallback(() => {
     setFilterQuery('');
     setSelectedOwner('ALL');
+  }, []);
+
+  // Get Object Icon
+  const getObjectIcon = useCallback((type) => {
+    const objectType = type.toLowerCase();
+    const iconColor = colors.objectType[objectType] || colors.textSecondary;
+    const iconProps = { size: 14, style: { color: iconColor } };
+    
+    switch(objectType) {
+      case 'table': return <Table {...iconProps} />;
+      case 'view': return <FileText {...iconProps} />;
+      case 'procedure': return <Terminal {...iconProps} />;
+      case 'function': return <Code {...iconProps} />;
+      case 'package': return <Package {...iconProps} />;
+      case 'sequence': return <Hash {...iconProps} />;
+      case 'synonym': return <Link {...iconProps} />;
+      case 'type': return <Type {...iconProps} />;
+      case 'trigger': return <Zap {...iconProps} />;
+      case 'index': return <BarChart {...iconProps} />;
+      default: return <Database {...iconProps} />;
+    }
+  }, [colors]);
+
+  // Function to get the first available schema object
+  const getFirstSchemaObject = useCallback((schemaObjects) => {
+    // Define the order of object types to check
+    const objectTypes = [
+      { type: 'TABLE', key: 'tables' },
+      { type: 'VIEW', key: 'views' },
+      { type: 'PROCEDURE', key: 'procedures' },
+      { type: 'FUNCTION', key: 'functions' },
+      { type: 'PACKAGE', key: 'packages' },
+      { type: 'SEQUENCE', key: 'sequences' },
+      { type: 'SYNONYM', key: 'synonyms' },
+      { type: 'TYPE', key: 'types' },
+      { type: 'TRIGGER', key: 'triggers' }
+    ];
+    
+    // Find the first object type that has at least one item
+    for (const objType of objectTypes) {
+      const objects = schemaObjects[objType.key] || [];
+      if (objects.length > 0) {
+        return {
+          object: objects[0],
+          type: objType.type
+        };
+      }
+    }
+    
+    return null;
   }, []);
 
   // Check screen orientation
@@ -805,666 +967,418 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme }) => {
     };
   }, [touchStart, isLeftSidebarVisible]);
 
-  // Professional Data Structures - Oracle Standards
-  const [connections, setConnections] = useState([
-    {
-      id: 'conn-1',
-      name: 'CBX_DMX',
-      description: 'Production HR Database',
-      host: 'db-prod.company.com',
-      port: '1521',
-      service: 'ORCL',
-      username: 'HR',
-      status: 'connected',
-      color: colors.connectionOnline,
-      lastUsed: '2024-01-15T10:30:00Z'
-    },
-    {
-      id: 'conn-2',
-      name: 'SCOTT_DEV',
-      description: 'Development Database',
-      host: 'db-dev.company.com',
-      port: '1521',
-      service: 'XE',
-      username: 'SCOTT',
-      status: 'connected',
-      color: colors.connectionOnline,
-      lastUsed: '2024-01-14T14:20:00Z'
+  // Fetch schema connections
+  const fetchSchemaConnections = useCallback(async () => {
+    if (!authToken) {
+      setError('Authentication required');
+      return;
     }
-  ]);
 
-  const [activeConnection, setActiveConnection] = useState('conn-1');
+    setLoading(true);
+    setError(null);
 
-  // Complete Schema Objects with Professional Data
-  const [schemaObjects, setSchemaObjects] = useState({
-    tables: [
-      {
-        id: 'T_EMP',
-        name: 'EMPLOYEES',
-        owner: 'HR',
-        type: 'TABLE',
-        rowCount: 1074,
-        size: '12.5 MB',
-        tablespace: 'USERS',
-        created: '2023-06-15T08:00:00Z',
-        lastDDL: '2024-01-10T14:30:00Z',
-        status: 'VALID',
-        isFavorite: true,
-        isExpanded: false,
-        comment: 'Employee master table containing all employee records',
-        columns: [
-          { name: 'EMPLOYEE_ID', type: 'NUMBER(6)', nullable: 'N', key: 'PK', defaultValue: null, position: 1 },
-          { name: 'FIRST_NAME', type: 'VARCHAR2(20)', nullable: 'Y', key: null, defaultValue: null, position: 2 },
-          { name: 'LAST_NAME', type: 'VARCHAR2(25)', nullable: 'N', key: null, defaultValue: null, position: 3 },
-          { name: 'EMAIL', type: 'VARCHAR2(25)', nullable: 'N', key: 'UK', defaultValue: null, position: 4 },
-          { name: 'PHONE_NUMBER', type: 'VARCHAR2(20)', nullable: 'Y', key: null, defaultValue: null, position: 5 },
-          { name: 'HIRE_DATE', type: 'DATE', nullable: 'N', key: null, defaultValue: 'SYSDATE', position: 6 },
-          { name: 'JOB_ID', type: 'VARCHAR2(10)', nullable: 'N', key: 'FK', defaultValue: null, position: 7 },
-          { name: 'SALARY', type: 'NUMBER(8,2)', nullable: 'Y', key: null, defaultValue: null, position: 8 },
-          { name: 'COMMISSION_PCT', type: 'NUMBER(2,2)', nullable: 'Y', key: null, defaultValue: null, position: 9 },
-          { name: 'MANAGER_ID', type: 'NUMBER(6)', nullable: 'Y', key: 'FK', defaultValue: null, position: 10 },
-          { name: 'DEPARTMENT_ID', type: 'NUMBER(4)', nullable: 'Y', key: 'FK', defaultValue: null, position: 11 }
-        ],
-        constraints: [
-          { name: 'EMP_EMP_ID_PK', type: 'PRIMARY KEY', columns: 'EMPLOYEE_ID', status: 'ENABLED', validated: 'VALIDATED' },
-          { name: 'EMP_EMAIL_UK', type: 'UNIQUE', columns: 'EMAIL', status: 'ENABLED', validated: 'VALIDATED' },
-          { name: 'EMP_DEPT_FK', type: 'FOREIGN KEY', columns: 'DEPARTMENT_ID', refTable: 'DEPARTMENTS', refColumns: 'DEPARTMENT_ID', status: 'ENABLED' },
-          { name: 'EMP_JOB_FK', type: 'FOREIGN KEY', columns: 'JOB_ID', refTable: 'JOBS', refColumns: 'JOB_ID', status: 'ENABLED' },
-          { name: 'EMP_MANAGER_FK', type: 'FOREIGN KEY', columns: 'MANAGER_ID', refTable: 'EMPLOYEES', refColumns: 'EMPLOYEE_ID', status: 'ENABLED' },
-          { name: 'EMP_SALARY_MIN', type: 'CHECK', condition: 'SALARY > 0', status: 'ENABLED' }
-        ],
-        indexes: [
-          { name: 'EMP_NAME_IX', type: 'NORMAL', columns: 'LAST_NAME, FIRST_NAME', uniqueness: 'NONUNIQUE', status: 'VALID' },
-          { name: 'EMP_JOB_IX', type: 'NORMAL', columns: 'JOB_ID', uniqueness: 'NONUNIQUE', status: 'VALID' },
-          { name: 'EMP_DEPARTMENT_IX', type: 'NORMAL', columns: 'DEPARTMENT_ID', uniqueness: 'NONUNIQUE', status: 'VALID' }
-        ],
-        grants: [
-          { grantee: 'SCOTT', privilege: 'SELECT', grantable: 'NO' },
-          { grantee: 'SCOTT', privilege: 'INSERT', grantable: 'YES' },
-          { grantee: 'PUBLIC', privilege: 'SELECT', grantable: 'NO' }
-        ],
-        triggers: [
-          { name: 'BIU_EMPLOYEES', type: 'BEFORE INSERT OR UPDATE', event: 'INSERT OR UPDATE', status: 'ENABLED' },
-          { name: 'AUDIT_EMPLOYEES', type: 'AFTER UPDATE OR DELETE', event: 'UPDATE OR DELETE', status: 'ENABLED' }
-        ]
-      },
-      {
-        id: 'T_DEPT',
-        name: 'DEPARTMENTS',
-        owner: 'HR',
-        type: 'TABLE',
-        rowCount: 27,
-        size: '256 KB',
-        tablespace: 'USERS',
-        created: '2023-06-15T08:00:00Z',
-        status: 'VALID',
-        isFavorite: false,
-        isExpanded: false,
-        comment: 'Company departments'
-      },
-      {
-        id: 'T_JOB',
-        name: 'JOBS',
-        owner: 'HR',
-        type: 'TABLE',
-        rowCount: 19,
-        size: '128 KB',
-        tablespace: 'USERS',
-        created: '2023-06-15T08:00:00Z',
-        status: 'VALID',
-        isFavorite: false,
-        isExpanded: false
+    try {
+      // Check cache first
+      const cachedConnections = getCachedSchemaData('connections');
+      if (cachedConnections) {
+        setConnections(cachedConnections);
+        if (cachedConnections.length > 0 && !activeConnection) {
+          setActiveConnection(cachedConnections[0].id);
+        }
+        setLoading(false);
+        return;
       }
-    ],
-    views: [
-      {
-        id: 'V_EMP_DETAILS',
-        name: 'EMP_DETAILS_VIEW',
-        owner: 'HR',
-        type: 'VIEW',
-        status: 'VALID',
-        isFavorite: true,
-        isExpanded: false,
-        comment: 'Detailed employee information view',
-        text: `CREATE OR REPLACE FORCE VIEW HR.EMP_DETAILS_VIEW AS
-SELECT 
-    e.employee_id,
-    e.first_name || ' ' || e.last_name AS full_name,
-    e.email,
-    e.hire_date,
-    e.salary,
-    d.department_name,
-    j.job_title,
-    m.first_name || ' ' || m.last_name AS manager_name,
-    l.city,
-    c.country_name
-FROM 
-    employees e
-    JOIN departments d ON e.department_id = d.department_id
-    JOIN jobs j ON e.job_id = j.job_id
-    LEFT JOIN employees m ON e.manager_id = m.employee_id
-    JOIN locations l ON d.location_id = l.location_id
-    JOIN countries c ON l.country_id = c.country_id
-WHERE 
-    e.status = 'ACTIVE'
-WITH READ ONLY;`
-      },
-      {
-        id: 'V_DEPT_SUMMARY',
-        name: 'DEPARTMENT_SUMMARY',
-        owner: 'HR',
-        type: 'VIEW',
-        status: 'VALID',
-        isFavorite: false,
-        isExpanded: false
-      }
-    ],
-    procedures: [
-      {
-        id: 'P_ADD_EMP',
-        name: 'ADD_EMPLOYEE',
-        owner: 'HR',
-        type: 'PROCEDURE',
-        status: 'VALID',
-        isFavorite: false,
-        isExpanded: false,
-        parameters: [
-          { name: 'p_employee_id', type: 'IN', datatype: 'NUMBER', defaultValue: null, position: 1 },
-          { name: 'p_first_name', type: 'IN', datatype: 'VARCHAR2', defaultValue: null, position: 2 },
-          { name: 'p_last_name', type: 'IN', datatype: 'VARCHAR2', defaultValue: null, position: 3 },
-          { name: 'p_email', type: 'IN', datatype: 'VARCHAR2', defaultValue: null, position: 4 },
-          { name: 'p_phone_number', type: 'IN', datatype: 'VARCHAR2', defaultValue: null, position: 5 },
-          { name: 'p_hire_date', type: 'IN', datatype: 'DATE', defaultValue: 'SYSDATE', position: 6 },
-          { name: 'p_job_id', type: 'IN', datatype: 'VARCHAR2', defaultValue: null, position: 7 },
-          { name: 'p_salary', type: 'IN', datatype: 'NUMBER', defaultValue: null, position: 8 },
-          { name: 'p_commission_pct', type: 'IN', datatype: 'NUMBER', defaultValue: null, position: 9 },
-          { name: 'p_manager_id', type: 'IN', datatype: 'NUMBER', defaultValue: null, position: 10 },
-          { name: 'p_department_id', type: 'IN', datatype: 'NUMBER', defaultValue: null, position: 11 }
-        ],
-        text: `CREATE OR REPLACE PROCEDURE HR.ADD_EMPLOYEE (
-    p_employee_id    IN NUMBER,
-    p_first_name     IN VARCHAR2,
-    p_last_name      IN VARCHAR2,
-    p_email          IN VARCHAR2,
-    p_phone_number   IN VARCHAR2 DEFAULT NULL,
-    p_hire_date      IN DATE DEFAULT SYSDATE,
-    p_job_id         IN VARCHAR2,
-    p_salary         IN NUMBER DEFAULT NULL,
-    p_commission_pct IN NUMBER DEFAULT NULL,
-    p_manager_id     IN NUMBER DEFAULT NULL,
-    p_department_id  IN NUMBER DEFAULT NULL
-) AS
-    v_email_count NUMBER;
-BEGIN
-    -- Check if email already exists
-    SELECT COUNT(*) INTO v_email_count
-    FROM employees
-    WHERE email = p_email;
-    
-    IF v_email_count > 0 THEN
-        RAISE_APPLICATION_ERROR(-20001, 'Email already exists');
-    END IF;
-    
-    -- Insert new employee
-    INSERT INTO employees (
-        employee_id, first_name, last_name, email,
-        phone_number, hire_date, job_id, salary,
-        commission_pct, manager_id, department_id,
-        created_date, created_by
-    ) VALUES (
-        p_employee_id, p_first_name, p_last_name, p_email,
-        p_phone_number, p_hire_date, p_job_id, p_salary,
-        p_commission_pct, p_manager_id, p_department_id,
-        SYSDATE, USER
-    );
-    
-    COMMIT;
-    
-    DBMS_OUTPUT.PUT_LINE('Employee added successfully: ' || p_employee_id);
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END ADD_EMPLOYEE;`
-      },
-      {
-        id: 'P_UPDATE_SALARY',
-        name: 'UPDATE_SALARY',
-        owner: 'HR',
-        type: 'PROCEDURE',
-        status: 'VALID',
-        isFavorite: false,
-        isExpanded: false,
-        comment: 'Update employee salary procedure'
-      }
-    ],
-    functions: [
-      {
-        id: 'F_GET_EMP_SAL',
-        name: 'GET_EMPLOYEE_SALARY',
-        owner: 'HR',
-        type: 'FUNCTION',
-        returnType: 'NUMBER',
-        deterministic: false,
-        pipelined: false,
-        status: 'VALID',
-        isFavorite: false,
-        isExpanded: false,
-        parameters: [
-          { name: 'p_employee_id', type: 'IN', datatype: 'NUMBER', defaultValue: null }
-        ],
-        text: `CREATE OR REPLACE FUNCTION HR.GET_EMPLOYEE_SALARY (
-    p_employee_id IN NUMBER
-) RETURN NUMBER
-AS
-    v_salary NUMBER;
-BEGIN
-    SELECT salary INTO v_salary
-    FROM employees
-    WHERE employee_id = p_employee_id;
-    
-    RETURN v_salary;
-EXCEPTION
-    WHEN NO_DATA_FOUND THEN
-        RETURN NULL;
-    WHEN TOO_MANY_ROWS THEN
-        RAISE_APPLICATION_ERROR(-20002, 'Multiple employees found');
-    WHEN OTHERS THEN
-        RAISE;
-END GET_EMPLOYEE_SALARY;`
-      },
-      {
-        id: 'F_CALC_BONUS',
-        name: 'CALCULATE_BONUS',
-        owner: 'HR',
-        type: 'FUNCTION',
-        returnType: 'NUMBER',
-        status: 'VALID',
-        isFavorite: false,
-        isExpanded: false
-      }
-    ],
-    packages: [
-      {
-        id: 'PKG_EMP',
-        name: 'EMP_PKG',
-        owner: 'HR',
-        type: 'PACKAGE',
-        status: 'VALID',
-        isFavorite: true,
-        isExpanded: true,
-        comment: 'Employee management package',
-        spec: `CREATE OR REPLACE PACKAGE HR.EMP_PKG
-AUTHID CURRENT_USER
-AS
-    -- Public type declarations
-    TYPE emp_rec IS RECORD (
-        employee_id   employees.employee_id%TYPE,
-        full_name     VARCHAR2(50),
-        email         employees.email%TYPE,
-        salary        employees.salary%TYPE,
-        department    departments.department_name%TYPE
-    );
-    
-    TYPE emp_tab IS TABLE OF emp_rec;
-    
-    -- Public constant declarations
-    C_MAX_SALARY CONSTANT NUMBER := 100000;
-    C_MIN_SALARY CONSTANT NUMBER := 1000;
-    
-    -- Public exception declarations
-    e_invalid_employee EXCEPTION;
-    PRAGMA EXCEPTION_INIT(e_invalid_employee, -20001);
-    
-    -- Public procedure declarations
-    PROCEDURE add_employee (
-        p_employee_id    IN NUMBER,
-        p_first_name     IN VARCHAR2,
-        p_last_name      IN VARCHAR2,
-        p_email          IN VARCHAR2,
-        p_phone_number   IN VARCHAR2 DEFAULT NULL,
-        p_hire_date      IN DATE DEFAULT SYSDATE,
-        p_job_id         IN VARCHAR2,
-        p_salary         IN NUMBER DEFAULT NULL,
-        p_commission_pct IN NUMBER DEFAULT NULL,
-        p_manager_id     IN NUMBER DEFAULT NULL,
-        p_department_id  IN NUMBER DEFAULT NULL
-    );
-    
-    PROCEDURE update_salary (
-        p_employee_id IN NUMBER,
-        p_new_salary  IN NUMBER
-    );
-    
-    PROCEDURE delete_employee (
-        p_employee_id IN NUMBER
-    );
-    
-    -- Public function declarations
-    FUNCTION get_employee_details (
-        p_employee_id IN NUMBER
-    ) RETURN emp_rec;
-    
-    FUNCTION get_department_employees (
-        p_department_id IN NUMBER
-    ) RETURN emp_tab PIPELINED;
-    
-    FUNCTION calculate_bonus (
-        p_employee_id IN NUMBER,
-        p_percentage  IN NUMBER DEFAULT 10
-    ) RETURN NUMBER;
-    
-    -- Public variable declarations
-    g_debug_mode BOOLEAN := FALSE;
-    
-END EMP_PKG;`,
-        body: `CREATE OR REPLACE PACKAGE BODY HR.EMP_PKG AS
-    
-    -- Private variables
-    v_audit_enabled BOOLEAN := TRUE;
-    
-    -- Private procedures
-    PROCEDURE audit_action (
-        p_action      IN VARCHAR2,
-        p_employee_id IN NUMBER,
-        p_user        IN VARCHAR2 DEFAULT USER
-    ) IS
-    BEGIN
-        IF v_audit_enabled THEN
-            INSERT INTO emp_audit_trail (
-                audit_id, action_date, action_type,
-                employee_id, performed_by
-            ) VALUES (
-                emp_audit_seq.NEXTVAL, SYSDATE, p_action,
-                p_employee_id, p_user
-            );
-        END IF;
-    END audit_action;
-    
-    -- Implementation of public procedures
-    PROCEDURE add_employee (
-        p_employee_id    IN NUMBER,
-        p_first_name     IN VARCHAR2,
-        p_last_name      IN VARCHAR2,
-        p_email          IN VARCHAR2,
-        p_phone_number   IN VARCHAR2 DEFAULT NULL,
-        p_hire_date      IN DATE DEFAULT SYSDATE,
-        p_job_id         IN VARCHAR2,
-        p_salary         IN NUMBER DEFAULT NULL,
-        p_commission_pct IN NUMBER DEFAULT NULL,
-        p_manager_id     IN NUMBER DEFAULT NULL,
-        p_department_id  IN NUMBER DEFAULT NULL
-    ) AS
-        v_email_count NUMBER;
-    BEGIN
-        -- Validation logic
-        IF p_salary IS NOT NULL AND p_salary < C_MIN_SALARY THEN
-            RAISE_APPLICATION_ERROR(-20003, 'Salary below minimum');
-        END IF;
-        
-        -- Check email uniqueness
-        SELECT COUNT(*) INTO v_email_count
-        FROM employees
-        WHERE email = p_email;
-        
-        IF v_email_count > 0 THEN
-            RAISE e_invalid_employee;
-        END IF;
-        
-        -- Insert record
-        INSERT INTO employees (
-            employee_id, first_name, last_name, email,
-            phone_number, hire_date, job_id, salary,
-            commission_pct, manager_id, department_id,
-            created_date, created_by
-        ) VALUES (
-            p_employee_id, p_first_name, p_last_name, p_email,
-            p_phone_number, p_hire_date, p_job_id, p_salary,
-            p_commission_pct, p_manager_id, p_department_id,
-            SYSDATE, USER
-        );
-        
-        -- Audit the action
-        audit_action('ADD', p_employee_id);
-        
-        COMMIT;
-        
-        IF g_debug_mode THEN
-            DBMS_OUTPUT.PUT_LINE('Employee added: ' || p_employee_id);
-        END IF;
-        
-    EXCEPTION
-        WHEN e_invalid_employee THEN
-            RAISE_APPLICATION_ERROR(-20001, 'Employee email already exists');
-        WHEN OTHERS THEN
-            ROLLBACK;
-            RAISE;
-    END add_employee;
-    
-    -- Other procedure implementations...
-    
-    FUNCTION get_employee_details (
-        p_employee_id IN NUMBER
-    ) RETURN emp_rec
-    AS
-        v_result emp_rec;
-    BEGIN
-        SELECT 
-            e.employee_id,
-            e.first_name || ' ' || e.last_name,
-            e.email,
-            e.salary,
-            d.department_name
-        INTO v_result
-        FROM employees e
-        JOIN departments d ON e.department_id = d.department_id
-        WHERE e.employee_id = p_employee_id;
-        
-        RETURN v_result;
-        
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RETURN NULL;
-    END get_employee_details;
-    
-    -- Other function implementations...
-    
-END EMP_PKG;`
-      }
-    ],
-    sequences: [
-      {
-        id: 'SEQ_EMP',
-        name: 'EMPLOYEES_SEQ',
-        owner: 'HR',
-        type: 'SEQUENCE',
-        lastNumber: 1100,
-        minValue: 1,
-        maxValue: 999999999999999999999999999,
-        incrementBy: 1,
-        cycleFlag: 'N',
-        orderFlag: 'N',
-        cacheSize: 20,
-        status: 'VALID',
-        isFavorite: false,
-        isExpanded: false
-      },
-      {
-        id: 'SEQ_DEPT',
-        name: 'DEPARTMENTS_SEQ',
-        owner: 'HR',
-        type: 'SEQUENCE',
-        lastNumber: 300,
-        incrementBy: 10,
-        status: 'VALID',
-        isFavorite: false,
-        isExpanded: false
-      }
-    ],
-    synonyms: [
-      {
-        id: 'SYN_EMP',
-        name: 'EMP',
-        owner: 'HR',
-        type: 'SYNONYM',
-        tableOwner: 'HR',
-        tableName: 'EMPLOYEES',
-        dbLink: null,
-        status: 'VALID',
-        isFavorite: false,
-        isExpanded: false
-      },
-      {
-        id: 'SYN_DEPT',
-        name: 'DEPT',
-        owner: 'SCOTT',
-        type: 'SYNONYM',
-        tableOwner: 'HR',
-        tableName: 'DEPARTMENTS',
-        dbLink: null,
-        status: 'VALID',
-        isFavorite: false,
-        isExpanded: false
-      }
-    ],
-    types: [
-      {
-        id: 'TYP_EMP_REC',
-        name: 'EMPLOYEE_REC',
-        owner: 'HR',
-        type: 'TYPE',
-        attributes: [
-          { name: 'EMPLOYEE_ID', type: 'NUMBER', length: null, precision: 6, scale: 0 },
-          { name: 'FULL_NAME', type: 'VARCHAR2', length: 50, precision: null, scale: null },
-          { name: 'EMAIL', type: 'VARCHAR2', length: 25, precision: null, scale: null },
-          { name: 'SALARY', type: 'NUMBER', length: null, precision: 8, scale: 2 }
-        ],
-        status: 'VALID',
-        isFavorite: false,
-        isExpanded: false
-      }
-    ],
-    triggers: [
-      {
-        id: 'TRG_EMP_AUD',
-        name: 'BIU_EMPLOYEES',
-        owner: 'HR',
-        type: 'TRIGGER',
-        triggerType: 'BEFORE EACH ROW',
-        triggeringEvent: 'INSERT OR UPDATE',
-        tableOwner: 'HR',
-        tableName: 'EMPLOYEES',
-        status: 'ENABLED',
-        isFavorite: false,
-        isExpanded: false,
-        text: `CREATE OR REPLACE TRIGGER HR.BIU_EMPLOYEES
-BEFORE INSERT OR UPDATE ON HR.EMPLOYEES
-FOR EACH ROW
-DECLARE
-    v_current_date DATE := SYSDATE;
-BEGIN
-    IF INSERTING THEN
-        :NEW.created_date := v_current_date;
-        :NEW.created_by := USER;
-        :NEW.last_updated_date := v_current_date;
-        :NEW.last_updated_by := USER;
-    ELSIF UPDATING THEN
-        :NEW.last_updated_date := v_current_date;
-        :NEW.last_updated_by := USER;
-    END IF;
-    
-    -- Validate email format
-    IF NOT REGEXP_LIKE(:NEW.email, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$') THEN
-        RAISE_APPLICATION_ERROR(-20010, 'Invalid email format');
-    END IF;
-    
-    -- Validate salary
-    IF :NEW.salary IS NOT NULL AND :NEW.salary < 0 THEN
-        RAISE_APPLICATION_ERROR(-20011, 'Salary cannot be negative');
-    END IF;
-END BIU_EMPLOYEES;`
-      },
-      {
-        id: 'TRG_DEPT_AUD',
-        name: 'DEPARTMENT_AUDIT',
-        owner: 'HR',
-        type: 'TRIGGER',
-        status: 'ENABLED',
-        isFavorite: false,
-        isExpanded: false
-      }
-    ]
-  });
 
-  // Professional State Management
-  const [activeObject, setActiveObject] = useState(schemaObjects.tables[0]);
-  const [activeTab, setActiveTab] = useState('columns');
-  const [objectTree, setObjectTree] = useState({
-    tables: true,
-    views: false,
-    procedures: false,
-    functions: false,
-    packages: true,
-    sequences: false,
-    synonyms: false,
-    types: false,
-    triggers: false
-  });
-  const [tabs, setTabs] = useState([
-    { id: 'tab-1', name: 'EMPLOYEES', type: 'TABLE', objectId: 'T_EMP', isActive: true, isDirty: false }
-  ]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showContextMenu, setShowContextMenu] = useState(false);
-  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
-  const [contextObject, setContextObject] = useState(null);
-  const [showConnectionManager, setShowConnectionManager] = useState(false);
-  const [dataView, setDataView] = useState({
-    page: 1,
-    pageSize: 50,
-    sortColumn: 'EMPLOYEE_ID',
-    sortDirection: 'ASC',
-    filters: []
-  });
+      const response = await getSchemaConnections(authToken);
+      const processedResponse = handleSchemaBrowserResponse(response);
+      const connectionsData = extractSchemaConnections(processedResponse);
+      
+      setConnections(connectionsData);
+      cacheSchemaData('connections', connectionsData, 30); // Cache for 30 minutes
+      
+      if (connectionsData.length > 0 && !activeConnection) {
+        setActiveConnection(connectionsData[0].id);
+      }
 
-  // Sample Data for Tables
-  const sampleData = {
-    EMPLOYEES: [
-      { EMPLOYEE_ID: 100, FIRST_NAME: 'Steven', LAST_NAME: 'King', EMAIL: 'SKING', HIRE_DATE: '2003-06-17', SALARY: 24000, JOB_ID: 'AD_PRES', DEPARTMENT_ID: 90 },
-      { EMPLOYEE_ID: 101, FIRST_NAME: 'Neena', LAST_NAME: 'Kochhar', EMAIL: 'NKOCHHAR', HIRE_DATE: '2005-09-21', SALARY: 17000, JOB_ID: 'AD_VP', DEPARTMENT_ID: 90 },
-      { EMPLOYEE_ID: 102, FIRST_NAME: 'Lex', LAST_NAME: 'De Haan', EMAIL: 'LDEHAAN', HIRE_DATE: '2001-01-13', SALARY: 17000, JOB_ID: 'AD_VP', DEPARTMENT_ID: 90 },
-      { EMPLOYEE_ID: 103, FIRST_NAME: 'Alexander', LAST_NAME: 'Hunold', EMAIL: 'AHUNOLD', HIRE_DATE: '2006-01-03', SALARY: 9000, JOB_ID: 'IT_PROG', DEPARTMENT_ID: 60 },
-      { EMPLOYEE_ID: 104, FIRST_NAME: 'Bruce', LAST_NAME: 'Ernst', EMAIL: 'BERNST', HIRE_DATE: '2007-05-21', SALARY: 6000, JOB_ID: 'IT_PROG', DEPARTMENT_ID: 60 }
-    ],
-    DEPARTMENTS: [
-      { DEPARTMENT_ID: 10, DEPARTMENT_NAME: 'Administration', MANAGER_ID: 200, LOCATION_ID: 1700 },
-      { DEPARTMENT_ID: 20, DEPARTMENT_NAME: 'Marketing', MANAGER_ID: 201, LOCATION_ID: 1800 },
-      { DEPARTMENT_ID: 30, DEPARTMENT_NAME: 'Purchasing', MANAGER_ID: 114, LOCATION_ID: 1700 }
-    ]
-  };
-
-  // Get Object Icon with color scheme from Collections
-  const getObjectIcon = useCallback((type) => {
-    const objectType = type.toLowerCase();
-    const iconColor = colors.objectType[objectType] || colors.textSecondary;
-    const iconProps = { size: 14, style: { color: iconColor } };
-    
-    switch(objectType) {
-      case 'table': return <Table {...iconProps} />;
-      case 'view': return <FileText {...iconProps} />;
-      case 'procedure': return <Terminal {...iconProps} />;
-      case 'function': return <Code {...iconProps} />;
-      case 'package': return <Package {...iconProps} />;
-      case 'sequence': return <Hash {...iconProps} />;
-      case 'synonym': return <Link {...iconProps} />;
-      case 'type': return <Type {...iconProps} />;
-      case 'trigger': return <Zap {...iconProps} />;
-      case 'index': return <BarChart {...iconProps} />;
-      default: return <Database {...iconProps} />;
+    } catch (error) {
+      console.error('Error fetching schema connections:', error);
+      setError(`Failed to load connections: ${error.message}`);
+      // Fallback to sample data if API fails
+      const fallbackConnections = [
+        {
+          id: 'conn-1',
+          name: 'CBX_DMX',
+          description: 'Production HR Database',
+          host: 'db-prod.company.com',
+          port: '1521',
+          service: 'ORCL',
+          username: 'HR',
+          status: 'connected',
+          color: colors.connectionOnline,
+          lastUsed: '2024-01-15T10:30:00Z'
+        }
+      ];
+      setConnections(fallbackConnections);
+      if (!activeConnection) {
+        setActiveConnection('conn-1');
+      }
+    } finally {
+      setLoading(false);
     }
-  }, [colors]);
+  }, [authToken, activeConnection, colors]);
 
-  // Handle Object Selection
-  const handleObjectSelect = useCallback((object, type) => {
+  // Fetch schema objects for active connection
+  const fetchSchemaObjects = useCallback(async () => {
+    if (!authToken || !activeConnection) {
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Check cache first
+      const cacheKey = `schema_objects_${activeConnection}`;
+      const cachedObjects = getCachedSchemaData(cacheKey);
+      if (cachedObjects) {
+        setSchemaObjects(cachedObjects);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch comprehensive schema data
+      const response = await getComprehensiveSchemaData(authToken, { 
+        connectionId: activeConnection 
+      });
+      const processedResponse = handleSchemaBrowserResponse(response);
+      const comprehensiveData = extractComprehensiveSchemaData(processedResponse);
+      
+      const transformedObjects = {
+        tables: comprehensiveData.tables?.objects || [],
+        views: comprehensiveData.views?.objects || [],
+        procedures: comprehensiveData.procedures?.objects || [],
+        functions: comprehensiveData.functions?.objects || [],
+        packages: comprehensiveData.packages?.objects || [],
+        sequences: [],
+        synonyms: [],
+        types: [],
+        triggers: []
+      };
+
+      setSchemaObjects(transformedObjects);
+      cacheSchemaData(cacheKey, transformedObjects, 15); // Cache for 15 minutes
+
+    } catch (error) {
+      console.error('Error fetching schema objects:', error);
+      setError(`Failed to load schema objects: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [authToken, activeConnection]);
+
+  // Fetch table data
+  const fetchTableData = useCallback(async (tableName) => {
+    if (!authToken || !activeConnection || !tableName) {
+      return;
+    }
+
+    setTableDataLoading(true);
+
+    try {
+      const params = {
+        connectionId: activeConnection,
+        tableName,
+        page: dataView.page,
+        pageSize: dataView.pageSize,
+        sortColumn: dataView.sortColumn,
+        sortDirection: dataView.sortDirection
+      };
+
+      const response = await getTableData(authToken, params);
+      const processedResponse = handleSchemaBrowserResponse(response);
+      const tableData = extractTableData(processedResponse);
+      
+      setTableData(tableData);
+
+    } catch (error) {
+      console.error('Error fetching table data:', error);
+      setError(`Failed to load table data: ${error.message}`);
+    } finally {
+      setTableDataLoading(false);
+    }
+  }, [authToken, activeConnection, dataView]);
+
+  // Fetch object details
+  const fetchObjectDetails = useCallback(async (objectId, objectType, objectName) => {
+    if (!authToken || !activeConnection || !objectName) {
+      return;
+    }
+
+    try {
+      const params = {
+        connectionId: activeConnection,
+        objectType,
+        objectName
+      };
+
+      const response = await getObjectDetails(authToken, params);
+      const processedResponse = handleSchemaBrowserResponse(response);
+      const details = extractObjectDetails(processedResponse);
+      
+      setObjectDetails(formatObjectDetails(details));
+
+    } catch (error) {
+      console.error('Error fetching object details:', error);
+      setError(`Failed to load object details: ${error.message}`);
+    }
+  }, [authToken, activeConnection]);
+
+  // Fetch object DDL
+  const fetchObjectDDL = useCallback(async (objectType, objectName) => {
+    if (!authToken || !activeConnection || !objectName) {
+      return;
+    }
+
+    try {
+      const params = {
+        connectionId: activeConnection,
+        objectType,
+        objectName
+      };
+
+      const response = await getObjectDDL(authToken, params);
+      const processedResponse = handleSchemaBrowserResponse(response);
+      const ddl = extractDDL(processedResponse);
+      
+      setObjectDDL(ddl);
+
+    } catch (error) {
+      console.error('Error fetching object DDL:', error);
+      setError(`Failed to load object DDL: ${error.message}`);
+    }
+  }, [authToken, activeConnection]);
+
+  // Search schema
+  const handleSearchSchema = useCallback(async (searchQuery, searchType = null) => {
+    if (!authToken || !activeConnection || !searchQuery) {
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const params = {
+        connectionId: activeConnection,
+        searchQuery,
+        searchType,
+        maxResults: 100
+      };
+
+      const response = await searchSchema(authToken, params);
+      const processedResponse = handleSchemaBrowserResponse(response);
+      const searchResults = extractSearchResults(processedResponse);
+      
+      setSearchResults(searchResults);
+
+    } catch (error) {
+      console.error('Error searching schema:', error);
+      setError(`Search failed: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [authToken, activeConnection]);
+
+  // Execute query
+  const handleExecuteQuery = useCallback(async (query, timeoutSeconds = 30, readOnly = true) => {
+    if (!authToken || !activeConnection || !query) {
+      return;
+    }
+
+    setExecutingQuery(true);
+
+    try {
+      const queryRequest = {
+        connectionId: activeConnection,
+        query,
+        timeoutSeconds,
+        readOnly
+      };
+
+      const response = await executeQuery(authToken, queryRequest);
+      const processedResponse = handleSchemaBrowserResponse(response);
+      const queryResults = extractQueryResults(processedResponse);
+      
+      return queryResults;
+
+    } catch (error) {
+      console.error('Error executing query:', error);
+      setError(`Query execution failed: ${error.message}`);
+      throw error;
+    } finally {
+      setExecutingQuery(false);
+    }
+  }, [authToken, activeConnection]);
+
+  // Generate API from object
+  const handleGenerateAPI = useCallback(async (objectType, objectName, apiType = 'REST', options = {}) => {
+    if (!authToken || !activeConnection || !objectName) {
+      return;
+    }
+
+    try {
+      const apiRequest = {
+        connectionId: activeConnection,
+        objectType,
+        objectName,
+        apiType,
+        options
+      };
+
+      const response = await generateAPIFromObject(authToken, apiRequest);
+      const processedResponse = handleSchemaBrowserResponse(response);
+      const apiResults = extractAPIGenerationResults(processedResponse);
+      
+      return apiResults;
+
+    } catch (error) {
+      console.error('Error generating API:', error);
+      setError(`API generation failed: ${error.message}`);
+      throw error;
+    }
+  }, [authToken, activeConnection]);
+
+  // Export schema data
+  const handleExportSchema = useCallback(async (format = 'JSON', objectTypes = [], objectNames = []) => {
+    if (!authToken || !activeConnection) {
+      return;
+    }
+
+    try {
+      const exportRequest = {
+        connectionId: activeConnection,
+        format,
+        objectTypes,
+        objectNames,
+        options: {}
+      };
+
+      const response = await exportSchemaData(authToken, exportRequest);
+      const processedResponse = handleSchemaBrowserResponse(response);
+      const exportResults = extractExportResults(processedResponse);
+      
+      return exportResults;
+
+    } catch (error) {
+      console.error('Error exporting schema:', error);
+      setError(`Export failed: ${error.message}`);
+      throw error;
+    }
+  }, [authToken, activeConnection]);
+
+  // Clear schema cache
+  const handleClearSchemaCache = useCallback(async () => {
+    if (!authToken) {
+      return;
+    }
+
+    try {
+      await clearSchemaCache(authToken);
+      clearCachedSchemaData(); // Clear local cache
+      // Refresh data
+      fetchSchemaConnections();
+      if (activeConnection) {
+        fetchSchemaObjects();
+      }
+    } catch (error) {
+      console.error('Error clearing cache:', error);
+      setError(`Cache clear failed: ${error.message}`);
+    }
+  }, [authToken, activeConnection, fetchSchemaConnections, fetchSchemaObjects]);
+
+  // Health check
+  const checkSchemaHealth = useCallback(async () => {
+    if (!authToken) {
+      return;
+    }
+
+    try {
+      const response = await healthCheck(authToken);
+      const processedResponse = handleSchemaBrowserResponse(response);
+      const healthData = extractHealthCheck(processedResponse);
+      
+      return healthData;
+
+    } catch (error) {
+      console.error('Error checking health:', error);
+      return {
+        status: 'DOWN',
+        timestamp: new Date().toISOString(),
+        error: error.message
+      };
+    }
+  }, [authToken]);
+
+  // Refresh all schema data
+  const refreshAllSchemaData = useCallback(async () => {
+    if (!authToken) {
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const healthData = await checkSchemaHealth();
+      
+      if (healthData.status === 'UP') {
+        // Clear cache and fetch fresh data
+        clearCachedSchemaData();
+        await fetchSchemaConnections();
+        
+        if (activeConnection) {
+          await fetchSchemaObjects();
+          
+          // Refresh active object if selected
+          if (activeObject) {
+            await fetchObjectDetails(activeObject.id, activeObject.type, activeObject.name);
+            if (activeObject.type === 'TABLE') {
+              await fetchTableData(activeObject.name);
+            }
+          }
+        }
+        
+        return { success: true, health: healthData };
+      } else {
+        setError('Schema browser service is unavailable');
+        return { success: false, health: healthData };
+      }
+
+    } catch (error) {
+      console.error('Error refreshing schema data:', error);
+      setError(`Refresh failed: ${error.message}`);
+      return { success: false, error: error.message };
+    } finally {
+      setLoading(false);
+    }
+  }, [authToken, activeConnection, activeObject, fetchSchemaConnections, fetchSchemaObjects, fetchObjectDetails, fetchTableData, checkSchemaHealth]);
+
+  // Initialize data
+  useEffect(() => {
+    fetchSchemaConnections();
+  }, [fetchSchemaConnections]);
+
+  useEffect(() => {
+    if (activeConnection) {
+      fetchSchemaObjects();
+    }
+  }, [activeConnection, fetchSchemaObjects]);
+
+  // Handle Object Selection - updated to be more robust
+  const handleObjectSelect = useCallback(async (object, type) => {
+    if (!authToken || !activeConnection || !object) {
+      return;
+    }
+
     setActiveObject(object);
     setSelectedForApiGeneration(object);
     
@@ -1475,43 +1389,72 @@ END BIU_EMPLOYEES;`
     if (existingTab) {
       setTabs(tabs.map(tab => ({ ...tab, isActive: tab.id === tabId })));
     } else {
-      setTabs(tabs.map(tab => ({ ...tab, isActive: false })).concat({
+      const newTabs = tabs.map(tab => ({ ...tab, isActive: false })).concat({
         id: tabId,
         name: object.name,
         type: type,
         objectId: object.id,
         isActive: true,
         isDirty: false
-      }));
+      });
+      setTabs(newTabs.slice(-5)); // Keep only last 5 tabs
     }
     
     // Set default tab based on object type
     switch(type.toLowerCase()) {
       case 'table':
         setActiveTab('columns');
+        // Fetch table data
+        await fetchTableData(object.name);
         break;
       case 'view':
         setActiveTab('definition');
+        // Fetch view DDL
+        await fetchObjectDDL(type, object.name);
         break;
       case 'procedure':
       case 'function':
         setActiveTab('parameters');
+        // Fetch object details
+        await fetchObjectDetails(object.id, type, object.name);
         break;
       case 'package':
         setActiveTab('specification');
+        // Fetch package DDL
+        await fetchObjectDDL(type, object.name);
         break;
       case 'trigger':
         setActiveTab('definition');
+        // Fetch trigger DDL
+        await fetchObjectDDL(type, object.name);
         break;
       default:
         setActiveTab('properties');
     }
 
+    // Fetch object details
+    await fetchObjectDetails(object.id, type, object.name);
+
     // Close sidebar on mobile
     if (window.innerWidth < 768) {
       setIsLeftSidebarVisible(false);
     }
-  }, [tabs]);
+  }, [authToken, activeConnection, tabs, fetchTableData, fetchObjectDDL, fetchObjectDetails]);
+
+  // Auto-select first schema object when schema objects are loaded
+  useEffect(() => {
+    // Check if we have schema objects but no active object yet, and we haven't auto-selected before
+    const hasObjects = Object.values(schemaObjects).some(arr => arr.length > 0);
+    
+    if (hasObjects && !activeObject && !hasAutoSelected && activeConnection) {
+      const firstObjectData = getFirstSchemaObject(schemaObjects);
+      
+      if (firstObjectData) {
+        setHasAutoSelected(true);
+        handleObjectSelect(firstObjectData.object, firstObjectData.type);
+      }
+    }
+  }, [schemaObjects, activeObject, hasAutoSelected, activeConnection, handleObjectSelect, getFirstSchemaObject]);
 
   // Handle Context Menu
   const handleContextMenu = useCallback((e, object, type) => {
@@ -1528,139 +1471,159 @@ END BIU_EMPLOYEES;`
     setObjectTree(prev => ({ ...prev, [type]: !prev[type] }));
   }, []);
 
-  // Render Columns Tab (Optimized for mobile)
-  const renderColumnsTab = () => (
-    <div className="flex-1 overflow-auto">
-      <div className="border rounded" style={{ 
-        borderColor: colors.gridBorder,
-        backgroundColor: colors.card
-      }}>
-        {/* Toolbar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 border-b" style={{ 
+  // Handle search from global search
+  const handleGlobalSearch = useCallback(() => {
+    if (globalSearchQuery.trim()) {
+      handleSearchSchema(globalSearchQuery);
+    }
+  }, [globalSearchQuery, handleSearchSchema]);
+
+  // Render Columns Tab
+  const renderColumnsTab = () => {
+    const columns = objectDetails?.columns || activeObject?.columns || [];
+    
+    return (
+      <div className="flex-1 overflow-auto">
+        <div className="border rounded" style={{ 
           borderColor: colors.gridBorder,
           backgroundColor: colors.card
         }}>
-          <div className="text-sm font-medium" style={{ color: colors.text }}>
-            Columns ({activeObject.columns?.length || 0})
+          {/* Toolbar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 border-b" style={{ 
+            borderColor: colors.gridBorder,
+            backgroundColor: colors.card
+          }}>
+            <div className="text-sm font-medium" style={{ color: colors.text }}>
+              Columns ({columns.length})
+            </div>
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <button 
+                className="px-2 py-1 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift touch-target"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+                onClick={() => {
+                  const columnsText = columns.map(col => 
+                    `${col.name} ${col.type} ${col.nullable === 'Y' ? 'NULL' : 'NOT NULL'}`
+                  ).join('\n');
+                  navigator.clipboard.writeText(columnsText || '');
+                }}
+                aria-label="Copy columns"
+              >
+                <Copy size={12} className="inline sm:mr-1" />
+                <span className="hidden sm:inline">Copy</span>
+              </button>
+              <button 
+                className="px-2 py-1 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift touch-target"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+                aria-label="Export columns"
+              >
+                <Download size={12} className="inline sm:mr-1" />
+                <span className="hidden sm:inline">Export</span>
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2 self-end sm:self-auto">
-            <button 
-              className="px-2 py-1 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift touch-target"
-              style={{ backgroundColor: colors.hover, color: colors.text }}
-              onClick={() => {
-                const columnsText = activeObject.columns?.map(col => 
-                  `${col.name} ${col.type} ${col.nullable === 'Y' ? 'NULL' : 'NOT NULL'}`
-                ).join('\n');
-                navigator.clipboard.writeText(columnsText || '');
-              }}
-              aria-label="Copy columns"
-            >
-              <Copy size={12} className="inline sm:mr-1" />
-              <span className="hidden sm:inline">Copy</span>
-            </button>
-            <button 
-              className="px-2 py-1 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift touch-target"
-              style={{ backgroundColor: colors.hover, color: colors.text }}
-              aria-label="Export columns"
-            >
-              <Download size={12} className="inline sm:mr-1" />
-              <span className="hidden sm:inline">Export</span>
-            </button>
-          </div>
-        </div>
 
-        {/* Columns Grid - Responsive */}
-        <div className="overflow-auto max-h-[calc(100vh-300px)] sm:max-h-none">
-          <table className="w-full min-w-[600px]" style={{ borderCollapse: 'collapse' }}>
-            <thead style={{ 
-              backgroundColor: colors.tableHeader,
-              position: 'sticky',
-              top: 0,
-              zIndex: 10
-            }}>
-              <tr>
-                <th className="text-left p-2 text-xs font-medium border-b" style={{ 
-                  borderColor: colors.gridBorder,
-                  color: colors.textSecondary,
-                  width: '30px'
-                }}>#</th>
-                <th className="text-left p-2 text-xs font-medium border-b" style={{ 
-                  borderColor: colors.gridBorder,
-                  color: colors.textSecondary,
-                  minWidth: '100px'
-                }}>Column</th>
-                <th className="text-left p-2 text-xs font-medium border-b hidden xs:table-cell" style={{ 
-                  borderColor: colors.gridBorder,
-                  color: colors.textSecondary,
-                  minWidth: '80px'
-                }}>Type</th>
-                <th className="text-left p-2 text-xs font-medium border-b hidden sm:table-cell" style={{ 
-                  borderColor: colors.gridBorder,
-                  color: colors.textSecondary,
-                  width: '40px'
-                }}>Null</th>
-                <th className="text-left p-2 text-xs font-medium border-b hidden sm:table-cell" style={{ 
-                  borderColor: colors.gridBorder,
-                  color: colors.textSecondary,
-                  width: '50px'
-                }}>Key</th>
-                <th className="text-left p-2 text-xs font-medium border-b hidden md:table-cell" style={{ 
-                  borderColor: colors.gridBorder,
-                  color: colors.textSecondary
-                }}>Default</th>
-              </tr>
-            </thead>
-            <tbody>
-              {activeObject.columns?.map((col, index) => (
-                <tr 
-                  key={col.name}
-                  className="hover:bg-opacity-50 transition-colors"
-                  style={{ 
-                    backgroundColor: index % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                    borderBottom: `1px solid ${colors.gridBorder}`
-                  }}
-                >
-                  <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{col.position}</td>
-                  <td className="p-2 text-xs font-medium truncate max-w-[120px] sm:max-w-none" style={{ color: colors.text }}>
-                    <div className="flex flex-col">
-                      <span className="truncate">{col.name}</span>
-                      <span className="text-xs text-gray-500 xs:hidden">{col.type}</span>
-                    </div>
-                  </td>
-                  <td className="p-2 text-xs font-mono truncate hidden xs:table-cell" style={{ color: colors.text }}>{col.type}</td>
-                  <td className="p-2 text-xs text-center hidden sm:table-cell">
-                    <div className={`inline-flex items-center justify-center w-5 h-5 rounded ${
-                      col.nullable === 'Y' ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'
-                    }`}>
-                      {col.nullable === 'Y' ? 'Y' : 'N'}
-                    </div>
-                  </td>
-                  <td className="p-2 hidden sm:table-cell">
-                    {col.key && (
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                        col.key === 'PK' ? 'bg-blue-500/10' :
-                        col.key === 'FK' ? 'bg-purple-500/10 text-purple-400' :
-                        'bg-green-500/10 text-green-400'
-                      }`}>
-                        {col.key}
-                      </span>
-                    )}
-                  </td>
-                  <td className="p-2 text-xs font-mono truncate hidden md:table-cell" style={{ color: colors.textSecondary }}>
-                    {col.defaultValue || <span className="italic">NULL</span>}
-                  </td>
+          {/* Columns Grid */}
+          <div className="overflow-auto max-h-[calc(100vh-300px)] sm:max-h-none">
+            <table className="w-full min-w-[600px]" style={{ borderCollapse: 'collapse' }}>
+              <thead style={{ 
+                backgroundColor: colors.tableHeader,
+                position: 'sticky',
+                top: 0,
+                zIndex: 10
+              }}>
+                <tr>
+                  <th className="text-left p-2 text-xs font-medium border-b" style={{ 
+                    borderColor: colors.gridBorder,
+                    color: colors.textSecondary,
+                    width: '30px'
+                  }}>#</th>
+                  <th className="text-left p-2 text-xs font-medium border-b" style={{ 
+                    borderColor: colors.gridBorder,
+                    color: colors.textSecondary,
+                    minWidth: '100px'
+                  }}>Column</th>
+                  <th className="text-left p-2 text-xs font-medium border-b hidden xs:table-cell" style={{ 
+                    borderColor: colors.gridBorder,
+                    color: colors.textSecondary,
+                    minWidth: '80px'
+                  }}>Type</th>
+                  <th className="text-left p-2 text-xs font-medium border-b hidden sm:table-cell" style={{ 
+                    borderColor: colors.gridBorder,
+                    color: colors.textSecondary,
+                    width: '40px'
+                  }}>Null</th>
+                  <th className="text-left p-2 text-xs font-medium border-b hidden sm:table-cell" style={{ 
+                    borderColor: colors.gridBorder,
+                    color: colors.textSecondary,
+                    width: '50px'
+                  }}>Key</th>
+                  <th className="text-left p-2 text-xs font-medium border-b hidden md:table-cell" style={{ 
+                    borderColor: colors.gridBorder,
+                    color: colors.textSecondary
+                  }}>Default</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {columns.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" className="p-4 text-center text-sm" style={{ color: colors.textSecondary }}>
+                      No columns found
+                    </td>
+                  </tr>
+                ) : (
+                  columns.map((col, index) => (
+                    <tr 
+                      key={col.name}
+                      className="hover:bg-opacity-50 transition-colors"
+                      style={{ 
+                        backgroundColor: index % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                        borderBottom: `1px solid ${colors.gridBorder}`
+                      }}
+                    >
+                      <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{col.position || index + 1}</td>
+                      <td className="p-2 text-xs font-medium truncate max-w-[120px] sm:max-w-none" style={{ color: colors.text }}>
+                        <div className="flex flex-col">
+                          <span className="truncate">{col.name}</span>
+                          <span className="text-xs text-gray-500 xs:hidden">{col.type}</span>
+                        </div>
+                      </td>
+                      <td className="p-2 text-xs font-mono truncate hidden xs:table-cell" style={{ color: colors.text }}>{col.type}</td>
+                      <td className="p-2 text-xs text-center hidden sm:table-cell">
+                        <div className={`inline-flex items-center justify-center w-5 h-5 rounded ${
+                          col.nullable === 'Y' ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'
+                        }`}>
+                          {col.nullable === 'Y' ? 'Y' : 'N'}
+                        </div>
+                      </td>
+                      <td className="p-2 hidden sm:table-cell">
+                        {col.key && (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                            col.key === 'PK' ? 'bg-blue-500/10' :
+                            col.key === 'FK' ? 'bg-purple-500/10 text-purple-400' :
+                            'bg-green-500/10 text-green-400'
+                          }`}>
+                            {col.key}
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-2 text-xs font-mono truncate hidden md:table-cell" style={{ color: colors.textSecondary }}>
+                        {col.defaultValue || <span className="italic">NULL</span>}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
-  // Render Data Tab (Mobile optimized)
+  // Render Data Tab
   const renderDataTab = () => {
-    const data = sampleData[activeObject.name] || [];
+    const data = tableData?.rows || [];
+    const columns = tableData?.columns || activeObject?.columns || [];
     
     return (
       <div className="flex-1 flex flex-col">
@@ -1673,9 +1636,15 @@ END BIU_EMPLOYEES;`
             <button 
               className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 hover-lift touch-target"
               style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+              onClick={() => activeObject && fetchTableData(activeObject.name)}
+              disabled={tableDataLoading || !activeObject}
               aria-label="Execute query"
             >
-              <Play size={12} />
+              {tableDataLoading ? (
+                <RefreshCw size={12} className="animate-spin" />
+              ) : (
+                <Play size={12} />
+              )}
               <span className="hidden sm:inline">Execute</span>
             </button>
             <div className="ml-0 sm:ml-4 flex items-center gap-2">
@@ -1687,22 +1656,36 @@ END BIU_EMPLOYEES;`
                   color: colors.text
                 }}
                 aria-label="Auto-refresh interval"
+                onChange={(e) => {
+                  if (e.target.value !== 'Off' && activeObject) {
+                    const interval = parseInt(e.target.value);
+                    // Implement auto-refresh logic here
+                  }
+                }}
               >
                 <option>Refresh: Off</option>
-                <option>5s</option>
-                <option>10s</option>
-                <option>30s</option>
+                <option value="5">5s</option>
+                <option value="10">10s</option>
+                <option value="30">30s</option>
               </select>
             </div>
           </div>
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs hidden sm:inline" style={{ color: colors.textSecondary }}>
-              Page: 1 of 1 | Rows: 1-{data.length}
+              Page: {tableData?.page || 1} of {tableData?.totalPages || 1} | 
+              Rows: {((tableData?.page || 1) - 1) * (tableData?.pageSize || 50) + 1}-
+              {Math.min((tableData?.page || 1) * (tableData?.pageSize || 50), tableData?.totalRows || 0)}
             </span>
             <div className="flex items-center gap-2">
               <button 
                 className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift touch-target"
                 style={{ backgroundColor: colors.hover }}
+                onClick={() => {
+                  if (tableData && tableData.page > 1) {
+                    setDataView(prev => ({ ...prev, page: prev.page - 1 }));
+                  }
+                }}
+                disabled={!tableData || tableData.page <= 1}
                 aria-label="Previous page"
               >
                 <ChevronLeft size={14} style={{ color: colors.textSecondary }} />
@@ -1710,6 +1693,12 @@ END BIU_EMPLOYEES;`
               <button 
                 className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift touch-target"
                 style={{ backgroundColor: colors.hover }}
+                onClick={() => {
+                  if (tableData && tableData.page < tableData.totalPages) {
+                    setDataView(prev => ({ ...prev, page: prev.page + 1 }));
+                  }
+                }}
+                disabled={!tableData || tableData.page >= tableData.totalPages}
                 aria-label="Next page"
               >
                 <ChevronRight size={14} style={{ color: colors.textSecondary }} />
@@ -1724,93 +1713,109 @@ END BIU_EMPLOYEES;`
             borderColor: colors.gridBorder,
             backgroundColor: colors.card
           }}>
-            <div className="sm:hidden">
-              {/* Mobile card view */}
-              {data.map((row, rowIndex) => (
-                <div 
-                  key={rowIndex}
-                  className="p-3 border-b"
-                  style={{ 
-                    borderColor: colors.gridBorder,
-                    backgroundColor: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd
-                  }}
-                >
-                  <div className="space-y-2">
-                    {activeObject.columns?.slice(0, 3).map(col => (
-                      <div key={col.name} className="flex justify-between">
-                        <span className="text-xs font-medium" style={{ color: colors.textSecondary }}>
-                          {col.name}:
-                        </span>
-                        <span className="text-xs truncate max-w-[150px]" style={{ color: colors.text }}>
-                          {row[col.name] !== null && row[col.name] !== undefined ? row[col.name] : (
-                            <span className="italic" style={{ color: colors.textTertiary }}>NULL</span>
-                          )}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+            {tableDataLoading ? (
+              <div className="flex items-center justify-center h-64">
+                <RefreshCw className="animate-spin" size={24} style={{ color: colors.textSecondary }} />
+              </div>
+            ) : data.length === 0 ? (
+              <div className="p-8 text-center">
+                <Table size={32} className="mx-auto mb-4" style={{ color: colors.textSecondary }} />
+                <div className="text-sm" style={{ color: colors.text }}>No data available</div>
+                <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+                  Execute query to load data
                 </div>
-              ))}
-            </div>
-            
-            {/* Desktop table view */}
-            <table className="w-full min-w-[600px] hidden sm:table" style={{ borderCollapse: 'collapse' }}>
-              <thead style={{ 
-                backgroundColor: colors.tableHeader,
-                position: 'sticky',
-                top: 0,
-                zIndex: 10
-              }}>
-                <tr>
-                  {activeObject.columns?.slice(0, 5).map(col => (
-                    <th key={col.name} className="text-left p-2 text-xs font-medium border-b" style={{ 
-                      borderColor: colors.gridBorder,
-                      color: colors.textSecondary,
-                      whiteSpace: 'nowrap'
-                    }}>
-                      <div className="flex items-center gap-1">
-                        <span className="truncate">{col.name}</span>
-                        {col.key && (
-                          <span className={`px-1 py-0.5 rounded text-xs hidden sm:inline ${
-                            col.key === 'PK' ? 'bg-blue-500/10' :
-                            col.key === 'FK' ? 'bg-purple-500/10 text-purple-400' :
-                            'bg-green-500/10 text-green-400'
-                          }`}>
-                            {col.key}
-                          </span>
-                        )}
-                      </div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {data.map((row, rowIndex) => (
-                  <tr 
-                    key={rowIndex}
-                    className="hover:bg-opacity-50 transition-colors"
-                    style={{ 
-                      backgroundColor: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                      borderBottom: `1px solid ${colors.gridBorder}`
-                    }}
-                  >
-                    {activeObject.columns?.slice(0, 5).map(col => (
-                      <td key={col.name} className="p-2 text-xs border-r" style={{ 
+              </div>
+            ) : (
+              <>
+                <div className="sm:hidden">
+                  {/* Mobile card view */}
+                  {data.slice(0, 20).map((row, rowIndex) => (
+                    <div 
+                      key={rowIndex}
+                      className="p-3 border-b"
+                      style={{ 
                         borderColor: colors.gridBorder,
-                        color: colors.text,
-                        whiteSpace: 'nowrap'
-                      }}>
-                        <div className="truncate max-w-[100px] sm:max-w-none">
-                          {row[col.name] !== null && row[col.name] !== undefined ? row[col.name] : (
-                            <span className="italic" style={{ color: colors.textTertiary }}>NULL</span>
-                          )}
-                        </div>
-                      </td>
+                        backgroundColor: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd
+                      }}
+                    >
+                      <div className="space-y-2">
+                        {columns.slice(0, 3).map(col => (
+                          <div key={col.name} className="flex justify-between">
+                            <span className="text-xs font-medium" style={{ color: colors.textSecondary }}>
+                              {col.name}:
+                            </span>
+                            <span className="text-xs truncate max-w-[150px]" style={{ color: colors.text }}>
+                              {row[col.name] !== null && row[col.name] !== undefined ? row[col.name] : (
+                                <span className="italic" style={{ color: colors.textTertiary }}>NULL</span>
+                              )}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Desktop table view */}
+                <table className="w-full min-w-[600px] hidden sm:table" style={{ borderCollapse: 'collapse' }}>
+                  <thead style={{ 
+                    backgroundColor: colors.tableHeader,
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
+                  }}>
+                    <tr>
+                      {columns.slice(0, 5).map(col => (
+                        <th key={col.name} className="text-left p-2 text-xs font-medium border-b" style={{ 
+                          borderColor: colors.gridBorder,
+                          color: colors.textSecondary,
+                          whiteSpace: 'nowrap'
+                        }}>
+                          <div className="flex items-center gap-1">
+                            <span className="truncate">{col.name}</span>
+                            {col.key && (
+                              <span className={`px-1 py-0.5 rounded text-xs hidden sm:inline ${
+                                col.key === 'PK' ? 'bg-blue-500/10' :
+                                col.key === 'FK' ? 'bg-purple-500/10 text-purple-400' :
+                                'bg-green-500/10 text-green-400'
+                              }`}>
+                                {col.key}
+                              </span>
+                            )}
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.slice(0, 50).map((row, rowIndex) => (
+                      <tr 
+                        key={rowIndex}
+                        className="hover:bg-opacity-50 transition-colors"
+                        style={{ 
+                          backgroundColor: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                          borderBottom: `1px solid ${colors.gridBorder}`
+                        }}
+                      >
+                        {columns.slice(0, 5).map(col => (
+                          <td key={col.name} className="p-2 text-xs border-r" style={{ 
+                            borderColor: colors.gridBorder,
+                            color: colors.text,
+                            whiteSpace: 'nowrap'
+                          }}>
+                            <div className="truncate max-w-[100px] sm:max-w-none">
+                              {row[col.name] !== null && row[col.name] !== undefined ? row[col.name] : (
+                                <span className="italic" style={{ color: colors.textTertiary }}>NULL</span>
+                              )}
+                            </div>
+                          </td>
+                        ))}
+                      </tr>
                     ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                  </tbody>
+                </table>
+              </>
+            )}
           </div>
         </div>
 
@@ -1821,9 +1826,9 @@ END BIU_EMPLOYEES;`
         }}>
           <div className="text-xs truncate" style={{ color: colors.textSecondary }}>
             <span className="block sm:inline">
-              {data.length} rows fetched in 0.023 seconds | 
-              {window.innerWidth >= 640 && ` Table: ${activeObject.name} | `}
-              Total: {activeObject.rowCount?.toLocaleString()}
+              {tableData?.rows?.length || 0} rows fetched {tableData?.queryTime ? `in ${tableData.queryTime}ms` : ''} | 
+              {window.innerWidth >= 640 && ` Table: ${activeObject?.name} | `}
+              Total: {(tableData?.totalRows || 0).toLocaleString()}
             </span>
           </div>
         </div>
@@ -1831,225 +1836,254 @@ END BIU_EMPLOYEES;`
     );
   };
 
-  // Render Parameters Tab for Procedures/Functions
-  const renderParametersTab = () => (
-    <div className="flex-1 overflow-auto">
-      <div className="border rounded" style={{ 
-        borderColor: colors.gridBorder,
-        backgroundColor: colors.card
-      }}>
-        <div className="p-2 border-b" style={{ 
+  // Render Parameters Tab
+  const renderParametersTab = () => {
+    const parameters = objectDetails?.parameters || activeObject?.parameters || [];
+    
+    return (
+      <div className="flex-1 overflow-auto">
+        <div className="border rounded" style={{ 
           borderColor: colors.gridBorder,
           backgroundColor: colors.card
         }}>
-          <div className="text-sm font-medium" style={{ color: colors.text }}>
-            Parameters ({activeObject.parameters?.length || 0})
+          <div className="p-2 border-b" style={{ 
+            borderColor: colors.gridBorder,
+            backgroundColor: colors.card
+          }}>
+            <div className="text-sm font-medium" style={{ color: colors.text }}>
+              Parameters ({parameters.length})
+            </div>
+          </div>
+          <div className="overflow-auto max-h-[calc(100vh-300px)] sm:max-h-none">
+            <table className="w-full min-w-[600px]" style={{ borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ backgroundColor: colors.tableHeader }}>
+                  <th className="text-left p-2 text-xs font-medium border-b hidden sm:table-cell" style={{ 
+                    borderColor: colors.gridBorder,
+                    color: colors.textSecondary,
+                    width: '30px'
+                  }}>#</th>
+                  <th className="text-left p-2 text-xs font-medium border-b" style={{ 
+                    borderColor: colors.gridBorder,
+                    color: colors.textSecondary,
+                    minWidth: '100px'
+                  }}>Parameter</th>
+                  <th className="text-left p-2 text-xs font-medium border-b" style={{ 
+                    borderColor: colors.gridBorder,
+                    color: colors.textSecondary,
+                    width: '60px'
+                  }}>Mode</th>
+                  <th className="text-left p-2 text-xs font-medium border-b hidden md:table-cell" style={{ 
+                    borderColor: colors.gridBorder,
+                    color: colors.textSecondary,
+                    minWidth: '80px'
+                  }}>Type</th>
+                  <th className="text-left p-2 text-xs font-medium border-b hidden lg:table-cell" style={{ 
+                    borderColor: colors.gridBorder,
+                    color: colors.textSecondary,
+                    minWidth: '100px'
+                  }}>Default</th>
+                </tr>
+              </thead>
+              <tbody>
+                {parameters.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" className="p-4 text-center text-sm" style={{ color: colors.textSecondary }}>
+                      No parameters found
+                    </td>
+                  </tr>
+                ) : (
+                  parameters.map((param, index) => (
+                    <tr 
+                      key={param.name}
+                      className="hover:bg-opacity-50 transition-colors"
+                      style={{ 
+                        backgroundColor: index % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                        borderBottom: `1px solid ${colors.gridBorder}`
+                      }}
+                    >
+                      <td className="p-2 text-xs hidden sm:table-cell" style={{ color: colors.textSecondary }}>{param.position || index + 1}</td>
+                      <td className="p-2 text-xs font-medium truncate max-w-[120px] sm:max-w-none" style={{ color: colors.text }}>
+                        <div className="flex flex-col">
+                          <span>{param.name}</span>
+                          <span className="text-xs text-gray-500 md:hidden">{param.datatype}</span>
+                        </div>
+                      </td>
+                      <td className="p-2">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                          param.type === 'IN' ? 'bg-blue-500/10' :
+                          param.type === 'OUT' ? 'bg-purple-500/10 text-purple-400' :
+                          'bg-green-500/10 text-green-400'
+                        }`}>
+                          {param.type}
+                        </span>
+                      </td>
+                      <td className="p-2 text-xs font-mono truncate hidden md:table-cell" style={{ color: colors.text }}>{param.datatype}</td>
+                      <td className="p-2 text-xs font-mono truncate hidden lg:table-cell" style={{ color: colors.textSecondary }}>
+                        {param.defaultValue || <span className="italic">NULL</span>}
+                      </td>
+                    </tr>
+                  ))
+                )}
+                {activeObject?.type === 'FUNCTION' && objectDetails?.returnType && (
+                  <tr className="border-t" style={{ borderColor: colors.gridBorder }}>
+                    <td className="p-2 text-xs font-medium hidden sm:table-cell" style={{ color: colors.textSecondary }}>-</td>
+                    <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>RETURN</td>
+                    <td className="p-2">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-500/10 text-green-400">
+                        OUT
+                      </span>
+                    </td>
+                    <td className="p-2 text-xs font-mono font-medium truncate hidden md:table-cell" style={{ color: colors.text }}>
+                      {objectDetails.returnType}
+                    </td>
+                    <td className="p-2 text-xs truncate hidden lg:table-cell" style={{ color: colors.textSecondary }}>
+                      {objectDetails.deterministic ? 'DETERMINISTIC' : ''}
+                      {objectDetails.pipelined ? ' | PIPELINED' : ''}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-        <div className="overflow-auto max-h-[calc(100vh-300px)] sm:max-h-none">
-          <table className="w-full min-w-[600px]" style={{ borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ backgroundColor: colors.tableHeader }}>
-                <th className="text-left p-2 text-xs font-medium border-b hidden sm:table-cell" style={{ 
-                  borderColor: colors.gridBorder,
-                  color: colors.textSecondary,
-                  width: '30px'
-                }}>#</th>
-                <th className="text-left p-2 text-xs font-medium border-b" style={{ 
-                  borderColor: colors.gridBorder,
-                  color: colors.textSecondary,
-                  minWidth: '100px'
-                }}>Parameter</th>
-                <th className="text-left p-2 text-xs font-medium border-b" style={{ 
-                  borderColor: colors.gridBorder,
-                  color: colors.textSecondary,
-                  width: '60px'
-                }}>Mode</th>
-                <th className="text-left p-2 text-xs font-medium border-b hidden md:table-cell" style={{ 
-                  borderColor: colors.gridBorder,
-                  color: colors.textSecondary,
-                  minWidth: '80px'
-                }}>Type</th>
-                <th className="text-left p-2 text-xs font-medium border-b hidden lg:table-cell" style={{ 
-                  borderColor: colors.gridBorder,
-                  color: colors.textSecondary,
-                  minWidth: '100px'
-                }}>Default</th>
-              </tr>
-            </thead>
-            <tbody>
-              {activeObject.parameters?.map((param, index) => (
-                <tr 
-                  key={param.name}
-                  className="hover:bg-opacity-50 transition-colors"
-                  style={{ 
-                    backgroundColor: index % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                    borderBottom: `1px solid ${colors.gridBorder}`
-                  }}
-                >
-                  <td className="p-2 text-xs hidden sm:table-cell" style={{ color: colors.textSecondary }}>{param.position}</td>
-                  <td className="p-2 text-xs font-medium truncate max-w-[120px] sm:max-w-none" style={{ color: colors.text }}>
-                    <div className="flex flex-col">
-                      <span>{param.name}</span>
-                      <span className="text-xs text-gray-500 md:hidden">{param.datatype}</span>
-                    </div>
-                  </td>
-                  <td className="p-2">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                      param.type === 'IN' ? 'bg-blue-500/10' :
-                      param.type === 'OUT' ? 'bg-purple-500/10 text-purple-400' :
-                      'bg-green-500/10 text-green-400'
-                    }`}>
-                      {param.type}
-                    </span>
-                  </td>
-                  <td className="p-2 text-xs font-mono truncate hidden md:table-cell" style={{ color: colors.text }}>{param.datatype}</td>
-                  <td className="p-2 text-xs font-mono truncate hidden lg:table-cell" style={{ color: colors.textSecondary }}>
-                    {param.defaultValue || <span className="italic">NULL</span>}
-                  </td>
-                </tr>
-              ))}
-              {activeObject.type === 'FUNCTION' && activeObject.returnType && (
-                <tr className="border-t" style={{ borderColor: colors.gridBorder }}>
-                  <td className="p-2 text-xs font-medium hidden sm:table-cell" style={{ color: colors.textSecondary }}>-</td>
-                  <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>RETURN</td>
-                  <td className="p-2">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-500/10 text-green-400">
-                      OUT
-                    </span>
-                  </td>
-                  <td className="p-2 text-xs font-mono font-medium truncate hidden md:table-cell" style={{ color: colors.text }}>
-                    {activeObject.returnType}
-                  </td>
-                  <td className="p-2 text-xs truncate hidden lg:table-cell" style={{ color: colors.textSecondary }}>
-                    {activeObject.deterministic ? 'DETERMINISTIC' : ''}
-                    {activeObject.pipelined ? ' | PIPELINED' : ''}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
-  // Render DDL Tab - Mobile optimized
-  const renderDDLTab = () => (
-    <div className="flex-1 overflow-auto">
-      <div className="border rounded p-2 sm:p-4" style={{ 
-        borderColor: colors.border,
-        backgroundColor: colors.codeBg
-      }}>
-        <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto max-h-[calc(100vh-250px)]" style={{ 
-          color: colors.text,
-          fontFamily: 'Consolas, "Courier New", monospace'
+  // Render DDL Tab
+  const renderDDLTab = () => {
+    const ddl = objectDDL || activeObject?.text || activeObject?.spec || activeObject?.body || '';
+    
+    return (
+      <div className="flex-1 overflow-auto">
+        <div className="border rounded p-2 sm:p-4" style={{ 
+          borderColor: colors.border,
+          backgroundColor: colors.codeBg
         }}>
-          {activeObject.text || activeObject.spec || activeObject.body || 'No DDL available'}
-        </pre>
-        <div className="sticky bottom-0 left-0 right-0 p-2 flex justify-end bg-gradient-to-t from-black/20 to-transparent">
-          <button 
-            className="px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift touch-target"
-            style={{ backgroundColor: colors.hover, color: colors.text }}
-            onClick={() => {
-              const ddl = activeObject.text || activeObject.spec || activeObject.body || '';
-              navigator.clipboard.writeText(ddl);
-            }}
-            aria-label="Copy DDL to clipboard"
-          >
-            <Copy size={12} className="inline mr-1" />
-            Copy
-          </button>
+          <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto max-h-[calc(100vh-250px)]" style={{ 
+            color: colors.text,
+            fontFamily: 'Consolas, "Courier New", monospace'
+          }}>
+            {ddl || 'No DDL available'}
+          </pre>
+          <div className="sticky bottom-0 left-0 right-0 p-2 flex justify-end bg-gradient-to-t from-black/20 to-transparent">
+            <button 
+              className="px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift touch-target"
+              style={{ backgroundColor: colors.hover, color: colors.text }}
+              onClick={() => {
+                navigator.clipboard.writeText(ddl);
+              }}
+              aria-label="Copy DDL to clipboard"
+            >
+              <Copy size={12} className="inline mr-1" />
+              Copy
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   // Render Constraints Tab
-  const renderConstraintsTab = () => (
-    <div className="flex-1 overflow-auto">
-      <div className="border rounded" style={{ 
-        borderColor: colors.gridBorder,
-        backgroundColor: colors.card
-      }}>
-        <div className="p-2 border-b" style={{ 
+  const renderConstraintsTab = () => {
+    const constraints = objectDetails?.constraints || activeObject?.constraints || [];
+    
+    return (
+      <div className="flex-1 overflow-auto">
+        <div className="border rounded" style={{ 
           borderColor: colors.gridBorder,
           backgroundColor: colors.card
         }}>
-          <div className="text-sm font-medium" style={{ color: colors.text }}>
-            Constraints ({activeObject.constraints?.length || 0})
+          <div className="p-2 border-b" style={{ 
+            borderColor: colors.gridBorder,
+            backgroundColor: colors.card
+          }}>
+            <div className="text-sm font-medium" style={{ color: colors.text }}>
+              Constraints ({constraints.length})
+            </div>
+          </div>
+          <div className="overflow-auto max-h-[calc(100vh-300px)] sm:max-h-none">
+            <table className="w-full min-w-[600px]" style={{ borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ backgroundColor: colors.tableHeader }}>
+                  <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary, minWidth: '100px' }}>Name</th>
+                  <th className="text-left p-2 text-xs font-medium border-b hidden sm:table-cell" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Type</th>
+                  <th className="text-left p-2 text-xs font-medium border-b hidden md:table-cell" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Columns</th>
+                  <th className="text-left p-2 text-xs font-medium border-b hidden lg:table-cell" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>References</th>
+                  <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {constraints.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" className="p-4 text-center text-sm" style={{ color: colors.textSecondary }}>
+                      No constraints found
+                    </td>
+                  </tr>
+                ) : (
+                  constraints.map((con, index) => (
+                    <tr 
+                      key={con.name}
+                      className="hover:bg-opacity-50 transition-colors"
+                      style={{ 
+                        backgroundColor: index % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                        borderBottom: `1px solid ${colors.gridBorder}`
+                      }}
+                    >
+                      <td className="p-2 text-xs font-medium truncate max-w-[120px] sm:max-w-none" style={{ color: colors.text }}>
+                        <div className="flex flex-col">
+                          <span>{con.name}</span>
+                          <span className="text-xs text-gray-500 sm:hidden">{con.type}</span>
+                        </div>
+                      </td>
+                      <td className="p-2 hidden sm:table-cell">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                          con.type === 'PRIMARY KEY' ? 'bg-blue-500/10' :
+                          con.type === 'FOREIGN KEY' ? 'bg-purple-500/10 text-purple-400' :
+                          con.type === 'UNIQUE' ? 'bg-green-500/10 text-green-400' :
+                          'bg-yellow-500/10 text-yellow-400'
+                        }`}>
+                          {con.type}
+                        </span>
+                      </td>
+                      <td className="p-2 text-xs truncate hidden md:table-cell" style={{ color: colors.text }}>{con.columns}</td>
+                      <td className="p-2 text-xs truncate hidden lg:table-cell" style={{ color: colors.textSecondary }}>
+                        {con.refTable || '-'}
+                      </td>
+                      <td className="p-2">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                          con.status === 'ENABLED' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                        }`}>
+                          {con.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-        <div className="overflow-auto max-h-[calc(100vh-300px)] sm:max-h-none">
-          <table className="w-full min-w-[600px]" style={{ borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ backgroundColor: colors.tableHeader }}>
-                <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary, minWidth: '100px' }}>Name</th>
-                <th className="text-left p-2 text-xs font-medium border-b hidden sm:table-cell" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Type</th>
-                <th className="text-left p-2 text-xs font-medium border-b hidden md:table-cell" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Columns</th>
-                <th className="text-left p-2 text-xs font-medium border-b hidden lg:table-cell" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>References</th>
-                <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {activeObject.constraints?.map((con, index) => (
-                <tr 
-                  key={con.name}
-                  className="hover:bg-opacity-50 transition-colors"
-                  style={{ 
-                    backgroundColor: index % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                    borderBottom: `1px solid ${colors.gridBorder}`
-                  }}
-                >
-                  <td className="p-2 text-xs font-medium truncate max-w-[120px] sm:max-w-none" style={{ color: colors.text }}>
-                    <div className="flex flex-col">
-                      <span>{con.name}</span>
-                      <span className="text-xs text-gray-500 sm:hidden">{con.type}</span>
-                    </div>
-                  </td>
-                  <td className="p-2 hidden sm:table-cell">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                      con.type === 'PRIMARY KEY' ? 'bg-blue-500/10' :
-                      con.type === 'FOREIGN KEY' ? 'bg-purple-500/10 text-purple-400' :
-                      con.type === 'UNIQUE' ? 'bg-green-500/10 text-green-400' :
-                      'bg-yellow-500/10 text-yellow-400'
-                    }`}>
-                      {con.type}
-                    </span>
-                  </td>
-                  <td className="p-2 text-xs truncate hidden md:table-cell" style={{ color: colors.text }}>{con.columns}</td>
-                  <td className="p-2 text-xs truncate hidden lg:table-cell" style={{ color: colors.textSecondary }}>
-                    {con.refTable || '-'}
-                  </td>
-                  <td className="p-2">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                      con.status === 'ENABLED' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
-                    }`}>
-                      {con.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
-  // Render Properties Tab - Mobile optimized
+  // Render Properties Tab
   const renderPropertiesTab = () => {
+    const details = objectDetails || activeObject || {};
+    
     const properties = [
-      { label: 'Object Name', value: activeObject.name },
-      { label: 'Owner', value: activeObject.owner },
-      { label: 'Object Type', value: activeObject.type },
-      { label: 'Status', value: activeObject.status },
-      { label: 'Created', value: activeObject.created ? new Date(activeObject.created).toLocaleString() : '-' },
-      { label: 'Last DDL Time', value: activeObject.lastDDL ? new Date(activeObject.lastDDL).toLocaleString() : '-' },
-      { label: 'Tablespace', value: activeObject.tablespace || '-' },
-      ...(activeObject.rowCount ? [{ label: 'Row Count', value: activeObject.rowCount.toLocaleString() }] : []),
-      ...(activeObject.size ? [{ label: 'Size', value: activeObject.size }] : []),
-      ...(activeObject.comment ? [{ label: 'Comment', value: activeObject.comment }] : []),
+      { label: 'Object Name', value: details.name },
+      { label: 'Owner', value: details.owner },
+      { label: 'Object Type', value: details.type },
+      { label: 'Status', value: details.status },
+      { label: 'Created', value: details.created ? formatDateForDisplay(details.created) : '-' },
+      { label: 'Last DDL Time', value: details.lastDDL ? formatDateForDisplay(details.lastDDL) : '-' },
+      { label: 'Tablespace', value: details.tablespace || '-' },
+      ...(details.rowCount ? [{ label: 'Row Count', value: details.rowCount.toLocaleString() }] : []),
+      ...(details.size ? [{ label: 'Size', value: details.size }] : []),
+      ...(details.comment ? [{ label: 'Comment', value: details.comment }] : []),
     ];
 
     return (
@@ -2080,9 +2114,10 @@ END BIU_EMPLOYEES;`
     );
   };
 
-  // Get Tabs for Current Object Type - Mobile optimized
+  // Get Tabs for Current Object Type
   const getTabsForObject = () => {
-    switch(activeObject?.type) {
+    const type = activeObject?.type?.toUpperCase();
+    switch(type) {
       case 'TABLE':
         return ['Columns', 'Data', 'Constraints', 'DDL', 'Properties'];
       case 'VIEW':
@@ -2135,7 +2170,7 @@ END BIU_EMPLOYEES;`
     }
   };
 
-  // Render Context Menu - Mobile optimized
+  // Render Context Menu
   const renderContextMenu = () => {
     if (!showContextMenu || !contextObject) return null;
 
@@ -2211,7 +2246,7 @@ END BIU_EMPLOYEES;`
     );
   };
 
-  // Render Connection Manager - Mobile optimized
+  // Render Connection Manager
   const renderConnectionManager = () => {
     if (!showConnectionManager) return null;
 
@@ -2234,47 +2269,71 @@ END BIU_EMPLOYEES;`
           </div>
           
           <div className="p-4">
-            <div className="space-y-3">
-              {connections.map(conn => (
-                <button
-                  key={conn.id}
-                  className={`w-full p-3 rounded border cursor-pointer transition-colors hover-lift touch-target text-left ${
-                    activeConnection === conn.id ? 'border-primary' : 'hover:border-primary/50'
-                  }`}
+            {loading ? (
+              <div className="flex items-center justify-center h-32">
+                <RefreshCw className="animate-spin" size={24} style={{ color: colors.textSecondary }} />
+              </div>
+            ) : error ? (
+              <div className="p-4 text-center">
+                <AlertCircle size={24} className="mx-auto mb-2" style={{ color: colors.error }} />
+                <div className="text-sm" style={{ color: colors.text }}>{error}</div>
+                <button 
+                  onClick={fetchSchemaConnections}
+                  className="mt-3 px-4 py-2 rounded text-sm font-medium transition-colors"
                   style={{ 
-                    backgroundColor: activeConnection === conn.id ? colors.selected : colors.card,
-                    borderColor: activeConnection === conn.id ? colors.primary : colors.border
+                    backgroundColor: colors.hover,
+                    color: colors.text
                   }}
-                  onClick={() => {
-                    setActiveConnection(conn.id);
-                    setShowConnectionManager(false);
-                  }}
-                  aria-label={`Select connection ${conn.name}`}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: conn.color }} />
-                      <div>
-                        <div className="text-sm font-medium truncate" style={{ color: colors.text }}>{conn.name}</div>
-                        <div className="text-xs truncate" style={{ color: colors.textSecondary }}>
-                          {conn.username}@{conn.host}
+                  Retry
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {connections.map(conn => (
+                  <button
+                    key={conn.id}
+                    className={`w-full p-3 rounded border cursor-pointer transition-colors hover-lift touch-target text-left ${
+                      activeConnection === conn.id ? 'border-primary' : 'hover:border-primary/50'
+                    }`}
+                    style={{ 
+                      backgroundColor: activeConnection === conn.id ? colors.selected : colors.card,
+                      borderColor: activeConnection === conn.id ? colors.primary : colors.border
+                    }}
+                    onClick={() => {
+                      setActiveConnection(conn.id);
+                      setShowConnectionManager(false);
+                    }}
+                    aria-label={`Select connection ${conn.name}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 rounded-full" style={{ 
+                          backgroundColor: conn.status === 'connected' ? colors.connectionOnline : 
+                                         conn.status === 'disconnected' ? colors.connectionOffline : colors.connectionIdle 
+                        }} />
+                        <div>
+                          <div className="text-sm font-medium truncate" style={{ color: colors.text }}>{conn.name}</div>
+                          <div className="text-xs truncate" style={{ color: colors.textSecondary }}>
+                            {conn.username}@{conn.host}
+                          </div>
                         </div>
                       </div>
+                      {activeConnection === conn.id && <Check size={16} style={{ color: colors.primary }} />}
                     </div>
-                    {activeConnection === conn.id && <Check size={16} style={{ color: colors.primary }} />}
-                  </div>
+                  </button>
+                ))}
+                
+                <button 
+                  className="w-full p-4 rounded border-2 border-dashed hover:border-primary/50 transition-colors flex items-center justify-center gap-2 hover-lift touch-target"
+                  style={{ borderColor: colors.border, color: colors.text }}
+                  aria-label="Add new connection"
+                >
+                  <Plus size={16} />
+                  Add New Connection
                 </button>
-              ))}
-              
-              <button 
-                className="w-full p-4 rounded border-2 border-dashed hover:border-primary/50 transition-colors flex items-center justify-center gap-2 hover-lift touch-target"
-                style={{ borderColor: colors.border, color: colors.text }}
-                aria-label="Add new connection"
-              >
-                <Plus size={16} />
-                Add New Connection
-              </button>
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -2300,6 +2359,46 @@ END BIU_EMPLOYEES;`
       document.body.style.overflow = 'auto';
     };
   }, [isLeftSidebarVisible]);
+
+  // Update table data when dataView changes
+  useEffect(() => {
+    if (activeObject?.type === 'TABLE' && activeObject?.name) {
+      fetchTableData(activeObject.name);
+    }
+  }, [dataView, activeObject, fetchTableData]);
+
+  // Loading state
+  const renderLoadingState = () => (
+    <div className="flex items-center justify-center h-screen">
+      <div className="text-center">
+        <RefreshCw className="animate-spin mx-auto mb-4" size={24} style={{ color: colors.textSecondary }} />
+        <div style={{ color: colors.text }}>Loading schema browser...</div>
+      </div>
+    </div>
+  );
+
+  // Error state
+  const renderErrorState = () => (
+    <div className="p-4 border rounded-xl" style={{ 
+      borderColor: colors.error,
+      backgroundColor: `${colors.error}20`
+    }}>
+      <div className="flex items-center gap-2">
+        <AlertCircle size={16} style={{ color: colors.error }} />
+        <div style={{ color: colors.error }}>{error}</div>
+      </div>
+      <button 
+        onClick={refreshAllSchemaData}
+        className="mt-2 px-3 py-1 rounded text-sm font-medium transition-colors"
+        style={{ 
+          backgroundColor: colors.hover,
+          color: colors.text
+        }}
+      >
+        Retry
+      </button>
+    </div>
+  );
 
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ 
@@ -2414,354 +2513,371 @@ END BIU_EMPLOYEES;`
         }
       `}</style>
 
-      {/* Mobile Header */}
-      <div className="md:hidden flex items-center justify-between h-12 px-4 border-b" style={{ 
-        backgroundColor: colors.header,
-        borderColor: colors.border
-      }}>
-        <button 
-          onClick={() => setIsLeftSidebarVisible(true)}
-          className="p-2 rounded hover:bg-opacity-50 transition-colors touch-target"
-          style={{ backgroundColor: colors.hover }}
-          aria-label="Open menu"
-        >
-          <Menu size={20} style={{ color: colors.text }} />
-        </button>
-        <div className="flex flex-col items-center">
-          <span className="text-sm font-medium truncate max-w-[200px]" style={{ color: colors.text }}>Schema Browser</span>
-          <span className="text-xs truncate max-w-[200px]" style={{ color: colors.textSecondary }}>HR @ db-prod</span>
-        </div>
-        <button
-          onClick={() => setShowApiModal(true)}
-          className="p-2 rounded hover:bg-opacity-50 transition-colors touch-target"
-          style={{ backgroundColor: colors.hover }}
-          aria-label="Generate API"
-        >
-          <Code size={18} style={{ color: colors.primary }} />
-        </button>
-      </div>
-
-
-      {/* TOP NAVIGATION */}
-      <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
-        backgroundColor: colors.header,
-        borderColor: colors.border
-      }}>
-        <div className="flex items-center gap-4 -ml-4 text-nowrap uppercase">
-          <span className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift`} style={{ color: colors.text }}>Schema Browser</span>
-        </div>
-
-        <div className="flex items-center gap-2">
-
-          {/* Global Search */}
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
-            <input 
-              type="text" 
-              placeholder="Search"
-              value={globalSearchQuery}
-              onChange={(e) => {}}
-              className="pl-8 pr-3 py-1.5 rounded text-sm focus:outline-none w-48 hover-lift"
-              style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }} 
-            />
-            {globalSearchQuery && (
-              <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                <button onClick={() => {}} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.hover }}>
-                  <X size={12} style={{ color: colors.textSecondary }} />
-                </button>
-              </div>
-            )}
+      {loading && !activeObject ? (
+        renderLoadingState()
+      ) : error ? (
+        renderErrorState()
+      ) : (
+        <>
+          {/* Mobile Header */}
+          <div className="md:hidden flex items-center justify-between h-12 px-4 border-b" style={{ 
+            backgroundColor: colors.header,
+            borderColor: colors.border
+          }}>
+            <button 
+              onClick={() => setIsLeftSidebarVisible(true)}
+              className="p-2 rounded hover:bg-opacity-50 transition-colors touch-target"
+              style={{ backgroundColor: colors.hover }}
+              aria-label="Open menu"
+            >
+              <Menu size={20} style={{ color: colors.text }} />
+            </button>
+            <div className="flex flex-col items-center">
+              <span className="text-sm font-medium truncate max-w-[200px]" style={{ color: colors.text }}>Schema Browser</span>
+              <span className="text-xs truncate max-w-[200px]" style={{ color: colors.textSecondary }}>
+                {connections.find(c => c.id === activeConnection)?.name || 'Loading...'} @ {connections.find(c => c.id === activeConnection)?.host || '...'}
+              </span>
+            </div>
+            <button
+              onClick={() => setShowApiModal(true)}
+              className="p-2 rounded hover:bg-opacity-50 transition-colors touch-target"
+              style={{ backgroundColor: colors.hover }}
+              aria-label="Generate API"
+            >
+              <Code size={18} style={{ color: colors.primary }} />
+            </button>
           </div>
 
-          {/* Code Panel Toggle */}
-          <button onClick={() => {}} 
-            className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-            style={{ backgroundColor: showCodePanel ? colors.selected : colors.hover }}>
-            <Code size={14} style={{ color: showCodePanel ? colors.primary : colors.textSecondary }} />
-          </button>
 
-          {/* Share Button */}
-          <button onClick={() => {}} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-            style={{ backgroundColor: colors.hover }}>
-            <Share2 size={14} style={{ color: colors.textSecondary }} />
-          </button>
-
-          {/* Settings */}
-          <button onClick={() => {}} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-            style={{ backgroundColor: colors.hover }}>
-            <Settings size={14} style={{ color: colors.textSecondary }} />
-          </button>
-
-        </div>
-      </div>
-
-      {/* MAIN CONTENT AREA */}
-      <div className="flex flex-1 overflow-hidden relative pb-16 md:pb-0">
-        {/* Left sidebar overlay for mobile */}
-        {isLeftSidebarVisible && (
-          <div 
-            className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden"
-            onClick={() => setIsLeftSidebarVisible(false)}
-          />
-        )}
-
-        {/* LEFT SIDEBAR - Object Explorer */}
-        <LeftSidebar
-          isLeftSidebarVisible={isLeftSidebarVisible}
-          setIsLeftSidebarVisible={setIsLeftSidebarVisible}
-          showConnectionManager={showConnectionManager}
-          setShowConnectionManager={setShowConnectionManager}
-          filterQuery={filterQuery}
-          selectedOwner={selectedOwner}
-          handleFilterChange={handleFilterChange}
-          handleOwnerChange={handleOwnerChange}
-          handleClearFilters={handleClearFilters}
-          colors={colors}
-          objectTree={objectTree}
-          handleToggleSection={handleToggleSection}
-          schemaObjects={schemaObjects}
-          activeObject={activeObject}
-          handleObjectSelect={handleObjectSelect}
-          getObjectIcon={getObjectIcon}
-          handleContextMenu={handleContextMenu}
-        />
-
-        {/* MAIN WORK AREA */}
-        <div className="flex-1 flex flex-col overflow-hidden" style={{ backgroundColor: colors.main }}>
-          {/* TAB BAR - Mobile optimized */}
-          <div className="flex items-center border-b" style={{ 
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-            minHeight: '36px'
+          {/* TOP NAVIGATION */}
+          <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
+            backgroundColor: colors.header,
+            borderColor: colors.border
           }}>
-            <div className="flex items-center flex-1 overflow-x-auto">
-              {tabs.map(tab => (
-                <button
-                  key={tab.id}
-                  className={`flex items-center gap-1 sm:gap-2 px-3 py-2 border-r cursor-pointer min-w-24 sm:min-w-40 hover-lift touch-target ${
-                    tab.isActive ? '' : 'hover:bg-opacity-50 transition-colors'
-                  }`}
-                  style={{ 
-                    backgroundColor: tab.isActive ? colors.selected : 'transparent',
-                    borderRightColor: colors.border,
-                    borderTop: tab.isActive ? `2px solid ${colors.tabActive}` : 'none'
-                  }}
-                  onClick={() => {
-                    const allObjects = Object.values(schemaObjects).flat();
-                    const found = allObjects.find(obj => obj.id === tab.objectId);
-                    if (found) {
-                      handleObjectSelect(found, tab.type);
-                    }
-                  }}
-                  aria-label={`Open ${tab.name} tab`}
-                >
-                  <div className="flex items-center gap-1 sm:gap-2 flex-1 min-w-0">
-                    {getObjectIcon(tab.type)}
-                    <span className="text-xs sm:text-sm truncate" style={{ 
-                      color: tab.isActive ? colors.tabActive : colors.tabInactive,
-                      fontWeight: tab.isActive ? '600' : '400'
-                    }}>
-                      {tab.name}
-                      {tab.isDirty && ' *'}
-                    </span>
-                  </div>
-                  {tabs.length > 1 && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setTabs(tabs.filter(t => t.id !== tab.id));
-                        if (tab.isActive) {
-                          const remainingTab = tabs.find(t => t.id !== tab.id);
-                          if (remainingTab) {
-                            const allObjects = Object.values(schemaObjects).flat();
-                            const found = allObjects.find(obj => obj.id === remainingTab.objectId);
-                            if (found) {
-                              handleObjectSelect(found, remainingTab.type);
-                            }
-                          }
-                        }
-                      }}
-                      className="p-0.5 rounded opacity-0 hover:opacity-100 hover:bg-opacity-50 transition-colors hover-lift ml-1"
-                      style={{ backgroundColor: colors.hover }}
-                      aria-label="Close tab"
-                    >
+            <div className="flex items-center gap-4 -ml-4 text-nowrap uppercase">
+              <span className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift`} style={{ color: colors.text }}>Schema Browser</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+
+              {/* Global Search */}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
+                <input 
+                  type="text" 
+                  placeholder="Search"
+                  value={globalSearchQuery}
+                  onChange={(e) => setGlobalSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleGlobalSearch()}
+                  className="pl-8 pr-3 py-1.5 rounded text-sm focus:outline-none w-48 hover-lift"
+                  style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }} 
+                />
+                {globalSearchQuery && (
+                  <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                    <button onClick={() => setGlobalSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                      style={{ backgroundColor: colors.hover }}>
                       <X size={12} style={{ color: colors.textSecondary }} />
                     </button>
-                  )}
-                </button>
-              ))}
-              <button
-                className="px-3 sm:px-4 py-2 border-r hover:bg-opacity-50 transition-colors hover-lift touch-target"
-                style={{ borderRightColor: colors.border, backgroundColor: colors.hover }}
-                onClick={() => console.log('New tab')}
-                aria-label="New tab"
-              >
-                <Plus size={14} style={{ color: colors.textSecondary }} />
+                  </div>
+                )}
+              </div>
+
+              {/* Code Panel Toggle */}
+              <button onClick={() => setShowCodePanel(!showCodePanel)} 
+                className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                style={{ backgroundColor: showCodePanel ? colors.selected : colors.hover }}>
+                <Code size={14} style={{ color: showCodePanel ? colors.primary : colors.textSecondary }} />
               </button>
+
+              {/* Share Button */}
+              <button onClick={() => handleExportSchema('JSON')} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                style={{ backgroundColor: colors.hover }}>
+                <Share2 size={14} style={{ color: colors.textSecondary }} />
+              </button>
+
+              {/* Settings */}
+              <button onClick={() => setShowConnectionManager(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                style={{ backgroundColor: colors.hover }}>
+                <Settings size={14} style={{ color: colors.textSecondary }} />
+              </button>
+
             </div>
           </div>
 
-          {/* OBJECT DETAILS AREA */}
-          <div className="flex-1 overflow-hidden flex flex-col">
-            {/* Object Properties Header - Mobile optimized */}
-            {activeObject && (
-              <div className="p-3 border-b" style={{ 
+          {/* MAIN CONTENT AREA */}
+          <div className="flex flex-1 overflow-hidden relative pb-16 md:pb-0">
+            {/* Left sidebar overlay for mobile */}
+            {isLeftSidebarVisible && (
+              <div 
+                className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden"
+                onClick={() => setIsLeftSidebarVisible(false)}
+              />
+            )}
+
+            {/* LEFT SIDEBAR - Object Explorer */}
+            <LeftSidebar
+              isLeftSidebarVisible={isLeftSidebarVisible}
+              setIsLeftSidebarVisible={setIsLeftSidebarVisible}
+              showConnectionManager={showConnectionManager}
+              setShowConnectionManager={setShowConnectionManager}
+              filterQuery={filterQuery}
+              selectedOwner={selectedOwner}
+              handleFilterChange={handleFilterChange}
+              handleOwnerChange={handleOwnerChange}
+              handleClearFilters={handleClearFilters}
+              colors={colors}
+              objectTree={objectTree}
+              handleToggleSection={handleToggleSection}
+              schemaObjects={schemaObjects}
+              activeObject={activeObject}
+              handleObjectSelect={handleObjectSelect}
+              getObjectIcon={getObjectIcon}
+              handleContextMenu={handleContextMenu}
+              activeConnection={activeConnection}
+              connections={connections}
+              loading={loading}
+            />
+
+            {/* MAIN WORK AREA */}
+            <div className="flex-1 flex flex-col overflow-hidden" style={{ backgroundColor: colors.main }}>
+              {/* TAB BAR - Mobile optimized */}
+              <div className="flex items-center border-b" style={{ 
+                backgroundColor: colors.card,
                 borderColor: colors.border,
-                backgroundColor: colors.card
+                minHeight: '36px'
               }}>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      {getObjectIcon(activeObject.type)}
-                      <div className="min-w-0">
-                        <span className="text-sm sm:text-base font-semibold truncate block" style={{ color: colors.text }}>
-                          {activeObject.name}
-                        </span>
-                        <span className="text-xs truncate block" style={{ color: colors.textSecondary }}>
-                          {activeObject.owner}
+                <div className="flex items-center flex-1 overflow-x-auto">
+                  {tabs.map(tab => (
+                    <button
+                      key={tab.id}
+                      className={`flex items-center gap-1 sm:gap-2 px-3 py-2 border-r cursor-pointer min-w-24 sm:min-w-40 hover-lift touch-target ${
+                        tab.isActive ? '' : 'hover:bg-opacity-50 transition-colors'
+                      }`}
+                      style={{ 
+                        backgroundColor: tab.isActive ? colors.selected : 'transparent',
+                        borderRightColor: colors.border,
+                        borderTop: tab.isActive ? `2px solid ${colors.tabActive}` : 'none'
+                      }}
+                      onClick={() => {
+                        const allObjects = Object.values(schemaObjects).flat();
+                        const found = allObjects.find(obj => obj.id === tab.objectId);
+                        if (found) {
+                          handleObjectSelect(found, tab.type);
+                        }
+                      }}
+                      aria-label={`Open ${tab.name} tab`}
+                    >
+                      <div className="flex items-center gap-1 sm:gap-2 flex-1 min-w-0">
+                        {getObjectIcon(tab.type)}
+                        <span className="text-xs sm:text-sm truncate" style={{ 
+                          color: tab.isActive ? colors.tabActive : colors.tabInactive,
+                          fontWeight: tab.isActive ? '600' : '400'
+                        }}>
+                          {tab.name}
+                          {tab.isDirty && ' *'}
                         </span>
                       </div>
-                      <span className="text-xs px-2 py-0.5 rounded shrink-0" style={{ 
-                        backgroundColor: activeObject.status === 'VALID' ? `${colors.success}20` : `${colors.error}20`,
-                        color: activeObject.status === 'VALID' ? colors.success : colors.error
-                      }}>
-                        {activeObject.status}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 sm:gap-4 text-xs">
-                      {activeObject.rowCount && (
-                        <span className="truncate" style={{ color: colors.textSecondary }}>
-                          {activeObject.rowCount.toLocaleString()} rows
-                        </span>
+                      {tabs.length > 1 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTabs(tabs.filter(t => t.id !== tab.id));
+                            if (tab.isActive) {
+                              const remainingTab = tabs.find(t => t.id !== tab.id);
+                              if (remainingTab) {
+                                const allObjects = Object.values(schemaObjects).flat();
+                                const found = allObjects.find(obj => obj.id === remainingTab.objectId);
+                                if (found) {
+                                  handleObjectSelect(found, remainingTab.type);
+                                }
+                              }
+                            }
+                          }}
+                          className="p-0.5 rounded opacity-0 hover:opacity-100 hover:bg-opacity-50 transition-colors hover-lift ml-1"
+                          style={{ backgroundColor: colors.hover }}
+                          aria-label="Close tab"
+                        >
+                          <X size={12} style={{ color: colors.textSecondary }} />
+                        </button>
                       )}
-                      {activeObject.size && (
-                        <span className="truncate hidden sm:inline" style={{ color: colors.textSecondary }}>
-                          {activeObject.size}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 mt-2 sm:mt-0 self-end">
-                    <button 
-                      onClick={() => setShowApiModal(true)} 
-                      className="px-3 py-1.5 text-xs sm:text-sm rounded hover:opacity-90 transition-colors flex items-center gap-1 sm:gap-2 hover-lift touch-target"
-                      style={{ backgroundColor: colors.primaryDark, color: colors.white }}
-                      aria-label="Generate API"
-                    >
-                      <Code size={12} />
-                      <span className="hidden sm:inline">Generate API</span>
-                      <span className="sm:hidden">API</span>
                     </button>
+                  ))}
+                  {/* <button
+                    className="px-3 sm:px-4 py-2 border-r hover:bg-opacity-50 transition-colors hover-lift touch-target"
+                    style={{ borderRightColor: colors.border, backgroundColor: colors.hover }}
+                    onClick={() => console.log('New tab')}
+                    aria-label="New tab"
+                  >
+                    <Plus size={14} style={{ color: colors.textSecondary }} />
+                  </button> */}
+                </div>
+              </div>
+
+              {/* OBJECT DETAILS AREA */}
+              <div className="flex-1 overflow-hidden flex flex-col">
+                {/* Object Properties Header - Mobile optimized */}
+                {activeObject && (
+                  <div className="p-3 border-b" style={{ 
+                    borderColor: colors.border,
+                    backgroundColor: colors.card
+                  }}>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          {getObjectIcon(activeObject.type)}
+                          <div className="min-w-0">
+                            <span className="text-sm sm:text-base font-semibold truncate block" style={{ color: colors.text }}>
+                              {activeObject.name}
+                            </span>
+                            <span className="text-xs truncate block" style={{ color: colors.textSecondary }}>
+                              {activeObject.owner}
+                            </span>
+                          </div>
+                          <span className="text-xs px-2 py-0.5 rounded shrink-0" style={{ 
+                            backgroundColor: activeObject.status === 'VALID' ? `${colors.success}20` : `${colors.error}20`,
+                            color: activeObject.status === 'VALID' ? colors.success : colors.error
+                          }}>
+                            {activeObject.status}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 sm:gap-4 text-xs">
+                          {activeObject.rowCount && (
+                            <span className="truncate" style={{ color: colors.textSecondary }}>
+                              {activeObject.rowCount.toLocaleString()} rows
+                            </span>
+                          )}
+                          {activeObject.size && (
+                            <span className="truncate hidden sm:inline" style={{ color: colors.textSecondary }}>
+                              {activeObject.size}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 mt-2 sm:mt-0 self-end">
+                        <button 
+                          onClick={() => setShowApiModal(true)} 
+                          className="px-3 py-1.5 text-xs sm:text-sm rounded hover:opacity-90 transition-colors flex items-center gap-1 sm:gap-2 hover-lift touch-target"
+                          style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+                          aria-label="Generate API"
+                        >
+                          <Code size={12} />
+                          <span className="hidden sm:inline">Generate API</span>
+                          <span className="sm:hidden">API</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
+                )}
+
+                {/* Detail Tabs - Mobile optimized */}
+                {activeObject && (
+                  <div className="flex items-center border-b overflow-x-auto" style={{ 
+                    backgroundColor: colors.card,
+                    borderColor: colors.border
+                  }}>
+                    {getTabsForObject().map(tab => (
+                      <button
+                        key={tab}
+                        onClick={() => setActiveTab(tab.toLowerCase())}
+                        className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors hover-lift whitespace-nowrap touch-target ${
+                          activeTab === tab.toLowerCase() ? '' : 'hover:bg-opacity-50'
+                        }`}
+                        style={{ 
+                          borderBottomColor: activeTab === tab.toLowerCase() ? colors.tabActive : 'transparent',
+                          color: activeTab === tab.toLowerCase() ? colors.tabActive : colors.tabInactive,
+                          backgroundColor: 'transparent',
+                          minHeight: '36px'
+                        }}
+                        aria-label={`View ${tab}`}
+                      >
+                        {tab}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Tab Content */}
+                <div className="flex-1 overflow-hidden p-3 sm:p-4" style={{ backgroundColor: colors.card }}>
+                  {activeObject ? renderTabContent() : (
+                    <div className="h-full flex flex-col items-center justify-center p-4">
+                      <Database size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mb-4" />
+                      <p className="text-sm text-center" style={{ color: colors.textSecondary }}>
+                        Loading schema objects...
+                      </p>
+                      {loading && (
+                        <RefreshCw className="animate-spin mt-4" size={20} style={{ color: colors.textSecondary }} />
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
-            )}
-
-            {/* Detail Tabs - Mobile optimized */}
-            {activeObject && (
-              <div className="flex items-center border-b overflow-x-auto" style={{ 
-                backgroundColor: colors.card,
-                borderColor: colors.border
-              }}>
-                {getTabsForObject().map(tab => (
-                  <button
-                    key={tab}
-                    onClick={() => setActiveTab(tab.toLowerCase())}
-                    className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors hover-lift whitespace-nowrap touch-target ${
-                      activeTab === tab.toLowerCase() ? '' : 'hover:bg-opacity-50'
-                    }`}
-                    style={{ 
-                      borderBottomColor: activeTab === tab.toLowerCase() ? colors.tabActive : 'transparent',
-                      color: activeTab === tab.toLowerCase() ? colors.tabActive : colors.tabInactive,
-                      backgroundColor: 'transparent',
-                      minHeight: '36px'
-                    }}
-                    aria-label={`View ${tab}`}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Tab Content */}
-            <div className="flex-1 overflow-hidden p-3 sm:p-4" style={{ backgroundColor: colors.card }}>
-              {activeObject ? renderTabContent() : (
-                <div className="h-full flex flex-col items-center justify-center p-4">
-                  <Database size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mb-4" />
-                  <p className="text-sm text-center" style={{ color: colors.textSecondary }}>
-                    Select an object from the schema browser to view details
-                  </p>
-                  <button
-                    onClick={() => setIsLeftSidebarVisible(true)}
-                    className="mt-4 px-4 py-2 rounded hover:bg-opacity-50 transition-colors hover-lift touch-target"
-                    style={{ backgroundColor: colors.primary, color: colors.white }}
-                  >
-                    Open Schema Browser
-                  </button>
-                </div>
-              )}
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Mobile Bottom Navigation */}
-      <MobileBottomNav
-        isLeftSidebarVisible={isLeftSidebarVisible}
-        setIsLeftSidebarVisible={setIsLeftSidebarVisible}
-        setShowApiModal={setShowApiModal}
-        schemaObjects={schemaObjects}
-        tabs={tabs}
-        handleObjectSelect={handleObjectSelect}
-        toggleTheme={toggleTheme}
-        isDark={isDark}
-        colors={colors}
-      />
+          {/* Mobile Bottom Navigation */}
+          <MobileBottomNav
+            isLeftSidebarVisible={isLeftSidebarVisible}
+            setIsLeftSidebarVisible={setIsLeftSidebarVisible}
+            setShowApiModal={setShowApiModal}
+            schemaObjects={schemaObjects}
+            tabs={tabs}
+            handleObjectSelect={handleObjectSelect}
+            toggleTheme={toggleTheme}
+            isDark={isDark}
+            colors={colors}
+            loading={loading}
+            onRefreshSchema={refreshAllSchemaData}
+          />
 
-      {/* STATUS BAR - Desktop only */}
-      <div className="hidden md:flex items-center justify-between h-8 px-4 text-xs border-t" style={{ 
-        backgroundColor: colors.header,
-        color: colors.textSecondary,
-        borderColor: colors.border
-      }}>
-        <div className="flex items-center gap-4 overflow-x-auto">
-          <span>HR @ db-prod.company.com:1521/ORCL</span>
-          <span className="opacity-75">|</span>
-          <span>{Object.values(schemaObjects).flat().length} Objects</span>
-          <span className="opacity-75">|</span>
-          <span>Ready</span>
-        </div>
-        <div className="hidden md:flex items-center gap-4">
-          <span>F4: Describe</span>
-          <span>F5: Refresh</span>
-          <span>F6: Switch Panels</span>
-          <span>F9: Execute</span>
-        </div>
-      </div>
+          {/* STATUS BAR - Desktop only */}
+          <div className="hidden md:flex items-center justify-between h-8 px-4 text-xs border-t" style={{ 
+            backgroundColor: colors.header,
+            color: colors.textSecondary,
+            borderColor: colors.border
+          }}>
+            <div className="flex items-center gap-4 overflow-x-auto">
+              <span>
+                {connections.find(c => c.id === activeConnection)?.name || 'No connection'} @ 
+                {connections.find(c => c.id === activeConnection)?.host || '...'}:
+                {connections.find(c => c.id === activeConnection)?.port || '...'}/
+                {connections.find(c => c.id === activeConnection)?.service || '...'}
+              </span>
+              <span className="opacity-75">|</span>
+              <span>{Object.values(schemaObjects).flat().length} Objects</span>
+              <span className="opacity-75">|</span>
+              <span>{activeObject ? `Selected: ${activeObject.name}` : 'Ready'}</span>
+            </div>
+            <div className="hidden md:flex items-center gap-4">
+              <span>F4: Describe</span>
+              <span>F5: Refresh</span>
+              <span>F6: Switch Panels</span>
+              <span>F9: Execute</span>
+            </div>
+          </div>
 
-      {/* MODALS & CONTEXT MENUS */}
-      {showContextMenu && (
-        <div 
-          className="fixed inset-0 z-40"
-          onClick={() => setShowContextMenu(false)}
-        >
-          {renderContextMenu()}
-        </div>
+          {/* MODALS & CONTEXT MENUS */}
+          {showContextMenu && (
+            <div 
+              className="fixed inset-0 z-40"
+              onClick={() => setShowContextMenu(false)}
+            >
+              {renderContextMenu()}
+            </div>
+          )}
+          {renderConnectionManager()}
+
+          {showApiModal && (
+            <ApiGenerationModal
+              isOpen={showApiModal}
+              onClose={() => setShowApiModal(false)}
+              selectedObject={selectedForApiGeneration || activeObject}
+              colors={colors}
+              theme={theme}
+              onGenerateAPI={handleGenerateAPI}
+            />
+          )}
+        </>
       )}
-      {renderConnectionManager()}
-
-      {showApiModal && (
-        <ApiGenerationModal
-          isOpen={showApiModal}
-          onClose={() => setShowApiModal(false)}
-          selectedObject={selectedForApiGeneration || activeObject}
-          colors={colors}
-          theme={theme}
-        />
-      )}
-
     </div>
   );
 };

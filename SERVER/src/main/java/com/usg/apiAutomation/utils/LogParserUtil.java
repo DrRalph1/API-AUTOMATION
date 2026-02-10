@@ -1,7 +1,7 @@
 package com.usg.apiAutomation.utils;
 
-import com.usg.apiAutomation.dtos.systemLogs.LogEntry;
-import com.usg.apiAutomation.dtos.systemLogs.LogEntryDetails;
+import com.usg.apiAutomation.dtos.systemActivities.systemLogs.LogEntry;
+import com.usg.apiAutomation.dtos.systemActivities.systemLogs.LogEntryDetails;
 import lombok.experimental.UtilityClass;
 
 import java.time.LocalDateTime;

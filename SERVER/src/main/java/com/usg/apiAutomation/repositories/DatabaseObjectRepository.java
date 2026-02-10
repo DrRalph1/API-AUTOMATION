@@ -1,10 +1,9 @@
 package com.usg.apiAutomation.repositories;
 
-import com.usg.apiAutomation.dtos.database.DatabaseObjectDTO;
-import com.usg.apiAutomation.dtos.database.DatabaseObjectSearchDTO;
-import com.usg.apiAutomation.dtos.database.ParameterDTO;
+import com.usg.apiAutomation.dtos.systemActivities.database.DatabaseObjectDTO;
+import com.usg.apiAutomation.dtos.systemActivities.database.DatabaseObjectSearchDTO;
+import com.usg.apiAutomation.dtos.systemActivities.database.ParameterDTO;
 import lombok.RequiredArgsConstructor;
-import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;

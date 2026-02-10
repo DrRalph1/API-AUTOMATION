@@ -61,7 +61,7 @@ public class DashboardController {
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
             loggerUtil.log("dashboard", "Request ID: " + requestId +
-                    ", Getting dashboard statistics for user: " + performedBy);
+                    ", Getting dashboard statistics for userManagement: " + performedBy);
 
             DashboardStatsResponse stats = dashboardService.getDashboardStats(requestId, req, performedBy);
 
@@ -302,7 +302,7 @@ public class DashboardController {
             DashboardStatsResponse stats = dashboardService.getDashboardStats(requestId, req, performedBy);
             DashboardConnectionsResponse connections = dashboardService.getDashboardConnections(requestId, req, performedBy);
             DashboardApisResponse apis = dashboardService.getDashboardApis(requestId, req, performedBy);
-            DashboardActivitiesResponse activities = dashboardService.getDashboardActivities(requestId, req, performedBy, 1, 5);
+            DashboardActivitiesResponse activities = dashboardService.getDashboardActivities(requestId, req, performedBy, 1, 6);
             DashboardSchemaStatsResponse schemaStats = dashboardService.getDashboardSchemaStats(requestId, req, performedBy);
             Map<String, Object> systemHealth = dashboardService.getDashboardSystemHealth(requestId, req, performedBy);
             Map<String, Object> codeStats = dashboardService.getCodeGenerationStats(requestId, req, performedBy);

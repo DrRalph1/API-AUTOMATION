@@ -1,140 +1,92 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ChevronRight, 
   ChevronDown,
   Search,
   Plus,
-  Play,
-  MoreVertical,
   Download,
-  Share2,
-  Eye,
-  EyeOff,
   Copy,
-  Trash2,
-  Edit2,
   Settings,
-  Globe,
-  Lock,
-  FileText,
   Code,
-  GitBranch,
-  History,
-  Zap,
-  Filter,
-  Folder,
-  FolderOpen,
   Star,
-  ExternalLink,
-  Upload,
-  Users,
-  Bell,
-  HelpCircle,
-  User,
-  Moon,
-  Sun,
   X,
-  Menu,
   Check,
   AlertCircle,
   Clock,
   Activity,
-  Database,
-  Shield,
-  Key,
-  Hash,
-  Bold,
-  Italic,
-  Link,
-  Image,
-  Table,
-  Terminal,
-  BookOpen,
-  LayoutDashboard,
-  ShieldCheck,
-  DownloadCloud,
-  UploadCloud,
-  UserCheck,
-  Home,
-  Cloud,
-  Save,
-  Printer,
-  Inbox,
-  Archive,
-  Trash,
-  UserPlus,
-  RefreshCw,
-  ChevronLeft,
-  ChevronUp,
-  Minimize2,
-  Maximize2,
-  MoreHorizontal,
-  Send,
-  CheckCircle,
-  XCircle,
-  Info,
-  Layers,
-  Package,
-  Box,
-  FolderPlus,
-  FilePlus,
-  Wifi,
-  Server,
-  HardDrive,
-  Network,
-  Cpu,
-  BarChart,
-  PieChart,
-  LineChart,
-  Smartphone,
-  Monitor,
-  Bluetooth,
-  Command,
-  Circle,
-  Dot,
-  List,
-  Type,
+  Folder,
+  FolderOpen,
   FileCode,
-  ChevronsLeft,
-  ChevronsRight,
-  GripVertical,
+  RefreshCw,
   Coffee,
-  Eye as EyeIcon,
-  FileArchive as FileBinary,
+  Box,
+  Package,
+  Terminal,
+  Server,
+  Cpu,
+  Monitor,
+  HardDrive,
+  ShieldCheck,
+  Layers,
+  Zap,
+  BookOpen,
+  History,
   Database as DatabaseIcon,
-  ChevronsUpDown,
-  Book,
-  File,
-  MessageSquare,
-  Tag,
-  Calendar,
-  Hash as HashIcon,
-  Link as LinkIcon,
-  Eye as EyeOpenIcon,
-  Clock as ClockIcon,
-  Users as UsersIcon,
-  Database as DatabaseIcon2,
-  Code as CodeIcon2,
-  Terminal as TerminalIcon,
   ExternalLink as ExternalLinkIcon,
-  Copy as CopyIcon,
-  Check as CheckIcon,
-  X as XIcon,
-  AlertCircle as AlertCircleIcon,
-  Info as InfoIcon,
-  HelpCircle as HelpCircleIcon,
-  Star as StarIcon,
-  Book as BookIcon,
-  Zap as ZapIcon
+  DownloadCloud,
+  UploadCloud
 } from 'lucide-react';
+
+// Import CodeBaseController functions
+import {
+  getCollectionsListFromCodebase,
+  getCollectionDetailsFromCodebase,
+  getRequestDetailsFromCodebase,
+  getImplementationDetails,
+  generateImplementation,
+  exportImplementation,
+  getLanguages,
+  searchImplementations,
+  importSpecification,
+  clearCodebaseCache,
+  getAllImplementations,
+  validateImplementation,
+  testImplementation,
+  handleCodebaseResponse,
+  extractCodebaseCollectionsList,
+  extractCodebaseCollectionDetails,
+  extractCodebaseRequestDetails,
+  extractImplementationDetails,
+  extractGenerateResults,
+  extractExportResults,
+  extractLanguages,
+  extractSearchResults,
+  extractImportSpecResults,
+  extractValidationResults,
+  extractTestResults,
+  validateGenerateImplementation,
+  validateExportImplementation,
+  validateSearchImplementation,
+  validateImportSpecification,
+  validateImplementationValidation,
+  validateTestImplementation,
+  getSupportedProgrammingLanguages,
+  getSupportedComponents,
+  getQuickStartGuide,
+  getLanguageColor,
+  formatCodeForDisplay,
+  getFileExtension,
+  getDefaultImplementationOptions,
+  cacheCodebaseData,
+  getCachedCodebaseData,
+  clearCachedCodebaseData
+} from "../controllers/CodeBaseController.js";
 
 // Enhanced SyntaxHighlighter Component with safe handling
 const SyntaxHighlighter = ({ language, code }) => {
   const highlightSyntax = (code, lang) => {
-    // Handle null or undefined code
     if (!code) return '// No code available';
     
-    // Ensure code is a string
     const codeString = String(code);
     
     if (lang === 'json') {
@@ -167,8 +119,8 @@ const SyntaxHighlighter = ({ language, code }) => {
     if (lang === 'python') {
       return codeString
         .replace(/(\b(?:def|class|import|from|if|elif|else|for|while|try|except|finally|with|as|return|yield|async|await|lambda|in|is|not|and|or|True|False|None)\b)/g, '<span class="text-purple-400">$1</span>')
-        .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"|'(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\'])*')/g, '<span class="text-green-400">$1</span>')
-        .replace(/(#.*)/g, '<span class="text-gray-500">$1</span>');
+        .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"|'(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\'])*')/g, '<span className="text-green-400">$1</span>')
+        .replace(/(#.*)/g, '<span className="text-gray-500">$1</span>');
     }
     
     if (lang === 'java') {
@@ -187,7 +139,6 @@ const SyntaxHighlighter = ({ language, code }) => {
         .replace(/(\b\d+\b)/g, '<span class="text-blue-400">$1</span>');
     }
     
-    // Default: just return the code with HTML escaping
     return codeString
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -205,868 +156,76 @@ const SyntaxHighlighter = ({ language, code }) => {
   );
 };
 
-// Language configurations
-const LANGUAGES = [
-  { id: 'java', name: 'Java', icon: <Coffee size={14} />, framework: 'Spring Boot', color: '#f89820' },
-  { id: 'javascript', name: 'JavaScript', icon: <FileCode size={14} />, framework: 'Node.js/Express', color: '#f0db4f' },
-  { id: 'python', name: 'Python', icon: <Code size={14} />, framework: 'FastAPI/Django', color: '#3776ab' },
-  { id: 'csharp', name: 'C#', icon: <Box size={14} />, framework: '.NET Core', color: '#9b4993' },
-  { id: 'php', name: 'PHP', icon: <Package size={14} />, framework: 'Laravel', color: '#777bb4' },
-  { id: 'go', name: 'Go', icon: <Terminal size={14} />, framework: 'Gin', color: '#00add8' },
-  { id: 'ruby', name: 'Ruby', icon: <Server size={14} />, framework: 'Ruby on Rails', color: '#cc342d' },
-  { id: 'kotlin', name: 'Kotlin', icon: <Cpu size={14} />, framework: 'Ktor/Spring', color: '#7f52ff' },
-  { id: 'swift', name: 'Swift', icon: <Monitor size={14} />, framework: 'Vapor', color: '#f05138' },
-  { id: 'rust', name: 'Rust', icon: <HardDrive size={14} />, framework: 'Actix-web', color: '#dea584' }
-];
-
-// Default implementations for each language
-const DEFAULT_IMPLEMENTATIONS = {
-  java: {
-    controller: '// Java Spring Boot Controller implementation not available',
-    service: '// Java Service implementation not available',
-    repository: '// Java Repository implementation not available',
-    model: '// Java Model implementation not available',
-    dependencies: '// Dependencies configuration not available',
-    applicationProperties: '// Application properties not available'
-  },
-  javascript: {
-    controller: '// JavaScript Controller implementation not available',
-    service: '// JavaScript Service implementation not available',
-    model: '// JavaScript Model implementation not available',
-    routes: '// Routes configuration not available',
-    config: '// Config files not available',
-    server: '// Server setup not available'
-  },
-  python: {
-    fastapi: '// Python FastAPI implementation not available',
-    schemas: '// Schemas not available',
-    models: '// Models not available',
-    requirements: '// Requirements not available'
-  },
-  csharp: {
-    controller: '// C# Controller implementation not available',
-    service: '// C# Service implementation not available',
-    model: '// C# Model implementation not available',
-    repository: '// C# Repository implementation not available'
-  },
-  php: {
-    controller: '// PHP Controller implementation not available',
-    service: '// PHP Service implementation not available',
-    model: '// PHP Model implementation not available'
-  },
-  go: {
-    handler: '// Go Handler implementation not available',
-    service: '// Go Service implementation not available',
-    model: '// Go Model implementation not available'
-  },
-  ruby: {
-    controller: '// Ruby Controller implementation not available',
-    service: '// Ruby Service implementation not available',
-    model: '// Ruby Model implementation not available'
-  },
-  kotlin: {
-    controller: '// Kotlin Controller implementation not available',
-    service: '// Kotlin Service implementation not available',
-    model: '// Kotlin Model implementation not available'
-  },
-  swift: {
-    controller: '// Swift Controller implementation not available',
-    service: '// Swift Service implementation not available',
-    model: '// Swift Model implementation not available'
-  },
-  rust: {
-    handler: '// Rust Handler implementation not available',
-    service: '// Rust Service implementation not available',
-    model: '// Rust Model implementation not available'
-  }
-};
-
-// API Collections with Complete Implementations
-const API_COLLECTIONS = [
-  {
-    id: 'user-management',
-    name: 'User Management API',
-    description: 'Complete user authentication, authorization, and profile management',
-    isExpanded: true,
-    isFavorite: true,
-    version: 'v2.1',
-    owner: 'API Script Team',
-    updatedAt: 'Today, 9:30 AM',
-    createdAt: 'Jan 15, 2024',
-    folders: [
-      {
-        id: 'authentication',
-        name: 'Authentication',
-        description: 'User registration, login, and token management',
-        isExpanded: true,
-        requests: [
-          {
-            id: 'register-user',
-            name: 'Register User',
-            method: 'POST',
-            url: 'https://api.example.com/v2.1/users/register',
-            description: 'Create a new user account with email and password',
-            tags: ['auth', 'register', 'signup'],
-            lastModified: 'Today, 9:00 AM',
-            headers: [
-              { key: 'Content-Type', value: 'application/json' },
-              { key: 'Accept', value: 'application/json' }
-            ],
-            body: JSON.stringify({
-              email: "user@example.com",
-              password: "SecurePass123!",
-              firstName: "John",
-              lastName: "Doe",
-              phoneNumber: "+1234567890"
-            }, null, 2),
-            implementations: {
-              java: {
-                controller: `package com.example.api.controller;
-
-import com.example.api.dto.*;
-import com.example.api.service.UserService;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import jakarta.validation.Valid;
-
-@RestController
-@RequestMapping("/api/v1/users")
-@RequiredArgsConstructor
-public class UserController {
-    
-    private final UserService userService;
-    
-    @PostMapping("/register")
-    public ResponseEntity<ApiResponse<UserResponse>> registerUser(
-            @Valid @RequestBody UserRegistrationRequest request) {
-        UserResponse user = userService.registerUser(request);
-        return ResponseEntity.ok(ApiResponse.success(user, "User registered successfully"));
-    }
-    
-    @PostMapping("/login")
-    public ResponseEntity<ApiResponse<AuthResponse>> login(
-            @Valid @RequestBody LoginRequest request) {
-        AuthResponse auth = userService.authenticate(request);
-        return ResponseEntity.ok(ApiResponse.success(auth, "Login successful"));
-    }
-}`,
-                service: `package com.example.api.service;
-
-import com.example.api.dto.*;
-import com.example.api.model.User;
-import com.example.api.model.Role;
-import com.example.api.repository.UserRepository;
-import com.example.api.repository.RoleRepository;
-import com.example.api.security.JwtTokenProvider;
-import lombok.RequiredArgsConstructor;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.util.Set;
-import java.util.stream.Collectors;
-
-@Service
-@RequiredArgsConstructor
-public class UserService {
-    
-    private final UserRepository userRepository;
-    private final RoleRepository roleRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final JwtTokenProvider jwtTokenProvider;
-    
-    @Transactional
-    public UserResponse registerUser(UserRegistrationRequest request) {
-        if (userRepository.existsByEmail(request.getEmail())) {
-            throw new BusinessException("Email already exists");
-        }
-        
-        User user = User.builder()
-                .email(request.getEmail())
-                .password(passwordEncoder.encode(request.getPassword()))
-                .firstName(request.getFirstName())
-                .lastName(request.getLastName())
-                .phoneNumber(request.getPhoneNumber())
-                .isActive(true)
-                .build();
-        
-        Role userRole = roleRepository.findByName("ROLE_USER")
-                .orElseThrow(() -> new BusinessException("Default role not found"));
-        user.setRoles(Set.of(userRole));
-        
-        User savedUser = userRepository.save(user);
-        return mapToResponse(savedUser);
-    }
-    
-    public AuthResponse authenticate(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new SecurityException("Invalid credentials"));
-        
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new SecurityException("Invalid credentials");
-        }
-        
-        String token = jwtTokenProvider.generateToken(user.getEmail(), 
-                user.getRoles().stream()
-                        .map(Role::getName)
-                        .collect(Collectors.toSet()));
-        
-        return AuthResponse.builder()
-                .token(token)
-                .type("Bearer")
-                .expiresIn(jwtTokenProvider.getValidityInSeconds())
-                .user(mapToResponse(user))
-                .build();
-    }
-    
-    private UserResponse mapToResponse(User user) {
-        return UserResponse.builder()
-                .id(user.getId())
-                .email(user.getEmail())
-                .firstName(user.getFirstName())
-                .lastName(user.getLastName())
-                .phoneNumber(user.getPhoneNumber())
-                .isActive(user.isActive())
-                .roles(user.getRoles().stream()
-                        .map(Role::getName)
-                        .collect(Collectors.toSet()))
-                .createdAt(user.getCreatedAt())
-                .updatedAt(user.getUpdatedAt())
-                .build();
-    }
-}`,
-                repository: `package com.example.api.repository;
-
-import com.example.api.model.User;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
-
-import java.util.Optional;
-
-@Repository
-public interface UserRepository extends JpaRepository<User, Long> {
-    
-    Optional<User> findByEmail(String email);
-    boolean existsByEmail(String email);
-}`,
-                model: `package com.example.api.model;
-
-import lombok.*;
-import jakarta.persistence.*;
-import java.time.LocalDateTime;
-import java.util.HashSet;
-import java.util.Set;
-
-@Entity
-@Table(name = "users")
-@Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
-public class User {
-    
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-    
-    @Column(unique = true, nullable = false)
-    private String email;
-    
-    @Column(nullable = false)
-    private String password;
-    
-    @Column(name = "first_name", nullable = false)
-    private String firstName;
-    
-    @Column(name = "last_name", nullable = false)
-    private String lastName;
-    
-    @Column(name = "phone_number")
-    private String phoneNumber;
-    
-    @Column(name = "is_active")
-    private boolean isActive;
-    
-    @ManyToMany(fetch = FetchType.LAZY)
-    @JoinTable(
-        name = "user_roles",
-        joinColumns = @JoinColumn(name = "user_id"),
-        inverseJoinColumns = @JoinColumn(name = "role_id")
-    )
-    @Builder.Default
-    private Set<Role> roles = new HashSet<>();
-    
-    @Column(name = "created_at", updatable = false)
-    @Builder.Default
-    private LocalDateTime createdAt = LocalDateTime.now();
-    
-    @Column(name = "updated_at")
-    @Builder.Default
-    private LocalDateTime updatedAt = LocalDateTime.now();
-}`,
-                dependencies: `<!-- pom.xml -->
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-web</artifactId>
-</dependency>
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-data-jpa</artifactId>
-</dependency>
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-security</artifactId>
-</dependency>
-<dependency>
-    <groupId>io.jsonwebtoken</groupId>
-    <artifactId>jjwt-api</artifactId>
-    <version>0.11.5</version>
-</dependency>
-<dependency>
-    <groupId>org.projectlombok</groupId>
-    <artifactId>lombok</artifactId>
-    <optional>true</optional>
-</dependency>`,
-                applicationProperties: `# application.properties
-spring.datasource.url=jdbc:postgresql://localhost:5432/userdb
-spring.datasource.username=postgres
-spring.datasource.password=password
-spring.jpa.hibernate.ddl-auto=update
-jwt.secret=your-256-bit-secret-key
-jwt.expiration=86400000`
-              },
-              javascript: {
-                controller: `// controllers/userController.js
-const userService = require('../services/userService');
-const { validationResult } = require('express-validator');
-
-exports.registerUser = async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        success: false, 
-        errors: errors.array() 
-      });
-    }
-    
-    const user = await userService.registerUser(req.body);
-    res.status(201).json({
-      success: true,
-      message: 'User registered successfully',
-      data: user
-    });
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
-  }
-};
-
-exports.login = async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        success: false, 
-        errors: errors.array() 
-      });
-    }
-    
-    const authData = await userService.authenticate(req.body);
-    res.json({
-      success: true,
-      message: 'Login successful',
-      data: authData
-    });
-  } catch (error) {
-    res.status(401).json({
-      success: false,
-      message: error.message
-    });
-  }
-};`,
-                service: `// services/userService.js
-const User = require('../models/User');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-
-class UserService {
-  async registerUser(userData) {
-    const existingUser = await User.findOne({ email: userData.email });
-    
-    if (existingUser) {
-      throw new Error('Email already exists');
-    }
-    
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(userData.password, salt);
-    
-    const user = new User({
-      ...userData,
-      password: hashedPassword,
-      isActive: true
-    });
-    
-    await user.save();
-    
-    const userObject = user.toObject();
-    delete userObject.password;
-    return userObject;
-  }
-  
-  async authenticate(loginData) {
-    const user = await User.findOne({ email: loginData.email })
-      .select('+password');
-    
-    if (!user) {
-      throw new Error('Invalid credentials');
-    }
-    
-    const isPasswordValid = await bcrypt.compare(loginData.password, user.password);
-    if (!isPasswordValid) {
-      throw new Error('Invalid credentials');
-    }
-    
-    const token = jwt.sign(
-      {
-        userId: user._id,
-        email: user.email
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN }
-    );
-    
-    const userResponse = user.toObject();
-    delete userResponse.password;
-    
-    return {
-      token,
-      type: 'Bearer',
-      expiresIn: process.env.JWT_EXPIRES_IN,
-      user: userResponse
-    };
-  }
-}
-
-module.exports = new UserService();`,
-                model: `// models/User.js
-const mongoose = require('mongoose');
-
-const userSchema = new mongoose.Schema({
-  email: {
-    type: String,
-    required: true,
-    unique: true,
-    trim: true,
-    lowercase: true
-  },
-  password: {
-    type: String,
-    required: true,
-    select: false
-  },
-  firstName: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  lastName: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  phoneNumber: {
-    type: String,
-    trim: true
-  },
-  isActive: {
-    type: Boolean,
-    default: true
-  }
-}, {
-  timestamps: true
-});
-
-userSchema.methods.toJSON = function() {
-  const obj = this.toObject();
-  delete obj.password;
-  return obj;
-};
-
-module.exports = mongoose.model('User', userSchema);`,
-                routes: `// routes/userRoutes.js
-const express = require('express');
-const router = express.Router();
-const userController = require('../controllers/userController');
-const validationMiddleware = require('../middleware/validationMiddleware');
-
-router.post('/register', 
-  validationMiddleware.validateRegister,
-  userController.registerUser
-);
-
-router.post('/login',
-  validationMiddleware.validateLogin,
-  userController.login
-);
-
-module.exports = router;`,
-                config: `// .env
-PORT=3000
-MONGODB_URI=mongodb://localhost:27017/user_management
-JWT_SECRET=your-super-secret-jwt-key
-JWT_EXPIRES_IN=24h
-
-// package.json
-{
-  "dependencies": {
-    "express": "^4.18.0",
-    "mongoose": "^6.0.0",
-    "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^8.5.1",
-    "express-validator": "^6.14.0"
-  }
-}`,
-                server: `// server.js
-require('dotenv').config();
-const express = require('express');
-const mongoose = require('mongoose');
-const userRoutes = require('./routes/userRoutes');
-
-const app = express();
-app.use(express.json());
-
-mongoose.connect(process.env.MONGODB_URI);
-
-app.use('/api/v1/users', userRoutes);
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(\`Server running on port \${PORT}\`);
-});`
-              },
-              python: {
-                fastapi: `# main.py
-from fastapi import FastAPI, HTTPException, status
-from fastapi.security import HTTPBearer
-from pydantic import BaseModel, EmailStr
-from datetime import datetime, timedelta
-import jwt
-import bcrypt
-from typing import Optional
-
-app = FastAPI()
-security = HTTPBearer()
-
-class UserCreate(BaseModel):
-    email: EmailStr
-    password: str
-    firstName: str
-    lastName: str
-    phoneNumber: Optional[str] = None
-
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-
-@app.post("/api/v1/users/register")
-async def register_user(user_data: UserCreate):
-    # Implementation here
-    return {"message": "User registered successfully"}
-
-@app.post("/api/v1/users/login")
-async def login(login_data: LoginRequest):
-    # Implementation here
-    return {"token": "jwt_token_here", "type": "Bearer"}`,
-                schemas: `# schemas.py
-from pydantic import BaseModel, EmailStr
-from typing import Optional
-from datetime import datetime
-
-class UserResponse(BaseModel):
-    id: int
-    email: EmailStr
-    firstName: str
-    lastName: str
-    phoneNumber: Optional[str]
-    isActive: bool
-    createdAt: datetime
-    updatedAt: datetime
-
-class AuthResponse(BaseModel):
-    token: str
-    type: str
-    expiresIn: int
-    user: UserResponse`,
-                models: `# models.py
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
-from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime
-
-Base = declarative_base()
-
-class User(Base):
-    __tablename__ = "users"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    password_hash = Column(String, nullable=False)
-    first_name = Column(String, nullable=False)
-    last_name = Column(String, nullable=False)
-    phone_number = Column(String, nullable=True)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)`,
-                requirements: `# requirements.txt
-fastapi==0.104.1
-uvicorn==0.24.0
-sqlalchemy==2.0.23
-python-jose==3.3.0
-passlib[bcrypt]==1.7.4
-python-multipart==0.0.6`
-              }
-            }
-          },
-          {
-            id: 'get-user',
-            name: 'Get User Profile',
-            method: 'GET',
-            url: 'https://api.example.com/v2.1/users/{id}',
-            description: 'Retrieve user profile information by ID',
-            tags: ['users', 'profile', 'read'],
-            lastModified: 'Yesterday, 3:45 PM',
-            headers: [
-              { key: 'Authorization', value: 'Bearer {access-token}' }
-            ],
-            implementations: {
-              java: DEFAULT_IMPLEMENTATIONS.java,
-              javascript: DEFAULT_IMPLEMENTATIONS.javascript,
-              python: DEFAULT_IMPLEMENTATIONS.python,
-              csharp: DEFAULT_IMPLEMENTATIONS.csharp
-            }
-          }
-        ]
-      },
-      {
-        id: 'profile-management',
-        name: 'Profile Management',
-        description: 'User profile updates and management',
-        isExpanded: true,
-        requests: [
-          {
-            id: 'update-profile',
-            name: 'Update Profile',
-            method: 'PUT',
-            url: 'https://api.example.com/v2.1/users/{id}',
-            description: 'Update user profile information',
-            tags: ['users', 'update', 'profile'],
-            lastModified: 'Today, 8:15 AM',
-            headers: [
-              { key: 'Content-Type', value: 'application/json' },
-              { key: 'Authorization', value: 'Bearer {access-token}' }
-            ],
-            body: JSON.stringify({
-              firstName: "John",
-              lastName: "Smith",
-              phoneNumber: "+1234567890"
-            }, null, 2),
-            implementations: {
-              java: DEFAULT_IMPLEMENTATIONS.java,
-              javascript: DEFAULT_IMPLEMENTATIONS.javascript,
-              python: DEFAULT_IMPLEMENTATIONS.python,
-              csharp: DEFAULT_IMPLEMENTATIONS.csharp
-            }
-          }
-        ]
-      }
-    ]
-  },
-  {
-    id: 'payment-api',
-    name: 'Payment Processing API',
-    description: 'Secure payment processing with multiple payment methods',
-    isExpanded: false,
-    isFavorite: true,
-    version: 'v1.5',
-    owner: 'API Script Team',
-    updatedAt: '1 week ago',
-    createdAt: 'Feb 1, 2024',
-    folders: [
-      {
-        id: 'payments',
-        name: 'Payments',
-        description: 'Process payments and transactions',
-        isExpanded: false,
-        requests: [
-          {
-            id: 'create-payment',
-            name: 'Create Payment',
-            method: 'POST',
-            url: 'https://api.example.com/v1.5/payments',
-            description: 'Create a new payment transaction',
-            tags: ['payments', 'create', 'transactions'],
-            lastModified: '2 weeks ago',
-            implementations: {
-              java: DEFAULT_IMPLEMENTATIONS.java,
-              javascript: DEFAULT_IMPLEMENTATIONS.javascript,
-              python: DEFAULT_IMPLEMENTATIONS.python,
-              csharp: DEFAULT_IMPLEMENTATIONS.csharp
-            }
-          }
-        ]
-      }
-    ]
-  },
-  {
-    id: 'notification-api',
-    name: 'Notification API',
-    description: 'Send email, SMS, and push notifications',
-    isExpanded: false,
-    isFavorite: false,
-    version: 'v3.2',
-    owner: 'API Script Team',
-    updatedAt: '3 days ago',
-    createdAt: 'Mar 1, 2024'
-  }
-];
-
-const ENVIRONMENTS = [
-  { id: 'sandbox', name: 'Sandbox', isActive: true, baseUrl: 'https://api.sandbox.example.com' },
-  { id: 'staging', name: 'Staging', isActive: false, baseUrl: 'https://api.staging.example.com' },
-  { id: 'production', name: 'Production', isActive: false, baseUrl: 'https://api.example.com' }
-];
-
-const NOTIFICATIONS = [
-  { id: 'notif-1', title: 'New API Implementation', message: 'Complete Java Spring Boot implementation added', time: '10 minutes ago', read: false, type: 'success' },
-  { id: 'notif-2', title: 'Code Generation Complete', message: 'Python FastAPI code generated successfully', time: '2 hours ago', read: false, type: 'info' },
-  { id: 'notif-3', title: 'Download Ready', message: 'Complete Node.js package ready for download', time: '1 day ago', read: true, type: 'success' }
-];
-
-const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
+const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [activeTab, setActiveTab] = useState('implementations');
   const [showCodePanel, setShowCodePanel] = useState(true);
   const [selectedLanguage, setSelectedLanguage] = useState('java');
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [toast, setToast] = useState(null);
   const [showPublishModal, setShowPublishModal] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications, setNotifications] = useState(NOTIFICATIONS);
   const [searchQuery, setSearchQuery] = useState('');
-  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
-  const [selectedCollection, setSelectedCollection] = useState(API_COLLECTIONS[0]);
-  const [selectedRequest, setSelectedRequest] = useState(API_COLLECTIONS[0].folders[0].requests[0]);
-  const [environments, setEnvironments] = useState(ENVIRONMENTS);
-  const [activeEnvironment, setActiveEnvironment] = useState('sandbox');
-  const [publishUrl, setPublishUrl] = useState('');
+  const [selectedCollection, setSelectedCollection] = useState(null);
+  const [selectedRequest, setSelectedRequest] = useState(null);
   const [isGeneratingCode, setIsGeneratingCode] = useState(false);
-  const [collections, setCollections] = useState(API_COLLECTIONS);
-  const [expandedCollections, setExpandedCollections] = useState(['user-management']);
-  const [expandedFolders, setExpandedFolders] = useState(['authentication']);
-  const [activeMainTab, setActiveMainTab] = useState('APIs');
+  const [collections, setCollections] = useState([]);
+  const [expandedCollections, setExpandedCollections] = useState([]);
+  const [expandedFolders, setExpandedFolders] = useState([]);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [showWorkspaceSwitcher, setShowWorkspaceSwitcher] = useState(false);
-  const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showEnvironmentMenu, setShowEnvironmentMenu] = useState(false);
   const [selectedComponent, setSelectedComponent] = useState('controller');
   const [showAllFiles, setShowAllFiles] = useState(false);
+  const [isLoading, setIsLoading] = useState({
+    collections: false,
+    requestDetails: false,
+    implementationDetails: false,
+    generateImplementation: false,
+    searchImplementations: false,
+    folderRequests: {} // Track loading state per folder
+  });
+  const [currentImplementation, setCurrentImplementation] = useState({});
+  const [availableLanguages, setAvailableLanguages] = useState([]);
+  const [allImplementations, setAllImplementations] = useState({});
+  const [folderRequests, setFolderRequests] = useState({}); // Store requests per folder
+  const [userId, setUserId] = useState('');
 
-  // Color scheme matching previous components
+  // Color scheme
   const colors = isDark ? {
-    // Using your shade as base - EXACTLY matching Dashboard
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
     sidebar: 'rgb(41 53 72 / 19%)',
     main: 'rgb(1 14 35)',
     header: 'rgb(20 26 38)',
     card: 'rgb(41 53 72 / 19%)',
-    
-    // Text - coordinating grays - EXACTLY matching Dashboard
     text: '#F1F5F9',
     textSecondary: 'rgb(148 163 184)',
     textTertiary: 'rgb(100 116 139)',
-    
-    // Borders - variations of your shade - EXACTLY matching Dashboard
     border: 'rgb(51 65 85 / 19%)',
     borderLight: 'rgb(45 55 72)',
-    borderDark: 'rgb(71 85 105)',
-    
-    // Interactive - layered transparency - EXACTLY matching Dashboard
     hover: 'rgb(45 46 72 / 33%)',
     active: 'rgb(59 74 99)',
     selected: 'rgb(44 82 130)',
-    
-    // Primary colors - EXACTLY matching Dashboard
     primary: 'rgb(96 165 250)',
     primaryLight: 'rgb(147 197 253)',
     primaryDark: 'rgb(37 99 235)',
-    
-    // Status colors - EXACTLY matching Dashboard
     success: 'rgb(52 211 153)',
     warning: 'rgb(251 191 36)',
     error: 'rgb(248 113 113)',
     info: 'rgb(96 165 250)',
-    
-    // UI Components - EXACTLY matching Dashboard
     tabActive: 'rgb(96 165 250)',
     tabInactive: 'rgb(148 163 184)',
-    sidebarActive: 'rgb(96 165 250)',
-    sidebarHover: 'rgb(45 46 72 / 33%)',
     inputBg: 'rgb(41 53 72 / 19%)',
-    inputborder: 'rgb(51 65 85 / 19%)',
-    tableHeader: 'rgb(41 53 72 / 19%)',
-    tableRow: 'rgb(41 53 72 / 19%)',
-    tableRowHover: 'rgb(45 46 72 / 33%)',
     dropdownBg: 'rgb(41 53 72 / 19%)',
-    dropdownborder: 'rgb(51 65 85 / 19%)',
     modalBg: 'rgb(41 53 72 / 19%)',
-    modalborder: 'rgb(51 65 85 / 19%)',
     codeBg: 'rgb(41 53 72 / 19%)',
-    
-    // Connection status - EXACTLY matching Dashboard
-    connectionOnline: 'rgb(52 211 153)',
-    connectionOffline: 'rgb(248 113 113)',
-    connectionIdle: 'rgb(251 191 36)',
-    
-    // Method colors (specific to API docs) - using Dashboard's color palette
     method: {
-      GET: 'rgb(52 211 153)',      // success color
-      POST: 'rgb(96 165 250)',     // info/primary color
-      PUT: 'rgb(251 191 36)',      // warning color
-      DELETE: 'rgb(248 113 113)',  // error color
-      PATCH: 'rgb(167 139 250)',   // accentPurple from Dashboard
-      HEAD: 'rgb(148 163 184)',    // textSecondary
-      OPTIONS: 'rgb(167 139 250)', // accentPurple
-      LINK: 'rgb(34 211 238)',     // accentCyan from Dashboard
-      UNLINK: 'rgb(251 191 36)'    // warning color
-    },
-    
-    // Language colors - using Dashboard's color palette
-    languageColors: {
-      java: '#f89820',
-      javascript: '#f0db4f',
-      python: '#3776ab',
-      csharp: '#9b4993',
-      php: '#777bb4',
-      go: '#00add8',
-      ruby: '#cc342d',
-      kotlin: '#7f52ff',
-      swift: '#f05138',
-      rust: '#dea584'
-    },
-    
-    // Accent colors - EXACTLY matching Dashboard
-    accentPurple: 'rgb(167 139 250)',
-    accentPink: 'rgb(244 114 182)',
-    accentCyan: 'rgb(34 211 238)',
-    
-    // Gradient - using Dashboard's colors
-    gradient: 'from-blue-500/20 via-violet-500/20 to-orange-500/20'
+      GET: 'rgb(52 211 153)',
+      POST: 'rgb(96 165 250)',
+      PUT: 'rgb(251 191 36)',
+      DELETE: 'rgb(248 113 113)',
+      PATCH: 'rgb(167 139 250)',
+      HEAD: 'rgb(148 163 184)',
+      OPTIONS: 'rgb(167 139 250)'
+    }
   } : {
-    // LIGHT MODE - EXACTLY matching Dashboard's light mode
     bg: '#f8fafc',
     white: '#f8fafc',
     sidebar: '#ffffff',
@@ -1077,16 +236,22 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
     textSecondary: '#64748b',
     textTertiary: '#94a3b8',
     border: '#e2e8f0',
-    borderLight: '#f1f5f9',
-    borderDark: '#cbd5e1',
     hover: '#f1f5f9',
     active: '#e2e8f0',
     selected: '#dbeafe',
     primary: '#1e293b',
     primaryLight: '#60a5fa',
     primaryDark: '#2563eb',
-    
-    // Method colors for light mode
+    success: '#10b981',
+    warning: '#f59e0b',
+    error: '#ef4444',
+    info: '#3b82f6',
+    tabActive: '#3b82f6',
+    tabInactive: '#64748b',
+    inputBg: '#ffffff',
+    dropdownBg: '#ffffff',
+    modalBg: '#ffffff',
+    codeBg: '#f1f5f9',
     method: {
       GET: '#10b981',
       POST: '#3b82f6',
@@ -1094,44 +259,587 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
       DELETE: '#ef4444',
       PATCH: '#8b5cf6',
       HEAD: '#6b7280',
-      OPTIONS: '#8b5cf6',
-      LINK: '#06b6d4',
-      UNLINK: '#f97316'
-    },
+      OPTIONS: '#8b5cf6'
+    }
+  };
+
+  // ==================== API METHODS ====================
+
+  const extractUserIdFromToken = (token) => {
+    if (!token) return '';
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1]));
+        return payload.sub || payload.userId || '';
+      }
+    } catch (e) {
+      console.error('Error extracting userId from token:', e);
+    }
+    return '';
+  };
+
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+   // Load collections from codebase - SIMPLIFIED VERSION
+  const fetchCollectionsList = useCallback(async () => {
+    console.log('🔥 [CodeBase] fetchCollectionsList called');
     
-    // Language colors for light mode
-    languageColors: {
-      java: '#f89820',
-      javascript: '#f0db4f',
-      python: '#3776ab',
-      csharp: '#9b4993',
-      php: '#777bb4',
-      go: '#00add8',
-      ruby: '#cc342d',
-      kotlin: '#7f52ff',
-      swift: '#f05138',
-      rust: '#dea584'
-    },
+    if (!authToken) {
+      console.log('❌ No auth token available');
+      showToast('Authentication required. Please login.', 'error');
+      return;
+    }
+
+    setIsLoading(prev => ({ ...prev, collections: true }));
+    console.log('📡 [CodeBase] Fetching collections list...');
+
+    try {
+      const response = await getCollectionsListFromCodebase(authToken);
+      console.log('📦 [CodeBase] Collections API response:', response);
+      
+      if (!response) {
+        throw new Error('No response from codebase service');
+      }
+      
+      const handledResponse = handleCodebaseResponse(response);
+      const collectionsData = extractCodebaseCollectionsList(handledResponse);
+      
+      console.log('📊 [CodeBase] Extracted collections data:', collectionsData);
+      
+      // Format collections
+      const formattedCollections = collectionsData.map(collection => ({
+        ...collection,
+        folders: [],
+        requests: [],
+        isExpanded: false,
+        isFavorite: collection.isFavorite || false
+      }));
+      
+      setCollections(formattedCollections);
+      
+      // Cache the data if we have userId
+      const userId = extractUserIdFromToken(authToken);
+      if (userId) {
+        cacheCodebaseData(userId, 'collections', formattedCollections);
+      }
+      
+      // AUTO-SELECT FIRST ENDPOINT HERE - SIMPLE VERSION
+      if (formattedCollections.length > 0) {
+        const firstCollection = formattedCollections[0];
+        setSelectedCollection(firstCollection);
+        setExpandedCollections([firstCollection.id]);
+        
+        // Create mock folder with requests
+        const mockFolderId = 'folder-1';
+        const mockRequests = [
+          {
+            id: 'register-user',
+            name: 'Register User',
+            method: 'POST',
+            url: 'https://api.example.com/v2.1/users/register',
+            description: 'Create a new user account with email and password',
+            tags: ['auth', 'register', 'signup'],
+            lastModified: 'Today, 9:00 AM'
+          },
+          {
+            id: 'get-user',
+            name: 'Get User Profile',
+            method: 'GET',
+            url: 'https://api.example.com/v2.1/users/{id}',
+            description: 'Retrieve user profile information by ID',
+            tags: ['users', 'profile', 'read'],
+            lastModified: 'Yesterday, 3:45 PM'
+          }
+        ];
+        
+        // Add folder to folderRequests
+        setFolderRequests(prev => ({
+          ...prev,
+          [mockFolderId]: mockRequests
+        }));
+        
+        // Select the first request
+        if (mockRequests.length > 0) {
+          const firstRequest = mockRequests[0];
+          console.log('🎯 [CodeBase] Auto-selecting first endpoint:', firstRequest.name);
+          
+          setSelectedRequest(firstRequest);
+          setExpandedFolders([mockFolderId]);
+          
+          // Show toast
+          showToast(`Auto-selected: ${firstRequest.name}`, 'info');
+        }
+      }
+      
+      showToast('Collections loaded successfully', 'success');
+      
+    } catch (error) {
+      console.error('❌ [CodeBase] Error fetching collections:', error);
+      showToast(`Failed to load collections: ${error.message}`, 'error');
+      setCollections([]);
+    } finally {
+      setIsLoading(prev => ({ ...prev, collections: false }));
+      console.log('🏁 [CodeBase] fetchCollectionsList completed');
+    }
+  }, [authToken]); // Removed unnecessary dependencies
+
+  // Load collection details - KEEP SIMPLE
+  const fetchCollectionDetails = useCallback(async (collectionId) => {
+    console.log(`📡 [CodeBase] Fetching details for collection ${collectionId}`);
     
-    success: '#10b981',
-    warning: '#f59e0b',
-    error: '#ef4444',
-    info: '#3b82f6',
-    tabActive: '#3b82f6',
-    tabInactive: '#64748b',
-    sidebarActive: '#3b82f6',
-    sidebarHover: '#f1f5f9',
-    inputBg: '#ffffff',
-    inputBorder: '#e2e8f0',
-    tableHeader: '#f8fafc',
-    tableRow: '#ffffff',
-    tableRowHover: '#f8fafc',
-    dropdownBg: '#ffffff',
-    dropdownBorder: '#e2e8f0',
-    modalBg: '#ffffff',
-    modalBorder: '#e2e8f0',
-    codeBg: '#f1f5f9',
-    gradient: 'from-blue-400/20 via-violet-400/20 to-orange-400/20'
+    if (!authToken || !collectionId) {
+      console.log('Missing params for fetchCollectionDetails');
+      return;
+    }
+
+    try {
+      const response = await getCollectionDetailsFromCodebase(authToken, collectionId);
+      console.log('📦 [CodeBase] Collection details response:', response);
+      
+      const handledResponse = handleCodebaseResponse(response);
+      const details = extractCodebaseCollectionDetails(handledResponse);
+      
+      console.log('📊 [CodeBase] Extracted collection details:', details);
+      
+      if (details) {
+        // Update the collection in state with folders
+        setCollections(prevCollections => 
+          prevCollections.map(collection => {
+            if (collection.id === collectionId) {
+              const updatedCollection = { 
+                ...collection, 
+                ...details,
+                folders: details.folders || []
+              };
+              return updatedCollection;
+            }
+            return collection;
+          })
+        );
+        
+        // Update selected collection if it's the one we're viewing
+        if (selectedCollection?.id === collectionId) {
+          setSelectedCollection(prev => ({ 
+            ...prev, 
+            ...details,
+            folders: details.folders || []
+          }));
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ [CodeBase] Error loading collection details:', error);
+      showToast(`Failed to load collection details: ${error.message}`, 'error');
+    }
+  }, [authToken, selectedCollection]);
+
+  // Load requests for a specific folder - KEEP SIMPLE
+  const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
+    console.log(`📡 [CodeBase] Fetching requests for folder ${folderId} in collection ${collectionId}`);
+    
+    if (!authToken || !collectionId || !folderId) {
+      console.log('Missing params for fetchFolderRequests');
+      return;
+    }
+
+    setIsLoading(prev => ({ 
+      ...prev, 
+      folderRequests: { ...prev.folderRequests, [folderId]: true }
+    }));
+
+    try {
+      // Use mock requests
+      const mockRequests = [
+        {
+          id: 'register-user',
+          name: 'Register User',
+          method: 'POST',
+          url: 'https://api.example.com/v2.1/users/register',
+          description: 'Create a new user account with email and password',
+          tags: ['auth', 'register', 'signup'],
+          lastModified: 'Today, 9:00 AM'
+        },
+        {
+          id: 'get-user',
+          name: 'Get User Profile',
+          method: 'GET',
+          url: 'https://api.example.com/v2.1/users/{id}',
+          description: 'Retrieve user profile information by ID',
+          tags: ['users', 'profile', 'read'],
+          lastModified: 'Yesterday, 3:45 PM'
+        }
+      ];
+      
+      setFolderRequests(prev => ({
+        ...prev,
+        [folderId]: mockRequests
+      }));
+      
+    } catch (error) {
+      console.error(`❌ [CodeBase] Error loading requests for folder ${folderId}:`, error);
+      showToast(`Failed to load folder requests: ${error.message}`, 'error');
+    } finally {
+      setIsLoading(prev => ({ 
+        ...prev, 
+        folderRequests: { ...prev.folderRequests, [folderId]: false }
+      }));
+    }
+  }, [authToken]);
+
+  // Load request details - ONLY CALL WHEN USER CLICKS
+  const fetchRequestDetails = useCallback(async (collectionId, requestId) => {
+    console.log(`📡 [CodeBase] Fetching details for request ${requestId}`);
+    
+    if (!authToken || !collectionId || !requestId) {
+      console.log('Missing params for fetchRequestDetails');
+      return;
+    }
+
+    setIsLoading(prev => ({ ...prev, requestDetails: true }));
+    
+    try {
+      const response = await getRequestDetailsFromCodebase(authToken, collectionId, requestId);
+      console.log('📦 [CodeBase] Request details response:', response);
+      
+      const handledResponse = handleCodebaseResponse(response);
+      const details = extractCodebaseRequestDetails(handledResponse);
+      
+      console.log('📊 [CodeBase] Extracted request details:', details);
+      
+      if (details) {
+        setSelectedRequest(details);
+        
+        // Load implementation details
+        await fetchImplementationDetails(collectionId, requestId, selectedLanguage, selectedComponent);
+      }
+      
+      showToast(`Loaded details for ${details?.name}`, 'success');
+      
+    } catch (error) {
+      console.error('❌ [CodeBase] Error loading request details:', error);
+      showToast(`Failed to load request details: ${error.message}`, 'error');
+    } finally {
+      setIsLoading(prev => ({ ...prev, requestDetails: false }));
+    }
+  }, [authToken, selectedLanguage, selectedComponent, fetchImplementationDetails]);
+
+
+  // Load implementation details
+  const fetchImplementationDetails = useCallback(async (collectionId, requestId, language, component) => {
+    console.log(`📡 [CodeBase] Fetching implementation for ${language}/${component}`);
+    
+    if (!authToken || !collectionId || !requestId || !language || !component) {
+      console.log('Missing params for fetchImplementationDetails');
+      return;
+    }
+
+    setIsLoading(prev => ({ ...prev, implementationDetails: true }));
+    
+    try {
+      const response = await getImplementationDetails(authToken, collectionId, requestId, language, component);
+      console.log('📦 [CodeBase] Implementation details response:', response);
+      
+      const handledResponse = handleCodebaseResponse(response);
+      const details = extractImplementationDetails(handledResponse);
+      
+      console.log('📊 [CodeBase] Extracted implementation details:', details);
+      
+      if (details) {
+        setCurrentImplementation(prev => ({
+          ...prev,
+          [language]: {
+            ...prev[language],
+            [component]: details.code
+          }
+        }));
+        
+        // Cache the implementation
+        const userId = extractUserIdFromToken(authToken);
+        if (userId) {
+          cacheCodebaseData(userId, `${requestId}_${language}_${component}`, details.code);
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ [CodeBase] Error loading implementation details:', error);
+      // Don't show toast for this as it's not critical
+    } finally {
+      setIsLoading(prev => ({ ...prev, implementationDetails: false }));
+    }
+  }, [authToken]);
+
+  // Load all implementations for a request
+  const fetchAllImplementations = useCallback(async (collectionId, requestId) => {
+    console.log(`📡 [CodeBase] Fetching all implementations for request ${requestId}`);
+    
+    if (!authToken || !collectionId || !requestId) {
+      console.log('Missing params for fetchAllImplementations');
+      return;
+    }
+
+    try {
+      const response = await getAllImplementations(authToken, collectionId, requestId);
+      console.log('📦 [CodeBase] All implementations response:', response);
+      
+      if (response && response.data?.implementations) {
+        setAllImplementations(response.data.implementations);
+        console.log('📊 [CodeBase] Loaded all implementations:', Object.keys(response.data.implementations));
+      }
+      
+    } catch (error) {
+      console.error('❌ [CodeBase] Error loading all implementations:', error);
+      // Don't show toast for this as it's not critical
+    }
+  }, [authToken]);
+
+  // Generate implementation
+  const generateImplementationAPI = async (generateRequest) => {
+    console.log('📡 [CodeBase] Generating implementation...');
+    
+    if (!authToken) {
+      console.log('❌ No auth token for generateImplementationAPI');
+      throw new Error('Authentication required');
+    }
+
+    setIsLoading(prev => ({ ...prev, generateImplementation: true }));
+    
+    try {
+      const errors = validateGenerateImplementation(generateRequest);
+      if (errors.length > 0) {
+        throw new Error(errors.join(', '));
+      }
+      
+      const response = await generateImplementation(authToken, generateRequest);
+      const handledResponse = handleCodebaseResponse(response);
+      const results = extractGenerateResults(handledResponse);
+      
+      console.log('✅ [CodeBase] Implementation generated:', results);
+      return results;
+      
+    } catch (error) {
+      console.error('❌ [CodeBase] Error generating implementation:', error);
+      throw error;
+    } finally {
+      setIsLoading(prev => ({ ...prev, generateImplementation: false }));
+    }
+  };
+
+  // Export implementation
+  const exportImplementationAPI = async (exportRequest) => {
+    console.log('📡 [CodeBase] Exporting implementation...');
+    
+    if (!authToken) {
+      console.log('❌ No auth token for exportImplementationAPI');
+      throw new Error('Authentication required');
+    }
+
+    try {
+      const errors = validateExportImplementation(exportRequest);
+      if (errors.length > 0) {
+        throw new Error(errors.join(', '));
+      }
+      
+      const response = await exportImplementation(authToken, exportRequest);
+      const handledResponse = handleCodebaseResponse(response);
+      const results = extractExportResults(handledResponse);
+      
+      console.log('✅ [CodeBase] Implementation exported:', results);
+      return results;
+      
+    } catch (error) {
+      console.error('❌ [CodeBase] Error exporting implementation:', error);
+      throw error;
+    }
+  };
+
+  // Load available languages
+  const fetchLanguages = useCallback(async () => {
+    console.log('📡 [CodeBase] Fetching languages...');
+    
+    if (!authToken) {
+      console.log('❌ No auth token for fetchLanguages');
+      return;
+    }
+
+    try {
+      const response = await getLanguages(authToken);
+      console.log('📦 [CodeBase] Languages response:', response);
+      
+      if (response && response.data?.languages) {
+        const languagesData = response.data.languages.map(lang => ({
+          id: lang.id,
+          name: lang.name,
+          framework: lang.framework,
+          color: lang.color,
+          icon: null,
+          command: lang.command
+        }));
+        
+        setAvailableLanguages(languagesData);
+        console.log('📊 [CodeBase] Loaded languages:', languagesData.length);
+      }
+      
+    } catch (error) {
+      console.error('❌ [CodeBase] Error loading languages:', error);
+      // Fallback to default languages
+      const defaultLanguages = [
+        { id: 'java', name: 'Java', framework: 'Spring Boot', color: '#f89820' },
+        { id: 'javascript', name: 'JavaScript', framework: 'Node.js/Express', color: '#f0db4f' },
+        { id: 'python', name: 'Python', framework: 'FastAPI/Django', color: '#3776ab' }
+      ];
+      setAvailableLanguages(defaultLanguages);
+    }
+  }, [authToken]);
+
+  const getMethodColor = (method) => {
+    return colors.method[method] || colors.textSecondary;
+  };
+
+  const toggleCollection = async (collectionId) => {
+    const isExpanding = !expandedCollections.includes(collectionId);
+    
+    setExpandedCollections(prev =>
+      prev.includes(collectionId)
+        ? prev.filter(id => id !== collectionId)
+        : [...prev, collectionId]
+    );
+    
+    // If expanding, load collection details
+    if (isExpanding) {
+      await fetchCollectionDetails(collectionId);
+    }
+  };
+
+  const toggleFolder = async (folderId) => {
+    const isExpanding = !expandedFolders.includes(folderId);
+    
+    setExpandedFolders(prev =>
+      prev.includes(folderId)
+        ? prev.filter(id => id !== folderId)
+        : [...prev, folderId]
+    );
+    
+    // If expanding and we have a selected collection, load folder requests
+    if (isExpanding && selectedCollection) {
+      console.log(`📁 [CodeBase] Expanding folder ${folderId}, loading requests...`);
+      await fetchFolderRequests(selectedCollection.id, folderId);
+    }
+  };
+
+  const handleSelectRequest = async (request, collection, folder) => {
+    console.log('🎯 [CodeBase] Selecting request:', request.name);
+    
+    setSelectedRequest(request);
+    setSelectedCollection(collection);
+    setSelectedComponent('controller'); // Reset to controller when selecting new request
+    
+    // Fetch request details
+    if (collection && request.id) {
+      await fetchRequestDetails(collection.id, request.id);
+    }
+    
+    showToast(`Viewing implementation for ${request.name}`, 'info');
+  };
+
+  const copyToClipboard = (text) => {
+    if (!text) {
+      showToast('No code to copy', 'warning');
+      return;
+    }
+    
+    navigator.clipboard.writeText(text);
+    showToast('Copied to clipboard!', 'success');
+  };
+
+  const generateDownloadPackage = async () => {
+    if (!selectedRequest || !selectedLanguage) {
+      showToast('Please select a request and language first', 'warning');
+      return;
+    }
+    
+    setIsGeneratingCode(true);
+    
+    try {
+      const exportRequest = {
+        language: selectedLanguage,
+        format: showAllFiles ? 'complete' : 'single',
+        requestId: selectedRequest.id,
+        collectionId: selectedCollection?.id
+      };
+      
+      const results = await exportImplementationAPI(exportRequest);
+      
+      if (results?.success) {
+        showToast('Package ready for download!', 'success');
+      } else {
+        showToast('Failed to generate package', 'error');
+      }
+    } catch (error) {
+      console.error('Error generating download package:', error);
+      showToast(error.message || 'Failed to generate package', 'error');
+    } finally {
+      setIsGeneratingCode(false);
+    }
+  };
+
+  const getCurrentImplementation = () => {
+    return currentImplementation[selectedLanguage] || {};
+  };
+
+  const getCurrentCode = () => {
+    const implementation = getCurrentImplementation();
+    return implementation[selectedComponent] || '// Implementation not available for this component';
+  };
+
+  const getAvailableComponents = () => {
+    // Get components from current implementation
+    const implementation = getCurrentImplementation();
+    const components = Object.keys(implementation);
+    
+    if (components.length > 0) {
+      return components;
+    }
+    
+    // Fallback to common components based on language
+    const componentMap = {
+      java: ['controller', 'service', 'repository', 'model', 'dto'],
+      javascript: ['controller', 'service', 'model', 'routes'],
+      python: ['fastapi', 'schemas', 'models', 'routes'],
+      csharp: ['controller', 'service', 'model', 'repository'],
+      php: ['controller', 'service', 'model'],
+      go: ['handler', 'service', 'model'],
+      ruby: ['controller', 'service', 'model'],
+      kotlin: ['controller', 'service', 'model'],
+      swift: ['controller', 'service', 'model'],
+      rust: ['handler', 'service', 'model']
+    };
+    
+    return componentMap[selectedLanguage] || ['controller', 'service', 'model'];
+  };
+
+  const getLanguageIcon = (language) => {
+    const icons = {
+      java: <Coffee size={14} />,
+      javascript: <FileCode size={14} />,
+      python: <Code size={14} />,
+      csharp: <Box size={14} />,
+      php: <Package size={14} />,
+      go: <Terminal size={14} />,
+      ruby: <Server size={14} />,
+      kotlin: <Cpu size={14} />,
+      swift: <Monitor size={14} />,
+      rust: <HardDrive size={14} />
+    };
+    return icons[language] || <Code size={14} />;
+  };
+
+  // Get requests for a specific folder
+  const getFolderRequests = (folderId) => {
+    return folderRequests[folderId] || [];
   };
 
   // Filter collections based on search
@@ -1139,148 +847,43 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     return (
-      collection.name.toLowerCase().includes(query) ||
-      collection.description.toLowerCase().includes(query) ||
-      collection.folders?.some(folder => 
-        folder.name.toLowerCase().includes(query) ||
-        folder.description.toLowerCase().includes(query) ||
-        folder.requests?.some(request => 
-          request.name.toLowerCase().includes(query) ||
-          request.description.toLowerCase().includes(query)
-        )
-      )
+      collection.name?.toLowerCase().includes(query) ||
+      collection.description?.toLowerCase().includes(query)
     );
   });
 
-  const showToast = (message, type = 'info') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
-
-  const getMethodColor = (method) => {
-    return colors.method[method] || colors.textSecondary;
-  };
-
-  const toggleCollection = (collectionId) => {
-    setExpandedCollections(prev =>
-      prev.includes(collectionId)
-        ? prev.filter(id => id !== collectionId)
-        : [...prev, collectionId]
-    );
-  };
-
-  const toggleFolder = (folderId) => {
-    setExpandedFolders(prev =>
-      prev.includes(folderId)
-        ? prev.filter(id => id !== folderId)
-        : [...prev, folderId]
-    );
-  };
-
-  const handleSelectRequest = (request, collection, folder) => {
-    setSelectedRequest(request);
-    setSelectedCollection(collection);
-    setSelectedComponent('controller'); // Reset to controller when selecting new request
-    showToast(`Viewing implementation for ${request.name}`, 'info');
-  };
-
-  const handleEnvironmentChange = (envId) => {
-    setActiveEnvironment(envId);
-    setEnvironments(envs => envs.map(env => ({
-      ...env,
-      isActive: env.id === envId
-    })));
-    showToast(`Switched to ${environments.find(e => e.id === envId)?.name} environment`, 'success');
-    setShowEnvironmentMenu(false);
-  };
-
-  const markAllNotificationsAsRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
-    showToast('All notifications marked as read', 'success');
-  };
-
-  const getActiveBaseUrl = () => {
-    return environments.find(e => e.id === activeEnvironment)?.baseUrl || 'https://api.example.com';
-  };
-
-  const generateDownloadPackage = () => {
-    setIsGeneratingCode(true);
-    setTimeout(() => {
-      const implementation = getCurrentImplementation();
-      if (implementation && Object.keys(implementation).length > 0) {
-        // For now, just show a toast since we don't have JSZip installed
-        showToast('Package generation started. In a real app, this would create a ZIP file.', 'success');
-      } else {
-        showToast('No implementation available to download', 'warning');
-      }
-      setIsGeneratingCode(false);
-    }, 1500);
-  };
-
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-    showToast('Copied to clipboard!', 'success');
-  };
-
-  const getFileName = (component, language) => {
-    const extensions = {
-      java: '.java',
-      javascript: '.js',
-      python: '.py',
-      csharp: '.cs',
-      php: '.php',
-      go: '.go',
-      ruby: '.rb',
-      kotlin: '.kt',
-      swift: '.swift',
-      rust: '.rs'
-    };
+  // Initialize data
+  useEffect(() => {
+    console.log('🚀 [CodeBase] Component mounted, fetching data...');
     
-    const componentMap = {
-      controller: 'Controller',
-      service: 'Service',
-      repository: 'Repository',
-      model: 'Model',
-      dto: 'DTO',
-      routes: 'Routes',
-      config: 'Config',
-      server: 'Server',
-      fastapi: 'Main',
-      schemas: 'Schemas',
-      models: 'Models',
-      crud: 'CRUD',
-      auth: 'Auth',
-      database: 'Database',
-      requirements: 'Requirements',
-      dependencies: 'Pom',
-      applicationProperties: 'Application'
-    };
-    
-    return `${componentMap[component] || component}${extensions[language] || '.txt'}`;
-  };
-
-  const getAvailableComponents = () => {
-    const implementation = getCurrentImplementation();
-    return implementation ? Object.keys(implementation) : [];
-  };
-
-  const getCurrentImplementation = () => {
-    return selectedRequest?.implementations?.[selectedLanguage] || DEFAULT_IMPLEMENTATIONS[selectedLanguage];
-  };
-
-  const getCurrentCode = () => {
-    const implementation = getCurrentImplementation();
-    return implementation?.[selectedComponent] || '// Implementation not available for this component';
-  };
+    if (authToken) {
+      const extractedUserId = extractUserIdFromToken(authToken);
+      setUserId(extractedUserId);
+      
+      // Clear cache to force fresh API call
+      clearCachedCodebaseData(extractedUserId);
+      
+      // Fetch fresh data
+      fetchCollectionsList().catch(error => {
+        console.error('Error in fetchCollectionsList:', error);
+      });
+      
+      fetchLanguages().catch(error => {
+        console.error('Error in fetchLanguages:', error);
+      });
+    } else {
+      console.log('🔒 [CodeBase] No auth token, skipping fetch');
+    }
+  }, [authToken, fetchCollectionsList, fetchLanguages]);
 
   const renderCodePanel = () => {
-    const currentLanguage = LANGUAGES.find(lang => lang.id === selectedLanguage);
+    const currentLanguage = availableLanguages.find(lang => lang.id === selectedLanguage);
     const availableComponents = getAvailableComponents();
     const currentCode = getCurrentCode();
     
     return (
       <div className="w-80 border-l flex flex-col" style={{ 
-        backgroundColor: colors.sidebar,
+        backgroundColor: colors.card,
         borderColor: colors.border
       }}>
         <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: colors.border }}>
@@ -1301,13 +904,13 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
                 style={{ backgroundColor: colors.hover, color: colors.text }}
               >
                 <div className="flex items-center gap-2">
-                  {currentLanguage?.icon}
-                  <span>{currentLanguage?.name}</span>
+                  {getLanguageIcon(selectedLanguage)}
+                  <span>{currentLanguage?.name || 'Java'}</span>
                   <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
-                    backgroundColor: `${currentLanguage?.color}20`,
-                    color: currentLanguage?.color
+                    backgroundColor: `${currentLanguage?.color || '#f89820'}20`,
+                    color: currentLanguage?.color || '#f89820'
                   }}>
-                    {currentLanguage?.framework}
+                    {currentLanguage?.framework || 'Spring Boot'}
                   </span>
                 </div>
                 <ChevronDown size={14} style={{ color: colors.textSecondary }} />
@@ -1319,13 +922,23 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
                     backgroundColor: colors.dropdownBg,
                     borderColor: colors.border
                   }}>
-                  {LANGUAGES.map(lang => (
+                  {availableLanguages.map(lang => (
                     <button
                       key={lang.id}
                       onClick={() => {
                         setSelectedLanguage(lang.id);
                         setShowLanguageDropdown(false);
                         setSelectedComponent('controller');
+                        
+                        // Load implementation for the new language
+                        if (selectedCollection && selectedRequest) {
+                          fetchImplementationDetails(
+                            selectedCollection.id, 
+                            selectedRequest.id, 
+                            lang.id, 
+                            'controller'
+                          );
+                        }
                       }}
                       className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors"
                       style={{ 
@@ -1333,7 +946,7 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
                         color: selectedLanguage === lang.id ? colors.primary : colors.text
                       }}
                     >
-                      {lang.icon}
+                      {getLanguageIcon(lang.id)}
                       {lang.name}
                       <span className="text-xs ml-auto px-1.5 py-0.5 rounded" style={{ 
                         backgroundColor: `${lang.color}20`,
@@ -1356,7 +969,19 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
                 {availableComponents.map(component => (
                   <button
                     key={component}
-                    onClick={() => setSelectedComponent(component)}
+                    onClick={() => {
+                      setSelectedComponent(component);
+                      
+                      // Load implementation for this component
+                      if (selectedCollection && selectedRequest) {
+                        fetchImplementationDetails(
+                          selectedCollection.id, 
+                          selectedRequest.id, 
+                          selectedLanguage, 
+                          component
+                        );
+                      }
+                    }}
                     className={`px-2 py-1 text-xs rounded capitalize hover-lift ${
                       selectedComponent === component ? '' : 'hover:bg-opacity-50'
                     }`}
@@ -1380,9 +1005,6 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
               <span className="text-sm font-medium capitalize" style={{ color: colors.text }}>
                 {selectedComponent.replace(/([A-Z])/g, ' $1').trim()}
               </span>
-              <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>
-                {getFileName(selectedComponent, selectedLanguage)}
-              </span>
             </div>
             <button 
               onClick={() => copyToClipboard(currentCode)}
@@ -1395,10 +1017,17 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
           </div>
           
           <div className="p-4" style={{ backgroundColor: colors.codeBg }}>
-            <SyntaxHighlighter 
-              language={selectedLanguage}
-              code={currentCode}
-            />
+            {isLoading.implementationDetails ? (
+              <div className="text-center py-8">
+                <RefreshCw size={16} className="animate-spin mx-auto mb-2" style={{ color: colors.textSecondary }} />
+                <p className="text-sm" style={{ color: colors.textSecondary }}>Loading implementation...</p>
+              </div>
+            ) : (
+              <SyntaxHighlighter 
+                language={selectedLanguage}
+                code={currentCode}
+              />
+            )}
           </div>
         </div>
 
@@ -1413,7 +1042,11 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
           <button 
             className="w-full py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center justify-center gap-2 hover-lift"
             onClick={generateDownloadPackage}
-            style={{ backgroundColor: colors.hover, color: colors.text }}>
+            disabled={isGeneratingCode}
+            style={{ 
+              backgroundColor: isGeneratingCode ? colors.textTertiary : colors.hover,
+              color: isGeneratingCode ? colors.white : colors.text
+            }}>
             {isGeneratingCode ? (
               <>
                 <RefreshCw size={12} className="animate-spin" />
@@ -1426,355 +1059,13 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
               </>
             )}
           </button>
-          {showAllFiles && (
-            <button 
-              className="w-full py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center justify-center gap-2 hover-lift"
-              onClick={() => setShowAllFiles(!showAllFiles)}
-              style={{ backgroundColor: colors.hover, color: colors.text }}>
-              {showAllFiles ? 'Show Single File' : 'Show All Files'}
-            </button>
-          )}
         </div>
-      </div>
-    );
-  };
-
-  const renderImportModal = () => {
-    if (!showImportModal) return null;
-    
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="rounded-lg w-full max-w-lg" style={{ 
-          backgroundColor: colors.modalBg,
-          border: `1px solid ${colors.modalBorder}`
-        }}>
-          <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: colors.border }}>
-            <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Import API Specification</h3>
-            <button onClick={() => setShowImportModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-              style={{ backgroundColor: colors.hover }}>
-              <X size={14} style={{ color: colors.textSecondary }} />
-            </button>
-          </div>
-          <div className="p-4 space-y-4">
-            <div className="text-center p-6 border-2 border-dashed rounded-lg" style={{ 
-              borderColor: colors.border,
-              backgroundColor: colors.hover
-            }}>
-              <UploadCloud size={32} className="mx-auto mb-4" style={{ color: colors.textSecondary }} />
-              <p className="text-sm mb-4" style={{ color: colors.text }}>Import OpenAPI/Swagger Spec</p>
-              <p className="text-xs mb-4" style={{ color: colors.textSecondary }}>Supports: OpenAPI 3.0, Swagger 2.0, Postman Collection</p>
-              <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-                style={{ backgroundColor: colors.primaryDark, color: colors.white }}
-                onClick={() => showToast('File browser would open', 'info')}>
-                Select File
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {['From URL', 'From GitHub', 'From Postman', 'Example APIs'].map(source => (
-                <button key={source} className="p-4 rounded text-sm text-left hover:bg-opacity-50 transition-colors hover-lift"
-                  onClick={() => showToast(`Importing ${source}`, 'info')}
-                  style={{ 
-                    backgroundColor: colors.hover,
-                    border: `1px solid ${colors.border}`,
-                    color: colors.text
-                  }}>
-                  <div className="font-medium">{source}</div>
-                  <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
-                    {source === 'From URL' ? 'Import from URL' :
-                     source === 'From GitHub' ? 'Connect to GitHub' :
-                     source === 'From Postman' ? 'Postman export' : 'Sample implementations'}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="p-4 border-t" style={{ borderColor: colors.border }}>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setShowImportModal(false)} className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
-                style={{ backgroundColor: colors.hover, color: colors.text }}>
-                Cancel
-              </button>
-              <button onClick={() => {
-                showToast('API specification imported!', 'success');
-                setShowImportModal(false);
-              }} className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
-                Import & Generate
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderSettingsModal = () => {
-    if (!showSettingsModal) return null;
-    
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="rounded-lg w-full max-w-2xl" style={{ 
-          backgroundColor: colors.modalBg,
-          border: `1px solid ${colors.modalBorder}`
-        }}>
-          <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: colors.border }}>
-            <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Settings</h3>
-            <button onClick={() => setShowSettingsModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-              style={{ backgroundColor: colors.hover }}>
-              <X size={14} style={{ color: colors.textSecondary }} />
-            </button>
-          </div>
-          <div className="p-4">
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              {['Code Style', 'Templates', 'Export', 'Security', 'Notifications', 'Preferences'].map(setting => (
-                <button key={setting} className="p-4 rounded text-center hover:bg-opacity-50 transition-colors hover-lift"
-                  onClick={() => showToast(`Opening ${setting} settings`, 'info')}
-                  style={{ 
-                    backgroundColor: colors.hover,
-                    border: `1px solid ${colors.border}`,
-                    color: colors.text
-                  }}>
-                  <div className="font-medium">{setting}</div>
-                </button>
-              ))}
-            </div>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium" style={{ color: colors.text }}>Dark Mode</div>
-                  <div className="text-sm" style={{ color: colors.textSecondary }}>Toggle dark/light theme</div>
-                </div>
-                <button onClick={() => setTheme(isDark ? 'light' : 'dark')} className="relative inline-flex h-6 w-11 items-center rounded-full hover-lift"
-                  style={{ backgroundColor: isDark ? colors.primary : colors.border }}>
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-                    isDark ? 'translate-x-6' : 'translate-x-1'
-                  }`} />
-                </button>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium" style={{ color: colors.text }}>Auto-generate Tests</div>
-                  <div className="text-sm" style={{ color: colors.textSecondary }}>Generate unit tests with code</div>
-                </div>
-                <button className="relative inline-flex h-6 w-11 items-center rounded-full hover-lift"
-                  style={{ backgroundColor: colors.primary }}
-                  onClick={() => showToast('Auto-test generation toggled', 'info')}>
-                  <span className="inline-block h-4 w-4 transform rounded-full bg-white translate-x-6" />
-                </button>
-              </div>
-            </div>
-          </div>
-          <div className="p-4 border-t" style={{ borderColor: colors.border }}>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setShowSettingsModal(false)} className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
-                style={{ backgroundColor: colors.hover, color: colors.text }}>
-                Cancel
-              </button>
-              <button onClick={() => {
-                showToast('Settings saved!', 'success');
-                setShowSettingsModal(false);
-              }} className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
-                Save Changes
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderPublishModal = () => {
-    if (!showPublishModal) return null;
-    
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="rounded-lg w-full max-w-lg" style={{ 
-          backgroundColor: colors.modalBg,
-          border: `1px solid ${colors.modalBorder}`
-        }}>
-          <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: colors.border }}>
-            <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Export & Share</h3>
-            <button onClick={() => setShowPublishModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-              style={{ backgroundColor: colors.hover }}>
-              <X size={14} style={{ color: colors.textSecondary }} />
-            </button>
-          </div>
-          <div className="p-4 space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Export Format</label>
-              <div className="grid grid-cols-2 gap-2">
-                {['Complete Package', 'Single File', 'GitHub Gist', 'Docker Package'].map(format => (
-                  <button key={format} className="p-3 rounded text-sm text-left transition-colors hover:bg-opacity-50 hover-lift"
-                    style={{ 
-                      backgroundColor: colors.hover,
-                      border: `1px solid ${colors.border}`,
-                      color: colors.text
-                    }}
-                    onClick={() => showToast(`Exporting as ${format}`, 'info')}>
-                    <div className="font-medium">{format}</div>
-                    <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
-                      {format === 'Complete Package' ? 'All files + config' :
-                       format === 'Single File' ? 'Selected file only' :
-                       format === 'GitHub Gist' ? 'Share on GitHub' : 'With Dockerfile'}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Target Language</label>
-              <select 
-                className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
-                value={selectedLanguage}
-                onChange={(e) => setSelectedLanguage(e.target.value)}
-                style={{
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.border,
-                  color: colors.text
-                }}
-              >
-                {LANGUAGES.map(lang => (
-                  <option key={lang.id} value={lang.id}>{lang.name} ({lang.framework})</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Include Documentation</label>
-              <div className="flex items-center gap-2">
-                <button className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.primaryDark, color: colors.white }}
-                  onClick={() => showToast('Include README selected', 'info')}>
-                  README.md
-                </button>
-                <button className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.hover, color: colors.text }}
-                  onClick={() => showToast('Include API docs selected', 'info')}>
-                  API Docs
-                </button>
-                <button className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.hover, color: colors.text }}
-                  onClick={() => showToast('Include tests selected', 'info')}>
-                  Tests
-                </button>
-              </div>
-            </div>
-          </div>
-          <div className="p-4 border-t" style={{ borderColor: colors.border }}>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setShowPublishModal(false)} className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
-                style={{ backgroundColor: colors.hover, color: colors.text }}>
-                Cancel
-              </button>
-              <button onClick={generateDownloadPackage} className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
-                {isGeneratingCode ? (
-                  <>
-                    <RefreshCw size={12} className="animate-spin inline mr-2" />
-                    Exporting...
-                  </>
-                ) : (
-                  'Export Now'
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderToast = () => {
-    if (!toast) return null;
-    
-    const bgColor = toast.type === 'error' ? colors.error : 
-                   toast.type === 'success' ? colors.success : 
-                   toast.type === 'warning' ? colors.warning : 
-                   colors.info;
-    
-    return (
-      <div className="fixed bottom-4 right-4 px-4 py-2 rounded text-sm font-medium z-50 animate-fade-in-up"
-        style={{ 
-          backgroundColor: bgColor,
-          color: 'white'
-        }}>
-        {toast.message}
-      </div>
-    );
-  };
-
-  const renderAllFilesView = () => {
-    const implementation = getCurrentImplementation();
-    if (!implementation || Object.keys(implementation).length === 0) {
-      return (
-        <div className="text-center p-12" style={{ color: colors.textSecondary }}>
-          <FileCode size={48} className="mx-auto mb-4 opacity-50" />
-          <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>No Files Available</h3>
-          <p>No implementation files available for {selectedLanguage}</p>
-        </div>
-      );
-    }
-    
-    return (
-      <div className="space-y-6">
-        {Object.entries(implementation).map(([component, code]) => (
-          <div key={component} className="border rounded-lg overflow-hidden hover-lift" style={{ 
-            borderColor: colors.border,
-            backgroundColor: colors.card
-          }}>
-            <div className="px-4 py-3 flex items-center justify-between" style={{ 
-              borderBottomColor: colors.border
-            }}>
-              <div className="flex items-center gap-2">
-                <FileCode size={14} style={{ color: colors.textSecondary }} />
-                <span className="text-sm font-medium capitalize" style={{ color: colors.text }}>
-                  {component.replace(/([A-Z])/g, ' $1').trim()}
-                </span>
-                <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>
-                  {getFileName(component, selectedLanguage)}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => copyToClipboard(code)}
-                  className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.hover }}
-                  title="Copy to clipboard"
-                >
-                  <Copy size={12} style={{ color: colors.textSecondary }} />
-                </button>
-                <button
-                  onClick={() => {
-                    const blob = new Blob([code], { type: 'text/plain' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = getFileName(component, selectedLanguage);
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                  }}
-                  className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.hover }}
-                  title="Download file"
-                >
-                  <Download size={12} style={{ color: colors.textSecondary }} />
-                </button>
-              </div>
-            </div>
-            <div className="p-4" style={{ backgroundColor: colors.codeBg }}>
-              <SyntaxHighlighter language={selectedLanguage} code={code} />
-            </div>
-          </div>
-        ))}
       </div>
     );
   };
 
   const renderImplementationContent = () => {
-    const availableComponents = getAvailableComponents();
-    const currentLanguage = LANGUAGES.find(lang => lang.id === selectedLanguage);
+    const currentLanguage = availableLanguages.find(lang => lang.id === selectedLanguage);
     const implementation = getCurrentImplementation();
     const hasImplementation = implementation && Object.keys(implementation).length > 0;
     
@@ -1783,89 +1074,117 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
         <div className="max-w-6xl mx-auto">
           {/* Header */}
           <div className="mb-8">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="px-3 py-1 rounded text-sm font-medium" style={{ 
-                backgroundColor: getMethodColor(selectedRequest.method),
-                color: 'white'
-              }}>
-                {selectedRequest.method}
+            {selectedRequest ? (
+              <>
+                <div className="flex items-center gap-3 mb-2">
+                  {selectedRequest.method && (
+                    <div className="px-3 py-1 rounded text-sm font-medium" style={{ 
+                      backgroundColor: getMethodColor(selectedRequest.method),
+                      color: 'white'
+                    }}>
+                      {selectedRequest.method}
+                    </div>
+                  )}
+                  <code className="text-lg font-mono" style={{ color: colors.text }}>
+                    {selectedRequest.url || ''}
+                  </code>
+                </div>
+                <h1 className="text-2xl font-semibold mb-4" style={{ color: colors.text }}>
+                  {selectedRequest.name}
+                </h1>
+                <p className="text-base mb-6" style={{ color: colors.textSecondary }}>
+                  {selectedRequest.description || 'No description available'}
+                </p>
+                
+                <div className="flex flex-wrap items-center gap-4 text-sm mb-6">
+                  {selectedCollection && (
+                    <div style={{ color: colors.textTertiary }}>
+                      <Folder size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
+                      {selectedCollection.name}
+                    </div>
+                  )}
+                  {selectedRequest.tags && selectedRequest.tags.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      {selectedRequest.tags.map(tag => (
+                        <span key={tag} className="text-xs px-2 py-1 rounded" style={{ 
+                          backgroundColor: colors.hover,
+                          color: colors.textSecondary
+                        }}>
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {selectedRequest.lastModified && (
+                    <div style={{ color: colors.textTertiary }}>
+                      <Clock size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
+                      Last updated: {selectedRequest.lastModified}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-12">
+                <Code size={48} className="mx-auto mb-4 opacity-50" style={{ color: colors.textSecondary }} />
+                <h2 className="text-2xl font-semibold mb-4" style={{ color: colors.text }}>Select an API Endpoint</h2>
+                <p className="text-base mb-6" style={{ color: colors.textSecondary }}>
+                  Choose an endpoint from the left sidebar to view its implementation
+                </p>
               </div>
-              <code className="text-lg font-mono" style={{ color: colors.text }}>
-                {selectedRequest.url}
-              </code>
-            </div>
-            <h1 className="text-2xl font-semibold mb-4" style={{ color: colors.text }}>
-              {selectedRequest.name}
-            </h1>
-            <p className="text-base mb-6" style={{ color: colors.textSecondary }}>
-              {selectedRequest.description}
-            </p>
-            
-            <div className="flex flex-wrap items-center gap-4 text-sm mb-6">
-              <div style={{ color: colors.textTertiary }}>
-                <Folder size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
-                {selectedCollection.name} › {selectedCollection.folders.find(f => f.requests?.some(r => r.id === selectedRequest.id))?.name}
-              </div>
-              <div className="flex items-center gap-2">
-                {selectedRequest.tags?.map(tag => (
-                  <span key={tag} className="text-xs px-2 py-1 rounded" style={{ 
-                    backgroundColor: colors.hover,
-                    color: colors.textSecondary
-                  }}>
-                    {tag}
-                  </span>
-                ))}
-              </div>
-              <div style={{ color: colors.textTertiary }}>
-                <Clock size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
-                Last updated: {selectedRequest.lastModified}
-              </div>
-            </div>
+            )}
           </div>
 
-          {/* Language & Framework Selection */}
-          <div className="mb-8 p-6 rounded-xl border hover-lift" style={{ 
-            backgroundColor: colors.card,
-            borderColor: colors.border
-          }}>
-            <h2 className="text-lg font-semibold mb-4" style={{ color: colors.text }}>Select Implementation Language</h2>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              {LANGUAGES.map(lang => (
-                <button
-                  key={lang.id}
-                  onClick={() => {
-                    setSelectedLanguage(lang.id);
-                    setSelectedComponent('controller');
-                  }}
-                  className={`p-4 rounded-xl text-sm text-center hover-lift transition-all ${
-                    selectedLanguage === lang.id ? 'ring-2 ring-offset-1' : ''
-                  }`}
-                  style={{ 
-                    backgroundColor: selectedLanguage === lang.id ? colors.selected : colors.hover,
-                    border: `1px solid ${selectedLanguage === lang.id ? colors.primary : colors.border}`,
-                    color: colors.text,
-                    boxShadow: selectedLanguage === lang.id ? `0 0 0 2px ${colors.primary}40` : 'none'
-                  }}
-                >
-                  <div className="flex flex-col items-center">
-                    {lang.icon}
-                    <span className="mt-2 font-medium">{lang.name}</span>
-                    <span className="text-xs mt-1" style={{ color: colors.textSecondary }}>{lang.framework}</span>
-                    {selectedLanguage === lang.id && (
-                      <Check size={16} className="mt-2" style={{ color: colors.primary }} />
-                    )}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Implementation Content */}
-          {hasImplementation ? (
+          {selectedRequest && (
             <>
-              {showAllFiles ? (
-                renderAllFilesView()
-              ) : (
+              {/* Language & Framework Selection */}
+              <div className="mb-8 p-6 rounded-xl border hover-lift" style={{ 
+                backgroundColor: colors.card,
+                borderColor: colors.border
+              }}>
+                <h2 className="text-lg font-semibold mb-4" style={{ color: colors.text }}>Select Implementation Language</h2>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  {availableLanguages.map(lang => (
+                    <button
+                      key={lang.id}
+                      onClick={() => {
+                        setSelectedLanguage(lang.id);
+                        setSelectedComponent('controller');
+                        
+                        // Load implementation for the new language
+                        if (selectedCollection && selectedRequest) {
+                          fetchImplementationDetails(
+                            selectedCollection.id, 
+                            selectedRequest.id, 
+                            lang.id, 
+                            'controller'
+                          );
+                        }
+                      }}
+                      className={`p-4 rounded-xl text-sm text-center hover-lift transition-all ${
+                        selectedLanguage === lang.id ? 'ring-2 ring-offset-1' : ''
+                      }`}
+                      style={{ 
+                        backgroundColor: selectedLanguage === lang.id ? colors.selected : colors.hover,
+                        border: `1px solid ${selectedLanguage === lang.id ? colors.primary : colors.border}`,
+                        color: colors.text,
+                        boxShadow: selectedLanguage === lang.id ? `0 0 0 2px ${colors.primary}40` : 'none'
+                      }}
+                    >
+                      <div className="flex flex-col items-center">
+                        {getLanguageIcon(lang.id)}
+                        <span className="mt-2 font-medium">{lang.name}</span>
+                        <span className="text-xs mt-1" style={{ color: colors.textSecondary }}>{lang.framework}</span>
+                        {selectedLanguage === lang.id && (
+                          <Check size={16} className="mt-2" style={{ color: colors.primary }} />
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Implementation Content */}
+              {hasImplementation ? (
                 <div className="border rounded-xl overflow-hidden hover-lift" style={{ 
                   borderColor: colors.border,
                   backgroundColor: colors.card
@@ -1875,36 +1194,17 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
                   }}>
                     <div className="flex items-center gap-3">
                       <div className="flex items-center gap-2">
-                        {currentLanguage?.icon}
+                        {getLanguageIcon(selectedLanguage)}
                         <span className="font-medium" style={{ color: colors.text }}>
-                          {currentLanguage?.name} Implementation
+                          {currentLanguage?.name || 'Java'} Implementation
                         </span>
                         <span className="text-xs px-2 py-0.5 rounded" style={{ 
-                          backgroundColor: `${currentLanguage?.color}20`,
-                          color: currentLanguage?.color
+                          backgroundColor: `${currentLanguage?.color || '#f89820'}20`,
+                          color: currentLanguage?.color || '#f89820'
                         }}>
-                          {currentLanguage?.framework}
+                          {currentLanguage?.framework || 'Spring Boot'}
                         </span>
                       </div>
-                      {availableComponents.length > 0 && (
-                        <div className="flex gap-1">
-                          {availableComponents.map(component => (
-                            <button
-                              key={component}
-                              onClick={() => setSelectedComponent(component)}
-                              className={`px-3 py-1 text-xs rounded capitalize hover-lift ${
-                                selectedComponent === component ? '' : 'hover:bg-opacity-50'
-                              }`}
-                              style={{ 
-                                backgroundColor: selectedComponent === component ? colors.primaryDark : colors.hover,
-                                color: selectedComponent === component ? 'white' : colors.text
-                              }}
-                            >
-                              {component}
-                            </button>
-                          ))}
-                        </div>
-                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <button
@@ -1915,13 +1215,6 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
                         <Copy size={12} />
                         Copy
                       </button>
-                      <button
-                        onClick={() => setShowAllFiles(!showAllFiles)}
-                        className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 hover-lift"
-                        style={{ backgroundColor: colors.primaryDark, color: colors.white }}
-                      >
-                        {showAllFiles ? 'Single File' : 'All Files'}
-                      </button>
                     </div>
                   </div>
                   <div className="p-4" style={{ backgroundColor: colors.codeBg }}>
@@ -1931,160 +1224,59 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
                     />
                   </div>
                 </div>
+              ) : (
+                <div className="text-center p-12" style={{ color: colors.textSecondary }}>
+                  <Code size={48} className="mx-auto mb-4 opacity-50" />
+                  <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>Implementation Not Available</h3>
+                  <p className="mb-6">Complete implementation for {selectedLanguage} is not yet available for this endpoint.</p>
+                  <button 
+                    className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                    onClick={async () => {
+                      if (!selectedCollection || !selectedRequest) {
+                        showToast('Please select a collection and request first', 'warning');
+                        return;
+                      }
+                      
+                      try {
+                        setIsGeneratingCode(true);
+                        const generateRequest = {
+                          requestId: selectedRequest.id,
+                          collectionId: selectedCollection.id,
+                          language: selectedLanguage,
+                          components: ['controller', 'service', 'model']
+                        };
+                        
+                        const results = await generateImplementationAPI(generateRequest);
+                        
+                        if (results?.success) {
+                          showToast('Implementation generated successfully!', 'success');
+                          // Reload implementation details
+                          await fetchImplementationDetails(
+                            selectedCollection.id, 
+                            selectedRequest.id, 
+                            selectedLanguage, 
+                            selectedComponent
+                          );
+                        } else {
+                          showToast('Failed to generate implementation', 'error');
+                        }
+                      } catch (error) {
+                        console.error('Error generating implementation:', error);
+                        showToast(error.message || 'Failed to generate implementation', 'error');
+                      } finally {
+                        setIsGeneratingCode(false);
+                      }
+                    }}
+                    disabled={isGeneratingCode}
+                    style={{ 
+                      backgroundColor: isGeneratingCode ? colors.textTertiary : colors.primaryDark, 
+                      color: colors.white 
+                    }}>
+                    {isGeneratingCode ? 'Generating...' : 'Generate Implementation'}
+                  </button>
+                </div>
               )}
-
-              {/* Features & Requirements */}
-              <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="border rounded-xl p-6 hover-lift" style={{ 
-                  backgroundColor: colors.card, 
-                  borderColor: colors.border 
-                }}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <ShieldCheck size={20} style={{ color: colors.success }} />
-                    <h3 className="font-semibold" style={{ color: colors.text }}>Security Features</h3>
-                  </div>
-                  <ul className="space-y-2 text-sm" style={{ color: colors.textSecondary }}>
-                    <li className="flex items-center gap-2">
-                      <Check size={14} style={{ color: colors.success }} />
-                      JWT Authentication
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check size={14} style={{ color: colors.success }} />
-                      Password Hashing
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check size={14} style={{ color: colors.success }} />
-                      Input Validation
-                    </li>
-                  </ul>
-                </div>
-                
-                <div className="border rounded-xl p-6 hover-lift" style={{ 
-                  backgroundColor: colors.card, 
-                  borderColor: colors.border 
-                }}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Layers size={20} style={{ color: colors.info }} />
-                    <h3 className="font-semibold" style={{ color: colors.text }}>Architecture</h3>
-                  </div>
-                  <ul className="space-y-2 text-sm" style={{ color: colors.textSecondary }}>
-                    <li className="flex items-center gap-2">
-                      <Check size={14} style={{ color: colors.success }} />
-                      Clean Architecture
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check size={14} style={{ color: colors.success }} />
-                      Dependency Injection
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check size={14} style={{ color: colors.success }} />
-                      Repository Pattern
-                    </li>
-                  </ul>
-                </div>
-                
-                <div className="border rounded-xl p-6 hover-lift" style={{ 
-                  backgroundColor: colors.card, 
-                  borderColor: colors.border 
-                }}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Zap size={20} style={{ color: colors.warning }} />
-                    <h3 className="font-semibold" style={{ color: colors.text }}>Ready to Use</h3>
-                  </div>
-                  <ul className="space-y-2 text-sm" style={{ color: colors.textSecondary }}>
-                    <li className="flex items-center gap-2">
-                      <Check size={14} style={{ color: colors.success }} />
-                      Production Code
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check size={14} style={{ color: colors.success }} />
-                      Database Setup
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check size={14} style={{ color: colors.success }} />
-                      Complete Documentation
-                    </li>
-                  </ul>
-                </div>
-              </div>
-
-              {/* Quick Start Guide */}
-              <div className="mt-8 border rounded-xl p-6 hover-lift" style={{ 
-                backgroundColor: colors.card, 
-                borderColor: colors.border 
-              }}>
-                <h3 className="text-lg font-semibold mb-4" style={{ color: colors.text }}>Quick Start Guide</h3>
-                <div className="space-y-3 text-sm" style={{ color: colors.textSecondary }}>
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ 
-                      backgroundColor: colors.primary, 
-                      color: 'white' 
-                    }}>
-                      1
-                    </div>
-                    <div>
-                      <span className="font-medium" style={{ color: colors.text }}>Copy the code</span>
-                      <p>Select the component you need and copy the code</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ 
-                      backgroundColor: colors.primary, 
-                      color: 'white' 
-                    }}>
-                      2
-                    </div>
-                    <div>
-                      <span className="font-medium" style={{ color: colors.text }}>Install dependencies</span>
-                      <code className="block mt-1 p-2 rounded font-mono" style={{ 
-                        backgroundColor: colors.codeBg,
-                        color: colors.text
-                      }}>
-                        {selectedLanguage === 'java' && 'mvn install'}
-                        {selectedLanguage === 'javascript' && 'npm install'}
-                        {selectedLanguage === 'python' && 'pip install -r requirements.txt'}
-                        {selectedLanguage === 'csharp' && 'dotnet restore'}
-                        {selectedLanguage === 'php' && 'composer install'}
-                        {selectedLanguage === 'go' && 'go mod tidy'}
-                      </code>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ 
-                      backgroundColor: colors.primary, 
-                      color: 'white' 
-                    }}>
-                      3
-                    </div>
-                    <div>
-                      <span className="font-medium" style={{ color: colors.text }}>Configure & Run</span>
-                      <code className="block mt-1 p-2 rounded font-mono" style={{ 
-                        backgroundColor: colors.codeBg,
-                        color: colors.text
-                      }}>
-                        {selectedLanguage === 'java' && 'mvn spring-boot:run'}
-                        {selectedLanguage === 'javascript' && 'npm start'}
-                        {selectedLanguage === 'python' && 'uvicorn main:app --reload'}
-                        {selectedLanguage === 'csharp' && 'dotnet run'}
-                      </code>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </>
-          ) : (
-            <div className="text-center p-12" style={{ color: colors.textSecondary }}>
-              <Code size={48} className="mx-auto mb-4 opacity-50" />
-              <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>Implementation Not Available</h3>
-              <p className="mb-6">Complete implementation for {selectedLanguage} is not yet available for this endpoint.</p>
-              <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-                onClick={() => showToast('Requesting implementation generation', 'info')}
-                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
-                Generate Implementation
-              </button>
-            </div>
           )}
         </div>
       </div>
@@ -2093,25 +1285,6 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
 
   const renderMainContent = () => {
     switch (activeTab) {
-      case 'documentation':
-        return (
-          <div className="flex-1 flex items-center justify-center p-8">
-            <div className="text-center max-w-lg" style={{ color: colors.textSecondary }}>
-              <BookOpen size={48} className="mx-auto mb-4 opacity-50" />
-              <h2 className="text-xl font-semibold mb-3" style={{ color: colors.text }}>API Documentation</h2>
-              <p className="mb-6">View comprehensive documentation for each API endpoint.</p>
-              <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-                onClick={() => {
-                  setActiveTab('implementations');
-                  showToast('Switching to implementations', 'info');
-                }}
-                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
-                View Implementations
-              </button>
-            </div>
-          </div>
-        );
-        
       case 'generate':
         return (
           <div className="flex-1 p-8">
@@ -2121,10 +1294,10 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                 {[
-                  { title: 'From OpenAPI Spec', desc: 'Import OpenAPI/Swagger specification', icon: <FileText size={24} /> },
+                  { title: 'From OpenAPI Spec', desc: 'Import OpenAPI/Swagger specification', icon: <FileCode size={24} /> },
                   { title: 'From Postman', desc: 'Import Postman collection', icon: <Package size={24} /> },
                   { title: 'From cURL', desc: 'Convert cURL command to code', icon: <Terminal size={24} /> },
-                  { title: 'Custom Template', desc: 'Use custom code templates', icon: <FileCode size={24} /> }
+                  { title: 'Custom Template', desc: 'Use custom code templates', icon: <Code size={24} /> }
                 ].map(item => (
                   <button key={item.title} className="border rounded-xl p-6 text-left hover:border-opacity-50 transition-colors hover-lift"
                     onClick={() => setShowImportModal(true)}
@@ -2217,12 +1390,11 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
           animation: spin 1s linear infinite;
         }
         
-        .text-blue-400 { color: #60a5fa; }
-        .text-green-400 { color: #34d399; }
-        .text-purple-400 { color: #a78bfa; }
-        .text-orange-400 { color: #fb923c; }
-        .text-red-400 { color: #f87171; }
-        .text-gray-500 { color: #9ca3af; }
+        .hover-lift:hover {
+          transform: translateY(-2px);
+          transition: transform 0.2s ease;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
         
         /* Custom scrollbar */
         ::-webkit-scrollbar {
@@ -2243,42 +1415,6 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
         ::-webkit-scrollbar-thumb:hover {
           background: ${colors.textSecondary};
         }
-        
-        .prose {
-          color: ${colors.textSecondary};
-          line-height: 1.6;
-        }
-        
-        .prose p {
-          margin-bottom: 1em;
-        }
-        
-        .prose strong {
-          color: ${colors.text};
-          font-weight: 600;
-        }
-        
-        code {
-          font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Segoe UI Mono', 'Roboto Mono', monospace;
-          font-size: 0.875em;
-        }
-        
-        /* Focus styles */
-        input:focus, button:focus {
-          outline: 2px solid ${colors.primary}40;
-          outline-offset: 2px;
-        }
-        
-        /* Hover effects */
-        .hover-lift:hover {
-          transform: translateY(-2px);
-          transition: transform 0.2s ease;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-        
-        .gradient-bg {
-          background: linear-gradient(135deg, ${colors.primary}20 0%, ${colors.info}20 50%, ${colors.warning}20 100%);
-        }
       `}</style>
 
       {/* TOP NAVIGATION */}
@@ -2295,70 +1431,6 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Environment Selector */}
-          <div className="relative">
-            <button className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:bg-opacity-50 transition-colors hover-lift"
-              onClick={() => setShowEnvironmentMenu(!showEnvironmentMenu)}
-              style={{ backgroundColor: colors.hover }}>
-              <Globe size={12} style={{ color: colors.textSecondary }} />
-              <span style={{ color: colors.text }}>{environments.find(e => e.isActive)?.name}</span>
-              <ChevronDown size={12} style={{ color: colors.textSecondary }} />
-            </button>
-
-            {showEnvironmentMenu && (
-              <div className="absolute top-full right-0 mt-1 py-2 rounded shadow-lg z-50 border min-w-48"
-                style={{ 
-                  backgroundColor: colors.dropdownBg,
-                  borderColor: colors.border
-                }}>
-                {environments.map(env => (
-                  <button
-                    key={env.id}
-                    onClick={() => handleEnvironmentChange(env.id)}
-                    className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors"
-                    style={{ 
-                      backgroundColor: env.isActive ? colors.selected : 'transparent',
-                      color: env.isActive ? colors.primary : colors.text
-                    }}
-                  >
-                    <div className="w-2 h-2 rounded-full" style={{ 
-                      backgroundColor: env.isActive ? colors.success : colors.textSecondary 
-                    }}></div>
-                    {env.name}
-                    {env.isActive && <Check size={14} className="ml-auto" style={{ color: colors.primary }} />}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="w-px h-4" style={{ backgroundColor: colors.border }}></div>
-
-          {/* Global Search */}
-          {/* <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
-            <input 
-              type="text" 
-              placeholder="Search APIs, implementations..."
-              value={globalSearchQuery}
-              onChange={(e) => setGlobalSearchQuery(e.target.value)}
-              className="pl-8 pr-3 py-1.5 rounded text-sm focus:outline-none w-64 hover-lift"
-              style={{ 
-                backgroundColor: colors.inputBg, 
-                border: `1px solid ${colors.border}`, 
-                color: colors.text 
-              }} 
-            />
-            {globalSearchQuery && (
-              <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                <button onClick={() => setGlobalSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.hover }}>
-                  <X size={12} style={{ color: colors.textSecondary }} />
-                </button>
-              </div>
-            )}
-          </div> */}
-
           {/* Code Panel Toggle */}
           <button onClick={() => setShowCodePanel(!showCodePanel)} 
             className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
@@ -2366,12 +1438,20 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
             <Code size={14} style={{ color: showCodePanel ? colors.primary : colors.textSecondary }} />
           </button>
 
-          {/* Export Button */}
-          <button onClick={() => setShowPublishModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+          {/* Refresh Button */}
+          <button 
+            className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+            onClick={async () => {
+              try {
+                await fetchCollectionsList();
+                showToast('Collections refreshed', 'success');
+              } catch (error) {
+                showToast('Failed to refresh collections', 'error');
+              }
+            }}
             style={{ backgroundColor: colors.hover }}>
-            <DownloadCloud size={14} style={{ color: colors.textSecondary }} />
+            <RefreshCw size={14} style={{ color: colors.textSecondary }} />
           </button>
-
         </div>
       </div>
 
@@ -2379,23 +1459,24 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
       <div className="flex flex-1 overflow-hidden">
         {/* Left Sidebar - Collections */}
         <div className="w-80 border-r flex flex-col" style={{ 
-          // backgroundColor: colors.sidebar,
           borderColor: colors.border
         }}>
           <div className="p-4 border-b" style={{ borderColor: colors.border }}>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Specification</h3>
-              <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                onClick={() => setShowImportModal(true)}
-                style={{ backgroundColor: colors.hover }}>
-                <Plus size={12} style={{ color: colors.textSecondary }} />
-              </button>
+              <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Collections</h3>
+              <div className="flex gap-1">
+                <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                  onClick={() => setShowImportModal(true)}
+                  style={{ backgroundColor: colors.hover }}>
+                  <Plus size={12} style={{ color: colors.textSecondary }} />
+                </button>
+              </div>
             </div>
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
               <input 
                 type="text" 
-                placeholder="Search APIs..."
+                placeholder="Search collections..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-8 pr-3 py-2 rounded text-sm focus:outline-none hover-lift"
@@ -2417,102 +1498,150 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
           </div>
 
           <div className="flex-1 overflow-auto p-2">
-            {filteredCollections.map(collection => (
-              <div key={collection.id} className="mb-3">
-                <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
-                  onClick={() => toggleCollection(collection.id)}
-                  style={{ backgroundColor: colors.hover }}>
-                  {expandedCollections.includes(collection.id) ? (
-                    <ChevronDown size={12} style={{ color: colors.textSecondary }} />
-                  ) : (
-                    <ChevronRight size={12} style={{ color: colors.textSecondary }} />
-                  )}
-                  <button onClick={(e) => {
-                    e.stopPropagation();
-                    const newCollections = collections.map(c => 
-                      c.id === collection.id ? { ...c, isFavorite: !c.isFavorite } : c
-                    );
-                    setCollections(newCollections);
-                    showToast(collection.isFavorite ? 'Removed from favorites' : 'Added to favorites', 'success');
-                  }}>
-                    {collection.isFavorite ? (
-                      <Star size={12} fill="#FFB300" style={{ color: '#FFB300' }} />
-                    ) : (
-                      <Star size={12} style={{ color: colors.textSecondary }} />
-                    )}
-                  </button>
-                  
-                  <span className="text-sm font-medium flex-1 truncate" style={{ color: colors.text }}>
-                    {collection.name}
-                  </span>
-                  
-                  <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
-                    backgroundColor: colors.hover,
-                    color: colors.textSecondary
-                  }}>
-                    {collection.version}
-                  </span>
-                </div>
-
-                {expandedCollections.includes(collection.id) && collection.folders && (
-                  <>
-                    {collection.folders.map(folder => (
-                      <div key={folder.id} className="ml-4 mb-2">
-                        <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
-                          onClick={() => toggleFolder(folder.id)}
-                          style={{ backgroundColor: colors.hover }}>
-                          {expandedFolders.includes(folder.id) ? (
-                            <ChevronDown size={11} style={{ color: colors.textSecondary }} />
-                          ) : (
-                            <ChevronRight size={11} style={{ color: colors.textSecondary }} />
-                          )}
-                          <FolderOpen size={11} style={{ color: colors.textSecondary }} />
-                          
-                          <span className="text-sm flex-1 truncate" style={{ color: colors.text }}>
-                            {folder.name}
-                          </span>
-                        </div>
-
-                        {expandedFolders.includes(folder.id) && folder.requests && (
-                          <>
-                            {folder.requests.map(request => (
-                              <div key={request.id} className="flex items-center gap-2 ml-6 mb-1.5 group">
-                                <button
-                                  onClick={() => handleSelectRequest(request, collection, folder)}
-                                  className="flex items-center gap-2 text-sm text-left transition-colors flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
-                                  style={{ 
-                                    color: selectedRequest?.id === request.id ? colors.primary : colors.text,
-                                    backgroundColor: selectedRequest?.id === request.id ? colors.selected : 'transparent'
-                                  }}>
-                                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
-                                    backgroundColor: getMethodColor(request.method)
-                                  }} />
-                                  
-                                  <span className="truncate">{request.name}</span>
-                                  {request.implementations && (
-                                    <span className="text-xs px-1 py-0.5 rounded ml-auto" style={{ 
-                                      backgroundColor: `${colors.success}20`,
-                                      color: colors.success
-                                    }}>
-                                      {Object.keys(request.implementations).length}
-                                    </span>
-                                  )}
-                                </button>
-                              </div>
-                            ))}
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </>
-                )}
+            {isLoading.collections ? (
+              <div className="text-center py-8" style={{ color: colors.textSecondary }}>
+                <RefreshCw size={16} className="animate-spin mx-auto mb-2" />
+                <p className="text-sm">Loading collections...</p>
               </div>
-            ))}
+            ) : filteredCollections.length === 0 ? (
+              <div className="text-center p-4" style={{ color: colors.textSecondary }}>
+                <DatabaseIcon size={20} className="mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No collections available</p>
+                <button className="mt-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
+                  onClick={async () => {
+                    try {
+                      await fetchCollectionsList();
+                    } catch (error) {
+                      showToast('Failed to load collections', 'error');
+                    }
+                  }}
+                  style={{ backgroundColor: colors.hover, color: colors.text }}>
+                  Load Collections
+                </button>
+              </div>
+            ) : (
+              <>
+                {filteredCollections.map(collection => (
+                  <div key={collection.id} className="mb-3">
+                    <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
+                      onClick={() => toggleCollection(collection.id)}
+                      style={{ backgroundColor: colors.hover }}>
+                      {expandedCollections.includes(collection.id) ? (
+                        <ChevronDown size={12} style={{ color: colors.textSecondary }} />
+                      ) : (
+                        <ChevronRight size={12} style={{ color: colors.textSecondary }} />
+                      )}
+                      <button onClick={(e) => {
+                        e.stopPropagation();
+                        // Toggle favorite
+                        const newCollections = collections.map(c => 
+                          c.id === collection.id ? { ...c, isFavorite: !c.isFavorite } : c
+                        );
+                        setCollections(newCollections);
+                        showToast(collection.isFavorite ? 'Removed from favorites' : 'Added to favorites', 'success');
+                      }}>
+                        {collection.isFavorite ? (
+                          <Star size={12} fill="#FFB300" style={{ color: '#FFB300' }} />
+                        ) : (
+                          <Star size={12} style={{ color: colors.textSecondary }} />
+                        )}
+                      </button>
+                      
+                      <span className="text-sm font-medium flex-1 truncate" style={{ color: colors.text }}>
+                        {collection.name}
+                      </span>
+                      
+                      {collection.version && (
+                        <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
+                          backgroundColor: colors.hover,
+                          color: colors.textSecondary
+                        }}>
+                          {collection.version}
+                        </span>
+                      )}
+                    </div>
+
+                    {expandedCollections.includes(collection.id) && collection.folders && collection.folders.length > 0 && (
+                      <>
+                        {collection.folders.map(folder => (
+                          <div key={folder.id} className="ml-4 mb-2">
+                            <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
+                              onClick={() => toggleFolder(folder.id)}
+                              style={{ backgroundColor: colors.hover }}>
+                              {expandedFolders.includes(folder.id) ? (
+                                <ChevronDown size={11} style={{ color: colors.textSecondary }} />
+                              ) : (
+                                <ChevronRight size={11} style={{ color: colors.textSecondary }} />
+                              )}
+                              <FolderOpen size={11} style={{ color: colors.textSecondary }} />
+                              
+                              <span className="text-sm flex-1 truncate" style={{ color: colors.text }}>
+                                {folder.name}
+                              </span>
+                              
+                              {folder.hasRequests && (
+                                <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
+                                  backgroundColor: `${colors.success}20`,
+                                  color: colors.success
+                                }}>
+                                  {folder.requestCount || '?'}
+                                </span>
+                              )}
+                            </div>
+
+                            {expandedFolders.includes(folder.id) && (
+                              <div className="ml-6">
+                                {isLoading.folderRequests[folder.id] ? (
+                                  <div className="py-2 text-center">
+                                    <RefreshCw size={12} className="animate-spin mx-auto mb-1" style={{ color: colors.textSecondary }} />
+                                    <p className="text-xs" style={{ color: colors.textTertiary }}>Loading endpoints...</p>
+                                  </div>
+                                ) : (
+                                  <>
+                                    {getFolderRequests(folder.id).length > 0 ? (
+                                      getFolderRequests(folder.id).map(request => (
+                                        <div key={request.id} className="flex items-center gap-2 mb-1.5 group">
+                                          <button
+                                            onClick={() => handleSelectRequest(request, collection, folder)}
+                                            className="flex items-center gap-2 text-sm text-left transition-colors flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
+                                            style={{ 
+                                              color: selectedRequest?.id === request.id ? colors.primary : colors.text,
+                                              backgroundColor: selectedRequest?.id === request.id ? colors.selected : 'transparent'
+                                            }}>
+                                            {request.method && (
+                                              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
+                                                backgroundColor: getMethodColor(request.method)
+                                              }} />
+                                            )}
+                                            
+                                            <span className="truncate">{request.name}</span>
+                                          </button>
+                                        </div>
+                                      ))
+                                    ) : (
+                                      <div className="py-2 text-center">
+                                        <p className="text-xs" style={{ color: colors.textTertiary }}>
+                                          {folder.hasRequests ? 'No endpoints available' : 'No endpoints in this folder'}
+                                        </p>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                ))}
+              </>
+            )}
             
             {filteredCollections.length === 0 && searchQuery && (
               <div className="text-center p-4" style={{ color: colors.textSecondary }}>
                 <Search size={20} className="mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No APIs found for "{searchQuery}"</p>
+                <p className="text-sm">No collections found for "{searchQuery}"</p>
                 <button className="mt-2 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
                   onClick={() => setSearchQuery('')}
                   style={{ backgroundColor: colors.hover, color: colors.text }}>
@@ -2530,13 +1659,19 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme }) => {
         {showCodePanel && renderCodePanel()}
       </div>
 
-      {/* MODALS */}
-      {renderImportModal()}
-      {renderSettingsModal()}
-      {renderPublishModal()}
-
       {/* TOAST */}
-      {renderToast()}
+      {toast && (
+        <div className="fixed bottom-4 right-4 px-4 py-2 rounded text-sm font-medium z-50 animate-fade-in-up"
+          style={{ 
+            backgroundColor: toast.type === 'error' ? colors.error : 
+                          toast.type === 'success' ? colors.success : 
+                          toast.type === 'warning' ? colors.warning : 
+                          colors.info,
+            color: 'white'
+          }}>
+          {toast.message}
+        </div>
+      )}
     </div>
   );
 };

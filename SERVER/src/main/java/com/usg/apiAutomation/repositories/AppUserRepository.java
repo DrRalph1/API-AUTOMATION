@@ -1,6 +1,6 @@
 package com.usg.apiAutomation.repositories;
 
-import com.usg.apiAutomation.dtos.user.UserDTO;
+import com.usg.apiAutomation.dtos.userManagement.UserDTO;
 import com.usg.apiAutomation.entities.UserEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -31,7 +31,7 @@ public interface AppUserRepository extends JpaRepository<UserEntity, String>,
     @Query("SELECT u.emailAddress FROM UserEntity u WHERE u.userId = :userId")
     String getEmailAddressByUserId(@Param("userId") String userId);
 
-    // Query to update the password for an existing user by userId
+    // Query to update the password for an existing userManagement by userId
     @Modifying
     @Query("UPDATE UserEntity u SET " +
             "u.password = COALESCE(:new_password, u.password), " +
@@ -80,7 +80,7 @@ public interface AppUserRepository extends JpaRepository<UserEntity, String>,
     );
 
     @Query("""
-    SELECT NEW com.usg.apiAutomation.dtos.user.UserDTO(
+    SELECT NEW com.usg.apiAutomation.dtos.userManagement.UserDTO(
         u.userId,
         u.username,
         u.password,
@@ -135,7 +135,7 @@ public interface AppUserRepository extends JpaRepository<UserEntity, String>,
     /*
      * New queries to support "unique filters" for the users list (similar to AuditLogRepository):
      * - distinct role names
-     * - distinct user groups
+     * - distinct userManagement groups
      * - distinct usernames (trimmed)
      *
      * These are used to populate filter dropdowns on the UI when listing users.

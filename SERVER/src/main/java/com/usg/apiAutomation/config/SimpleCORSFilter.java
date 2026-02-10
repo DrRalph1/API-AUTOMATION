@@ -25,7 +25,7 @@ public class SimpleCORSFilter implements Filter {
         String origin = request.getHeader("Origin");
 
         // Only set CORS headers if origin matches allowed origins
-        if (origin != null && (origin.contains("192.168.0.127:9874") || origin.contains("localhost:9874") || origin.contains("127.0.0.1:9874"))) {
+        if (origin != null && (origin.contains("192.168.1.124:9874") || origin.contains("localhost:9874") || origin.contains("127.0.0.1:9874"))) {
             response.setHeader("Access-Control-Allow-Origin", origin);
             response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
             response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Secret, X-API-Key, X-Forwarded-For, Origin, Accept, Access-Control-Request-Method, Access-Control-Request-Headers");

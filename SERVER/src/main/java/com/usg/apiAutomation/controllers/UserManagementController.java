@@ -2,13 +2,13 @@ package com.usg.apiAutomation.controllers;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.usg.apiAutomation.dtos.user.*;
+import com.usg.apiAutomation.dtos.userManagement.*;
 import com.usg.apiAutomation.helpers.ApiKeyNSecretHelper;
 import com.usg.apiAutomation.helpers.ClientIpHelper;
 import com.usg.apiAutomation.helpers.JwtHelper;
 import com.usg.apiAutomation.helpers.AuditLogHelper;
 import com.usg.apiAutomation.services.UserManagementService;
-import com.usg.apiAutomation.services.system.SMSService;
+import com.usg.apiAutomation.services.systemActivities.SMSService;
 import com.usg.apiAutomation.utils.JwtUtil;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import io.swagger.v3.oas.annotations.Operation;
@@ -55,7 +55,7 @@ public class UserManagementController {
 
     @Operation(
             summary = "User Login",
-            description = "Authenticates a user and returns user details with tokens if successful"
+            description = "Authenticates a userManagement and returns userManagement details with tokens if successful"
     )
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Login successful", content = @Content),
@@ -126,12 +126,12 @@ public class UserManagementController {
                 return ResponseEntity.badRequest().body(errorResponse);
             }
 
-            // Call the service to authenticate the user with all required parameters
+            // Call the service to authenticate the userManagement with all required parameters
             ResponseEntity<?> responseEntity = userManagementService.userLogin(
                     userLoginRequestDTO,
                     requestId,
                     req,
-                    null // performedBy is null for user self-login
+                    null // performedBy is null for userManagement self-login
             );
 
             // Ensure responseEntity and response body are not null
@@ -145,7 +145,7 @@ public class UserManagementController {
                 return responseEntity;
             } else {
                 loggerUtil.log("api-automation",
-                        "Request ID: " + requestId + ", Empty response from user service for login request");
+                        "Request ID: " + requestId + ", Empty response from userManagement service for login request");
                 auditLogHelper.logAuditAction("USER_LOGIN_EMPTY_RESPONSE", null,
                         String.format("Empty response from authentication service for username %s", userLoginRequestDTO.getUserId()),
                         requestId);
@@ -187,7 +187,7 @@ public class UserManagementController {
 
 
     @PostMapping
-    @Operation(summary = "Create a new user", parameters = {
+    @Operation(summary = "Create a new userManagement", parameters = {
             @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
     })
     @ApiResponses(value = {
@@ -206,10 +206,10 @@ public class UserManagementController {
         String requestId = UUID.randomUUID().toString();
 
         // Validate Authorization header
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "creating a user");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "creating a userManagement");
         if (authValidation != null) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Authorization failed for creating user: " + dto.getUsername());
+                    "Request ID: " + requestId + ", Authorization failed for creating userManagement: " + dto.getUsername());
             return authValidation;
         }
 
@@ -226,7 +226,7 @@ public class UserManagementController {
             loggerUtil.log("api-automation",
                     "Request ID: " + requestId + ", Validation errors: " + validationErrors);
             auditLogHelper.logAuditAction("CREATE_USER_VALIDATION_FAILED", performedBy,
-                    String.format("Validation errors creating user %s: %s", dto.getUsername(), validationErrors), requestId);
+                    String.format("Validation errors creating userManagement %s: %s", dto.getUsername(), validationErrors), requestId);
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 400);
@@ -238,10 +238,10 @@ public class UserManagementController {
 
         loggerUtil.log("api-automation",
                 "Request ID: " + requestId +
-                        ", Creating user: " + dto.getUsername() +
+                        ", Creating userManagement: " + dto.getUsername() +
                         ", Requested by: " + performedBy);
         auditLogHelper.logAuditAction("CREATE_USER_REQUEST", performedBy,
-                String.format("Creating user: %s", dto.getUsername()), requestId);
+                String.format("Creating userManagement: %s", dto.getUsername()), requestId);
 
         // Call service method and return the response directly
         ResponseEntity<?> response = userManagementService.createUser(dto, requestId, req, performedBy);
@@ -308,7 +308,7 @@ public class UserManagementController {
             loggerUtil.log("web-application-firewall",
                     "Request ID: " + requestId + ", Validation errors: " + validationErrors);
             auditLogHelper.logAuditAction("RESET_DEFAULT_PASSWORD_VALIDATION_FAILED", performedBy,
-                    String.format("Validation errors resetting default password for user %s: %s", resetRequest.getUserId(), validationErrors),
+                    String.format("Validation errors resetting default password for userManagement %s: %s", resetRequest.getUserId(), validationErrors),
                     requestId);
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -321,10 +321,10 @@ public class UserManagementController {
 
         loggerUtil.log("web-application-firewall",
                 "Request ID: " + requestId +
-                        ", Resetting default password for user: " + resetRequest.getUserId() +
+                        ", Resetting default password for userManagement: " + resetRequest.getUserId() +
                         ", Requested by: " + performedBy);
         auditLogHelper.logAuditAction("RESET_DEFAULT_PASSWORD_REQUEST", performedBy,
-                String.format("Resetting default password for user: %s", resetRequest.getUserId()), requestId);
+                String.format("Resetting default password for userManagement: %s", resetRequest.getUserId()), requestId);
 
         // Call service method and return the response directly
         ResponseEntity<?> response = userManagementService.resetDefaultPassword(resetRequest, requestId, req, performedBy);
@@ -336,7 +336,7 @@ public class UserManagementController {
                     "Request ID: " + requestId + ", Default password reset completed. Response code: " +
                             responseBody.get("responseCode") + ", Message: " + responseBody.get("message"));
             auditLogHelper.logAuditAction("RESET_DEFAULT_PASSWORD_COMPLETED", performedBy,
-                    String.format("Default password reset completed for user %s. Response code: %s, Message: %s",
+                    String.format("Default password reset completed for userManagement %s. Response code: %s, Message: %s",
                             resetRequest.getUserId(), responseBody.get("responseCode"), responseBody.get("message")),
                     requestId);
         }
@@ -349,7 +349,7 @@ public class UserManagementController {
     @PutMapping("/forgot-password")
     @Operation(
             summary = "Forgot Password",
-            description = "Generates a new password for the user and sends it via SMS. Email notification is optional."
+            description = "Generates a new password for the userManagement and sends it via SMS. Email notification is optional."
     )
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Password reset successful", content = @Content),
@@ -394,10 +394,10 @@ public class UserManagementController {
         try {
             // Log incoming request
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Forgot password attempt for user: " +
+                    "Request ID: " + requestId + ", Forgot password attempt for userManagement: " +
                             forgotPasswordRequestDTO.getUserId());
             auditLogHelper.logAuditAction("FORGOT_PASSWORD_REQUEST", apiKey,
-                    String.format("Forgot password attempt for user: %s by API client: %s", forgotPasswordRequestDTO.getUserId(), apiKey),
+                    String.format("Forgot password attempt for userManagement: %s by API client: %s", forgotPasswordRequestDTO.getUserId(), apiKey),
                     requestId);
 
             // Validate request body
@@ -409,7 +409,7 @@ public class UserManagementController {
                 loggerUtil.log("web-application-firewall",
                         "Request ID: " + requestId + ", Validation errors: " + validationErrors);
                 auditLogHelper.logAuditAction("FORGOT_PASSWORD_VALIDATION_FAILED", apiKey,
-                        String.format("Validation errors for forgot password of user %s: %s", forgotPasswordRequestDTO.getUserId(), validationErrors),
+                        String.format("Validation errors for forgot password of userManagement %s: %s", forgotPasswordRequestDTO.getUserId(), validationErrors),
                         requestId);
 
                 Map<String, Object> errorResponse = new HashMap<>();
@@ -432,7 +432,7 @@ public class UserManagementController {
                 loggerUtil.log("web-application-firewall",
                         "Request ID: " + requestId + ", Empty response from forgot password service");
                 auditLogHelper.logAuditAction("FORGOT_PASSWORD_EMPTY_RESPONSE", apiKey,
-                        String.format("Empty response from forgot password service for user %s", forgotPasswordRequestDTO.getUserId()),
+                        String.format("Empty response from forgot password service for userManagement %s", forgotPasswordRequestDTO.getUserId()),
                         requestId);
 
                 Map<String, Object> errorResponse = new HashMap<>();
@@ -449,7 +449,7 @@ public class UserManagementController {
                         "Request ID: " + requestId + ", Forgot password completed. Response code: " +
                                 responseBody.get("responseCode") + ", Message: " + responseBody.get("message"));
                 auditLogHelper.logAuditAction("FORGOT_PASSWORD_COMPLETED", apiKey,
-                        String.format("Forgot password completed for user %s. Response code: %s, Message: %s",
+                        String.format("Forgot password completed for userManagement %s. Response code: %s, Message: %s",
                                 forgotPasswordRequestDTO.getUserId(), responseBody.get("responseCode"), responseBody.get("message")),
                         requestId);
             }
@@ -460,7 +460,7 @@ public class UserManagementController {
             loggerUtil.log("web-application-firewall",
                     "Request ID: " + requestId + ", Error during forgot password: " + e.getMessage());
             auditLogHelper.logAuditAction("FORGOT_PASSWORD_ERROR", apiKey,
-                    String.format("Error during forgot password for user %s: %s", forgotPasswordRequestDTO.getUserId(), e.getMessage()),
+                    String.format("Error during forgot password for userManagement %s: %s", forgotPasswordRequestDTO.getUserId(), e.getMessage()),
                     requestId);
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -477,7 +477,7 @@ public class UserManagementController {
     @PutMapping("/password-reset")
     @Operation(
             summary = "User Password Reset",
-            description = "Resets the user password and sends a confirmation email if the reset is successful"
+            description = "Resets the userManagement password and sends a confirmation email if the reset is successful"
     )
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Password reset successful", content = @Content),
@@ -523,10 +523,10 @@ public class UserManagementController {
         try {
             // Log incoming request
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Password reset attempt for user: " +
+                    "Request ID: " + requestId + ", Password reset attempt for userManagement: " +
                             userPasswordResetRequestDTO.getUserId());
             auditLogHelper.logAuditAction("PASSWORD_RESET_REQUEST", apiKey,
-                    String.format("Password reset attempt for user: %s by API client: %s", userPasswordResetRequestDTO.getUserId(), apiKey),
+                    String.format("Password reset attempt for userManagement: %s by API client: %s", userPasswordResetRequestDTO.getUserId(), apiKey),
                     requestId);
 
             // Validate request body
@@ -538,7 +538,7 @@ public class UserManagementController {
                 loggerUtil.log("web-application-firewall",
                         "Request ID: " + requestId + ", Validation errors: " + validationErrors);
                 auditLogHelper.logAuditAction("PASSWORD_RESET_VALIDATION_FAILED", apiKey,
-                        String.format("Validation errors resetting password for user %s: %s", userPasswordResetRequestDTO.getUserId(), validationErrors),
+                        String.format("Validation errors resetting password for userManagement %s: %s", userPasswordResetRequestDTO.getUserId(), validationErrors),
                         requestId);
 
                 Map<String, Object> errorResponse = new HashMap<>();
@@ -562,7 +562,7 @@ public class UserManagementController {
                 loggerUtil.log("web-application-firewall",
                         "Request ID: " + requestId + ", Empty response from password reset service");
                 auditLogHelper.logAuditAction("PASSWORD_RESET_EMPTY_RESPONSE", apiKey,
-                        String.format("Empty response from password reset service for user %s", userPasswordResetRequestDTO.getUserId()),
+                        String.format("Empty response from password reset service for userManagement %s", userPasswordResetRequestDTO.getUserId()),
                         requestId);
 
                 Map<String, Object> errorResponse = new HashMap<>();
@@ -579,7 +579,7 @@ public class UserManagementController {
                         "Request ID: " + requestId + ", Password reset completed. Response code: " +
                                 responseBody.get("responseCode") + ", Message: " + responseBody.get("message"));
                 auditLogHelper.logAuditAction("PASSWORD_RESET_COMPLETED", apiKey,
-                        String.format("Password reset completed for user %s. Response code: %s, Message: %s",
+                        String.format("Password reset completed for userManagement %s. Response code: %s, Message: %s",
                                 userPasswordResetRequestDTO.getUserId(), responseBody.get("responseCode"), responseBody.get("message")),
                         requestId);
             }
@@ -590,7 +590,7 @@ public class UserManagementController {
             loggerUtil.log("web-application-firewall",
                     "Request ID: " + requestId + ", Error resetting password: " + e.getMessage());
             auditLogHelper.logAuditAction("PASSWORD_RESET_ERROR", apiKey,
-                    String.format("Error resetting password for user %s: %s", userPasswordResetRequestDTO.getUserId(), e.getMessage()),
+                    String.format("Error resetting password for userManagement %s: %s", userPasswordResetRequestDTO.getUserId(), e.getMessage()),
                     requestId);
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -681,8 +681,8 @@ public class UserManagementController {
 
     @GetMapping("/{userId}")
     @Operation(
-            summary = "Get a single user by ID",
-            description = "Retrieves a single user by their ID using API Key and Secret authentication"
+            summary = "Get a single userManagement by ID",
+            description = "Retrieves a single userManagement by their ID using API Key and Secret authentication"
     )
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "User retrieved successfully", content = @Content),
@@ -726,10 +726,10 @@ public class UserManagementController {
         try {
             // Log incoming request
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Retrieving user with ID: " + userId +
+                    "Request ID: " + requestId + ", Retrieving userManagement with ID: " + userId +
                             ", Requested by API client with key: " + apiKey);
             auditLogHelper.logAuditAction("RETRIEVE_USER_REQUEST", apiKey,
-                    String.format("Retrieving user with ID: %s by API client: %s", userId, apiKey),
+                    String.format("Retrieving userManagement with ID: %s by API client: %s", userId, apiKey),
                     requestId);
 
             // Call service method
@@ -740,11 +740,11 @@ public class UserManagementController {
                 loggerUtil.log("api-automation",
                         "Request ID: " + requestId + ", Empty response from getUser service");
                 auditLogHelper.logAuditAction("RETRIEVE_USER_EMPTY_RESPONSE", apiKey,
-                        String.format("Empty response from getUser service for user %s", userId), requestId);
+                        String.format("Empty response from getUser service for userManagement %s", userId), requestId);
 
                 Map<String, Object> errorResponse = new HashMap<>();
                 errorResponse.put("responseCode", 500);
-                errorResponse.put("message", "Empty response from user retrieval service.");
+                errorResponse.put("message", "Empty response from userManagement retrieval service.");
                 errorResponse.put("requestId", requestId);
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
             }
@@ -764,13 +764,13 @@ public class UserManagementController {
 
         } catch (Exception e) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Error retrieving user: " + e.getMessage());
+                    "Request ID: " + requestId + ", Error retrieving userManagement: " + e.getMessage());
             auditLogHelper.logAuditAction("RETRIEVE_USER_ERROR", apiKey,
-                    String.format("Error retrieving user %s: %s", userId, e.getMessage()), requestId);
+                    String.format("Error retrieving userManagement %s: %s", userId, e.getMessage()), requestId);
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while retrieving user: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while retrieving userManagement: " + e.getMessage());
             errorResponse.put("requestId", requestId);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
@@ -1049,7 +1049,7 @@ public class UserManagementController {
     }
 
     @PutMapping("/{userId}")
-    @Operation(summary = "Update a user by ID", parameters = {
+    @Operation(summary = "Update a userManagement by ID", parameters = {
             @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
     })
     @ApiResponses(value = {
@@ -1069,10 +1069,10 @@ public class UserManagementController {
         String requestId = UUID.randomUUID().toString();
 
         // Validate Authorization header
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "updating a user");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "updating a userManagement");
         if (authValidation != null) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Authorization failed for updating user: " + userId);
+                    "Request ID: " + requestId + ", Authorization failed for updating userManagement: " + userId);
             return authValidation;
         }
 
@@ -1089,7 +1089,7 @@ public class UserManagementController {
             loggerUtil.log("api-automation",
                     "Request ID: " + requestId + ", Validation errors: " + validationErrors);
             auditLogHelper.logAuditAction("UPDATE_USER_VALIDATION_FAILED", performedBy,
-                    String.format("Validation errors updating user %s: %s", userId, validationErrors), requestId);
+                    String.format("Validation errors updating userManagement %s: %s", userId, validationErrors), requestId);
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 400);
@@ -1101,10 +1101,10 @@ public class UserManagementController {
 
         loggerUtil.log("api-automation",
                 "Request ID: " + requestId +
-                        ", Updating user with ID: " + userId +
+                        ", Updating userManagement with ID: " + userId +
                         ", Requested by: " + performedBy);
         auditLogHelper.logAuditAction("UPDATE_USER_REQUEST", performedBy,
-                String.format("Updating user with ID: %s", userId), requestId);
+                String.format("Updating userManagement with ID: %s", userId), requestId);
 
         // Call service method and return the response directly
         ResponseEntity<?> response = userManagementService.updateUser(userId, dto, requestId, req, performedBy);
@@ -1124,7 +1124,7 @@ public class UserManagementController {
     }
 
     @DeleteMapping("/{userId}")
-    @Operation(summary = "Delete a user by ID", parameters = {
+    @Operation(summary = "Delete a userManagement by ID", parameters = {
             @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
     })
     @ApiResponses(value = {
@@ -1141,10 +1141,10 @@ public class UserManagementController {
         String requestId = UUID.randomUUID().toString();
 
         // Validate Authorization header
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "deleting a user");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "deleting a userManagement");
         if (authValidation != null) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Authorization failed for deleting user: " + userId);
+                    "Request ID: " + requestId + ", Authorization failed for deleting userManagement: " + userId);
             return authValidation;
         }
 
@@ -1154,10 +1154,10 @@ public class UserManagementController {
 
         loggerUtil.log("api-automation",
                 "Request ID: " + requestId +
-                        ", Deleting user with ID: " + userId +
+                        ", Deleting userManagement with ID: " + userId +
                         ", Requested by: " + performedBy);
         auditLogHelper.logAuditAction("DELETE_USER_REQUEST", performedBy,
-                String.format("Deleting user with ID: %s", userId), requestId);
+                String.format("Deleting userManagement with ID: %s", userId), requestId);
 
         // Call service method and return the response directly
         ResponseEntity<?> response = userManagementService.deleteUser(userId, requestId, req, performedBy);

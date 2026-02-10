@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+// Dashboard.jsx - FIXED VERSION
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Database, Server, FileCode, Activity, Zap, Settings,
   Search, Bell, ChevronDown, MoreVertical, RefreshCw,
@@ -12,7 +13,7 @@ import {
   BarChart, LineChart as LineChartIcon, Terminal, Cpu as CpuIcon,
   FileJson, BookOpen, Share2, Upload, EyeOff, Type, Palette, TrendingDown,
   Contrast, VolumeX, ZapOff, GitPullRequest, ShieldAlert,
-  CalendarDays, DatabaseZap, Network as NetworkIcon, FileOutput,TestTube,
+  CalendarDays, DatabaseZap, Network as NetworkIcon, FileOutput, TestTube,
   Code2, Search as SearchIcon, DownloadCloud, UploadCloud,
   UserCheck, KeyRound, FolderTree, FolderTree as FolderTreeIcon,
   BookMarked, LayoutDashboard, Sliders, ChevronRight,
@@ -123,43 +124,90 @@ import {
   Brain as BrainIcon2
 } from "lucide-react";
 
-const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setActiveTab }) => {
-  const [loading, setLoading] = useState(false);
+// Import DashboardController
+import {
+  getDashboardStats,
+  getDashboardConnections,
+  getDashboardApis,
+  getDashboardActivities,
+  getDashboardSchemaStats,
+  getCodeGenerationStats,
+  getComprehensiveDashboard,
+  searchDashboardActivities,
+  refreshDashboard,
+  exportDashboardData,
+  monitorDashboardMetrics,
+  handleDashboardResponse,
+  formatDashboardData,
+  validateDashboardSearchCriteria,
+  buildDashboardSearchDTO,
+  buildDashboardPaginationParams
+} from "../controllers/DashboardController.js";
+
+const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setActiveTab, authToken }) => {
+  const [loading, setLoading] = useState(true);
+  const [refreshLoading, setRefreshLoading] = useState(false);
   const [timeRange, setTimeRange] = useState("24h");
-  const [stats, setStats] = useState({
-    totalConnections: 0,
-    activeConnections: 0,
-    totalApis: 0,
-    activeApis: 0,
-    totalCalls: 0,
-    avgLatency: "0ms",
-    successRate: "0%",
-    uptime: "0%"
+  
+  const [dashboardData, setDashboardData] = useState({
+    stats: {
+      totalConnections: 0,
+      activeConnections: 0,
+      totalApis: 0,
+      activeApis: 0,
+      totalCalls: 0,
+      avgLatency: "0ms",
+      successRate: "0%",
+      uptime: "0%"
+    },
+    connections: {
+      content: [],
+      totalPages: 0,
+      totalElements: 0,
+      size: 0,
+      number: 0,
+      first: true,
+      last: true,
+      empty: true,
+      numberOfElements: 0
+    },
+    apis: {
+      content: [],
+      totalPages: 0,
+      totalElements: 0,
+      size: 0,
+      number: 0,
+      first: true,
+      last: true,
+      empty: true,
+      numberOfElements: 0
+    },
+    recentActivities: {
+      content: [],
+      totalPages: 1,
+      totalElements: 0,
+      size: 7,
+      number: 0,
+      first: true,
+      last: true,
+      empty: true,
+      numberOfElements: 0
+    },
+    schemaStats: {},
+    codeGenerationStats: {},
+    systemHealth: {},
+    lastUpdated: null,
+    generatedFor: ''
   });
 
-  const [connections, setConnections] = useState([]);
-  const [apis, setApis] = useState([]);
-  const [notifications, setNotifications] = useState([]);
-  const [apiPerformance, setApiPerformance] = useState([]);
-  const [schemaData, setSchemaData] = useState({});
-  const [recentActivity, setRecentActivity] = useState([]);
-  const [systemHealth, setSystemHealth] = useState({
-    cpu: 24,
-    memory: 65,
-    disk: 42,
-    network: 78
-  });
-  const [codeGenerationStats, setCodeGenerationStats] = useState({
-    java: 45,
-    javascript: 32,
-    python: 18,
-    csharp: 5
-  });
-
-  // Modal states - now using a stack to handle nested modals
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  
+  // Modal states
   const [modalStack, setModalStack] = useState([]);
 
-  // Pagination for recent activities
+  // Pagination
   const [activityPage, setActivityPage] = useState(1);
   const [activitiesPerPage, setActivitiesPerPage] = useState(7);
   
@@ -167,11 +215,27 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
   const [apiStatsPage, setApiStatsPage] = useState(1);
   const [apiCallsPage, setApiCallsPage] = useState(1);
   const [itemsPerModalPage, setItemsPerModalPage] = useState(6);
-
+  
   // Mobile state
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isRightSidebarVisible, setIsRightSidebarVisible] = useState(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+
+  // Error state
+  const [error, setError] = useState(null);
+
+  // Mobile menu handlers
+  const toggleMobileMenu = () => {
+    setIsMobileMenuOpen(!isMobileMenuOpen);
+  };
+
+  const toggleRightSidebar = () => {
+    setIsRightSidebarVisible(!isRightSidebarVisible);
+  };
+
+  const toggleMobileSearch = () => {
+    setIsMobileSearchOpen(!isMobileSearchOpen);
+  };
 
   // Responsive icon size function
   const getResponsiveIconSize = () => {
@@ -183,7 +247,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     return 14;
   };
 
-  // Color scheme
+  // Color scheme - EXACT MATCH from static version
   const colors = isDark ? {
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
@@ -287,376 +351,267 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     return modalStack[modalStack.length - 1];
   };
 
-  // Initialize dashboard data
-  useEffect(() => {
-    const fetchDashboardData = () => {
-      // Sample connections
-      const sampleConnections = [
-        {
-          id: 'conn-1',
-          name: 'CBX_DMX',
-          description: 'Development Database',
-          host: 'db.unionsg.com',
-          port: '1521',
-          service: 'ORCL',
-          username: 'HR',
-          password: '********',
-          status: 'connected',
-          color: colors.connectionOnline,
-          type: 'oracle',
-          latency: '12ms',
-          uptime: '99.9%',
-          lastConnected: '2024-01-15T10:30:00Z',
-          driver: 'Oracle JDBC',
-          version: '19c',
-          maxConnections: 50,
-          currentConnections: 12,
-          databaseSize: '2.4 GB',
-          tablespaceUsed: '65%'
-        }
-      ];
-
-      // Sample APIs
-      const sampleApis = [
-        {
-          id: 'api-1',
-          name: 'User Management API',
-          description: 'Complete user authentication and management',
-          version: 'v2.1',
-          status: 'active',
-          endpointCount: 12,
-          lastUpdated: '2024-01-15T10:30:00Z',
-          calls: 1250,
-          latency: '45ms',
-          successRate: '99.8%',
-          baseUrl: 'https://api.example.com/v2.1/users',
-          documentation: 'https://docs.example.com/api/v2.1',
-          supportedMethods: ['GET', 'POST', 'PUT', 'DELETE'],
-          security: 'JWT Authentication',
-          rateLimit: '1000 requests/hour',
-          errors: 5,
-          avgResponseTime: '42ms',
-          uptime: '99.9%',
-          lastDeployed: '2024-01-14T08:00:00Z',
-          owner: 'John Doe',
-          category: 'Authentication'
-        },
-        {
-          id: 'api-2',
-          name: 'Payment Processing API',
-          description: 'Secure payment processing',
-          version: 'v1.5',
-          status: 'active',
-          endpointCount: 8,
-          lastUpdated: '2024-01-14T14:20:00Z',
-          calls: 892,
-          latency: '32ms',
-          successRate: '99.9%',
-          baseUrl: 'https://api.example.com/v1.5/payments',
-          documentation: 'https://docs.example.com/api/v1.5',
-          supportedMethods: ['POST'],
-          security: 'API Key + SSL',
-          rateLimit: '500 requests/hour',
-          errors: 2,
-          avgResponseTime: '30ms',
-          uptime: '100%',
-          lastDeployed: '2024-01-13T10:00:00Z',
-          owner: 'Jane Smith',
-          category: 'Payments'
-        },
-        {
-          id: 'api-3',
-          name: 'Inventory Management API',
-          description: 'Manage product inventory and stock levels',
-          version: 'v1.2',
-          status: 'active',
-          endpointCount: 15,
-          lastUpdated: '2024-01-13T09:15:00Z',
-          calls: 2100,
-          latency: '38ms',
-          successRate: '99.5%',
-          baseUrl: 'https://api.example.com/v1.2/inventory',
-          documentation: 'https://docs.example.com/api/v1.2',
-          supportedMethods: ['GET', 'POST', 'PUT', 'PATCH'],
-          security: 'OAuth 2.0',
-          rateLimit: '2000 requests/hour',
-          errors: 12,
-          avgResponseTime: '35ms',
-          uptime: '99.7%',
-          lastDeployed: '2024-01-12T14:30:00Z',
-          owner: 'Bob Johnson',
-          category: 'Inventory'
-        },
-        {
-          id: 'api-4',
-          name: 'Order Processing API',
-          description: 'Handle customer orders and order tracking',
-          version: 'v2.0',
-          status: 'active',
-          endpointCount: 10,
-          lastUpdated: '2024-01-12T16:45:00Z',
-          calls: 1850,
-          latency: '50ms',
-          successRate: '99.7%',
-          baseUrl: 'https://api.example.com/v2.0/orders',
-          documentation: 'https://docs.example.com/api/v2.0',
-          supportedMethods: ['GET', 'POST', 'PUT'],
-          security: 'API Key + JWT',
-          rateLimit: '1500 requests/hour',
-          errors: 8,
-          avgResponseTime: '48ms',
-          uptime: '99.8%',
-          lastDeployed: '2024-01-11T09:00:00Z',
-          owner: 'Alice Brown',
-          category: 'Orders'
-        },
-        {
-          id: 'api-5',
-          name: 'Customer Support API',
-          description: 'Customer support ticket management',
-          version: 'v1.0',
-          status: 'active',
-          endpointCount: 6,
-          lastUpdated: '2024-01-11T11:20:00Z',
-          calls: 750,
-          latency: '28ms',
-          successRate: '99.9%',
-          baseUrl: 'https://api.example.com/v1.0/support',
-          documentation: 'https://docs.example.com/api/v1.0',
-          supportedMethods: ['GET', 'POST', 'PUT', 'DELETE'],
-          security: 'API Key',
-          rateLimit: '800 requests/hour',
-          errors: 3,
-          avgResponseTime: '25ms',
-          uptime: '100%',
-          lastDeployed: '2024-01-10T13:45:00Z',
-          owner: 'Charlie Wilson',
-          category: 'Support'
-        },
-        {
-          id: 'api-6',
-          name: 'Analytics API',
-          description: 'Data analytics and reporting endpoints',
-          version: 'v3.1',
-          status: 'active',
-          endpointCount: 20,
-          lastUpdated: '2024-01-10T15:30:00Z',
-          calls: 3100,
-          latency: '65ms',
-          successRate: '99.3%',
-          baseUrl: 'https://api.example.com/v3.1/analytics',
-          documentation: 'https://docs.example.com/api/v3.1',
-          supportedMethods: ['GET', 'POST'],
-          security: 'JWT + IP Whitelist',
-          rateLimit: '3000 requests/hour',
-          errors: 22,
-          avgResponseTime: '60ms',
-          uptime: '99.5%',
-          lastDeployed: '2024-01-09T10:15:00Z',
-          owner: 'David Lee',
-          category: 'Analytics'
-        },
-        {
-          id: 'api-7',
-          name: 'Notification API',
-          description: 'Send email and push notifications',
-          version: 'v1.3',
-          status: 'active',
-          endpointCount: 5,
-          lastUpdated: '2024-01-09T14:00:00Z',
-          calls: 4200,
-          latency: '25ms',
-          successRate: '99.6%',
-          baseUrl: 'https://api.example.com/v1.3/notifications',
-          documentation: 'https://docs.example.com/api/v1.3',
-          supportedMethods: ['POST'],
-          security: 'API Key',
-          rateLimit: '5000 requests/hour',
-          errors: 17,
-          avgResponseTime: '22ms',
-          uptime: '99.9%',
-          lastDeployed: '2024-01-08T08:30:00Z',
-          owner: 'Emma Davis',
-          category: 'Notifications'
-        },
-        {
-          id: 'api-8',
-          name: 'Content Management API',
-          description: 'Manage website content and media',
-          version: 'v2.2',
-          status: 'active',
-          endpointCount: 14,
-          lastUpdated: '2024-01-08T12:45:00Z',
-          calls: 1650,
-          latency: '40ms',
-          successRate: '99.8%',
-          baseUrl: 'https://api.example.com/v2.2/content',
-          documentation: 'https://docs.example.com/api/v2.2',
-          supportedMethods: ['GET', 'POST', 'PUT', 'DELETE'],
-          security: 'JWT Authentication',
-          rateLimit: '1200 requests/hour',
-          errors: 9,
-          avgResponseTime: '38ms',
-          uptime: '99.9%',
-          lastDeployed: '2024-01-07T11:00:00Z',
-          owner: 'Frank Miller',
-          category: 'Content'
-        }
-      ];
-
-      // Sample schema data
-      const sampleSchemaData = {
-        totalObjects: 156,
-        tables: 45,
-        views: 12,
-        procedures: 23,
-        packages: 8,
-        functions: 15,
-        triggers: 9,
-        indexes: 44,
-        sequences: 5,
-        materializedViews: 3,
-        partitions: 21,
-        databaseName: 'HR_DEV',
-        databaseSize: '2.4 GB',
-        version: '1.2.3',
-        monthlyGrowth: 12,
-        tableChange: 3,
-        viewChange: 1,
-        procedureChange: 2,
-        functionChange: 4,
-        packageChange: 0,
-        triggerChange: 1,
-        indexChange: 5,
-        sequenceChange: 0,
-        materializedViewChange: 0,
-        totalObjectsChange: 16
-      };
-
-      // Generate sample recent activities
-      const generateSampleActivities = () => {
-        const activities = [];
-        const actions = ['API Generated', 'Database Connected', 'Code Generated', 'Schema Updated', 
-                        'User Login', 'Configuration Updated', 'Backup Created', 'Test Executed',
-                        'Deployment Completed', 'Security Scan', 'Performance Test', 'Bug Fixed'];
-        const users = ['Admin', 'System', 'Developer', 'DBA', 'Tester', 'DevOps', 'Security Analyst'];
-        const icons = ['api', 'database', 'code', 'schema', 'user', 'settings', 'backup', 'test'];
-        
-        for (let i = 1; i <= 25; i++) {
-          const action = actions[Math.floor(Math.random() * actions.length)];
-          const user = users[Math.floor(Math.random() * users.length)];
-          const icon = icons[Math.floor(Math.random() * icons.length)];
-          const hoursAgo = Math.floor(Math.random() * 24 * 7);
-          const apiName = action.includes('API') ? `API-${Math.floor(Math.random() * 100)}` : null;
-          const databaseName = action.includes('Database') ? `DB-${Math.floor(Math.random() * 100)}` : null;
-          
-          activities.push({
-            id: `act-${i}`,
-            action: action,
-            description: `${action} for ${user}'s task #${i}`,
-            user: user,
-            time: hoursAgo === 0 ? 'Just now' : 
-                  hoursAgo < 24 ? `${hoursAgo} hour${hoursAgo > 1 ? 's' : ''} ago` :
-                  `${Math.floor(hoursAgo / 24)} day${Math.floor(hoursAgo / 24) > 1 ? 's' : ''} ago`,
-            timestamp: new Date(Date.now() - hoursAgo * 3600000).toISOString(),
-            icon: icon,
-            priority: Math.random() > 0.7 ? 'high' : Math.random() > 0.4 ? 'medium' : 'low',
-            details: `Detailed information about ${action}. This activity involved ${user} working on task #${i}.`,
-            affectedResource: apiName || databaseName || `RES-${i}`,
-            actionType: action.toLowerCase().includes('api') ? 'api' : 
-                       action.toLowerCase().includes('database') ? 'database' : 
-                       action.toLowerCase().includes('code') ? 'code' : 'system'
-          });
-        }
-        return activities;
-      };
-
-      const sampleStats = {
-        totalConnections: sampleConnections.length,
-        activeConnections: sampleConnections.filter(c => c.status === 'connected').length,
-        totalApis: sampleApis.length,
-        activeApis: sampleApis.filter(a => a.status === 'active').length,
-        totalCalls: sampleApis.reduce((sum, api) => sum + api.calls, 0),
-        avgLatency: "48ms",
-        successRate: "99.8%",
-        uptime: "99.9%"
-      };
-
-      setConnections(sampleConnections);
-      setApis(sampleApis);
-      setSchemaData(sampleSchemaData);
-      setStats(sampleStats);
-      setRecentActivity(generateSampleActivities());
+  // Transform API data to match component structure
+  const transformApiData = (apiData) => {
+    if (!apiData || !apiData.data) return {};
+    
+    const data = apiData.data;
+    
+    // Transform connections data
+    const connectionsData = data.connections?.connections || [];
+    const connections = {
+      content: connectionsData,
+      totalPages: Math.ceil(connectionsData.length / 10),
+      totalElements: connectionsData.length,
+      size: 10,
+      number: 0,
+      first: true,
+      last: connectionsData.length <= 10,
+      empty: connectionsData.length === 0,
+      numberOfElements: Math.min(connectionsData.length, 10)
     };
-
-    fetchDashboardData();
-  }, []);
-
-  // Pagination logic
-  const totalActivityPages = Math.ceil(recentActivity.length / activitiesPerPage);
-  const paginatedActivities = recentActivity.slice(
-    (activityPage - 1) * activitiesPerPage,
-    activityPage * activitiesPerPage
-  );
-
-  const handlePrevPage = () => {
-    if (activityPage > 1) {
-      setActivityPage(activityPage - 1);
-    }
+    
+    // Transform APIs data
+    const apisData = data.apis?.apis || [];
+    const apis = {
+      content: apisData,
+      totalPages: Math.ceil(apisData.length / 10),
+      totalElements: apisData.length,
+      size: 10,
+      number: 0,
+      first: true,
+      last: apisData.length <= 10,
+      empty: apisData.length === 0,
+      numberOfElements: Math.min(apisData.length, 10)
+    };
+    
+    // Transform recent activities data
+    const activitiesData = data.recentActivities?.activities || [];
+    const recentActivities = {
+      content: activitiesData,
+      totalPages: data.recentActivities?.totalPages || 1,
+      totalElements: data.recentActivities?.totalItems || activitiesData.length,
+      size: activitiesPerPage,
+      number: activityPage - 1,
+      first: activityPage === 1,
+      last: activityPage === (data.recentActivities?.totalPages || 1),
+      empty: activitiesData.length === 0,
+      numberOfElements: activitiesData.length
+    };
+    
+    // Transform schema stats
+    const schemaStats = data.schemaStats || {};
+    
+    // Transform stats
+    const stats = {
+      totalConnections: data.stats?.totalConnections || connectionsData.length,
+      activeConnections: data.stats?.activeConnections || connectionsData.filter(c => c.status === 'connected').length,
+      totalApis: data.stats?.totalApis || apisData.length,
+      activeApis: data.stats?.activeApis || apisData.filter(a => a.status === 'active').length,
+      totalCalls: data.stats?.totalCalls || apisData.reduce((sum, api) => sum + (api.calls || 0), 0),
+      avgLatency: data.stats?.avgLatency || "0ms",
+      successRate: data.stats?.successRate || "0%",
+      uptime: data.stats?.uptime || "0%"
+    };
+    
+    return {
+      stats,
+      connections,
+      apis,
+      recentActivities,
+      schemaStats,
+      codeGenerationStats: data.codeGenerationStats || {},
+      systemHealth: data.systemHealth || {},
+      lastUpdated: data.lastUpdated || new Date().toISOString(),
+      generatedFor: data.generatedFor || 'User'
+    };
   };
 
-  const handleNextPage = () => {
-    if (activityPage < totalActivityPages) {
-      setActivityPage(activityPage + 1);
-    }
-  };
-
-  const handleRefresh = () => {
-    setLoading(true);
-    setTimeout(() => {
+  // Fetch dashboard data from API
+  const fetchDashboardData = useCallback(async () => {
+    if (!authToken) {
+      setError('Authentication required');
       setLoading(false);
-      console.log('Dashboard refreshed');
-    }, 1000);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Get comprehensive data
+      const response = await getComprehensiveDashboard(authToken);
+      const processedResponse = handleDashboardResponse(response);
+      
+      // Transform the data to match component structure
+      const transformedData = transformApiData(processedResponse);
+      
+      setDashboardData(prev => ({
+        ...prev,
+        ...transformedData
+      }));
+
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      setError(`Failed to load dashboard: ${error.message}`);
+      
+      // Try individual endpoints as fallback
+      try {
+        await fetchIndividualData();
+      } catch (fallbackError) {
+        console.error('Fallback also failed:', fallbackError);
+        setError('Unable to load dashboard data. Please try again later.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [authToken, activityPage, activitiesPerPage]);
+
+  // Fetch individual data components
+  const fetchIndividualData = async () => {
+    if (!authToken) return;
+
+    try {
+      const [
+        statsResponse,
+        connectionsResponse,
+        apisResponse,
+        activitiesResponse,
+        schemaResponse
+      ] = await Promise.all([
+        getDashboardStats(authToken),
+        getDashboardConnections(authToken),
+        getDashboardApis(authToken),
+        getDashboardActivities(authToken, { page: activityPage, size: activitiesPerPage }),
+        getDashboardSchemaStats(authToken)
+      ]);
+
+      const stats = handleDashboardResponse(statsResponse);
+      const connections = handleDashboardResponse(connectionsResponse);
+      const apis = handleDashboardResponse(apisResponse);
+      const activities = handleDashboardResponse(activitiesResponse);
+      const schema = handleDashboardResponse(schemaResponse);
+
+      // Transform individual responses
+      const transformedData = transformApiData({
+        data: {
+          stats: stats.data,
+          connections: connections.data,
+          apis: apis.data,
+          recentActivities: activities.data,
+          schemaStats: schema.data,
+          lastUpdated: new Date().toISOString()
+        }
+      });
+
+      setDashboardData(prev => ({
+        ...prev,
+        ...transformedData
+      }));
+
+    } catch (error) {
+      throw new Error(`Failed to fetch individual components: ${error.message}`);
+    }
   };
 
-  // UPDATED: Navigation handlers - Now navigate to pages
+  // Fetch activities with pagination
+  const fetchActivitiesWithPagination = async (page) => {
+    if (!authToken) return;
+    
+    try {
+      const response = await getDashboardActivities(authToken, { 
+        page: page, 
+        size: activitiesPerPage 
+      });
+      const processedResponse = handleDashboardResponse(response);
+      
+      if (processedResponse.data?.activities) {
+        const activitiesData = processedResponse.data.activities;
+        setDashboardData(prev => ({
+          ...prev,
+          recentActivities: {
+            content: activitiesData,
+            totalPages: processedResponse.data.totalPages || 1,
+            totalElements: processedResponse.data.totalItems || activitiesData.length,
+            size: activitiesPerPage,
+            number: page - 1,
+            first: page === 1,
+            last: page === (processedResponse.data.totalPages || 1),
+            empty: activitiesData.length === 0,
+            numberOfElements: activitiesData.length
+          }
+        }));
+      }
+    } catch (error) {
+      console.error('Error fetching activities page:', error);
+    }
+  };
+
+  // Refresh dashboard
+  const handleRefresh = async () => {
+    if (!authToken) return;
+    
+    setRefreshLoading(true);
+    try {
+      const response = await getComprehensiveDashboard(authToken);
+      const processedResponse = handleDashboardResponse(response);
+      const transformedData = transformApiData(processedResponse);
+      
+      setDashboardData(prev => ({
+        ...prev,
+        ...transformedData
+      }));
+    } catch (error) {
+      console.error('Error refreshing dashboard:', error);
+      setError(`Refresh failed: ${error.message}`);
+    } finally {
+      setRefreshLoading(false);
+    }
+  };
+
+  // Initialize and fetch data
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
+
+  // Update activities when page changes
+  useEffect(() => {
+    if (authToken && activityPage > 0) {
+      fetchActivitiesWithPagination(activityPage);
+    }
+  }, [activityPage, activitiesPerPage, authToken]);
+
+  // Navigation handlers
   const handleNavigateToSchemaBrowser = () => {
-    console.log('Navigating to Schema Browser');
     closeAllModals();
     setActiveTab('schema-browser');
   };
 
   const handleNavigateToApiBuilder = () => {
-    console.log('Navigating to Collections (API Builder)');
     closeAllModals();
     setActiveTab('api-collections');
   };
 
   const handleNavigateToCodeBase = () => {
-    console.log('Navigating to Code Base');
     closeAllModals();
     setActiveTab('code-base');
   };
 
   const handleNavigateToDocumentation = () => {
-    console.log('Navigating to Documentation');
     closeAllModals();
     setActiveTab('api-docs');
   };
 
   const handleNavigateToAPISecurity = () => {
-    console.log('Navigating to API Security');
     closeAllModals();
-    setActiveTab('security')
+    setActiveTab('security');
   };
 
   const handleNavigateToUserManagement = () => {
-    console.log('Navigating to API Security');
     closeAllModals();
-    setActiveTab('user-mgt')
+    setActiveTab('user-mgt');
   };
 
-  // NEW: Navigate to Connections page
   const handleNavigateToConnections = () => {
     console.log('Navigating to Connections');
     closeAllModals();
@@ -694,30 +649,33 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
   // View API stats should show modal
   const handleApiStatsClick = () => {
     console.log('Opening API Stats modal');
+    const activeApis = dashboardData.apis?.content?.filter(api => api.status === 'active') || [];
     openModal('apiStats', {
       title: 'Active APIs',
-      data: apis.filter(api => api.status === 'active'),
-      totalItems: apis.filter(api => api.status === 'active').length
+      data: activeApis,
+      totalItems: activeApis.length
     });
   };
 
   // View API calls should show modal
   const handleApiCallsClick = () => {
     console.log('Opening API Calls modal');
+    const apiCallsData = dashboardData.apis?.content?.map(api => ({
+      id: api.id,
+      name: api.name,
+      calls: api.calls || 0,
+      latency: api.latency || '0ms',
+      successRate: api.successRate || '0%',
+      errors: api.errors || 0,
+      avgResponseTime: api.avgResponseTime || 'N/A',
+      lastUpdated: api.lastUpdated,
+      owner: api.owner || 'N/A'
+    })) || [];
+    
     openModal('apiCalls', {
       title: 'API Calls Analytics',
-      data: apis.map(api => ({
-        id: api.id,
-        name: api.name,
-        calls: api.calls,
-        latency: api.latency,
-        successRate: api.successRate,
-        errors: api.errors || 0,
-        avgResponseTime: api.avgResponseTime || 'N/A',
-        lastUpdated: api.lastUpdated,
-        owner: api.owner || 'N/A'
-      })),
-      totalItems: apis.length
+      data: apiCallsData,
+      totalItems: apiCallsData.length
     });
   };
 
@@ -728,19 +686,16 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
   };
 
   const handleViewConnectionDetails = (connection) => {
-    // Open connection modal
     openModal('connection', connection);
     console.log('Viewing connection details:', connection.name);
   };
 
   const handleActivityClick = (activity) => {
-    // Open activity modal
     openModal('activity', activity);
     console.log('Viewing activity:', activity.action);
   };
 
   const handleSchemaItemClick = (itemType, count) => {
-    // Open schema item modal
     openModal('schemaItem', { type: itemType, count });
     console.log('Viewing schema item:', itemType);
   };
@@ -772,48 +727,19 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     }, 300);
   };
 
-  // Settings - navigate to Collections
-  const handleOpenSettings = () => {
-    console.log('Opening settings - Navigating to Collections');
-    closeAllModals();
-    handleNavigateToApiBuilder();
+  // Pagination handlers
+  const handlePrevPage = () => {
+    if (activityPage > 1) {
+      setActivityPage(activityPage - 1);
+    }
   };
 
-  // Security scan - navigate to API Security
-  const handleRunSecurityScan = () => {
-    console.log('Running security scan - Navigating to API Security');
-    closeAllModals();
-    handleNavigateToAPISecurity();
+  const handleNextPage = () => {
+    if (activityPage < (dashboardData.recentActivities.totalPages || 1)) {
+      setActivityPage(activityPage + 1);
+    }
   };
 
-  // Test results - navigate to Collections
-  const handleViewTestResults = () => {
-    console.log('Viewing test results - Navigating to Collections');
-    closeAllModals();
-    handleNavigateToApiBuilder();
-  };
-
-  // Configure backup - navigate to Collections
-  const handleConfigureBackup = () => {
-    console.log('Configuring backup - Navigating to Collections');
-    closeAllModals();
-    handleNavigateToApiBuilder();
-  };
-
-  // Mobile menu handlers
-  const toggleMobileMenu = () => {
-    setIsMobileMenuOpen(!isMobileMenuOpen);
-  };
-
-  const toggleRightSidebar = () => {
-    setIsRightSidebarVisible(!isRightSidebarVisible);
-  };
-
-  const toggleMobileSearch = () => {
-    setIsMobileSearchOpen(!isMobileSearchOpen);
-  };
-
-  // Add pagination handlers for modals
   const handleApiStatsPageChange = (newPage) => {
     setApiStatsPage(newPage);
   };
@@ -822,6 +748,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     setApiCallsPage(newPage);
   };
 
+  // Helper functions from static version
   const getIconForActivity = (icon) => {
     const iconSize = getResponsiveIconSize();
     const iconProps = { size: iconSize, style: { color: colors.textSecondary } };
@@ -847,10 +774,12 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
       case 'warning':
       case 'testing':
       case 'pending':
+      case 'idle':
         return colors.warning;
       case 'error':
       case 'failed':
       case 'offline':
+      case 'disconnected':
         return colors.error;
       default:
         return colors.textSecondary;
@@ -864,6 +793,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
       case 'oracle': return <Database {...iconProps} />;
       case 'postgresql': return <Server {...iconProps} />;
       case 'mysql': return <DatabaseIcon {...iconProps} />;
+      case 'mongodb': return <Database {...iconProps} />;
+      case 'redis': return <Database {...iconProps} />;
       default: return <Database {...iconProps} />;
     }
   };
@@ -877,7 +808,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     }
   };
 
-  // Stat Card Component
+  // Stat Card Component - EXACT MATCH from static version
   const StatCard = ({ title, value, icon: Icon, change, color, onClick }) => {
     const iconSize = getResponsiveIconSize();
     return (
@@ -911,7 +842,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     );
   };
 
-  // Connection Card
+  // Connection Card - EXACT MATCH from static version
   const ConnectionCard = ({ connection }) => {
     const iconSize = getResponsiveIconSize();
     return (
@@ -952,7 +883,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     );
   };
 
-  // Activity Item
+  // Activity Item - EXACT MATCH from static version
   const ActivityItem = ({ activity }) => {
     const iconSize = getResponsiveIconSize();
     return (
@@ -975,7 +906,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
               {activity.action}
             </span>
             <span className="text-xs shrink-0" style={{ color: colors.textSecondary }}>
-              {activity.time}
+              {new Date(activity.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
           </div>
           <p className="text-xs mt-0.5 sm:mt-1 truncate" style={{ color: colors.textSecondary }}>
@@ -985,7 +916,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <div className="text-xs truncate" style={{ color: colors.textTertiary }}>
               by {activity.user}
             </div>
-            {activity.priority !== 'low' && (
+            {activity.priority && activity.priority !== 'low' && (
               <div className={`text-xs px-1 sm:px-2 py-0.5 rounded-full capitalize shrink-0 ${
                 activity.priority === 'high' ? 'bg-red-500/10 text-red-500' : 'bg-yellow-500/10 text-yellow-500'
               }`}>
@@ -998,23 +929,25 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     );
   };
 
-  // Schema Stats Card
+  // Schema Stats Card - EXACT MATCH from static version
   const SchemaStatsCard = () => {
     const iconSize = getResponsiveIconSize();
+    const schemaData = dashboardData.schemaStats || {};
+    
     const schemaCategories = [
       { 
         name: 'Tables & Views', 
         items: [
           { 
             key: 'tables', 
-            value: schemaData.tables, 
+            value: schemaData.tables || 0, 
             icon: <Table size={Math.max(iconSize - 2, 10)} />,
             change: schemaData.tableChange || 0,
             description: 'Data tables'
           },
           { 
             key: 'views', 
-            value: schemaData.views, 
+            value: schemaData.views || 0, 
             icon: <Eye size={Math.max(iconSize - 2, 10)} />,
             change: schemaData.viewChange || 0,
             description: 'Virtual tables'
@@ -1028,14 +961,14 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
         items: [
           { 
             key: 'procedures', 
-            value: schemaData.procedures, 
+            value: schemaData.procedures || 0, 
             icon: <FileCode size={Math.max(iconSize - 2, 10)} />,
             change: schemaData.procedureChange || 0,
             description: 'Stored procedures'
           },
           { 
             key: 'functions', 
-            value: schemaData.functions, 
+            value: schemaData.functions || 0, 
             icon: <Code size={Math.max(iconSize - 2, 10)} />,
             change: schemaData.functionChange || 0,
             description: 'Functions'
@@ -1061,8 +994,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
               </h3>
               <div className="flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-xs" 
                 style={{ 
-                  backgroundColor: schemaData.totalObjectsChange >= 0 ? `${colors.success}20` : `${colors.error}20`,
-                  color: schemaData.totalObjectsChange >= 0 ? colors.success : colors.error
+                  backgroundColor: (schemaData.totalObjectsChange || 0) >= 0 ? `${colors.success}20` : `${colors.error}20`,
+                  color: (schemaData.totalObjectsChange || 0) >= 0 ? colors.success : colors.error
                 }}>
                 <TrendingUp size={10} />
                 <span>{Math.abs(schemaData.totalObjectsChange || 0)}</span>
@@ -1070,7 +1003,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             </div>
             <div className="flex flex-wrap items-center gap-1 sm:gap-2">
               <p className="text-xs truncate" style={{ color: colors.textSecondary }}>
-                {schemaData.totalObjects} objects
+                {schemaData.totalObjects || 0} objects
               </p>
               <div className="text-xs flex items-center gap-1" style={{ color: colors.textTertiary }}>
                 <Database size={10} />
@@ -1121,7 +1054,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-xs" style={{ color: colors.textSecondary }}>
-                      {((categoryTotal / schemaData.totalObjects) * 100).toFixed(1)}%
+                      {schemaData.totalObjects ? ((categoryTotal / schemaData.totalObjects) * 100).toFixed(1) : '0.0'}%
                     </div>
                     <div className="text-xs font-medium hidden sm:block" style={{ color: category.color }}>
                       Δ {category.items.reduce((sum, item) => sum + item.change, 0)} this month
@@ -1197,13 +1130,16 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     );
   };
 
-  // Activity Pagination Component
+  // Activity Pagination Component - EXACT MATCH from static version
   const ActivityPagination = () => {
     const iconSize = getResponsiveIconSize();
+    const totalActivityPages = dashboardData.recentActivities.totalPages || 1;
+    const totalElements = dashboardData.recentActivities.totalElements || 0;
+    
     return (
       <div className="flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-3 p-3 sm:p-4 border-t" style={{ borderColor: colors.border }}>
         <div className="text-xs text-center sm:text-left" style={{ color: colors.textSecondary }}>
-          Showing {((activityPage - 1) * activitiesPerPage) + 1} - {Math.min(activityPage * activitiesPerPage, recentActivity.length)} of {recentActivity.length}
+          Showing {((activityPage - 1) * activitiesPerPage) + 1} - {Math.min(activityPage * activitiesPerPage, totalElements)} of {totalElements}
         </div>
         <div className="flex items-center gap-1 sm:gap-2">
           <button
@@ -1283,7 +1219,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     );
   };
 
-  // Mobile Search Bar
+  // Mobile Search Bar - EXACT MATCH from static version
   const MobileSearchBar = () => (
     <div className={`md:hidden p-3 border-b transition-all duration-300 ${isMobileSearchOpen ? 'block' : 'hidden'}`} 
       style={{ borderColor: colors.border, backgroundColor: colors.header }}>
@@ -1294,6 +1230,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
           placeholder="Search connections, APIs, activities..."
           className="flex-1 bg-transparent outline-none text-sm"
           style={{ color: colors.text }}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
         />
         <button
           onClick={() => setIsMobileSearchOpen(false)}
@@ -1306,7 +1244,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     </div>
   );
 
-  // Mobile Modal Component
+  // Modal Components
   const MobileModal = ({ children, title, onClose, showBackButton = false, onBack }) => {
     const iconSize = getResponsiveIconSize();
     const modalCount = modalStack.length;
@@ -1400,12 +1338,12 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
           </div>
           <div>
             <div className="text-xs font-medium mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Time</div>
-            <div className="text-sm truncate" style={{ color: colors.text }}>{data?.time}</div>
+            <div className="text-sm truncate" style={{ color: colors.text }}>{new Date(data?.timestamp).toLocaleString()}</div>
           </div>
           <div>
             <div className="text-xs font-medium mb-0.5 sm:mb-1" style={{ color: colors.textSecondary }}>Priority</div>
             <div className="text-sm capitalize truncate" style={{ color: getPriorityColor(data?.priority) }}>
-              {data?.priority}
+              {data?.priority || 'low'}
             </div>
           </div>
           <div>
@@ -1456,6 +1394,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     </MobileModal>
   );
 
+  // Connection Modal
   const ConnectionModal = ({ data }) => (
     <MobileModal 
       title="Connection Details" 
@@ -1540,10 +1479,10 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
           </div>
           <div className="space-y-1">
             <div className="text-xs font-medium uppercase tracking-wider" style={{ color: colors.textSecondary }}>
-              SSL
+              Status
             </div>
             <div className="text-sm truncate p-1.5 rounded bg-white/10" style={{ color: colors.text }}>
-              {data?.ssl ? 'Enabled' : 'Disabled'}
+              {data?.status}
             </div>
           </div>
         </div>
@@ -1564,7 +1503,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             }}>
               <div className="text-xs font-medium mb-1.5" style={{ color: colors.textSecondary }}>Latency</div>
               <div className="text-lg font-bold" style={{ color: colors.text }}>
-                {data?.latency ? `${data.latency}ms` : 'N/A'}
+                {data?.latency ? `${data.latency}` : 'N/A'}
               </div>
             </div>
             <div className="text-center p-3 rounded-lg border" style={{ 
@@ -1573,7 +1512,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             }}>
               <div className="text-xs font-medium mb-1.5" style={{ color: colors.textSecondary }}>Uptime</div>
               <div className="text-lg font-bold" style={{ color: colors.text }}>
-                {data?.uptime ? `${data.uptime}%` : 'N/A'}
+                {data?.uptime ? `${data.uptime}` : 'N/A'}
               </div>
             </div>
             <div className="text-center p-3 rounded-lg border" style={{ 
@@ -1588,7 +1527,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
           </div>
         </div>
 
-        {/* Action Buttons - All in one row */}
+        {/* Action Buttons */}
         <div className="pt-2">
           <div className="grid grid-cols-3 gap-2 sm:gap-3">
             <button 
@@ -1641,7 +1580,6 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             </button>
           </div>
           
-          {/* Optional: Additional actions if needed */}
           <div className="mt-3 pt-3 border-t" style={{ borderColor: colors.border }}>
             <button 
               onClick={() => console.log('Export connection config')}
@@ -1698,7 +1636,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
           </div>
           <div>
             <div className="text-xs font-medium mb-1" style={{ color: colors.textSecondary }}>Total Calls</div>
-            <div className="text-sm font-medium" style={{ color: colors.text }}>{data?.calls?.toLocaleString()}</div>
+            <div className="text-sm font-medium" style={{ color: colors.text }}>{data?.calls?.toLocaleString() || 0}</div>
           </div>
           <div>
             <div className="text-xs font-medium mb-1" style={{ color: colors.textSecondary }}>Success Rate</div>
@@ -1706,7 +1644,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
               color: parseFloat(data?.successRate) >= 99 ? colors.success : 
                     parseFloat(data?.successRate) >= 95 ? colors.warning : colors.error 
             }}>
-              {data?.successRate}
+              {data?.successRate || '0%'}
             </div>
           </div>
         </div>
@@ -1774,7 +1712,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <div className="text-center p-3 rounded border" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
               <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Endpoints</div>
               <div className="text-lg font-bold" style={{ color: colors.text }}>
-                {data.data.reduce((sum, api) => sum + api.endpointCount, 0)}
+                {data.data.reduce((sum, api) => sum + (api.endpointCount || 0), 0)}
               </div>
             </div>
             <div className="text-center p-3 rounded border" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
@@ -1782,7 +1720,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
               <div className="text-lg font-bold" style={{ color: colors.success }}>
                 {(
                   data.data.reduce((sum, api) => {
-                    const rate = parseFloat(api.successRate);
+                    const rate = parseFloat(api.successRate) || 0;
                     return sum + (isNaN(rate) ? 0 : rate);
                   }, 0) / data.data.length
                 ).toFixed(1)}%
@@ -1861,7 +1799,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                       </td>
                       <td className="p-3">
                         <div className="text-sm font-medium" style={{ color: colors.text }}>
-                          {api.calls.toLocaleString()}
+                          {(api.calls || 0).toLocaleString()}
                         </div>
                       </td>
                       <td className="p-3">
@@ -1870,18 +1808,18 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                             color: parseFloat(api.successRate) >= 99 ? colors.success : 
                                   parseFloat(api.successRate) >= 95 ? colors.warning : colors.error 
                           }}>
-                            {api.successRate}
+                            {api.successRate || '0%'}
                           </div>
                         </div>
                       </td>
                       <td className="p-3">
                         <div className="text-sm" style={{ color: colors.text }}>
-                          {api.latency}
+                          {api.latency || '0ms'}
                         </div>
                       </td>
                       <td className="p-3">
                         <div className="text-sm" style={{ color: colors.textSecondary }}>
-                          {new Date(api.lastUpdated).toLocaleDateString()}
+                          {api.lastUpdated ? new Date(api.lastUpdated).toLocaleDateString() : 'N/A'}
                         </div>
                       </td>
                     </tr>
@@ -2021,7 +1959,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     };
 
     const handleViewApiDetailsFromCalls = (apiData) => {
-      const fullApi = apis.find(a => a.id === apiData.id);
+      const fullApi = dashboardData.apis?.content?.find(a => a.id === apiData.id);
       if (fullApi) {
         openModal('api', fullApi);
       }
@@ -2040,13 +1978,13 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <div className="text-center p-3 rounded border" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
               <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Calls</div>
               <div className="text-lg font-bold" style={{ color: colors.text }}>
-                {data.data.reduce((sum, api) => sum + api.calls, 0).toLocaleString()}
+                {data.data.reduce((sum, api) => sum + (api.calls || 0), 0).toLocaleString()}
               </div>
             </div>
             <div className="text-center p-3 rounded border" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
               <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Errors</div>
               <div className="text-lg font-bold" style={{ color: colors.error }}>
-                {data.data.reduce((sum, api) => sum + api.errors, 0).toLocaleString()}
+                {data.data.reduce((sum, api) => sum + (api.errors || 0), 0).toLocaleString()}
               </div>
             </div>
             <div className="text-center p-3 rounded border" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
@@ -2056,7 +1994,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                   data.data.reduce((sum, api) => {
                     const time = parseInt(api.avgResponseTime) || 0;
                     return sum + time;
-                  }, 0) / data.data.length
+                  }, 0) / Math.max(data.data.length, 1)
                 ).toFixed(0)}ms
               </div>
             </div>
@@ -2111,25 +2049,25 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                       </td>
                       <td className="p-3">
                         <div className="text-sm font-medium" style={{ color: colors.primaryDark }}>
-                          {api.calls.toLocaleString()}
+                          {(api.calls || 0).toLocaleString()}
                         </div>
                       </td>
                       <td className="p-3">
                         <div className="flex items-center gap-1">
                           <div className="text-sm font-medium" style={{ 
-                            color: api.errors === 0 ? colors.success : 
-                                  api.errors < 10 ? colors.warning : colors.error 
+                            color: (api.errors || 0) === 0 ? colors.success : 
+                                  (api.errors || 0) < 10 ? colors.warning : colors.error 
                           }}>
-                            {api.errors}
+                            {api.errors || 0}
                           </div>
-                          {api.errors > 0 && (
+                          {(api.errors || 0) > 0 && (
                             <AlertCircle size={10} style={{ color: colors.warning }} />
                           )}
                         </div>
                       </td>
                       <td className="p-3">
                         <div className="text-sm" style={{ color: colors.text }}>
-                          {api.avgResponseTime}
+                          {api.avgResponseTime || 'N/A'}
                         </div>
                       </td>
                       <td className="p-3">
@@ -2137,12 +2075,12 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                           color: parseFloat(api.successRate) >= 99 ? colors.success : 
                                 parseFloat(api.successRate) >= 95 ? colors.warning : colors.error 
                         }}>
-                          {api.successRate}
+                          {api.successRate || '0%'}
                         </div>
                       </td>
                       <td className="p-3">
                         <div className="text-sm" style={{ color: colors.textSecondary }}>
-                          {api.owner}
+                          {api.owner || 'N/A'}
                         </div>
                       </td>
                     </tr>
@@ -2468,7 +2406,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     });
   };
 
-  // Right Sidebar Component
+  // Right Sidebar Component - EXACT MATCH from static version
   const RightSidebar = () => (
     <div className={`w-full md:w-80 border-l flex flex-col fixed md:relative inset-y-0 right-0 z-40 transform transition-transform duration-300 ease-in-out ${
       isRightSidebarVisible ? 'translate-x-0' : 'translate-x-full md:translate-x-0'
@@ -2503,7 +2441,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleApiGeneration}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.hover, color: colors.text }}
+              style={{ backgroundColor: colors.card, color: colors.text }}
             >
               <FileCode size={14} />
               <span className="truncate">Generate New API</span>
@@ -2511,7 +2449,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToAPICollection}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.hover, color: colors.text }}
+              style={{ backgroundColor: colors.card, color: colors.text }}
             >
               <Database size={14} />
               <span className="truncate">API Collections</span>
@@ -2519,7 +2457,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToDocumentation}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.hover, color: colors.text }}
+              style={{ backgroundColor: colors.card, color: colors.text }}
             >
               <BookOpen size={14} />
               <span className="truncate">API Documentation</span>
@@ -2527,7 +2465,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToCodeBase}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.hover, color: colors.text }}
+              style={{ backgroundColor: colors.card, color: colors.text }}
             >
               <Code size={14} />
               <span className="truncate">API Code Base</span>
@@ -2535,7 +2473,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToAPISecurity}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.hover, color: colors.text }}
+              style={{ backgroundColor: colors.card, color: colors.text }}
             >
               <Shield size={14} />
               <span className="truncate">API Security</span>
@@ -2543,7 +2481,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToUserManagement}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.hover, color: colors.text }}
+              style={{ backgroundColor: colors.card, color: colors.text }}
             >
               <UserCog size={14} />
               <span className="truncate">User Management</span>
@@ -2589,6 +2527,63 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
       </div>
     </div>
   );
+
+  // Loading state
+  const renderLoadingState = () => (
+    <div className="flex items-center justify-center h-64">
+      <div className="text-center">
+        <RefreshCw className="animate-spin mx-auto mb-4" size={24} style={{ color: colors.textSecondary }} />
+        <div style={{ color: colors.text }}>Loading dashboard data...</div>
+      </div>
+    </div>
+  );
+
+  // Error state
+  const renderErrorState = () => (
+    <div className="p-4 border rounded-xl" style={{ 
+      borderColor: colors.error,
+      backgroundColor: `${colors.error}20`
+    }}>
+      <div className="flex items-center gap-2">
+        <AlertCircle size={16} style={{ color: colors.error }} />
+        <div style={{ color: colors.error }}>{error}</div>
+      </div>
+      <button 
+        onClick={fetchDashboardData}
+        className="mt-2 px-3 py-1 rounded text-sm font-medium transition-colors"
+        style={{ 
+          backgroundColor: colors.hover,
+          color: colors.text
+        }}
+      >
+        Retry
+      </button>
+    </div>
+  );
+
+  // Empty state
+  const renderEmptyState = () => (
+    <div className="text-center p-8">
+      <Database size={48} className="mx-auto mb-4" style={{ color: colors.textSecondary }} />
+      <div className="text-sm" style={{ color: colors.text }}>No dashboard data available</div>
+      <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+        Connect to a database or create APIs to see data here
+      </div>
+    </div>
+  );
+
+  // Main render
+  if (loading) {
+    return renderLoadingState();
+  }
+
+  if (error) {
+    return renderErrorState();
+  }
+
+  const hasData = dashboardData.stats.totalConnections > 0 || 
+                  dashboardData.apis.content?.length > 0 ||
+                  dashboardData.recentActivities.content?.length > 0;
 
   return (
     <div className="flex flex-col h-screen min-h-screen" style={{ 
@@ -2712,8 +2707,9 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                     backgroundColor: colors.hover,
                     color: colors.text
                   }}
+                  disabled={refreshLoading}
                 >
-                  <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+                  <RefreshCw size={18} className={refreshLoading ? 'animate-spin' : ''} />
                 </button>
               </div>
             </div>
@@ -2722,7 +2718,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-1.5 sm:gap-2 md:gap-4 mb-3 sm:mb-4 md:mb-6">
               <StatCard
                 title="Connections"
-                value={stats.totalConnections}
+                value={dashboardData.stats.totalConnections}
                 icon={Database}
                 change={+5}
                 color={colors.success}
@@ -2730,7 +2726,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
               />
               <StatCard
                 title="Active APIs"
-                value={stats.activeApis}
+                value={dashboardData.stats.activeApis}
                 icon={FileCode}
                 change={+12}
                 color={colors.info}
@@ -2738,7 +2734,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
               />
               <StatCard
                 title="API Calls"
-                value={stats.totalCalls.toLocaleString()}
+                value={dashboardData.stats.totalCalls.toLocaleString()}
                 icon={Activity}
                 change={+8.5}
                 color={colors.primaryDark}
@@ -2746,7 +2742,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
               />
               <StatCard
                 title="Success Rate"
-                value={stats.successRate}
+                value={dashboardData.stats.successRate}
                 icon={CheckCircle}
                 change={+0.2}
                 color={colors.success}
@@ -2755,87 +2751,103 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             </div>
 
             {/* Main Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-6">
-              {/* Left Column */}
-              <div className="flex flex-col gap-3 sm:gap-4 md:gap-6">
-                {/* Active Connections */}
-                <div className="border rounded-xl" style={{ 
-                  borderColor: colors.border,
-                  backgroundColor: colors.card
-                }}>
-                  <div className="p-2 sm:p-3 md:p-4 border-b" style={{ borderColor: colors.border }}>
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xs sm:text-sm font-semibold truncate" style={{ color: colors.text }}>
-                        Active Connections
-                      </h3>
-                      <div className="flex items-center gap-1 sm:gap-2">
-                        <span className="text-xs hidden sm:inline" style={{ color: colors.textSecondary }}>
-                          {connections.length} connections
-                        </span>
-                        <button 
-                          onClick={handleNavigateToAPICollection}
-                          className="p-0.5 sm:p-1 rounded hover:bg-opacity-50 transition-colors hover-lift shrink-0"
-                          style={{ backgroundColor: colors.hover }}
-                        >
-                          <Plus size={12} style={{ color: colors.textSecondary }} />
-                        </button>
+            {hasData ? (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-6">
+                {/* Left Column */}
+                <div className="flex flex-col gap-3 sm:gap-4 md:gap-6">
+                  {/* Active Connections */}
+                  {dashboardData.connections.content?.length > 0 && (
+                    <div className="border rounded-xl" style={{ 
+                      borderColor: colors.border,
+                      backgroundColor: colors.card
+                    }}>
+                      <div className="p-2 sm:p-3 md:p-4 border-b" style={{ borderColor: colors.border }}>
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xs sm:text-sm font-semibold truncate" style={{ color: colors.text }}>
+                            Active Connections
+                          </h3>
+                          <div className="flex items-center gap-1 sm:gap-2">
+                            <span className="text-xs hidden sm:inline" style={{ color: colors.textSecondary }}>
+                              {dashboardData.connections.content.length} connections
+                            </span>
+                            <button 
+                              onClick={handleNavigateToAPICollection}
+                              className="p-0.5 sm:p-1 rounded hover:bg-opacity-50 transition-colors hover-lift shrink-0"
+                              style={{ backgroundColor: colors.hover }}
+                            >
+                              <Plus size={12} style={{ color: colors.textSecondary }} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="p-2 sm:p-3 md:p-4">
+                        <div className="space-y-2 sm:space-y-3">
+                          {dashboardData.connections.content.slice(0, 3).map(conn => (
+                            <ConnectionCard key={conn.id} connection={conn} />
+                          ))}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="p-2 sm:p-3 md:p-4">
-                    <div className="space-y-2 sm:space-y-3">
-                      {connections.map(conn => (
-                        <ConnectionCard key={conn.id} connection={conn} />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <SchemaStatsCard />
-              </div>
+                  )}
 
-              {/* Right Column */}
-              <div className="flex flex-col gap-3 sm:gap-4 md:gap-6">
-                <div className="border rounded-xl flex flex-col h-full" style={{ 
-                  borderColor: colors.border,
-                  backgroundColor: colors.card
-                }}>
-                  <div className="p-2 sm:p-3 md:p-4 border-b flex-shrink-0" style={{ borderColor: colors.border }}>
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xs sm:text-sm font-semibold" style={{ color: colors.text }}>
-                        Recent Activity
-                      </h3>
-                      <div className="flex items-center gap-1 sm:gap-2">
-                        <select
-                          value={activitiesPerPage}
-                          onChange={(e) => setActivitiesPerPage(Number(e.target.value))}
-                          className="text-xs px-1 sm:px-2 py-0.5 sm:py-1 rounded border bg-transparent hidden sm:block"
-                          style={{ 
-                            borderColor: colors.border,
-                            color: colors.text
-                          }}
-                        >
-                          <option value={5}>5 per page</option>
-                          <option value={10}>10 per page</option>
-                          <option value={15}>15 per page</option>
-                        </select>
-                        <Clock size={12} style={{ color: colors.textSecondary }} />
+                  {/* Schema Statistics */}
+                  {dashboardData.schemaStats && Object.keys(dashboardData.schemaStats).length > 0 && (
+                    <SchemaStatsCard />
+                  )}
+                </div>
+
+                {/* Right Column */}
+                <div className="flex flex-col gap-3 sm:gap-4 md:gap-6">
+                  <div className="border rounded-xl flex flex-col h-full" style={{ 
+                    borderColor: colors.border,
+                    backgroundColor: colors.card
+                  }}>
+                    <div className="p-2 sm:p-3 md:p-4 border-b flex-shrink-0" style={{ borderColor: colors.border }}>
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs sm:text-sm font-semibold" style={{ color: colors.text }}>
+                          Recent Activity
+                        </h3>
+                        <div className="flex items-center gap-1 sm:gap-2">
+                          <select
+                            value={activitiesPerPage}
+                            onChange={(e) => setActivitiesPerPage(Number(e.target.value))}
+                            className="text-xs px-1 sm:px-2 py-0.5 sm:py-1 rounded border bg-transparent hidden sm:block"
+                            style={{ 
+                              borderColor: colors.border,
+                              color: colors.text
+                            }}
+                          >
+                            <option value={5}>5 per page</option>
+                            <option value={10}>10 per page</option>
+                            <option value={15}>15 per page</option>
+                          </select>
+                          <Clock size={12} style={{ color: colors.textSecondary }} />
+                        </div>
                       </div>
                     </div>
+                    <div className="flex-1 overflow-auto min-h-0 space-y-1.5 sm:space-y-3">
+                      {dashboardData.recentActivities.content?.length > 0 ? (
+                        dashboardData.recentActivities.content.map(activity => (
+                          <ActivityItem key={activity.id} activity={activity} />
+                        ))
+                      ) : (
+                        <div className="p-4 text-center">
+                          <div className="text-sm" style={{ color: colors.textSecondary }}>No recent activity</div>
+                        </div>
+                      )}
+                    </div>
+                    <ActivityPagination />
                   </div>
-                  <div className="flex-1 overflow-auto min-h-0 space-y-1.5 sm:space-y-3">
-                    {paginatedActivities.map(activity => (
-                      <ActivityItem key={activity.id} activity={activity} />
-                    ))}
-                  </div>
-                  <ActivityPagination />
                 </div>
               </div>
-            </div>
+            ) : (
+              renderEmptyState()
+            )}
           </div>
         </div>
       </div>
 
-      {/* Mobile Bottom Navigation */}
+      {/* Mobile Bottom Navigation - EXACT MATCH from static version */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 border-t" style={{ 
         borderColor: colors.border,
         backgroundColor: colors.header,

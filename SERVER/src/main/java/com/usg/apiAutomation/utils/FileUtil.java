@@ -29,7 +29,7 @@ public class FileUtil {
         } else if (lowerName.contains("rule-group") || lowerName.contains("rule-groups")) {
             return "Rule group configuration and evaluation logs";
         } else if (lowerName.contains("waf-engine") || lowerName.contains("engine")) {
-            return "WAF engine operations, processing, and system activity logs";
+            return "WAF engine operations, processing, and systemActivities activity logs";
         } else if (lowerName.contains("waf-policy") || lowerName.contains("waf-policies") ||
                 lowerName.contains("policy")) {
             return "WAF policy management and enforcement logs";
@@ -37,7 +37,7 @@ public class FileUtil {
                 lowerName.contains("rule")) {
             return "WAF rule execution and evaluation logs";
         } else if (lowerName.contains("web-application-firewall") || lowerName.contains("waf")) {
-            return "Web Application Firewall (WAF) core system and traffic inspection logs";
+            return "Web Application Firewall (WAF) core systemActivities and traffic inspection logs";
         } else if (lowerName.contains("web-socket") || lowerName.contains("socket")) {
             return "WebSocket configuration, connections, and communication logs";
         } else if (lowerName.contains("access") || lowerName.contains("request")) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   ChevronRight, 
   ChevronDown,
@@ -107,23 +107,57 @@ import {
   File
 } from 'lucide-react';
 
-// Add syntax highlighting components
+// Import CollectionsController
+import {
+  getCollectionsList,
+  getCollectionDetails,
+  getRequestDetails,
+  saveRequest,
+  createCollection,
+  generateCodeSnippet,
+  getEnvironments,
+  importCollection,
+  clearCollectionsCache,
+  executeRequest,
+  handleCollectionsResponse,
+  extractCollectionsList,
+  extractCollectionDetails,
+  extractRequestDetails,
+  extractSaveRequestResults,
+  extractCreateCollectionResults,
+  extractCodeSnippetResults,
+  extractEnvironments,
+  extractImportResults,
+  extractExecuteResults,
+  validateSaveRequest,
+  validateCreateCollection,
+  validateCodeSnippetRequest,
+  validateImportRequest,
+  validateExecuteRequest,
+  formatCollection,
+  formatRequest,
+  cacheCollectionsData,
+  getCachedCollectionsData,
+  clearCachedCollectionsData
+} from "../controllers/CollectionsController.js";
+
+// Syntax highlighter component
 const SyntaxHighlighter = ({ language, code }) => {
   const highlightSyntax = (code, lang) => {
     if (lang === 'json') {
       return code
         .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, (match) => {
-          let cls = 'text-blue-400'; // default for numbers
+          let cls = 'text-blue-400';
           if (/^"/.test(match)) {
             if (/:$/.test(match)) {
-              cls = 'text-purple-400'; // keys
+              cls = 'text-purple-400';
             } else {
-              cls = 'text-green-400'; // strings
+              cls = 'text-green-400';
             }
           } else if (/true|false/.test(match)) {
-            cls = 'text-orange-400'; // booleans
+            cls = 'text-orange-400';
           } else if (/null/.test(match)) {
-            cls = 'text-red-400'; // null
+            cls = 'text-red-400';
           }
           return `<span class="${cls}">${match}</span>`;
         });
@@ -153,9 +187,8 @@ const SyntaxHighlighter = ({ language, code }) => {
   );
 };
 
-const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
-
-  // Matching the exact color scheme from the first component
+const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
+  // Matching the exact color scheme from the second component
   const colors = isDark ? {
     // Using your shade as base - EXACTLY matching Dashboard
     bg: 'rgb(1 14 35)',
@@ -298,186 +331,11 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
     gradient: 'from-blue-400/20 via-violet-400/20 to-orange-400/20'
   };
 
-  // State
-  const [collections, setCollections] = useState([
-    {
-      id: 'col-1',
-      name: 'E-Commerce API',
-      description: 'Complete e-commerce platform endpoints',
-      isExpanded: true,
-      isFavorite: true,
-      isEditing: false,
-      createdAt: '2024-01-15T10:30:00Z',
-      requestsCount: 12,
-      variables: [
-        { id: 'var-1', key: 'baseUrl', value: '{{base_url}}', type: 'string', enabled: true }
-      ],
-      folders: [
-        {
-          id: 'folder-1',
-          name: 'Authentication',
-          description: 'User authentication and authorization',
-          isExpanded: true,
-          isEditing: false,
-          requests: [
-            {
-              id: 'req-1',
-              name: 'Login',
-              method: 'POST',
-              url: '{{baseUrl}}/api/v1/auth/login',
-              description: 'Authenticate user with email and password',
-              isEditing: false,
-              status: 'saved',
-              lastModified: '2024-01-15T09:45:00Z',
-              auth: { type: 'noauth' },
-              params: [
-                { id: 'p-1', key: 'test_param', value: 'test_value', description: 'Test parameter', enabled: true }
-              ],
-              headers: [
-                { id: 'h-1', key: 'Content-Type', value: 'application/json', enabled: true, description: '' }
-              ],
-              body: JSON.stringify({
-                email: 'user@example.com',
-                password: 'password123'
-              }, null, 2),
-              tests: "pm.test('Status code is 200', function() {\n  pm.response.to.have.status(200);\n});",
-              preRequestScript: '',
-              isSaved: true
-            },
-            {
-              id: 'req-2',
-              name: 'Refresh Token',
-              method: 'POST',
-              url: '{{baseUrl}}/api/v1/auth/refresh',
-              description: 'Refresh access token',
-              isEditing: false,
-              status: 'saved',
-              lastModified: '2024-01-14T14:20:00Z',
-              auth: { type: 'bearer', token: '{{access_token}}' },
-              params: [],
-              headers: [
-                { id: 'h-2', key: 'Content-Type', value: 'application/json', enabled: true, description: '' }
-              ],
-              body: JSON.stringify({
-                refresh_token: '{{refresh_token}}'
-              }, null, 2),
-              tests: '',
-              preRequestScript: '',
-              isSaved: true
-            }
-          ]
-        },
-        {
-          id: 'folder-2',
-          name: 'Products',
-          description: 'Product management endpoints',
-          isExpanded: true,
-          isEditing: false,
-          requests: [
-            {
-              id: 'req-3',
-              name: 'Get Products',
-              method: 'GET',
-              url: '{{baseUrl}}/api/v1/products',
-              description: 'Retrieve list of products',
-              isEditing: false,
-              status: 'saved',
-              lastModified: '2024-01-15T08:15:00Z',
-              auth: { type: 'bearer', token: '{{access_token}}' },
-              params: [
-                { id: 'p-1', key: 'page', value: '1', description: 'Page number', enabled: true },
-                { id: 'p-2', key: 'limit', value: '20', description: 'Items per page', enabled: true },
-                { id: 'p-3', key: 'category', value: '', description: 'Filter by category', enabled: false }
-              ],
-              headers: [
-                { id: 'h-3', key: 'Authorization', value: 'Bearer {{access_token}}', enabled: true, description: '' }
-              ],
-              body: '',
-              tests: "pm.test('Status code is 200', function() {\n  pm.response.to.have.status(200);\n});",
-              preRequestScript: '',
-              isSaved: true
-            },
-            {
-              id: 'req-4',
-              name: 'Create Product',
-              method: 'POST',
-              url: '{{baseUrl}}/api/v1/products',
-              description: 'Create a new product',
-              isEditing: false,
-              status: 'saved',
-              lastModified: '2024-01-14T16:45:00Z',
-              auth: { type: 'bearer', token: '{{access_token}}' },
-              params: [],
-              headers: [
-                { id: 'h-4', key: 'Authorization', value: 'Bearer {{access_token}}', enabled: true, description: '' },
-                { id: 'h-5', key: 'Content-Type', value: 'application/json', enabled: true, description: '' }
-              ],
-              body: JSON.stringify({
-                name: 'New Product',
-                price: 99.99,
-                category: 'electronics'
-              }, null, 2),
-              tests: "pm.test('Status code is 201', function() {\n  pm.response.to.have.status(201);\n});",
-              preRequestScript: '',
-              isSaved: true
-            }
-          ]
-        }
-      ]
-    },
-    {
-      id: 'col-2',
-      name: 'Social Media API',
-      description: 'Social media platform endpoints',
-      isExpanded: false,
-      isFavorite: false,
-      isEditing: false,
-      createdAt: '2024-01-10T14:20:00Z',
-      requestsCount: 8,
-      variables: [
-        { id: 'var-2', key: 'apiUrl', value: '{{api_url}}', type: 'string', enabled: true }
-      ],
-      folders: [
-        {
-          id: 'folder-3',
-          name: 'Posts',
-          description: 'Post management endpoints',
-          isExpanded: false,
-          isEditing: false,
-          requests: [
-            {
-              id: 'req-5',
-              name: 'Create Post',
-              method: 'POST',
-              url: '{{apiUrl}}/api/v1/posts',
-              description: 'Create a new post',
-              isEditing: false,
-              status: 'saved',
-              lastModified: '2024-01-12T11:30:00Z',
-              auth: { type: 'bearer', token: '{{access_token}}' },
-              params: [],
-              headers: [
-                { id: 'h-6', key: 'Content-Type', value: 'application/json', enabled: true, description: '' }
-              ],
-              body: JSON.stringify({
-                content: 'Hello world!',
-                media_urls: ['https://example.com/image.jpg']
-              }, null, 2),
-              tests: "pm.test('Status code is 201', function() {\n  pm.response.to.have.status(201);\n});",
-              preRequestScript: '',
-              isSaved: true
-            }
-          ]
-        }
-      ]
-    }
-  ]);
-
+  // State - Match the second component's structure exactly
+  const [collections, setCollections] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [activeTab, setActiveTab] = useState('params');
-  const [requestTabs, setRequestTabs] = useState([
-    { id: 'req-1', name: 'Login', method: 'POST', collectionId: 'col-1', folderId: 'folder-1', isActive: true }
-  ]);
+  const [requestTabs, setRequestTabs] = useState([]);
   
   // Right panel states
   const [showCodePanel, setShowCodePanel] = useState(true);
@@ -503,18 +361,11 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
   ]);
   const [activeEnvironment, setActiveEnvironment] = useState('env-1');
   
-  const [requestMethod, setRequestMethod] = useState('POST');
-  const [requestUrl, setRequestUrl] = useState('{{baseUrl}}/api/v1/auth/login');
-  const [requestParams, setRequestParams] = useState([
-    { id: 'p-1', key: 'test_param', value: 'test_value', description: 'Test parameter', enabled: true }
-  ]);
-  const [requestHeaders, setRequestHeaders] = useState([
-    { id: 'h-1', key: 'Content-Type', value: 'application/json', enabled: true, description: '' }
-  ]);
-  const [requestBody, setRequestBody] = useState(JSON.stringify({
-    email: 'user@example.com',
-    password: 'password123'
-  }, null, 2));
+  const [requestMethod, setRequestMethod] = useState('GET');
+  const [requestUrl, setRequestUrl] = useState('');
+  const [requestParams, setRequestParams] = useState([]);
+  const [requestHeaders, setRequestHeaders] = useState([]);
+  const [requestBody, setRequestBody] = useState('');
   const [requestBodyType, setRequestBodyType] = useState('raw');
   const [rawBodyType, setRawBodyType] = useState('json');
   const [formData, setFormData] = useState([
@@ -530,12 +381,10 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
   const [response, setResponse] = useState(null);
   const [isSending, setIsSending] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications, setNotifications] = useState([
-    { id: 'notif-1', title: 'Collection Updated', message: 'E-Commerce API was updated by you', time: '2 hours ago', read: false },
-    { id: 'notif-2', title: 'Monitor Alert', message: 'API monitor detected slow response time', time: '1 day ago', read: false },
-    { id: 'notif-3', title: 'Team Invite', message: 'John Doe invited you to collaborate', time: '2 days ago', read: true }
-  ]);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [authType, setAuthType] = useState('noauth');
   const [showAuthDropdown, setShowAuthDropdown] = useState(false);
   const [authConfig, setAuthConfig] = useState({ 
@@ -554,24 +403,937 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
   const [responseView, setResponseView] = useState('raw');
   const responseRef = useRef(null);
 
-  // Modals state
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  // UI states
   const [showPassword, setShowPassword] = useState(false);
   const [showToken, setShowToken] = useState(false);
-
-  // Toast state
   const [toast, setToast] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  // Initialize
-  useEffect(() => {
-    if (collections[0]?.folders[0]?.requests[0]) {
-      handleSelectRequest(collections[0].folders[0].requests[0], 'col-1', 'folder-1');
+  // FIXED: Move these states to component level instead of inside renderCreateModal
+  const [newCollectionName, setNewCollectionName] = useState('');
+  const [newCollectionDescription, setNewCollectionDescription] = useState('');
+
+  // ==================== API METHODS ====================
+
+  // Transform API data to match UI structure
+  const transformCollectionsData = (apiData) => {
+  console.log('🔄 [Transform] Input:', apiData);
+  
+  if (!apiData) {
+    console.warn('⚠️ [Transform] No data provided');
+    return [];
+  }
+  
+  // Handle different possible response structures
+  let collectionsArray = [];
+  
+  // Case 1: Direct array of collections
+  if (Array.isArray(apiData)) {
+    console.log('✅ [Transform] Data is already array');
+    collectionsArray = apiData;
+  } 
+  // Case 2: Object with "collections" property
+  else if (apiData.collections && Array.isArray(apiData.collections)) {
+    console.log('✅ [Transform] Found collections in .collections');
+    collectionsArray = apiData.collections;
+  }
+  // Case 3: Object with "data" property that contains array
+  else if (apiData.data && Array.isArray(apiData.data)) {
+    console.log('✅ [Transform] Found collections in .data');
+    collectionsArray = apiData.data;
+  }
+  // Case 4: Nested structure (your backend's format)
+  else if (apiData.data && apiData.data.collections && Array.isArray(apiData.data.collections)) {
+    console.log('✅ [Transform] Found collections in .data.collections');
+    collectionsArray = apiData.data.collections;
+  }
+  else {
+    console.warn('⚠️ [Transform] Unknown data structure:', apiData);
+    return [];
+  }
+  
+  console.log(`📊 [Transform] Processing ${collectionsArray.length} collections`);
+  
+  return collectionsArray.map((collection, index) => {
+    // Extract collection details with fallbacks
+    const collectionId = collection.id || collection.collectionId || `col-${index + 1}`;
+    const collectionName = collection.name || collection.collectionName || `Collection ${index + 1}`;
+    
+    console.log(`📝 [Transform] Collection ${index}: ${collectionName}`, collection);
+    
+    // Transform folders if they exist
+    let folders = [];
+    
+    // Check for folders in different possible locations
+    if (collection.folders && Array.isArray(collection.folders)) {
+      folders = collection.folders.map((folder, folderIndex) => {
+        const folderId = folder.id || folder.folderId || `folder-${folderIndex + 1}`;
+        const folderName = folder.name || folder.folderName || `Folder ${folderIndex + 1}`;
+        
+        // Transform requests if they exist
+        let requests = [];
+        
+        if (folder.requests && Array.isArray(folder.requests)) {
+          requests = folder.requests.map((request, reqIndex) => {
+            const requestId = request.id || request.requestId || `req-${reqIndex + 1}`;
+            const requestName = request.name || request.requestName || `Request ${reqIndex + 1}`;
+            
+            return {
+              id: requestId,
+              name: requestName,
+              method: request.method || 'GET',
+              url: request.url || request.endpoint || '',
+              description: request.description || '',
+              isEditing: false,
+              status: request.status || 'saved',
+              lastModified: request.lastModified || request.updatedAt || new Date().toISOString(),
+              auth: request.auth || request.authConfig || { type: 'noauth' },
+              params: request.params || request.parameters || [],
+              headers: request.headers || [],
+              body: request.body || request.requestBody || '',
+              tests: request.tests || request.testScripts || '',
+              preRequestScript: request.preRequestScript || '',
+              isSaved: request.isSaved !== false
+            };
+          });
+        } else {
+          console.log(`ℹ️ [Transform] No requests in folder ${folderName}`);
+        }
+        
+        return {
+          id: folderId,
+          name: folderName,
+          description: folder.description || '',
+          isExpanded: false,
+          isEditing: false,
+          requests: requests
+        };
+      });
+    } else {
+      console.log(`ℹ️ [Transform] No folders in collection ${collectionName}`);
     }
-  }, []);
+    
+    // Return the transformed collection
+    return {
+      id: collectionId,
+      name: collectionName,
+      description: collection.description || '',
+      isExpanded: index === 0, // Expand first collection by default
+      isFavorite: collection.favorite || collection.isFavorite || false,
+      isEditing: false,
+      createdAt: collection.createdAt || collection.createdDate || new Date().toISOString(),
+      requestsCount: collection.requestsCount || collection.totalRequests || 0,
+      variables: collection.variables || [],
+      folders: folders
+    };
+  });
+};
+
+
+  // Update this part of your code
+const transformFoldersData = (foldersData) => {
+  if (!foldersData || !Array.isArray(foldersData)) {
+    console.log('ℹ️ [Transform] No folders data provided');
+    return [];
+  }
+  
+  return foldersData.map((folder, index) => {
+    const folderId = folder.id || folder.folderId || `folder-${index + 1}`;
+    const folderName = folder.name || folder.folderName || `Folder ${index + 1}`;
+    
+    // Transform requests if they exist
+    let requests = [];
+    
+    if (folder.requests && Array.isArray(folder.requests)) {
+      requests = folder.requests.map((request, reqIndex) => {
+        const requestId = request.id || request.requestId || `req-${reqIndex + 1}`;
+        const requestName = request.name || request.requestName || `Request ${reqIndex + 1}`;
+        
+        return {
+          id: requestId,
+          name: requestName,
+          method: request.method || 'GET',
+          url: request.url || request.endpoint || '',
+          description: request.description || '',
+          isEditing: false,
+          status: request.status || 'saved',
+          lastModified: request.lastModified || request.updatedAt || new Date().toISOString(),
+          auth: request.auth || request.authConfig || { type: 'noauth' },
+          params: request.params || request.parameters || [],
+          headers: request.headers || [],
+          body: request.body || request.requestBody || '',
+          tests: request.tests || request.testScripts || '',
+          preRequestScript: request.preRequestScript || '',
+          isSaved: request.isSaved !== false
+        };
+      });
+    }
+    
+    return {
+      id: folderId,
+      name: folderName,
+      description: folder.description || '',
+      isExpanded: false,
+      isEditing: false,
+      requests: requests
+    };
+  });
+};
+
+
+ const fetchCollections = useCallback(async () => {
+  console.log('🔥 [Collections] fetchCollections called');
+  
+  if (!authToken) {
+    console.log('❌ No auth token available');
+    setError('Authentication required. Please login.');
+    setLoading(false);
+    return;
+  }
+
+  setLoading(true);
+  setError(null);
+  console.log('📡 [Collections] Fetching from API...');
+
+  try {
+    // 1. Get collections list (basic info)
+    console.log('📦 [Collections] Getting collections list...');
+    const response = await getCollectionsList(authToken);
+    console.log('📦 [Collections] API response:', response);
+    
+    if (!response) {
+      throw new Error('No response from server');
+    }
+    
+    // 2. Extract collections data
+    let collectionsData = null;
+    
+    if (response.data && response.data.collections && Array.isArray(response.data.collections)) {
+      collectionsData = response.data.collections;
+      console.log('✅ [Collections] Found collections in response.data.collections:', collectionsData.length);
+    }
+    else if (response.data && Array.isArray(response.data)) {
+      collectionsData = response.data;
+      console.log('✅ [Collections] Found collections in response.data:', collectionsData.length);
+    }
+    else if (response.collections && Array.isArray(response.collections)) {
+      collectionsData = response.collections;
+      console.log('✅ [Collections] Found collections in response.collections:', collectionsData.length);
+    }
+    else if (Array.isArray(response)) {
+      collectionsData = response;
+      console.log('✅ [Collections] Response is direct array:', collectionsData.length);
+    }
+    else {
+      throw new Error('Could not find collections data in response');
+    }
+
+    // 3. Transform basic collections data
+    const basicCollections = transformCollectionsData(collectionsData);
+    
+    // 4. For EACH collection, get details with folders/requests
+    console.log('🔄 [Collections] Fetching details for each collection...');
+    const collectionsWithDetails = await Promise.all(
+      basicCollections.map(async (collection) => {
+        try {
+          // Get collection details (with folders/requests)
+          const detailsResponse = await getCollectionDetails(authToken, collection.id);
+          const processedDetails = handleCollectionsResponse(detailsResponse);
+          const collectionDetails = extractCollectionDetails(processedDetails);
+          
+          console.log(`📁 [Collections] Got details for ${collection.name}:`, 
+            collectionDetails?.folders?.length || 0, 'folders');
+          
+          // Transform folders from backend format to UI format
+          let transformedFolders = [];
+          if (collectionDetails?.folders && Array.isArray(collectionDetails.folders)) {
+            transformedFolders = collectionDetails.folders.map((folder, folderIndex) => {
+              const folderId = folder.id || `folder-${folderIndex + 1}`;
+              const folderName = folder.name || `Folder ${folderIndex + 1}`;
+              
+              // Transform requests in this folder
+              let requests = [];
+              if (folder.requests && Array.isArray(folder.requests)) {
+                requests = folder.requests.map((request, reqIndex) => {
+                  const requestId = request.id || `req-${reqIndex + 1}`;
+                  const requestName = request.name || `Request ${reqIndex + 1}`;
+                  
+                  return {
+                    id: requestId,
+                    name: requestName,
+                    method: request.method || 'GET',
+                    url: request.url || '',
+                    description: request.description || '',
+                    isEditing: false,
+                    status: request.status || 'saved',
+                    lastModified: request.lastModified || new Date().toISOString(),
+                    auth: request.auth || { type: 'noauth' },
+                    params: request.params || [],
+                    headers: request.headers || [],
+                    body: request.body || '',
+                    tests: request.tests || '',
+                    preRequestScript: request.preRequestScript || '',
+                    isSaved: request.saved !== false
+                  };
+                });
+              }
+              
+              return {
+                id: folderId,
+                name: folderName,
+                description: folder.description || '',
+                isExpanded: false,
+                isEditing: false,
+                requests: requests
+              };
+            });
+          }
+          
+          // Return collection with folders
+          return {
+            ...collection,
+            folders: transformedFolders,
+            requestsCount: collectionDetails?.totalRequests || collection.requestsCount || 0
+          };
+          
+        } catch (error) {
+          console.error(`❌ [Collections] Error fetching details for collection ${collection.id}:`, error);
+          
+          // Return basic collection if details fetch fails
+          return {
+            ...collection,
+            folders: [] // Empty folders array
+          };
+        }
+      })
+    );
+
+    console.log('📊 [Collections] Final collections with details:', collectionsWithDetails);
+    
+    if (!collectionsWithDetails || collectionsWithDetails.length === 0) {
+      console.warn('⚠️ [Collections] No collections after fetching details');
+      setCollections([]);
+      setError('No collections found');
+    } else {
+      // 5. Update state with the complete data
+      setCollections(collectionsWithDetails);
+      
+      // 6. Auto-select first request if available
+      if (collectionsWithDetails.length > 0 && !selectedRequest) {
+        const firstCollection = collectionsWithDetails[0];
+        // Expand the first collection
+        setCollections(prev => prev.map((col, idx) => 
+          idx === 0 ? { ...col, isExpanded: true } : col
+        ));
+        
+        if (firstCollection.folders && firstCollection.folders.length > 0) {
+          const firstFolder = firstCollection.folders[0];
+          // Expand the first folder
+          setCollections(prev => prev.map(col => 
+            col.id === firstCollection.id ? {
+              ...col,
+              folders: col.folders.map((folder, idx) => 
+                idx === 0 ? { ...folder, isExpanded: true } : folder
+              )
+            } : col
+          ));
+          
+          if (firstFolder.requests && firstFolder.requests.length > 0) {
+            const firstRequest = firstFolder.requests[0];
+            console.log('🎯 [Collections] Auto-selecting first request:', firstRequest.name);
+            handleSelectRequest(firstRequest, firstCollection.id, firstFolder.id);
+          }
+        }
+      }
+      
+      console.log('✅ [Collections] Successfully loaded', collectionsWithDetails.length, 'collections');
+    }
+
+  } catch (error) {
+    console.error('❌ [Collections] Error fetching collections:', error);
+    setError(`Failed to load collections: ${error.message}`);
+    setCollections([]);
+    
+    // Show toast notification
+    showToast(`Error loading collections: ${error.message}`, 'error');
+  } finally {
+    setLoading(false);
+    console.log('🏁 [Collections] fetchCollections completed');
+  }
+}, [authToken]);
+
+  const fetchEnvironments = useCallback(async () => {
+    if (!authToken) {
+      // Use default environments
+      setEnvironments([
+        { id: 'env-1', name: 'No Environment', isActive: true, variables: [] },
+        { id: 'env-2', name: 'Development', isActive: false, variables: [] },
+        { id: 'env-3', name: 'Production', isActive: false, variables: [] }
+      ]);
+      setActiveEnvironment('env-1');
+      return;
+    }
+
+    try {
+      const response = await getEnvironments(authToken);
+      const processedResponse = handleCollectionsResponse(response);
+      const environmentsData = extractEnvironments(processedResponse);
+      
+      if (environmentsData && environmentsData.length > 0) {
+        const transformedEnvs = environmentsData.map(env => ({
+          id: env.id || `env-${Date.now()}`,
+          name: env.name || 'Environment',
+          isActive: env.isActive || false,
+          variables: env.variables || []
+        }));
+        setEnvironments(transformedEnvs);
+        if (!activeEnvironment && transformedEnvs.length > 0) {
+          const activeEnv = transformedEnvs.find(e => e.isActive) || transformedEnvs[0];
+          setActiveEnvironment(activeEnv.id);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching environments:', error);
+      // Fallback to default environments
+      setEnvironments([
+        { id: 'env-1', name: 'No Environment', isActive: true, variables: [] },
+        { id: 'env-2', name: 'Development', isActive: false, variables: [] },
+        { id: 'env-3', name: 'Production', isActive: false, variables: [] }
+      ]);
+      setActiveEnvironment('env-1');
+    }
+  }, [authToken, activeEnvironment]);
+
+  const handleSelectRequest = useCallback(async (request, collectionId, folderId) => {
+  // First, update local state with the basic request
+  const requestWithContext = { ...request, collectionId, folderId };
+  setSelectedRequest(requestWithContext);
+  
+  // Set form fields from request
+  setRequestMethod(request.method || 'GET');
+  setRequestUrl(request.url || '');
+  setRequestBody(request.body || '');
+  setRequestParams(request.params || []);
+  setRequestHeaders(request.headers || []);
+  setAuthType(request.auth?.type || 'noauth');
+  setAuthConfig(request.auth || {});
+  setResponse(null);
+  
+  // Update tabs
+  setRequestTabs(tabs => {
+    const existingTab = tabs.find(t => t.id === request.id);
+    if (existingTab) {
+      return tabs.map(t => ({ ...t, isActive: t.id === request.id }));
+    } else {
+      return tabs.map(t => ({ ...t, isActive: false }))
+        .concat({ 
+          id: request.id, 
+          name: request.name, 
+          method: request.method, 
+          collectionId, 
+          folderId, 
+          isActive: true 
+        });
+    }
+  });
+  
+  // Try to get more details from API if needed
+  if (authToken && request.id && collectionId) {
+    try {
+      const response = await getRequestDetails(authToken, collectionId, request.id);
+      const processedResponse = handleCollectionsResponse(response);
+      const details = extractRequestDetails(processedResponse);
+      
+      // Update the request with details from API
+      if (details) {
+        const requestWithDetails = { ...request, ...details };
+        setSelectedRequest(requestWithDetails);
+        
+        // Update form fields with API details
+        if (details.method) setRequestMethod(details.method);
+        if (details.url) setRequestUrl(details.url);
+        if (details.body) setRequestBody(details.body);
+        if (details.parameters) setRequestParams(details.parameters);
+        if (details.headers) setRequestHeaders(details.headers);
+        if (details.authType) setAuthType(details.authType);
+        if (details.authConfig) setAuthConfig(details.authConfig);
+      }
+    } catch (apiError) {
+      console.error('Error fetching request details from API:', apiError);
+      // Continue with local data
+    }
+  }
+}, [authToken]);
+
+  const handleSaveRequest = useCallback(async () => {
+    if (!selectedRequest) {
+      showToast('No request selected', 'error');
+      return;
+    }
+
+    const validationErrors = validateSaveRequest({
+      collectionId: selectedRequest.collectionId,
+      name: selectedRequest.name || 'New Request',
+      method: requestMethod,
+      url: requestUrl
+    });
+
+    if (validationErrors.length > 0) {
+      showToast(validationErrors[0], 'error');
+      return;
+    }
+
+    setIsSending(true);
+
+    try {
+      const saveRequestData = {
+        collectionId: selectedRequest.collectionId,
+        requestId: selectedRequest.id,
+        name: selectedRequest.name,
+        method: requestMethod,
+        url: requestUrl,
+        headers: requestHeaders,
+        body: requestBody,
+        params: requestParams,
+        auth: { type: authType, ...authConfig },
+        bodyType: rawBodyType
+      };
+
+      if (authToken) {
+        const response = await saveRequest(authToken, saveRequestData);
+        const processedResponse = handleCollectionsResponse(response);
+        const saveResults = extractSaveRequestResults(processedResponse);
+        
+        if (saveResults && saveResults.success) {
+          showToast('Request saved successfully', 'success');
+        } else {
+          showToast('Failed to save request', 'error');
+        }
+      }
+
+      // Update local state regardless of API success
+      setCollections(prev => prev.map(col => 
+        col.id === selectedRequest.collectionId ? {
+          ...col,
+          folders: col.folders.map(folder =>
+            folder.id === selectedRequest.folderId ? {
+              ...folder,
+              requests: folder.requests.map(req =>
+                req.id === selectedRequest.id ? { 
+                  ...req, 
+                  ...saveRequestData, 
+                  lastModified: new Date().toISOString(),
+                  isSaved: true 
+                } : req
+              )
+            } : folder
+          )
+        } : col
+      ));
+
+      // Update selected request
+      setSelectedRequest(prev => ({ 
+        ...prev, 
+        ...saveRequestData, 
+        lastModified: new Date().toISOString(),
+        isSaved: true 
+      }));
+
+      clearCachedCollectionsData(); // Clear cache since data changed
+
+    } catch (error) {
+      console.error('Error saving request:', error);
+      showToast(`Failed to save request: ${error.message}`, 'error');
+    } finally {
+      setIsSending(false);
+    }
+  }, [authToken, selectedRequest, requestMethod, requestUrl, requestHeaders, requestBody, requestParams, authType, authConfig, rawBodyType]);
+
+  const handleCreateCollection = useCallback(async (name, description = '') => {
+    const validationErrors = validateCreateCollection({ name });
+    if (validationErrors.length > 0) {
+      showToast(validationErrors[0], 'error');
+      return null;
+    }
+
+    try {
+      let createResults = null;
+      
+      if (authToken) {
+        const collectionData = {
+          name,
+          description,
+          visibility: 'PRIVATE'
+        };
+
+        const response = await createCollection(authToken, collectionData);
+        const processedResponse = handleCollectionsResponse(response);
+        createResults = extractCreateCollectionResults(processedResponse);
+      }
+
+      // Add to local state with transformed structure
+      const newCollection = {
+        id: createResults?.collectionId || `col-${Date.now()}`,
+        name: createResults?.name || name,
+        description: createResults?.description || description,
+        isExpanded: true,
+        isFavorite: false,
+        isEditing: false,
+        createdAt: new Date().toISOString(),
+        requestsCount: 0,
+        variables: [],
+        folders: []
+      };
+      
+      setCollections(prev => [...prev, newCollection]);
+      showToast('Collection created successfully', 'success');
+      clearCachedCollectionsData(); // Clear cache
+
+      return newCollection;
+
+    } catch (error) {
+      console.error('Error creating collection:', error);
+      showToast(`Failed to create collection: ${error.message}`, 'error');
+      throw error;
+    }
+  }, [authToken]);
+
+  const handleGenerateCodeSnippet = useCallback(async () => {
+    const validationErrors = validateCodeSnippetRequest({
+      language: selectedLanguage,
+      method: requestMethod,
+      url: requestUrl
+    });
+
+    if (validationErrors.length > 0) {
+      showToast(validationErrors[0], 'error');
+      return null;
+    }
+
+    try {
+      let snippetResults = null;
+      
+      if (authToken) {
+        const snippetRequest = {
+          language: selectedLanguage,
+          method: requestMethod,
+          url: requestUrl,
+          headers: requestHeaders,
+          body: requestBody,
+          queryParams: requestParams
+        };
+
+        const response = await generateCodeSnippet(authToken, snippetRequest);
+        const processedResponse = handleCollectionsResponse(response);
+        snippetResults = extractCodeSnippetResults(processedResponse);
+      }
+
+      // Fallback to local generation
+      if (!snippetResults || !snippetResults.code) {
+        snippetResults = {
+          code: generateCodeSnippetLocal(),
+          language: selectedLanguage,
+          success: true
+        };
+      }
+
+      return snippetResults;
+
+    } catch (error) {
+      console.error('Error generating code snippet:', error);
+      // Fallback to local generation
+      return {
+        code: generateCodeSnippetLocal(),
+        language: selectedLanguage,
+        success: false
+      };
+    }
+  }, [authToken, selectedLanguage, requestMethod, requestUrl, requestHeaders, requestBody, requestParams]);
+
+  const handleImportCollection = useCallback(async (importData, importType = 'POSTMAN') => {
+    const validationErrors = validateImportRequest({
+      source: 'file',
+      format: importType,
+      data: importData
+    });
+
+    if (validationErrors.length > 0) {
+      showToast(validationErrors[0], 'error');
+      return null;
+    }
+
+    try {
+      let importResults = null;
+      
+      if (authToken) {
+        const importRequest = {
+          source: 'file',
+          format: importType,
+          data: importData
+        };
+
+        const response = await importCollection(authToken, importRequest);
+        const processedResponse = handleCollectionsResponse(response);
+        importResults = extractImportResults(processedResponse);
+      }
+
+      // Refresh collections
+      fetchCollections();
+      showToast('Collection imported successfully', 'success');
+      clearCachedCollectionsData(); // Clear cache
+
+      return importResults;
+
+    } catch (error) {
+      console.error('Error importing collection:', error);
+      showToast(`Failed to import: ${error.message}`, 'error');
+      throw error;
+    }
+  }, [authToken, fetchCollections]);
+
+  const handleExecuteRequest = useCallback(async () => {
+    const validationErrors = validateExecuteRequest({
+      method: requestMethod,
+      url: requestUrl
+    });
+
+    if (validationErrors.length > 0) {
+      showToast(validationErrors[0], 'error');
+      return;
+    }
+
+    setIsSending(true);
+    setResponse(null);
+
+    try {
+      let executeResults = null;
+      
+      if (authToken && selectedRequest) {
+        const executeRequestData = {
+          method: requestMethod,
+          url: requestUrl,
+          headers: requestHeaders,
+          body: requestBody,
+          queryParams: requestParams,
+          authType: authType,
+          authConfig: authConfig
+        };
+
+        const response = await executeRequest(authToken, executeRequestData);
+        const processedResponse = handleCollectionsResponse(response);
+        executeResults = extractExecuteResults(processedResponse);
+      }
+
+      // Fallback to simulated response
+      if (!executeResults) {
+        // Simulate API response
+        setTimeout(() => {
+          setResponse({
+            status: 200,
+            statusText: 'OK',
+            time: `${Math.floor(Math.random() * 200) + 100}ms`,
+            size: `${(Math.random() * 3 + 1).toFixed(1)}KB`,
+            headers: [
+              { key: 'Content-Type', value: 'application/json' },
+              { key: 'X-RateLimit-Limit', value: '1000' },
+              { key: 'X-RateLimit-Remaining', value: '999' },
+              { key: 'X-Powered-By', value: 'Express' },
+              { key: 'Date', value: new Date().toUTCString() }
+            ],
+            body: JSON.stringify({
+              success: true,
+              data: {
+                token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+                user: { 
+                  id: 1, 
+                  email: 'user@example.com',
+                  name: 'John Doe',
+                  role: 'admin'
+                }
+              },
+              message: 'Request successful',
+              timestamp: new Date().toISOString()
+            }, null, 2)
+          });
+          setIsSending(false);
+          showToast('Request completed successfully', 'success');
+        }, 1000);
+        return;
+      }
+      
+      setResponse(executeResults);
+      showToast('Request executed successfully', 'success');
+
+    } catch (error) {
+      console.error('Error executing request:', error);
+      showToast(`Request failed: ${error.message}`, 'error');
+      setResponse({
+        status: 500,
+        statusText: 'Error',
+        errorMessage: error.message,
+        success: false,
+        time: '0ms',
+        size: '0KB',
+        headers: [],
+        body: JSON.stringify({ error: error.message }, null, 2)
+      });
+    } finally {
+      setIsSending(false);
+    }
+  }, [authToken, selectedRequest, requestMethod, requestUrl, requestHeaders, requestBody, requestParams, authType, authConfig]);
+
+  const handleClearCache = useCallback(async () => {
+    try {
+      if (authToken) {
+        await clearCollectionsCache(authToken);
+      }
+      clearCachedCollectionsData(); // Clear local cache
+      showToast('Cache cleared successfully', 'success');
+      
+      // Refresh data
+      fetchCollections();
+      fetchEnvironments();
+
+    } catch (error) {
+      console.error('Error clearing cache:', error);
+      showToast(`Cache clear failed: ${error.message}`, 'error');
+    }
+  }, [authToken, fetchCollections, fetchEnvironments]);
+
+  // ==================== UI HELPER FUNCTIONS ====================
+
+  // Add this function to help debug API responses
+const debugAPIResponse = async () => {
+  if (!authToken) {
+    console.log('❌ No auth token for debugging');
+    return;
+  }
+  
+  console.log('🔬 [DEBUG] Testing API call...');
+  
+  try {
+    // Direct fetch to see raw response
+    const testResponse = await fetch('http://localhost:8080/plx/api/collections', {
+      method: 'GET',
+      headers: {
+        'Authorization': authToken,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const textResponse = await testResponse.text();
+    console.log('📄 [DEBUG] Raw text response:', textResponse);
+    
+    try {
+      const jsonResponse = JSON.parse(textResponse);
+      console.log('📊 [DEBUG] Parsed JSON response:', jsonResponse);
+      
+      // Analyze structure
+      console.log('🔍 [DEBUG] Response structure analysis:');
+      console.log('- Status:', testResponse.status);
+      console.log('- OK?', testResponse.ok);
+      console.log('- Has data?', !!jsonResponse.data);
+      console.log('- Data type:', typeof jsonResponse.data);
+      console.log('- Data keys:', jsonResponse.data ? Object.keys(jsonResponse.data) : 'N/A');
+      console.log('- Is data array?', Array.isArray(jsonResponse.data));
+      
+      if (jsonResponse.data && typeof jsonResponse.data === 'object') {
+        console.log('- Data.collections?', !!jsonResponse.data.collections);
+        console.log('- Is collections array?', Array.isArray(jsonResponse.data.collections));
+        if (jsonResponse.data.collections) {
+          console.log('- Collections count:', jsonResponse.data.collections.length);
+          console.log('- First collection:', jsonResponse.data.collections[0]);
+        }
+      }
+      
+    } catch (parseError) {
+      console.error('❌ [DEBUG] Failed to parse JSON:', parseError);
+    }
+    
+  } catch (error) {
+    console.error('❌ [DEBUG] Fetch failed:', error);
+  }
+};
+
+// Call this in useEffect or add a debug button
+useEffect(() => {
+  // Uncomment to debug on mount
+  // debugAPIResponse();
+}, [authToken]);
+
+  // Local fallback for code generation
+  const generateCodeSnippetLocal = () => {
+    const languages = {
+      curl: `curl -X ${requestMethod} "${requestUrl}" \\\n` +
+            requestHeaders.filter(h => h.enabled).map(h => `  -H "${h.key}: ${h.value}"`).join(' \\\n') +
+            (requestBody && requestMethod !== 'GET' ? ` \\\n  -d '${requestBody}'` : ''),
+      
+      javascript: `fetch("${requestUrl}", {\n` +
+                 `  method: "${requestMethod}",\n` +
+                 `  headers: {\n` +
+                 requestHeaders.filter(h => h.enabled).map(h => `    "${h.key}": "${h.value}"`).join(',\n') + '\n' +
+                 `  },\n` +
+                 (requestBody && requestMethod !== 'GET' ? `  body: ${requestBody}\n` : '') +
+                 `})\n.then(response => response.json())\n.then(data => console.log(data))\n.catch(error => console.error('Error:', error));`,
+      
+      python: `import requests\n\n` +
+              `headers = {\n` +
+              requestHeaders.filter(h => h.enabled).map(h => `    "${h.key}": "${h.value}"`).join(',\n') + '\n' +
+              `}\n\n` +
+              (requestBody && requestMethod !== 'GET' ? `data = ${requestBody}\n\n` : '') +
+              `response = requests.${requestMethod.toLowerCase()}("${requestUrl}", ` +
+              (requestBody && requestMethod !== 'GET' ? `json=data, ` : '') +
+              `headers=headers)\n` +
+              `print(response.json())`,
+      
+      nodejs: `const https = require('https');\n\n` +
+              `const options = {\n` +
+              `  hostname: 'api.example.com',\n` +
+              `  port: 443,\n` +
+              `  path: '/api/v1/auth/login',\n` +
+              `  method: '${requestMethod}',\n` +
+              `  headers: {\n` +
+              requestHeaders.filter(h => h.enabled).map(h => `    "${h.key}": "${h.value}"`).join(',\n') + '\n' +
+              `  }\n` +
+              `};\n\n` +
+              `const req = https.request(options, (res) => {\n` +
+              `  let data = '';\n` +
+              `  res.on('data', (chunk) => {\n` +
+              `    data += chunk;\n` +
+              `  });\n` +
+              `  res.on('end', () => {\n` +
+              `    console.log(JSON.parse(data));\n` +
+              `  });\n` +
+              `});\n\n` +
+              `req.on('error', (error) => {\n` +
+              `  console.error(error);\n` +
+              `});\n\n` +
+              (requestBody && requestMethod !== 'GET' ? `req.write(${requestBody});\n` : '') +
+              `req.end();`
+    };
+    
+    return languages[selectedLanguage] || languages.curl;
+  };
+
+  // Initialize data
+  useEffect(() => {
+  console.log('🚀 [Collections] Component mounted, fetching data...');
+  
+  if (authToken) {
+    // Clear cache to force fresh API call
+    clearCachedCollectionsData();
+    
+    // Fetch fresh data
+    fetchCollections().catch(error => {
+      console.error('Error in fetchCollections:', error);
+    });
+  } else {
+    console.log('🔒 [Collections] No auth token, skipping fetch');
+  }
+  
+  fetchEnvironments();
+}, [authToken, fetchCollections, fetchEnvironments]);
 
   // Handle mouse move for resizing
   useEffect(() => {
@@ -614,112 +1376,6 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
     return colors.method[method] || colors.textSecondary;
   };
 
-  // Select request
-  const handleSelectRequest = (request, collectionId, folderId) => {
-    const requestWithContext = { ...request, collectionId, folderId };
-    setSelectedRequest(requestWithContext);
-    setRequestMethod(request.method);
-    setRequestUrl(request.url);
-    setRequestBody(request.body || '');
-    setRequestParams(request.params || []);
-    setRequestHeaders(request.headers || []);
-    setAuthType(request.auth?.type || 'noauth');
-    setAuthConfig(request.auth || {});
-    setResponse(null);
-    
-    // Update tabs
-    setRequestTabs(tabs => {
-      const existingTab = tabs.find(t => t.id === request.id);
-      if (existingTab) {
-        return tabs.map(t => ({ ...t, isActive: t.id === request.id }));
-      } else {
-        return tabs.map(t => ({ ...t, isActive: false }))
-          .concat({ id: request.id, name: request.name, method: request.method, collectionId, folderId, isActive: true });
-      }
-    });
-  };
-
-  // Save request changes
-  const saveRequestChanges = () => {
-    if (!selectedRequest) return;
-    
-    const { collectionId, folderId, id: requestId } = selectedRequest;
-    
-    setCollections(collections.map(col => 
-      col.id === collectionId ? {
-        ...col,
-        folders: col.folders.map(folder =>
-          folder.id === folderId ? {
-            ...folder,
-            requests: folder.requests.map(req =>
-              req.id === requestId ? {
-                ...req,
-                method: requestMethod,
-                url: requestUrl,
-                params: requestParams,
-                headers: requestHeaders,
-                body: requestBody,
-                auth: { type: authType, ...authConfig },
-                lastModified: new Date().toISOString(),
-                isSaved: true
-              } : req
-            )
-          } : folder
-        )
-      } : col
-    ));
-    
-    showToast('Request saved successfully', 'success');
-  };
-
-  // Update collection name
-  const updateCollectionName = (collectionId, newName) => {
-    if (!newName.trim()) return;
-    setCollections(collections.map(col => 
-      col.id === collectionId ? { ...col, name: newName, isEditing: false } : col
-    ));
-    showToast('Collection name updated', 'success');
-  };
-
-  // Update folder name
-  const updateFolderName = (collectionId, folderId, newName) => {
-    if (!newName.trim()) return;
-    setCollections(collections.map(col => 
-      col.id === collectionId ? {
-        ...col,
-        folders: col.folders.map(folder =>
-          folder.id === folderId ? { ...folder, name: newName, isEditing: false } : folder
-        )
-      } : col
-    ));
-    showToast('Folder name updated', 'success');
-  };
-
-  // Update request name
-  const updateRequestName = (collectionId, folderId, requestId, newName) => {
-    if (!newName.trim()) return;
-    setCollections(collections.map(col => 
-      col.id === collectionId ? {
-        ...col,
-        folders: col.folders.map(folder =>
-          folder.id === folderId ? {
-            ...folder,
-            requests: folder.requests.map(req =>
-              req.id === requestId ? { ...req, name: newName, isEditing: false } : req
-            )
-          } : folder
-        )
-      } : col
-    ));
-    
-    // Update active tab name
-    setRequestTabs(tabs => tabs.map(tab =>
-      tab.id === requestId ? { ...tab, name: newName } : tab
-    ));
-    
-    showToast('Request name updated', 'success');
-  };
-
   // Toggle collection expansion
   const toggleCollection = (collectionId) => {
     setCollections(collections.map(col => 
@@ -745,7 +1401,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
       col.id === collectionId ? { ...col, isFavorite: !col.isFavorite } : col
     ));
     const collection = collections.find(c => c.id === collectionId);
-    showToast(collection.isFavorite ? 'Removed from favorites' : 'Added to favorites', 'success');
+    showToast(collection?.isFavorite ? 'Removed from favorites' : 'Added to favorites', 'success');
   };
 
   // Filter collections based on search
@@ -756,10 +1412,10 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
     return (
       collection.name.toLowerCase().includes(query) ||
       collection.description?.toLowerCase().includes(query) ||
-      collection.folders.some(folder => 
+      collection.folders?.some(folder => 
         folder.name.toLowerCase().includes(query) ||
         folder.description?.toLowerCase().includes(query) ||
-        folder.requests.some(request => 
+        folder.requests?.some(request => 
           request.name.toLowerCase().includes(query) ||
           request.description?.toLowerCase().includes(query) ||
           request.url.toLowerCase().includes(query)
@@ -769,23 +1425,15 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
   });
 
   // Add new collection
-  const addNewCollection = (name, description = '') => {
-    const newCollection = {
-      id: `col-${Date.now()}`,
-      name: name || 'New Collection',
-      description,
-      isExpanded: true,
-      isFavorite: false,
-      isEditing: false,
-      createdAt: new Date().toISOString(),
-      requestsCount: 0,
-      variables: [],
-      folders: []
-    };
-    
-    setCollections([...collections, newCollection]);
-    setShowCreateModal(false);
-    showToast('Collection created successfully', 'success');
+  const addNewCollection = async (name, description = '') => {
+    try {
+      await handleCreateCollection(name, description);
+      setShowCreateModal(false);
+      setNewCollectionName('');
+      setNewCollectionDescription('');
+    } catch (error) {
+      console.error('Error adding collection:', error);
+    }
   };
 
   // Add new folder
@@ -800,7 +1448,10 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
     };
     
     setCollections(collections.map(col => 
-      col.id === collectionId ? { ...col, folders: [...col.folders, newFolder] } : col
+      col.id === collectionId ? { 
+        ...col, 
+        folders: [...(col.folders || []), newFolder] 
+      } : col
     ));
     
     showToast('Folder added', 'success');
@@ -829,14 +1480,65 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
     setCollections(collections.map(col => 
       col.id === collectionId ? {
         ...col,
-        folders: col.folders.map(folder =>
-          folder.id === folderId ? { ...folder, requests: [...folder.requests, newRequest] } : folder
+        folders: (col.folders || []).map(folder =>
+          folder.id === folderId ? { 
+            ...folder, 
+            requests: [...(folder.requests || []), newRequest] 
+          } : folder
         )
       } : col
     ));
     
     handleSelectRequest(newRequest, collectionId, folderId);
     showToast('Request added', 'success');
+  };
+
+  // Update collection name
+  const updateCollectionName = (collectionId, newName) => {
+    if (!newName.trim()) return;
+    setCollections(collections.map(col => 
+      col.id === collectionId ? { ...col, name: newName, isEditing: false } : col
+    ));
+    showToast('Collection name updated', 'success');
+  };
+
+  // Update folder name
+  const updateFolderName = (collectionId, folderId, newName) => {
+    if (!newName.trim()) return;
+    setCollections(collections.map(col => 
+      col.id === collectionId ? {
+        ...col,
+        folders: (col.folders || []).map(folder =>
+          folder.id === folderId ? { ...folder, name: newName, isEditing: false } : folder
+        )
+      } : col
+    ));
+    showToast('Folder name updated', 'success');
+  };
+
+  // Update request name
+  const updateRequestName = (collectionId, folderId, requestId, newName) => {
+    if (!newName.trim()) return;
+    setCollections(collections.map(col => 
+      col.id === collectionId ? {
+        ...col,
+        folders: (col.folders || []).map(folder =>
+          folder.id === folderId ? {
+            ...folder,
+            requests: (folder.requests || []).map(req =>
+              req.id === requestId ? { ...req, name: newName, isEditing: false } : req
+            )
+          } : folder
+        )
+      } : col
+    ));
+    
+    // Update active tab name
+    setRequestTabs(tabs => tabs.map(tab =>
+      tab.id === requestId ? { ...tab, name: newName } : tab
+    ));
+    
+    showToast('Request name updated', 'success');
   };
 
   // Add param
@@ -891,162 +1593,9 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
     setRequestHeaders(headers => headers.filter(header => header.id !== id));
   };
 
-  // Send request
-  const sendRequest = () => {
-    setIsSending(true);
-    setResponse(null);
-    
-    // Validate URL
-    if (!requestUrl.trim()) {
-      showToast('Please enter a URL', 'error');
-      setIsSending(false);
-      return;
-    }
-    
-    // Simulate API call
-    setTimeout(() => {
-      setResponse({
-        status: 200,
-        statusText: 'OK',
-        time: `${Math.floor(Math.random() * 200) + 100}ms`,
-        size: `${(Math.random() * 3 + 1).toFixed(1)}KB`,
-        headers: [
-          { key: 'Content-Type', value: 'application/json' },
-          { key: 'X-RateLimit-Limit', value: '1000' },
-          { key: 'X-RateLimit-Remaining', value: '999' },
-          { key: 'X-Powered-By', value: 'Express' },
-          { key: 'Date', value: new Date().toUTCString() }
-        ],
-        body: JSON.stringify({
-          success: true,
-          data: {
-            token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-            user: { 
-              id: 1, 
-              email: 'user@example.com',
-              name: 'John Doe',
-              role: 'admin'
-            }
-          },
-          message: 'Request successful',
-          timestamp: new Date().toISOString()
-        }, null, 2)
-      });
-      setIsSending(false);
-      showToast('Request completed successfully', 'success');
-    }, 1000);
-  };
+  // ==================== UI COMPONENTS ====================
 
-  // Generate code snippet
-  const generateCodeSnippet = () => {
-    const languages = {
-      curl: `curl -X ${requestMethod} "${requestUrl}" \\\n` +
-            requestHeaders.map(h => `  -H "${h.key}: ${h.value}"`).join(' \\\n') +
-            (requestBody && requestMethod !== 'GET' ? ` \\\n  -d '${requestBody}'` : ''),
-      
-      javascript: `fetch("${requestUrl}", {\n` +
-                 `  method: "${requestMethod}",\n` +
-                 `  headers: {\n` +
-                 requestHeaders.map(h => `    "${h.key}": "${h.value}"`).join(',\n') + '\n' +
-                 `  },\n` +
-                 (requestBody && requestMethod !== 'GET' ? `  body: ${requestBody}\n` : '') +
-                 `})\n.then(response => response.json())\n.then(data => console.log(data))\n.catch(error => console.error('Error:', error));`,
-      
-      python: `import requests\n\n` +
-              `headers = {\n` +
-              requestHeaders.map(h => `    "${h.key}": "${h.value}"`).join(',\n') + '\n' +
-              `}\n\n` +
-              (requestBody && requestMethod !== 'GET' ? `data = ${requestBody}\n\n` : '') +
-              `response = requests.${requestMethod.toLowerCase()}("${requestUrl}", ` +
-              (requestBody && requestMethod !== 'GET' ? `json=data, ` : '') +
-              `headers=headers)\n` +
-              `print(response.json())`,
-      
-      nodejs: `const https = require('https');\n\n` +
-              `const options = {\n` +
-              `  hostname: 'api.example.com',\n` +
-              `  port: 443,\n` +
-              `  path: '/api/v1/auth/login',\n` +
-              `  method: '${requestMethod}',\n` +
-              `  headers: {\n` +
-              requestHeaders.map(h => `    "${h.key}": "${h.value}"`).join(',\n') + '\n' +
-              `  }\n` +
-              `};\n\n` +
-              `const req = https.request(options, (res) => {\n` +
-              `  let data = '';\n` +
-              `  res.on('data', (chunk) => {\n` +
-              `    data += chunk;\n` +
-              `  });\n` +
-              `  res.on('end', () => {\n` +
-              `    console.log(JSON.parse(data));\n` +
-              `  });\n` +
-              `});\n\n` +
-              `req.on('error', (error) => {\n` +
-              `  console.error(error);\n` +
-              `});\n\n` +
-              (requestBody && requestMethod !== 'GET' ? `req.write(${requestBody});\n` : '') +
-              `req.end();`,
-      
-      php: `<?php\n\n` +
-           `$ch = curl_init();\n\n` +
-           `curl_setopt($ch, CURLOPT_URL, "${requestUrl}");\n` +
-           `curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n` +
-           `curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "${requestMethod}");\n\n` +
-           `$headers = [\n` +
-           requestHeaders.map(h => `  "${h.key}: ${h.value}"`).join(',\n') + '\n' +
-           `];\n` +
-           `curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);\n\n` +
-           (requestBody && requestMethod !== 'GET' ? `curl_setopt($ch, CURLOPT_POSTFIELDS, ${requestBody});\n\n` : '') +
-           `$response = curl_exec($ch);\n` +
-           `curl_close($ch);\n\n` +
-           `echo $response;\n` +
-           `?>`,
-      
-      ruby: `require 'net/http'\n` +
-            `require 'uri'\n` +
-            `require 'json'\n\n` +
-            `uri = URI.parse("${requestUrl}")\n\n` +
-            `http = Net::HTTP.new(uri.host, uri.port)\n` +
-            `http.use_ssl = true if uri.scheme == 'https'\n\n` +
-            `request = Net::HTTP::${requestMethod.charAt(0) + requestMethod.slice(1).toLowerCase()}.new(uri.request_uri)\n\n` +
-            requestHeaders.map(h => `request["${h.key}"] = "${h.value}"`).join('\n') + '\n\n' +
-            (requestBody && requestMethod !== 'GET' ? `request.body = ${requestBody}.to_json\n\n` : '') +
-            `response = http.request(request)\n` +
-            `puts response.body`,
-      
-      java: `import java.net.HttpURLConnection;\n` +
-            `import java.net.URL;\n` +
-            `import java.io.BufferedReader;\n` +
-            `import java.io.InputStreamReader;\n` +
-            `import java.io.OutputStream;\n\n` +
-            `public class Main {\n` +
-            `  public static void main(String[] args) throws Exception {\n` +
-            `    URL url = new URL("${requestUrl}");\n` +
-            `    HttpURLConnection conn = (HttpURLConnection) url.openConnection();\n` +
-            `    conn.setRequestMethod("${requestMethod}");\n\n` +
-            requestHeaders.map(h => `    conn.setRequestProperty("${h.key}", "${h.value}");`).join('\n') + '\n\n' +
-            (requestBody && requestMethod !== 'GET' ? `    conn.setDoOutput(true);\n` +
-            `    try(OutputStream os = conn.getOutputStream()) {\n` +
-            `      byte[] input = ${requestBody}.getBytes("utf-8");\n` +
-            `      os.write(input, 0, input.length);\n` +
-            `    }\n\n` : '') +
-            `    try(BufferedReader br = new BufferedReader(\n` +
-            `      new InputStreamReader(conn.getInputStream(), "utf-8"))) {\n` +
-            `      StringBuilder response = new StringBuilder();\n` +
-            `      String responseLine;\n` +
-            `      while ((responseLine = br.readLine()) != null) {\n` +
-            `        response.append(responseLine.trim());\n` +
-            `      }\n` +
-            `      System.out.println(response.toString());\n` +
-            `    }\n` +
-            `  }\n` +
-            `}`
-    };
-    
-    return languages[selectedLanguage] || languages.curl;
-  };
-
-  // Render Code panel with syntax highlighting
+  // Render Code panel with API integration
   const renderCodePanel = () => {
     const languages = [
       { id: 'curl', name: 'cURL', icon: <Terminal size={14} /> },
@@ -1055,15 +1604,29 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
       { id: 'nodejs', name: 'Node.js', icon: <Server size={14} /> },
       { id: 'php', name: 'PHP', icon: <Box size={14} /> },
       { id: 'ruby', name: 'Ruby', icon: <Package size={14} /> },
-      { id: 'java', name: 'Java', icon: <Coffee size={14} /> },
-      { id: 'csharp', name: 'C#', icon: <Hash size={14} /> },
-      { id: 'go', name: 'Go', icon: <Terminal size={14} /> },
-      { id: 'swift', name: 'Swift', icon: <Terminal size={14} /> },
-      { id: 'kotlin', name: 'Kotlin', icon: <Terminal size={14} /> }
+      { id: 'java', name: 'Java', icon: <Coffee size={14} /> }
     ];
 
     const currentLanguage = languages.find(lang => lang.id === selectedLanguage);
+    const [codeSnippet, setCodeSnippet] = useState('');
     
+    useEffect(() => {
+      const loadCodeSnippet = async () => {
+        try {
+          const snippet = await handleGenerateCodeSnippet();
+          if (snippet && snippet.code) {
+            setCodeSnippet(snippet.code);
+          } else {
+            setCodeSnippet(generateCodeSnippetLocal());
+          }
+        } catch (error) {
+          console.error('Error loading code snippet:', error);
+          setCodeSnippet(generateCodeSnippetLocal());
+        }
+      };
+      loadCodeSnippet();
+    }, [selectedLanguage, requestMethod, requestUrl, requestHeaders, requestBody]);
+
     return (
       <div className="w-80 border-l flex flex-col" style={{ 
         backgroundColor: colors.sidebar,
@@ -1091,39 +1654,42 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
           </button>
 
           {showLanguageDropdown && (
-            <div className="absolute left-4 right-4 top-full mt-1 py-2 rounded shadow-lg z-50 border"
-              style={{ 
-                backgroundColor: colors.dropdownBg,
-                borderColor: colors.border,
-                maxHeight: '300px',
-                overflowY: 'auto'
-              }}>
-              {languages.map(lang => (
-                <button
-                  key={lang.id}
-                  onClick={() => {
-                    setSelectedLanguage(lang.id);
-                    setShowLanguageDropdown(false);
-                  }}
-                  className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors hover-lift"
-                  style={{ 
-                    backgroundColor: selectedLanguage === lang.id ? colors.selected : 'transparent',
-                    color: selectedLanguage === lang.id ? colors.primary : colors.text
-                  }}
-                >
-                  {lang.icon}
-                  {lang.name}
-                  {selectedLanguage === lang.id && <Check size={14} className="ml-auto" />}
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowLanguageDropdown(false)} />
+              <div className="absolute left-4 right-4 top-full mt-1 py-2 rounded shadow-lg z-50 border"
+                style={{ 
+                  backgroundColor: colors.bg,
+                  borderColor: colors.border,
+                  maxHeight: '300px',
+                  overflowY: 'auto'
+                }}>
+                {languages.map(lang => (
+                  <button
+                    key={lang.id}
+                    onClick={() => {
+                      setSelectedLanguage(lang.id);
+                      setShowLanguageDropdown(false);
+                    }}
+                    className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors hover-lift"
+                    style={{ 
+                      backgroundColor: selectedLanguage === lang.id ? colors.selected : 'transparent',
+                      color: selectedLanguage === lang.id ? colors.primary : colors.text
+                    }}
+                  >
+                    {lang.icon}
+                    {lang.name}
+                    {selectedLanguage === lang.id && <Check size={14} className="ml-auto" />}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
 
         <div className="flex-1 overflow-auto p-4">
           <SyntaxHighlighter 
             language={selectedLanguage === 'curl' ? 'bash' : selectedLanguage}
-            code={generateCodeSnippet()}
+            code={codeSnippet}
           />
         </div>
 
@@ -1131,7 +1697,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
           <button 
             className="w-full py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center justify-center gap-2 hover-lift"
             onClick={() => {
-              navigator.clipboard.writeText(generateCodeSnippet());
+              navigator.clipboard.writeText(codeSnippet);
               showToast('Copied to clipboard!', 'success');
             }}
             style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
@@ -1178,33 +1744,36 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
             </button>
 
             {showAuthDropdown && (
-              <div className="absolute left-0 right-0 top-full mt-1 py-2 rounded shadow-lg z-50 border"
-                style={{ 
-                  backgroundColor: colors.dropdownBg,
-                  borderColor: colors.border,
-                  maxHeight: '300px',
-                  overflowY: 'auto'
-                }}>
-                {authTypes.map(type => (
-                  <button
-                    key={type.id}
-                    onClick={() => {
-                      setAuthType(type.id);
-                      setShowAuthDropdown(false);
-                      setAuthConfig({ type: type.id });
-                    }}
-                    className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors hover-lift"
-                    style={{ 
-                      backgroundColor: authType === type.id ? colors.selected : 'transparent',
-                      color: authType === type.id ? colors.primary : colors.text
-                    }}
-                  >
-                    {type.icon}
-                    {type.name}
-                    {authType === type.id && <Check size={14} className="ml-auto" />}
-                  </button>
-                ))}
-              </div>
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowAuthDropdown(false)} />
+                <div className="absolute left-0 right-0 top-full mt-1 py-2 rounded shadow-lg z-50 border"
+                  style={{ 
+                    backgroundColor: colors.dropdownBg,
+                    borderColor: colors.border,
+                    maxHeight: '300px',
+                    overflowY: 'auto'
+                  }}>
+                  {authTypes.map(type => (
+                    <button
+                      key={type.id}
+                      onClick={() => {
+                        setAuthType(type.id);
+                        setShowAuthDropdown(false);
+                        setAuthConfig({ type: type.id });
+                      }}
+                      className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors hover-lift"
+                      style={{ 
+                        backgroundColor: authType === type.id ? colors.selected : 'transparent',
+                        color: authType === type.id ? colors.primary : colors.text
+                      }}
+                    >
+                      {type.icon}
+                      {type.name}
+                      {authType === type.id && <Check size={14} className="ml-auto" />}
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
           </div>
           {currentAuthType && (
@@ -1316,20 +1885,6 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
                   </button>
                 </div>
               </div>
-              <div className="flex items-center gap-2 mt-4">
-                <input
-                  type="checkbox"
-                  id="show-header"
-                  className="rounded-sm hover-lift"
-                  style={{
-                    borderColor: colors.border,
-                    backgroundColor: colors.inputBg
-                  }}
-                />
-                <label htmlFor="show-header" className="text-sm" style={{ color: colors.text }}>
-                  Show header in request
-                </label>
-              </div>
             </div>
           )}
 
@@ -1429,20 +1984,6 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
                     {showToken ? <EyeOff size={16} /> : <EyeIcon size={16} />}
                   </button>
                 </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="auto-refresh"
-                  className="rounded-sm hover-lift"
-                  style={{
-                    borderColor: colors.border,
-                    backgroundColor: colors.inputBg
-                  }}
-                />
-                <label htmlFor="auto-refresh" className="text-sm" style={{ color: colors.text }}>
-                  Auto-refresh access token
-                </label>
               </div>
             </div>
           )}
@@ -1770,7 +2311,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
     );
   };
 
-  // Render Body Tab with all options
+  // Render Body Tab
   const renderBodyTab = () => {
     const renderBodyContent = () => {
       switch (requestBodyType) {
@@ -1925,24 +2466,6 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
                       </td>
                     </tr>
                   ))}
-                  
-                  {formData.length === 0 && (
-                    <tr>
-                      <td colSpan="5" className="px-4 py-8 text-center" style={{ color: colors.textSecondary }}>
-                        <div className="flex flex-col items-center gap-2">
-                          <FileText size={24} style={{ opacity: 0.5 }} />
-                          <p className="text-sm">No form data</p>
-                          <button
-                            onClick={() => setFormData([...formData, { id: `form-${Date.now()}`, key: '', value: '', type: 'text', enabled: true }])}
-                            className="mt-2 px-3 py-1.5 text-sm font-medium rounded flex items-center gap-2 hover:opacity-90 transition-colors hover-lift"
-                            style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
-                            <Plus size={13} />
-                            Add form data
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </div>
@@ -2074,235 +2597,217 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme }) => {
                       </td>
                     </tr>
                   ))}
-                  
-                  {urlEncodedData.length === 0 && (
-                    <tr>
-                      <td colSpan="5" className="px-4 py-8 text-center" style={{ color: colors.textSecondary }}>
-                        <div className="flex flex-col items-center gap-2">
-                          <Hash size={24} style={{ opacity: 0.5 }} />
-                          <p className="text-sm">No url-encoded data</p>
-                          <button
-                            onClick={() => setUrlEncodedData([...urlEncodedData, { id: `url-${Date.now()}`, key: '', value: '', description: '', enabled: true }])}
-                            className="mt-2 px-3 py-1.5 text-sm font-medium rounded flex items-center gap-2 hover:opacity-90 transition-colors hover-lift"
-                            style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
-                            <Plus size={13} />
-                            Add parameter
-                          </button>
-                        </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      );
+                </tbody>
+              </table>
+            </div>
+          );
 
-    case 'raw':
-      return (
-        <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
-          <div className="flex items-center justify-between px-3 py-2 border-b" style={{ 
-            backgroundColor: colors.tableHeader,
-            borderColor: colors.border
-          }}>
-            <div className="flex items-center gap-2">
-              <select
-                value={rawBodyType}
-                onChange={(e) => setRawBodyType(e.target.value)}
-                className="px-2 py-1 rounded text-sm focus:outline-none transition-colors hover-lift"
-                style={{ 
+        case 'raw':
+          return (
+            <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
+              <div className="flex items-center justify-between px-3 py-2 border-b" style={{ 
+                backgroundColor: colors.tableHeader,
+                borderColor: colors.border
+              }}>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={rawBodyType}
+                    onChange={(e) => setRawBodyType(e.target.value)}
+                    className="px-2 py-1 rounded text-sm focus:outline-none transition-colors hover-lift"
+                    style={{ 
+                      backgroundColor: colors.card,
+                      color: colors.text,
+                      border: `1px solid ${colors.border}`,
+                      cursor: 'pointer'
+                    }}>
+                    <option value="json">JSON</option>
+                    <option value="text">Text</option>
+                    <option value="javascript">JavaScript</option>
+                    <option value="html">HTML</option>
+                    <option value="xml">XML</option>
+                  </select>
+                  <button 
+                    className="px-2 py-1 text-sm rounded hover:bg-opacity-50 transition-colors hover-lift" 
+                    style={{ 
+                      backgroundColor: colors.hover,
+                      color: colors.textSecondary
+                    }}
+                    onClick={() => {
+                      try {
+                        const parsed = JSON.parse(requestBody);
+                        setRequestBody(JSON.stringify(parsed, null, 2));
+                        showToast('JSON beautified!', 'success');
+                      } catch (e) {
+                        showToast('Not valid JSON', 'error');
+                      }
+                    }}>
+                    Beautify
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs" style={{ color: colors.textSecondary }}>
+                    {requestBody.length} characters
+                  </span>
+                  <button 
+                    className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift" 
+                    style={{ backgroundColor: colors.hover }}
+                    onClick={() => {
+                      navigator.clipboard.writeText(requestBody);
+                      showToast('Copied to clipboard!', 'success');
+                    }}>
+                    <Copy size={13} style={{ color: colors.textSecondary }} />
+                  </button>
+                </div>
+              </div>
+              <textarea
+                value={requestBody}
+                onChange={(e) => setRequestBody(e.target.value)}
+                className="w-full h-64 font-mono text-sm p-4 resize-none focus:outline-none hover-lift"
+                style={{
                   backgroundColor: colors.card,
                   color: colors.text,
-                  border: `1px solid ${colors.border}`,
-                  cursor: 'pointer'
-                }}>
-                <option value="json">JSON</option>
-                <option value="text">Text</option>
-                <option value="javascript">JavaScript</option>
-                <option value="html">HTML</option>
-                <option value="xml">XML</option>
-              </select>
-              <button 
-                className="px-2 py-1 text-sm rounded hover:bg-opacity-50 transition-colors hover-lift" 
-                style={{ 
-                  backgroundColor: colors.hover,
-                  color: colors.textSecondary
+                  lineHeight: '1.5'
                 }}
-                onClick={() => {
-                  try {
-                    const parsed = JSON.parse(requestBody);
-                    setRequestBody(JSON.stringify(parsed, null, 2));
-                    showToast('JSON beautified!', 'success');
-                  } catch (e) {
-                    showToast('Not valid JSON', 'error');
-                  }
-                }}>
-                Beautify
-              </button>
+                placeholder={rawBodyType === 'json' ? '{\n  "key": "value"\n}' : 'Enter text here...'}
+                spellCheck="false"
+              />
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs" style={{ color: colors.textSecondary }}>
-                {requestBody.length} characters
-              </span>
-              <button 
-                className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift" 
-                style={{ backgroundColor: colors.hover }}
-                onClick={() => {
-                  navigator.clipboard.writeText(requestBody);
-                  showToast('Copied to clipboard!', 'success');
-                }}>
-                <Copy size={13} style={{ color: colors.textSecondary }} />
-              </button>
-            </div>
-          </div>
-          <textarea
-            value={requestBody}
-            onChange={(e) => setRequestBody(e.target.value)}
-            className="w-full h-64 font-mono text-sm p-4 resize-none focus:outline-none hover-lift"
-            style={{
-              backgroundColor: colors.card,
-              color: colors.text,
-              lineHeight: '1.5'
-            }}
-            placeholder={rawBodyType === 'json' ? '{\n  "key": "value"\n}' : 'Enter text here...'}
-            spellCheck="false"
-          />
-        </div>
-      );
+          );
 
-    case 'binary':
-      return (
-        <div className="border rounded p-8 text-center" style={{ borderColor: colors.border }}>
-          <FileBinary size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
-          <p className="text-sm mb-2" style={{ color: colors.text }}>Upload a file</p>
-          <p className="text-xs mb-6 max-w-sm mx-auto" style={{ color: colors.textSecondary }}>
-            Select a file to send as the request body. Files are sent as-is without any processing.
-          </p>
-          <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 mx-auto hover-lift"
-            style={{ backgroundColor: colors.primaryDark, color: colors.white }}
-            onClick={() => {
-              const input = document.createElement('input');
-              input.type = 'file';
-              input.accept = '*/*';
-              input.onchange = (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                  setBinaryFile(file);
-                  showToast(`File selected: ${file.name}`, 'success');
-                }
-              };
-              input.click();
-            }}>
-            <Upload size={14} />
-            Choose File
-          </button>
-          {binaryFile && (
-            <div className="mt-4 p-3 rounded hover-lift" style={{ backgroundColor: colors.hover }}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <File size={14} style={{ color: colors.textSecondary }} />
-                  <span className="text-sm" style={{ color: colors.text }}>{binaryFile.name}</span>
+        case 'binary':
+          return (
+            <div className="border rounded p-8 text-center" style={{ borderColor: colors.border }}>
+              <FileBinary size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
+              <p className="text-sm mb-2" style={{ color: colors.text }}>Upload a file</p>
+              <p className="text-xs mb-6 max-w-sm mx-auto" style={{ color: colors.textSecondary }}>
+                Select a file to send as the request body. Files are sent as-is without any processing.
+              </p>
+              <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 mx-auto hover-lift"
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+                onClick={() => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = '*/*';
+                  input.onchange = (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                      setBinaryFile(file);
+                      showToast(`File selected: ${file.name}`, 'success');
+                    }
+                  };
+                  input.click();
+                }}>
+                <Upload size={14} />
+                Choose File
+              </button>
+              {binaryFile && (
+                <div className="mt-4 p-3 rounded hover-lift" style={{ backgroundColor: colors.hover }}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <File size={14} style={{ color: colors.textSecondary }} />
+                      <span className="text-sm" style={{ color: colors.text }}>{binaryFile.name}</span>
+                    </div>
+                    <button onClick={() => setBinaryFile(null)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                      style={{ backgroundColor: colors.card }}>
+                      <X size={12} style={{ color: colors.textSecondary }} />
+                    </button>
+                  </div>
+                  <p className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+                    Size: {(binaryFile.size / 1024).toFixed(2)} KB
+                  </p>
                 </div>
-                <button onClick={() => setBinaryFile(null)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.card }}>
-                  <X size={12} style={{ color: colors.textSecondary }} />
-                </button>
+              )}
+            </div>
+          );
+
+        case 'graphql':
+          return (
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium" style={{ color: colors.text }}>Query</label>
+                  <button className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                    style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+                    onClick={() => {
+                      setGraphqlQuery('query {\n  getUser(id: 1) {\n    id\n    name\n    email\n  }\n}');
+                      showToast('Sample query loaded', 'success');
+                    }}>
+                    Sample
+                  </button>
+                </div>
+                <textarea
+                  value={graphqlQuery}
+                  onChange={(e) => setGraphqlQuery(e.target.value)}
+                  className="w-full h-48 font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
+                  style={{
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    color: colors.text,
+                    lineHeight: '1.5'
+                  }}
+                  placeholder="query {\n  getUser(id: 1) {\n    id\n    name\n    email\n  }\n}"
+                  spellCheck="false"
+                />
               </div>
-              <p className="text-xs mt-1" style={{ color: colors.textSecondary }}>
-                Size: {(binaryFile.size / 1024).toFixed(2)} KB
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Variables</label>
+                <textarea
+                  value={graphqlVariables}
+                  onChange={(e) => setGraphqlVariables(e.target.value)}
+                  className="w-full h-32 font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
+                  style={{
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    color: colors.text,
+                    lineHeight: '1.5'
+                  }}
+                  placeholder='{\n  "id": 1\n}'
+                  spellCheck="false"
+                />
+              </div>
+            </div>
+          );
+
+        default:
+          return (
+            <div className="border rounded p-8 text-center" style={{ borderColor: colors.border }}>
+              <FileText size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
+              <p className="text-sm" style={{ color: colors.text }}>
+                This request does not have a body
               </p>
             </div>
-          )}
-        </div>
-      );
+          );
+      }
+    };
 
-    case 'graphql':
-      return (
-        <div className="space-y-4">
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium" style={{ color: colors.text }}>Query</label>
-              <button className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
-                onClick={() => {
-                  setGraphqlQuery('query {\n  getUser(id: 1) {\n    id\n    name\n    email\n  }\n}');
-                  showToast('Sample query loaded', 'success');
+    return (
+      <div className="p-4">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Body</h3>
+          <div className="flex gap-2">
+            {['none', 'form-data', 'x-www-form-urlencoded', 'raw', 'binary', 'graphql'].map(type => (
+              <button
+                key={type}
+                onClick={() => setRequestBodyType(type)}
+                className={`px-3 py-1.5 rounded text-sm font-medium capitalize transition-colors hover-lift ${
+                  requestBodyType === type ? '' : 'hover:bg-opacity-50'
+                }`}
+                style={{ 
+                  backgroundColor: requestBodyType === type ? colors.primaryDark : colors.hover,
+                  color: requestBodyType === type ? 'white' : colors.textSecondary
                 }}>
-                Sample
+                {type === 'x-www-form-urlencoded' ? 'x-www-form' : type}
               </button>
-            </div>
-            <textarea
-              value={graphqlQuery}
-              onChange={(e) => setGraphqlQuery(e.target.value)}
-              className="w-full h-48 font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
-              style={{
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-                color: colors.text,
-                lineHeight: '1.5'
-              }}
-              placeholder="query {\n  getUser(id: 1) {\n    id\n    name\n    email\n  }\n}"
-              spellCheck="false"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Variables</label>
-            <textarea
-              value={graphqlVariables}
-              onChange={(e) => setGraphqlVariables(e.target.value)}
-              className="w-full h-32 font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
-              style={{
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-                color: colors.text,
-                lineHeight: '1.5'
-              }}
-              placeholder='{\n  "id": 1\n}'
-              spellCheck="false"
-            />
+            ))}
           </div>
         </div>
-      );
-
-    default:
-      return (
-        <div className="border rounded p-8 text-center" style={{ borderColor: colors.border }}>
-          <FileText size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
-          <p className="text-sm" style={{ color: colors.text }}>
-            This request does not have a body
-          </p>
-        </div>
-      );
-  }
-};
-
-return (
-  <div className="p-4">
-    <div className="flex justify-between items-center mb-4">
-      <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Body</h3>
-      <div className="flex gap-2">
-        {['none', 'form-data', 'x-www-form-urlencoded', 'raw', 'binary', 'graphql'].map(type => (
-          <button
-            key={type}
-            onClick={() => setRequestBodyType(type)}
-            className={`px-3 py-1.5 rounded text-sm font-medium capitalize transition-colors hover-lift ${
-              requestBodyType === type ? '' : 'hover:bg-opacity-50'
-            }`}
-            style={{ 
-              backgroundColor: requestBodyType === type ? colors.primaryDark : colors.hover,
-              color: requestBodyType === type ? 'white' : colors.textSecondary
-            }}>
-            {type === 'x-www-form-urlencoded' ? 'x-www-form' : type}
-          </button>
-        ))}
+        
+        {renderBodyContent()}
       </div>
-    </div>
-    
-    {renderBodyContent()}
-  </div>
-);
+    );
   };
 
-  // Render Response Panel with view options
+  // Render Response Panel
   const renderResponsePanel = () => {
     const renderResponseContent = () => {
       if (!response) {
@@ -2375,7 +2880,7 @@ return (
                   </tr>
                 </thead>
                 <tbody>
-                  {response.headers.map((header, index) => (
+                  {response.headers && response.headers.map((header, index) => (
                     <tr key={index} className="border-b last:border-b-0 hover-lift" style={{ borderColor: colors.border }}>
                       <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>{header.key}</td>
                       <td className="px-4 py-3" style={{ color: colors.textSecondary }}>{header.value}</td>
@@ -2561,6 +3066,16 @@ return (
     </div>
   );
 
+  // Determine which right panel to show
+  const renderRightPanel = () => {
+    if (showCodePanel) return renderCodePanel();
+    if (showAPIs) return renderAPIsPanel();
+    if (showEnvironments) return renderEnvironmentsPanel();
+    if (showMockServers) return renderMockServersPanel();
+    if (showMonitors) return renderMonitorsPanel();
+    return null;
+  };
+
   const renderMockServersPanel = () => (
     <div className="w-80 border-l flex flex-col" style={{ 
       backgroundColor: colors.sidebar,
@@ -2609,16 +3124,6 @@ return (
     </div>
   );
 
-  // Determine which right panel to show
-  const renderRightPanel = () => {
-    if (showCodePanel) return renderCodePanel();
-    if (showAPIs) return renderAPIsPanel();
-    if (showEnvironments) return renderEnvironmentsPanel();
-    if (showMockServers) return renderMockServersPanel();
-    if (showMonitors) return renderMonitorsPanel();
-    return null;
-  };
-
   // Render Toast
   const renderToast = () => {
     if (!toast) return null;
@@ -2664,30 +3169,24 @@ return (
               <button className="mt-4 px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                 style={{ backgroundColor: colors.primaryDark, color: colors.white }}
                 onClick={() => {
-                  showToast('Import feature would open file dialog', 'info');
-                  setTimeout(() => setShowImportModal(false), 1500);
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = '.json,.yaml,.yml,.postman_collection';
+                  input.onchange = async (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                      try {
+                        const text = await file.text();
+                        await handleImportCollection(text, 'POSTMAN');
+                        setShowImportModal(false);
+                      } catch (error) {
+                        showToast('Failed to import file', 'error');
+                      }
+                    }
+                  };
+                  input.click();
                 }}>
                 Browse Files
-              </button>
-            </div>
-            <div className="space-y-2">
-              <button className="w-full px-4 py-3 rounded text-sm text-left hover:bg-opacity-50 transition-colors flex items-center gap-3 hover-lift"
-                style={{ backgroundColor: colors.hover, color: colors.text }}
-                onClick={() => {
-                  showToast('Import from link dialog would open', 'info');
-                  setTimeout(() => setShowImportModal(false), 1500);
-                }}>
-                <Globe size={14} />
-                Import from Link
-              </button>
-              <button className="w-full px-4 py-3 rounded text-sm text-left hover:bg-opacity-50 transition-colors flex items-center gap-3 hover-lift"
-                style={{ backgroundColor: colors.hover, color: colors.text }}
-                onClick={() => {
-                  showToast('Paste raw text dialog would open', 'info');
-                  setTimeout(() => setShowImportModal(false), 1500);
-                }}>
-                <Code size={14} />
-                Paste Raw Text
               </button>
             </div>
           </div>
@@ -2702,7 +3201,7 @@ return (
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
         <div className="rounded-lg w-full max-w-md" style={{ 
-          backgroundColor: colors.modalBg,
+          backgroundColor: colors.bg,
           border: `1px solid ${colors.modalBorder}`
         }}>
           <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: colors.border }}>
@@ -2737,26 +3236,6 @@ return (
                 </button>
               </div>
             </div>
-            <div className="space-y-2">
-              <label className="block text-sm font-medium" style={{ color: colors.text }}>Invite People</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Enter email addresses"
-                  className="flex-1 px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
-                  style={{
-                    backgroundColor: colors.inputBg,
-                    borderColor: colors.border,
-                    color: colors.text
-                  }}
-                />
-                <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-                  onClick={() => showToast('Invitation sent!', 'success')}
-                  style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
-                  Invite
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -2769,7 +3248,7 @@ return (
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
         <div className="rounded-lg w-full max-w-lg" style={{ 
-          backgroundColor: colors.modalBg,
+          backgroundColor: colors.bg,
           border: `1px solid ${colors.modalBorder}`
         }}>
           <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: colors.border }}>
@@ -2824,9 +3303,6 @@ return (
   };
 
   const renderCreateModal = () => {
-    const [newCollectionName, setNewCollectionName] = useState('');
-    const [newCollectionDescription, setNewCollectionDescription] = useState('');
-    
     return (
       showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -2878,8 +3354,6 @@ return (
                     return;
                   }
                   addNewCollection(newCollectionName, newCollectionDescription);
-                  setNewCollectionName('');
-                  setNewCollectionDescription('');
                 }}
                 style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
                 Create Collection
@@ -2888,6 +3362,251 @@ return (
           </div>
         </div>
       )
+    );
+  };
+
+  // Render Collections tree
+  const renderCollectionsTree = () => {
+    if (loading) {
+      return (
+        <div className="flex items-center justify-center h-32">
+          <RefreshCw className="animate-spin" size={16} style={{ color: colors.textSecondary }} />
+        </div>
+      );
+    }
+
+    if (error) {
+      return (
+        <div className="p-4 text-center">
+          <AlertCircle size={24} className="mx-auto mb-2" style={{ color: colors.error }} />
+          <div className="text-sm" style={{ color: colors.text }}>{error}</div>
+          <button 
+            onClick={fetchCollections}
+            className="mt-3 px-4 py-2 rounded text-sm font-medium transition-colors"
+            style={{ 
+              backgroundColor: colors.hover,
+              color: colors.text
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex-1 overflow-auto p-2">
+        {filteredCollections.map(collection => (
+          <div key={collection.id} className="mb-3">
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer group hover-lift"
+              onClick={() => toggleCollection(collection.id)}
+              style={{ backgroundColor: colors.hover }}>
+              {collection.isExpanded ? (
+                <ChevronDown size={12} style={{ color: colors.textSecondary }} />
+              ) : (
+                <ChevronRight size={12} style={{ color: colors.textSecondary }} />
+              )}
+              <button onClick={(e) => {
+                e.stopPropagation();
+                toggleFavorite(collection.id);
+              }}>
+                {collection.isFavorite ? (
+                  <Star size={12} fill="#FFB300" style={{ color: '#FFB300' }} />
+                ) : (
+                  <Star size={12} style={{ color: colors.textSecondary }} />
+                )}
+              </button>
+              
+              {collection.isEditing ? (
+                <input
+                  type="text"
+                  defaultValue={collection.name}
+                  onBlur={(e) => updateCollectionName(collection.id, e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      updateCollectionName(collection.id, e.target.value);
+                    } else if (e.key === 'Escape') {
+                      setCollections(cols => cols.map(col => 
+                        col.id === collection.id ? { ...col, isEditing: false } : col
+                      ));
+                    }
+                  }}
+                  className="flex-1 text-sm font-medium bg-transparent border-none outline-none"
+                  style={{ color: colors.text }}
+                  autoFocus
+                />
+              ) : (
+                <span className="text-sm font-medium flex-1" style={{ color: colors.text }}>
+                  {collection.name}
+                </span>
+              )}
+              
+              {collection.requestsCount > 0 && (
+                <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
+                  backgroundColor: colors.border,
+                  color: colors.textSecondary
+                }}>
+                  {collection.requestsCount}
+                </span>
+              )}
+            </div>
+
+            {collection.isExpanded && collection.folders && collection.folders.length > 0 && (
+              <>
+                {collection.folders.map(folder => (
+                  <div key={folder.id} className="ml-4 mb-2">
+                    <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer group hover-lift"
+                      onClick={() => toggleFolder(collection.id, folder.id)}
+                      style={{ backgroundColor: colors.hover }}>
+                      {folder.isExpanded ? (
+                        <ChevronDown size={11} style={{ color: colors.textSecondary }} />
+                      ) : (
+                        <ChevronRight size={11} style={{ color: colors.textSecondary }} />
+                      )}
+                      <FolderOpen size={11} style={{ color: colors.textSecondary }} />
+                      
+                      {folder.isEditing ? (
+                        <input
+                          type="text"
+                          defaultValue={folder.name}
+                          onBlur={(e) => updateFolderName(collection.id, folder.id, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              updateFolderName(collection.id, folder.id, e.target.value);
+                            } else if (e.key === 'Escape') {
+                              setCollections(cols => cols.map(col => ({
+                                ...col,
+                                folders: col.folders.map(f => 
+                                  f.id === folder.id ? { ...f, isEditing: false } : f
+                                )
+                              })));
+                            }
+                          }}
+                          className="flex-1 text-sm bg-transparent border-none outline-none"
+                          style={{ color: colors.text }}
+                          autoFocus
+                        />
+                      ) : (
+                        <span className="text-sm flex-1" style={{ color: colors.text }}>
+                          {folder.name}
+                        </span>
+                      )}
+                      
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCollections(cols => cols.map(col => ({
+                            ...col,
+                            folders: col.folders.map(f => 
+                              f.id === folder.id ? { ...f, isEditing: true } : f
+                            )
+                          })));
+                        }}
+                        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all hover-lift"
+                        style={{ backgroundColor: colors.card }}>
+                        <Edit2 size={10} style={{ color: colors.textSecondary }} />
+                      </button>
+                    </div>
+
+                    {folder.isExpanded && folder.requests && folder.requests.length > 0 && (
+                      <>
+                        {folder.requests.map(request => (
+                          <div key={request.id} className="flex items-center gap-2 ml-6 mb-1.5 group">
+                            <button
+                              onClick={() => handleSelectRequest(request, collection.id, folder.id)}
+                              className="flex items-center gap-2 text-sm text-left transition-colors hover:text-opacity-80 flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
+                              style={{ 
+                                color: selectedRequest?.id === request.id ? colors.primary : colors.text,
+                                backgroundColor: selectedRequest?.id === request.id ? colors.selected : 'transparent'
+                              }}>
+                              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
+                                backgroundColor: getMethodColor(request.method)
+                              }} />
+                              
+                              {request.isEditing ? (
+                                <input
+                                  type="text"
+                                  defaultValue={request.name}
+                                  onBlur={(e) => updateRequestName(collection.id, folder.id, request.id, e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      updateRequestName(collection.id, folder.id, request.id, e.target.value);
+                                    } else if (e.key === 'Escape') {
+                                      setCollections(cols => cols.map(col => ({
+                                        ...col,
+                                        folders: col.folders.map(f => 
+                                          f.id === folder.id ? {
+                                            ...f,
+                                            requests: f.requests.map(r => 
+                                              r.id === request.id ? { ...r, isEditing: false } : r
+                                            )
+                                          } : f
+                                        )
+                                      })));
+                                    }
+                                  }}
+                                  className="flex-1 bg-transparent border-none outline-none"
+                                  style={{ color: selectedRequest?.id === request.id ? colors.primary : colors.text }}
+                                  autoFocus
+                                />
+                              ) : (
+                                <span className="truncate">{request.name}</span>
+                              )}
+                            </button>
+                            
+                            {!request.isEditing && (
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCollections(cols => cols.map(col => ({
+                                    ...col,
+                                    folders: col.folders.map(f => 
+                                      f.id === folder.id ? {
+                                        ...f,
+                                        requests: f.requests.map(r => 
+                                          r.id === request.id ? { ...r, isEditing: true } : r
+                                        )
+                                      } : f
+                                    )
+                                  })));
+                                }}
+                                className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all mr-2 hover-lift"
+                                style={{ backgroundColor: colors.card }}>
+                                <Edit2 size={10} style={{ color: colors.textSecondary }} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <button
+                          onClick={() => addNewRequest(collection.id, folder.id)}
+                          className="ml-6 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1 hover-lift"
+                          style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>
+                          <Plus size={10} />
+                          Add Request
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))}
+                <button
+                  onClick={() => addNewFolder(collection.id)}
+                  className="ml-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1 hover-lift"
+                  style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>
+                  <Plus size={10} />
+                  Add Folder
+                </button>
+              </>
+            )}
+          </div>
+        ))}
+        
+        {filteredCollections.length === 0 && searchQuery && (
+          <div className="text-center p-4" style={{ color: colors.textSecondary }}>
+            <Search size={20} className="mx-auto mb-2 opacity-50" />
+            <p className="text-sm">No collections found for "{searchQuery}"</p>
+          </div>
+        )}
+      </div>
     );
   };
 
@@ -3010,32 +3729,17 @@ return (
 
           <div className="w-px h-4" style={{ backgroundColor: colors.border }}></div>
 
-          {/* Global Search */}
-          {/* <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
-            <input 
-              type="text" 
-              placeholder="Search"
-              value={globalSearchQuery}
-              onChange={(e) => setGlobalSearchQuery(e.target.value)}
-              className="pl-8 pr-3 py-1.5 rounded text-sm focus:outline-none w-48 hover-lift"
-              style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }} 
-            />
-            {globalSearchQuery && (
-              <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                <button onClick={() => setGlobalSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.hover }}>
-                  <X size={12} style={{ color: colors.textSecondary }} />
-                </button>
-              </div>
-            )}
-          </div> */}
-
           {/* Code Panel Toggle */}
           <button onClick={() => {setShowCodePanel(!showCodePanel); setShowAPIs(false); setShowEnvironments(false); setShowMockServers(false); setShowMonitors(false);}} 
             className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
             style={{ backgroundColor: showCodePanel ? colors.selected : colors.hover }}>
             <Code size={14} style={{ color: showCodePanel ? colors.primary : colors.textSecondary }} />
+          </button>
+
+          {/* Cache Clear Button */}
+          <button onClick={handleClearCache} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+            style={{ backgroundColor: colors.hover }}>
+            <RefreshCw size={14} style={{ color: colors.textSecondary }} />
           </button>
 
           {/* Share Button */}
@@ -3057,7 +3761,6 @@ return (
       <div className="flex flex-1 overflow-hidden">
         {/* LEFT SIDEBAR - Collections */}
         <div className="w-80 border-r flex flex-col" style={{ 
-          // backgroundColor: colors.sidebar,
           borderColor: colors.border
         }}>
           <div className="p-3 border-b" style={{ borderColor: colors.border }}>
@@ -3068,10 +3771,9 @@ return (
                   style={{ backgroundColor: colors.hover }}>
                   <Plus size={12} style={{ color: colors.textSecondary }} />
                 </button>
-                <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.hover }}
-                  onClick={() => showToast('More options menu would open', 'info')}>
-                  <MoreVertical size={12} style={{ color: colors.textSecondary }} />
+                <button onClick={() => setShowImportModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                  style={{ backgroundColor: colors.hover }}>
+                  <Upload size={12} style={{ color: colors.textSecondary }} />
                 </button>
               </div>
             </div>
@@ -3096,221 +3798,7 @@ return (
             </div>
           </div>
 
-          <div className="flex-1 overflow-auto p-2">
-            {filteredCollections.map(collection => (
-              <div key={collection.id} className="mb-3">
-                <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer group hover-lift"
-                  onClick={() => toggleCollection(collection.id)}
-                  style={{ backgroundColor: colors.hover }}>
-                  {collection.isExpanded ? (
-                    <ChevronDown size={12} style={{ color: colors.textSecondary }} />
-                  ) : (
-                    <ChevronRight size={12} style={{ color: colors.textSecondary }} />
-                  )}
-                  <button onClick={(e) => {
-                    e.stopPropagation();
-                    toggleFavorite(collection.id);
-                  }}>
-                    {collection.isFavorite ? (
-                      <Star size={12} fill="#FFB300" style={{ color: '#FFB300' }} />
-                    ) : (
-                      <Star size={12} style={{ color: colors.textSecondary }} />
-                    )}
-                  </button>
-                  
-                  {collection.isEditing ? (
-                    <input
-                      type="text"
-                      defaultValue={collection.name}
-                      onBlur={(e) => updateCollectionName(collection.id, e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          updateCollectionName(collection.id, e.target.value);
-                        } else if (e.key === 'Escape') {
-                          setCollections(cols => cols.map(col => 
-                            col.id === collection.id ? { ...col, isEditing: false } : col
-                          ));
-                        }
-                      }}
-                      className="flex-1 text-sm font-medium bg-transparent border-none outline-none"
-                      style={{ color: colors.text }}
-                      autoFocus
-                    />
-                  ) : (
-                    <span className="text-sm font-medium flex-1" style={{ color: colors.text }}>
-                      {collection.name}
-                    </span>
-                  )}
-                  
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setCollections(cols => cols.map(col => 
-                        col.id === collection.id ? { ...col, isEditing: true } : col
-                      ));
-                    }}
-                    className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all hover-lift"
-                    style={{ backgroundColor: colors.card }}>
-                    <Edit2 size={11} style={{ color: colors.textSecondary }} />
-                  </button>
-                </div>
-
-                {collection.isExpanded && (
-                  <>
-                    {collection.folders.map(folder => (
-                      <div key={folder.id} className="ml-4 mb-2">
-                        <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer group hover-lift"
-                          onClick={() => toggleFolder(collection.id, folder.id)}
-                          style={{ backgroundColor: colors.hover }}>
-                          {folder.isExpanded ? (
-                            <ChevronDown size={11} style={{ color: colors.textSecondary }} />
-                          ) : (
-                            <ChevronRight size={11} style={{ color: colors.textSecondary }} />
-                          )}
-                          <FolderOpen size={11} style={{ color: colors.textSecondary }} />
-                          
-                          {folder.isEditing ? (
-                            <input
-                              type="text"
-                              defaultValue={folder.name}
-                              onBlur={(e) => updateFolderName(collection.id, folder.id, e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  updateFolderName(collection.id, folder.id, e.target.value);
-                                } else if (e.key === 'Escape') {
-                                  setCollections(cols => cols.map(col => ({
-                                    ...col,
-                                    folders: col.folders.map(f => 
-                                      f.id === folder.id ? { ...f, isEditing: false } : f
-                                    )
-                                  })));
-                                }
-                              }}
-                              className="flex-1 text-sm bg-transparent border-none outline-none"
-                              style={{ color: colors.text }}
-                              autoFocus
-                            />
-                          ) : (
-                            <span className="text-sm flex-1" style={{ color: colors.text }}>
-                              {folder.name}
-                            </span>
-                          )}
-                          
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setCollections(cols => cols.map(col => ({
-                                ...col,
-                                folders: col.folders.map(f => 
-                                  f.id === folder.id ? { ...f, isEditing: true } : f
-                                )
-                              })));
-                            }}
-                            className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all hover-lift"
-                            style={{ backgroundColor: colors.card }}>
-                            <Edit2 size={10} style={{ color: colors.textSecondary }} />
-                          </button>
-                        </div>
-
-                        {folder.isExpanded && (
-                          <>
-                            {folder.requests.map(request => (
-                              <div key={request.id} className="flex items-center gap-2 ml-6 mb-1.5 group">
-                                <button
-                                  onClick={() => handleSelectRequest(request, collection.id, folder.id)}
-                                  className="flex items-center gap-2 text-sm text-left transition-colors hover:text-opacity-80 flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
-                                  style={{ 
-                                    color: selectedRequest?.id === request.id ? colors.primary : colors.text,
-                                    backgroundColor: selectedRequest?.id === request.id ? colors.selected : 'transparent'
-                                  }}>
-                                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
-                                    backgroundColor: getMethodColor(request.method)
-                                  }} />
-                                  
-                                  {request.isEditing ? (
-                                    <input
-                                      type="text"
-                                      defaultValue={request.name}
-                                      onBlur={(e) => updateRequestName(collection.id, folder.id, request.id, e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                          updateRequestName(collection.id, folder.id, request.id, e.target.value);
-                                        } else if (e.key === 'Escape') {
-                                          setCollections(cols => cols.map(col => ({
-                                            ...col,
-                                            folders: col.folders.map(f => 
-                                              f.id === folder.id ? {
-                                                ...f,
-                                                requests: f.requests.map(r => 
-                                                  r.id === request.id ? { ...r, isEditing: false } : r
-                                                )
-                                              } : f
-                                            )
-                                          })));
-                                        }
-                                      }}
-                                      className="flex-1 bg-transparent border-none outline-none"
-                                      style={{ color: selectedRequest?.id === request.id ? colors.primary : colors.text }}
-                                      autoFocus
-                                    />
-                                  ) : (
-                                    <span className="truncate">{request.name}</span>
-                                  )}
-                                </button>
-                                
-                                {!request.isEditing && (
-                                  <button 
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setCollections(cols => cols.map(col => ({
-                                        ...col,
-                                        folders: col.folders.map(f => 
-                                          f.id === folder.id ? {
-                                            ...f,
-                                            requests: f.requests.map(r => 
-                                              r.id === request.id ? { ...r, isEditing: true } : r
-                                            )
-                                          } : f
-                                        )
-                                      })));
-                                    }}
-                                    className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-opacity-50 transition-all mr-2 hover-lift"
-                                    style={{ backgroundColor: colors.card }}>
-                                    <Edit2 size={10} style={{ color: colors.textSecondary }} />
-                                  </button>
-                                )}
-                              </div>
-                            ))}
-                            <button
-                              onClick={() => addNewRequest(collection.id, folder.id)}
-                              className="ml-6 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1 hover-lift"
-                              style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>
-                              <Plus size={10} />
-                              Add Request
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                    <button
-                      onClick={() => addNewFolder(collection.id)}
-                      className="ml-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1 hover-lift"
-                      style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>
-                      <Plus size={10} />
-                      Add Folder
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
-            
-            {filteredCollections.length === 0 && searchQuery && (
-              <div className="text-center p-4" style={{ color: colors.textSecondary }}>
-                <Search size={20} className="mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No collections found for "{searchQuery}"</p>
-              </div>
-            )}
-          </div>
+          {renderCollectionsTree()}
         </div>
 
         {/* MAIN WORKSPACE */}
@@ -3333,8 +3821,8 @@ return (
                   }}
                   onClick={() => {
                     const collection = collections.find(c => c.id === tab.collectionId);
-                    const folder = collection?.folders.find(f => f.id === tab.folderId);
-                    const request = folder?.requests.find(r => r.id === tab.id);
+                    const folder = collection?.folders?.find(f => f.id === tab.folderId);
+                    const request = folder?.requests?.find(r => r.id === tab.id);
                     if (request) {
                       handleSelectRequest(request, tab.collectionId, tab.folderId);
                     }
@@ -3358,8 +3846,8 @@ return (
                         if (remainingTabs.length > 0) {
                           const nextTab = remainingTabs[0];
                           const collection = collections.find(c => c.id === nextTab.collectionId);
-                          const folder = collection?.folders.find(f => f.id === nextTab.folderId);
-                          const request = folder?.requests.find(r => r.id === nextTab.id);
+                          const folder = collection?.folders?.find(f => f.id === nextTab.folderId);
+                          const request = folder?.requests?.find(r => r.id === nextTab.id);
                           if (request) {
                             handleSelectRequest(request, nextTab.collectionId, nextTab.folderId);
                           }
@@ -3376,6 +3864,7 @@ return (
               ))}
               <button
                 onClick={() => {
+                  // Create new request
                   const newRequest = {
                     id: `req-${Date.now()}`,
                     name: 'New Request',
@@ -3429,7 +3918,7 @@ return (
                   placeholder="Enter request URL" />
               </div>
               
-              <button onClick={sendRequest} disabled={isSending}
+              <button onClick={handleExecuteRequest} disabled={isSending}
                 className={`px-4 py-2 rounded text-sm font-medium flex items-center gap-2 transition-colors min-w-32 hover-lift ${
                   isSending ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'
                 }`}
@@ -3449,7 +3938,7 @@ return (
               
               <button className="px-3 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                 style={{ backgroundColor: colors.primaryDark, color: colors.white }}
-                onClick={saveRequestChanges}>
+                onClick={handleSaveRequest}>
                 Save
               </button>
             </div>
@@ -3494,9 +3983,6 @@ return (
                       color: colors.text
                     }}
                     placeholder="pm.test('Status code is 200', function() {\n  pm.response.to.have.status(200);\n});"
-                    onChange={(e) => {
-                      // You can save this to state if needed
-                    }}
                   />
                 </div>
               )}

@@ -1,0 +1,10 @@
+[2026-02-10T07:29:31.856345200Z] [26685bbe] [INFO] [DashboardService.getDashboardStats] http-nio-4789-exec-10: Request ID: 0a7c8466-8336-498c-889d-a5a87e86214a, Getting dashboard statistics for userManagement: RDK006
+[2026-02-10T07:29:31.865451700Z] [a5402f38] [INFO] [DashboardService.getDashboardStats] http-nio-4789-exec-10: Request ID: 0a7c8466-8336-498c-889d-a5a87e86214a, Retrieved dashboard statistics for userManagement: RDK006
+[2026-02-10T07:32:23.146334500Z] [6b2afdb2] [INFO] [DashboardService.getDashboardStats] http-nio-4789-exec-3: Request ID: 94564836-c3d3-45e0-bd73-7c2e7d95fee6, Getting dashboard statistics for userManagement: RDK006
+[2026-02-10T07:32:43.978906700Z] [a43db119] [INFO] [DashboardService.getDashboardStats] http-nio-4789-exec-5: Request ID: b84b9982-ecb2-4f85-aa46-04ddc2df5dbc, Getting dashboard statistics for userManagement: RDK006
+[2026-02-10T07:32:51.741654700Z] [6e2fed15] [INFO] [DashboardService.getDashboardStats] http-nio-4789-exec-5: Request ID: 3eae60c6-f3d7-4e37-9362-11aae460ce75, Getting dashboard statistics for userManagement: RDK006
+[2026-02-10T07:50:12.998316200Z] [1a692fe7] [INFO] [DashboardService.getDashboardStats] http-nio-4789-exec-4: Request ID: e2f337d0-c6ba-4d24-a3f4-a2135b38fcf9, Getting dashboard statistics for userManagement: RDK006
+[2026-02-10T07:50:13.006278300Z] [b4a03f6d] [INFO] [DashboardService.getDashboardStats] http-nio-4789-exec-4: Request ID: e2f337d0-c6ba-4d24-a3f4-a2135b38fcf9, Retrieved dashboard statistics for userManagement: RDK006
+[2026-02-10T08:00:22.816261500Z] [2d6ade34] [INFO] [DashboardService.getDashboardStats] http-nio-4789-exec-7: Request ID: 93ba8e36-98a0-45b9-a875-c64cb7a2e597, Getting dashboard statistics for userManagement: RDK006
+[2026-02-10T08:00:22.823855100Z] [fb46e177] [INFO] [DashboardService.getDashboardStats] http-nio-4789-exec-7: Request ID: 93ba8e36-98a0-45b9-a875-c64cb7a2e597, Retrieved dashboard statistics for userManagement: RDK006
+[2026-02-10T08:00:46.593566700Z] [a12f9bf5] [INFO] [DashboardService.getDashboardStats] http-nio-4789-exec-4: Request ID: a3b6fcac-4eb1-46ad-be31-77f1a4890938, Getting dashboard statistics for userManagement: RDK006

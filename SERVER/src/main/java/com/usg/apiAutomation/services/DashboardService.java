@@ -57,9 +57,9 @@ public class DashboardService {
 
     public DashboardStatsResponse getDashboardStats(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting dashboard statistics for user: {}", requestId, performedBy);
+            log.info("Request ID: {}, Getting dashboard statistics for userManagement: {}", requestId, performedBy);
             loggerUtil.log("dashboard",
-                    "Request ID: " + requestId + ", Getting dashboard statistics for user: " + performedBy);
+                    "Request ID: " + requestId + ", Getting dashboard statistics for userManagement: " + performedBy);
 
             // Check cache first
             String cacheKey = "dashboard_stats_" + performedBy;
@@ -77,7 +77,7 @@ public class DashboardService {
 
             log.info("Request ID: {}, Retrieved dashboard statistics", requestId);
             loggerUtil.log("dashboard",
-                    "Request ID: " + requestId + ", Retrieved dashboard statistics for user: " + performedBy);
+                    "Request ID: " + requestId + ", Retrieved dashboard statistics for userManagement: " + performedBy);
 
             return stats;
 
@@ -92,7 +92,7 @@ public class DashboardService {
 
     public DashboardConnectionsResponse getDashboardConnections(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting dashboard connections for user: {}", requestId, performedBy);
+            log.info("Request ID: {}, Getting dashboard connections for userManagement: {}", requestId, performedBy);
 
             // Check cache first
             String cacheKey = "dashboard_connections_" + performedBy;
@@ -121,7 +121,7 @@ public class DashboardService {
 
     public DashboardApisResponse getDashboardApis(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting dashboard APIs for user: {}", requestId, performedBy);
+            log.info("Request ID: {}, Getting dashboard APIs for userManagement: {}", requestId, performedBy);
 
             // Check cache first
             String cacheKey = "dashboard_apis_" + performedBy;
@@ -151,7 +151,7 @@ public class DashboardService {
     public DashboardActivitiesResponse getDashboardActivities(String requestId, HttpServletRequest req,
                                                               String performedBy, int page, int size) {
         try {
-            log.info("Request ID: {}, Getting dashboard activities for user: {}, Page: {}, Size: {}",
+            log.info("Request ID: {}, Getting dashboard activities for userManagement: {}, Page: {}, Size: {}",
                     requestId, performedBy, page, size);
 
             // Check cache first
@@ -194,7 +194,7 @@ public class DashboardService {
 
     public DashboardSchemaStatsResponse getDashboardSchemaStats(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting dashboard schema statistics for user: {}", requestId, performedBy);
+            log.info("Request ID: {}, Getting dashboard schema statistics for userManagement: {}", requestId, performedBy);
 
             // Check cache first
             String cacheKey = "dashboard_schema_stats_" + performedBy;
@@ -223,7 +223,7 @@ public class DashboardService {
 
     public Map<String, Object> getDashboardSystemHealth(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting dashboard system health for user: {}", requestId, performedBy);
+            log.info("Request ID: {}, Getting dashboard systemActivities health for userManagement: {}", requestId, performedBy);
 
             Map<String, Object> systemHealth = new HashMap<>();
 
@@ -258,20 +258,20 @@ public class DashboardService {
             // Last updated
             systemHealth.put("lastUpdated", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
 
-            log.info("Request ID: {}, Retrieved dashboard system health", requestId);
+            log.info("Request ID: {}, Retrieved dashboard systemActivities health", requestId);
 
             return systemHealth;
 
         } catch (Exception e) {
-            String errorMsg = "Error retrieving dashboard system health: " + e.getMessage();
+            String errorMsg = "Error retrieving dashboard systemActivities health: " + e.getMessage();
             log.error("Request ID: {}, {}", requestId, errorMsg);
-            return Map.of("error", "Failed to fetch system health: " + e.getMessage());
+            return Map.of("error", "Failed to fetch systemActivities health: " + e.getMessage());
         }
     }
 
     public Map<String, Object> getCodeGenerationStats(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting code generation statistics for user: {}", requestId, performedBy);
+            log.info("Request ID: {}, Getting code generation statistics for userManagement: {}", requestId, performedBy);
 
             Map<String, Object> codeStats = new HashMap<>();
 
@@ -319,7 +319,7 @@ public class DashboardService {
 
     public void clearDashboardCache(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Clearing dashboard cache for user: {}", requestId, performedBy);
+            log.info("Request ID: {}, Clearing dashboard cache for userManagement: {}", requestId, performedBy);
 
             int beforeSize = dashboardCache.size();
             dashboardCache.clear();
@@ -327,7 +327,7 @@ public class DashboardService {
 
             log.info("Request ID: {}, Cleared {} dashboard cache entries", requestId, beforeSize - afterSize);
             loggerUtil.log("dashboard",
-                    "Request ID: " + requestId + ", Cleared dashboard cache for user: " + performedBy);
+                    "Request ID: " + requestId + ", Cleared dashboard cache for userManagement: " + performedBy);
 
         } catch (Exception e) {
             String errorMsg = "Error clearing dashboard cache: " + e.getMessage();
@@ -403,7 +403,7 @@ public class DashboardService {
         List<ConnectionDto> connections = new ArrayList<>();
 
         // Generate sample connections
-        for (int i = 1; i <= 8; i++) {
+        for (int i = 1; i <= 1; i++) {
             ConnectionDto connection = new ConnectionDto();
             connection.setId("conn-" + i);
             connection.setName("DB_CONNECTION_" + i);
@@ -481,7 +481,7 @@ public class DashboardService {
             // Generate description based on action
             activity.setDescription(generateActivityDescription(action, i));
 
-            // Random user
+            // Random userManagement
             activity.setUser(ACTIVITY_USERS[(int) (Math.random() * ACTIVITY_USERS.length)]);
 
             // Random time (within last 7 days)
@@ -526,7 +526,7 @@ public class DashboardService {
                 activity.setActionType("code");
             } else {
                 activity.setAffectedResource("SYS-" + (int) (Math.random() * 100));
-                activity.setActionType("system");
+                activity.setActionType("systemActivities");
             }
 
             activities.add(activity);
@@ -583,11 +583,11 @@ public class DashboardService {
         if (action.contains("Database")) return "database";
         if (action.contains("Code")) return "code";
         if (action.contains("Schema")) return "schema";
-        if (action.contains("User")) return "user";
+        if (action.contains("User")) return "userManagement";
         if (action.contains("Configuration")) return "settings";
         if (action.contains("Backup")) return "backup";
         if (action.contains("Test")) return "test";
-        return "system";
+        return "systemActivities";
     }
 
     private String generateActivityDescription(String action, int id) {
@@ -616,7 +616,7 @@ public class DashboardService {
 
     private String getApiDescription(int index) {
         String[] descriptions = {
-                "Complete user authentication and management",
+                "Complete userManagement authentication and management",
                 "Secure payment processing",
                 "Manage product inventory and stock levels",
                 "Handle customer orders and order tracking",
@@ -715,7 +715,7 @@ public class DashboardService {
         ApiDto api = new ApiDto();
         api.setId("api-1");
         api.setName("User Management API");
-        api.setDescription("Complete user authentication and management");
+        api.setDescription("Complete userManagement authentication and management");
         api.setVersion("v2.1");
         api.setStatus("active");
         api.setEndpointCount(12);

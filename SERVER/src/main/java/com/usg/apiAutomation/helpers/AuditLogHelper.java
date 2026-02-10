@@ -1,7 +1,7 @@
 package com.usg.apiAutomation.helpers;
 
-import com.usg.apiAutomation.dtos.audit.AuditLogDTO;
-import com.usg.apiAutomation.dtos.audit.AuditLogSearchRequest;
+import com.usg.apiAutomation.dtos.systemActivities.audit.AuditLogDTO;
+import com.usg.apiAutomation.dtos.systemActivities.audit.AuditLogSearchRequest;
 import com.usg.apiAutomation.entities.AuditLogEntity;
 import com.usg.apiAutomation.repositories.AuditLogRepository;
 import org.springframework.beans.factory.annotation.Autowired;

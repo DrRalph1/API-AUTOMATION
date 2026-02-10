@@ -54,7 +54,7 @@ public class SecurityConfig {
                         )
                 )
 
-                // ✅ Hook your custom user service
+                // ✅ Hook your custom userManagement service
                 .userDetailsService(userDetailsService)
 
                 // ✅ Authorization Rules

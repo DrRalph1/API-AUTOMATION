@@ -1,6 +1,6 @@
 package com.usg.apiAutomation.services;
 
-import com.usg.apiAutomation.dtos.user.*;
+import com.usg.apiAutomation.dtos.userManagement.*;
 import com.usg.apiAutomation.entities.UserRoleEntity;
 import com.usg.apiAutomation.entities.UserEntity;
 import com.usg.apiAutomation.exceptions.GlobalExceptionHandler.BusinessRuleException;
@@ -10,9 +10,9 @@ import com.usg.apiAutomation.helpers.ErrorHandlingHelper;
 import com.usg.apiAutomation.helpers.SortValidationHelper;
 import com.usg.apiAutomation.repositories.AppRoleRepository;
 import com.usg.apiAutomation.repositories.AppUserRepository;
-import com.usg.apiAutomation.services.system.AccountLockService;
-import com.usg.apiAutomation.services.system.EmailService;
-import com.usg.apiAutomation.services.system.SMSService;
+import com.usg.apiAutomation.services.systemActivities.AccountLockService;
+import com.usg.apiAutomation.services.systemActivities.EmailService;
+import com.usg.apiAutomation.services.systemActivities.SMSService;
 import com.usg.apiAutomation.utils.JwtUtil;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import org.apache.commons.lang3.RandomStringUtils;
@@ -71,7 +71,7 @@ public class UserManagementService {
 
         loggerUtil.log("api-automation",
                 "Request ID: " + requestId +
-                        ", Creating user: " + dto.getUsername() +
+                        ", Creating userManagement: " + dto.getUsername() +
                         ", Requested by: " + safePerformedBy);
 
         try {
@@ -95,7 +95,7 @@ public class UserManagementService {
                             String.format("Role with ID %s not found", dto.getRoleId())
                     ));
 
-            // ✅ CRITICAL: Generate a user ID before creating the entity
+            // ✅ CRITICAL: Generate a userManagement ID before creating the entity
             String generatedUserId = dto.getUsername();
 
             UserEntity entity = UserEntity.builder()
@@ -164,7 +164,7 @@ public class UserManagementService {
 
         } catch (DataIntegrityViolationException e) {
             result.put("responseCode", 409);
-            result.put("message", "A user with similar data already exists");
+            result.put("message", "A userManagement with similar data already exists");
 
             loggerUtil.log("api-automation",
                     "Request ID: " + requestId + ", Data integrity violation: " + e.getMessage());
@@ -176,7 +176,7 @@ public class UserManagementService {
             result.put("message", "Internal server error: " + e.getMessage());
 
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Error creating user: " + e.getMessage());
+                    "Request ID: " + requestId + ", Error creating userManagement: " + e.getMessage());
 
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
         }
@@ -195,18 +195,18 @@ public class UserManagementService {
 
         String safePerformedBy = performedBy != null ? performedBy : "UNKNOWN";
         loggerUtil.log("api-automation", "[Login] Request ID: " + requestId +
-                ", Login attempt for user: " + userId +
+                ", Login attempt for userManagement: " + userId +
                 ", Performed by: " + safePerformedBy);
 
         try {
             loggerUtil.log("api-automation",
-                    "[Login] Request ID: " + requestId + ", Checking if user exists: " + userId);
+                    "[Login] Request ID: " + requestId + ", Checking if userManagement exists: " + userId);
 
             Optional<UserEntity> userOptional = appUserRepository.findByUserIdIgnoreCase(userId);
 
             if (userOptional.isEmpty()) {
                 loggerUtil.log("api-automation",
-                        "[Login] Request ID: " + requestId + ", Invalid user: " + userId);
+                        "[Login] Request ID: " + requestId + ", Invalid userManagement: " + userId);
                 throw new RuntimeException("Invalid User ID or Password");
             }
 
@@ -220,7 +220,7 @@ public class UserManagementService {
             // Check if account is locked
             if (accountLockService.isAccountLocked(user.getUserId())) {
                 loggerUtil.log("api-automation",
-                        "[Login] Request ID: " + requestId + ", Account is locked for user: " + userId);
+                        "[Login] Request ID: " + requestId + ", Account is locked for userManagement: " + userId);
                 String lockStatus = accountLockService.getLockStatus(user.getUserId());
                 if ("PERMANENTLY_LOCKED".equals(lockStatus)) {
                     throw new RuntimeException("Account locked due to multiple failed attempts. Please contact support to unlock your account.");
@@ -232,20 +232,20 @@ public class UserManagementService {
             // Null-safe password check
             if (user.getPassword() == null) {
                 loggerUtil.log("api-automation",
-                        "[Login] Request ID: " + requestId + ", Password not set for user: " + userId);
+                        "[Login] Request ID: " + requestId + ", Password not set for userManagement: " + userId);
                 throw new RuntimeException("User password not set. Contact support.");
             }
 
             // Verify password
             loggerUtil.log("api-automation",
-                    "[Login] Request ID: " + requestId + ", Verifying password for user: " + userId);
+                    "[Login] Request ID: " + requestId + ", Verifying password for userManagement: " + userId);
             if (!passwordEncoder.matches(userLoginRequestDTO.getPassword(), user.getPassword())) {
                 loggerUtil.log("api-automation",
-                        "[Login] Request ID: " + requestId + ", Invalid password attempt for user: " + userId);
+                        "[Login] Request ID: " + requestId + ", Invalid password attempt for userManagement: " + userId);
                 try {
                     accountLockService.handleFailedLoginAttempt(user.getUserId());
                     loggerUtil.log("api-automation",
-                            "[Login] Request ID: " + requestId + ", Incremented failed login attempt count for user: " + userId);
+                            "[Login] Request ID: " + requestId + ", Incremented failed login attempt count for userManagement: " + userId);
                 } catch (MessagingException e) {
                     loggerUtil.log("api-automation",
                             "Request ID: " + requestId + ", Failed to send account locked email: " + e.getMessage());
@@ -265,7 +265,7 @@ public class UserManagementService {
             // Reset failed attempts on successful login
             accountLockService.resetFailedAttempts(user.getUserId());
             loggerUtil.log("api-automation",
-                    "[Login] Request ID: " + requestId + ", Reset failed attempts for user: " + userId);
+                    "[Login] Request ID: " + requestId + ", Reset failed attempts for userManagement: " + userId);
 
             if (Boolean.FALSE.equals(user.getIsActive())) {
                 loggerUtil.log("api-automation",
@@ -278,7 +278,7 @@ public class UserManagementService {
             if (isDefaultPassword == null) {
                 loggerUtil.log("api-automation",
                         "[Login] Request ID: " + requestId +
-                                ", isDefaultPassword is null for user: " + userId + ", defaulting to false");
+                                ", isDefaultPassword is null for userManagement: " + userId + ", defaulting to false");
                 isDefaultPassword = false;
             }
 
@@ -323,7 +323,7 @@ public class UserManagementService {
                 result.put("data", userData);
 
                 loggerUtil.log("api-automation",
-                        "[Login] Request ID: " + requestId + ", Successful login for user: " + userId);
+                        "[Login] Request ID: " + requestId + ", Successful login for userManagement: " + userId);
             }
 
         } catch (Exception e) {
@@ -331,12 +331,12 @@ public class UserManagementService {
             if (responseMessage == null) {
                 responseMessage = "Unknown error occurred during login";
                 loggerUtil.log("api-automation",
-                        "[Login] Request ID: " + requestId + ", Null error message for user: " + userId);
+                        "[Login] Request ID: " + requestId + ", Null error message for userManagement: " + userId);
             }
 
             loggerUtil.log("api-automation",
                     "[Login] Request ID: " + requestId +
-                            ", Error during login for user: " + userId + " -> " + responseMessage);
+                            ", Error during login for userManagement: " + userId + " -> " + responseMessage);
 
             int errorCode = errorHandlingHelper.determineErrorCodeBasedOnMessage(responseMessage);
             result.put("responseCode", errorCode);
@@ -345,7 +345,7 @@ public class UserManagementService {
 
         loggerUtil.log("api-automation",
                 "[Login] Request ID: " + requestId +
-                        ", Final response for user: " + userId +
+                        ", Final response for userManagement: " + userId +
                         ", code: " + result.get("responseCode"));
 
         return ResponseEntity.status((int) result.get("responseCode")).body(result);
@@ -369,11 +369,11 @@ public class UserManagementService {
 
         loggerUtil.log("web-application-firewall",
                 "[PasswordReset] Request ID: " + requestId +
-                        ", Password reset attempt for user: " + userId +
+                        ", Password reset attempt for userManagement: " + userId +
                         ", Performed by: " + safePerformedBy);
 
         try {
-            // Fetch user from repository
+            // Fetch userManagement from repository
             Optional<UserDTO> userOptional = appUserRepository.getUserByUserId(userId);
             if (userOptional.isEmpty()) {
                 loggerUtil.log("web-application-firewall",
@@ -470,14 +470,14 @@ public class UserManagementService {
             result.put("data", responseData);
 
             loggerUtil.log("web-application-firewall",
-                    "[PasswordReset] Request ID: " + requestId + ", Successful password reset for user: " + userId);
+                    "[PasswordReset] Request ID: " + requestId + ", Successful password reset for userManagement: " + userId);
 
             return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("web-application-firewall",
                     "[PasswordReset] Request ID: " + requestId +
-                            ", Error during password reset for user: " + userId + " -> " + e.getMessage());
+                            ", Error during password reset for userManagement: " + userId + " -> " + e.getMessage());
 
             result.put("responseCode", 500);
             result.put("message", "An error occurred during password reset: " + e.getMessage());
@@ -498,10 +498,10 @@ public class UserManagementService {
 
         loggerUtil.log("web-application-firewall",
                 "[ForgotPassword] Request ID: " + requestId +
-                        ", Password reset attempt for user: " + userId);
+                        ", Password reset attempt for userManagement: " + userId);
 
         try {
-            // Fetch user from repository
+            // Fetch userManagement from repository
             Optional<UserDTO> userOptional = appUserRepository.getUserByUserId(userId);
             if (userOptional.isEmpty()) {
                 loggerUtil.log("web-application-firewall",
@@ -548,7 +548,7 @@ public class UserManagementService {
 
             // Optional email notification (commented out)
         /*
-        String email = user.getEmailAddress();
+        String email = userManagement.getEmailAddress();
         if (email != null && !email.isEmpty()) {
             try {
                 String emailSubject = "Password Reset Successful";
@@ -580,14 +580,14 @@ public class UserManagementService {
             result.put("data", responseData);
 
             loggerUtil.log("web-application-firewall",
-                    "[ForgotPassword] Request ID: " + requestId + ", Successful password reset for user: " + userId);
+                    "[ForgotPassword] Request ID: " + requestId + ", Successful password reset for userManagement: " + userId);
 
             return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("web-application-firewall",
                     "[ForgotPassword] Request ID: " + requestId +
-                            ", Error during password reset for user: " + userId + " -> " + e.getMessage());
+                            ", Error during password reset for userManagement: " + userId + " -> " + e.getMessage());
 
             result.put("responseCode", 500);
             result.put("message", "An error occurred during password reset: " + e.getMessage());
@@ -610,19 +610,19 @@ public class UserManagementService {
 
         loggerUtil.log("web-application-firewall",
                 "[DefaultPasswordReset] Request ID: " + requestId +
-                        ", Default password reset for user: " + userId +
+                        ", Default password reset for userManagement: " + userId +
                         ", Performed by: " + safePerformedBy);
 
         try {
             loggerUtil.log("web-application-firewall",
-                    "[DefaultPasswordReset] Request ID: " + requestId + ", Checking if user exists: " + userId);
+                    "[DefaultPasswordReset] Request ID: " + requestId + ", Checking if userManagement exists: " + userId);
 
-            // Verify user exists
+            // Verify userManagement exists
             Optional<UserDTO> userOptional = appUserRepository.getUserByUserId(userId);
             if (userOptional.isEmpty()) {
                 loggerUtil.log("web-application-firewall",
-                        "[DefaultPasswordReset] Request ID: " + requestId + ", Invalid user: " + userId);
-                throw new RuntimeException("Invalid user ID");
+                        "[DefaultPasswordReset] Request ID: " + requestId + ", Invalid userManagement: " + userId);
+                throw new RuntimeException("Invalid userManagement ID");
             }
 
             UserDTO user = userOptional.get();
@@ -635,7 +635,7 @@ public class UserManagementService {
             // Check if account is locked
             if (accountLockService.isAccountLocked(userId)) {
                 loggerUtil.log("web-application-firewall",
-                        "[DefaultPasswordReset] Request ID: " + requestId + ", Account is locked for user: " + userId);
+                        "[DefaultPasswordReset] Request ID: " + requestId + ", Account is locked for userManagement: " + userId);
                 String lockStatus = accountLockService.getLockStatus(userId);
                 if ("PERMANENTLY_LOCKED".equals(lockStatus)) {
                     throw new RuntimeException("Account locked due to multiple failed attempts. Please contact support to unlock your account.");
@@ -647,20 +647,20 @@ public class UserManagementService {
             // Null-safe password check
             if (user.getPassword() == null) {
                 loggerUtil.log("web-application-firewall",
-                        "[DefaultPasswordReset] Request ID: " + requestId + ", Password not set for user: " + userId);
+                        "[DefaultPasswordReset] Request ID: " + requestId + ", Password not set for userManagement: " + userId);
                 throw new RuntimeException("User password not set. Contact support.");
             }
 
             // Verify old password
             loggerUtil.log("web-application-firewall",
-                    "[DefaultPasswordReset] Request ID: " + requestId + ", Verifying old password for user: " + userId);
+                    "[DefaultPasswordReset] Request ID: " + requestId + ", Verifying old password for userManagement: " + userId);
             if (!passwordEncoder.matches(resetRequest.getOldPassword(), user.getPassword())) {
                 loggerUtil.log("web-application-firewall",
-                        "[DefaultPasswordReset] Request ID: " + requestId + ", Invalid old password attempt for user: " + userId);
+                        "[DefaultPasswordReset] Request ID: " + requestId + ", Invalid old password attempt for userManagement: " + userId);
                 try {
                     accountLockService.handleFailedLoginAttempt(userId);
                     loggerUtil.log("web-application-firewall",
-                            "[DefaultPasswordReset] Request ID: " + requestId + ", Incremented failed attempt count for user: " + userId);
+                            "[DefaultPasswordReset] Request ID: " + requestId + ", Incremented failed attempt count for userManagement: " + userId);
                 } catch (MessagingException e) {
                     loggerUtil.log("web-application-firewall",
                             "[DefaultPasswordReset] Request ID: " + requestId + ", Failed to send account locked email: " + e.getMessage());
@@ -680,14 +680,14 @@ public class UserManagementService {
             // Validate new password
             if (resetRequest.getNewPassword() == null || resetRequest.getNewPassword().length() < 8) {
                 loggerUtil.log("web-application-firewall",
-                        "[DefaultPasswordReset] Request ID: " + requestId + ", New password too short for user: " + userId);
+                        "[DefaultPasswordReset] Request ID: " + requestId + ", New password too short for userManagement: " + userId);
                 throw new RuntimeException("New password must be at least 8 characters");
             }
 
             // Check if new password is same as old password
             if (passwordEncoder.matches(resetRequest.getNewPassword(), user.getPassword())) {
                 loggerUtil.log("web-application-firewall",
-                        "[DefaultPasswordReset] Request ID: " + requestId + ", New password same as old for user: " + userId);
+                        "[DefaultPasswordReset] Request ID: " + requestId + ", New password same as old for userManagement: " + userId);
                 throw new RuntimeException("New password cannot be the same as current password");
             }
 
@@ -718,7 +718,7 @@ public class UserManagementService {
             // Reset failed attempts on successful password reset
             accountLockService.resetFailedAttempts(userId);
             loggerUtil.log("web-application-firewall",
-                    "[DefaultPasswordReset] Request ID: " + requestId + ", Reset failed attempts for user: " + userId);
+                    "[DefaultPasswordReset] Request ID: " + requestId + ", Reset failed attempts for userManagement: " + userId);
 
             // Prepare response data
             Map<String, Object> responseData = new HashMap<>();
@@ -731,19 +731,19 @@ public class UserManagementService {
             result.put("data", responseData);
 
             loggerUtil.log("web-application-firewall",
-                    "[DefaultPasswordReset] Request ID: " + requestId + ", Successful default password reset for user: " + userId);
+                    "[DefaultPasswordReset] Request ID: " + requestId + ", Successful default password reset for userManagement: " + userId);
 
         } catch (Exception e) {
             String responseMessage = e.getMessage();
             if (responseMessage == null) {
                 responseMessage = "Unknown error occurred during password reset";
                 loggerUtil.log("web-application-firewall",
-                        "[DefaultPasswordReset] Request ID: " + requestId + ", Null error message for user: " + userId);
+                        "[DefaultPasswordReset] Request ID: " + requestId + ", Null error message for userManagement: " + userId);
             }
 
             loggerUtil.log("web-application-firewall",
                     "[DefaultPasswordReset] Request ID: " + requestId +
-                            ", Error during default password reset for user: " + userId + " -> " + responseMessage);
+                            ", Error during default password reset for userManagement: " + userId + " -> " + responseMessage);
 
             int errorCode = errorHandlingHelper.determineErrorCodeBasedOnMessage(responseMessage);
             result.put("responseCode", errorCode);
@@ -752,7 +752,7 @@ public class UserManagementService {
 
         loggerUtil.log("web-application-firewall",
                 "[DefaultPasswordReset] Request ID: " + requestId +
-                        ", Final response for user: " + userId +
+                        ", Final response for userManagement: " + userId +
                         ", code: " + result.get("responseCode"));
 
         return ResponseEntity.status((int) result.get("responseCode")).body(result);
@@ -793,7 +793,7 @@ public class UserManagementService {
             } catch (BusinessRuleException e) {
                 Map<String, Object> result = new HashMap<>();
                 result.put("responseCode", 422);
-                result.put("message", "Validation failed for user: " + e.getMessage());
+                result.put("message", "Validation failed for userManagement: " + e.getMessage());
 
                 loggerUtil.log("api-automation",
                         "Request ID: " + requestId + ", Validation failed: " + e.getMessage());
@@ -860,7 +860,7 @@ public class UserManagementService {
             try {
                 List<UserEntity> savedEntities = appUserRepository.saveAll(entitiesToSave);
 
-                // Update results with created user IDs
+                // Update results with created userManagement IDs
                 int savedIndex = 0;
                 for (UserResultDTO result : results) {
                     if ("PENDING_CREATION".equals(result.getStatus())) {
@@ -914,7 +914,7 @@ public class UserManagementService {
 
         loggerUtil.log("api-automation",
                 "Request ID: " + requestId +
-                        ", Bulk user creation completed: " + createdCount + " created, " +
+                        ", Bulk userManagement creation completed: " + createdCount + " created, " +
                         duplicateCount + " duplicates, " + roleNotFoundCount.get() + " roles not found");
 
         // Convert to standard response format
@@ -956,7 +956,7 @@ public class UserManagementService {
 
         loggerUtil.log("api-automation",
                 "Request ID: " + requestId +
-                        ", Getting user with ID: " + userId +
+                        ", Getting userManagement with ID: " + userId +
                         ", Requested by: " + safePerformedBy);
 
         try {
@@ -1000,7 +1000,7 @@ public class UserManagementService {
             result.put("message", "Internal server error: " + e.getMessage());
 
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Error getting user: " + e.getMessage());
+                    "Request ID: " + requestId + ", Error getting userManagement: " + e.getMessage());
 
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
         }
@@ -1212,7 +1212,7 @@ public class UserManagementService {
 
         loggerUtil.log("api-automation",
                 "Request ID: " + requestId +
-                        ", Updating user with ID: " + userId +
+                        ", Updating userManagement with ID: " + userId +
                         ", Requested by: " + safePerformedBy);
 
         try {
@@ -1224,7 +1224,7 @@ public class UserManagementService {
                             String.format("User with ID %s not found", userId)
                     ));
 
-            // Check if username conflicts with existing user
+            // Check if username conflicts with existing userManagement
             if (!entity.getUsername().equals(dto.getUsername())) {
                 Optional<UserEntity> existingUser = appUserRepository.findByUsername(dto.getUsername());
                 if (existingUser.isPresent() && !existingUser.get().getUserId().equals(userId)) {
@@ -1310,7 +1310,7 @@ public class UserManagementService {
             result.put("message", "Internal server error: " + e.getMessage());
 
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Error updating user: " + e.getMessage());
+                    "Request ID: " + requestId + ", Error updating userManagement: " + e.getMessage());
 
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
         }
@@ -1402,7 +1402,7 @@ public class UserManagementService {
 
         loggerUtil.log("api-automation",
                 "Request ID: " + requestId +
-                        ", Deleting user with ID: " + userId +
+                        ", Deleting userManagement with ID: " + userId +
                         ", Requested by: " + safePerformedBy);
 
         try {
@@ -1416,7 +1416,7 @@ public class UserManagementService {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(result);
             }
 
-            // Optional: Check if user is in use before deletion
+            // Optional: Check if userManagement is in use before deletion
             boolean isInUse = checkIfUserIsInUse(userId);
             if (isInUse) {
                 result.put("responseCode", 409);
@@ -1443,7 +1443,7 @@ public class UserManagementService {
             result.put("message", "Internal server error: " + e.getMessage());
 
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Error deleting user: " + e.getMessage());
+                    "Request ID: " + requestId + ", Error deleting userManagement: " + e.getMessage());
 
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
         }
@@ -1492,15 +1492,15 @@ public class UserManagementService {
         }
     }
 
-    // Helper method to check if user is in use (example implementation)
+    // Helper method to check if userManagement is in use (example implementation)
     private boolean checkIfUserIsInUse(String userId) {
-        // Implement logic to check if user is referenced elsewhere
-        // For example, check if user has any associated records in other tables
+        // Implement logic to check if userManagement is referenced elsewhere
+        // For example, check if userManagement has any associated records in other tables
         // This would depend on your business requirements
-        // Return true if user is in use, false otherwise
+        // Return true if userManagement is in use, false otherwise
 
-        // Example: Check if user is currently logged in or has active sessions
-        // You might want to check if user has any created records in the system
+        // Example: Check if userManagement is currently logged in or has active sessions
+        // You might want to check if userManagement has any created records in the systemActivities
 
         return false; // Placeholder - implement according to your requirements
     }
