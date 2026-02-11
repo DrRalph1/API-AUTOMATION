@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   ChevronRight, 
   ChevronDown,
@@ -192,6 +192,9 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [allImplementations, setAllImplementations] = useState({});
   const [folderRequests, setFolderRequests] = useState({}); // Store requests per folder
   const [userId, setUserId] = useState('');
+  
+  // Ref to track if this is the first load
+  const isFirstLoad = useRef(true);
 
   // Color scheme
   const colors = isDark ? {
@@ -277,7 +280,7 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   };
 
   // Load collections from codebase
-   const fetchCollectionsList = useCallback(async () => {
+  const fetchCollectionsList = useCallback(async () => {
     console.log('🔥 [CodeBase] fetchCollectionsList called');
     
     if (!authToken) {
@@ -319,13 +322,17 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
         cacheCodebaseData(userId, 'collections', formattedCollections);
       }
       
-      // Auto-select and load first collection if available
+      // In fetchCollectionsList, when auto-selecting first collection:
       if (formattedCollections.length > 0) {
         const firstCollection = formattedCollections[0];
         setSelectedCollection(firstCollection);
         
-        // Expand and load details for first collection
+        // IMPORTANT: Clear any existing expanded folders first
+        setExpandedFolders([]); // ← Clear all expanded folders
+        
+        // Then expand the first collection
         setExpandedCollections([firstCollection.id]);
+        
         await fetchCollectionDetails(firstCollection.id);
       }
       
@@ -341,71 +348,127 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     }
   }, [authToken]);
 
-  // Load collection details
-  const fetchCollectionDetails = useCallback(async (collectionId) => {
-    console.log(`📡 [CodeBase] Fetching details for collection ${collectionId}`);
+
+  // DEBUG - Monitor selectedCollection.folders changes
+useEffect(() => {
+  if (selectedCollection?.folders?.length > 0) {
+    console.log('🔥🔥🔥 [CodeBase] FOLDERS ARE NOW AVAILABLE!', {
+      folders: selectedCollection.folders.map(f => f.name),
+      count: selectedCollection.folders.length
+    });
+  }
+}, [selectedCollection?.folders]);
+
+// DEBUG - Track selectedCollection folders changes
+useEffect(() => {
+  console.log('🔍 [CodeBase] selectedCollection UPDATED:', {
+    id: selectedCollection?.id,
+    name: selectedCollection?.name,
+    foldersCount: selectedCollection?.folders?.length,
+    folders: selectedCollection?.folders?.map(f => f.name),
+    hasFolders: selectedCollection?.folders?.length > 0
+  });
+  
+  // If folders are now available, this should trigger auto-expand
+  if (selectedCollection?.folders?.length > 0) {
+    console.log('🚀 [CodeBase] Folders are NOW AVAILABLE! Auto-expand should trigger...');
+  }
+}, [selectedCollection]);
+
+  // Add this ref near your other refs
+const selectedCollectionRef = useRef(null);
+
+// Update the ref whenever selectedCollection changes
+useEffect(() => {
+  selectedCollectionRef.current = selectedCollection;
+}, [selectedCollection]);
+
+// Load collection details - FINAL FIX with ref
+const fetchCollectionDetails = useCallback(async (collectionId) => {
+  console.log(`📡 [CodeBase] Fetching details for collection ${collectionId}`);
+  
+  if (!authToken || !collectionId) {
+    console.log('Missing params for fetchCollectionDetails');
+    return;
+  }
+
+  try {
+    const response = await getCollectionDetailsFromCodebase(authToken, collectionId);
+    console.log('📦 [CodeBase] Collection details response:', response);
     
-    if (!authToken || !collectionId) {
-      console.log('Missing params for fetchCollectionDetails');
-      return;
-    }
-
-    try {
-      const response = await getCollectionDetailsFromCodebase(authToken, collectionId);
-      console.log('📦 [CodeBase] Collection details response:', response);
+    const handledResponse = handleCodebaseResponse(response);
+    const details = extractCodebaseCollectionDetails(handledResponse);
+    
+    console.log('📊 [CodeBase] Extracted collection details:', details);
+    
+    if (details) {
+      // CRITICAL: Force ALL folders to have null counts
+      const foldersWithNullCounts = (details.folders || []).map(folder => ({
+        id: folder.id || folder.folderId,
+        name: folder.name || folder.folderName,
+        description: folder.description,
+        hasRequests: null,
+        requestCount: null,
+        subfolders: folder.subfolders || []
+      }));
       
-      const handledResponse = handleCodebaseResponse(response);
-      const details = extractCodebaseCollectionDetails(handledResponse);
+      console.log('📁 [CodeBase] Creating folders with null counts:', foldersWithNullCounts.map(f => f.name));
       
-      console.log('📊 [CodeBase] Extracted collection details:', details);
+      // Update collections state
+      setCollections(prevCollections => {
+        const updated = prevCollections.map(collection => {
+          if (collection.id === collectionId) {
+            return { 
+              ...collection, 
+              ...details,
+              folders: foldersWithNullCounts
+            };
+          }
+          return collection;
+        });
+        return updated;
+      });
       
-      if (details) {
-        // Update the collection in state with folders
-        setCollections(prevCollections => 
-          prevCollections.map(collection => {
-            if (collection.id === collectionId) {
-              const updatedCollection = { 
-                ...collection, 
-                ...details,
-                folders: (details.folders || []).map(folder => ({
-                  id: folder.id || folder.folderId,
-                  name: folder.name || folder.folderName,
-                  description: folder.description,
-                  hasRequests: folder.hasRequests || (folder.requestCount > 0) || false,
-                  requestCount: folder.requestCount || folder.totalRequests || 0,
-                  subfolders: folder.subfolders || []
-                }))
-              };
-              
-              return updatedCollection;
-            }
-            return collection;
-          })
-        );
+      // CRITICAL: Update selectedCollection using the ref to get the latest value
+      if (selectedCollectionRef.current?.id === collectionId) {
+        console.log('🔄 [CodeBase] Scheduling selectedCollection update with folders');
         
-        // Update selected collection if it's the one we're viewing
-        if (selectedCollection?.id === collectionId) {
-          setSelectedCollection(prev => ({ 
-            ...prev, 
-            ...details,
-            folders: updatedCollection.folders
-          }));
-        }
+        // Use setTimeout to ensure this runs after the current render cycle
+        setTimeout(() => {
+          console.log('🔄 [CodeBase] EXECUTING selectedCollection update NOW');
+          
+          // Use the ref to get the latest selectedCollection
+          const currentSelected = selectedCollectionRef.current;
+          
+          if (currentSelected?.id === collectionId) {
+            const updatedCollection = {
+              ...currentSelected,
+              ...details,
+              folders: [...foldersWithNullCounts] // New array reference
+            };
+            
+            console.log('📁 [CodeBase] Setting selectedCollection with folders:', 
+              updatedCollection.folders.map(f => f.name));
+            
+            setSelectedCollection(updatedCollection);
+          }
+        }, 10); // Small delay to ensure it runs after render
       }
-      
-    } catch (error) {
-      console.error('❌ [CodeBase] Error loading collection details:', error);
-      showToast(`Failed to load collection details: ${error.message}`, 'error');
     }
-  }, [authToken, selectedCollection]);
+    
+  } catch (error) {
+    console.error('❌ [CodeBase] Error loading collection details:', error);
+    showToast(`Failed to load collection details: ${error.message}`, 'error');
+  }
+}, [authToken]); // Remove selectedCollection from deps, use ref instead
 
-  // Load requests for a specific folder
+  // Load requests for a specific folder - FIXED to update from null to actual count
 const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
   console.log(`📡 [CodeBase] Fetching requests for folder ${folderId} in collection ${collectionId}`);
   
   if (!authToken || !collectionId || !folderId) {
     console.log('Missing params for fetchFolderRequests');
-    return;
+    return [];
   }
 
   // Set loading state for this specific folder
@@ -413,6 +476,8 @@ const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
     ...prev, 
     folderRequests: { ...prev.folderRequests, [folderId]: true }
   }));
+
+  let requests = [];
 
   try {
     const response = await getFolderRequestsFromCodebase(authToken, collectionId, folderId);
@@ -424,15 +489,17 @@ const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
     console.log('📊 [CodeBase] Extracted folder requests:', folderDetails);
     
     if (folderDetails) {
+      requests = folderDetails.requests || [];
+      
       // Update folder requests in state
       setFolderRequests(prev => ({
         ...prev,
-        [folderId]: folderDetails.requests || []
+        [folderId]: requests
       }));
       
-      console.log(`📊 [CodeBase] Loaded ${folderDetails.requests?.length || 0} requests for folder ${folderId}`);
+      console.log(`📊 [CodeBase] Loaded ${requests.length} requests for folder ${folderId}`);
       
-      // Update the folder info in collections
+      // CRITICAL: Update the folder with ACTUAL count (replacing null)
       setCollections(prevCollections => 
         prevCollections.map(collection => {
           if (collection.id === collectionId) {
@@ -440,7 +507,11 @@ const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
               ...collection,
               folders: collection.folders?.map(folder => 
                 folder.id === folderId 
-                  ? { ...folder, requestCount: folderDetails.requests?.length || 0 }
+                  ? { 
+                      ...folder, 
+                      requestCount: requests.length, // Now show actual count
+                      hasRequests: requests.length > 0 // Now show badge if has requests
+                    }
                   : folder
               ) || []
             };
@@ -448,6 +519,22 @@ const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
           return collection;
         })
       );
+      
+      // Also update the selected collection if needed
+      if (selectedCollection?.id === collectionId) {
+        setSelectedCollection(prev => ({
+          ...prev,
+          folders: prev.folders?.map(folder => 
+            folder.id === folderId 
+              ? { 
+                  ...folder, 
+                  requestCount: requests.length,
+                  hasRequests: requests.length > 0
+                }
+              : folder
+          ) || []
+        }));
+      }
     }
     
   } catch (error) {
@@ -459,6 +546,28 @@ const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
       ...prev,
       [folderId]: []
     }));
+    
+    // Update with zero count on error (still replacing null)
+    setCollections(prevCollections => 
+      prevCollections.map(collection => {
+        if (collection.id === collectionId) {
+          return {
+            ...collection,
+            folders: collection.folders?.map(folder => 
+              folder.id === folderId 
+                ? { 
+                    ...folder, 
+                    requestCount: 0,
+                    hasRequests: false
+                  }
+                : folder
+            ) || []
+          };
+        }
+        return collection;
+      })
+    );
+    
   } finally {
     // Clear loading state for this folder
     setIsLoading(prev => ({ 
@@ -466,7 +575,9 @@ const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
       folderRequests: { ...prev.folderRequests, [folderId]: false }
     }));
   }
-}, [authToken]);
+  
+  return requests;
+}, [authToken, selectedCollection]);
 
   // Load request details
   const fetchRequestDetails = useCallback(async (collectionId, requestId) => {
@@ -505,7 +616,7 @@ const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
     }
   }, [authToken, selectedLanguage, selectedComponent]);
 
-  // Load implementation details
+  // Load implementation details - FIXED to properly set implementation
 const fetchImplementationDetails = useCallback(async (collectionId, requestId, language, component) => {
   console.log(`📡 [CodeBase] Fetching implementation for ${language}/${component}`);
   
@@ -526,13 +637,21 @@ const fetchImplementationDetails = useCallback(async (collectionId, requestId, l
     console.log('📊 [CodeBase] Extracted implementation details:', details);
     
     if (details?.code) {
-      setCurrentImplementation(prev => ({
-        ...prev,
-        [language]: {
-          ...prev[language],
-          [component]: details.code
-        }
-      }));
+      // CRITICAL: Set the implementation with the actual fetched code
+      setCurrentImplementation(prev => {
+        const updated = {
+          ...prev,
+          [language]: {
+            ...(prev[language] || {}),
+            [component]: details.code
+          }
+        };
+        console.log(`✅ [CodeBase] Set implementation for ${language}/${component}`, {
+          length: details.code.length,
+          preview: details.code.substring(0, 100) + '...'
+        });
+        return updated;
+      });
       
       // Cache the implementation
       const userId = extractUserIdFromToken(authToken);
@@ -540,6 +659,8 @@ const fetchImplementationDetails = useCallback(async (collectionId, requestId, l
         cacheCodebaseData(userId, `${requestId}_${language}_${component}`, details.code);
       }
     } else {
+      console.log(`⚠️ [CodeBase] No implementation found for ${language}/${component}`);
+      
       // Try to get from allImplementations cache
       const allImpl = allImplementations[language]?.[component];
       if (allImpl) {
@@ -551,12 +672,12 @@ const fetchImplementationDetails = useCallback(async (collectionId, requestId, l
           }
         }));
       } else {
-        // Set empty if no implementation found
+        // Set default message
         setCurrentImplementation(prev => ({
           ...prev,
           [language]: {
             ...prev[language],
-            [component]: `// No implementation available for ${component} in ${language}`
+            [component]: `// No implementation available for ${component} in ${language}\n// Please generate implementation first.`
           }
         }));
       }
@@ -577,71 +698,69 @@ const fetchImplementationDetails = useCallback(async (collectionId, requestId, l
             [component]: cachedCode
           }
         }));
+        console.log(`📦 [CodeBase] Using cached implementation for ${language}/${component}`);
       }
     }
-    
-    // Don't show toast for this as it's not critical
   } finally {
     setIsLoading(prev => ({ ...prev, implementationDetails: false }));
   }
 }, [authToken, allImplementations]);
 
-
-// Fetch quick start guide for language
-const fetchQuickStartGuide = useCallback(async (language) => {
-  console.log(`📡 [CodeBase] Fetching quick start guide for ${language}`);
-  
-  if (!authToken || !language) {
-    console.log('Missing params for fetchQuickStartGuide');
-    return null;
-  }
-
-  try {
-    const response = await getQuickStartGuide(authToken, language);
-    const handledResponse = handleCodebaseResponse(response);
-    const guide = extractQuickStartGuide(handledResponse);
+  // Fetch quick start guide for language
+  const fetchQuickStartGuide = useCallback(async (language) => {
+    console.log(`📡 [CodeBase] Fetching quick start guide for ${language}`);
     
-    return guide || getDefaultQuickStartGuide(language);
-  } catch (error) {
-    console.error('❌ [CodeBase] Error loading quick start guide:', error);
-    return getDefaultQuickStartGuide(language);
-  }
-}, [authToken]);
+    if (!authToken || !language) {
+      console.log('Missing params for fetchQuickStartGuide');
+      return null;
+    }
+
+    try {
+      const response = await getQuickStartGuide(authToken, language);
+      const handledResponse = handleCodebaseResponse(response);
+      const guide = extractQuickStartGuide(handledResponse);
+      
+      return guide || getDefaultQuickStartGuide(language);
+    } catch (error) {
+      console.error('❌ [CodeBase] Error loading quick start guide:', error);
+      return getDefaultQuickStartGuide(language);
+    }
+  }, [authToken]);
 
   // Load all implementations for a request
-const fetchAllImplementations = useCallback(async (collectionId, requestId) => {
-  console.log(`📡 [CodeBase] Fetching all implementations for request ${requestId}`);
-  
-  if (!authToken || !collectionId || !requestId) {
-    console.log('Missing params for fetchAllImplementations');
-    return;
-  }
-
-  try {
-    const response = await getAllImplementations(authToken, collectionId, requestId);
-    console.log('📦 [CodeBase] All implementations response:', response);
+  const fetchAllImplementations = useCallback(async (collectionId, requestId) => {
+    console.log(`📡 [CodeBase] Fetching all implementations for request ${requestId}`);
     
-    const handledResponse = handleCodebaseResponse(response);
-    const allImplData = extractAllImplementations(handledResponse);
-    
-    if (allImplData) {
-      setAllImplementations(allImplData.implementations || {});
-      console.log('📊 [CodeBase] Loaded all implementations:', Object.keys(allImplData.implementations || {}));
-      
-      // Update current implementation if we have data for selected language
-      if (selectedLanguage && allImplData.implementations?.[selectedLanguage]) {
-        setCurrentImplementation(prev => ({
-          ...prev,
-          [selectedLanguage]: allImplData.implementations[selectedLanguage]
-        }));
-      }
+    if (!authToken || !collectionId || !requestId) {
+      console.log('Missing params for fetchAllImplementations');
+      return;
     }
-    
-  } catch (error) {
-    console.error('❌ [CodeBase] Error loading all implementations:', error);
-    // Don't show toast for this as it's not critical
-  }
-}, [authToken, selectedLanguage]);
+
+    try {
+      const response = await getAllImplementations(authToken, collectionId, requestId);
+      console.log('📦 [CodeBase] All implementations response:', response);
+      
+      const handledResponse = handleCodebaseResponse(response);
+      const allImplData = extractAllImplementations(handledResponse);
+      
+      if (allImplData) {
+        setAllImplementations(allImplData.implementations || {});
+        console.log('📊 [CodeBase] Loaded all implementations:', Object.keys(allImplData.implementations || {}));
+        
+        // Update current implementation if we have data for selected language
+        if (selectedLanguage && allImplData.implementations?.[selectedLanguage]) {
+          setCurrentImplementation(prev => ({
+            ...prev,
+            [selectedLanguage]: allImplData.implementations[selectedLanguage]
+          }));
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ [CodeBase] Error loading all implementations:', error);
+      // Don't show toast for this as it's not critical
+    }
+  }, [authToken, selectedLanguage]);
 
   // Generate implementation
   const generateImplementationAPI = async (generateRequest) => {
@@ -704,39 +823,49 @@ const fetchAllImplementations = useCallback(async (collectionId, requestId) => {
   };
 
   // Load available languages
-const fetchLanguages = useCallback(async () => {
-  console.log('📡 [CodeBase] Fetching languages...');
-  
-  if (!authToken) {
-    console.log('❌ No auth token for fetchLanguages');
-    return;
-  }
+  const fetchLanguages = useCallback(async () => {
+    console.log('📡 [CodeBase] Fetching languages...');
+    
+    if (!authToken) {
+      console.log('❌ No auth token for fetchLanguages');
+      return;
+    }
 
-  try {
-    const response = await getLanguages(authToken);
-    console.log('📦 [CodeBase] Languages response:', response);
-    
-    const handledResponse = handleCodebaseResponse(response);
-    const languagesData = extractLanguages(handledResponse);
-    
-    if (languagesData && languagesData.length > 0) {
-      const formattedLanguages = languagesData.map(lang => ({
-        id: lang.value || lang.id || lang.language,
-        name: lang.label || lang.name || lang.language,
-        framework: lang.framework || lang.primaryFramework,
-        color: lang.color || getLanguageColor(lang.value || lang.id || lang.language),
-        icon: lang.icon || null,
-        command: lang.command || lang.runCommand
-      }));
+    try {
+      const response = await getLanguages(authToken);
+      console.log('📦 [CodeBase] Languages response:', response);
       
-      setAvailableLanguages(formattedLanguages);
-      console.log('📊 [CodeBase] Loaded languages:', formattedLanguages.length);
+      const handledResponse = handleCodebaseResponse(response);
+      const languagesData = extractLanguages(handledResponse);
       
-      // Set default language if not set
-      if (!selectedLanguage && formattedLanguages.length > 0) {
-        setSelectedLanguage(formattedLanguages[0].id);
+      if (languagesData && languagesData.length > 0) {
+        const formattedLanguages = languagesData.map(lang => ({
+          id: lang.value || lang.id || lang.language,
+          name: lang.label || lang.name || lang.language,
+          framework: lang.framework || lang.primaryFramework,
+          color: lang.color || getLanguageColor(lang.value || lang.id || lang.language),
+          icon: lang.icon || null,
+          command: lang.command || lang.runCommand
+        }));
+        
+        setAvailableLanguages(formattedLanguages);
+        console.log('📊 [CodeBase] Loaded languages:', formattedLanguages.length);
+        
+        // Set default language if not set
+        if (!selectedLanguage && formattedLanguages.length > 0) {
+          setSelectedLanguage(formattedLanguages[0].id);
+        }
+      } else {
+        // Fallback to default languages
+        const defaultLanguages = getDefaultSupportedProgrammingLanguages();
+        setAvailableLanguages(defaultLanguages);
+        if (!selectedLanguage && defaultLanguages.length > 0) {
+          setSelectedLanguage(defaultLanguages[0].value);
+        }
       }
-    } else {
+      
+    } catch (error) {
+      console.error('❌ [CodeBase] Error loading languages:', error);
       // Fallback to default languages
       const defaultLanguages = getDefaultSupportedProgrammingLanguages();
       setAvailableLanguages(defaultLanguages);
@@ -744,17 +873,7 @@ const fetchLanguages = useCallback(async () => {
         setSelectedLanguage(defaultLanguages[0].value);
       }
     }
-    
-  } catch (error) {
-    console.error('❌ [CodeBase] Error loading languages:', error);
-    // Fallback to default languages
-    const defaultLanguages = getDefaultSupportedProgrammingLanguages();
-    setAvailableLanguages(defaultLanguages);
-    if (!selectedLanguage && defaultLanguages.length > 0) {
-      setSelectedLanguage(defaultLanguages[0].value);
-    }
-  }
-}, [authToken]);
+  }, [authToken]);
 
   const getMethodColor = (method) => {
     return colors.method[method] || colors.textSecondary;
@@ -775,8 +894,16 @@ const fetchLanguages = useCallback(async () => {
     }
   };
 
-  const toggleFolder = async (folderId) => {
+const toggleFolder = async (folderId) => {
+  // CRITICAL: During initial load, do NOTHING at all
+  // This prevents any folder expansion state changes
+  if (isFirstLoad.current) {
+    console.log(`⏭️ [CodeBase] Initial load in progress, completely skipping toggleFolder for ${folderId}`);
+    return; // Return immediately, don't even toggle the UI
+  }
+  
   const isExpanding = !expandedFolders.includes(folderId);
+  const isFirstFolder = selectedCollection?.folders[0]?.id === folderId;
   
   setExpandedFolders(prev =>
     prev.includes(folderId)
@@ -786,22 +913,42 @@ const fetchLanguages = useCallback(async () => {
   
   // If expanding and we have a selected collection, load folder requests
   if (isExpanding && selectedCollection) {
+    // Skip fetching during first load for the first folder
+    if (isFirstLoad.current && isFirstFolder) {
+      console.log(`⏭️ [CodeBase] Skipping fetch for first folder during first load - already fetched by auto-expand`);
+      return;
+    }
+    
     console.log(`📁 [CodeBase] Expanding folder ${folderId}, loading requests...`);
     try {
       await fetchFolderRequests(selectedCollection.id, folderId);
     } catch (error) {
       console.error(`Error loading folder ${folderId} requests:`, error);
-      // Keep folder expanded but show error in UI
     }
   }
 };
 
-  const handleSelectRequest = async (request, collection, folder) => {
+  // Add this state to track the current request ID
+const [currentRequestId, setCurrentRequestId] = useState(null);
+
+// Update handleSelectRequest to set the current request ID
+const handleSelectRequest = async (request, collection, folder) => {
   console.log('🎯 [CodeBase] Selecting request:', request.name);
   
+  // Set the current request ID FIRST - this will clear the implementation
+  setCurrentRequestId(request.id);
   setSelectedRequest(request);
   setSelectedCollection(collection);
-  setSelectedComponent('controller'); // Reset to controller when selecting new request
+  setSelectedComponent('controller');
+  
+  // Clear current implementation for this language/component when switching requests
+  setCurrentImplementation(prev => ({
+    ...prev,
+    [selectedLanguage]: {
+      ...(prev[selectedLanguage] || {}),
+      [selectedComponent]: null // Clear it
+    }
+  }));
   
   // Fetch request details
   if (collection && request.id) {
@@ -813,6 +960,8 @@ const fetchLanguages = useCallback(async () => {
   
   showToast(`Viewing implementation for ${request.name}`, 'info');
 };
+
+
 
   const copyToClipboard = (text) => {
     if (!text) {
@@ -865,37 +1014,37 @@ const fetchLanguages = useCallback(async () => {
   };
 
   const getAvailableComponents = () => {
-  // First check components from current implementation
-  const implementation = getCurrentImplementation();
-  const componentsFromImpl = Object.keys(implementation);
-  
-  if (componentsFromImpl.length > 0) {
-    return componentsFromImpl;
-  }
-  
-  // Use controller's getSupportedComponents for selected language
-  const supportedComponents = getSupportedComponents(selectedLanguage);
-  
-  if (supportedComponents && supportedComponents.length > 0) {
-    return supportedComponents.map(comp => comp.value);
-  }
-  
-  // Fallback to common components based on language
-  const componentMap = {
-    java: ['controller', 'service', 'repository', 'model', 'dto'],
-    javascript: ['controller', 'service', 'model', 'routes'],
-    python: ['fastapi', 'schemas', 'models', 'routes'],
-    csharp: ['controller', 'service', 'model', 'repository'],
-    php: ['controller', 'service', 'model'],
-    go: ['handler', 'service', 'model'],
-    ruby: ['controller', 'service', 'model'],
-    kotlin: ['controller', 'service', 'model'],
-    swift: ['controller', 'service', 'model'],
-    rust: ['handler', 'service', 'model']
+    // First check components from current implementation
+    const implementation = getCurrentImplementation();
+    const componentsFromImpl = Object.keys(implementation);
+    
+    if (componentsFromImpl.length > 0) {
+      return componentsFromImpl;
+    }
+    
+    // Use controller's getSupportedComponents for selected language
+    const supportedComponents = getSupportedComponents(selectedLanguage);
+    
+    if (supportedComponents && supportedComponents.length > 0) {
+      return supportedComponents.map(comp => comp.value);
+    }
+    
+    // Fallback to common components based on language
+    const componentMap = {
+      java: ['controller', 'service', 'repository', 'model', 'dto'],
+      javascript: ['controller', 'service', 'model', 'routes'],
+      python: ['fastapi', 'schemas', 'models', 'routes'],
+      csharp: ['controller', 'service', 'model', 'repository'],
+      php: ['controller', 'service', 'model'],
+      go: ['handler', 'service', 'model'],
+      ruby: ['controller', 'service', 'model'],
+      kotlin: ['controller', 'service', 'model'],
+      swift: ['controller', 'service', 'model'],
+      rust: ['handler', 'service', 'model']
+    };
+    
+    return componentMap[selectedLanguage] || ['controller', 'service', 'model'];
   };
-  
-  return componentMap[selectedLanguage] || ['controller', 'service', 'model'];
-};
 
   const getLanguageIcon = (language) => {
     const icons = {
@@ -928,30 +1077,126 @@ const fetchLanguages = useCallback(async () => {
     );
   });
 
+  // DEBUG - Monitor currentImplementation changes
+useEffect(() => {
+  if (selectedLanguage && selectedComponent) {
+    const code = currentImplementation[selectedLanguage]?.[selectedComponent];
+    if (code) {
+      console.log('📝 [CodeBase] Current implementation code:', {
+        language: selectedLanguage,
+        component: selectedComponent,
+        length: code.length,
+        preview: code.substring(0, 100) + '...'
+      });
+    }
+  }
+}, [currentImplementation, selectedLanguage, selectedComponent]);
+
   // Initialize data
   useEffect(() => {
-  console.log('🚀 [CodeBase] Component mounted, fetching data...');
-  
-  if (authToken) {
-    // Use controller's function
-    const extractedUserId = extractUserIdFromToken(authToken);
-    setUserId(extractedUserId);
+    console.log('🚀 [CodeBase] Component mounted, fetching data...');
     
-    // Clear cache to force fresh API call
-    clearCachedCodebaseData(extractedUserId);
-    
-    // Fetch fresh data
-    fetchCollectionsList().catch(error => {
-      console.error('Error in fetchCollectionsList:', error);
-    });
-    
-    fetchLanguages().catch(error => {
-      console.error('Error in fetchLanguages:', error);
-    });
-  } else {
-    console.log('🔒 [CodeBase] No auth token, skipping fetch');
+    if (authToken) {
+      // Use controller's function
+      const extractedUserId = extractUserIdFromToken(authToken);
+      setUserId(extractedUserId);
+      
+      // Clear cache to force fresh API call
+      clearCachedCodebaseData(extractedUserId);
+      
+      // Fetch fresh data
+      fetchCollectionsList().catch(error => {
+        console.error('Error in fetchCollectionsList:', error);
+      });
+      
+      fetchLanguages().catch(error => {
+        console.error('Error in fetchLanguages:', error);
+      });
+    } else {
+      console.log('🔒 [CodeBase] No auth token, skipping fetch');
+    }
+  }, [authToken, fetchCollectionsList, fetchLanguages]);
+
+// Add this ref near your other refs
+const autoExpandTriggered = useRef(false);
+
+// ==================== AUTO-EXPAND ONLY FIRST FOLDER & SELECT FIRST ENDPOINT ====================
+useEffect(() => {
+  // Only run on first load and if not already triggered
+  if (!isFirstLoad.current || autoExpandTriggered.current) {
+    return;
   }
-}, [authToken, fetchCollectionsList, fetchLanguages]);
+  
+  // Need selected collection
+  if (!selectedCollection) {
+    console.log('⏳ [CodeBase] Waiting for selectedCollection...');
+    return;
+  }
+  
+  // Need folders to be loaded
+  if (!selectedCollection.folders || selectedCollection.folders.length === 0) {
+    console.log('⏳ [CodeBase] Waiting for folders to load...');
+    return;
+  }
+  
+  // Mark as triggered immediately to prevent multiple calls
+  autoExpandTriggered.current = true;
+  
+  console.log('🔥🔥🔥 [CodeBase] AUTO-EXPAND TRIGGERED - FIRST FOLDER ONLY', {
+    collection: selectedCollection.name,
+    firstFolder: selectedCollection.folders[0]?.name
+  });
+  
+  const autoExpandAndSelect = async () => {
+    // ONLY expand the first folder
+    const firstFolder = selectedCollection.folders[0];
+    
+    if (!firstFolder) {
+      console.log('❌ [CodeBase] No first folder found');
+      return;
+    }
+    
+    console.log(`📁 [CodeBase] Auto-expanding first folder: ${firstFolder.id} - ${firstFolder.name}`);
+    
+    // 1. Clear any existing expanded folders and ONLY expand the first one
+    setExpandedFolders([firstFolder.id]);
+    
+    // 2. Fetch requests ONLY for the first folder
+    console.log(`📡 [CodeBase] Auto-fetching requests for first folder: ${firstFolder.id}`);
+    const requests = await fetchFolderRequests(selectedCollection.id, firstFolder.id);
+    console.log(`📊 [CodeBase] Auto-fetch complete - loaded ${requests?.length || 0} requests`);
+    
+    // 3. Select the first request if available
+    if (requests && requests.length > 0 && !selectedRequest) {
+      const firstRequest = requests[0];
+      console.log(`🎯 [CodeBase] Auto-selecting first request: ${firstRequest.name}`);
+      
+      setSelectedRequest(firstRequest);
+      setSelectedComponent('controller');
+      
+      await fetchRequestDetails(selectedCollection.id, firstRequest.id);
+      await fetchAllImplementations(selectedCollection.id, firstRequest.id);
+      
+      showToast(`Viewing implementation for ${firstRequest.name}`, 'info');
+    }
+    
+    // Mark that first load is complete
+    isFirstLoad.current = false;
+    console.log('✅ [CodeBase] Auto-expand completed - only first folder expanded');
+  };
+  
+  autoExpandAndSelect();
+  
+}, [
+  selectedCollection, 
+  selectedCollection?.folders,
+  selectedCollection?.folders?.length,
+  selectedRequest,
+  fetchFolderRequests,
+  fetchRequestDetails,
+  fetchAllImplementations,
+  showToast
+]);
 
   const renderCodePanel = () => {
     const currentLanguage = availableLanguages.find(lang => lang.id === selectedLanguage);
@@ -1116,26 +1361,6 @@ const fetchLanguages = useCallback(async () => {
             <Copy size={12} />
             Copy Code
           </button>
-          {/* <button 
-            className="w-full py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center justify-center gap-2 hover-lift"
-            onClick={generateDownloadPackage}
-            disabled={isGeneratingCode}
-            style={{ 
-              backgroundColor: isGeneratingCode ? colors.textTertiary : colors.hover,
-              color: isGeneratingCode ? colors.white : colors.text
-            }}>
-            {isGeneratingCode ? (
-              <>
-                <RefreshCw size={12} className="animate-spin" />
-                Generating...
-              </>
-            ) : (
-              <>
-                <Download size={12} />
-                Download Package
-              </>
-            )}
-          </button> */}
         </div>
       </div>
     );
@@ -1364,7 +1589,6 @@ const fetchLanguages = useCallback(async () => {
     switch (activeTab) {
       case 'generate':
         return (
-
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Implementation Tabs */}
             <div className="flex items-center border-b h-9" style={{ 
@@ -1400,7 +1624,6 @@ const fetchLanguages = useCallback(async () => {
               </div>
             </div>
 
-          
             <div className="max-w-4xl mx-auto">
               <br /><br />
               <h2 className="text-2xl font-semibold mb-6" style={{ color: colors.text }}>Generate Code</h2>
@@ -1693,17 +1916,27 @@ const fetchLanguages = useCallback(async () => {
                                 {folder.name}
                               </span>
                               
-                              {folder.hasRequests && (
+                             {folder.requestCount !== null && (
                                 <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
-                                  backgroundColor: `${colors.success}20`,
-                                  color: colors.success
+                                  backgroundColor: folder.hasRequests ? `${colors.success}20` : `${colors.textTertiary}20`,
+                                  color: folder.hasRequests ? colors.success : colors.textTertiary
                                 }}>
-                                  {folder.requestCount || '?'}
+                                  {folder.requestCount}
+                                </span>
+                              )}
+
+                              {/* If still loading (requestCount is null), show nothing or optional spinner */}
+                              {folder.requestCount === null && isLoading.folderRequests[folder.id] && (
+                                <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
+                                  backgroundColor: `${colors.textTertiary}20`,
+                                  color: colors.textTertiary
+                                }}>
+                                  <RefreshCw size={10} className="animate-spin" />
                                 </span>
                               )}
                             </div>
 
-                           {expandedFolders.includes(folder.id) && (
+                            {expandedFolders.includes(folder.id) && (
                               <div className="ml-6">
                                 {isLoading.folderRequests[folder.id] ? (
                                   <div className="py-2 text-center">
