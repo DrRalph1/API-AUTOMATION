@@ -1,5 +1,4 @@
 // controllers/CodeBaseController.js
-import { API_CONFIG } from "../config/APIConfig.js";
 import { apiCall } from "@/helpers/APIHelper.js";
 import { apiCallWithTokenRefresh } from "./AuthController.js";
 
@@ -8,6 +7,11 @@ const getAuthHeaders = (jwtToken) => ({
   Authorization: `Bearer ${jwtToken}`,
   "Content-Type": "application/json"
 });
+
+// Helper function to get base API URL
+const getBaseUrl = () => {
+  return '/codebase';
+};
 
 // ============ CODEBASE METHODS ============
 
@@ -19,7 +23,7 @@ const getAuthHeaders = (jwtToken) => ({
 export const getCollectionsListFromCodebase = async (authorizationHeader) => {
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/codebase/collections`, {
+    (authHeader) => apiCall(`${getBaseUrl()}/collections`, {
       method: 'GET',
       headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
@@ -35,7 +39,24 @@ export const getCollectionsListFromCodebase = async (authorizationHeader) => {
 export const getCollectionDetailsFromCodebase = async (authorizationHeader, collectionId) => {
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/codebase/collections/${collectionId}`, {
+    (authHeader) => apiCall(`${getBaseUrl()}/collections/${collectionId}`, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+/**
+ * Get folder requests from codebase
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} collectionId - Collection ID
+ * @param {string} folderId - Folder ID
+ * @returns {Promise} API response
+ */
+export const getFolderRequestsFromCodebase = async (authorizationHeader, collectionId, folderId) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`${getBaseUrl()}/collections/${collectionId}/folders/${folderId}/requests`, {
       method: 'GET',
       headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
@@ -52,7 +73,7 @@ export const getCollectionDetailsFromCodebase = async (authorizationHeader, coll
 export const getRequestDetailsFromCodebase = async (authorizationHeader, collectionId, requestId) => {
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/codebase/collections/${collectionId}/requests/${requestId}`, {
+    (authHeader) => apiCall(`${getBaseUrl()}/collections/${collectionId}/requests/${requestId}`, {
       method: 'GET',
       headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
@@ -71,7 +92,24 @@ export const getRequestDetailsFromCodebase = async (authorizationHeader, collect
 export const getImplementationDetails = async (authorizationHeader, collectionId, requestId, language, component) => {
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/codebase/collections/${collectionId}/requests/${requestId}/implementations/${language}/${component}`, {
+    (authHeader) => apiCall(`${getBaseUrl()}/collections/${collectionId}/requests/${requestId}/implementations/${language}/${component}`, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+/**
+ * Get all implementations for a request
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} collectionId - Collection ID
+ * @param {string} requestId - Request ID
+ * @returns {Promise} API response
+ */
+export const getAllImplementations = async (authorizationHeader, collectionId, requestId) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`${getBaseUrl()}/collections/${collectionId}/requests/${requestId}/implementations`, {
       method: 'GET',
       headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
@@ -92,7 +130,7 @@ export const getImplementationDetails = async (authorizationHeader, collectionId
 export const generateImplementation = async (authorizationHeader, generateRequest) => {
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/codebase/generate-implementation`, {
+    (authHeader) => apiCall(`${getBaseUrl()}/generate-implementation`, {
       method: 'POST',
       headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
       body: JSON.stringify(generateRequest)
@@ -114,7 +152,7 @@ export const generateImplementation = async (authorizationHeader, generateReques
 export const exportImplementation = async (authorizationHeader, exportRequest) => {
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/codebase/export`, {
+    (authHeader) => apiCall(`${getBaseUrl()}/export`, {
       method: 'POST',
       headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
       body: JSON.stringify(exportRequest)
@@ -130,7 +168,7 @@ export const exportImplementation = async (authorizationHeader, exportRequest) =
 export const getLanguages = async (authorizationHeader) => {
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/codebase/languages`, {
+    (authHeader) => apiCall(`${getBaseUrl()}/languages`, {
       method: 'GET',
       headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
@@ -152,7 +190,7 @@ export const getLanguages = async (authorizationHeader) => {
 export const searchImplementations = async (authorizationHeader, searchRequest) => {
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/codebase/search`, {
+    (authHeader) => apiCall(`${getBaseUrl()}/search`, {
       method: 'POST',
       headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
       body: JSON.stringify(searchRequest)
@@ -173,42 +211,10 @@ export const searchImplementations = async (authorizationHeader, searchRequest) 
 export const importSpecification = async (authorizationHeader, importRequest) => {
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/codebase/import`, {
+    (authHeader) => apiCall(`${getBaseUrl()}/import`, {
       method: 'POST',
       headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
       body: JSON.stringify(importRequest)
-    })
-  );
-};
-
-/**
- * Clear codebase cache
- * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response
- */
-export const clearCodebaseCache = async (authorizationHeader) => {
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(`/codebase/cache/clear`, {
-      method: 'POST',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
-};
-
-/**
- * Get all implementations for a request
- * @param {string} authorizationHeader - Bearer token
- * @param {string} collectionId - Collection ID
- * @param {string} requestId - Request ID
- * @returns {Promise} API response
- */
-export const getAllImplementations = async (authorizationHeader, collectionId, requestId) => {
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(`/codebase/collections/${collectionId}/requests/${requestId}/implementations`, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
   );
 };
@@ -226,7 +232,7 @@ export const getAllImplementations = async (authorizationHeader, collectionId, r
 export const validateImplementation = async (authorizationHeader, validationRequest) => {
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/codebase/validate`, {
+    (authHeader) => apiCall(`${getBaseUrl()}/validate`, {
       method: 'POST',
       headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
       body: JSON.stringify(validationRequest)
@@ -238,6 +244,7 @@ export const validateImplementation = async (authorizationHeader, validationRequ
  * Test implementation
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} testRequest - Test request data
+ * @param {string} testRequest.requestId - Request ID (required)
  * @param {string} testRequest.language - Programming language (required)
  * @param {Object} testRequest.implementation - Implementation code
  * @param {Object} testRequest.testData - Test data
@@ -248,10 +255,56 @@ export const validateImplementation = async (authorizationHeader, validationRequ
 export const testImplementation = async (authorizationHeader, testRequest) => {
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/codebase/test`, {
+    (authHeader) => apiCall(`${getBaseUrl()}/test`, {
       method: 'POST',
       headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
       body: JSON.stringify(testRequest)
+    })
+  );
+};
+
+/**
+ * Clear codebase cache
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const clearCodebaseCache = async (authorizationHeader) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`${getBaseUrl()}/cache/clear`, {
+      method: 'POST',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+/**
+ * Get supported programming languages with details
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getSupportedProgrammingLanguages = async (authorizationHeader) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`${getBaseUrl()}/supported-languages`, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+/**
+ * Get quick start guide for a language
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} language - Programming language
+ * @returns {Promise} API response
+ */
+export const getQuickStartGuide = async (authorizationHeader, language) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`${getBaseUrl()}/quick-start/${language}`, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
   );
 };
@@ -275,7 +328,8 @@ export const handleCodebaseResponse = (response) => {
       ...response,
       data: response.data || {},
       responseCode: responseCode,
-      requestId: response.requestId
+      requestId: response.requestId,
+      message: response.message || 'Success'
     };
   }
 
@@ -306,6 +360,7 @@ export const extractCodebaseCollectionsList = (response) => {
   
   const data = response.data;
   
+  // Handle different response structures
   if (Array.isArray(data)) {
     return data;
   }
@@ -316,6 +371,11 @@ export const extractCodebaseCollectionsList = (response) => {
   
   if (data.data && Array.isArray(data.data)) {
     return data.data;
+  }
+  
+  // Try to extract from common DTO structure
+  if (data.collectionList && Array.isArray(data.collectionList)) {
+    return data.collectionList;
   }
   
   return [];
@@ -336,15 +396,37 @@ export const extractCodebaseCollectionDetails = (response) => {
     name: details.name || details.collectionName,
     description: details.description,
     version: details.version,
-    owner: details.owner,
+    owner: details.owner || details.performedBy,
     createdAt: details.createdAt || details.createdDate,
     updatedAt: details.updatedAt || details.modifiedDate,
     isFavorite: details.isFavorite || details.favorite || false,
-    isExpanded: details.isExpanded || false,
     folders: details.folders || [],
     totalRequests: details.totalRequests || 0,
     totalFolders: details.totalFolders || 0,
     tags: details.tags || [],
+    metadata: details.metadata || {}
+  };
+};
+
+/**
+ * Extract folder requests from codebase response
+ * @param {Object} response - API response
+ * @returns {Object} Folder requests details
+ */
+export const extractFolderRequests = (response) => {
+  if (!response || !response.data) return null;
+  
+  const details = response.data;
+  
+  return {
+    folderId: details.folderId,
+    folderName: details.folderName,
+    collectionId: details.collectionId,
+    requests: details.requests || [],
+    totalRequests: details.totalRequests || 0,
+    subfolders: details.subfolders || [],
+    createdAt: details.createdAt,
+    updatedAt: details.updatedAt,
     metadata: details.metadata || {}
   };
 };
@@ -363,7 +445,7 @@ export const extractCodebaseRequestDetails = (response) => {
     id: details.id || details.requestId,
     name: details.name || details.requestName,
     method: details.method,
-    url: details.url,
+    url: details.url || details.endpoint,
     description: details.description,
     collectionId: details.collectionId,
     folderId: details.folderId,
@@ -372,7 +454,9 @@ export const extractCodebaseRequestDetails = (response) => {
     tags: details.tags || [],
     body: details.body || {},
     implementations: details.implementations || {},
-    metadata: details.metadata || {}
+    metadata: details.metadata || {},
+    parameters: details.parameters || [],
+    responses: details.responses || {}
   };
 };
 
@@ -391,11 +475,33 @@ export const extractImplementationDetails = (response) => {
     component: details.component,
     requestId: details.requestId,
     collectionId: details.collectionId,
-    code: details.code || details.snippet,
+    code: details.code || details.snippet || details.implementation,
     fileName: details.fileName,
     languageInfo: details.languageInfo || {},
-    success: details.code !== undefined,
-    metadata: details.metadata || {}
+    success: details.success !== undefined ? details.success : (details.code !== undefined),
+    metadata: details.metadata || {},
+    validationStatus: details.validationStatus,
+    testResults: details.testResults
+  };
+};
+
+/**
+ * Extract all implementations for a request
+ * @param {Object} response - API response
+ * @returns {Object} All implementations data
+ */
+export const extractAllImplementations = (response) => {
+  if (!response || !response.data) return null;
+  
+  const data = response.data;
+  
+  return {
+    requestId: data.requestId,
+    collectionId: data.collectionId,
+    implementations: data.implementations || {},
+    availableLanguages: data.availableLanguages || [],
+    totalImplementations: data.totalImplementations || 0,
+    metadata: data.metadata || {}
   };
 };
 
@@ -412,13 +518,14 @@ export const extractGenerateResults = (response) => {
   return {
     requestId: data.requestId,
     language: data.language,
-    generatedAt: data.generatedAt,
+    generatedAt: data.generatedAt || data.timestamp,
     status: data.status,
     implementations: data.implementations || {},
     quickStartGuide: data.quickStartGuide || {},
     features: data.features || [],
-    success: data.requestId !== undefined,
-    metadata: data.metadata || {}
+    success: data.success !== undefined ? data.success : (data.requestId !== undefined),
+    metadata: data.metadata || {},
+    generatedComponents: data.generatedComponents || []
   };
 };
 
@@ -435,10 +542,12 @@ export const extractExportResults = (response) => {
   return {
     format: data.format,
     language: data.language,
-    exportedAt: data.exportedAt,
+    exportedAt: data.exportedAt || data.timestamp,
     exportData: data.exportData || {},
-    success: data.format !== undefined,
-    metadata: data.metadata || {}
+    success: data.success !== undefined ? data.success : (data.format !== undefined),
+    metadata: data.metadata || {},
+    downloadUrl: data.downloadUrl,
+    fileContent: data.fileContent
   };
 };
 
@@ -462,6 +571,10 @@ export const extractLanguages = (response) => {
   
   if (data.data && Array.isArray(data.data)) {
     return data.data;
+  }
+  
+  if (data.languageList && Array.isArray(data.languageList)) {
+    return data.languageList;
   }
   
   return [];
@@ -489,6 +602,10 @@ export const extractSearchResults = (response) => {
     return data.data;
   }
   
+  if (data.searchResults && Array.isArray(data.searchResults)) {
+    return data.searchResults;
+  }
+  
   return [];
 };
 
@@ -504,11 +621,13 @@ export const extractImportSpecResults = (response) => {
   
   return {
     source: data.source,
-    importedAt: data.importedAt,
+    importedAt: data.importedAt || data.timestamp,
     status: data.status,
     importData: data.importData || {},
-    success: data.importedAt !== undefined,
-    metadata: data.metadata || {}
+    success: data.success !== undefined ? data.success : (data.importedAt !== undefined),
+    metadata: data.metadata || {},
+    importedCollections: data.importedCollections || [],
+    totalRequests: data.totalRequests || 0
   };
 };
 
@@ -529,8 +648,9 @@ export const extractValidationResults = (response) => {
     suggestions: data.suggestions || [],
     errors: data.errors || [],
     score: data.score || 0,
-    success: data.language !== undefined,
-    metadata: data.metadata || {}
+    success: data.success !== undefined ? data.success : (data.language !== undefined),
+    metadata: data.metadata || {},
+    validationDetails: data.validationDetails || {}
   };
 };
 
@@ -552,7 +672,56 @@ export const extractTestResults = (response) => {
     executionTime: data.executionTime,
     status: data.status || 'UNKNOWN',
     details: data.details || {},
-    success: data.testsPassed !== undefined,
+    success: data.success !== undefined ? data.success : (data.testsPassed !== undefined),
+    metadata: data.metadata || {},
+    requestId: data.requestId,
+    language: data.language
+  };
+};
+
+/**
+ * Extract supported programming languages with details
+ * @param {Object} response - API response
+ * @returns {Array} Supported languages with details
+ */
+export const extractSupportedProgrammingLanguages = (response) => {
+  if (!response || !response.data) return [];
+  
+  const data = response.data;
+  
+  if (Array.isArray(data)) {
+    return data;
+  }
+  
+  if (data.languages && Array.isArray(data.languages)) {
+    return data.languages;
+  }
+  
+  if (data.supportedLanguages && Array.isArray(data.supportedLanguages)) {
+    return data.supportedLanguages;
+  }
+  
+  return [];
+};
+
+/**
+ * Extract quick start guide
+ * @param {Object} response - API response
+ * @returns {Object} Quick start guide
+ */
+export const extractQuickStartGuide = (response) => {
+  if (!response || !response.data) return null;
+  
+  const data = response.data;
+  
+  return {
+    language: data.language,
+    steps: data.steps || [],
+    prerequisites: data.prerequisites || [],
+    installation: data.installation || {},
+    configuration: data.configuration || {},
+    running: data.running || {},
+    testing: data.testing || {},
     metadata: data.metadata || {}
   };
 };
@@ -690,6 +859,10 @@ export const validateTestImplementation = (testRequest) => {
     errors.push('Programming language is required');
   }
   
+  if (!testRequest.requestId) {
+    errors.push('Request ID is required');
+  }
+  
   if (!testRequest.implementation) {
     errors.push('Implementation code is required');
   }
@@ -698,21 +871,21 @@ export const validateTestImplementation = (testRequest) => {
 };
 
 /**
- * Get supported programming languages for code generation
- * @returns {Array} Supported languages
+ * Get default programming languages (fallback if API fails)
+ * @returns {Array} Default supported languages
  */
-export const getSupportedProgrammingLanguages = () => {
+export const getDefaultSupportedProgrammingLanguages = () => {
   return [
-    { value: 'java', label: 'Java', framework: 'Spring Boot', color: '#f89820' },
-    { value: 'javascript', label: 'JavaScript', framework: 'Node.js/Express', color: '#f0db4f' },
-    { value: 'python', label: 'Python', framework: 'FastAPI/Django', color: '#3776ab' },
-    { value: 'csharp', label: 'C#', framework: '.NET Core', color: '#9b4993' },
-    { value: 'php', label: 'PHP', framework: 'Laravel', color: '#777bb4' },
-    { value: 'go', label: 'Go', framework: 'Gin', color: '#00add8' },
-    { value: 'ruby', label: 'Ruby', framework: 'Ruby on Rails', color: '#cc342d' },
-    { value: 'kotlin', label: 'Kotlin', framework: 'Ktor/Spring', color: '#7f52ff' },
-    { value: 'swift', label: 'Swift', framework: 'Vapor', color: '#f05138' },
-    { value: 'rust', label: 'Rust', framework: 'Actix-web', color: '#dea584' }
+    { value: 'java', label: 'Java', framework: 'Spring Boot', color: '#f89820', icon: 'java' },
+    { value: 'javascript', label: 'JavaScript', framework: 'Node.js/Express', color: '#f0db4f', icon: 'javascript' },
+    { value: 'python', label: 'Python', framework: 'FastAPI/Django', color: '#3776ab', icon: 'python' },
+    { value: 'csharp', label: 'C#', framework: '.NET Core', color: '#9b4993', icon: 'csharp' },
+    { value: 'php', label: 'PHP', framework: 'Laravel', color: '#777bb4', icon: 'php' },
+    { value: 'go', label: 'Go', framework: 'Gin', color: '#00add8', icon: 'go' },
+    { value: 'ruby', label: 'Ruby', framework: 'Ruby on Rails', color: '#cc342d', icon: 'ruby' },
+    { value: 'kotlin', label: 'Kotlin', framework: 'Ktor/Spring', color: '#7f52ff', icon: 'kotlin' },
+    { value: 'swift', label: 'Swift', framework: 'Vapor', color: '#f05138', icon: 'swift' },
+    { value: 'rust', label: 'Rust', framework: 'Actix-web', color: '#dea584', icon: 'rust' }
   ];
 };
 
@@ -767,31 +940,59 @@ export const getSupportedComponents = (language) => {
 };
 
 /**
- * Get quick start guide for language
+ * Get default quick start guide for language (fallback)
  * @param {string} language - Programming language
  * @returns {Object} Quick start guide
  */
-export const getQuickStartGuide = (language) => {
+export const getDefaultQuickStartGuide = (language) => {
   const guides = {
     java: {
-      step1: 'mvn install',
-      step2: 'mvn spring-boot:run',
-      step3: 'Open http://localhost:8080'
+      language: 'java',
+      prerequisites: ['JDK 11+', 'Maven 3.6+'],
+      steps: [
+        { step: 1, title: 'Install dependencies', command: 'mvn install' },
+        { step: 2, title: 'Run application', command: 'mvn spring-boot:run' },
+        { step: 3, title: 'Test API', description: 'Open http://localhost:8080/swagger-ui.html' }
+      ],
+      configuration: {
+        port: 8080,
+        database: 'Configure in application.properties'
+      }
     },
     javascript: {
-      step1: 'npm install',
-      step2: 'npm start',
-      step3: 'Open http://localhost:3000'
+      language: 'javascript',
+      prerequisites: ['Node.js 14+', 'npm 6+'],
+      steps: [
+        { step: 1, title: 'Install dependencies', command: 'npm install' },
+        { step: 2, title: 'Run application', command: 'npm start' },
+        { step: 3, title: 'Test API', description: 'Open http://localhost:3000/api/docs' }
+      ],
+      configuration: {
+        port: 3000,
+        environment: 'Set in .env file'
+      }
     },
     python: {
-      step1: 'pip install -r requirements.txt',
-      step2: 'uvicorn main:app --reload',
-      step3: 'Open http://localhost:8000/docs'
+      language: 'python',
+      prerequisites: ['Python 3.8+', 'pip'],
+      steps: [
+        { step: 1, title: 'Install dependencies', command: 'pip install -r requirements.txt' },
+        { step: 2, title: 'Run application', command: 'uvicorn main:app --reload' },
+        { step: 3, title: 'Test API', description: 'Open http://localhost:8000/docs' }
+      ],
+      configuration: {
+        port: 8000,
+        environment: 'Set in .env file'
+      }
     },
     default: {
-      step1: 'Install dependencies',
-      step2: 'Run the application',
-      step3: 'Test the API'
+      language: 'default',
+      prerequisites: ['Check language-specific requirements'],
+      steps: [
+        { step: 1, title: 'Install dependencies', command: 'See language documentation' },
+        { step: 2, title: 'Run application', command: 'See language documentation' },
+        { step: 3, title: 'Test API', description: 'Refer to API documentation' }
+      ]
     }
   };
   
@@ -973,29 +1174,60 @@ export const clearCachedCodebaseData = (userId = null, cacheKey = null) => {
   }
 };
 
+/**
+ * Extract user ID from authorization header
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {string|null} User ID or null
+ */
+export const extractUserIdFromToken = (authorizationHeader) => {
+  if (!authorizationHeader || !authorizationHeader.startsWith('Bearer ')) {
+    return null;
+  }
+  
+  try {
+    const token = authorizationHeader.replace('Bearer ', '');
+    // Simple extraction - in real app, you might want to decode JWT
+    // This is a placeholder - implement proper JWT decoding if needed
+    const parts = token.split('.');
+    if (parts.length === 3) {
+      const payload = JSON.parse(atob(parts[1]));
+      return payload.sub || payload.userId || payload.username || null;
+    }
+  } catch (error) {
+    console.error('Error extracting user ID from token:', error);
+  }
+  
+  return null;
+};
+
 // Export all functions
 export default {
   // Main API methods
   getCollectionsListFromCodebase,
   getCollectionDetailsFromCodebase,
+  getFolderRequestsFromCodebase,
   getRequestDetailsFromCodebase,
   getImplementationDetails,
+  getAllImplementations,
   generateImplementation,
   exportImplementation,
   getLanguages,
   searchImplementations,
   importSpecification,
-  clearCodebaseCache,
-  getAllImplementations,
   validateImplementation,
   testImplementation,
+  clearCodebaseCache,
+  getSupportedProgrammingLanguages,
+  getQuickStartGuide,
   
   // Response handlers
   handleCodebaseResponse,
   extractCodebaseCollectionsList,
   extractCodebaseCollectionDetails,
+  extractFolderRequests,
   extractCodebaseRequestDetails,
   extractImplementationDetails,
+  extractAllImplementations,
   extractGenerateResults,
   extractExportResults,
   extractLanguages,
@@ -1003,6 +1235,8 @@ export default {
   extractImportSpecResults,
   extractValidationResults,
   extractTestResults,
+  extractSupportedProgrammingLanguages,
+  extractQuickStartGuide,
   
   // Validation functions
   validateGenerateImplementation,
@@ -1013,9 +1247,9 @@ export default {
   validateTestImplementation,
   
   // Utility functions
-  getSupportedProgrammingLanguages,
+  getDefaultSupportedProgrammingLanguages,
   getSupportedComponents,
-  getQuickStartGuide,
+  getDefaultQuickStartGuide,
   getLanguageColor,
   formatCodeForDisplay,
   getFileExtension,
@@ -1024,5 +1258,8 @@ export default {
   // Cache functions
   cacheCodebaseData,
   getCachedCodebaseData,
-  clearCachedCodebaseData
+  clearCachedCodebaseData,
+  
+  // Token utilities
+  extractUserIdFromToken
 };

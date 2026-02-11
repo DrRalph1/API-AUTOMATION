@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Users, UserPlus, UserMinus, UserX, UserCheck, UserCog, UserCircle,
   Shield, Key, Mail, Phone, Calendar, Clock, Search, Filter, MoreVertical,
@@ -112,6 +112,31 @@ import UserManagementAPI, {
   getDefaultUserFilters
 } from '@/controllers/UserManagementController.js';
 
+// Custom debounce hook
+const useDebounce = (callback, delay) => {
+  const timeoutRef = useRef(null);
+
+  const debouncedFunction = useCallback((...args) => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+
+    timeoutRef.current = setTimeout(() => {
+      callback(...args);
+    }, delay);
+  }, [callback, delay]);
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+
+  return debouncedFunction;
+};
+
 const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setActiveTab, authToken }) => {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -144,6 +169,11 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [isRightSidebarVisible, setIsRightSidebarVisible] = useState(false);
+
+  // Fix: Add states to prevent multiple modal openings
+  const [openingModalForUserId, setOpeningModalForUserId] = useState(null);
+  const [isOpeningModal, setIsOpeningModal] = useState(false);
+  const pendingRequestRef = useRef(null);
 
   // Load users on component mount
   useEffect(() => {
@@ -801,10 +831,19 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
 
   const closeModal = () => {
     setModalStack(prev => prev.slice(0, -1));
+    // Clear opening state when modal closes
+    setTimeout(() => {
+      setOpeningModalForUserId(null);
+      setIsOpeningModal(false);
+      pendingRequestRef.current = null;
+    }, 100);
   };
 
   const closeAllModals = () => {
     setModalStack([]);
+    setOpeningModalForUserId(null);
+    setIsOpeningModal(false);
+    pendingRequestRef.current = null;
   };
 
   const getCurrentModal = () => {
@@ -914,11 +953,62 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     loadUsers({ statusFilter: value });
   };
 
-  const handleViewUserDetails = async (user) => {
-    const userDetails = await loadUserDetails(user.id);
-    if (userDetails) {
-      openModal('userDetails', userDetails);
+  // FIXED: Debounced view user details to prevent multiple API calls
+  const debouncedViewUserDetails = useDebounce(async (user) => {
+    // Don't proceed if no user or already loading
+    if (!user || !user.id) return;
+    
+    // Check if already loading this user
+    if (openingModalForUserId === user.id || isOpeningModal) {
+      console.log('Already loading this user, skipping...');
+      return;
     }
+
+    // Check if we already have a pending request for this user
+    if (pendingRequestRef.current === user.id) {
+      console.log('Request already pending for this user, skipping...');
+      return;
+    }
+
+    pendingRequestRef.current = user.id;
+    setOpeningModalForUserId(user.id);
+    setIsOpeningModal(true);
+
+    try {
+      console.log('Loading user details (debounced):', user.id);
+      const userDetails = await loadUserDetails(user.id);
+      
+      if (userDetails) {
+        openModal('userDetails', userDetails);
+      }
+    } catch (error) {
+      console.error('Error loading user details:', error);
+      showToast('error', error.message || 'Failed to load user details');
+    } finally {
+      // Clear states after a delay to prevent rapid clicking
+      setTimeout(() => {
+        setOpeningModalForUserId(null);
+        setIsOpeningModal(false);
+        pendingRequestRef.current = null;
+      }, 500);
+    }
+  }, 300); // 300ms debounce
+
+  // FIXED: Handle view user details with debouncing
+  const handleViewUserDetails = (user) => {
+    debouncedViewUserDetails(user);
+  };
+
+  // FIXED: Handle row click with proper event handling
+  const handleRowClick = (user, e) => {
+    // Only open modal if clicking on the row itself, not buttons/checkboxes
+    if (e.target.closest('button') || 
+        e.target.closest('input') || 
+        e.target.closest('a')) {
+      return;
+    }
+    
+    handleViewUserDetails(user);
   };
 
   const handleEditUser = (user) => {
@@ -927,10 +1017,6 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
 
   const handleImportUsers = () => {
     openModal('importUsers', {});
-  };
-
-  const handleRowClick = async (user) => {
-    await handleViewUserDetails(user);
   };
 
   const getResponsiveIconSize = () => {
@@ -967,18 +1053,19 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
           { id: 'permission-sets', label: 'Permission Sets', icon: <KeyRound size={12} /> },
           { id: 'access-control', label: 'Access Control', icon: <Lock size={12} /> }
         ]
-      },
-      {
-        id: 'security',
-        label: 'Security',
-        icon: <ShieldCheck size={16} />,
-        subItems: [
-          { id: 'mfa-settings', label: 'MFA Settings', icon: <ShieldCheckIcon size={12} /> },
-          { id: 'password-policies', label: 'Password Policies', icon: <KeyIcon size={12} /> },
-          { id: 'login-security', label: 'Login Security', icon: <LogIn size={12} /> },
-          { id: 'session-management', label: 'Session Management', icon: <ClockIcon size={12} /> }
-        ]
       }
+      // ,
+      // {
+      //   id: 'security',
+      //   label: 'Security',
+      //   icon: <ShieldCheck size={16} />,
+      //   subItems: [
+      //     { id: 'mfa-settings', label: 'MFA Settings', icon: <ShieldCheckIcon size={12} /> },
+      //     { id: 'password-policies', label: 'Password Policies', icon: <KeyIcon size={12} /> },
+      //     { id: 'login-security', label: 'Login Security', icon: <LogIn size={12} /> },
+      //     { id: 'session-management', label: 'Session Management', icon: <ClockIcon size={12} /> }
+      //   ]
+      // }
     ];
 
     const toggleSection = (sectionId) => {
@@ -1163,15 +1250,15 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     const [userDetails, setUserDetails] = useState(user);
     const [activityLog, setActivityLog] = useState([]);
 
-    useEffect(() => {
-      if (user?.id) {
-        handleLoadUserActivity(user.id).then(data => {
-          if (data) {
-            setActivityLog(data.activities || []);
-          }
-        });
-      }
-    }, [user?.id]);
+    // useEffect(() => {
+    //   if (user?.id) {
+    //     handleLoadUserActivity(user.id).then(data => {
+    //       if (data) {
+    //         setActivityLog(data.activities || []);
+    //       }
+    //     });
+    //   }
+    // }, [user?.id]);
 
     const formatDate = (dateString) => {
       return formatDateForDisplay(dateString, true) || '';
@@ -1537,27 +1624,27 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     const [roles, setRoles] = useState([]);
     const [validationResult, setValidationResult] = useState(null);
 
-    useEffect(() => {
-      handleLoadRolesAndPermissions().then(data => {
-        if (data && data.roles) {
-          setRoles(data.roles);
-        }
-      });
-    }, []);
+    // useEffect(() => {
+    //   handleLoadRolesAndPermissions().then(data => {
+    //     if (data && data.roles) {
+    //       setRoles(data.roles);
+    //     }
+    //   });
+    // }, []);
 
-    useEffect(() => {
-      if (formData.email || formData.username) {
-        const validate = async () => {
-          const result = await handleValidateUserData({
-            email: formData.email,
-            username: formData.username,
-            userId: user?.id || null
-          });
-          setValidationResult(result);
-        };
-        validate();
-      }
-    }, [formData.email, formData.username]);
+    // useEffect(() => {
+    //   if (formData.email || formData.username) {
+    //     const validate = async () => {
+    //       const result = await handleValidateUserData({
+    //         email: formData.email,
+    //         username: formData.username,
+    //         userId: user?.id || null
+    //       });
+    //       setValidationResult(result);
+    //     };
+    //     validate();
+    //   }
+    // }, [formData.email, formData.username]);
 
     const handleSubmit = async (e) => {
       e.preventDefault();
@@ -2414,6 +2501,8 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
 
   // User Card Component for mobile
   const UserCard = ({ user }) => {
+    const [isOpening, setIsOpening] = useState(false);
+
     const formatDate = (dateString) => {
       const date = new Date(dateString);
       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -2424,14 +2513,31 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
       return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     };
 
+    const handleClick = async (e) => {
+      e.stopPropagation();
+      if (isOpening || openingModalForUserId === user.id) return;
+      
+      setIsOpening(true);
+      try {
+        await handleViewUserDetails(user);
+      } finally {
+        setTimeout(() => setIsOpening(false), 500);
+      }
+    };
+
+    const handleButtonClick = (e, action) => {
+      e.stopPropagation();
+      action(user);
+    };
+
     return (
       <div 
         className="border rounded-xl p-3 hover-lift transition-all duration-200"
-        onClick={() => handleRowClick(user)}
+        onClick={handleClick}
         style={{ 
           borderColor: colors.border,
           backgroundColor: colors.card,
-          cursor: 'pointer'
+          cursor: isOpening ? 'wait' : 'pointer'
         }}
       >
         <div className="flex items-start justify-between mb-3">
@@ -2462,12 +2568,10 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
               {user.role || 'unknown'}
             </div>
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleViewUserDetails(user);
-              }}
+              onClick={(e) => handleButtonClick(e, handleViewUserDetails)}
               className="p-1 rounded hover:bg-opacity-50 transition-colors"
               style={{ backgroundColor: colors.hover }}
+              disabled={isOpening || openingModalForUserId === user.id}
             >
               <MoreVertical size={14} style={{ color: colors.textSecondary }} />
             </button>
@@ -2526,28 +2630,24 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
 
           <div className="flex gap-2 pt-2">
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleEditUser(user);
-              }}
+              onClick={(e) => handleButtonClick(e, handleEditUser)}
               className="flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors hover-lift"
               style={{ 
                 backgroundColor: colors.hover,
                 color: colors.text
               }}
+              disabled={isOpening}
             >
               Edit
             </button>
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                openModal('resetPassword', user);
-              }}
+              onClick={(e) => handleButtonClick(e, (user) => openModal('resetPassword', user))}
               className="flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors hover-lift"
               style={{ 
                 backgroundColor: colors.primaryDark,
                 color: 'white'
               }}
+              disabled={isOpening}
             >
               Reset PW
             </button>
@@ -3104,12 +3204,21 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                       {currentUsers.map(user => (
                         <tr 
                           key={user.id}
-                          className="border-t hover-lift transition-colors cursor-pointer"
+                          className="border-t hover-lift transition-colors"
                           style={{ 
                             borderColor: colors.border,
-                            backgroundColor: selectedUsers.includes(user.id) ? colors.selected : 'transparent'
+                            backgroundColor: selectedUsers.includes(user.id) ? colors.selected : 'transparent',
+                            cursor: openingModalForUserId === user.id ? 'wait' : 'pointer',
+                            opacity: openingModalForUserId === user.id ? 0.7 : 1
                           }}
-                          onClick={() => handleRowClick(user)}
+                          onClick={(e) => {
+                            // Only trigger if clicking on the row itself, not on interactive elements
+                            if (!e.target.closest('button') && 
+                                !e.target.closest('input[type="checkbox"]') &&
+                                !e.target.closest('a')) {
+                              handleRowClick(user, e);
+                            }
+                          }}
                         >
                           <td className="p-3" onClick={(e) => e.stopPropagation()}>
                             <input
@@ -3118,7 +3227,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                               onChange={() => handleSelectUser(user.id)}
                               className="rounded border-gray-300"
                               style={{ borderColor: colors.border }}
-                              disabled={loading}
+                              disabled={loading || openingModalForUserId === user.id}
                             />
                           </td>
                           <td className="p-3">
@@ -3184,29 +3293,41 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                           <td className="p-3" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center gap-2">
                               <button
-                                onClick={() => handleViewUserDetails(user)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  handleViewUserDetails(user);
+                                }}
                                 className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
                                 style={{ backgroundColor: colors.hover }}
                                 title="View Details"
-                                disabled={loading}
+                                disabled={loading || openingModalForUserId === user.id}
                               >
                                 <Eye size={14} style={{ color: colors.textSecondary }} />
                               </button>
                               <button
-                                onClick={() => handleEditUser(user)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  handleEditUser(user);
+                                }}
                                 className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
                                 style={{ backgroundColor: colors.hover }}
                                 title="Edit User"
-                                disabled={loading}
+                                disabled={loading || openingModalForUserId === user.id}
                               >
                                 <Edit size={14} style={{ color: colors.textSecondary }} />
                               </button>
                               <button
-                                onClick={() => handleDeleteUser(user)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  handleDeleteUser(user);
+                                }}
                                 className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
                                 style={{ backgroundColor: colors.hover }}
                                 title="Delete User"
-                                disabled={loading}
+                                disabled={loading || openingModalForUserId === user.id}
                               >
                                 <Trash2 size={14} style={{ color: colors.error }} />
                               </button>

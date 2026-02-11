@@ -79,7 +79,13 @@ import {
   getDefaultImplementationOptions,
   cacheCodebaseData,
   getCachedCodebaseData,
-  clearCachedCodebaseData
+  clearCachedCodebaseData,
+  getFolderRequestsFromCodebase,
+  extractFolderRequests,
+  extractAllImplementations,
+  extractUserIdFromToken,
+  extractSupportedProgrammingLanguages,
+  extractQuickStartGuide
 } from "../controllers/CodeBaseController.js";
 
 // Enhanced SyntaxHighlighter Component with safe handling
@@ -265,20 +271,6 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
 
   // ==================== API METHODS ====================
 
-  const extractUserIdFromToken = (token) => {
-    if (!token) return '';
-    try {
-      const parts = token.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(atob(parts[1]));
-        return payload.sub || payload.userId || '';
-      }
-    } catch (e) {
-      console.error('Error extracting userId from token:', e);
-    }
-    return '';
-  };
-
   const showToast = (message, type = 'info') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
@@ -375,18 +367,15 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
               const updatedCollection = { 
                 ...collection, 
                 ...details,
-                folders: details.folders || [] // Ensure folders array exists
+                folders: (details.folders || []).map(folder => ({
+                  id: folder.id || folder.folderId,
+                  name: folder.name || folder.folderName,
+                  description: folder.description,
+                  hasRequests: folder.hasRequests || (folder.requestCount > 0) || false,
+                  requestCount: folder.requestCount || folder.totalRequests || 0,
+                  subfolders: folder.subfolders || []
+                }))
               };
-              
-              // Initialize folder requests if they have requests
-              if (details.folders && details.folders.length > 0) {
-                details.folders.forEach(folder => {
-                  if (folder.hasRequests) {
-                    // We'll load these requests when the folder is expanded
-                    console.log(`📁 [CodeBase] Folder ${folder.id} has requests`);
-                  }
-                });
-              }
               
               return updatedCollection;
             }
@@ -399,11 +388,9 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
           setSelectedCollection(prev => ({ 
             ...prev, 
             ...details,
-            folders: details.folders || []
+            folders: updatedCollection.folders
           }));
         }
-        
-        console.log('📊 [CodeBase] Updated collection details:', details.name);
       }
       
     } catch (error) {
@@ -413,66 +400,73 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   }, [authToken, selectedCollection]);
 
   // Load requests for a specific folder
-  const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
-    console.log(`📡 [CodeBase] Fetching requests for folder ${folderId} in collection ${collectionId}`);
+const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
+  console.log(`📡 [CodeBase] Fetching requests for folder ${folderId} in collection ${collectionId}`);
+  
+  if (!authToken || !collectionId || !folderId) {
+    console.log('Missing params for fetchFolderRequests');
+    return;
+  }
+
+  // Set loading state for this specific folder
+  setIsLoading(prev => ({ 
+    ...prev, 
+    folderRequests: { ...prev.folderRequests, [folderId]: true }
+  }));
+
+  try {
+    const response = await getFolderRequestsFromCodebase(authToken, collectionId, folderId);
+    console.log('📦 [CodeBase] Folder requests response:', response);
     
-    if (!authToken || !collectionId || !folderId) {
-      console.log('Missing params for fetchFolderRequests');
-      return;
-    }
-
-    // Set loading state for this specific folder
-    setIsLoading(prev => ({ 
-      ...prev, 
-      folderRequests: { ...prev.folderRequests, [folderId]: true }
-    }));
-
-    try {
-      // Note: We need to get request details for each request in the folder
-      // Since we don't have a direct API to get all requests in a folder,
-      // we'll use a workaround or wait for the API to be implemented
-      
-      // For now, simulate fetching requests
-      const mockRequests = [
-        {
-          id: 'register-user',
-          name: 'Register User',
-          method: 'POST',
-          url: 'https://api.example.com/v2.1/users/register',
-          description: 'Create a new user account with email and password',
-          tags: ['auth', 'register', 'signup'],
-          lastModified: 'Today, 9:00 AM'
-        },
-        {
-          id: 'get-user',
-          name: 'Get User Profile',
-          method: 'GET',
-          url: 'https://api.example.com/v2.1/users/{id}',
-          description: 'Retrieve user profile information by ID',
-          tags: ['users', 'profile', 'read'],
-          lastModified: 'Yesterday, 3:45 PM'
-        }
-      ];
-      
+    const handledResponse = handleCodebaseResponse(response);
+    const folderDetails = extractFolderRequests(handledResponse);
+    
+    console.log('📊 [CodeBase] Extracted folder requests:', folderDetails);
+    
+    if (folderDetails) {
       // Update folder requests in state
       setFolderRequests(prev => ({
         ...prev,
-        [folderId]: mockRequests
+        [folderId]: folderDetails.requests || []
       }));
       
-      console.log(`📊 [CodeBase] Loaded ${mockRequests.length} requests for folder ${folderId}`);
+      console.log(`📊 [CodeBase] Loaded ${folderDetails.requests?.length || 0} requests for folder ${folderId}`);
       
-    } catch (error) {
-      console.error(`❌ [CodeBase] Error loading requests for folder ${folderId}:`, error);
-      showToast(`Failed to load folder requests: ${error.message}`, 'error');
-    } finally {
-      // Clear loading state for this folder
-      setIsLoading(prev => ({ 
-        ...prev, 
-        folderRequests: { ...prev.folderRequests, [folderId]: false }
-      }));
+      // Update the folder info in collections
+      setCollections(prevCollections => 
+        prevCollections.map(collection => {
+          if (collection.id === collectionId) {
+            return {
+              ...collection,
+              folders: collection.folders?.map(folder => 
+                folder.id === folderId 
+                  ? { ...folder, requestCount: folderDetails.requests?.length || 0 }
+                  : folder
+              ) || []
+            };
+          }
+          return collection;
+        })
+      );
     }
-  }, [authToken]);
+    
+  } catch (error) {
+    console.error(`❌ [CodeBase] Error loading requests for folder ${folderId}:`, error);
+    showToast(`Failed to load folder requests: ${error.message}`, 'error');
+    
+    // Set empty array if API fails
+    setFolderRequests(prev => ({
+      ...prev,
+      [folderId]: []
+    }));
+  } finally {
+    // Clear loading state for this folder
+    setIsLoading(prev => ({ 
+      ...prev, 
+      folderRequests: { ...prev.folderRequests, [folderId]: false }
+    }));
+  }
+}, [authToken]);
 
   // Load request details
   const fetchRequestDetails = useCallback(async (collectionId, requestId) => {
@@ -512,72 +506,142 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   }, [authToken, selectedLanguage, selectedComponent]);
 
   // Load implementation details
-  const fetchImplementationDetails = useCallback(async (collectionId, requestId, language, component) => {
-    console.log(`📡 [CodeBase] Fetching implementation for ${language}/${component}`);
-    
-    if (!authToken || !collectionId || !requestId || !language || !component) {
-      console.log('Missing params for fetchImplementationDetails');
-      return;
-    }
+const fetchImplementationDetails = useCallback(async (collectionId, requestId, language, component) => {
+  console.log(`📡 [CodeBase] Fetching implementation for ${language}/${component}`);
+  
+  if (!authToken || !collectionId || !requestId || !language || !component) {
+    console.log('Missing params for fetchImplementationDetails');
+    return;
+  }
 
-    setIsLoading(prev => ({ ...prev, implementationDetails: true }));
+  setIsLoading(prev => ({ ...prev, implementationDetails: true }));
+  
+  try {
+    const response = await getImplementationDetails(authToken, collectionId, requestId, language, component);
+    console.log('📦 [CodeBase] Implementation details response:', response);
     
-    try {
-      const response = await getImplementationDetails(authToken, collectionId, requestId, language, component);
-      console.log('📦 [CodeBase] Implementation details response:', response);
+    const handledResponse = handleCodebaseResponse(response);
+    const details = extractImplementationDetails(handledResponse);
+    
+    console.log('📊 [CodeBase] Extracted implementation details:', details);
+    
+    if (details?.code) {
+      setCurrentImplementation(prev => ({
+        ...prev,
+        [language]: {
+          ...prev[language],
+          [component]: details.code
+        }
+      }));
       
-      const handledResponse = handleCodebaseResponse(response);
-      const details = extractImplementationDetails(handledResponse);
-      
-      console.log('📊 [CodeBase] Extracted implementation details:', details);
-      
-      if (details) {
+      // Cache the implementation
+      const userId = extractUserIdFromToken(authToken);
+      if (userId) {
+        cacheCodebaseData(userId, `${requestId}_${language}_${component}`, details.code);
+      }
+    } else {
+      // Try to get from allImplementations cache
+      const allImpl = allImplementations[language]?.[component];
+      if (allImpl) {
         setCurrentImplementation(prev => ({
           ...prev,
           [language]: {
             ...prev[language],
-            [component]: details.code
+            [component]: allImpl
           }
         }));
-        
-        // Cache the implementation
-        const userId = extractUserIdFromToken(authToken);
-        if (userId) {
-          cacheCodebaseData(userId, `${requestId}_${language}_${component}`, details.code);
-        }
+      } else {
+        // Set empty if no implementation found
+        setCurrentImplementation(prev => ({
+          ...prev,
+          [language]: {
+            ...prev[language],
+            [component]: `// No implementation available for ${component} in ${language}`
+          }
+        }));
       }
-      
-    } catch (error) {
-      console.error('❌ [CodeBase] Error loading implementation details:', error);
-      // Don't show toast for this as it's not critical
-    } finally {
-      setIsLoading(prev => ({ ...prev, implementationDetails: false }));
     }
-  }, [authToken]);
+    
+  } catch (error) {
+    console.error('❌ [CodeBase] Error loading implementation details:', error);
+    
+    // Try to get from cache
+    const userId = extractUserIdFromToken(authToken);
+    if (userId) {
+      const cachedCode = getCachedCodebaseData(userId, `${requestId}_${language}_${component}`);
+      if (cachedCode) {
+        setCurrentImplementation(prev => ({
+          ...prev,
+          [language]: {
+            ...prev[language],
+            [component]: cachedCode
+          }
+        }));
+      }
+    }
+    
+    // Don't show toast for this as it's not critical
+  } finally {
+    setIsLoading(prev => ({ ...prev, implementationDetails: false }));
+  }
+}, [authToken, allImplementations]);
+
+
+// Fetch quick start guide for language
+const fetchQuickStartGuide = useCallback(async (language) => {
+  console.log(`📡 [CodeBase] Fetching quick start guide for ${language}`);
+  
+  if (!authToken || !language) {
+    console.log('Missing params for fetchQuickStartGuide');
+    return null;
+  }
+
+  try {
+    const response = await getQuickStartGuide(authToken, language);
+    const handledResponse = handleCodebaseResponse(response);
+    const guide = extractQuickStartGuide(handledResponse);
+    
+    return guide || getDefaultQuickStartGuide(language);
+  } catch (error) {
+    console.error('❌ [CodeBase] Error loading quick start guide:', error);
+    return getDefaultQuickStartGuide(language);
+  }
+}, [authToken]);
 
   // Load all implementations for a request
-  const fetchAllImplementations = useCallback(async (collectionId, requestId) => {
-    console.log(`📡 [CodeBase] Fetching all implementations for request ${requestId}`);
-    
-    if (!authToken || !collectionId || !requestId) {
-      console.log('Missing params for fetchAllImplementations');
-      return;
-    }
+const fetchAllImplementations = useCallback(async (collectionId, requestId) => {
+  console.log(`📡 [CodeBase] Fetching all implementations for request ${requestId}`);
+  
+  if (!authToken || !collectionId || !requestId) {
+    console.log('Missing params for fetchAllImplementations');
+    return;
+  }
 
-    try {
-      const response = await getAllImplementations(authToken, collectionId, requestId);
-      console.log('📦 [CodeBase] All implementations response:', response);
+  try {
+    const response = await getAllImplementations(authToken, collectionId, requestId);
+    console.log('📦 [CodeBase] All implementations response:', response);
+    
+    const handledResponse = handleCodebaseResponse(response);
+    const allImplData = extractAllImplementations(handledResponse);
+    
+    if (allImplData) {
+      setAllImplementations(allImplData.implementations || {});
+      console.log('📊 [CodeBase] Loaded all implementations:', Object.keys(allImplData.implementations || {}));
       
-      if (response && response.data?.implementations) {
-        setAllImplementations(response.data.implementations);
-        console.log('📊 [CodeBase] Loaded all implementations:', Object.keys(response.data.implementations));
+      // Update current implementation if we have data for selected language
+      if (selectedLanguage && allImplData.implementations?.[selectedLanguage]) {
+        setCurrentImplementation(prev => ({
+          ...prev,
+          [selectedLanguage]: allImplData.implementations[selectedLanguage]
+        }));
       }
-      
-    } catch (error) {
-      console.error('❌ [CodeBase] Error loading all implementations:', error);
-      // Don't show toast for this as it's not critical
     }
-  }, [authToken]);
+    
+  } catch (error) {
+    console.error('❌ [CodeBase] Error loading all implementations:', error);
+    // Don't show toast for this as it's not critical
+  }
+}, [authToken, selectedLanguage]);
 
   // Generate implementation
   const generateImplementationAPI = async (generateRequest) => {
@@ -640,43 +704,57 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   };
 
   // Load available languages
-  const fetchLanguages = useCallback(async () => {
-    console.log('📡 [CodeBase] Fetching languages...');
-    
-    if (!authToken) {
-      console.log('❌ No auth token for fetchLanguages');
-      return;
-    }
+const fetchLanguages = useCallback(async () => {
+  console.log('📡 [CodeBase] Fetching languages...');
+  
+  if (!authToken) {
+    console.log('❌ No auth token for fetchLanguages');
+    return;
+  }
 
-    try {
-      const response = await getLanguages(authToken);
-      console.log('📦 [CodeBase] Languages response:', response);
+  try {
+    const response = await getLanguages(authToken);
+    console.log('📦 [CodeBase] Languages response:', response);
+    
+    const handledResponse = handleCodebaseResponse(response);
+    const languagesData = extractLanguages(handledResponse);
+    
+    if (languagesData && languagesData.length > 0) {
+      const formattedLanguages = languagesData.map(lang => ({
+        id: lang.value || lang.id || lang.language,
+        name: lang.label || lang.name || lang.language,
+        framework: lang.framework || lang.primaryFramework,
+        color: lang.color || getLanguageColor(lang.value || lang.id || lang.language),
+        icon: lang.icon || null,
+        command: lang.command || lang.runCommand
+      }));
       
-      if (response && response.data?.languages) {
-        const languagesData = response.data.languages.map(lang => ({
-          id: lang.id,
-          name: lang.name,
-          framework: lang.framework,
-          color: lang.color,
-          icon: null,
-          command: lang.command
-        }));
-        
-        setAvailableLanguages(languagesData);
-        console.log('📊 [CodeBase] Loaded languages:', languagesData.length);
+      setAvailableLanguages(formattedLanguages);
+      console.log('📊 [CodeBase] Loaded languages:', formattedLanguages.length);
+      
+      // Set default language if not set
+      if (!selectedLanguage && formattedLanguages.length > 0) {
+        setSelectedLanguage(formattedLanguages[0].id);
       }
-      
-    } catch (error) {
-      console.error('❌ [CodeBase] Error loading languages:', error);
+    } else {
       // Fallback to default languages
-      const defaultLanguages = [
-        { id: 'java', name: 'Java', framework: 'Spring Boot', color: '#f89820' },
-        { id: 'javascript', name: 'JavaScript', framework: 'Node.js/Express', color: '#f0db4f' },
-        { id: 'python', name: 'Python', framework: 'FastAPI/Django', color: '#3776ab' }
-      ];
+      const defaultLanguages = getDefaultSupportedProgrammingLanguages();
       setAvailableLanguages(defaultLanguages);
+      if (!selectedLanguage && defaultLanguages.length > 0) {
+        setSelectedLanguage(defaultLanguages[0].value);
+      }
     }
-  }, [authToken]);
+    
+  } catch (error) {
+    console.error('❌ [CodeBase] Error loading languages:', error);
+    // Fallback to default languages
+    const defaultLanguages = getDefaultSupportedProgrammingLanguages();
+    setAvailableLanguages(defaultLanguages);
+    if (!selectedLanguage && defaultLanguages.length > 0) {
+      setSelectedLanguage(defaultLanguages[0].value);
+    }
+  }
+}, [authToken]);
 
   const getMethodColor = (method) => {
     return colors.method[method] || colors.textSecondary;
@@ -698,35 +776,43 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   };
 
   const toggleFolder = async (folderId) => {
-    const isExpanding = !expandedFolders.includes(folderId);
-    
-    setExpandedFolders(prev =>
-      prev.includes(folderId)
-        ? prev.filter(id => id !== folderId)
-        : [...prev, folderId]
-    );
-    
-    // If expanding and we have a selected collection, load folder requests
-    if (isExpanding && selectedCollection) {
-      console.log(`📁 [CodeBase] Expanding folder ${folderId}, loading requests...`);
+  const isExpanding = !expandedFolders.includes(folderId);
+  
+  setExpandedFolders(prev =>
+    prev.includes(folderId)
+      ? prev.filter(id => id !== folderId)
+      : [...prev, folderId]
+  );
+  
+  // If expanding and we have a selected collection, load folder requests
+  if (isExpanding && selectedCollection) {
+    console.log(`📁 [CodeBase] Expanding folder ${folderId}, loading requests...`);
+    try {
       await fetchFolderRequests(selectedCollection.id, folderId);
+    } catch (error) {
+      console.error(`Error loading folder ${folderId} requests:`, error);
+      // Keep folder expanded but show error in UI
     }
-  };
+  }
+};
 
   const handleSelectRequest = async (request, collection, folder) => {
-    console.log('🎯 [CodeBase] Selecting request:', request.name);
+  console.log('🎯 [CodeBase] Selecting request:', request.name);
+  
+  setSelectedRequest(request);
+  setSelectedCollection(collection);
+  setSelectedComponent('controller'); // Reset to controller when selecting new request
+  
+  // Fetch request details
+  if (collection && request.id) {
+    await fetchRequestDetails(collection.id, request.id);
     
-    setSelectedRequest(request);
-    setSelectedCollection(collection);
-    setSelectedComponent('controller'); // Reset to controller when selecting new request
-    
-    // Fetch request details
-    if (collection && request.id) {
-      await fetchRequestDetails(collection.id, request.id);
-    }
-    
-    showToast(`Viewing implementation for ${request.name}`, 'info');
-  };
+    // Also fetch all implementations for this request
+    await fetchAllImplementations(collection.id, request.id);
+  }
+  
+  showToast(`Viewing implementation for ${request.name}`, 'info');
+};
 
   const copyToClipboard = (text) => {
     if (!text) {
@@ -779,30 +865,37 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   };
 
   const getAvailableComponents = () => {
-    // Get components from current implementation
-    const implementation = getCurrentImplementation();
-    const components = Object.keys(implementation);
-    
-    if (components.length > 0) {
-      return components;
-    }
-    
-    // Fallback to common components based on language
-    const componentMap = {
-      java: ['controller', 'service', 'repository', 'model', 'dto'],
-      javascript: ['controller', 'service', 'model', 'routes'],
-      python: ['fastapi', 'schemas', 'models', 'routes'],
-      csharp: ['controller', 'service', 'model', 'repository'],
-      php: ['controller', 'service', 'model'],
-      go: ['handler', 'service', 'model'],
-      ruby: ['controller', 'service', 'model'],
-      kotlin: ['controller', 'service', 'model'],
-      swift: ['controller', 'service', 'model'],
-      rust: ['handler', 'service', 'model']
-    };
-    
-    return componentMap[selectedLanguage] || ['controller', 'service', 'model'];
+  // First check components from current implementation
+  const implementation = getCurrentImplementation();
+  const componentsFromImpl = Object.keys(implementation);
+  
+  if (componentsFromImpl.length > 0) {
+    return componentsFromImpl;
+  }
+  
+  // Use controller's getSupportedComponents for selected language
+  const supportedComponents = getSupportedComponents(selectedLanguage);
+  
+  if (supportedComponents && supportedComponents.length > 0) {
+    return supportedComponents.map(comp => comp.value);
+  }
+  
+  // Fallback to common components based on language
+  const componentMap = {
+    java: ['controller', 'service', 'repository', 'model', 'dto'],
+    javascript: ['controller', 'service', 'model', 'routes'],
+    python: ['fastapi', 'schemas', 'models', 'routes'],
+    csharp: ['controller', 'service', 'model', 'repository'],
+    php: ['controller', 'service', 'model'],
+    go: ['handler', 'service', 'model'],
+    ruby: ['controller', 'service', 'model'],
+    kotlin: ['controller', 'service', 'model'],
+    swift: ['controller', 'service', 'model'],
+    rust: ['handler', 'service', 'model']
   };
+  
+  return componentMap[selectedLanguage] || ['controller', 'service', 'model'];
+};
 
   const getLanguageIcon = (language) => {
     const icons = {
@@ -837,27 +930,28 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
 
   // Initialize data
   useEffect(() => {
-    console.log('🚀 [CodeBase] Component mounted, fetching data...');
+  console.log('🚀 [CodeBase] Component mounted, fetching data...');
+  
+  if (authToken) {
+    // Use controller's function
+    const extractedUserId = extractUserIdFromToken(authToken);
+    setUserId(extractedUserId);
     
-    if (authToken) {
-      const extractedUserId = extractUserIdFromToken(authToken);
-      setUserId(extractedUserId);
-      
-      // Clear cache to force fresh API call
-      clearCachedCodebaseData(extractedUserId);
-      
-      // Fetch fresh data
-      fetchCollectionsList().catch(error => {
-        console.error('Error in fetchCollectionsList:', error);
-      });
-      
-      fetchLanguages().catch(error => {
-        console.error('Error in fetchLanguages:', error);
-      });
-    } else {
-      console.log('🔒 [CodeBase] No auth token, skipping fetch');
-    }
-  }, [authToken, fetchCollectionsList, fetchLanguages]);
+    // Clear cache to force fresh API call
+    clearCachedCodebaseData(extractedUserId);
+    
+    // Fetch fresh data
+    fetchCollectionsList().catch(error => {
+      console.error('Error in fetchCollectionsList:', error);
+    });
+    
+    fetchLanguages().catch(error => {
+      console.error('Error in fetchLanguages:', error);
+    });
+  } else {
+    console.log('🔒 [CodeBase] No auth token, skipping fetch');
+  }
+}, [authToken, fetchCollectionsList, fetchLanguages]);
 
   const renderCodePanel = () => {
     const currentLanguage = availableLanguages.find(lang => lang.id === selectedLanguage);
@@ -1022,7 +1116,7 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
             <Copy size={12} />
             Copy Code
           </button>
-          <button 
+          {/* <button 
             className="w-full py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center justify-center gap-2 hover-lift"
             onClick={generateDownloadPackage}
             disabled={isGeneratingCode}
@@ -1041,7 +1135,7 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
                 Download Package
               </>
             )}
-          </button>
+          </button> */}
         </div>
       </div>
     );
@@ -1609,7 +1703,7 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
                               )}
                             </div>
 
-                            {expandedFolders.includes(folder.id) && (
+                           {expandedFolders.includes(folder.id) && (
                               <div className="ml-6">
                                 {isLoading.folderRequests[folder.id] ? (
                                   <div className="py-2 text-center">
@@ -1619,25 +1713,34 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
                                 ) : (
                                   <>
                                     {getFolderRequests(folder.id).length > 0 ? (
-                                      getFolderRequests(folder.id).map(request => (
-                                        <div key={request.id} className="flex items-center gap-2 mb-1.5 group">
-                                          <button
-                                            onClick={() => handleSelectRequest(request, collection, folder)}
-                                            className="flex items-center gap-2 text-sm text-left transition-colors flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
-                                            style={{ 
-                                              color: selectedRequest?.id === request.id ? colors.primary : colors.text,
-                                              backgroundColor: selectedRequest?.id === request.id ? colors.selected : 'transparent'
-                                            }}>
-                                            {request.method && (
-                                              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
-                                                backgroundColor: getMethodColor(request.method)
-                                              }} />
-                                            )}
-                                            
-                                            <span className="truncate">{request.name}</span>
-                                          </button>
-                                        </div>
-                                      ))
+                                      getFolderRequests(folder.id).map(request => {
+                                        // Check if request has the expected structure
+                                        const requestId = request.id || request.requestId;
+                                        const requestName = request.name || request.requestName;
+                                        const requestMethod = request.method;
+                                        
+                                        if (!requestId || !requestName) return null;
+                                        
+                                        return (
+                                          <div key={requestId} className="flex items-center gap-2 mb-1.5 group">
+                                            <button
+                                              onClick={() => handleSelectRequest(request, collection, folder)}
+                                              className="flex items-center gap-2 text-sm text-left transition-colors flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
+                                              style={{ 
+                                                color: selectedRequest?.id === requestId ? colors.primary : colors.text,
+                                                backgroundColor: selectedRequest?.id === requestId ? colors.selected : 'transparent'
+                                              }}>
+                                              {requestMethod && (
+                                                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
+                                                  backgroundColor: getMethodColor(requestMethod)
+                                                }} />
+                                              )}
+                                              
+                                              <span className="truncate">{requestName}</span>
+                                            </button>
+                                          </div>
+                                        );
+                                      })
                                     ) : (
                                       <div className="py-2 text-center">
                                         <p className="text-xs" style={{ color: colors.textTertiary }}>

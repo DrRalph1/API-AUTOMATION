@@ -369,7 +369,7 @@ public class CollectionsService {
         loginRequest.setId("req-1");
         loginRequest.setName("Login");
         loginRequest.setMethod("POST");
-        loginRequest.setUrl("{{baseUrl}}/api/v1/auth/login");
+        loginRequest.setUrl("http://com.example.com/api/v1/auth/login");
         loginRequest.setDescription("Authenticate user with email and password");
         loginRequest.setEditing(false);
         loginRequest.setStatus("saved");
@@ -400,7 +400,7 @@ public class CollectionsService {
         refreshRequest.setId("req-2");
         refreshRequest.setName("Refresh Token");
         refreshRequest.setMethod("POST");
-        refreshRequest.setUrl("{{baseUrl}}/api/v1/auth/refresh");
+        refreshRequest.setUrl("http://com.example.com/api/v1/auth/refresh");
         refreshRequest.setDescription("Refresh access token");
         refreshRequest.setEditing(false);
         refreshRequest.setStatus("saved");
@@ -444,7 +444,7 @@ public class CollectionsService {
         getProductsRequest.setId("req-3");
         getProductsRequest.setName("Get Products");
         getProductsRequest.setMethod("GET");
-        getProductsRequest.setUrl("{{baseUrl}}/api/v1/products");
+        getProductsRequest.setUrl("http://com.example.com/api/v1/products");
         getProductsRequest.setDescription("Retrieve list of products");
         getProductsRequest.setEditing(false);
         getProductsRequest.setStatus("saved");
@@ -478,7 +478,7 @@ public class CollectionsService {
         createProductRequest.setId("req-4");
         createProductRequest.setName("Create Product");
         createProductRequest.setMethod("POST");
-        createProductRequest.setUrl("{{baseUrl}}/api/v1/products");
+        createProductRequest.setUrl("http://com.example.com/api/v1/products");
         createProductRequest.setDescription("Create a new product");
         createProductRequest.setEditing(false);
         createProductRequest.setStatus("saved");
@@ -607,7 +607,7 @@ public class CollectionsService {
         details.setRequestId("req-1");
         details.setName("Login");
         details.setMethod("POST");
-        details.setUrl("{{baseUrl}}/api/v1/auth/login");
+        details.setUrl("http://com.example.com/api/v1/auth/login");
         details.setDescription("Authenticate user with email and password");
         details.setAuthType("noauth");
 
@@ -649,7 +649,7 @@ public class CollectionsService {
         details.setRequestId("req-2");
         details.setName("Refresh Token");
         details.setMethod("POST");
-        details.setUrl("{{baseUrl}}/api/v1/auth/refresh");
+        details.setUrl("http://com.example.com/api/v1/auth/refresh");
         details.setDescription("Refresh access token");
         details.setAuthType("bearer");
 
@@ -689,7 +689,7 @@ public class CollectionsService {
         details.setRequestId("req-3");
         details.setName("Get Products");
         details.setMethod("GET");
-        details.setUrl("{{baseUrl}}/api/v1/products");
+        details.setUrl("http://com.example.com/api/v1/products");
         details.setDescription("Retrieve list of products");
         details.setAuthType("bearer");
 
@@ -732,7 +732,7 @@ public class CollectionsService {
         details.setRequestId("req-4");
         details.setName("Create Product");
         details.setMethod("POST");
-        details.setUrl("{{baseUrl}}/api/v1/products");
+        details.setUrl("http://com.example.com/api/v1/products");
         details.setDescription("Create a new product");
         details.setAuthType("bearer");
 
