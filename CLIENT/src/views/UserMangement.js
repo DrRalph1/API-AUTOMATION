@@ -62,7 +62,7 @@ import {
   UserCog as UserCogIcon2, UserCircle2, UserSquare as UserSquareIcon
 } from "lucide-react";
 
-// Import the API controller
+// Import the API controllers
 import UserManagementAPI, {
   getUsersList,
   getUserDetails,
@@ -103,7 +103,6 @@ import UserManagementAPI, {
   validateExportUsers,
   validateUpdateStatus,
   validateUserDataRequest,
-  getUserRoleDisplayName,
   getUserStatusDisplayName,
   getStatusColor,
   getRoleColor,
@@ -111,6 +110,14 @@ import UserManagementAPI, {
   formatDateForDisplay,
   getDefaultUserFilters
 } from '@/controllers/UserManagementController.js';
+
+
+// Import UserRoleController methods
+import {
+  getAllRoles,
+  handleRoleResponse,
+  extractRolePaginationInfo
+} from '@/controllers/UserRoleController.js';
 
 // Custom debounce hook
 const useDebounce = (callback, delay) => {
@@ -151,6 +158,9 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   
   // API states
   const [users, setUsers] = useState([]);
+  const [roles, setRoles] = useState([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [rolesError, setRolesError] = useState(false);
   const [stats, setStats] = useState({
     totalUsers: 0,
     activeUsers: 0,
@@ -175,6 +185,13 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   const [isOpeningModal, setIsOpeningModal] = useState(false);
   const pendingRequestRef = useRef(null);
 
+  // Load roles on component mount
+  useEffect(() => {
+    if (authToken) {
+      loadRoles();
+    }
+  }, [authToken]);
+
   // Load users on component mount
   useEffect(() => {
     if (authToken) {
@@ -184,6 +201,73 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
       console.warn('No auth token available');
     }
   }, [authToken]);
+
+  // Load roles from API - NO STATIC FALLBACKS
+  const loadRoles = async (showLoading = false) => {
+    const authHeader = authToken;
+    if (!authHeader) {
+      console.warn('No auth token available for loading roles');
+      setRolesError(true);
+      return;
+    }
+
+    if (showLoading) setRolesLoading(true);
+    setRolesError(false);
+    
+    try {
+      const response = await getAllRoles(authHeader, { page: 0, size: 100 });
+      
+      // Handle your exact API response structure
+      if (response && response.responseCode === 200 && response.data) {
+        // Extract content from the paginated response
+        const content = response.data.content || [];
+        
+        // Map the roles to a consistent format using the actual field names from your API
+        const mappedRoles = content.map(role => ({
+          id: role.roleId,
+          roleId: role.roleId,
+          roleName: role.roleName,
+          description: role.description || '',
+          roleCode: role.roleName?.replace(/\s+/g, '_').toUpperCase() || ''
+        }));
+        
+        setRoles(mappedRoles);
+        
+        if (mappedRoles.length === 0) {
+          setRolesError(true);
+        }
+      } else {
+        console.error('Invalid API response structure:', response);
+        setRolesError(true);
+        setRoles([]);
+      }
+    } catch (error) {
+      console.error('Error loading roles:', error);
+      setRolesError(true);
+      setRoles([]);
+    } finally {
+      if (showLoading) setRolesLoading(false);
+    }
+  };
+
+  // Get role display name from role ID - NO STATIC FALLBACKS
+  const getRoleDisplayName = (roleId) => {
+    if (!roleId) return 'Unknown';
+    if (roleId === 'all') return 'All Roles';
+    
+    // Try to find by id or roleId
+    const role = roles.find(r => r.id === roleId || r.roleId === roleId);
+    if (role) return role.roleName;
+    
+    // If not found, just return the roleId as is
+    return roleId;
+  };
+
+  // Get role color from UUID - Uses the controller's getRoleColor function
+  const getRoleColorFromId = (roleId) => {
+    if (!roleId || roleId === 'all') return '#6B7280'; // Default gray
+    return getRoleColor(roleId);
+  };
 
   // Load users with filters
   const loadUsers = async (filters = {}) => {
@@ -207,7 +291,15 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
       
       const processedResponse = handleUserManagementResponse(response);
       const userList = extractUsersList(processedResponse);
-      setUsers(userList || []);
+      
+      // Map role IDs to role names for display
+      const mappedUserList = userList.map(user => ({
+        ...user,
+        roleDisplayName: getRoleDisplayName(user.role || user.roleId),
+        roleDisplayColor: getRoleColorFromId(user.role || user.roleId)
+      }));
+      
+      setUsers(mappedUserList || []);
       
     } catch (error) {
       console.error('Error loading users:', error);
@@ -257,7 +349,15 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     try {
       const response = await getUserDetails(authHeader, userId);
       const processedResponse = handleUserManagementResponse(response);
-      return extractUserDetails(processedResponse);
+      const userDetails = extractUserDetails(processedResponse);
+      
+      // Add role display name
+      if (userDetails) {
+        userDetails.roleDisplayName = getRoleDisplayName(userDetails.roleId || userDetails.role);
+        userDetails.roleDisplayColor = getRoleColorFromId(userDetails.roleId || userDetails.role);
+      }
+      
+      return userDetails;
     } catch (error) {
       console.error('Error loading user details:', error);
       showToast('error', error.message || 'Failed to load user details');
@@ -277,18 +377,12 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
 
     setLoading(true);
     try {
-      const validationErrors = validateCreateUser(userData);
-      if (validationErrors.length > 0) {
-        showToast('error', validationErrors.join(', '));
-        return false;
-      }
-
       const response = await createUser(authHeader, userData);
       const processedResponse = handleUserManagementResponse(response);
       const result = extractCreateUserResults(processedResponse);
       
       if (result.success) {
-        showToast('success', result.message);
+        showToast('success', result.message || 'User created successfully');
         loadUsers();
         loadStatistics();
         return true;
@@ -315,18 +409,12 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
 
     setLoading(true);
     try {
-      const validationErrors = validateUpdateUser(userData);
-      if (validationErrors.length > 0) {
-        showToast('error', validationErrors.join(', '));
-        return false;
-      }
-
       const response = await updateUser(authHeader, userId, userData);
       const processedResponse = handleUserManagementResponse(response);
       const result = extractUpdateUserResults(processedResponse);
       
       if (result.success) {
-        showToast('success', result.message);
+        showToast('success', result.message || 'User updated successfully');
         loadUsers();
         return true;
       } else {
@@ -361,7 +449,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
       const result = extractDeleteUserResults(processedResponse);
       
       if (result.success) {
-        showToast('success', result.message);
+        showToast('success', result.message || 'User deleted successfully');
         setSelectedUsers(prev => prev.filter(id => id !== user.id));
         loadUsers();
         loadStatistics();
@@ -386,16 +474,6 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     const authHeader = authToken;
     if (!authHeader) {
       showToast('error', 'Authentication required. Please log in.');
-      return;
-    }
-
-    const validationErrors = validateBulkOperation({
-      operation: action,
-      userIds: selectedUsers
-    });
-    
-    if (validationErrors.length > 0) {
-      showToast('error', validationErrors.join(', '));
       return;
     }
 
@@ -458,7 +536,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
       const result = extractResetPasswordResults(processedResponse);
       
       if (result.success) {
-        showToast('success', result.message);
+        showToast('success', result.message || 'Password reset successful');
         return true;
       } else {
         showToast('error', result.message || 'Failed to reset password');
@@ -483,17 +561,18 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
 
     setLoading(true);
     try {
-      const validationErrors = validateSearchUsers(searchData);
-      if (validationErrors.length > 0) {
-        showToast('error', validationErrors.join(', '));
-        return;
-      }
-
       const response = await searchUsers(authHeader, searchData);
       const processedResponse = handleUserManagementResponse(response);
       const result = extractSearchUsersResults(processedResponse);
       
-      setUsers(result.results || []);
+      // Map role IDs to role names for display
+      const mappedResults = (result.results || []).map(user => ({
+        ...user,
+        roleDisplayName: getRoleDisplayName(user.role || user.roleId),
+        roleDisplayColor: getRoleColorFromId(user.role || user.roleId)
+      }));
+      
+      setUsers(mappedResults);
       setCurrentPage(1);
       
     } catch (error) {
@@ -514,12 +593,6 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
 
     setLoading(true);
     try {
-      const validationErrors = validateImportUsers(importData);
-      if (validationErrors.length > 0) {
-        showToast('error', validationErrors.join(', '));
-        return false;
-      }
-
       const response = await importUsers(authHeader, importData);
       const processedResponse = handleUserManagementResponse(response);
       const result = extractImportUsersResults(processedResponse);
@@ -552,12 +625,6 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
 
     setLoading(true);
     try {
-      const validationErrors = validateExportUsers(exportData);
-      if (validationErrors.length > 0) {
-        showToast('error', validationErrors.join(', '));
-        return;
-      }
-
       const response = await exportUsers(authHeader, exportData);
       const processedResponse = handleUserManagementResponse(response);
       const result = extractExportUsersResults(processedResponse);
@@ -592,18 +659,12 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
 
     setLoading(true);
     try {
-      const validationErrors = validateUpdateStatus(newStatus);
-      if (validationErrors.length > 0) {
-        showToast('error', validationErrors.join(', '));
-        return;
-      }
-
       const response = await updateUserStatus(authHeader, user.id, newStatus);
       const processedResponse = handleUserManagementResponse(response);
       const result = extractUpdateStatusResults(processedResponse);
       
       if (result.success) {
-        showToast('success', result.message);
+        showToast('success', result.message || 'Status updated successfully');
         loadUsers();
         loadStatistics();
       } else {
@@ -648,12 +709,6 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     }
 
     try {
-      const validationErrors = validateUserDataRequest(validationData);
-      if (validationErrors.length > 0) {
-        showToast('error', validationErrors.join(', '));
-        return null;
-      }
-
       const response = await validateUserData(authHeader, validationData);
       const processedResponse = handleUserManagementResponse(response);
       return extractValidationResults(processedResponse);
@@ -783,9 +838,9 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     connectionIdle: '#f59e0b'
   };
 
-  // Role colors
-  const getRoleColorStyle = (role) => {
-    const color = getRoleColor(role) || colors.textSecondary;
+  // Role colors - Uses the controller's getRoleColor function
+  const getRoleColorStyle = (roleId) => {
+    const color = getRoleColorFromId(roleId) || colors.textSecondary;
     return {
       backgroundColor: `${color}20`,
       color: color
@@ -804,24 +859,6 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   // Security score color
   const getSecurityColor = (score) => {
     return getSecurityScoreColor(score) || colors.textSecondary;
-  };
-
-  // Role colors object
-  const roleColors = {
-    admin: colors.error,
-    developer: colors.primary,
-    viewer: colors.success,
-    moderator: colors.warning,
-    guest: colors.textSecondary
-  };
-
-  // Status colors object
-  const statusColors = {
-    active: colors.success,
-    inactive: colors.warning,
-    pending: colors.info,
-    suspended: colors.error,
-    archived: colors.textSecondary
   };
 
   // Modal management
@@ -858,7 +895,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
       user.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       user.fullName?.toLowerCase().includes(searchQuery.toLowerCase()));
     
-    const matchesRole = selectedRole === 'all' || user.role === selectedRole;
+    const matchesRole = selectedRole === 'all' || (user.role === selectedRole) || (user.roleId === selectedRole);
     const matchesStatus = selectedStatus === 'all' || user.status === selectedStatus;
     
     return matchesSearch && matchesRole && matchesStatus;
@@ -909,6 +946,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
   const handleRefresh = async () => {
     await loadUsers();
     await loadStatistics();
+    await loadRoles(true);
   };
 
   const handleSort = (field) => {
@@ -986,11 +1024,11 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
       showToast('error', error.message || 'Failed to load user details');
     } finally {
       // Clear states after a delay to prevent rapid clicking
-      setTimeout(() => {
-        setOpeningModalForUserId(null);
-        setIsOpeningModal(false);
-        pendingRequestRef.current = null;
-      }, 500);
+      // setTimeout(() => {
+      //   setOpeningModalForUserId(null);
+      //   setIsOpeningModal(false);
+      //   pendingRequestRef.current = null;
+      // }, 500);
     }
   }, 300); // 300ms debounce
 
@@ -1040,30 +1078,19 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
         subItems: [
           { id: 'all-users', label: 'All Users', icon: <UsersIcon size={12} /> },
           { id: 'active-users', label: 'Active Users', icon: <UserCheck size={12} /> },
+          { id: 'inactive-users', label: 'Inactive Users', icon: <Clock size={12} /> },
           { id: 'pending-users', label: 'Pending Users', icon: <Clock size={12} /> },
           { id: 'suspended-users', label: 'Suspended Users', icon: <UserX size={12} /> }
         ]
       },
-      {
-        id: 'roles',
-        label: 'Roles & Permissions',
-        icon: <Shield size={16} />,
-        subItems: [
-          { id: 'role-management', label: 'Role Management', icon: <ShieldIcon size={12} /> },
-          { id: 'permission-sets', label: 'Permission Sets', icon: <KeyRound size={12} /> },
-          { id: 'access-control', label: 'Access Control', icon: <Lock size={12} /> }
-        ]
-      }
-      // ,
       // {
-      //   id: 'security',
-      //   label: 'Security',
-      //   icon: <ShieldCheck size={16} />,
+      //   id: 'roles',
+      //   label: 'Roles & Permissions',
+      //   icon: <Shield size={16} />,
       //   subItems: [
-      //     { id: 'mfa-settings', label: 'MFA Settings', icon: <ShieldCheckIcon size={12} /> },
-      //     { id: 'password-policies', label: 'Password Policies', icon: <KeyIcon size={12} /> },
-      //     { id: 'login-security', label: 'Login Security', icon: <LogIn size={12} /> },
-      //     { id: 'session-management', label: 'Session Management', icon: <ClockIcon size={12} /> }
+      //     { id: 'role-management', label: 'Role Management', icon: <ShieldIcon size={12} /> },
+      //     { id: 'permission-sets', label: 'Permission Sets', icon: <KeyRound size={12} /> },
+      //     { id: 'access-control', label: 'Access Control', icon: <Lock size={12} /> }
       //   ]
       // }
     ];
@@ -1100,7 +1127,20 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
           
           <div className="flex gap-2">
             <button 
-              onClick={() => openModal('editUser', { id: 'new' })}
+              onClick={() => openModal('editUser', { 
+                id: 'new',
+                username: '',
+                email: '',
+                fullName: '',
+                roleId: '',
+                status: 'pending',
+                department: '',
+                location: '',
+                mfaEnabled: false,
+                emailVerified: false,
+                phoneVerified: false,
+                tags: []
+              })}
               className="flex-1 px-3 py-2 rounded text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2 justify-center"
               style={{ 
                 backgroundColor: colors.primaryDark,
@@ -1123,7 +1163,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto p-2">
+        <div className="flex-1 overflow-auto p-2 space-y-4">
           {sideNavItems.map((item) => (
             <div key={item.id} className="mb-1">
               <button
@@ -1163,6 +1203,8 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                           setSelectedStatus('all');
                         } else if (subItem.id === 'active-users') {
                           setSelectedStatus('active');
+                        } else if (subItem.id === 'inactive-users') {
+                          setSelectedStatus('inactive');
                         } else if (subItem.id === 'pending-users') {
                           setSelectedStatus('pending');
                         } else if (subItem.id === 'suspended-users') {
@@ -1250,16 +1292,6 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     const [userDetails, setUserDetails] = useState(user);
     const [activityLog, setActivityLog] = useState([]);
 
-    // useEffect(() => {
-    //   if (user?.id) {
-    //     handleLoadUserActivity(user.id).then(data => {
-    //       if (data) {
-    //         setActivityLog(data.activities || []);
-    //       }
-    //     });
-    //   }
-    // }, [user?.id]);
-
     const formatDate = (dateString) => {
       return formatDateForDisplay(dateString, true) || '';
     };
@@ -1302,10 +1334,10 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                   <span style={{ color: colors.textSecondary }}>@{userDetails?.username || 'unknown'}</span>
                 </div>
                 <div 
-                  className="px-2 py-0.5 rounded-full text-xs font-medium"
-                  style={getRoleColorStyle(userDetails?.role)}
+                  className="px-2 py-0.5 rounded-full text-xs font-medium uppercase"
+                  style={getRoleColorStyle(userDetails?.roleId || userDetails?.role)}
                 >
-                  {getUserRoleDisplayName(userDetails?.role)}
+                  {getRoleDisplayName(userDetails?.roleId || userDetails?.role)}
                 </div>
                 <div 
                   className="px-2 py-0.5 rounded-full text-xs font-medium"
@@ -1605,275 +1637,409 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     );
   };
 
-  // Edit User Modal
-  const EditUserModal = ({ data: user }) => {
-    const [formData, setFormData] = useState({
-      username: user?.username || '',
-      email: user?.email || '',
-      fullName: user?.fullName || '',
-      role: user?.role || 'viewer',
-      status: user?.status || 'pending',
-      department: user?.department || '',
-      location: user?.location || '',
-      mfaEnabled: user?.mfaEnabled || false,
-      emailVerified: user?.emailVerified || false,
-      phoneVerified: user?.phoneVerified || false,
-      tags: user?.tags || []
-    });
+  // Edit User Modal - NO STATIC FALLBACKS
+  // Edit User Modal - Fixed role selection
+const EditUserModal = ({ data: user }) => {
+  const [formData, setFormData] = useState({
+    username: user?.username || '',
+    email: user?.email || '',
+    fullName: user?.fullName || '',
+    roleId: user?.roleId || user?.role || '', // Make sure this isn't undefined
+    status: user?.status || 'pending',
+    department: user?.department || '',
+    location: user?.location || '',
+    mfaEnabled: user?.mfaEnabled || false,
+    emailVerified: user?.emailVerified || false,
+    phoneVerified: user?.phoneVerified || false,
+    tags: user?.tags || []
+  });
 
-    const [roles, setRoles] = useState([]);
-    const [validationResult, setValidationResult] = useState(null);
+  const [validationResult, setValidationResult] = useState(null);
+  const [localRoles, setLocalRoles] = useState([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [rolesError, setRolesError] = useState(false);
 
-    // useEffect(() => {
-    //   handleLoadRolesAndPermissions().then(data => {
-    //     if (data && data.roles) {
-    //       setRoles(data.roles);
-    //     }
-    //   });
-    // }, []);
-
-    // useEffect(() => {
-    //   if (formData.email || formData.username) {
-    //     const validate = async () => {
-    //       const result = await handleValidateUserData({
-    //         email: formData.email,
-    //         username: formData.username,
-    //         userId: user?.id || null
-    //       });
-    //       setValidationResult(result);
-    //     };
-    //     validate();
-    //   }
-    // }, [formData.email, formData.username]);
-
-    const handleSubmit = async (e) => {
-      e.preventDefault();
+  // Fetch roles when modal opens - NO STATIC FALLBACKS
+  useEffect(() => {
+    const fetchRoles = async () => {
+      if (!authToken) {
+        setRolesError(true);
+        return;
+      }
       
-      if (user?.id === 'new') {
-        const success = await handleCreateUser({
-          ...formData,
-          password: 'TemporaryPassword123!',
-          department: formData.department || 'Engineering',
-          location: formData.location || 'New York, NY'
-        });
+      setRolesLoading(true);
+      setRolesError(false);
+      
+      try {
+        const response = await getAllRoles(authToken, { page: 0, size: 100 });
         
-        if (success) {
-          closeModal();
-        }
-      } else {
-        const success = await handleUpdateUser(user.id, formData);
-        if (success) {
-          closeModal();
-        }
-      }
-    };
-
-    const handleTagInput = (e) => {
-      if (e.key === 'Enter' && e.target.value.trim()) {
-        const newTag = e.target.value.trim();
-        if (!formData.tags.includes(newTag)) {
-          setFormData(prev => ({
-            ...prev,
-            tags: [...prev.tags, newTag]
+        if (response && response.responseCode === 200 && response.data) {
+          const content = response.data.content || [];
+          
+          const mappedRoles = content.map(role => ({
+            id: role.roleId,
+            roleId: role.roleId,
+            roleName: role.roleName,
+            description: role.description || ''
           }));
+          
+          setLocalRoles(mappedRoles);
+          
+          // Debug: Log loaded roles and current user role
+          console.log('Loaded roles:', mappedRoles);
+          console.log('User role ID:', user?.roleId || user?.role);
+          
+          // IMPORTANT FIX: If user has a role but it's not in the loaded roles yet,
+          // we need to manually add it or set it after roles load
+          const userRoleId = user?.roleId || user?.role;
+          if (userRoleId && userRoleId !== 'new') {
+            // Check if the user's role exists in the loaded roles
+            const roleExists = mappedRoles.some(role => 
+              role.roleId === userRoleId || role.id === userRoleId
+            );
+            
+            if (!roleExists && userRoleId) {
+              console.log('User role not found in loaded roles, adding manually');
+              // Add the user's role to the list if it doesn't exist
+              setLocalRoles(prev => [
+                ...prev,
+                {
+                  id: userRoleId,
+                  roleId: userRoleId,
+                  roleName: getRoleDisplayName(userRoleId) || 'Unknown Role'
+                }
+              ]);
+            }
+            
+            // Ensure formData has the correct roleId
+            setFormData(prev => ({
+              ...prev,
+              roleId: userRoleId
+            }));
+          }
+          
+          if (mappedRoles.length === 0) {
+            setRolesError(true);
+          }
+        } else {
+          console.error('Invalid API response:', response);
+          setRolesError(true);
+          setLocalRoles([]);
         }
-        e.target.value = '';
+      } catch (error) {
+        console.error('Error loading roles:', error);
+        setRolesError(true);
+        setLocalRoles([]);
+      } finally {
+        setRolesLoading(false);
       }
     };
+    
+    fetchRoles();
+  }, [authToken, user]);
 
-    const removeTag = (tagToRemove) => {
+  // FIX: Ensure roleId is set when the component mounts
+  useEffect(() => {
+    // If we have a user with a role, make sure it's selected
+    if (user && (user.roleId || user.role)) {
+      const userRoleId = user.roleId || user.role;
       setFormData(prev => ({
         ...prev,
-        tags: prev.tags.filter(tag => tag !== tagToRemove)
+        roleId: userRoleId
       }));
-    };
+    }
+  }, [user]);
 
-    return (
-      <MobileModal 
-        title={user?.id === 'new' ? "Add New User" : "Edit User"} 
-        onClose={closeModal}
-        showBackButton={modalStack.length > 1}
-        onBack={closeModal}
-      >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {validationResult && !validationResult.valid && (
-            <div className="p-3 rounded border" style={{ 
-              borderColor: colors.error,
-              backgroundColor: `${colors.error}20`
-            }}>
-              <div className="text-sm font-medium mb-1" style={{ color: colors.error }}>
-                Validation Issues
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    // Debug: Check what roleId is being used
+    console.log('Selected roleId:', formData.roleId);
+    
+    if (!formData.roleId) {
+      showToast('error', 'Please select a role');
+      return;
+    }
+    
+    if (user?.id === 'new') {
+      // Create new user
+      const createData = {
+        username: formData.username,
+        email: formData.email,
+        fullName: formData.fullName,
+        roleId: formData.roleId,
+        password: 'TemporaryPassword123!',
+        department: formData.department || 'Engineering',
+        location: formData.location || 'New York, NY',
+        mfaEnabled: formData.mfaEnabled,
+        status: formData.status || 'pending'
+      };
+      
+      console.log('Creating user with data:', createData);
+      const success = await handleCreateUser(createData);
+      
+      if (success) {
+        closeModal();
+      }
+    } else {
+      // Update existing user
+      const success = await handleUpdateUser(user.id, {
+        fullName: formData.fullName,
+        roleId: formData.roleId,
+        status: formData.status,
+        department: formData.department,
+        location: formData.location,
+        mfaEnabled: formData.mfaEnabled,
+        emailVerified: formData.emailVerified,
+        phoneVerified: formData.phoneVerified,
+        tags: formData.tags
+      });
+      
+      if (success) {
+        closeModal();
+      }
+    }
+  };
+
+  const handleTagInput = (e) => {
+    if (e.key === 'Enter' && e.target.value.trim()) {
+      const newTag = e.target.value.trim();
+      if (!formData.tags.includes(newTag)) {
+        setFormData(prev => ({
+          ...prev,
+          tags: [...prev.tags, newTag]
+        }));
+      }
+      e.target.value = '';
+    }
+  };
+
+  const removeTag = (tagToRemove) => {
+    setFormData(prev => ({
+      ...prev,
+      tags: prev.tags.filter(tag => tag !== tagToRemove)
+    }));
+  };
+
+  return (
+    <MobileModal 
+      title={user?.id === 'new' ? "Add New User" : "Edit User"} 
+      onClose={closeModal}
+      showBackButton={modalStack.length > 1}
+      onBack={closeModal}
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {validationResult && !validationResult.valid && (
+          <div className="p-3 rounded border" style={{ 
+            borderColor: colors.error,
+            backgroundColor: `${colors.error}20`
+          }}>
+            <div className="text-sm font-medium mb-1" style={{ color: colors.error }}>
+              Validation Issues
+            </div>
+            <ul className="text-xs space-y-1">
+              {validationResult.issues.map((issue, index) => (
+                <li key={index} style={{ color: colors.textSecondary }}>
+                  • {issue.field}: {issue.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+              Full Name *
+            </label>
+            <input
+              type="text"
+              value={formData.fullName}
+              onChange={(e) => setFormData(prev => ({ ...prev, fullName: e.target.value }))}
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                borderColor: colors.inputBorder,
+                color: colors.text
+              }}
+              required
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+              Username *
+            </label>
+            <input
+              type="text"
+              value={formData.username}
+              onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                borderColor: colors.inputBorder,
+                color: colors.text
+              }}
+              required={user?.id === 'new'}
+              disabled={user?.id !== 'new'}
+            />
+            {/* {user?.id !== 'new' && (
+              <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+                Username cannot be changed
               </div>
-              <ul className="text-xs space-y-1">
-                {validationResult.issues.map((issue, index) => (
-                  <li key={index} style={{ color: colors.textSecondary }}>
-                    • {issue.field}: {issue.message}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
-                Full Name *
-              </label>
-              <input
-                type="text"
-                value={formData.fullName}
-                onChange={(e) => setFormData(prev => ({ ...prev, fullName: e.target.value }))}
-                className="w-full px-3 py-2 rounded border text-sm"
+            )} */}
+          </div>
+          <div>
+            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+              Email *
+            </label>
+            <input
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                borderColor: colors.inputBorder,
+                color: colors.text
+              }}
+              required={user?.id === 'new'}
+              disabled={user?.id !== 'new'}
+            />
+            {/* {user?.id !== 'new' && (
+              <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+                Email cannot be changed
+              </div>
+            )} */}
+          </div>
+          <div>
+            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+              Access Type *
+            </label>
+            {rolesError ? (
+              <div 
+                className="w-full px-3 py-2 rounded border text-sm flex items-center justify-between"
                 style={{ 
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
+                  backgroundColor: `${colors.error}20`,
+                  borderColor: colors.error,
+                  color: colors.error
                 }}
-                required
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
-                Username *
-              </label>
-              <input
-                type="text"
-                value={formData.username}
-                onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{ 
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-                required
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
-                Email *
-              </label>
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{ 
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-                required
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
-                Role *
-              </label>
-              <select
-                value={formData.role}
-                onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{ 
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-                required
               >
-                <option value="">Select Role</option>
-                {roles.map(role => (
-                  <option key={role.id} value={role.id}>
-                    {role.name}
+                <span>Failed to load roles</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRolesError(false);
+                    setRolesLoading(true);
+                    const fetchRoles = async () => {
+                      try {
+                        const response = await getAllRoles(authToken, { page: 0, size: 100 });
+                        if (response && response.responseCode === 200 && response.data) {
+                          const content = response.data.content || [];
+                          const mappedRoles = content.map(role => ({
+                            id: role.roleId,
+                            roleId: role.roleId,
+                            roleName: role.roleName
+                          }));
+                          setLocalRoles(mappedRoles);
+                          
+                          // Re-set the user's role after reload
+                          const userRoleId = user?.roleId || user?.role;
+                          if (userRoleId && userRoleId !== 'new') {
+                            setFormData(prev => ({ ...prev, roleId: userRoleId }));
+                          }
+                          
+                          if (mappedRoles.length > 0) {
+                            setRolesError(false);
+                          }
+                        }
+                      } catch (error) {
+                        console.error('Error retrying roles:', error);
+                      } finally {
+                        setRolesLoading(false);
+                      }
+                    };
+                    fetchRoles();
+                  }}
+                  className="p-1 rounded hover:bg-opacity-50"
+                  style={{ backgroundColor: `${colors.error}30` }}
+                >
+                  <RefreshCw size={14} className={rolesLoading ? 'animate-spin' : ''} />
+                </button>
+              </div>
+            ) : (
+              <select
+                key={`role-select-${formData.roleId || 'empty'}`} // Force re-render when roleId changes
+                value={formData.roleId || ''}
+                onChange={(e) => {
+                  console.log('Role selected:', e.target.value);
+                  setFormData(prev => ({ ...prev, roleId: e.target.value }));
+                }}
+                className="w-full px-3 py-2 rounded border text-sm uppercase"
+                style={{ 
+                  backgroundColor: colors.bg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text,
+                  opacity: rolesLoading ? 0.7 : 1
+                }}
+                required
+                disabled={rolesLoading || localRoles.length === 0}
+              >
+                <option value="">
+                  {rolesLoading ? 'Loading access types...' : 
+                   localRoles.length === 0 ? 'No access types available' : 'Select Access Type'}
+                </option>
+                {localRoles.map(role => (
+                  <option 
+                    key={role.roleId} 
+                    value={role.roleId}
+                    selected={formData.roleId === role.roleId} // Explicit selected attribute
+                  >
+                    {role.roleName}
                   </option>
                 ))}
               </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
-                Status *
-              </label>
-              <select
-                value={formData.status}
-                onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{ 
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-                required
-              >
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="pending">Pending</option>
-                <option value="suspended">Suspended</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
-                Department
-              </label>
-              <input
-                type="text"
-                value={formData.department}
-                onChange={(e) => setFormData(prev => ({ ...prev, department: e.target.value }))}
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{ 
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
-                Location
-              </label>
-              <input
-                type="text"
-                value={formData.location}
-                onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{ 
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-              />
-            </div>
+            )}
+            {rolesLoading && (
+              <div className="flex items-center gap-2 text-xs mt-1" style={{ color: colors.textSecondary }}>
+                <RefreshCw size={12} className="animate-spin" />
+                <span>Loading roles from server...</span>
+              </div>
+            )}
+            {/* Debug display - remove in production */}
+            {/* <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+              Selected role ID: {formData.roleId || 'None'}
+            </div> */}
           </div>
-
           <div>
-            <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
-              Tags
+            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+              Status *
             </label>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {formData.tags.map((tag, index) => (
-                <div 
-                  key={index}
-                  className="px-2 py-1 rounded flex items-center gap-1 text-xs"
-                  style={{ 
-                    backgroundColor: colors.hover,
-                    color: colors.textSecondary
-                  }}
-                >
-                  {tag}
-                  <button
-                    type="button"
-                    onClick={() => removeTag(tag)}
-                    className="p-0.5 rounded hover:bg-opacity-50 transition-colors"
-                    style={{ backgroundColor: colors.hover }}
-                  >
-                    <X size={10} />
-                  </button>
-                </div>
-              ))}
-            </div>
+            <select
+              value={formData.status}
+              onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ 
+                backgroundColor: colors.bg,
+                borderColor: colors.inputBorder,
+                color: colors.text
+              }}
+              required
+            >
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="pending">Pending</option>
+              <option value="suspended">Suspended</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+              Staff Id
+            </label>
             <input
               type="text"
-              placeholder="Type tag and press Enter..."
-              onKeyDown={handleTagInput}
+              value={formData.department}
+              onChange={(e) => setFormData(prev => ({ ...prev, department: e.target.value }))}
               className="w-full px-3 py-2 rounded border text-sm"
               style={{ 
                 backgroundColor: colors.inputBg,
@@ -1882,64 +2048,120 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
               }}
             />
           </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="mfaEnabled"
-                checked={formData.mfaEnabled}
-                onChange={(e) => setFormData(prev => ({ ...prev, mfaEnabled: e.target.checked }))}
-                className="rounded"
-              />
-              <label htmlFor="mfaEnabled" className="text-sm" style={{ color: colors.text }}>
-                MFA Enabled
-              </label>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="emailVerified"
-                checked={formData.emailVerified}
-                onChange={(e) => setFormData(prev => ({ ...prev, emailVerified: e.target.checked }))}
-                className="rounded"
-              />
-              <label htmlFor="emailVerified" className="text-sm" style={{ color: colors.text }}>
-                Email Verified
-              </label>
-            </div>
+          <div>
+            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+              Location
+            </label>
+            <input
+              type="text"
+              value={formData.location}
+              onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                borderColor: colors.inputBorder,
+                color: colors.text
+              }}
+            />
           </div>
+        </div>
 
-          <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <button 
-                type="submit"
-                className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
-                style={{ 
-                  backgroundColor: colors.success,
-                  color: 'white'
-                }}
-                disabled={validationResult && !validationResult.valid}
-              >
-                {user?.id === 'new' ? 'Create User' : 'Update User'}
-              </button>
-              <button 
-                type="button"
-                onClick={closeModal}
-                className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+        <div>
+          <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
+            Tags
+          </label>
+          <div className="flex flex-wrap gap-2 mb-2">
+            {formData.tags.map((tag, index) => (
+              <div 
+                key={index}
+                className="px-2 py-1 rounded flex items-center gap-1 text-xs"
                 style={{ 
                   backgroundColor: colors.hover,
-                  color: colors.text
+                  color: colors.textSecondary
                 }}
               >
-                Cancel
-              </button>
-            </div>
+                {tag}
+                <button
+                  type="button"
+                  onClick={() => removeTag(tag)}
+                  className="p-0.5 rounded hover:bg-opacity-50 transition-colors"
+                  style={{ backgroundColor: colors.hover }}
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            ))}
           </div>
-        </form>
-      </MobileModal>
-    );
-  };
+          <input
+            type="text"
+            placeholder="Type tag and press Enter..."
+            onKeyDown={handleTagInput}
+            className="w-full px-3 py-2 rounded border text-sm"
+            style={{ 
+              backgroundColor: colors.inputBg,
+              borderColor: colors.inputBorder,
+              color: colors.text
+            }}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="mfaEnabled"
+              checked={formData.mfaEnabled}
+              onChange={(e) => setFormData(prev => ({ ...prev, mfaEnabled: e.target.checked }))}
+              className="rounded"
+            />
+            <label htmlFor="mfaEnabled" className="text-sm" style={{ color: colors.text }}>
+              MFA Enabled
+            </label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="emailVerified"
+              checked={formData.emailVerified}
+              onChange={(e) => setFormData(prev => ({ ...prev, emailVerified: e.target.checked }))}
+              className="rounded"
+            />
+            <label htmlFor="emailVerified" className="text-sm" style={{ color: colors.text }}>
+              Email Verified
+            </label>
+          </div>
+        </div>
+
+        <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button 
+              type="submit"
+              className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+              style={{ 
+                backgroundColor: colors.success,
+                color: 'white'
+              }}
+              disabled={(validationResult && !validationResult.valid) || rolesLoading || localRoles.length === 0}
+            >
+              {user?.id === 'new' ? 'Create User' : 'Update User'}
+            </button>
+            <button 
+              type="button"
+              onClick={closeModal}
+              className="px-4 py-2 rounded text-sm font-medium transition-colors flex-1 hover-lift"
+              style={{ 
+                backgroundColor: colors.hover,
+                color: colors.text
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </form>
+    </MobileModal>
+  );
+};
 
   // Reset Password Modal
   const ResetPasswordModal = ({ data: user }) => {
@@ -1978,7 +2200,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
                 Reset Method
               </label>
               <select
@@ -2051,15 +2273,60 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     );
   };
 
-  // Import Users Modal
+  // Import Users Modal - NO STATIC FALLBACKS
   const ImportUsersModal = () => {
     const [file, setFile] = useState(null);
     const [importType, setImportType] = useState('csv');
     const [importOptions, setImportOptions] = useState({
       sendWelcomeEmail: true,
       generatePasswords: true,
-      defaultRole: 'viewer'
+      defaultRoleId: ''
     });
+    const [localRoles, setLocalRoles] = useState([]);
+    const [rolesLoading, setRolesLoading] = useState(false);
+    const [rolesError, setRolesError] = useState(false);
+
+    // Fetch roles when modal opens - NO STATIC FALLBACKS
+    useEffect(() => {
+      const fetchRoles = async () => {
+        if (!authToken) {
+          setRolesError(true);
+          return;
+        }
+        
+        setRolesLoading(true);
+        setRolesError(false);
+        
+        try {
+          const response = await getAllRoles(authToken, { page: 0, size: 100 });
+          
+          if (response && response.responseCode === 200 && response.data) {
+            const content = response.data.content || [];
+            
+            const mappedRoles = content.map(role => ({
+              id: role.roleId,
+              roleId: role.roleId,
+              roleName: role.roleName
+            }));
+            
+            setLocalRoles(mappedRoles);
+            
+            if (mappedRoles.length === 0) {
+              setRolesError(true);
+            }
+          } else {
+            setRolesError(true);
+          }
+        } catch (error) {
+          console.error('Error loading roles:', error);
+          setRolesError(true);
+        } finally {
+          setRolesLoading(false);
+        }
+      };
+      
+      fetchRoles();
+    }, [authToken]);
 
     const handleFileChange = (e) => {
       setFile(e.target.files[0]);
@@ -2115,7 +2382,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
                 File Type
               </label>
               <select
@@ -2123,7 +2390,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                 onChange={(e) => setImportType(e.target.value)}
                 className="w-full px-3 py-2 rounded border text-sm"
                 style={{ 
-                  backgroundColor: colors.inputBg,
+                  backgroundColor: colors.bg,
                   borderColor: colors.inputBorder,
                   color: colors.text
                 }}
@@ -2135,7 +2402,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
             </div>
 
             <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+              <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
                 File *
               </label>
               <input
@@ -2178,23 +2445,77 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                 </label>
               </div>
               <div>
-                <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+                <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
                   Default Role
                 </label>
-                <select
-                  value={importOptions.defaultRole}
-                  onChange={(e) => setImportOptions(prev => ({ ...prev, defaultRole: e.target.value }))}
-                  className="w-full px-3 py-2 rounded border text-sm"
-                  style={{ 
-                    backgroundColor: colors.inputBg,
-                    borderColor: colors.inputBorder,
-                    color: colors.text
-                  }}
-                >
-                  <option value="viewer">Viewer</option>
-                  <option value="developer">Developer</option>
-                  <option value="admin">Admin</option>
-                </select>
+                {rolesError ? (
+                  <div 
+                    className="w-full px-3 py-2 rounded border text-sm flex items-center justify-between"
+                    style={{ 
+                      backgroundColor: `${colors.error}20`,
+                      borderColor: colors.error,
+                      color: colors.error
+                    }}
+                  >
+                    <span>Failed to load roles</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRolesError(false);
+                        setRolesLoading(true);
+                        const fetchRoles = async () => {
+                          try {
+                            const response = await getAllRoles(authToken, { page: 0, size: 100 });
+                            if (response && response.responseCode === 200 && response.data) {
+                              const content = response.data.content || [];
+                              const mappedRoles = content.map(role => ({
+                                id: role.roleId,
+                                roleId: role.roleId,
+                                roleName: role.roleName
+                              }));
+                              setLocalRoles(mappedRoles);
+                              if (mappedRoles.length > 0) {
+                                setRolesError(false);
+                              }
+                            }
+                          } catch (error) {
+                            console.error('Error retrying roles:', error);
+                          } finally {
+                            setRolesLoading(false);
+                          }
+                        };
+                        fetchRoles();
+                      }}
+                      className="p-1 rounded hover:bg-opacity-50"
+                      style={{ backgroundColor: `${colors.error}30` }}
+                    >
+                      <RefreshCw size={14} className={rolesLoading ? 'animate-spin' : ''} />
+                    </button>
+                  </div>
+                ) : (
+                  <select
+                    value={importOptions.defaultRoleId}
+                    onChange={(e) => setImportOptions(prev => ({ ...prev, defaultRoleId: e.target.value }))}
+                    className="w-full px-3 py-2 rounded border text-sm"
+                    style={{ 
+                      backgroundColor: colors.bg,
+                      borderColor: colors.inputBorder,
+                      color: colors.text,
+                      opacity: rolesLoading ? 0.7 : 1
+                    }}
+                    disabled={rolesLoading || localRoles.length === 0}
+                  >
+                    <option value="">
+                      {rolesLoading ? 'Loading roles...' : 
+                       localRoles.length === 0 ? 'No roles available' : 'Select Default Role'}
+                    </option>
+                    {localRoles.map(role => (
+                      <option key={role.roleId} value={role.roleId}>
+                        {role.roleName}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             </div>
 
@@ -2207,6 +2528,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                     backgroundColor: colors.success,
                     color: 'white'
                   }}
+                  disabled={rolesLoading || localRoles.length === 0}
                 >
                   Import Users
                 </button>
@@ -2229,25 +2551,71 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
     );
   };
 
-  // Export Users Modal
+  // Export Users Modal - NO STATIC FALLBACKS
   const ExportUsersModal = () => {
     const [exportFormat, setExportFormat] = useState('csv');
     const [exportFields, setExportFields] = useState([
-      'id', 'username', 'email', 'fullName', 'role', 'status', 'department', 'lastActive', 'joinedDate', 'securityScore'
+      'id', 'username', 'email', 'fullName', 'roleId', 'roleName', 'status', 'department', 'lastActive', 'joinedDate', 'securityScore'
     ]);
     const [filters, setFilters] = useState({
-      role: '',
+      roleId: '',
       status: '',
       department: '',
       createdAfter: ''
     });
+    const [localRoles, setLocalRoles] = useState([]);
+    const [rolesLoading, setRolesLoading] = useState(false);
+    const [rolesError, setRolesError] = useState(false);
+
+    // Fetch roles when modal opens - NO STATIC FALLBACKS
+    useEffect(() => {
+      const fetchRoles = async () => {
+        if (!authToken) {
+          setRolesError(true);
+          return;
+        }
+        
+        setRolesLoading(true);
+        setRolesError(false);
+        
+        try {
+          const response = await getAllRoles(authToken, { page: 0, size: 100 });
+          
+          if (response && response.responseCode === 200 && response.data) {
+            const content = response.data.content || [];
+            
+            const mappedRoles = content.map(role => ({
+              id: role.roleId,
+              roleId: role.roleId,
+              roleName: role.roleName
+            }));
+            
+            setLocalRoles(mappedRoles);
+            
+            if (mappedRoles.length === 0) {
+              setRolesError(true);
+            }
+          } else {
+            setRolesError(true);
+          }
+        } catch (error) {
+          console.error('Error loading roles:', error);
+          setRolesError(true);
+        } finally {
+          setRolesLoading(false);
+        }
+      };
+      
+      fetchRoles();
+    }, [authToken]);
 
     const availableFields = [
       { value: 'id', label: 'ID' },
       { value: 'username', label: 'Username' },
       { value: 'email', label: 'Email' },
       { value: 'fullName', label: 'Full Name' },
-      { value: 'role', label: 'Role' },
+      { value: 'roleId', label: 'Role ID' },
+      { value: 'roleName', label: 'Role Name' },
       { value: 'status', label: 'Status' },
       { value: 'department', label: 'Department' },
       { value: 'lastActive', label: 'Last Active' },
@@ -2292,7 +2660,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="text-xs font-medium mb-1 block" style={{ color: colors.textSecondary }}>
+            <label className="text-xs font-medium mb-3 block" style={{ color: colors.textSecondary }}>
               Export Format *
             </label>
             <select
@@ -2300,7 +2668,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
               onChange={(e) => setExportFormat(e.target.value)}
               className="w-full px-3 py-2 rounded border text-sm"
               style={{ 
-                backgroundColor: colors.inputBg,
+                backgroundColor: colors.bg,
                 borderColor: colors.inputBorder,
                 color: colors.text
               }}
@@ -2340,27 +2708,77 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
               Filter Export Data (Optional)
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <select
-                value={filters.role}
-                onChange={(e) => setFilters(prev => ({ ...prev, role: e.target.value }))}
-                className="px-2 py-1 rounded border text-xs"
-                style={{ 
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text
-                }}
-              >
-                <option value="">All Roles</option>
-                <option value="admin">Admin</option>
-                <option value="developer">Developer</option>
-                <option value="viewer">Viewer</option>
-              </select>
+              {rolesError ? (
+                <div 
+                  className="px-2 py-1 rounded border text-xs flex items-center justify-between col-span-2"
+                  style={{ 
+                    backgroundColor: `${colors.error}20`,
+                    borderColor: colors.error,
+                    color: colors.error
+                  }}
+                >
+                  <span>Failed to load roles</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRolesError(false);
+                      setRolesLoading(true);
+                      const fetchRoles = async () => {
+                        try {
+                          const response = await getAllRoles(authToken, { page: 0, size: 100 });
+                          if (response && response.responseCode === 200 && response.data) {
+                            const content = response.data.content || [];
+                            const mappedRoles = content.map(role => ({
+                              id: role.roleId,
+                              roleId: role.roleId,
+                              roleName: role.roleName
+                            }));
+                            setLocalRoles(mappedRoles);
+                            if (mappedRoles.length > 0) {
+                              setRolesError(false);
+                            }
+                          }
+                        } catch (error) {
+                          console.error('Error retrying roles:', error);
+                        } finally {
+                          setRolesLoading(false);
+                        }
+                      };
+                      fetchRoles();
+                    }}
+                    className="p-0.5 rounded hover:bg-opacity-50"
+                    style={{ backgroundColor: `${colors.error}30` }}
+                  >
+                    <RefreshCw size={12} className={rolesLoading ? 'animate-spin' : ''} />
+                  </button>
+                </div>
+              ) : (
+                <select
+                  value={filters.roleId}
+                  onChange={(e) => setFilters(prev => ({ ...prev, roleId: e.target.value }))}
+                  className="px-2 py-1 rounded border text-xs"
+                  style={{ 
+                    backgroundColor: colors.bg,
+                    borderColor: colors.inputBorder,
+                    color: colors.text,
+                    opacity: rolesLoading ? 0.7 : 1
+                  }}
+                  disabled={rolesLoading}
+                >
+                  <option value="">All Roles</option>
+                  {localRoles.map(role => (
+                    <option key={role.roleId} value={role.roleId}>
+                      {role.roleName}
+                    </option>
+                  ))}
+                </select>
+              )}
               <select
                 value={filters.status}
                 onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
                 className="px-2 py-1 rounded border text-xs"
                 style={{ 
-                  backgroundColor: colors.inputBg,
+                  backgroundColor: colors.bg,
                   borderColor: colors.inputBorder,
                   color: colors.text
                 }}
@@ -2406,6 +2824,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                   backgroundColor: colors.success,
                   color: 'white'
                 }}
+                disabled={rolesLoading}
               >
                 Export Users
               </button>
@@ -2560,12 +2979,9 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
           <div className="flex items-center gap-2">
             <div 
               className="px-2 py-1 rounded-full text-xs font-medium"
-              style={{ 
-                backgroundColor: `${roleColors[user.role] || colors.textSecondary}20`,
-                color: roleColors[user.role] || colors.textSecondary
-              }}
+              style={getRoleColorStyle(user.role || user.roleId)}
             >
-              {user.role || 'unknown'}
+              {getRoleDisplayName(user.role || user.roleId)}
             </div>
             <button
               onClick={(e) => handleButtonClick(e, handleViewUserDetails)}
@@ -2602,12 +3018,9 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
             </div>
             <div 
               className="px-2 py-0.5 rounded-full text-xs"
-              style={{ 
-                backgroundColor: `${statusColors[user.status] || colors.textSecondary}20`,
-                color: statusColors[user.status] || colors.textSecondary
-              }}
+              style={getStatusColorStyle(user.status)}
             >
-              {user.status || 'unknown'}
+              {getUserStatusDisplayName(user.status)}
             </div>
           </div>
 
@@ -2880,7 +3293,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <button 
+                  {/* <button 
                     onClick={handleRefresh}
                     className="p-2 rounded-lg hover-lift transition-all duration-200"
                     style={{ 
@@ -2903,7 +3316,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                   >
                     <Download size={14} />
                     <span className="hidden sm:inline">Export</span>
-                  </button>
+                  </button> */}
                   <button 
                     onClick={handleImportUsers}
                     className="px-3 py-2 rounded-lg text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2"
@@ -2923,8 +3336,14 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                       username: '',
                       email: '',
                       fullName: '',
-                      role: 'viewer',
-                      status: 'pending'
+                      roleId: '',
+                      status: 'pending',
+                      department: '',
+                      location: '',
+                      mfaEnabled: false,
+                      emailVerified: false,
+                      phoneVerified: false,
+                      tags: []
                     })}
                     className="px-3 py-2 rounded-lg text-sm font-medium hover-lift transition-all duration-200 flex items-center gap-2"
                     style={{ 
@@ -2996,24 +3415,25 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                         onChange={(e) => handleRoleFilterChange(e.target.value)}
                         className="px-3 py-2 rounded border text-sm"
                         style={{ 
-                          backgroundColor: colors.inputBg,
+                          backgroundColor: colors.bg,
                           borderColor: colors.inputBorder,
                           color: colors.text
                         }}
                         disabled={loading}
                       >
                         <option value="all">All Roles</option>
-                        <option value="admin">Admin</option>
-                        <option value="developer">Developer</option>
-                        <option value="viewer">Viewer</option>
-                        <option value="moderator">Moderator</option>
+                        {roles.map(role => (
+                          <option key={role.id || role.roleId} value={role.id || role.roleId}>
+                            {role.roleName}
+                          </option>
+                        ))}
                       </select>
                       <select
                         value={selectedStatus}
                         onChange={(e) => handleStatusFilterChange(e.target.value)}
                         className="px-3 py-2 rounded border text-sm"
                         style={{ 
-                          backgroundColor: colors.inputBg,
+                          backgroundColor: colors.bg,
                           borderColor: colors.inputBorder,
                           color: colors.text
                         }}
@@ -3047,7 +3467,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                     }}>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         <select className="px-2 py-1 rounded border text-xs" style={{ 
-                          backgroundColor: colors.inputBg,
+                          backgroundColor: colors.bg,
                           borderColor: colors.inputBorder,
                           color: colors.text
                         }}>
@@ -3057,7 +3477,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                           <option>Sales</option>
                         </select>
                         <select className="px-2 py-1 rounded border text-xs" style={{ 
-                          backgroundColor: colors.inputBg,
+                          backgroundColor: colors.bg,
                           borderColor: colors.inputBorder,
                           color: colors.text
                         }}>
@@ -3066,7 +3486,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                           <option>Disabled</option>
                         </select>
                         <select className="px-2 py-1 rounded border text-xs" style={{ 
-                          backgroundColor: colors.inputBg,
+                          backgroundColor: colors.bg,
                           borderColor: colors.inputBorder,
                           color: colors.text
                         }}>
@@ -3175,7 +3595,7 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                           Email
                         </th>
                         <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
-                          Role
+                          Access Type
                         </th>
                         <th className="p-3 text-left text-xs font-medium" style={{ color: colors.textSecondary }}>
                           Status
@@ -3236,7 +3656,11 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                                 className="w-8 h-8 rounded-full flex items-center justify-center text-white font-medium text-sm"
                                 style={{ backgroundColor: user.avatarColor || colors.primary }}
                               >
-                                {user.fullName?.split(' ').map(n => n[0]).join('') || '??'}
+                                {user.fullName
+                                ?.split(' ')
+                                .map(n => n[0])
+                                .join('')
+                                .slice(0, 2) || '??'}
                               </div>
                               <div className="min-w-0">
                                 <div className="text-sm font-semibold truncate" style={{ color: colors.text }}>
@@ -3255,10 +3679,10 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
                           </td>
                           <td className="p-3">
                             <div 
-                              className="px-2 py-1 rounded-full text-xs font-medium w-fit"
-                              style={getRoleColorStyle(user.role)}
+                              className="px-2 py-1 rounded-full text-xs font-medium w-fit uppercase"
+                              style={getRoleColorStyle(user.role || user.roleId)}
                             >
-                              {getUserRoleDisplayName(user.role)}
+                              {getRoleDisplayName(user.role || user.roleId)}
                             </div>
                           </td>
                           <td className="p-3">

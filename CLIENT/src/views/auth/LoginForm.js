@@ -243,10 +243,10 @@ const LoginForm = ({
 
         <Button
           type="submit"
-          className="w-full py-3.5 rounded-xl font-semibold transition-all duration-300 relative group overflow-hidden hover-lift"
+          className="w-full py-3.5 bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 rounded-xl font-semibold transition-all duration-300 relative group overflow-hidden hover-lift"
           style={{ 
-            backgroundColor: colors.primary,
-            color: 'white'
+            // backgroundColor: colors.primary,
+            // color: 'white'
           }}
           disabled={loading}
         >

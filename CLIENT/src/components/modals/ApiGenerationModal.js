@@ -1880,7 +1880,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                         >
                           <option value="general">General</option>
                           <option value="data">Data Access</option>
-                          <option value="admin">Administrative</option>
+                          <option value="oracle">Administrative</option>
                           <option value="report">Reporting</option>
                           <option value="integration">Integration</option>
                         </select>

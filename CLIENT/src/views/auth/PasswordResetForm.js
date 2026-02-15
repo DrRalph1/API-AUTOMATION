@@ -56,7 +56,7 @@ const PasswordResetForm = ({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="text-center">
+      <div className="text-center mb-2 -mt-2">
         <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl border gradient-bg mb-4 hover-lift"
           style={{ 
             borderColor: colors.border,
@@ -67,7 +67,7 @@ const PasswordResetForm = ({
         <h3 className="text-xl font-bold mb-2" style={{ color: colors.text }}>
           Password Reset Required
         </h3>
-        <p className="text-sm max-w-xs mx-auto" style={{ color: colors.textSecondary }}>
+        <p className="text-sm max-w-sm mx-auto" style={{ color: colors.textSecondary }}>
           For security reasons, you must update your password
         </p>
       </div>
@@ -246,10 +246,10 @@ const PasswordResetForm = ({
           </Button>
           <Button
             type="submit"
-            className="flex-1 py-3.5 rounded-xl font-semibold transition-all duration-300 relative group overflow-hidden hover-lift"
+            className="flex-1 py-3.5 bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 rounded-xl font-semibold transition-all duration-300 relative group overflow-hidden hover-lift"
             style={{ 
-              backgroundColor: colors.primary,
-              color: 'white',
+              // backgroundColor: colors.primary,
+              // color: 'white',
               opacity: (!allRequirementsMet || !passwordsMatch) ? 0.5 : 1
             }}
             disabled={loading || !allRequirementsMet || !passwordsMatch}
@@ -272,7 +272,7 @@ const PasswordResetForm = ({
       </form>
 
       {/* Security Note */}
-      <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
+      {/* <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
         <div className="flex items-start gap-3">
           <div className="p-1.5 rounded-lg" style={{ backgroundColor: colors.hover }}>
             <Lock className="h-4 w-4" style={{ color: colors.primary }} />
@@ -286,10 +286,10 @@ const PasswordResetForm = ({
             </p>
           </div>
         </div>
-      </div>
+      </div> */}
 
       {/* Security Indicators */}
-      <div className="grid grid-cols-2 gap-2 pt-2">
+      {/* <div className="grid grid-cols-2 gap-2 pt-2">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors.success }}></div>
           <span className="text-xs" style={{ color: colors.textSecondary }}>End-to-End Encrypted</span>
@@ -298,7 +298,7 @@ const PasswordResetForm = ({
           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors.success }}></div>
           <span className="text-xs" style={{ color: colors.textSecondary }}>256-bit AES</span>
         </div>
-      </div>
+      </div> */}
     </div>
   );
 };

@@ -253,7 +253,7 @@ export default function Login() {
             <div className="flex items-center justify-between mb-1">
               <div>
                 <h2 className="text-xl font-bold" style={{ color: colors.text }}>
-                  {requiresPasswordReset ? 'Reset Password' : showOtp ? '' : 'Welcome Back'}
+                  {requiresPasswordReset ? '' : showOtp ? '' : 'Welcome Back'}
                 </h2>
                 <p className="text-sm mt-1.5 flex items-center gap-1.5" style={{ color: colors.textSecondary }}>
                   {!showOtp && !requiresPasswordReset && (
@@ -434,10 +434,10 @@ export default function Login() {
                     {/* Submit Button */}
                     <Button
                       type="submit"
-                      className="w-full py-3.5 rounded-xl font-semibold transition-all duration-300 relative group overflow-hidden hover-lift hover:shadow-lg"
+                      className="w-full py-3.5 bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 rounded-xl font-semibold transition-all duration-300 relative group overflow-hidden hover-lift hover:shadow-lg"
                       style={{ 
-                        backgroundColor: colors.primary,
-                        color: isDark ? '#0f172a' : 'white',
+                        // backgroundColor: colors.primary,
+                        // color: isDark ? '#0f172a' : 'white',
                         boxShadow: `0 4px 14px ${colors.primary}40`
                       }}
                       disabled={loading}

@@ -1,3 +1,7 @@
+// ============================================
+// UPDATED CONTROLLER WITH ALL HARDCODED ROLE VALIDATIONS REMOVED
+// ============================================
+
 // controllers/UserManagementController.js
 import { apiCall } from "@/helpers/APIHelper.js";
 import { apiCallWithTokenRefresh } from "./AuthController.js";
@@ -15,7 +19,7 @@ const getAuthHeaders = (jwtToken) => ({
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} filters - Filter parameters
  * @param {string} filters.searchQuery - Search query
- * @param {string} filters.roleFilter - Role filter
+ * @param {string} filters.roleFilter - Role ID (UUID)
  * @param {string} filters.statusFilter - Status filter
  * @param {string} filters.sortField - Sort field
  * @param {string} filters.sortDirection - Sort direction (asc/desc)
@@ -69,10 +73,11 @@ export const getUserDetails = async (authorizationHeader, userId) => {
  * @param {string} createRequest.username - Username (required)
  * @param {string} createRequest.email - Email (required)
  * @param {string} createRequest.fullName - Full name (required)
- * @param {string} createRequest.role - Role (admin/developer/viewer) (required)
+ * @param {string} createRequest.roleId - Role ID (UUID) (required)
  * @param {string} createRequest.department - Department
  * @param {string} createRequest.location - Location
  * @param {boolean} createRequest.mfaEnabled - Enable MFA
+ * @param {string} createRequest.status - Status
  * @param {string} createRequest.password - Password (required for creation)
  * @returns {Promise} API response
  */
@@ -93,8 +98,8 @@ export const createUser = async (authorizationHeader, createRequest) => {
  * @param {string} userId - User ID
  * @param {Object} updateRequest - Update user request data
  * @param {string} updateRequest.fullName - Full name
- * @param {string} updateRequest.role - Role (admin/developer/viewer)
- * @param {string} updateRequest.status - Status (active/inactive/pending/suspended)
+ * @param {string} updateRequest.roleId - Role ID (UUID)
+ * @param {string} updateRequest.status - Status
  * @param {string} updateRequest.department - Department
  * @param {boolean} updateRequest.mfaEnabled - Enable MFA
  * @param {boolean} updateRequest.emailVerified - Email verified
@@ -156,7 +161,7 @@ export const bulkUserOperation = async (authorizationHeader, bulkRequest) => {
  * @param {string} userId - User ID
  * @param {Object} resetRequest - Reset password request data
  * @param {boolean} resetRequest.forceLogout - Force logout all devices
- * @param {string} resetRequest.resetMethod - Reset method (email/sms)
+ * @param {string} resetRequest.resetMethod - Reset method (email/sms/temporary)
  * @returns {Promise} API response
  */
 export const resetUserPassword = async (authorizationHeader, userId, resetRequest = {}) => {
@@ -191,7 +196,7 @@ export const getUserStatistics = async (authorizationHeader) => {
  * @param {Object} searchRequest - Search request data
  * @param {string} searchRequest.query - Search query (required)
  * @param {Object} searchRequest.filters - Additional filters
- * @param {string} searchRequest.filters.role - Filter by role
+ * @param {string} searchRequest.filters.roleId - Filter by role ID (UUID)
  * @param {string} searchRequest.filters.status - Filter by status
  * @param {string} searchRequest.filters.department - Filter by department
  * @param {boolean} searchRequest.filters.mfaEnabled - Filter by MFA status
@@ -219,7 +224,7 @@ export const searchUsers = async (authorizationHeader, searchRequest) => {
  * @param {Object} importRequest.options - Import options
  * @param {boolean} importRequest.options.sendWelcomeEmail - Send welcome email
  * @param {boolean} importRequest.options.generatePasswords - Generate passwords
- * @param {string} importRequest.options.defaultRole - Default role
+ * @param {string} importRequest.options.defaultRoleId - Default role ID (UUID)
  * @returns {Promise} API response
  */
 export const importUsers = async (authorizationHeader, importRequest) => {
@@ -237,9 +242,9 @@ export const importUsers = async (authorizationHeader, importRequest) => {
  * Export users data
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} exportRequest - Export users request data
- * @param {string} exportRequest.format - Export format (csv/json/excel) (required)
+ * @param {string} exportRequest.format - Export format (csv/json/excel/pdf) (required)
  * @param {Object} exportRequest.filters - Export filters
- * @param {string} exportRequest.filters.role - Filter by role
+ * @param {string} exportRequest.filters.roleId - Filter by role ID (UUID)
  * @param {string} exportRequest.filters.status - Filter by status
  * @param {string} exportRequest.filters.department - Filter by department
  * @param {Date} exportRequest.filters.createdAfter - Filter by creation date
@@ -322,7 +327,7 @@ export const getRolesAndPermissions = async (authorizationHeader) => {
  * @param {string} validationRequest.email - Email to validate
  * @param {string} validationRequest.username - Username to validate
  * @param {string} validationRequest.fullName - Full name to validate
- * @param {string} validationRequest.role - Role to validate
+ * @param {string} validationRequest.roleId - Role ID to validate (UUID)
  * @param {Object} validationRequest.options - Validation options
  * @returns {Promise} API response
  */
@@ -403,6 +408,10 @@ export const extractUsersList = (response) => {
     return data.data;
   }
   
+  if (data.content && Array.isArray(data.content)) {
+    return data.content;
+  }
+  
   return [];
 };
 
@@ -421,7 +430,8 @@ export const extractUserDetails = (response) => {
     username: details.username,
     email: details.email,
     fullName: details.fullName,
-    role: details.role,
+    roleId: details.roleId || details.role,
+    roleName: details.roleName,
     status: details.status,
     avatarColor: details.avatarColor,
     department: details.department,
@@ -455,8 +465,8 @@ export const extractCreateUserResults = (response) => {
   
   return {
     id: data.id || data.userId,
-    success: data.success || false,
-    message: data.message,
+    success: data.success !== false,
+    message: data.message || 'User created successfully',
     user: data.user || {},
     generatedAt: data.generatedAt,
     nextSteps: data.nextSteps || []
@@ -474,8 +484,8 @@ export const extractUpdateUserResults = (response) => {
   const data = response.data;
   
   return {
-    success: data.success || false,
-    message: data.message,
+    success: data.success !== false,
+    message: data.message || 'User updated successfully',
     updatedAt: data.updatedAt,
     user: data.user || {},
     auditLog: data.auditLog || {}
@@ -493,8 +503,8 @@ export const extractDeleteUserResults = (response) => {
   const data = response.data;
   
   return {
-    success: data.success || false,
-    message: data.message,
+    success: data.success !== false,
+    message: data.message || 'User deleted successfully',
     deletedAt: data.deletedAt,
     deletedUser: data.deletedUser || {}
   };
@@ -531,8 +541,8 @@ export const extractResetPasswordResults = (response) => {
   const data = response.data;
   
   return {
-    success: data.success || false,
-    message: data.message,
+    success: data.success !== false,
+    message: data.message || 'Password reset successful',
     userId: data.userId,
     resetAt: data.resetAt,
     expiresAt: data.expiresAt,
@@ -546,7 +556,16 @@ export const extractResetPasswordResults = (response) => {
  * @returns {Object} User statistics
  */
 export const extractUserStatistics = (response) => {
-  if (!response || !response.data) return null;
+  if (!response || !response.data) return {
+    totalUsers: 0,
+    activeUsers: 0,
+    admins: 0,
+    developers: 0,
+    pendingUsers: 0,
+    suspendedUsers: 0,
+    mfaEnabled: 0,
+    avgSecurityScore: 0
+  };
   
   const data = response.data;
   
@@ -555,10 +574,9 @@ export const extractUserStatistics = (response) => {
     activeUsers: data.activeUsers || 0,
     admins: data.admins || 0,
     developers: data.developers || 0,
-    viewers: data.viewers || 0,
     pendingUsers: data.pendingUsers || 0,
     suspendedUsers: data.suspendedUsers || 0,
-    mfaEnabledUsers: data.mfaEnabledUsers || 0,
+    mfaEnabled: data.mfaEnabledUsers || data.mfaEnabled || 0,
     avgSecurityScore: data.avgSecurityScore || 0,
     generatedAt: data.generatedAt,
     trends: data.trends || {},
@@ -580,7 +598,7 @@ export const extractSearchUsersResults = (response) => {
   
   return {
     query: data.query,
-    results: data.results || [],
+    results: data.results || data.users || [],
     total: data.total || 0,
     searchAt: data.searchAt,
     metadata: data.metadata || {}
@@ -660,8 +678,8 @@ export const extractUpdateStatusResults = (response) => {
   const data = response.data;
   
   return {
-    success: data.success || false,
-    message: data.message,
+    success: data.success !== false,
+    message: data.message || 'Status updated successfully',
     userId: data.userId,
     previousStatus: data.previousStatus,
     newStatus: data.newStatus,
@@ -681,7 +699,7 @@ export const extractRolesAndPermissions = (response) => {
   const data = response.data;
   
   return {
-    roles: data.roles || [],
+    roles: data.roles || data.content || [],
     totalRoles: data.totalRoles || 0,
     generatedAt: data.generatedAt,
     permissionCategories: data.permissionCategories || {}
@@ -699,14 +717,14 @@ export const extractValidationResults = (response) => {
   const data = response.data;
   
   return {
-    valid: data.valid || false,
+    valid: data.valid !== false,
     issues: data.issues || [],
     validatedAt: data.validatedAt,
     score: data.score || 0
   };
 };
 
-// ============ VALIDATION & UTILITY FUNCTIONS ============
+// ============ VALIDATION FUNCTIONS - REMOVED ALL HARDCODED ROLE VALIDATIONS ============
 
 /**
  * Validate create user request
@@ -732,14 +750,10 @@ export const validateCreateUser = (createRequest) => {
     errors.push('Full name is required');
   }
   
-  if (!createRequest.role) {
-    errors.push('Role is required');
-  } else {
-    const validRoles = ['admin', 'developer', 'viewer', 'moderator'];
-    if (!validRoles.includes(createRequest.role.toLowerCase())) {
-      errors.push(`Role must be one of: ${validRoles.join(', ')}`);
-    }
+  if (!createRequest.roleId) {
+    errors.push('Role ID is required');
   }
+  // Role ID validation removed - now treated as UUID string from API
   
   if (!createRequest.password) {
     errors.push('Password is required');
@@ -762,13 +776,6 @@ export const validateUpdateUser = (updateRequest) => {
     errors.push('Valid email is required');
   }
   
-  if (updateRequest.role) {
-    const validRoles = ['admin', 'developer', 'viewer', 'moderator'];
-    if (!validRoles.includes(updateRequest.role.toLowerCase())) {
-      errors.push(`Role must be one of: ${validRoles.join(', ')}`);
-    }
-  }
-  
   if (updateRequest.status) {
     const validStatuses = ['active', 'inactive', 'pending', 'suspended'];
     if (!validStatuses.includes(updateRequest.status.toLowerCase())) {
@@ -779,6 +786,8 @@ export const validateUpdateUser = (updateRequest) => {
   if (updateRequest.fullName && updateRequest.fullName.trim().length === 0) {
     errors.push('Full name cannot be empty');
   }
+  
+  // Role ID validation removed - now treated as UUID string from API
   
   return errors;
 };
@@ -934,19 +943,35 @@ export const isValidEmail = (email) => {
 };
 
 /**
- * Get user role display name
- * @param {string} role - Role identifier
- * @returns {string} Display name for role
+ * Generate a deterministic color from a UUID string
+ * @param {string} uuid - UUID string
+ * @returns {string} HSL color string
  */
-export const getUserRoleDisplayName = (role) => {
-  const roleMap = {
-    admin: 'Administrator',
-    developer: 'Developer',
-    viewer: 'Viewer',
-    moderator: 'Moderator'
-  };
+export const getColorFromUuid = (uuid) => {
+  if (!uuid) return '#6B7280'; // Default gray
   
-  return roleMap[role] || role;
+  // Create a hash from the UUID
+  let hash = 0;
+  for (let i = 0; i < uuid.length; i++) {
+    hash = ((hash << 5) - hash) + uuid.charCodeAt(i);
+    hash |= 0; // Convert to 32-bit integer
+  }
+  
+  // Generate HSL values
+  const hue = Math.abs(hash) % 360;
+  const saturation = 70 + (Math.abs(hash >> 8) % 20); // 70-90%
+  const lightness = 45 + (Math.abs(hash >> 16) % 15); // 45-60%
+  
+  return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+};
+
+/**
+ * Get role color from UUID
+ * @param {string} roleId - Role UUID
+ * @returns {string} Color code
+ */
+export const getRoleColor = (roleId) => {
+  return getColorFromUuid(roleId);
 };
 
 /**
@@ -962,7 +987,7 @@ export const getUserStatusDisplayName = (status) => {
     suspended: 'Suspended'
   };
   
-  return statusMap[status] || status;
+  return statusMap[status] || status || 'Unknown';
 };
 
 /**
@@ -979,22 +1004,6 @@ export const getStatusColor = (status) => {
   };
   
   return colors[status] || '#6B7280';
-};
-
-/**
- * Get role color
- * @param {string} role - User role
- * @returns {string} Color code
- */
-export const getRoleColor = (role) => {
-  const colors = {
-    admin: '#EF4444',     // Red
-    developer: '#3B82F6', // Blue
-    viewer: '#10B981',    // Green
-    moderator: '#F59E0B'  // Amber
-  };
-  
-  return colors[role] || '#6B7280';
 };
 
 /**
@@ -1057,7 +1066,8 @@ export const getExportFields = () => {
     { value: 'username', label: 'Username' },
     { value: 'email', label: 'Email' },
     { value: 'fullName', label: 'Full Name' },
-    { value: 'role', label: 'Role' },
+    { value: 'roleId', label: 'Role ID' },
+    { value: 'roleName', label: 'Role Name' },
     { value: 'status', label: 'Status' },
     { value: 'department', label: 'Department' },
     { value: 'lastActive', label: 'Last Active' },
@@ -1092,6 +1102,8 @@ export const generateCSVFromUsers = (users, fields = []) => {
         value = value ? 'Yes' : 'No';
       } else if (field.value === 'lastActive' || field.value === 'joinedDate') {
         value = formatDateForDisplay(value, field.value === 'lastActive');
+      } else if (field.value === 'roleName' && !value && user.role) {
+        value = user.role?.name || user.role?.roleName || '';
       }
       
       return `"${value || ''}"`;
@@ -1227,7 +1239,7 @@ export default {
   extractRolesAndPermissions,
   extractValidationResults,
   
-  // Validation functions
+  // Validation functions - NO HARDCODED ROLE VALIDATIONS
   validateCreateUser,
   validateUpdateUser,
   validateBulkOperation,
@@ -1239,10 +1251,10 @@ export default {
   
   // Utility functions
   isValidEmail,
-  getUserRoleDisplayName,
+  getColorFromUuid,
+  getRoleColor,
   getUserStatusDisplayName,
   getStatusColor,
-  getRoleColor,
   getSecurityScoreColor,
   formatDateForDisplay,
   getDefaultUserFilters,

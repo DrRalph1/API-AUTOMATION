@@ -1,4 +1,4 @@
-// Dashboard.jsx - FIXED VERSION
+// Dashboard.jsx - UPDATED COLOR SCHEME
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Database, Server, FileCode, Activity, Zap, Settings,
@@ -247,30 +247,43 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     return 14;
   };
 
-  // Color scheme - EXACT MATCH from static version
+  // Color scheme - EXACT MATCH from Login component
   const colors = isDark ? {
+    // Base colors
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
     sidebar: 'rgb(41 53 72 / 19%)',
     main: 'rgb(1 14 35)',
     header: 'rgb(20 26 38)',
     card: 'rgb(41 53 72 / 19%)',
+    
+    // Text colors
     text: '#F1F5F9',
     textSecondary: 'rgb(148 163 184)',
     textTertiary: 'rgb(100 116 139)',
+    
+    // Border colors
     border: 'rgb(51 65 85 / 19%)',
     borderLight: 'rgb(45 55 72)',
     borderDark: 'rgb(71 85 105)',
+    
+    // Interactive states
     hover: 'rgb(45 46 72 / 33%)',
     active: 'rgb(59 74 99)',
     selected: 'rgb(44 82 130)',
+    
+    // Primary colors
     primary: 'rgb(96 165 250)',
     primaryLight: 'rgb(147 197 253)',
     primaryDark: 'rgb(37 99 235)',
+    
+    // Status colors
     success: 'rgb(52 211 153)',
     warning: 'rgb(251 191 36)',
     error: 'rgb(248 113 113)',
     info: 'rgb(96 165 250)',
+    
+    // UI Component colors
     tabActive: 'rgb(96 165 250)',
     tabInactive: 'rgb(148 163 184)',
     sidebarActive: 'rgb(96 165 250)',
@@ -285,13 +298,21 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     modalBg: 'rgb(41 53 72 / 19%)',
     modalborder: 'rgb(51 65 85 / 19%)',
     codeBg: 'rgb(41 53 72 / 19%)',
+    
+    // Connection status colors
     connectionOnline: 'rgb(52 211 153)',
     connectionOffline: 'rgb(248 113 113)',
     connectionIdle: 'rgb(251 191 36)',
+    
+    // Accent colors
     accentPurple: 'rgb(167 139 250)',
     accentPink: 'rgb(244 114 182)',
-    accentCyan: 'rgb(34 211 238)'
+    accentCyan: 'rgb(34 211 238)',
+    
+    // Gradient
+    gradient: 'from-blue-500/20 via-violet-500/20 to-orange-500/20'
   } : {
+    // Light mode colors
     bg: '#f8fafc',
     white: '#f8fafc',
     sidebar: '#ffffff',
@@ -330,7 +351,11 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     codeBg: '#f1f5f9',
     connectionOnline: '#10b981',
     connectionOffline: '#ef4444',
-    connectionIdle: '#f59e0b'
+    connectionIdle: '#f59e0b',
+    accentPurple: '#a78bfa',
+    accentPink: '#f472b6',
+    accentCyan: '#22d3ee',
+    gradient: 'from-blue-400/20 via-violet-400/20 to-orange-400/20'
   };
 
   // Modal management functions
@@ -1270,7 +1295,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
           onClick={(e) => e.stopPropagation()}
           style={{ 
             backgroundColor: colors.bg,
-            borderColor: colors.modalBorder,
+            borderColor: colors.modalborder,
             zIndex: zIndex
           }}
         >
@@ -1775,7 +1800,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                       className="border-t hover-lift cursor-pointer transition-colors"
                       style={{ 
                         borderColor: colors.border,
-                        backgroundColor: index % 2 === 0 ? colors.tableRow : colors.tableRowHover
+                        backgroundColor: index % 2 === 0 ? colors.tableRow : colors.tableRowhover
                       }}
                       onClick={() => handleViewApiDetails(api)}
                     >
@@ -2036,7 +2061,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                       className="border-t hover-lift cursor-pointer transition-colors"
                       style={{ 
                         borderColor: colors.border,
-                        backgroundColor: index % 2 === 0 ? colors.tableRow : colors.tableRowHover
+                        backgroundColor: index % 2 === 0 ? colors.tableRow : colors.tableRowhover
                       }}
                       onClick={() => handleViewApiDetailsFromCalls(api)}
                     >
@@ -2614,24 +2639,24 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
           }
         }
         
-        /* Custom scrollbar */
+        /* Custom scrollbar - Updated to match Login component */
         ::-webkit-scrollbar {
           width: 6px;
           height: 6px;
         }
         
         ::-webkit-scrollbar-track {
-          background: ${colors.border};
+          background: ${isDark ? 'rgb(51 65 85)' : '#e2e8f0'};
           border-radius: 4px;
         }
         
         ::-webkit-scrollbar-thumb {
-          background: ${colors.textTertiary};
+          background: ${isDark ? 'rgb(100 116 139)' : '#94a3b8'};
           border-radius: 4px;
         }
         
         ::-webkit-scrollbar-thumb:hover {
-          background: ${colors.textSecondary};
+          background: ${isDark ? 'rgb(148 163 184)' : '#64748b'};
         }
         
         /* Mobile optimizations */
