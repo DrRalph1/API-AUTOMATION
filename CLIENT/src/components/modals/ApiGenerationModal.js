@@ -1609,8 +1609,8 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
   return (
     <>
       <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4" style={{ zIndex: 1000 }}>
-        <div className="rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col" style={{ 
-          backgroundColor: themeColors.modalBg,
+        <div className="rounded-xl shadow-2xl w-5xl max-w-5xl max-h-[90vh] overflow-hidden flex flex-col" style={{ 
+          backgroundColor: themeColors.bg,
           border: `1px solid ${themeColors.modalBorder}`
         }}>
           {/* Header */}

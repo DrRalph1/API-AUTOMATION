@@ -1083,16 +1083,16 @@ const UserManagement = ({ theme, isDark, customTheme, toggleTheme, navigateTo, s
           { id: 'suspended-users', label: 'Suspended Users', icon: <UserX size={12} /> }
         ]
       },
-      // {
-      //   id: 'roles',
-      //   label: 'Roles & Permissions',
-      //   icon: <Shield size={16} />,
-      //   subItems: [
-      //     { id: 'role-management', label: 'Role Management', icon: <ShieldIcon size={12} /> },
-      //     { id: 'permission-sets', label: 'Permission Sets', icon: <KeyRound size={12} /> },
-      //     { id: 'access-control', label: 'Access Control', icon: <Lock size={12} /> }
-      //   ]
-      // }
+      {
+        id: 'roles',
+        label: 'Roles & Permissions',
+        icon: <Shield size={16} />,
+        subItems: [
+          { id: 'role-management', label: 'Role Management', icon: <ShieldIcon size={12} /> },
+          { id: 'permission-sets', label: 'Permission Sets', icon: <KeyRound size={12} /> },
+          { id: 'access-control', label: 'Access Control', icon: <Lock size={12} /> }
+        ]
+      }
     ];
 
     const toggleSection = (sectionId) => {
@@ -2876,10 +2876,59 @@ const EditUserModal = ({ data: user }) => {
     if (!loading) return null;
     
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50">
-        <div className="bg-white p-6 rounded-lg shadow-lg flex flex-col items-center gap-3">
-          <RefreshCw className="animate-spin" size={24} style={{ color: colors.primary }} />
-          <div className="text-sm" style={{ color: colors.text }}>Loading...</div>
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+        {/* Full-page backdrop */}
+        <div className="absolute inset-0 bg-white/95 dark:bg-gray-950/95 backdrop-blur-sm transition-colors duration-300" />
+        
+        {/* Centered Loading Content */}
+        <div className="relative flex flex-col items-center gap-6 p-8 max-w-md w-full">
+          {/* Main Spinner */}
+          <div className="relative">
+            {/* Outer ring */}
+            <div className="w-20 h-20 rounded-full border-4 border-gray-100 dark:border-gray-800 animate-pulse" />
+            
+            {/* Inner spinning ring */}
+            <div 
+              className="absolute top-0 left-0 w-20 h-20 rounded-full border-4 border-t-transparent border-l-transparent animate-spin"
+              style={{ 
+                borderColor: `${colors.primary} transparent transparent transparent`,
+                filter: 'drop-shadow(0 0 6px rgba(59, 130, 246, 0.3))'
+              }}
+            />
+            
+            {/* Center dot */}
+            <div 
+              className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
+              style={{ backgroundColor: colors.primary }}
+            />
+          </div>
+          
+          {/* Loading Text */}
+          <div className="text-center space-y-2">
+            <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
+              Loading
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Please wait while we prepare your content
+            </p>
+          </div>
+          
+          {/* Progress Bar */}
+          <div className="w-64 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+            <div 
+              className="h-full rounded-full animate-pulse"
+              style={{ 
+                width: '70%', 
+                backgroundColor: colors.primary,
+                opacity: 0.8
+              }}
+            />
+          </div>
+          
+          {/* Optional loading tips */}
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">
+            This won't take long
+          </p>
         </div>
       </div>
     );

@@ -2459,14 +2459,17 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
       <div className="flex-1 overflow-auto">
         {/* Quick Actions */}
         <div className="p-3 md:p-4">
-          <h3 className="text-sm font-semibold mb-4 mt-1 hidden md:block" style={{ color: colors.text }}>
+          <h3 className="text-sm uppercase font-semibold mb-5 mt-1 hidden md:block" style={{ color: colors.text }}>
             Quick Actions
           </h3>
           <div className="space-y-6 sm:space-y-6 ">
             <button 
               onClick={handleApiGeneration}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.card, color: colors.text }}
+              style={{ 
+                // backgroundColor: colors.card,
+                color: colors.text 
+              }}
             >
               <FileCode size={14} />
               <span className="truncate">Generate New API</span>
@@ -2474,7 +2477,10 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToAPICollection}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.card, color: colors.text }}
+              style={{ 
+                // backgroundColor: colors.card,
+                color: colors.text 
+              }}
             >
               <Database size={14} />
               <span className="truncate">API Collections</span>
@@ -2482,7 +2488,10 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToDocumentation}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.card, color: colors.text }}
+              style={{ 
+                // backgroundColor: colors.card,
+                color: colors.text 
+              }}
             >
               <BookOpen size={14} />
               <span className="truncate">API Documentation</span>
@@ -2490,7 +2499,10 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToCodeBase}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.card, color: colors.text }}
+              style={{ 
+                // backgroundColor: colors.card,
+                color: colors.text 
+              }}
             >
               <Code size={14} />
               <span className="truncate">API Code Base</span>
@@ -2498,7 +2510,10 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToAPISecurity}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.card, color: colors.text }}
+              style={{ 
+                // backgroundColor: colors.card,
+                color: colors.text 
+              }}
             >
               <Shield size={14} />
               <span className="truncate">API Security</span>
@@ -2506,7 +2521,10 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             <button 
               onClick={handleNavigateToUserManagement}
               className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-              style={{ backgroundColor: colors.card, color: colors.text }}
+              style={{ 
+                // backgroundColor: colors.card,
+                color: colors.text 
+              }}
             >
               <UserCog size={14} />
               <span className="truncate">User Management</span>
@@ -2516,8 +2534,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
 
         {/* Recent Deployments */}
         <div className="border-t p-3 md:p-4 hidden md:block" style={{ borderColor: colors.border }}>
-          <div className="flex items-center justify-between mb-6 mt-6">
-            <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
+          <div className="flex items-center justify-between mb-7 mt-2">
+            <h3 className="text-sm font-semibold uppercase" style={{ color: colors.text }}>
               Recent Deployments
             </h3>
             <Rocket size={14} style={{ color: colors.textSecondary }} />
@@ -2719,8 +2737,11 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                 </button>
                 <button 
                   onClick={handleApiGeneration}
-                  className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-                  style={{ backgroundColor: colors.card, color: colors.text }}
+                  className="w-full px-3 py-2 bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
+                  style={{ 
+                // backgroundColor: colors.card,
+                color: 'white' 
+              }}
                 >
                   <FileCode size={14} />
                   <span className="truncate">Generate New API</span>

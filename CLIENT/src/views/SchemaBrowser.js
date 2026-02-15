@@ -550,15 +550,15 @@ const MobileBottomNav = React.memo(({
 
       <button 
         onClick={() => setShowApiModal(true)}
-        className="rounded hover:bg-opacity-50 transition-colors touch-target flex flex-col items-center justify-center w-14 h-14 p-1"
-        style={{ backgroundColor: 'transparent' }}
+        className="rounded hover:bg-opacity-50 bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 transition-colors touch-target flex flex-col items-center justify-center w-14 h-8 p-1"
+        // style={{ backgroundColor: 'transparent' }}
         aria-label="Generate API"
         disabled={loading}
       >
         <div className="flex-1 flex items-center justify-center">
           <Code size={16} style={{ color: colors.primary }} />
         </div>
-        <span className="text-xs" style={{ color: colors.primary }}>Generate API</span>
+        <span className="text-xs" style={{ color: "white" }}>Generate New API</span>
       </button>
       
       <button 
@@ -2540,9 +2540,9 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
             </div>
             <button
               onClick={() => setShowApiModal(true)}
-              className="p-2 rounded hover:bg-opacity-50 transition-colors touch-target"
-              style={{ backgroundColor: colors.hover }}
-              aria-label="Generate API"
+              className="p-2 rounded bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 hover:bg-opacity-50 transition-colors touch-target"
+              style={{ color: "white" }}
+              aria-label="Generate New API"
             >
               <Code size={18} style={{ color: colors.primary }} />
             </button>
@@ -2756,12 +2756,15 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                       <div className="flex items-center gap-2 mt-2 sm:mt-0 self-end">
                         <button 
                           onClick={() => setShowApiModal(true)} 
-                          className="px-3 py-1.5 text-xs sm:text-sm rounded hover:opacity-90 transition-colors flex items-center gap-1 sm:gap-2 hover-lift touch-target"
-                          style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+                          className="px-3 py-1 text-xs sm:text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 rounded hover:opacity-90 transition-colors flex items-center gap-1 sm:gap-2 hover-lift touch-target"
+                          style={{ 
+                            // backgroundColor: colors.primaryDark, 
+                            color: "white" 
+                          }}
                           aria-label="Generate API"
                         >
                           <Code size={12} />
-                          <span className="hidden sm:inline">Generate API</span>
+                          <span className="hidden sm:inline">Generate New API</span>
                           <span className="sm:hidden">API</span>
                         </button>
                       </div>
