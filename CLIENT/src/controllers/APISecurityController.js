@@ -118,7 +118,7 @@ export const addRateLimitRule = async (authorizationHeader, addRuleRequest) => {
  * @param {string} addIPEntryRequest.name - Entry name (required)
  * @param {string} addIPEntryRequest.ipRange - IP range/CIDR (required)
  * @param {string} addIPEntryRequest.description - Entry description
- * @param {string} addIPEntryRequest.endpoints - Protected endpoints
+ * @param {Array} addIPEntryRequest.endpoints - Protected endpoints
  * @param {Object} addIPEntryRequest.options - Additional options
  * @returns {Promise} API response
  */
@@ -152,6 +152,33 @@ export const addLoadBalancer = async (authorizationHeader, addLoadBalancerReques
       method: 'POST',
       headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
       body: JSON.stringify(addLoadBalancerRequest)
+    })
+  );
+};
+
+/**
+ * Update rate limit rule
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} ruleId - Rule ID
+ * @param {Object} updateRuleRequest - Update rule request data
+ * @param {string} [updateRuleRequest.name] - Rule name
+ * @param {string} [updateRuleRequest.description] - Rule description
+ * @param {string} [updateRuleRequest.endpoint] - Endpoint pattern
+ * @param {string} [updateRuleRequest.method] - HTTP method
+ * @param {number} [updateRuleRequest.limit] - Request limit
+ * @param {string} [updateRuleRequest.window] - Time window
+ * @param {number} [updateRuleRequest.burst] - Burst limit
+ * @param {string} [updateRuleRequest.action] - Action (throttle/block)
+ * @param {string} [updateRuleRequest.status] - Rule status (active/inactive)
+ * @returns {Promise} API response
+ */
+export const updateRateLimitRule = async (authorizationHeader, ruleId, updateRuleRequest) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`/security/rate-limit-rules/${ruleId}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+      body: JSON.stringify(updateRuleRequest)
     })
   );
 };
@@ -192,6 +219,45 @@ export const deleteRule = async (authorizationHeader, ruleId) => {
 };
 
 /**
+ * Update IP whitelist entry
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} entryId - IP whitelist entry ID
+ * @param {Object} updateIPEntryRequest - Update IP entry request data
+ * @param {string} [updateIPEntryRequest.name] - Entry name
+ * @param {string} [updateIPEntryRequest.ipRange] - IP range/CIDR
+ * @param {string} [updateIPEntryRequest.description] - Entry description
+ * @param {Array} [updateIPEntryRequest.endpoints] - Protected endpoints
+ * @param {string} [updateIPEntryRequest.status] - Entry status (active/inactive/pending)
+ * @returns {Promise} API response
+ */
+export const updateIPWhitelistEntry = async (authorizationHeader, entryId, updateIPEntryRequest) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`/security/ip-whitelist/${entryId}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+      body: JSON.stringify(updateIPEntryRequest)
+    })
+  );
+};
+
+/**
+ * Delete IP whitelist entry
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} entryId - IP whitelist entry ID
+ * @returns {Promise} API response
+ */
+export const deleteIPWhitelistEntry = async (authorizationHeader, entryId) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`/security/ip-whitelist/${entryId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+/**
  * Generate security report
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} reportRequest - Generate report request data
@@ -209,6 +275,26 @@ export const generateSecurityReport = async (authorizationHeader, reportRequest)
       method: 'POST',
       headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
       body: JSON.stringify(reportRequest)
+    })
+  );
+};
+
+/**
+ * Download security report
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} reportId - Report ID
+ * @returns {Promise} API response (binary data)
+ */
+export const downloadSecurityReport = async (authorizationHeader, reportId) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`/security/reports/download/${reportId}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${authHeader.replace('Bearer ', '')}`,
+        'Accept': 'text/html'
+      },
+      responseType: 'blob'
     })
   );
 };
@@ -277,6 +363,37 @@ export const getSecurityAlerts = async (authorizationHeader) => {
 };
 
 /**
+ * Mark alert as read
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} alertId - Alert ID
+ * @returns {Promise} API response
+ */
+export const markAlertAsRead = async (authorizationHeader, alertId) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`/security/alerts/${alertId}/read`, {
+      method: 'PUT',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+/**
+ * Mark all alerts as read
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const markAllAlertsAsRead = async (authorizationHeader) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`/security/alerts/read-all`, {
+      method: 'PUT',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+/**
  * Export security data
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} exportRequest - Export security data request
@@ -294,6 +411,21 @@ export const exportSecurityData = async (authorizationHeader, exportRequest) => 
       method: 'POST',
       headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
       body: JSON.stringify(exportRequest)
+    })
+  );
+};
+
+/**
+ * Health check
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const healthCheck = async (authorizationHeader) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`/security/health`, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
   );
 };
@@ -386,6 +518,102 @@ export const extractIPWhitelist = (response) => {
   }
   
   return [];
+};
+
+/**
+ * Extract single IP whitelist entry from response
+ * @param {Object} response - API response
+ * @returns {Object|null} IP whitelist entry or null
+ */
+export const extractIPWhitelistEntry = (response) => {
+  if (!response || !response.data) return null;
+  
+  const data = response.data;
+  
+  if (data.id && data.name) {
+    return {
+      id: data.id,
+      name: data.name,
+      ipRange: data.ipRange,
+      description: data.description,
+      endpoints: data.endpoints || [],
+      status: data.status,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+      createdBy: data.createdBy,
+      updatedBy: data.updatedBy
+    };
+  }
+  
+  if (data.data && data.data.id) {
+    return data.data;
+  }
+  
+  return null;
+};
+
+/**
+ * Extract update IP whitelist entry response
+ * @param {Object} response - API response
+ * @returns {Object} Update response
+ */
+export const extractUpdateIPWhitelistResponse = (response) => {
+  if (!response || !response.data) return null;
+  
+  const data = response.data;
+  
+  return {
+    id: data.id,
+    name: data.name,
+    ipRange: data.ipRange,
+    description: data.description,
+    endpoints: data.endpoints || [],
+    status: data.status,
+    updatedAt: data.updatedAt,
+    message: data.message,
+    success: data.id !== undefined
+  };
+};
+
+/**
+ * Extract update rate limit rule response
+ * @param {Object} response - API response
+ * @returns {Object} Update response
+ */
+export const extractUpdateRateLimitRuleResponse = (response) => {
+  if (!response || !response.data) return null;
+  
+  const data = response.data;
+  
+  return {
+    id: data.id,
+    name: data.name,
+    endpoint: data.endpoint,
+    limit: data.limit,
+    window: data.window,
+    status: data.status,
+    updatedAt: data.updatedAt,
+    message: data.message,
+    success: data.id !== undefined
+  };
+};
+
+/**
+ * Extract delete IP whitelist entry response
+ * @param {Object} response - API response
+ * @returns {Object} Delete response
+ */
+export const extractDeleteIPWhitelistResponse = (response) => {
+  if (!response || !response.data) return null;
+  
+  const data = response.data;
+  
+  return {
+    entryId: data.entryId,
+    deleted: data.deleted || false,
+    deletedAt: data.deletedAt,
+    success: data.deleted === true
+  };
 };
 
 /**
@@ -527,6 +755,41 @@ export const extractSecurityAlerts = (response) => {
 };
 
 /**
+ * Extract mark alert as read response
+ * @param {Object} response - API response
+ * @returns {Object} Mark alert response
+ */
+export const extractMarkAlertAsReadResponse = (response) => {
+  if (!response || !response.data) return null;
+  
+  const data = response.data;
+  
+  return {
+    alertId: data.alertId,
+    read: data.read || false,
+    readAt: data.readAt,
+    success: data.read === true
+  };
+};
+
+/**
+ * Extract mark all alerts as read response
+ * @param {Object} response - API response
+ * @returns {Object} Mark all alerts response
+ */
+export const extractMarkAllAlertsAsReadResponse = (response) => {
+  if (!response || !response.data) return null;
+  
+  const data = response.data;
+  
+  return {
+    markedCount: data.markedCount || 0,
+    markedAt: data.markedAt,
+    success: data.markedCount > 0
+  };
+};
+
+/**
  * Extract security report results
  * @param {Object} response - API response
  * @returns {Object} Security report results
@@ -565,6 +828,25 @@ export const extractExportSecurityResults = (response) => {
     exportedAt: data.exportedAt,
     exportInfo: data.exportInfo || {},
     success: data.exportId !== undefined
+  };
+};
+
+/**
+ * Extract health check response
+ * @param {Object} response - API response
+ * @returns {Object} Health check results
+ */
+export const extractHealthCheckResults = (response) => {
+  if (!response || !response.data) return null;
+  
+  const data = response.data;
+  
+  return {
+    responseCode: data.responseCode,
+    message: data.message,
+    requestId: data.requestId,
+    timestamp: data.timestamp,
+    success: data.responseCode === 200
   };
 };
 
@@ -632,9 +914,62 @@ export const validateAddIPWhitelistEntry = (addIPEntryRequest) => {
   }
   
   // Basic CIDR validation
-  const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
-  if (addIPEntryRequest.ipRange && !cidrRegex.test(addIPEntryRequest.ipRange)) {
+  if (addIPEntryRequest.ipRange && !isValidCIDR(addIPEntryRequest.ipRange)) {
     errors.push('Invalid IP range/CIDR format');
+  }
+  
+  return errors;
+};
+
+/**
+ * Validate update IP whitelist entry request
+ * @param {Object} updateIPEntryRequest - Update IP entry request data to validate
+ * @returns {Array} Array of validation errors
+ */
+export const validateUpdateIPWhitelistEntry = (updateIPEntryRequest) => {
+  const errors = [];
+  
+  // At least one field should be provided for update
+  if (!updateIPEntryRequest.name && 
+      !updateIPEntryRequest.ipRange && 
+      !updateIPEntryRequest.description && 
+      !updateIPEntryRequest.endpoints && 
+      !updateIPEntryRequest.status) {
+    errors.push('At least one field must be provided for update');
+    return errors;
+  }
+  
+  // Validate IP range if provided
+  if (updateIPEntryRequest.ipRange && !isValidCIDR(updateIPEntryRequest.ipRange)) {
+    errors.push('Invalid IP range/CIDR format');
+  }
+  
+  // Validate status if provided
+  if (updateIPEntryRequest.status) {
+    const validStatuses = ['active', 'inactive', 'pending'];
+    if (!validStatuses.includes(updateIPEntryRequest.status.toLowerCase())) {
+      errors.push(`Status must be one of: ${validStatuses.join(', ')}`);
+    }
+  }
+  
+  // Validate endpoints if provided
+  if (updateIPEntryRequest.endpoints) {
+    if (!Array.isArray(updateIPEntryRequest.endpoints)) {
+      errors.push('Endpoints must be an array');
+    } else {
+      // Check if all endpoints are strings
+      for (const endpoint of updateIPEntryRequest.endpoints) {
+        if (typeof endpoint !== 'string' || endpoint.trim().length === 0) {
+          errors.push('Each endpoint must be a non-empty string');
+          break;
+        }
+      }
+    }
+  }
+  
+  // Validate name if provided
+  if (updateIPEntryRequest.name && updateIPEntryRequest.name.trim().length === 0) {
+    errors.push('Entry name cannot be empty if provided');
   }
   
   return errors;
@@ -659,6 +994,60 @@ export const validateAddLoadBalancer = (addLoadBalancerRequest) => {
   const validAlgorithms = ['round_robin', 'least_connections', 'ip_hash', 'weighted'];
   if (addLoadBalancerRequest.algorithm && !validAlgorithms.includes(addLoadBalancerRequest.algorithm)) {
     errors.push(`Algorithm must be one of: ${validAlgorithms.join(', ')}`);
+  }
+  
+  return errors;
+};
+
+/**
+ * Validate update rate limit rule request
+ * @param {Object} updateRuleRequest - Update rule request data to validate
+ * @returns {Array} Array of validation errors
+ */
+export const validateUpdateRateLimitRule = (updateRuleRequest) => {
+  const errors = [];
+  
+  // At least one field should be provided for update
+  if (!updateRuleRequest.name && 
+      !updateRuleRequest.description && 
+      !updateRuleRequest.endpoint && 
+      !updateRuleRequest.method && 
+      !updateRuleRequest.limit && 
+      !updateRuleRequest.window && 
+      !updateRuleRequest.burst && 
+      !updateRuleRequest.action && 
+      !updateRuleRequest.status) {
+    errors.push('At least one field must be provided for update');
+    return errors;
+  }
+  
+  // Validate method if provided
+  if (updateRuleRequest.method) {
+    const validMethods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'ALL'];
+    if (!validMethods.includes(updateRuleRequest.method.toUpperCase())) {
+      errors.push(`Method must be one of: ${validMethods.join(', ')}`);
+    }
+  }
+  
+  // Validate limit if provided
+  if (updateRuleRequest.limit && updateRuleRequest.limit <= 0) {
+    errors.push('Limit must be greater than 0');
+  }
+  
+  // Validate action if provided
+  if (updateRuleRequest.action) {
+    const validActions = ['throttle', 'block'];
+    if (!validActions.includes(updateRuleRequest.action.toLowerCase())) {
+      errors.push(`Action must be one of: ${validActions.join(', ')}`);
+    }
+  }
+  
+  // Validate status if provided
+  if (updateRuleRequest.status) {
+    const validStatuses = ['active', 'inactive'];
+    if (!validStatuses.includes(updateRuleRequest.status.toLowerCase())) {
+      errors.push(`Status must be one of: ${validStatuses.join(', ')}`);
+    }
   }
   
   return errors;
@@ -781,7 +1170,37 @@ export const getSeverityColor = (severity) => {
     'medium': 'info',
     'low': 'secondary'
   };
-  return severityMap[severity.toLowerCase()] || 'secondary';
+  return severityMap[severity?.toLowerCase()] || 'secondary';
+};
+
+/**
+ * Get IP whitelist entry status color
+ * @param {string} status - Entry status
+ * @returns {string} Color class
+ */
+export const getIPWhitelistStatusColor = (status) => {
+  const statusMap = {
+    'active': 'success',
+    'inactive': 'secondary',
+    'pending': 'warning'
+  };
+  return statusMap[status?.toLowerCase()] || 'secondary';
+};
+
+/**
+ * Get IP whitelist entry status label
+ * @param {string} status - Entry status
+ * @returns {string} Status label
+ */
+export const getIPWhitelistStatusLabel = (status) => {
+  if (!status) return 'Unknown';
+  
+  const statusMap = {
+    'active': 'Active',
+    'inactive': 'Inactive',
+    'pending': 'Pending'
+  };
+  return statusMap[status.toLowerCase()] || status;
 };
 
 /**
@@ -803,6 +1222,98 @@ export const formatIPRange = (ipRange) => {
   }
   
   return ipRange;
+};
+
+/**
+ * Format IP whitelist endpoints for display
+ * @param {Array} endpoints - Endpoints array
+ * @param {number} maxDisplay - Maximum number to display
+ * @returns {string} Formatted endpoints string
+ */
+export const formatIPWhitelistEndpoints = (endpoints, maxDisplay = 3) => {
+  if (!endpoints || !Array.isArray(endpoints) || endpoints.length === 0) {
+    return 'All endpoints';
+  }
+  
+  if (endpoints.length <= maxDisplay) {
+    return endpoints.join(', ');
+  }
+  
+  const displayed = endpoints.slice(0, maxDisplay).join(', ');
+  const remaining = endpoints.length - maxDisplay;
+  return `${displayed} +${remaining} more`;
+};
+
+/**
+ * Check if IP range is valid CIDR
+ * @param {string} ipRange - IP range to validate
+ * @returns {boolean} True if valid CIDR
+ */
+export const isValidCIDR = (ipRange) => {
+  if (!ipRange) return false;
+  
+  // IPv4 CIDR
+  const ipv4CidrRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+  // IPv6 CIDR
+  const ipv6CidrRegex = /^([0-9a-fA-F:]+)(\/\d{1,3})?$/;
+  
+  if (!ipv4CidrRegex.test(ipRange) && !ipv6CidrRegex.test(ipRange)) {
+    return false;
+  }
+  
+  // Validate IPv4 octets if it's IPv4
+  if (ipv4CidrRegex.test(ipRange)) {
+    const ipPart = ipRange.split('/')[0];
+    const octets = ipPart.split('.');
+    if (octets.length === 4) {
+      for (const octet of octets) {
+        const num = parseInt(octet, 10);
+        if (isNaN(num) || num < 0 || num > 255) {
+          return false;
+        }
+      }
+    }
+  }
+  
+  return true;
+};
+
+/**
+ * Get CIDR notation description
+ * @param {string} cidr - CIDR notation
+ * @returns {string} Description of the CIDR range
+ */
+export const getCIDRDescription = (cidr) => {
+  if (!cidr || !isValidCIDR(cidr)) return 'Invalid CIDR';
+  
+  if (cidr.includes('/')) {
+    const [ip, prefix] = cidr.split('/');
+    const prefixNum = parseInt(prefix, 10);
+    
+    if (ip.includes(':')) {
+      // IPv6
+      if (prefixNum === 128) return 'Single IPv6 address';
+      if (prefixNum === 64) return 'IPv6 /64 subnet (standard network)';
+      if (prefixNum === 48) return 'IPv6 /48 subnet (large network)';
+      if (prefixNum === 32) return 'IPv6 /32 subnet (ISP allocation)';
+      return `IPv6 /${prefixNum} subnet`;
+    } else {
+      // IPv4
+      if (prefixNum === 32) return 'Single IPv4 address';
+      if (prefixNum === 31) return 'Point-to-point link (2 addresses)';
+      if (prefixNum === 30) return 'Small subnet (4 addresses, 2 usable)';
+      if (prefixNum === 29) return 'Small subnet (8 addresses, 6 usable)';
+      if (prefixNum === 28) return 'Small subnet (16 addresses, 14 usable)';
+      if (prefixNum === 27) return 'Medium subnet (32 addresses, 30 usable)';
+      if (prefixNum === 26) return 'Medium subnet (64 addresses, 62 usable)';
+      if (prefixNum === 24) return 'Standard /24 subnet (256 addresses, 254 usable)';
+      if (prefixNum === 16) return 'Large /16 subnet (65,536 addresses)';
+      if (prefixNum === 8) return 'Very large /8 subnet (16,777,216 addresses)';
+      return `IPv4 /${prefixNum} subnet`;
+    }
+  }
+  
+  return cidr.includes(':') ? 'Single IPv6 address' : 'Single IPv4 address';
 };
 
 /**
@@ -881,12 +1392,12 @@ export const getUnreadSecurityAlertsCount = (alerts) => {
 };
 
 /**
- * Mark security alert as read
+ * Mark security alert as read (local state only)
  * @param {Array} alerts - Security alerts array
  * @param {string} alertId - Alert ID to mark as read
  * @returns {Array} Updated alerts array
  */
-export const markAlertAsRead = (alerts, alertId) => {
+export const markAlertAsReadLocally = (alerts, alertId) => {
   if (!alerts || !Array.isArray(alerts)) return [];
   
   return alerts.map(alert => {
@@ -898,11 +1409,11 @@ export const markAlertAsRead = (alerts, alertId) => {
 };
 
 /**
- * Mark all security alerts as read
+ * Mark all security alerts as read (local state only)
  * @param {Array} alerts - Security alerts array
  * @returns {Array} Updated alerts array
  */
-export const markAllAlertsAsRead = (alerts) => {
+export const markAllAlertsAsReadLocally = (alerts) => {
   if (!alerts || !Array.isArray(alerts)) return [];
   
   return alerts.map(alert => ({ ...alert, read: true }));
@@ -1053,32 +1564,48 @@ export default {
   addRateLimitRule,
   addIPWhitelistEntry,
   addLoadBalancer,
+  updateRateLimitRule,
   updateRuleStatus,
   deleteRule,
+  updateIPWhitelistEntry,
+  deleteIPWhitelistEntry,
   generateSecurityReport,
+  downloadSecurityReport,
   runSecurityScan,
   getSecurityConfiguration,
   updateSecurityConfiguration,
   getSecurityAlerts,
+  markAlertAsRead,
+  markAllAlertsAsRead,
   exportSecurityData,
+  healthCheck,
   
   // Response handlers
   handleSecurityResponse,
   extractRateLimitRules,
   extractIPWhitelist,
+  extractIPWhitelistEntry,
+  extractUpdateIPWhitelistResponse,
+  extractUpdateRateLimitRuleResponse,
+  extractDeleteIPWhitelistResponse,
   extractLoadBalancers,
   extractSecurityEvents,
   extractSecuritySummary,
   extractSecurityScanResults,
   extractSecurityConfiguration,
   extractSecurityAlerts,
+  extractMarkAlertAsReadResponse,
+  extractMarkAllAlertsAsReadResponse,
   extractSecurityReportResults,
   extractExportSecurityResults,
+  extractHealthCheckResults,
   
   // Validation functions
   validateAddRateLimitRule,
   validateAddIPWhitelistEntry,
+  validateUpdateIPWhitelistEntry,
   validateAddLoadBalancer,
+  validateUpdateRateLimitRule,
   validateGenerateSecurityReport,
   validateUpdateRuleStatus,
   validateExportSecurityData,
@@ -1087,15 +1614,20 @@ export default {
   getSecurityScoreColor,
   getSecurityScoreLabel,
   getSeverityColor,
+  getIPWhitelistStatusColor,
+  getIPWhitelistStatusLabel,
   formatIPRange,
+  formatIPWhitelistEndpoints,
+  isValidCIDR,
+  getCIDRDescription,
   calculateTotalSecurityRequests,
   getEndpointProtectionPercentage,
   filterSecurityEventsBySeverity,
   sortSecurityEventsByDate,
   getRecentSecurityAlerts,
   getUnreadSecurityAlertsCount,
-  markAlertAsRead,
-  markAllAlertsAsRead,
+  markAlertAsReadLocally,
+  markAllAlertsAsReadLocally,
   getDefaultSecurityConfiguration,
   getSecurityEventTypes,
   getLoadBalancingAlgorithms,

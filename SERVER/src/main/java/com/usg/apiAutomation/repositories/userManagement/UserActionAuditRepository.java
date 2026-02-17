@@ -1,6 +1,6 @@
 package com.usg.apiAutomation.repositories;
 
-import com.usg.apiAutomation.entities.UserActionAuditEntity;
+import com.usg.apiAutomation.entities.userManagement.UserActionAuditEntity;
 import com.usg.apiAutomation.entities.UserEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 

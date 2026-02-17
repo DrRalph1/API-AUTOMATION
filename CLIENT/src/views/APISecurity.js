@@ -85,7 +85,7 @@ import {
   Zap as ZapIcon2
 } from 'lucide-react';
 
-// Import APISecurityController functions - IMPORTANT: Use the same pattern as CodeBase
+// Import APISecurityController functions
 import {
   getRateLimitRules,
   getIPWhitelist,
@@ -96,6 +96,7 @@ import {
   addIPWhitelistEntry,
   addLoadBalancer,
   updateRuleStatus,
+  updateIPWhitelistEntry,
   deleteRule,
   generateSecurityReport,
   runSecurityScan,
@@ -110,10 +111,12 @@ import {
   extractSecurityEvents,
   extractSecuritySummary,
   extractSecurityScanResults,
+  extractUpdateIPWhitelistResponse,
   extractSecurityConfiguration,
   extractSecurityAlerts,
   extractSecurityReportResults,
   extractExportSecurityResults,
+  validateUpdateIPWhitelistEntry,
   validateAddRateLimitRule,
   validateAddIPWhitelistEntry,
   validateAddLoadBalancer,
@@ -137,19 +140,40 @@ import {
   getLoadBalancingAlgorithms,
   cacheSecurityData,
   getCachedSecurityData,
-  clearCachedSecurityData
+  clearCachedSecurityData,
+  updateRateLimitRule,
+  extractUpdateRateLimitRuleResponse,
+  validateUpdateRateLimitRule
 } from "@/controllers/APISecurityController.js";
 
 const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [activeTab, setActiveTab] = useState('ip-whitelist');
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Pagination states for IP whitelist
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(5);
+  const [totalPages, setTotalPages] = useState(1);
+  
+  // Modal states
   const [showAddRuleModal, setShowAddRuleModal] = useState(false);
-  const [showSecurityReport, setShowSecurityReport] = useState(false);
+  const [showSecurityReportModal, setShowSecurityReportModal] = useState(false);
   const [showIPWhitelistModal, setShowIPWhitelistModal] = useState(false);
   const [showLoadBalancerModal, setShowLoadBalancerModal] = useState(false);
+  const [showScanModal, setShowScanModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [modalDetails, setModalDetails] = useState(null);
+  
   const [toast, setToast] = useState(null);
   const [expandedSections, setExpandedSections] = useState(['rate-limits', 'ip-whitelist']);
   const [showNotifications, setShowNotifications] = useState(false);
+
+  const [editingIPEntry, setEditingIPEntry] = useState(null);
+  const [showEditIPWhitelistModal, setShowEditIPWhitelistModal] = useState(false);
+  
+  // New state for editing rate limit rules
+  const [editingRule, setEditingRule] = useState(null);
+  const [showEditRuleModal, setShowEditRuleModal] = useState(false);
   
   // API States
   const [loading, setLoading] = useState({
@@ -158,7 +182,11 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     loadBalancers: false,
     securityEvents: false,
     summary: false,
-    report: false
+    report: false,
+    scan: false,
+    togglingIP: false,
+    downloadingPDF: false,
+    initialLoad: true // Add initial load state
   });
   
   const [error, setError] = useState({
@@ -170,7 +198,7 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     report: null
   });
 
-  // Updated color scheme to match Documentation
+  // Colors (same as your original code)
   const colors = isDark ? {
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
@@ -199,14 +227,14 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     sidebarActive: 'rgb(96 165 250)',
     sidebarHover: 'rgb(45 46 72 / 33%)',
     inputBg: 'rgb(41 53 72 / 19%)',
-    inputborder: 'rgb(51 65 85 / 19%)',
+    inputBorder: 'rgb(51 65 85 / 19%)',
     tableHeader: 'rgb(41 53 72 / 19%)',
     tableRow: 'rgb(41 53 72 / 19%)',
     tableRowHover: 'rgb(45 46 72 / 33%)',
     dropdownBg: 'rgb(41 53 72 / 19%)',
-    dropdownborder: 'rgb(51 65 85 / 19%)',
+    dropdownBorder: 'rgb(51 65 85 / 19%)',
     modalBg: 'rgb(41 53 72 / 19%)',
-    modalborder: 'rgb(51 65 85 / 19%)',
+    modalBorder: 'rgb(51 65 85 / 19%)',
     codeBg: 'rgb(41 53 72 / 19%)',
     connectionOnline: 'rgb(52 211 153)',
     connectionOffline: 'rgb(248 113 113)',
@@ -304,6 +332,10 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   });
   const [securityAlerts, setSecurityAlerts] = useState([]);
   const [securityConfig, setSecurityConfig] = useState(null);
+  const [scanResults, setScanResults] = useState(null);
+  const [reportResults, setReportResults] = useState(null);
+  
+  // Form states
   const [newRuleData, setNewRuleData] = useState({
     name: '',
     description: '',
@@ -315,6 +347,7 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     action: 'throttle',
     options: {}
   });
+  
   const [newIPEntryData, setNewIPEntryData] = useState({
     name: '',
     ipRange: '',
@@ -322,6 +355,7 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     endpoints: '',
     options: {}
   });
+  
   const [newLoadBalancerData, setNewLoadBalancerData] = useState({
     name: '',
     algorithm: 'round_robin',
@@ -330,6 +364,7 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     servers: [],
     options: {}
   });
+  
   const [userId, setUserId] = useState('');
 
   // Extract userId from token
@@ -357,21 +392,40 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   useEffect(() => {
     console.log('🔥 [APISecurity] Component mounted, authToken:', !!authToken);
     
-    if (authToken) {
-      const extractedUserId = extractUserIdFromToken(authToken);
-      setUserId(extractedUserId);
+    const initializeData = async () => {
+      setLoading(prev => ({ ...prev, initialLoad: true }));
       
-      // Clear cache to force fresh API call
-      clearCachedSecurityData(extractedUserId);
-      
-      // Fetch initial data
-      fetchSecuritySummary();
-      fetchSecurityAlerts();
-      fetchSecurityConfiguration();
-    } else {
-      console.log('🔒 [APISecurity] No auth token, skipping fetch');
-      showToast('Authentication required. Please login.', 'warning');
-    }
+      if (authToken) {
+        const extractedUserId = extractUserIdFromToken(authToken);
+        setUserId(extractedUserId);
+        
+        // Clear cache to force fresh API call
+        clearCachedSecurityData(extractedUserId);
+        
+        try {
+          // Fetch all data in parallel for initial load
+          await Promise.all([
+            fetchSecuritySummary(),
+            fetchSecurityAlerts(),
+            fetchSecurityConfiguration(),
+            fetchRateLimitRules(),
+            fetchIPWhitelist(),
+            fetchLoadBalancers(),
+            fetchSecurityEvents()
+          ]);
+        } catch (error) {
+          console.error('Error during initial data load:', error);
+        } finally {
+          setLoading(prev => ({ ...prev, initialLoad: false }));
+        }
+      } else {
+        console.log('🔒 [APISecurity] No auth token, skipping fetch');
+        showToast('Authentication required. Please login.', 'warning');
+        setLoading(prev => ({ ...prev, initialLoad: false }));
+      }
+    };
+    
+    initializeData();
   }, [authToken]);
 
   // Fetch data when active tab changes
@@ -380,23 +434,264 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     
     if (!authToken) return;
     
-    switch (activeTab) {
-      case 'rate-limits':
-        fetchRateLimitRules();
-        break;
-      case 'ip-whitelist':
-        fetchIPWhitelist();
-        break;
-      case 'load-balancers':
-        fetchLoadBalancers();
-        break;
-      case 'security-events':
-        fetchSecurityEvents();
-        break;
-    }
+    const loadTabData = async () => {
+      switch (activeTab) {
+        case 'rate-limits':
+          await fetchRateLimitRules();
+          break;
+        case 'ip-whitelist':
+          await fetchIPWhitelist();
+          break;
+        case 'load-balancers':
+          await fetchLoadBalancers();
+          break;
+        case 'security-events':
+          await fetchSecurityEvents();
+          break;
+      }
+    };
+    
+    loadTabData();
+    
+    // Reset to first page when tab changes
+    setCurrentPage(1);
   }, [activeTab, authToken]);
 
-  // ==================== API METHODS ====================
+  // Update total pages when ipWhitelist changes
+  useEffect(() => {
+    setTotalPages(Math.ceil(ipWhitelist.length / itemsPerPage));
+    if (currentPage > Math.ceil(ipWhitelist.length / itemsPerPage) && ipWhitelist.length > 0) {
+      setCurrentPage(Math.ceil(ipWhitelist.length / itemsPerPage));
+    }
+  }, [ipWhitelist, itemsPerPage]);
+
+  // Handle IP Whitelist status toggle
+  const handleToggleIPWhitelistStatus = async (entry) => {
+    console.log(`📡 [APISecurity] Toggling IP whitelist entry ${entry.id} status from ${entry.status} to ${entry.status === 'active' ? 'inactive' : 'active'}...`);
+    
+    if (!authToken) {
+      showToast('Authentication required', 'error');
+      return;
+    }
+    
+    const newStatus = entry.status === 'active' ? 'inactive' : 'active';
+    
+    setLoading(prev => ({ ...prev, togglingIP: true }));
+    
+    try {
+      const updateData = { status: newStatus };
+      
+      const validationErrors = validateUpdateIPWhitelistEntry(updateData);
+      if (validationErrors.length > 0) {
+        showToast(`Validation errors: ${validationErrors.join(', ')}`, 'error');
+        return;
+      }
+      
+      const response = await updateIPWhitelistEntry(authToken, entry.id, updateData);
+      const handledResponse = handleSecurityResponse(response);
+      const updatedEntry = extractUpdateIPWhitelistResponse(handledResponse);
+      
+      if (updatedEntry && updatedEntry.success) {
+        const updatedIpWhitelist = ipWhitelist.map(item => 
+          item.id === entry.id 
+            ? { 
+                ...item, 
+                status: newStatus,
+                updatedAt: new Date().toISOString()
+              }
+            : item
+        );
+        
+        setIpWhitelist(updatedIpWhitelist);
+        showToast(`IP whitelist entry ${newStatus === 'active' ? 'activated' : 'deactivated'} successfully!`, 'success');
+        
+        if (userId) {
+          clearCachedSecurityData(userId);
+        }
+        
+        await refreshIPWhitelist();
+      } else {
+        showToast('Failed to update IP entry status: Invalid response from server', 'error');
+      }
+      
+    } catch (error) {
+      console.error('❌ [APISecurity] Error toggling IP whitelist entry status:', error);
+      
+      let errorMessage = 'Failed to update IP entry status';
+      
+      if (error.message) {
+        if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+          errorMessage = 'Your session has expired. Please log in again.';
+        } else if (error.message.includes('403') || error.message.includes('Forbidden')) {
+          errorMessage = 'You do not have permission to update IP whitelist entries';
+        } else if (error.message.includes('404') || error.message.includes('Not Found')) {
+          errorMessage = 'The IP whitelist entry was not found. It may have been deleted.';
+          const updatedIpWhitelist = ipWhitelist.filter(item => item.id !== entry.id);
+          setIpWhitelist(updatedIpWhitelist);
+        } else if (error.message.includes('409') || error.message.includes('Conflict')) {
+          errorMessage = 'The update conflicts with an existing entry';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      showToast(errorMessage, 'error');
+    } finally {
+      setLoading(prev => ({ ...prev, togglingIP: false }));
+    }
+  };
+
+  // Handle Edit IP Whitelist Entry
+  const handleEditIPWhitelistEntry = (entry) => {
+    console.log('📝 [APISecurity] Editing IP whitelist entry:', entry);
+    setEditingIPEntry(entry);
+    setNewIPEntryData({
+      name: entry.name || '',
+      ipRange: entry.ipRange || '',
+      description: entry.description || '',
+      endpoints: Array.isArray(entry.endpoints) ? entry.endpoints.join(', ') : (entry.endpoints || ''),
+      options: entry.options || {}
+    });
+    setShowEditIPWhitelistModal(true);
+  };
+
+  const handleUpdateIPWhitelistEntry = async () => {
+    console.log('📡 [APISecurity] Updating IP whitelist entry...');
+    
+    if (!authToken) {
+      showToast('Authentication required', 'error');
+      return;
+    }
+    
+    if (!editingIPEntry || !editingIPEntry.id) {
+      showToast('No entry selected for update', 'error');
+      return;
+    }
+    
+    const updateData = {};
+    
+    if (newIPEntryData.name !== editingIPEntry.name) {
+      updateData.name = newIPEntryData.name;
+    }
+    
+    if (newIPEntryData.ipRange !== editingIPEntry.ipRange) {
+      updateData.ipRange = newIPEntryData.ipRange;
+    }
+    
+    if (newIPEntryData.description !== editingIPEntry.description) {
+      updateData.description = newIPEntryData.description;
+    }
+    
+    const originalEndpoints = Array.isArray(editingIPEntry.endpoints) 
+      ? editingIPEntry.endpoints 
+      : (editingIPEntry.endpoints ? editingIPEntry.endpoints.split(',').map(e => e.trim()) : []);
+    
+    const newEndpoints = Array.isArray(newIPEntryData.endpoints)
+      ? newIPEntryData.endpoints
+      : (newIPEntryData.endpoints ? newIPEntryData.endpoints.split(',').map(e => e.trim()) : []);
+    
+    if (JSON.stringify(originalEndpoints) !== JSON.stringify(newEndpoints)) {
+      updateData.endpoints = newEndpoints;
+    }
+    
+    if (Object.keys(updateData).length === 0) {
+      showToast('No changes detected to update', 'warning');
+      return;
+    }
+    
+    const validationErrors = validateUpdateIPWhitelistEntry(updateData);
+    if (validationErrors.length > 0) {
+      showToast(`Validation errors: ${validationErrors.join(', ')}`, 'error');
+      return;
+    }
+    
+    try {
+      setLoading(prev => ({ ...prev, ipWhitelist: true }));
+      
+      const response = await updateIPWhitelistEntry(authToken, editingIPEntry.id, updateData);
+      const handledResponse = handleSecurityResponse(response);
+      const updatedEntry = extractUpdateIPWhitelistResponse(handledResponse);
+      
+      if (updatedEntry && updatedEntry.success) {
+        const updatedIpWhitelist = ipWhitelist.map(entry => 
+          entry.id === editingIPEntry.id 
+            ? { 
+                ...entry, 
+                ...updatedEntry,
+                createdAt: entry.createdAt,
+                createdBy: entry.createdBy
+              }
+            : entry
+        );
+        
+        setIpWhitelist(updatedIpWhitelist);
+        
+        setEditingIPEntry(null);
+        setNewIPEntryData({
+          name: '',
+          ipRange: '',
+          description: '',
+          endpoints: '',
+          status: 'active',
+          options: {}
+        });
+        setShowEditIPWhitelistModal(false);
+        
+        showToast(updatedEntry.message || 'IP whitelist entry updated successfully!', 'success');
+        
+        if (userId) {
+          clearCachedSecurityData(userId);
+        }
+        
+        await refreshIPWhitelist();
+      } else {
+        showToast('Failed to update IP entry: Invalid response from server', 'error');
+      }
+      
+    } catch (error) {
+      console.error('❌ [APISecurity] Error updating IP whitelist entry:', error);
+      
+      let errorMessage = 'Failed to update IP entry';
+      
+      if (error.message) {
+        if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+          errorMessage = 'Your session has expired. Please log in again.';
+        } else if (error.message.includes('403') || error.message.includes('Forbidden')) {
+          errorMessage = 'You do not have permission to update IP whitelist entries';
+        } else if (error.message.includes('404') || error.message.includes('Not Found')) {
+          errorMessage = 'The IP whitelist entry was not found. It may have been deleted.';
+          const updatedIpWhitelist = ipWhitelist.filter(entry => entry.id !== editingIPEntry.id);
+          setIpWhitelist(updatedIpWhitelist);
+          setShowEditIPWhitelistModal(false);
+        } else if (error.message.includes('409') || error.message.includes('Conflict')) {
+          errorMessage = 'The IP range conflicts with an existing entry';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      showToast(errorMessage, 'error');
+    } finally {
+      setLoading(prev => ({ ...prev, ipWhitelist: false }));
+    }
+  };
+
+  const refreshIPWhitelist = async () => {
+    try {
+      if (authToken) {
+        const response = await getIPWhitelist(authToken);
+        const handledResponse = handleSecurityResponse(response);
+        const whitelistData = extractIPWhitelist(handledResponse);
+        setIpWhitelist(whitelistData);
+        
+        if (userId) {
+          cacheSecurityData(userId, 'ip_whitelist', whitelistData, 5);
+        }
+      }
+    } catch (refreshError) {
+      console.warn('⚠️ [APISecurity] Failed to refresh IP whitelist after update:', refreshError);
+    }
+  };
 
   const fetchRateLimitRules = useCallback(async () => {
     console.log('📡 [APISecurity] Fetching rate limit rules...');
@@ -425,7 +720,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       
       setRateLimitRules(rules);
       
-      // Cache the data
       if (userId) {
         cacheSecurityData(userId, 'rateLimitRules', rules, 15);
       }
@@ -437,7 +731,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       setError(prev => ({ ...prev, rateLimits: error.message }));
       showToast(`Failed to load rate limit rules: ${error.message}`, 'error');
       
-      // Try to get cached data
       if (userId) {
         const cached = getCachedSecurityData(userId, 'rateLimitRules');
         if (cached) {
@@ -450,6 +743,153 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       console.log('🏁 [APISecurity] fetchRateLimitRules completed');
     }
   }, [authToken, userId]);
+
+  // Handle Edit Rate Limit Rule
+  const handleEditRateLimitRule = (rule) => {
+    console.log('📝 [APISecurity] Editing rate limit rule:', rule);
+    setEditingRule(rule);
+    setNewRuleData({
+      name: rule.name || '',
+      description: rule.description || '',
+      endpoint: rule.endpoint || '',
+      method: rule.method || 'GET',
+      limit: rule.limit || 100,
+      window: rule.window || '1m',
+      burst: rule.burst || 20,
+      action: rule.action || 'throttle',
+      options: rule.options || {}
+    });
+    setShowEditRuleModal(true);
+  };
+
+  // Handle Update Rate Limit Rule
+  const handleUpdateRateLimitRule = async () => {
+    console.log('📡 [APISecurity] Updating rate limit rule...');
+    
+    if (!authToken) {
+      showToast('Authentication required', 'error');
+      return;
+    }
+    
+    if (!editingRule || !editingRule.id) {
+      showToast('No rule selected for update', 'error');
+      return;
+    }
+    
+    const updateData = {};
+    
+    if (newRuleData.name !== editingRule.name) {
+      updateData.name = newRuleData.name;
+    }
+    
+    if (newRuleData.description !== editingRule.description) {
+      updateData.description = newRuleData.description;
+    }
+    
+    if (newRuleData.endpoint !== editingRule.endpoint) {
+      updateData.endpoint = newRuleData.endpoint;
+    }
+    
+    if (newRuleData.method !== editingRule.method) {
+      updateData.method = newRuleData.method;
+    }
+    
+    if (newRuleData.limit !== editingRule.limit) {
+      updateData.limit = newRuleData.limit;
+    }
+    
+    if (newRuleData.window !== editingRule.window) {
+      updateData.window = newRuleData.window;
+    }
+    
+    if (newRuleData.burst !== editingRule.burst) {
+      updateData.burst = newRuleData.burst;
+    }
+    
+    if (newRuleData.action !== editingRule.action) {
+      updateData.action = newRuleData.action;
+    }
+    
+    if (Object.keys(updateData).length === 0) {
+      showToast('No changes detected to update', 'warning');
+      return;
+    }
+    
+    const validationErrors = validateUpdateRateLimitRule(updateData);
+    if (validationErrors.length > 0) {
+      showToast(`Validation errors: ${validationErrors.join(', ')}`, 'error');
+      return;
+    }
+    
+    try {
+      setLoading(prev => ({ ...prev, rateLimits: true }));
+      
+      const response = await updateRateLimitRule(authToken, editingRule.id, updateData);
+      const handledResponse = handleSecurityResponse(response);
+      const updatedRule = extractUpdateRateLimitRuleResponse(handledResponse);
+      
+      if (updatedRule && updatedRule.success) {
+        const updatedRules = rateLimitRules.map(rule => 
+          rule.id === editingRule.id 
+            ? { 
+                ...rule, 
+                ...updatedRule,
+                createdAt: rule.createdAt,
+                createdBy: rule.createdBy
+              }
+            : rule
+        );
+        
+        setRateLimitRules(updatedRules);
+        
+        setEditingRule(null);
+        setNewRuleData({
+          name: '',
+          description: '',
+          endpoint: '',
+          method: 'GET',
+          limit: 100,
+          window: '1m',
+          burst: 20,
+          action: 'throttle',
+          options: {}
+        });
+        setShowEditRuleModal(false);
+        
+        showToast(updatedRule.message || 'Rate limit rule updated successfully!', 'success');
+        
+        if (userId) {
+          clearCachedSecurityData(userId);
+        }
+      } else {
+        showToast('Failed to update rate limit rule: Invalid response from server', 'error');
+      }
+      
+    } catch (error) {
+      console.error('❌ [APISecurity] Error updating rate limit rule:', error);
+      
+      let errorMessage = 'Failed to update rate limit rule';
+      
+      if (error.message) {
+        if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+          errorMessage = 'Your session has expired. Please log in again.';
+        } else if (error.message.includes('403') || error.message.includes('Forbidden')) {
+          errorMessage = 'You do not have permission to update rate limit rules';
+        } else if (error.message.includes('404') || error.message.includes('Not Found')) {
+          errorMessage = 'The rate limit rule was not found. It may have been deleted.';
+          const updatedRules = rateLimitRules.filter(rule => rule.id !== editingRule.id);
+          setRateLimitRules(updatedRules);
+          setShowEditRuleModal(false);
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      showToast(errorMessage, 'error');
+    } finally {
+      setLoading(prev => ({ ...prev, rateLimits: false }));
+    }
+  };
 
   const fetchIPWhitelist = useCallback(async () => {
     console.log('📡 [APISecurity] Fetching IP whitelist...');
@@ -478,7 +918,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       
       setIpWhitelist(whitelist);
       
-      // Cache the data
       if (userId) {
         cacheSecurityData(userId, 'ipWhitelist', whitelist, 15);
       }
@@ -490,7 +929,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       setError(prev => ({ ...prev, ipWhitelist: error.message }));
       showToast(`Failed to load IP whitelist: ${error.message}`, 'error');
       
-      // Try to get cached data
       if (userId) {
         const cached = getCachedSecurityData(userId, 'ipWhitelist');
         if (cached) {
@@ -531,7 +969,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       
       setLoadBalancers(balancers);
       
-      // Cache the data
       if (userId) {
         cacheSecurityData(userId, 'loadBalancers', balancers, 15);
       }
@@ -543,7 +980,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       setError(prev => ({ ...prev, loadBalancers: error.message }));
       showToast(`Failed to load load balancers: ${error.message}`, 'error');
       
-      // Try to get cached data
       if (userId) {
         const cached = getCachedSecurityData(userId, 'loadBalancers');
         if (cached) {
@@ -584,9 +1020,8 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       
       setSecurityEvents(events);
       
-      // Cache the data
       if (userId) {
-        cacheSecurityData(userId, 'securityEvents', events, 5); // Shorter cache for events
+        cacheSecurityData(userId, 'securityEvents', events, 5);
       }
       
       showToast(`Loaded ${events.length} security events`, 'success');
@@ -596,7 +1031,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       setError(prev => ({ ...prev, securityEvents: error.message }));
       showToast(`Failed to load security events: ${error.message}`, 'error');
       
-      // Try to get cached data
       if (userId) {
         const cached = getCachedSecurityData(userId, 'securityEvents');
         if (cached) {
@@ -638,7 +1072,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         setSecuritySummary(summary);
       }
       
-      // Cache the data
       if (userId) {
         cacheSecurityData(userId, 'securitySummary', summary, 10);
       }
@@ -647,7 +1080,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       console.error('❌ [APISecurity] Error fetching security summary:', error);
       setError(prev => ({ ...prev, summary: error.message }));
       
-      // Try to get cached data
       if (userId) {
         const cached = getCachedSecurityData(userId, 'securitySummary');
         if (cached) {
@@ -684,14 +1116,12 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       
       setSecurityAlerts(alerts);
       
-      // Cache the data
       if (userId) {
         cacheSecurityData(userId, 'securityAlerts', alerts, 5);
       }
       
     } catch (error) {
       console.error('❌ [APISecurity] Error fetching security alerts:', error);
-      // Don't show toast for this as it's not critical
     }
   }, [authToken, userId]);
 
@@ -718,14 +1148,12 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       
       setSecurityConfig(config);
       
-      // Cache the data
       if (userId) {
         cacheSecurityData(userId, 'securityConfig', config, 30);
       }
       
     } catch (error) {
       console.error('❌ [APISecurity] Error fetching security configuration:', error);
-      // Don't show toast for this as it's not critical
     }
   }, [authToken, userId]);
 
@@ -737,7 +1165,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       return;
     }
     
-    // Validate the rule data
     const validationErrors = validateAddRateLimitRule(newRuleData);
     if (validationErrors.length > 0) {
       showToast(`Validation errors: ${validationErrors.join(', ')}`, 'error');
@@ -750,10 +1177,8 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       
       const handledResponse = handleSecurityResponse(response);
       
-      // Refresh the rules list
       await fetchRateLimitRules();
       
-      // Reset form and close modal
       setNewRuleData({
         name: '',
         description: '',
@@ -783,7 +1208,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       return;
     }
     
-    // Validate the IP entry data
     const validationErrors = validateAddIPWhitelistEntry(newIPEntryData);
     if (validationErrors.length > 0) {
       showToast(`Validation errors: ${validationErrors.join(', ')}`, 'error');
@@ -796,10 +1220,8 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       
       const handledResponse = handleSecurityResponse(response);
       
-      // Refresh the whitelist
       await fetchIPWhitelist();
       
-      // Reset form and close modal
       setNewIPEntryData({
         name: '',
         ipRange: '',
@@ -825,7 +1247,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       return;
     }
     
-    // Validate the load balancer data
     const validationErrors = validateAddLoadBalancer(newLoadBalancerData);
     if (validationErrors.length > 0) {
       showToast(`Validation errors: ${validationErrors.join(', ')}`, 'error');
@@ -838,10 +1259,8 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       
       const handledResponse = handleSecurityResponse(response);
       
-      // Refresh the load balancers list
       await fetchLoadBalancers();
       
-      // Reset form and close modal
       setNewLoadBalancerData({
         name: '',
         algorithm: 'round_robin',
@@ -881,7 +1300,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       
       const handledResponse = handleSecurityResponse(response);
       
-      // Refresh the rules list
       await fetchRateLimitRules();
       
       showToast(`Rule status updated to ${newStatus}`, 'success');
@@ -910,7 +1328,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       
       const handledResponse = handleSecurityResponse(response);
       
-      // Refresh the rules list
       await fetchRateLimitRules();
       
       showToast('Rule deleted successfully', 'success');
@@ -919,6 +1336,123 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       console.error('❌ [APISecurity] Error deleting rule:', error);
       showToast(`Failed to delete rule: ${error.message}`, 'error');
     }
+  };
+
+  // Generate comprehensive security recommendations
+  const generateSecurityRecommendations = () => {
+    const recommendations = [];
+    
+    // Rate limit recommendations
+    if (rateLimitRules.length === 0) {
+      recommendations.push({
+        severity: 'high',
+        message: 'No rate limiting rules configured. Add rate limiting to prevent API abuse and DDoS attacks.'
+      });
+    } else {
+      const activeRules = rateLimitRules.filter(r => r.status === 'active').length;
+      if (activeRules === 0) {
+        recommendations.push({
+          severity: 'medium',
+          message: 'Rate limiting rules are configured but inactive. Activate them to protect your APIs.'
+        });
+      }
+      if (rateLimitRules.length < 3) {
+        recommendations.push({
+          severity: 'low',
+          message: 'Consider adding more granular rate limiting rules for different endpoint categories.'
+        });
+      }
+    }
+    
+    // IP whitelist recommendations
+    if (ipWhitelist.length === 0) {
+      recommendations.push({
+        severity: 'medium',
+        message: 'No IP whitelist entries configured. Consider whitelisting trusted IP ranges for sensitive endpoints.'
+      });
+    } else {
+      const activeIPs = ipWhitelist.filter(ip => ip.status === 'active').length;
+      if (activeIPs === 0) {
+        recommendations.push({
+          severity: 'medium',
+          message: 'IP whitelist entries exist but are inactive. Activate them to restrict access to trusted IPs.'
+        });
+      }
+    }
+    
+    // Load balancer recommendations
+    if (loadBalancers.length === 0) {
+      recommendations.push({
+        severity: 'low',
+        message: 'No load balancers configured. Load balancing improves availability and distributes traffic.'
+      });
+    } else {
+      loadBalancers.forEach(lb => {
+        if (lb.servers && lb.servers.length === 0) {
+          recommendations.push({
+            severity: 'high',
+            message: `Load balancer "${lb.name}" has no backend servers configured. Add servers to enable traffic distribution.`
+          });
+        }
+        const healthyServers = lb.servers?.filter(s => s.status === 'healthy').length || 0;
+        if (healthyServers === 0 && lb.servers?.length > 0) {
+          recommendations.push({
+            severity: 'critical',
+            message: `All backend servers in load balancer "${lb.name}" are unhealthy. Check server health immediately.`
+          });
+        }
+      });
+    }
+    
+    // Security events recommendations
+    const criticalEvents = securityEvents.filter(e => e.severity === 'critical' || e.severity === 'high').length;
+    if (criticalEvents > 10) {
+      recommendations.push({
+        severity: 'critical',
+        message: `${criticalEvents} critical security events detected in the last period. Investigate immediately.`
+      });
+    } else if (criticalEvents > 0) {
+      recommendations.push({
+        severity: 'high',
+        message: `${criticalEvents} high-severity security events detected. Review and take appropriate action.`
+      });
+    }
+    
+    // Security score recommendations
+    if (securitySummary.securityScore < 50) {
+      recommendations.push({
+        severity: 'critical',
+        message: `Security score is very low (${securitySummary.securityScore}%). Urgent security improvements needed.`
+      });
+    } else if (securitySummary.securityScore < 70) {
+      recommendations.push({
+        severity: 'high',
+        message: `Security score is ${securitySummary.securityScore}%. Implement recommended security measures.`
+      });
+    } else if (securitySummary.securityScore < 85) {
+      recommendations.push({
+        severity: 'medium',
+        message: `Security score is ${securitySummary.securityScore}%. Consider additional security hardening.`
+      });
+    }
+    
+    // Vulnerable endpoints recommendations
+    if (securitySummary.vulnerableEndpoints > 0) {
+      recommendations.push({
+        severity: securitySummary.vulnerableEndpoints > 5 ? 'critical' : 'high',
+        message: `${securitySummary.vulnerableEndpoints} vulnerable endpoints detected. Address vulnerabilities promptly.`
+      });
+    }
+    
+    // Blocked requests recommendations
+    if (securitySummary.blockedRequests > 1000) {
+      recommendations.push({
+        severity: 'medium',
+        message: `${securitySummary.blockedRequests.toLocaleString()} requests blocked. Review if rules need adjustment.`
+      });
+    }
+    
+    return recommendations;
   };
 
   const handleGenerateSecurityReport = async () => {
@@ -932,8 +1466,8 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     const reportRequest = {
       reportType: 'comprehensive',
       format: 'pdf',
-      startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days ago
-      endDate: new Date().toISOString().split('T')[0], // today
+      startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      endDate: new Date().toISOString().split('T')[0],
       options: {}
     };
     
@@ -950,13 +1484,33 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       console.log('📦 [APISecurity] Generate security report response:', response);
       
       const handledResponse = handleSecurityResponse(response);
-      const reportResults = extractSecurityReportResults(handledResponse);
+      let results = extractSecurityReportResults(handledResponse);
       
-      console.log('📊 [APISecurity] Security report results:', reportResults);
+      // If no recommendations from API, generate our own
+      if (!results.recommendations || results.recommendations.length === 0) {
+        results = {
+          ...results,
+          recommendations: generateSecurityRecommendations()
+        };
+      }
       
-      if (reportResults && reportResults.success) {
-        // Show the report modal with the results
-        setShowSecurityReport(true);
+      // Add stats if not present
+      if (!results.stats) {
+        results.stats = {
+          totalEvents: securityEvents.length,
+          blockedRequests: securitySummary.blockedRequests || 0,
+          throttledRequests: securitySummary.throttledRequests || 0,
+          activeRules: rateLimitRules.filter(r => r.status === 'active').length,
+          activeIPEntries: ipWhitelist.filter(ip => ip.status === 'active').length,
+          totalLoadBalancers: loadBalancers.length
+        };
+      }
+      
+      console.log('📊 [APISecurity] Security report results with recommendations:', results);
+      
+      if (results && results.success) {
+        setReportResults(results);
+        setShowSecurityReportModal(true);
         showToast('Security report generated successfully!', 'success');
       } else {
         showToast('Failed to generate security report', 'error');
@@ -970,6 +1524,180 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     }
   };
 
+  // Handle PDF download
+  const handleDownloadPDF = async () => {
+    console.log('📡 [APISecurity] Downloading PDF report...');
+    
+    if (!authToken) {
+      showToast('Authentication required', 'error');
+      return;
+    }
+    
+    if (!reportResults) {
+      showToast('No report results to download', 'error');
+      return;
+    }
+    
+    setLoading(prev => ({ ...prev, downloadingPDF: true }));
+    
+    try {
+      // Generate HTML content for PDF
+      const htmlContent = generatePDFHTML(reportResults, securitySummary, rateLimitRules, ipWhitelist, loadBalancers, securityEvents);
+      
+      // In a real application, you would send this HTML to a PDF generation service
+      // For demo purposes, we'll create a blob and trigger download
+      const blob = new Blob([htmlContent], { type: 'text/html' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `security-report-${new Date().toISOString().split('T')[0]}.html`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      showToast('Report downloaded successfully!', 'success');
+      
+    } catch (error) {
+      console.error('❌ [APISecurity] Error downloading PDF:', error);
+      showToast(`Failed to download report: ${error.message}`, 'error');
+    } finally {
+      setLoading(prev => ({ ...prev, downloadingPDF: false }));
+    }
+  };
+
+  // Generate HTML for PDF (simplified version - in production you'd use a proper PDF library)
+  const generatePDFHTML = (results, summary, rules, whitelist, balancers, events) => {
+    const recommendations = results.recommendations || generateSecurityRecommendations();
+    const stats = results.stats || {
+      totalEvents: events.length,
+      blockedRequests: summary.blockedRequests || 0,
+      throttledRequests: summary.throttledRequests || 0,
+      activeRules: rules.filter(r => r.status === 'active').length,
+      activeIPEntries: whitelist.filter(ip => ip.status === 'active').length,
+      totalLoadBalancers: balancers.length
+    };
+    
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>API Security Report</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 40px; color: #333; }
+          h1 { color: #2563eb; border-bottom: 2px solid #2563eb; padding-bottom: 10px; }
+          h2 { color: #1e293b; margin-top: 30px; }
+          .summary { background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0; }
+          .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin: 20px 0; }
+          .stat-card { background: white; padding: 15px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+          .stat-label { color: #64748b; font-size: 12px; text-transform: uppercase; }
+          .stat-value { font-size: 24px; font-weight: bold; color: #1e293b; }
+          .recommendation { padding: 15px; margin: 10px 0; border-radius: 6px; }
+          .critical { background: #fee2e2; border-left: 4px solid #dc2626; }
+          .high { background: #ffedd5; border-left: 4px solid #f97316; }
+          .medium { background: #fef9c3; border-left: 4px solid #eab308; }
+          .low { background: #e0f2fe; border-left: 4px solid #0ea5e9; }
+          .severity { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+          .table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+          .table th { background: #f1f5f9; padding: 10px; text-align: left; }
+          .table td { padding: 10px; border-bottom: 1px solid #e2e8f0; }
+          .footer { margin-top: 40px; color: #64748b; font-size: 12px; text-align: center; }
+        </style>
+      </head>
+      <body>
+        <h1>API Security Report</h1>
+        <p>Generated on: ${new Date().toLocaleString()}</p>
+        
+        <div class="summary">
+          <h2>Security Summary</h2>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">Security Score</div>
+              <div class="stat-value">${summary.securityScore}%</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Total Endpoints</div>
+              <div class="stat-value">${summary.totalEndpoints}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Vulnerable Endpoints</div>
+              <div class="stat-value">${summary.vulnerableEndpoints}</div>
+            </div>
+          </div>
+        </div>
+        
+        <h2>Security Recommendations (${recommendations.length})</h2>
+        ${recommendations.map(rec => `
+          <div class="recommendation ${rec.severity}">
+            <span class="severity" style="background: ${
+              rec.severity === 'critical' ? '#dc2626' : 
+              rec.severity === 'high' ? '#f97316' : 
+              rec.severity === 'medium' ? '#eab308' : '#0ea5e9'
+            }; color: white;">${rec.severity.toUpperCase()}</span>
+            <p style="margin-top: 10px;">${rec.message}</p>
+          </div>
+        `).join('')}
+        
+        <h2>Statistics</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Security Events</div>
+            <div class="stat-value">${stats.totalEvents}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Blocked Requests</div>
+            <div class="stat-value">${stats.blockedRequests.toLocaleString()}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Throttled Requests</div>
+            <div class="stat-value">${stats.throttledRequests.toLocaleString()}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Active Rate Limits</div>
+            <div class="stat-value">${stats.activeRules}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Active IP Whitelist</div>
+            <div class="stat-value">${stats.activeIPEntries}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Load Balancers</div>
+            <div class="stat-value">${stats.totalLoadBalancers}</div>
+          </div>
+        </div>
+        
+        ${rateLimitRules.length > 0 ? `
+          <h2>Rate Limit Rules</h2>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Endpoint</th>
+                <th>Limit</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rateLimitRules.slice(0, 5).map(rule => `
+                <tr>
+                  <td>${rule.name}</td>
+                  <td>${rule.endpoint}</td>
+                  <td>${rule.limit} req/${rule.window}</td>
+                  <td>${rule.status}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        ` : ''}
+        
+        <div class="footer">
+          <p>This report was generated by the API Security Dashboard</p>
+        </div>
+      </body>
+      </html>
+    `;
+  };
+
   const handleRunSecurityScan = async () => {
     console.log('📡 [APISecurity] Running security scan...');
     
@@ -978,24 +1706,28 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       return;
     }
     
+    setLoading(prev => ({ ...prev, scan: true }));
+    
     try {
       const response = await runSecurityScan(authToken);
       console.log('📦 [APISecurity] Security scan response:', response);
       
       const handledResponse = handleSecurityResponse(response);
-      const scanResults = extractSecurityScanResults(handledResponse);
+      const results = extractSecurityScanResults(handledResponse);
       
-      console.log('📊 [APISecurity] Security scan results:', scanResults);
+      console.log('📊 [APISecurity] Security scan results:', results);
       
-      if (scanResults && scanResults.success) {
-        // Refresh summary and events
+      if (results && results.success) {
+        setScanResults(results);
+        setShowScanModal(true);
+        
         await Promise.all([
           fetchSecuritySummary(),
           fetchSecurityEvents()
         ]);
         
-        showToast(`Security scan completed. Found ${scanResults.totalFindings} issues.`, 
-          scanResults.criticalFindings > 0 ? 'warning' : 'success');
+        showToast(`Security scan completed. Found ${results.totalFindings} issues.`, 
+          results.criticalFindings > 0 ? 'warning' : 'success');
       } else {
         showToast('Security scan failed', 'error');
       }
@@ -1003,6 +1735,8 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     } catch (error) {
       console.error('❌ [APISecurity] Error running security scan:', error);
       showToast(`Failed to run security scan: ${error.message}`, 'error');
+    } finally {
+      setLoading(prev => ({ ...prev, scan: false }));
     }
   };
 
@@ -1017,8 +1751,8 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     const exportRequest = {
       format: format || 'json',
       dataType: dataType || 'all',
-      startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 7 days ago
-      endDate: new Date().toISOString().split('T')[0], // today
+      startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      endDate: new Date().toISOString().split('T')[0],
       options: {}
     };
     
@@ -1039,7 +1773,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       
       if (exportResults && exportResults.success) {
         showToast(`Security data exported successfully as ${format.toUpperCase()}`, 'success');
-        // In a real app, you would trigger a download here
       } else {
         showToast('Failed to export security data', 'error');
       }
@@ -1050,7 +1783,35 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     }
   };
 
-  // Utility functions
+  const handleShowDetails = (item, type) => {
+    setModalDetails({ item, type });
+    setShowDetailsModal(true);
+  };
+
+  const goToPage = (page) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
+  const goToPreviousPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
+  const goToNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  const getCurrentPageItems = () => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return ipWhitelist.slice(startIndex, endIndex);
+  };
+
   const getSecurityScoreColorValue = (score) => {
     const colorClass = getSecurityScoreColor(score);
     switch(colorClass) {
@@ -1084,12 +1845,156 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     );
   };
 
+  const renderPagination = () => {
+    if (ipWhitelist.length === 0) return null;
+    
+    return (
+      <div className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: colors.border }}>
+        <div className="text-sm" style={{ color: colors.textSecondary }}>
+          Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, ipWhitelist.length)} of {ipWhitelist.length} entries
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={goToPreviousPage}
+            disabled={currentPage === 1}
+            className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: colors.hover, color: colors.text }}
+          >
+            <ChevronLeft size={16} />
+          </button>
+          
+          <div className="flex items-center gap-1">
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              let pageNum;
+              if (totalPages <= 5) {
+                pageNum = i + 1;
+              } else if (currentPage <= 3) {
+                pageNum = i + 1;
+              } else if (currentPage >= totalPages - 2) {
+                pageNum = totalPages - 4 + i;
+              } else {
+                pageNum = currentPage - 2 + i;
+              }
+              
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => goToPage(pageNum)}
+                  className={`w-8 h-8 rounded text-sm font-medium transition-colors hover-lift ${
+                    currentPage === pageNum ? 'bg-opacity-100' : 'hover:bg-opacity-50'
+                  }`}
+                  style={{ 
+                    backgroundColor: currentPage === pageNum ? colors.primaryDark : colors.hover,
+                    color: currentPage === pageNum ? colors.white : colors.text
+                  }}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
+          </div>
+          
+          <button
+            onClick={goToNextPage}
+            disabled={currentPage === totalPages}
+            className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: colors.hover, color: colors.text }}
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // Loading Overlay Component
+  const LoadingOverlay = () => {
+    // Check if any loading state is active
+    const isLoading = loading.initialLoad || 
+                     loading.rateLimits || 
+                     loading.ipWhitelist || 
+                     loading.loadBalancers || 
+                     loading.securityEvents || 
+                     loading.summary || 
+                     loading.report || 
+                     loading.scan || 
+                     loading.downloadingPDF;
+    
+    if (!isLoading) return null;
+    
+    return (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+        {/* Full-page backdrop */}
+        <div className="absolute inset-0 bg-white/95 dark:bg-gray-950/95 backdrop-blur-sm transition-colors duration-300" />
+        
+        {/* Centered Loading Content */}
+        <div className="relative flex flex-col items-center gap-6 p-8 max-w-md w-full">
+          {/* Main Spinner */}
+          <div className="relative">
+            {/* Outer ring */}
+            <div className="w-20 h-20 rounded-full border-4 border-gray-100 dark:border-gray-800 animate-pulse" />
+            
+            {/* Inner spinning ring */}
+            <div 
+              className="absolute top-0 left-0 w-20 h-20 rounded-full border-4 border-t-transparent border-l-transparent animate-spin"
+              style={{ 
+                borderColor: `${colors.primary} transparent transparent transparent`,
+                filter: 'drop-shadow(0 0 6px rgba(59, 130, 246, 0.3))'
+              }}
+            />
+            
+            {/* Center dot */}
+            <div 
+              className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
+              style={{ backgroundColor: colors.primary }}
+            />
+          </div>
+          
+          {/* Loading Text */}
+          <div className="text-center space-y-2">
+            <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
+              Loading Security Data
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {loading.initialLoad ? 'Initializing security dashboard...' :
+               loading.rateLimits ? 'Loading rate limit rules...' :
+               loading.ipWhitelist ? 'Loading IP whitelist...' :
+               loading.loadBalancers ? 'Loading load balancers...' :
+               loading.securityEvents ? 'Loading security events...' :
+               loading.summary ? 'Loading security summary...' :
+               loading.report ? 'Generating security report...' :
+               loading.scan ? 'Running security scan...' :
+               loading.downloadingPDF ? 'Preparing PDF download...' :
+               'Please wait while we load your data'}
+            </p>
+          </div>
+          
+          {/* Progress Bar */}
+          <div className="w-64 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+            <div 
+              className="h-full rounded-full animate-pulse"
+              style={{ 
+                width: '70%', 
+                backgroundColor: colors.primary,
+                opacity: 0.8
+              }}
+            />
+          </div>
+          
+          {/* Optional loading tips */}
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">
+            This won't take long
+          </p>
+        </div>
+      </div>
+    );
+  };
+
   // Render Rate Limits Tab
   const renderRateLimitsTab = () => (
     <div className="space-y-6 mt-1">
-      {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
+        <div className="space-y-2">
           <h2 className="text-lg font-semibold" style={{ color: colors.text }}>Rate Limiting Rules</h2>
           <p className="text-xs" style={{ color: colors.textSecondary }}>
             Configure request rate limits for API endpoints
@@ -1134,7 +2039,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         </div>
       )}
 
-      {/* Loading State */}
       {loading.rateLimits && rateLimitRules.length === 0 && (
         <div className="text-center py-8" style={{ color: colors.textSecondary }}>
           <RefreshCw size={24} className="animate-spin mx-auto mb-2" />
@@ -1142,15 +2046,18 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         </div>
       )}
 
-      {/* Rules Grid */}
       {!loading.rateLimits && rateLimitRules.length > 0 && (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {rateLimitRules.map(rule => (
-              <div key={rule.id} className="border rounded-lg p-4 hover-lift" style={{ 
-                borderColor: colors.border,
-                backgroundColor: colors.card
-              }}>
+              <div 
+                key={rule.id} 
+                className="border rounded-lg p-4 hover-lift" 
+                style={{ 
+                  borderColor: colors.border,
+                  backgroundColor: colors.card
+                }}
+              >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <div className={`w-2 h-2 rounded-full ${
@@ -1159,14 +2066,31 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                     <h3 className="text-sm font-semibold" style={{ color: colors.text }}>{rule.name}</h3>
                   </div>
                   <div className="flex gap-1">
-                    <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                      onClick={() => handleUpdateRuleStatus(rule.id, 
-                        rule.status === 'active' ? 'inactive' : 'active')}
+                    <button 
+                      className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEditRateLimitRule(rule);
+                      }}
                       style={{ backgroundColor: colors.hover }}>
                       <Edit2 size={12} style={{ color: colors.textSecondary }} />
                     </button>
-                    <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                      onClick={() => handleDeleteRule(rule.id)}
+                    <button 
+                      className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleUpdateRuleStatus(rule.id, 
+                          rule.status === 'active' ? 'inactive' : 'active');
+                      }}
+                      style={{ backgroundColor: colors.hover }}>
+                      <Power size={12} style={{ color: rule.status === 'active' ? colors.success : colors.error }} />
+                    </button>
+                    <button 
+                      className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteRule(rule.id);
+                      }}
                       style={{ backgroundColor: colors.hover }}>
                       <Trash2 size={12} style={{ color: colors.error }} />
                     </button>
@@ -1207,7 +2131,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
             ))}
           </div>
 
-          {/* Statistics */}
           <div className="border rounded-lg p-6" style={{ 
             borderColor: colors.border,
             backgroundColor: colors.card
@@ -1276,241 +2199,276 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   );
 
   // Render IP Whitelist Tab
-  const renderIPWhitelistTab = () => (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold" style={{ color: colors.text }}>IP Whitelisting</h2>
-          <p className="text-sm" style={{ color: colors.textSecondary }}>
-            Manage IP addresses and ranges allowed to access your APIs
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={fetchIPWhitelist}
-            disabled={loading.ipWhitelist}
-            className="px-3 py-1.5 rounded text-xs font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift disabled:opacity-50"
-            style={{ backgroundColor: colors.hover, color: colors.text }}>
-            <RefreshCw size={12} className={loading.ipWhitelist ? 'animate-spin' : ''} />
-            Refresh
-          </button>
-          <button 
-            onClick={() => setShowIPWhitelistModal(true)}
-            className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 hover-lift"
-            style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
-            <Plus size={14} />
-            Add IP Range
-          </button>
-        </div>
-      </div>
-
-      {error.ipWhitelist && (
-        <div className="p-4 rounded-lg" style={{ 
-          backgroundColor: colors.error + '10',
-          border: `1px solid ${colors.error}20`
-        }}>
+  const renderIPWhitelistTab = () => {
+    const currentItems = getCurrentPageItems();
+    
+    return (
+      <div className="space-y-8">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <h2 className="text-lg font-semibold" style={{ color: colors.text }}>IP Whitelisting</h2>
+            <p className="text-xs" style={{ color: colors.textSecondary }}>
+              Manage IP addresses and ranges allowed to access your APIs
+            </p>
+          </div>
           <div className="flex items-center gap-2">
-            <AlertCircle size={16} style={{ color: colors.error }} />
-            <span className="text-sm" style={{ color: colors.error }}>
-              Error loading IP whitelist: {error.ipWhitelist}
-            </span>
+            <button 
+              onClick={fetchIPWhitelist}
+              disabled={loading.ipWhitelist}
+              className="px-3 py-1.5 rounded text-xs font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift disabled:opacity-50"
+              style={{ backgroundColor: colors.hover, color: colors.text }}>
+              <RefreshCw size={12} className={loading.ipWhitelist ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+            <button 
+              onClick={() => setShowIPWhitelistModal(true)}
+              className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 hover-lift"
+              style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
+              <Plus size={14} />
+              Add IP Range
+            </button>
           </div>
-          <button 
-            onClick={fetchIPWhitelist}
-            className="mt-2 px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors"
-            style={{ backgroundColor: colors.error, color: colors.white }}>
-            Retry
-          </button>
         </div>
-      )}
 
-      {/* Loading State */}
-      {loading.ipWhitelist && ipWhitelist.length === 0 && (
-        <div className="text-center py-8" style={{ color: colors.textSecondary }}>
-          <RefreshCw size={24} className="animate-spin mx-auto mb-2" />
-          <p>Loading IP whitelist...</p>
-        </div>
-      )}
-
-      {/* IP Whitelist Table */}
-      {!loading.ipWhitelist && ipWhitelist.length > 0 && (
-        <>
-          <div className="border rounded-lg overflow-hidden" style={{ 
-            borderColor: colors.border,
-            backgroundColor: colors.card
+        {error.ipWhitelist && (
+          <div className="p-4 rounded-lg" style={{ 
+            backgroundColor: colors.error + '10',
+            border: `1px solid ${colors.error}20`
           }}>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead style={{ backgroundColor: colors.tableHeader }}>
-                  <tr>
-                    <th className="text-left p-4 text-sm font-medium" style={{ color: colors.textSecondary }}>Name</th>
-                    <th className="text-left p-4 text-sm font-medium" style={{ color: colors.textSecondary }}>IP Range</th>
-                    <th className="text-left p-4 text-sm font-medium" style={{ color: colors.textSecondary }}>Endpoints</th>
-                    <th className="text-left p-4 text-sm font-medium" style={{ color: colors.textSecondary }}>Status</th>
-                    <th className="text-left p-4 text-sm font-medium" style={{ color: colors.textSecondary }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ipWhitelist.map((item, index) => (
-                    <tr 
-                      key={item.id}
-                      className="hover:bg-opacity-50 transition-colors"
-                      style={{ 
-                        backgroundColor: index % 2 === 0 ? colors.tableRow : colors.tableRowHover,
-                        borderBottom: `1px solid ${colors.border}`
-                      }}
-                    >
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <Globe size={14} style={{ color: colors.textSecondary }} />
-                          <span className="text-sm font-medium" style={{ color: colors.text }}>{item.name}</span>
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <div className="text-sm font-mono" style={{ color: colors.text }}>{item.ipRange}</div>
-                        <div className="text-xs" style={{ color: colors.textSecondary }}>{item.description}</div>
-                      </td>
-                      <td className="p-4">
-                        <div className="text-sm font-mono truncate" style={{ color: colors.text }}>{item.endpoints}</div>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full ${
-                            item.status === 'active' ? 'bg-green-500' : 'bg-red-500'
-                          }`} />
-                          <span className={`text-xs px-2 py-1 rounded ${
-                            item.status === 'active' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
-                          }`}>
-                            {item.status}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                            onClick={() => showToast(`Editing ${item.name}`, 'info')}
-                            style={{ backgroundColor: colors.hover }}>
-                            <Edit2 size={12} style={{ color: colors.textSecondary }} />
-                          </button>
-                          <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                            onClick={() => showToast(`Deleting ${item.name}`, 'info')}
-                            style={{ backgroundColor: colors.hover }}>
-                            <Trash2 size={12} style={{ color: colors.error }} />
-                          </button>
-                        </div>
-                      </td>
+            <div className="flex items-center gap-2">
+              <AlertCircle size={16} style={{ color: colors.error }} />
+              <span className="text-sm" style={{ color: colors.error }}>
+                Error loading IP whitelist: {error.ipWhitelist}
+              </span>
+            </div>
+            <button 
+              onClick={fetchIPWhitelist}
+              className="mt-2 px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors"
+              style={{ backgroundColor: colors.error, color: colors.white }}>
+              Retry
+            </button>
+          </div>
+        )}
+
+        {loading.ipWhitelist && ipWhitelist.length === 0 && (
+          <div className="text-center py-8" style={{ color: colors.textSecondary }}>
+            <RefreshCw size={24} className="animate-spin mx-auto mb-2" />
+            <p>Loading IP whitelist...</p>
+          </div>
+        )}
+
+        {!loading.ipWhitelist && ipWhitelist.length > 0 && (
+          <>
+            <div className="border rounded-lg overflow-hidden" style={{ 
+              borderColor: colors.border,
+              backgroundColor: colors.card
+            }}>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead style={{ backgroundColor: colors.tableHeader }}>
+                    <tr>
+                      <th className="text-left p-4 text-sm font-medium" style={{ color: colors.textSecondary }}>#</th>
+                      <th className="text-left p-4 text-sm font-medium" style={{ color: colors.textSecondary }}>Name</th>
+                      <th className="text-left p-4 text-sm font-medium" style={{ color: colors.textSecondary }}>IP Range</th>
+                      <th className="text-left p-4 text-sm font-medium" style={{ color: colors.textSecondary }}>Endpoints</th>
+                      <th className="text-left p-4 text-sm font-medium" style={{ color: colors.textSecondary }}>Status</th>
+                      <th className="text-left p-4 text-sm font-medium" style={{ color: colors.textSecondary }}>Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {currentItems.map((item, index) => {
+                      const actualIndex = ((currentPage - 1) * itemsPerPage) + index;
+                      return (
+                        <tr 
+                          key={item.id}
+                          className="hover:bg-opacity-50 transition-colors cursor-pointer"
+                          onClick={() => handleShowDetails(item, 'ip-whitelist')}
+                          style={{ 
+                            backgroundColor: actualIndex % 2 === 0 ? colors.tableRow : colors.tableRowHover,
+                            borderBottom: `1px solid ${colors.border}`
+                          }}
+                        >
+                          <td className="p-4">
+                            <div className="text-sm font-mono truncate" style={{ color: colors.text }}>{actualIndex + 1}</div>
+                          </td>
+                          <td className="p-4">
+                            <div className="flex items-center gap-2">
+                              <Globe size={14} style={{ color: colors.textSecondary }} />
+                              <span className="text-sm font-medium" style={{ color: colors.text }}>{item.name}</span>
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <div className="text-sm font-mono" style={{ color: colors.text }}>{item.ipRange}</div>
+                            <div className="text-xs" style={{ color: colors.textSecondary }}>{item.description}</div>
+                          </td>
+                          <td className="p-4">
+                            <div className="text-sm font-mono truncate" style={{ color: colors.text }}>
+                              {Array.isArray(item.endpoints) ? item.endpoints.join(', ') : item.endpoints}
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <div className="flex items-center gap-2">
+                              <div className={`w-2 h-2 rounded-full ${
+                                item.status === 'active' ? 'bg-green-500' : 'bg-red-500'
+                              }`} />
+                              <span className={`text-xs px-2 py-1 rounded ${
+                                item.status === 'active' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
+                              }`}>
+                                {item.status}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center gap-2">
+                              <button 
+                                className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditIPWhitelistEntry(item);
+                                }}
+                                style={{ backgroundColor: colors.hover }}
+                                disabled={loading.togglingIP}
+                              >
+                                <Edit2 size={12} style={{ color: colors.textSecondary }} />
+                              </button>
+                              
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleIPWhitelistStatus(item);
+                                }}
+                                disabled={loading.togglingIP}
+                                className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50"
+                                style={{
+                                  backgroundColor: item.status === 'active' ? colors.success : colors.error,
+                                  opacity: 0.8
+                                }}
+                              >
+                                <span
+                                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                    item.status === 'active' ? 'translate-x-5' : 'translate-x-0.5'
+                                  }`}
+                                />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              
+              {renderPagination()}
             </div>
-          </div>
 
-          {/* IP Analysis */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="border rounded-lg p-6 hover-lift" style={{ 
-              borderColor: colors.border,
-              backgroundColor: colors.card
-            }}>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 rounded" style={{ backgroundColor: `${colors.info}20` }}>
-                  <Shield size={20} style={{ color: colors.info }} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold" style={{ color: colors.text }}>IP Security Status</h3>
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Current whitelist coverage</div>
-                </div>
-              </div>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm" style={{ color: colors.textSecondary }}>Total IP Ranges</span>
-                  <span className="text-sm font-semibold" style={{ color: colors.text }}>{ipWhitelist.length}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm" style={{ color: colors.textSecondary }}>Active Ranges</span>
-                  <span className="text-sm font-semibold" style={{ color: colors.success }}>
-                    {ipWhitelist.filter(ip => ip.status === 'active').length}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm" style={{ color: colors.textSecondary }}>Protected Endpoints</span>
-                  <span className="text-sm font-semibold" style={{ color: colors.text }}>
-                    {getEndpointProtectionPercentage(securitySummary)}%
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="border rounded-lg p-6 hover-lift" style={{ 
-              borderColor: colors.border,
-              backgroundColor: colors.card
-            }}>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 rounded" style={{ backgroundColor: `${colors.success}20` }}>
-                  <Activity size={20} style={{ color: colors.success }} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Recent IP Blocks</h3>
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Last 24 hours</div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {securityEvents
-                  .filter(event => event.type === 'ip_blocked')
-                  .slice(0, 3)
-                  .map((event, index) => (
-                    <div key={index} className="flex items-center justify-between p-2 rounded hover-lift cursor-pointer"
-                      style={{ backgroundColor: colors.hover }}
-                      onClick={() => showToast(`Viewing details for ${event.sourceIp}`, 'info')}>
-                      <div>
-                        <div className="text-xs font-medium" style={{ color: colors.text }}>{event.sourceIp}</div>
-                        <div className="text-xs" style={{ color: colors.textSecondary }}>{event.endpoint}</div>
-                      </div>
-                      <span className="text-xs px-2 py-1 rounded-full" style={{ 
-                        backgroundColor: colors.error + '20',
-                        color: colors.error
-                      }}>
-                        Blocked
-                      </span>
-                    </div>
-                  ))}
-                {securityEvents.filter(event => event.type === 'ip_blocked').length === 0 && (
-                  <div className="text-center py-4" style={{ color: colors.textSecondary }}>
-                    No IP blocks in the last 24 hours
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="border rounded-lg p-6 hover-lift cursor-pointer" 
+                onClick={() => handleShowDetails({ title: 'IP Security Status' }, 'stats')}
+                style={{ 
+                  borderColor: colors.border,
+                  backgroundColor: colors.card
+                }}>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 rounded" style={{ backgroundColor: `${colors.info}20` }}>
+                    <Shield size={20} style={{ color: colors.info }} />
                   </div>
-                )}
+                  <div>
+                    <h3 className="text-sm font-semibold" style={{ color: colors.text }}>IP Security Status</h3>
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>Current whitelist coverage</div>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm" style={{ color: colors.textSecondary }}>Total IP Ranges</span>
+                    <span className="text-sm font-semibold" style={{ color: colors.text }}>{ipWhitelist.length}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm" style={{ color: colors.textSecondary }}>Active Ranges</span>
+                    <span className="text-sm font-semibold" style={{ color: colors.success }}>
+                      {ipWhitelist.filter(ip => ip.status === 'active').length}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm" style={{ color: colors.textSecondary }}>Protected Endpoints</span>
+                    <span className="text-sm font-semibold" style={{ color: colors.text }}>
+                      {getEndpointProtectionPercentage(securitySummary)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border rounded-lg p-6 hover-lift cursor-pointer" 
+                onClick={() => handleShowDetails({ title: 'Recent IP Blocks' }, 'stats')}
+                style={{ 
+                  borderColor: colors.border,
+                  backgroundColor: colors.card
+                }}>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 rounded" style={{ backgroundColor: `${colors.success}20` }}>
+                    <Activity size={20} style={{ color: colors.success }} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Recent IP Blocks</h3>
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>Last 24 hours</div>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {securityEvents
+                    .filter(event => event.type === 'ip_blocked')
+                    .slice(0, 3)
+                    .map((event, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 rounded hover-lift cursor-pointer"
+                        style={{ backgroundColor: colors.hover }}
+                        onClick={() => handleShowDetails(event, 'event')}>
+                        <div>
+                          <div className="text-xs font-medium" style={{ color: colors.text }}>{event.sourceIp}</div>
+                          <div className="text-xs" style={{ color: colors.textSecondary }}>{event.endpoint}</div>
+                        </div>
+                        <span className="text-xs px-2 py-1 rounded-full" style={{ 
+                          backgroundColor: colors.error + '20',
+                          color: colors.error
+                        }}>
+                          Blocked
+                        </span>
+                      </div>
+                    ))}
+                  {securityEvents.filter(event => event.type === 'ip_blocked').length === 0 && (
+                    <div className="text-center py-4" style={{ color: colors.textSecondary }}>
+                      No IP blocks in the last 24 hours
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        </>
-      )}
+          </>
+        )}
 
-      {!loading.ipWhitelist && ipWhitelist.length === 0 && !error.ipWhitelist && (
-        <div className="text-center py-12" style={{ color: colors.textSecondary }}>
-          <Globe size={48} className="mx-auto mb-4 opacity-50" />
-          <h3 className="text-lg font-medium mb-2" style={{ color: colors.text }}>No IP Whitelist Entries</h3>
-          <p className="mb-4">You haven't configured any IP whitelist entries yet.</p>
-          <button 
-            onClick={() => setShowIPWhitelistModal(true)}
-            className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 mx-auto hover-lift"
-            style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
-            <Plus size={14} />
-            Add Your First IP Range
-          </button>
-        </div>
-      )}
-    </div>
-  );
+        {!loading.ipWhitelist && ipWhitelist.length === 0 && !error.ipWhitelist && (
+          <div className="text-center py-12" style={{ color: colors.textSecondary }}>
+            <Globe size={48} className="mx-auto mb-4 opacity-50" />
+            <h3 className="text-lg font-medium mb-2" style={{ color: colors.text }}>No IP Whitelist Entries</h3>
+            <p className="mb-4">You haven't configured any IP whitelist entries yet.</p>
+            <button 
+              onClick={() => setShowIPWhitelistModal(true)}
+              className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 mx-auto hover-lift"
+              style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
+              <Plus size={14} />
+              Add Your First IP Range
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Render Load Balancers Tab
   const renderLoadBalancersTab = () => (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold" style={{ color: colors.text }}>Load Balancers</h2>
-          <p className="text-sm" style={{ color: colors.textSecondary }}>
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold" style={{ color: colors.text }}>Load Balancers</h2>
+          <p className="text-xs" style={{ color: colors.textSecondary }}>
             Manage API load balancing and traffic distribution
           </p>
         </div>
@@ -1553,7 +2511,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         </div>
       )}
 
-      {/* Loading State */}
       {loading.loadBalancers && loadBalancers.length === 0 && (
         <div className="text-center py-8" style={{ color: colors.textSecondary }}>
           <RefreshCw size={24} className="animate-spin mx-auto mb-2" />
@@ -1561,15 +2518,19 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         </div>
       )}
 
-      {/* Load Balancers Grid */}
       {!loading.loadBalancers && loadBalancers.length > 0 && (
         <>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {loadBalancers.map(lb => (
-              <div key={lb.id} className="border rounded-lg p-6 hover-lift" style={{ 
-                borderColor: colors.border,
-                backgroundColor: colors.card
-              }}>
+              <div 
+                key={lb.id} 
+                className="border rounded-lg p-6 hover-lift cursor-pointer" 
+                onClick={() => handleShowDetails(lb, 'load-balancer')}
+                style={{ 
+                  borderColor: colors.border,
+                  backgroundColor: colors.card
+                }}
+              >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <div className="p-2 rounded" style={{ backgroundColor: `${colors.success}20` }}>
@@ -1591,7 +2552,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                   </div>
                 </div>
 
-                {/* Health Check */}
                 {lb.healthCheck && (
                   <div className="mb-6 p-3 rounded-lg" style={{ backgroundColor: colors.hover }}>
                     <div className="flex items-center justify-between mb-2">
@@ -1612,14 +2572,13 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                   </div>
                 )}
 
-                {/* Server List */}
                 <div className="space-y-3">
                   <div className="text-sm font-medium" style={{ color: colors.text }}>Backend Servers</div>
                   {lb.servers && lb.servers.length > 0 ? (
                     lb.servers.map(server => (
                       <div key={server.id} className="flex items-center justify-between p-3 rounded-lg hover-lift cursor-pointer"
                         style={{ backgroundColor: colors.hover }}
-                        onClick={() => showToast(`Viewing ${server.name} details`, 'info')}>
+                        onClick={() => handleShowDetails(server, 'server')}>
                         <div className="flex items-center gap-3">
                           <div className={`w-2 h-2 rounded-full ${
                             server.status === 'healthy' ? 'bg-green-500' :
@@ -1643,7 +2602,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                   )}
                 </div>
 
-                {/* Stats */}
                 <div className="mt-6 pt-4 border-t flex items-center justify-between" style={{ borderColor: colors.border }}>
                   <div>
                     <div className="text-xs" style={{ color: colors.textSecondary }}>Total Connections</div>
@@ -1662,11 +2620,12 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
             ))}
           </div>
 
-          {/* Load Balancer Stats */}
-          <div className="border rounded-lg p-6" style={{ 
-            borderColor: colors.border,
-            backgroundColor: colors.card
-          }}>
+          <div className="border rounded-lg p-6 cursor-pointer hover-lift" 
+            onClick={() => handleShowDetails({ title: 'Load Balancing Performance' }, 'stats')}
+            style={{ 
+              borderColor: colors.border,
+              backgroundColor: colors.card
+            }}>
             <h3 className="text-lg font-semibold mb-4" style={{ color: colors.text }}>Load Balancing Performance</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
@@ -1710,12 +2669,11 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
 
   // Render Security Events Tab
   const renderSecurityEventsTab = () => (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold" style={{ color: colors.text }}>Security Events</h2>
-          <p className="text-sm" style={{ color: colors.textSecondary }}>
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold" style={{ color: colors.text }}>Security Events</h2>
+          <p className="text-xs" style={{ color: colors.textSecondary }}>
             Monitor and analyze security events in real-time
           </p>
         </div>
@@ -1758,7 +2716,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         </div>
       )}
 
-      {/* Loading State */}
       {loading.securityEvents && securityEvents.length === 0 && (
         <div className="text-center py-8" style={{ color: colors.textSecondary }}>
           <RefreshCw size={24} className="animate-spin mx-auto mb-2" />
@@ -1766,7 +2723,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         </div>
       )}
 
-      {/* Security Events Table */}
       {!loading.securityEvents && securityEvents.length > 0 && (
         <>
           <div className="border rounded-lg overflow-hidden" style={{ 
@@ -1790,7 +2746,7 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                     <tr 
                       key={event.id || index}
                       className="hover:bg-opacity-50 transition-colors cursor-pointer"
-                      onClick={() => showToast(`Viewing event ${event.id || 'details'}`, 'info')}
+                      onClick={() => handleShowDetails(event, 'event')}
                       style={{ 
                         backgroundColor: index % 2 === 0 ? colors.tableRow : colors.tableRowHover,
                         borderBottom: `1px solid ${colors.border}`
@@ -1853,12 +2809,13 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
             </div>
           </div>
 
-          {/* Security Insights */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="border rounded-lg p-6 hover-lift" style={{ 
-              borderColor: colors.border,
-              backgroundColor: colors.card
-            }}>
+            <div className="border rounded-lg p-6 hover-lift cursor-pointer" 
+              onClick={() => handleShowDetails({ title: 'Threat Level' }, 'stats')}
+              style={{ 
+                borderColor: colors.border,
+                backgroundColor: colors.card
+              }}>
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-2 rounded" style={{ backgroundColor: `${colors.error}20` }}>
                   <AlertTriangle size={20} style={{ color: colors.error }} />
@@ -1879,10 +2836,12 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               </div>
             </div>
 
-            <div className="border rounded-lg p-6 hover-lift" style={{ 
-              borderColor: colors.border,
-              backgroundColor: colors.card
-            }}>
+            <div className="border rounded-lg p-6 hover-lift cursor-pointer" 
+              onClick={() => handleShowDetails({ title: 'Event Trends' }, 'stats')}
+              style={{ 
+                borderColor: colors.border,
+                backgroundColor: colors.card
+              }}>
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-2 rounded" style={{ backgroundColor: `${colors.info}20` }}>
                   <BarChart3 size={20} style={{ color: colors.info }} />
@@ -1919,10 +2878,12 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               </div>
             </div>
 
-            <div className="border rounded-lg p-6 hover-lift" style={{ 
-              borderColor: colors.border,
-              backgroundColor: colors.card
-            }}>
+            <div className="border rounded-lg p-6 hover-lift cursor-pointer" 
+              onClick={() => handleShowDetails({ title: 'Security Score' }, 'stats')}
+              style={{ 
+                borderColor: colors.border,
+                backgroundColor: colors.card
+              }}>
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-2 rounded" style={{ backgroundColor: `${colors.success}20` }}>
                   <ShieldCheck size={20} style={{ color: colors.success }} />
@@ -1970,7 +2931,7 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       backgroundColor: colors.sidebar
     }}>
       <div className="mb-6">
-        <div className="space-y-1">
+        <div className="space-y-4">
           {[
             { id: 'ip-whitelist', label: 'IP Whitelist', icon: <Globe size={16} /> },
             { id: 'rate-limits', label: 'Rate Limits', icon: <Filter size={16} /> },
@@ -1996,11 +2957,12 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         </div>
       </div>
 
-      {/* Security Summary */}
-      <div className="border rounded-lg p-4 mb-6" style={{ 
-        borderColor: colors.border,
-        backgroundColor: colors.card
-      }}>
+      <div className="border rounded-lg p-4 mb-6 cursor-pointer hover-lift" 
+        onClick={() => handleShowDetails({ title: 'Security Summary' }, 'stats')}
+        style={{ 
+          borderColor: colors.border,
+          backgroundColor: colors.card
+        }}>
         <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Security Summary</h3>
         {loading.summary ? (
           <div className="text-center py-4">
@@ -2044,10 +3006,9 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         )}
       </div>
 
-      {/* Quick Actions */}
       <div>
         <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Quick Actions</h3>
-        <div className="space-y-2">
+        <div className="space-y-4">
           <button 
             onClick={handleGenerateSecurityReport}
             disabled={loading.report}
@@ -2058,10 +3019,11 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
           </button>
           <button 
             onClick={handleRunSecurityScan}
-            className="w-full text-left px-3 py-2 rounded flex items-center gap-3 text-sm hover-lift"
+            disabled={loading.scan}
+            className="w-full text-left px-3 py-2 rounded flex items-center gap-3 text-sm hover-lift disabled:opacity-50"
             style={{ backgroundColor: colors.hover, color: colors.text }}>
             <ShieldCheck size={14} />
-            Run Security Scan
+            {loading.scan ? 'Scanning...' : 'Run Security Scan'}
           </button>
           <button 
             onClick={() => {
@@ -2080,7 +3042,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         </div>
       </div>
 
-      {/* Unread Alerts */}
       {securityAlerts.length > 0 && (
         <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
           <div className="flex items-center justify-between mb-2">
@@ -2099,7 +3060,7 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                 onClick={() => {
                   const updatedAlerts = markAlertAsRead(securityAlerts, alert.id);
                   setSecurityAlerts(updatedAlerts);
-                  showToast('Alert marked as read', 'success');
+                  handleShowDetails(alert, 'alert');
                 }}>
                 <div className={`w-1.5 h-1.5 rounded-full ${!alert.read ? 'bg-red-500' : 'bg-green-500'}`} />
                 <span className="truncate" style={{ color: colors.textSecondary }}>{alert.message}</span>
@@ -2111,7 +3072,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     </div>
   );
 
-  // Render Main Content based on active tab
   const renderMainContent = () => {
     switch (activeTab) {
       case 'rate-limits':
@@ -2130,10 +3090,10 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   // Add Rule Modal
   const renderAddRuleModal = () => (
     showAddRuleModal && (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div className="border rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto" style={{ 
           borderColor: colors.modalBorder,
-          backgroundColor: colors.modalBg
+          backgroundColor: colors.bg
         }}>
           <div className="p-6">
             <div className="flex items-center justify-between mb-6">
@@ -2147,7 +3107,207 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               </button>
             </div>
             
-            <div className="space-y-4">
+            <div className="space-y-8">
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Rule Name *</label>
+                <input 
+                  type="text" 
+                  value={newRuleData.name}
+                  onChange={(e) => setNewRuleData({...newRuleData, name: e.target.value})}
+                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
+                  style={{ 
+                    backgroundColor: colors.inputBg,
+                    border: `1px solid ${colors.inputBorder}`,
+                    color: colors.text
+                  }}
+                  placeholder="e.g., API Rate Limit for Public Endpoints"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Description</label>
+                <input 
+                  type="text" 
+                  value={newRuleData.description}
+                  onChange={(e) => setNewRuleData({...newRuleData, description: e.target.value})}
+                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
+                  style={{ 
+                    backgroundColor: colors.inputBg,
+                    border: `1px solid ${colors.inputBorder}`,
+                    color: colors.text
+                  }}
+                  placeholder="Optional description"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Endpoint Pattern *</label>
+                <input 
+                  type="text" 
+                  value={newRuleData.endpoint}
+                  onChange={(e) => setNewRuleData({...newRuleData, endpoint: e.target.value})}
+                  className="w-full px-3 py-2 rounded-lg text-sm font-mono focus:outline-none"
+                  style={{ 
+                    backgroundColor: colors.inputBg,
+                    border: `1px solid ${colors.inputBorder}`,
+                    color: colors.text
+                  }}
+                  placeholder="/api/v1/**"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>HTTP Method *</label>
+                <select 
+                  value={newRuleData.method}
+                  onChange={(e) => setNewRuleData({...newRuleData, method: e.target.value})}
+                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
+                  style={{ 
+                    backgroundColor: colors.bg,
+                    border: `1px solid ${colors.inputBorder}`,
+                    color: colors.text
+                  }}
+                >
+                  <option value="ALL">ALL Methods</option>
+                  <option value="GET">GET</option>
+                  <option value="POST">POST</option>
+                  <option value="PUT">PUT</option>
+                  <option value="DELETE">DELETE</option>
+                  <option value="PATCH">PATCH</option>
+                </select>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Limit *</label>
+                  <input 
+                    type="number" 
+                    value={newRuleData.limit}
+                    onChange={(e) => setNewRuleData({...newRuleData, limit: parseInt(e.target.value) || 100})}
+                    className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
+                    style={{ 
+                      backgroundColor: colors.inputBg,
+                      border: `1px solid ${colors.inputBorder}`,
+                      color: colors.text
+                    }}
+                    placeholder="100"
+                    min="1"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Window *</label>
+                  <select 
+                    value={newRuleData.window}
+                    onChange={(e) => setNewRuleData({...newRuleData, window: e.target.value})}
+                    className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
+                    style={{ 
+                      backgroundColor: colors.inputBg,
+                      border: `1px solid ${colors.inputBorder}`,
+                      color: colors.text
+                    }}
+                  >
+                    <option value="1s">1 Second</option>
+                    <option value="10s">10 Seconds</option>
+                    <option value="1m">1 Minute</option>
+                    <option value="5m">5 Minutes</option>
+                    <option value="1h">1 Hour</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Burst Limit</label>
+                <input 
+                  type="number" 
+                  value={newRuleData.burst}
+                  onChange={(e) => setNewRuleData({...newRuleData, burst: parseInt(e.target.value) || 20})}
+                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
+                  style={{ 
+                    backgroundColor: colors.inputBg,
+                    border: `1px solid ${colors.inputBorder}`,
+                    color: colors.text
+                  }}
+                  placeholder="20"
+                  min="0"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Action *</label>
+                <select 
+                  value={newRuleData.action}
+                  onChange={(e) => setNewRuleData({...newRuleData, action: e.target.value})}
+                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
+                  style={{ 
+                    backgroundColor: colors.inputBg,
+                    border: `1px solid ${colors.inputBorder}`,
+                    color: colors.text
+                  }}
+                >
+                  <option value="throttle">Throttle (429)</option>
+                  <option value="block">Block (403)</option>
+                  <option value="log">Log Only</option>
+                </select>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-end gap-3 mt-8">
+              <button 
+                onClick={() => setShowAddRuleModal(false)}
+                className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleAddRateLimitRule}
+                className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+              >
+                Add Rule
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  );
+
+  // Edit Rule Modal
+  const renderEditRuleModal = () => (
+    showEditRuleModal && (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="border rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto" style={{ 
+          borderColor: colors.modalBorder,
+          backgroundColor: colors.bg
+        }}>
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-semibold" style={{ color: colors.text }}>Edit Rate Limit Rule</h3>
+              <button 
+                onClick={() => {
+                  setShowEditRuleModal(false);
+                  setEditingRule(null);
+                  setNewRuleData({
+                    name: '',
+                    description: '',
+                    endpoint: '',
+                    method: 'GET',
+                    limit: 100,
+                    window: '1m',
+                    burst: 20,
+                    action: 'throttle',
+                    options: {}
+                  });
+                }}
+                className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                style={{ backgroundColor: colors.hover }}
+              >
+                <X size={20} style={{ color: colors.text }} />
+              </button>
+            </div>
+            
+            <div className="space-y-8">
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Rule Name *</label>
                 <input 
@@ -2293,18 +3453,33 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
             
             <div className="flex items-center justify-end gap-3 mt-8">
               <button 
-                onClick={() => setShowAddRuleModal(false)}
+                onClick={() => {
+                  setShowEditRuleModal(false);
+                  setEditingRule(null);
+                  setNewRuleData({
+                    name: '',
+                    description: '',
+                    endpoint: '',
+                    method: 'GET',
+                    limit: 100,
+                    window: '1m',
+                    burst: 20,
+                    action: 'throttle',
+                    options: {}
+                  });
+                }}
                 className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover, color: colors.text }}
               >
                 Cancel
               </button>
               <button 
-                onClick={handleAddRateLimitRule}
-                className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                onClick={handleUpdateRateLimitRule}
+                disabled={loading.rateLimits}
+                className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift disabled:opacity-50"
                 style={{ backgroundColor: colors.primaryDark, color: colors.white }}
               >
-                Add Rule
+                {loading.rateLimits ? 'Updating...' : 'Update Rule'}
               </button>
             </div>
           </div>
@@ -2316,10 +3491,10 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   // Add IP Whitelist Modal
   const renderIPWhitelistModal = () => (
     showIPWhitelistModal && (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div className="border rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto" style={{ 
-          borderColor: colors.bg,
-          backgroundColor: colors.modalBg
+          borderColor: colors.modalBorder,
+          backgroundColor: colors.bg
         }}>
           <div className="p-6">
             <div className="flex items-center justify-between mb-6">
@@ -2333,7 +3508,7 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               </button>
             </div>
             
-            <div className="space-y-4">
+            <div className="space-y-8">
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Entry Name *</label>
                 <input 
@@ -2364,9 +3539,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                   }}
                   placeholder="192.168.1.0/24 or 10.0.0.1"
                 />
-                <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
-                  Format: 192.168.1.0/24 or single IP: 10.0.0.1
-                </div>
               </div>
               
               <div>
@@ -2427,10 +3599,10 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   // Add Load Balancer Modal
   const renderLoadBalancerModal = () => (
     showLoadBalancerModal && (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div className="border rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto" style={{ 
           borderColor: colors.modalBorder,
-          backgroundColor: colors.modalBg
+          backgroundColor: colors.bg
         }}>
           <div className="p-6">
             <div className="flex items-center justify-between mb-6">
@@ -2444,7 +3616,7 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               </button>
             </div>
             
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Name *</label>
                 <input 
@@ -2468,8 +3640,8 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                   onChange={(e) => setNewLoadBalancerData({...newLoadBalancerData, algorithm: e.target.value})}
                   className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
                   style={{ 
-                    backgroundColor: colors.inputBg,
-                    border: `1px solid ${colors.inputBorder}`,
+                    backgroundColor: colors.bg,
+                    border: `1px ${colors.inputBorder}`,
                     color: colors.text
                   }}
                 >
@@ -2538,19 +3710,19 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     )
   );
 
-  // Security Report Modal
-  const renderSecurityReportModal = () => (
-    showSecurityReport && (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+  // Security Scan Modal
+  const renderScanModal = () => (
+    showScanModal && scanResults && (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div className="border rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto" style={{ 
           borderColor: colors.modalBorder,
-          backgroundColor: colors.modalBg
+          backgroundColor: colors.bg
         }}>
           <div className="p-6">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold" style={{ color: colors.text }}>Security Report</h3>
+              <h3 className="text-lg font-semibold" style={{ color: colors.text }}>Security Scan Results</h3>
               <button 
-                onClick={() => setShowSecurityReport(false)}
+                onClick={() => setShowScanModal(false)}
                 className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover }}
               >
@@ -2558,7 +3730,131 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               </button>
             </div>
             
-            <div className="space-y-6">
+            <div className="space-y-8">
+              <div className="p-4 rounded-lg" style={{ backgroundColor: colors.hover }}>
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <div className="text-sm font-semibold" style={{ color: colors.text }}>Scan Summary</div>
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>
+                      Completed on {new Date().toLocaleString()}
+                    </div>
+                  </div>
+                  <div className={`px-3 py-1 rounded-full ${
+                    scanResults.criticalFindings > 0 ? 'bg-red-500/20 text-red-500' : 
+                    scanResults.warningFindings > 0 ? 'bg-yellow-500/20 text-yellow-500' : 
+                    'bg-green-500/20 text-green-500'
+                  }`}>
+                    <span className="text-xs font-medium">
+                      {scanResults.criticalFindings > 0 ? 'CRITICAL ISSUES' :
+                       scanResults.warningFindings > 0 ? 'WARNINGS' : 'CLEAN'}
+                    </span>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold" style={{ color: colors.text }}>
+                      {scanResults.totalFindings || 0}
+                    </div>
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>Total Issues</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold" style={{ color: colors.error }}>
+                      {scanResults.criticalFindings || 0}
+                    </div>
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>Critical</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold" style={{ color: colors.warning }}>
+                      {scanResults.warningFindings || 0}
+                    </div>
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>Warnings</div>
+                  </div>
+                </div>
+              </div>
+              
+              {scanResults.findings && scanResults.findings.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Detailed Findings</h4>
+                  <div className="space-y-2">
+                    {scanResults.findings.map((finding, index) => (
+                      <div key={index} className="p-3 rounded-lg" style={{ backgroundColor: colors.hover }}>
+                        <div className="flex items-start gap-3">
+                          <div className={`mt-1 w-2 h-2 rounded-full ${
+                            finding.severity === 'critical' ? 'bg-red-500' :
+                            finding.severity === 'high' ? 'bg-orange-500' :
+                            finding.severity === 'medium' ? 'bg-yellow-500' : 'bg-blue-500'
+                          }`} />
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-sm font-medium" style={{ color: colors.text }}>
+                                {finding.title}
+                              </span>
+                              <span className={`text-xs px-2 py-1 rounded ${
+                                finding.severity === 'critical' ? 'bg-red-500/20 text-red-500' :
+                                finding.severity === 'high' ? 'bg-orange-500/20 text-orange-500' :
+                                finding.severity === 'medium' ? 'bg-yellow-500/20 text-yellow-500' :
+                                'bg-blue-500/20 text-blue-500'
+                              }`}>
+                                {finding.severity}
+                              </span>
+                            </div>
+                            <p className="text-xs" style={{ color: colors.textSecondary }}>
+                              {finding.description}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="flex items-center justify-end gap-3 mt-8">
+              <button 
+                onClick={() => handleExportSecurityData('json', 'scan-results')}
+                className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift flex items-center gap-2"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+              >
+                <Download size={14} />
+                Export Results
+              </button>
+              <button 
+                onClick={() => setShowScanModal(false)}
+                className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  );
+
+  // Security Report Modal
+  const renderSecurityReportModal = () => (
+    showSecurityReportModal && reportResults && (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="border rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto" style={{ 
+          borderColor: colors.modalBorder,
+          backgroundColor: colors.bg
+        }}>
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-semibold" style={{ color: colors.text }}>Security Report</h3>
+              <button 
+                onClick={() => setShowSecurityReportModal(false)}
+                className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                style={{ backgroundColor: colors.hover }}
+              >
+                <X size={20} style={{ color: colors.text }} />
+              </button>
+            </div>
+            
+            <div className="space-y-8">
               <div className="p-4 rounded-lg" style={{ backgroundColor: colors.hover }}>
                 <div className="flex items-center justify-between mb-4">
                   <div>
@@ -2593,75 +3889,243 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                 </div>
               </div>
               
-              <div>
-                <h4 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Security Recommendations</h4>
-                <div className="space-y-2">
-                  {securitySummary.vulnerableEndpoints > 0 && (
-                    <div className="flex items-start gap-2 p-3 rounded-lg hover-lift"
-                      style={{ backgroundColor: colors.hover }}>
-                      <div className="p-1 rounded-full" style={{ backgroundColor: colors.error + '20' }}>
-                        <AlertTriangle size={12} style={{ color: colors.error }} />
+              {(reportResults.recommendations && reportResults.recommendations.length > 0) && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Security Recommendations</h4>
+                  <div className="space-y-2">
+                    {reportResults.recommendations.map((rec, index) => (
+                      <div key={index} className="flex items-start gap-2 p-3 rounded-lg hover-lift"
+                        style={{ backgroundColor: colors.hover }}>
+                        <div className={`p-1 rounded-full ${
+                          rec.severity === 'critical' ? 'bg-red-500/20' :
+                          rec.severity === 'high' ? 'bg-orange-500/20' :
+                          rec.severity === 'medium' ? 'bg-yellow-500/20' : 'bg-blue-500/20'
+                        }`}>
+                          <AlertTriangle size={12} style={{ 
+                            color: rec.severity === 'critical' ? colors.error :
+                                   rec.severity === 'high' ? colors.warning :
+                                   rec.severity === 'medium' ? colors.warning : colors.info
+                          }} />
+                        </div>
+                        <span className="text-sm" style={{ color: colors.text }}>{rec.message}</span>
                       </div>
-                      <span className="text-sm" style={{ color: colors.text }}>
-                        Secure {securitySummary.vulnerableEndpoints} vulnerable endpoints
-                      </span>
-                    </div>
-                  )}
-                  
-                  {rateLimitRules.length === 0 && (
-                    <div className="flex items-start gap-2 p-3 rounded-lg hover-lift"
-                      style={{ backgroundColor: colors.hover }}>
-                      <div className="p-1 rounded-full" style={{ backgroundColor: colors.warning + '20' }}>
-                        <Filter size={12} style={{ color: colors.warning }} />
-                      </div>
-                      <span className="text-sm" style={{ color: colors.text }}>
-                        Implement rate limiting for API endpoints
-                      </span>
-                    </div>
-                  )}
-                  
-                  {ipWhitelist.filter(ip => ip.status === 'active').length === 0 && (
-                    <div className="flex items-start gap-2 p-3 rounded-lg hover-lift"
-                      style={{ backgroundColor: colors.hover }}>
-                      <div className="p-1 rounded-full" style={{ backgroundColor: colors.info + '20' }}>
-                        <Globe size={12} style={{ color: colors.info }} />
-                      </div>
-                      <span className="text-sm" style={{ color: colors.text }}>
-                        Configure IP whitelist for sensitive endpoints
-                      </span>
-                    </div>
-                  )}
-                  
-                  {securityEvents.length > 0 && (
-                    <div className="flex items-start gap-2 p-3 rounded-lg hover-lift"
-                      style={{ backgroundColor: colors.hover }}>
-                      <div className="p-1 rounded-full" style={{ backgroundColor: colors.success + '20' }}>
-                        <ShieldCheck size={12} style={{ color: colors.success }} />
-                      </div>
-                      <span className="text-sm" style={{ color: colors.text }}>
-                        Review {securityEvents.length} security events from the last scan
-                      </span>
-                    </div>
-                  )}
+                    ))}
+                  </div>
                 </div>
+              )}
+              
+              {reportResults.stats && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-3 rounded-lg" style={{ backgroundColor: colors.hover }}>
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>Total Events</div>
+                    <div className="text-xl font-bold" style={{ color: colors.text }}>{reportResults.stats.totalEvents}</div>
+                  </div>
+                  <div className="p-3 rounded-lg" style={{ backgroundColor: colors.hover }}>
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>Blocked Requests</div>
+                    <div className="text-xl font-bold" style={{ color: colors.text }}>{reportResults.stats.blockedRequests}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="flex items-center justify-end gap-3 mt-8">
+              <button 
+                onClick={handleDownloadPDF}
+                disabled={loading.downloadingPDF}
+                className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift flex items-center gap-2 disabled:opacity-50"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+              >
+                <Download size={14} />
+                {loading.downloadingPDF ? 'Downloading...' : 'Download PDF'}
+              </button>
+              <button 
+                onClick={() => setShowSecurityReportModal(false)}
+                className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  );
+
+  // Details Modal
+  const renderDetailsModal = () => (
+    showDetailsModal && modalDetails && (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="border rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto" style={{ 
+          borderColor: colors.modalBorder,
+          backgroundColor: colors.bg
+        }}>
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-semibold" style={{ color: colors.text }}>
+                {modalDetails.item.title || modalDetails.item.name || 'Details'}
+              </h3>
+              <button 
+                onClick={() => setShowDetailsModal(false)}
+                className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                style={{ backgroundColor: colors.hover }}
+              >
+                <X size={20} style={{ color: colors.text }} />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              {Object.entries(modalDetails.item).map(([key, value]) => {
+                if (key === 'id' || key === '__v' || typeof value === 'object') return null;
+                return (
+                  <div key={key} className="flex items-start justify-between border-b pb-2" style={{ borderColor: colors.border }}>
+                    <span className="text-sm capitalize" style={{ color: colors.textSecondary }}>
+                      {key.replace(/([A-Z])/g, ' $1').trim()}:
+                    </span>
+                    <span className="text-sm font-medium" style={{ color: colors.text }}>
+                      {value?.toString() || 'N/A'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            
+            <div className="flex items-center justify-end gap-3 mt-8">
+              <button 
+                onClick={() => setShowDetailsModal(false)}
+                className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  );
+
+  // Edit IP Whitelist Modal
+  const renderEditIPWhitelistModal = () => (
+    showEditIPWhitelistModal && (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="border rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto" style={{ 
+          borderColor: colors.modalBorder,
+          backgroundColor: colors.bg
+        }}>
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-semibold" style={{ color: colors.text }}>Edit IP Whitelist Entry</h3>
+              <button 
+                onClick={() => {
+                  setShowEditIPWhitelistModal(false);
+                  setEditingIPEntry(null);
+                  setNewIPEntryData({
+                    name: '',
+                    ipRange: '',
+                    description: '',
+                    endpoints: '',
+                    options: {}
+                  });
+                }}
+                className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                style={{ backgroundColor: colors.hover }}
+              >
+                <X size={20} style={{ color: colors.text }} />
+              </button>
+            </div>
+            
+            <div className="space-y-8">
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Entry Name *</label>
+                <input 
+                  type="text" 
+                  value={newIPEntryData.name}
+                  onChange={(e) => setNewIPEntryData({...newIPEntryData, name: e.target.value})}
+                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
+                  style={{ 
+                    backgroundColor: colors.inputBg,
+                    border: `1px solid ${colors.inputBorder}`,
+                    color: colors.text
+                  }}
+                  placeholder="e.g., Office Network"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>IP Range/CIDR *</label>
+                <input 
+                  type="text" 
+                  value={newIPEntryData.ipRange}
+                  onChange={(e) => setNewIPEntryData({...newIPEntryData, ipRange: e.target.value})}
+                  className="w-full px-3 py-2 rounded-lg text-sm font-mono focus:outline-none"
+                  style={{ 
+                    backgroundColor: colors.inputBg,
+                    border: `1px solid ${colors.inputBorder}`,
+                    color: colors.text
+                  }}
+                  placeholder="192.168.1.0/24 or 10.0.0.1"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Description</label>
+                <input 
+                  type="text" 
+                  value={newIPEntryData.description}
+                  onChange={(e) => setNewIPEntryData({...newIPEntryData, description: e.target.value})}
+                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
+                  style={{ 
+                    backgroundColor: colors.inputBg,
+                    border: `1px solid ${colors.inputBorder}`,
+                    color: colors.text
+                  }}
+                  placeholder="Optional description"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Protected Endpoints</label>
+                <input 
+                  type="text" 
+                  value={newIPEntryData.endpoints}
+                  onChange={(e) => setNewIPEntryData({...newIPEntryData, endpoints: e.target.value})}
+                  className="w-full px-3 py-2 rounded-lg text-sm font-mono focus:outline-none"
+                  style={{ 
+                    backgroundColor: colors.inputBg,
+                    border: `1px solid ${colors.inputBorder}`,
+                    color: colors.text
+                  }}
+                  placeholder="/api/v1/** (leave empty for all endpoints)"
+                />
               </div>
             </div>
             
             <div className="flex items-center justify-end gap-3 mt-8">
               <button 
-                onClick={() => handleExportSecurityData('pdf', 'reports')}
-                className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift flex items-center gap-2"
+                onClick={() => {
+                  setShowEditIPWhitelistModal(false);
+                  setEditingIPEntry(null);
+                  setNewIPEntryData({
+                    name: '',
+                    ipRange: '',
+                    description: '',
+                    endpoints: '',
+                    options: {}
+                  });
+                }}
+                className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover, color: colors.text }}
               >
-                <Download size={14} />
-                Download PDF
+                Cancel
               </button>
               <button 
-                onClick={() => setShowSecurityReport(false)}
-                className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                onClick={handleUpdateIPWhitelistEntry}
+                disabled={loading.ipWhitelist}
+                className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift disabled:opacity-50"
                 style={{ backgroundColor: colors.primaryDark, color: colors.white }}
               >
-                Close
+                {loading.ipWhitelist ? 'Updating...' : 'Update Entry'}
               </button>
             </div>
           </div>
@@ -2722,7 +4186,6 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         .text-red-400 { color: #f87171; }
         .text-gray-500 { color: #9ca3af; }
         
-        /* Custom scrollbar */
         ::-webkit-scrollbar {
           width: 8px;
           height: 8px;
@@ -2761,13 +4224,11 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
           font-size: 0.875em;
         }
         
-        /* Focus styles */
         input:focus, button:focus, select:focus {
           outline: 2px solid ${colors.primary}40;
           outline-offset: 2px;
         }
         
-        /* Hover effects */
         .hover-lift:hover {
           transform: translateY(-2px);
           transition: transform 0.2s ease;
@@ -2779,22 +4240,24 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         }
       `}</style>
 
+      {/* Loading Overlay */}
+      <LoadingOverlay />
+
       {/* TOP NAVIGATION */}
       <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
         backgroundColor: colors.header,
         borderColor: colors.border
       }}>
         <div className="flex items-center gap-2">
-            <span className="px-3 py-1.5 text-sm font-medium -ml-3 uppercase">API Security</span>
+          <span className="px-3 py-1.5 text-sm font-medium -ml-3 uppercase">API Security</span>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Search */}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
             <input 
               type="text" 
-              placeholder="Search security rules, events..."
+              placeholder="Search security events..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-8 pr-3 py-1.5 rounded text-xs focus:outline-none w-64 hover-lift"
@@ -2836,11 +4299,11 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                 <div className="flex items-center gap-2">
                   <button 
                     onClick={handleRunSecurityScan}
-                    disabled={loading.rateLimits || loading.securityEvents}
+                    disabled={loading.scan}
                     className="px-4 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors hover-lift disabled:opacity-50"
                     style={{ backgroundColor: colors.hover, color: colors.text }}>
                     <ShieldCheck size={14} className="inline mr-2" />
-                    Run Scan
+                    {loading.scan ? 'Scanning...' : 'Run Scan'}
                   </button>
                   <button 
                     onClick={handleGenerateSecurityReport}
@@ -2884,10 +4347,12 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                     change: '' 
                   }
                 ].map((stat, index) => (
-                  <div key={index} className="border rounded-lg p-4 hover-lift" style={{ 
-                    borderColor: colors.border,
-                    backgroundColor: colors.card
-                  }}>
+                  <div key={index} className="border rounded-lg p-4 hover-lift cursor-pointer" 
+                    onClick={() => handleShowDetails({ title: stat.label, value: stat.value }, 'stats')}
+                    style={{ 
+                      borderColor: colors.border,
+                      backgroundColor: colors.card
+                    }}>
                     <div className="flex items-center justify-between mb-2">
                       <div className="p-2 rounded" style={{ backgroundColor: `${stat.color}20` }}>
                         {React.cloneElement(stat.icon, { size: 16, style: { color: stat.color } })}
@@ -2923,9 +4388,13 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
 
       {/* MODALS */}
       {renderAddRuleModal()}
+      {renderEditRuleModal()}
       {renderIPWhitelistModal()}
       {renderLoadBalancerModal()}
+      {renderScanModal()}
       {renderSecurityReportModal()}
+      {renderDetailsModal()}
+      {renderEditIPWhitelistModal()}
 
       {/* TOAST */}
       {renderToast()}
