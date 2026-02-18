@@ -84,7 +84,7 @@ public class SystemLogController {
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting all log files");
         if (authValidation != null) {
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Authorization failed for getting all log files");
+                    "RequestEntity ID: " + requestId + ", Authorization failed for getting all log files");
             return authValidation;
         }
 
@@ -94,7 +94,7 @@ public class SystemLogController {
 
         try {
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId +
+                    "RequestEntity ID: " + requestId +
                             ", Getting all log files" +
                             ", Requested by: " + userId);
 
@@ -103,7 +103,7 @@ public class SystemLogController {
 
             if (logFiles.isEmpty()) {
                 loggerUtil.log("web-application-firewall",
-                        "Request ID: " + requestId + ", No log files found");
+                        "RequestEntity ID: " + requestId + ", No log files found");
 
                 Map<String, Object> noContentResponse = createSuccessResponse(204, "No log files found in the systemActivities", null, requestId);
                 noContentResponse.put("totalFiles", 0);
@@ -114,14 +114,14 @@ public class SystemLogController {
             successResponse.put("totalFiles", logFiles.size());
 
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Get all log files completed. Total files: " + logFiles.size());
+                    "RequestEntity ID: " + requestId + ", Get all log files completed. Total files: " + logFiles.size());
 
             return ResponseEntity.ok(successResponse);
 
         } catch (Exception e) {
-            log.error("Request ID: {}, Error getting log files: {}", requestId, e.getMessage());
+            log.error("RequestEntity ID: {}, Error getting log files: {}", requestId, e.getMessage());
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Error getting log files: " + e.getMessage());
+                    "RequestEntity ID: " + requestId + ", Error getting log files: " + e.getMessage());
 
             Map<String, Object> errorResponse = createErrorResponse(500,
                     "Failed to fetch log files: " + e.getMessage(), requestId);
@@ -158,7 +158,7 @@ public class SystemLogController {
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting log entries");
         if (authValidation != null) {
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Authorization failed for getting log entries");
+                    "RequestEntity ID: " + requestId + ", Authorization failed for getting log entries");
             return authValidation;
         }
 
@@ -168,7 +168,7 @@ public class SystemLogController {
 
         try {
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId +
+                    "RequestEntity ID: " + requestId +
                             ", Getting log entries - Search: " + search +
                             ", Severity: " + severity +
                             ", TimeFilter: " + timeFilter +
@@ -181,7 +181,7 @@ public class SystemLogController {
 
             if (logEntries.getLogs().isEmpty()) {
                 loggerUtil.log("web-application-firewall",
-                        "Request ID: " + requestId + ", No log entries found matching criteria");
+                        "RequestEntity ID: " + requestId + ", No log entries found matching criteria");
 
                 Map<String, Object> noContentResponse = createSuccessResponse(204, "No log entries found matching the specified criteria", null, requestId);
                 return ResponseEntity.ok(noContentResponse);
@@ -196,15 +196,15 @@ public class SystemLogController {
             ));
 
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Get log entries completed. Total elements: " +
+                    "RequestEntity ID: " + requestId + ", Get log entries completed. Total elements: " +
                             logEntries.getTotalItems() + ", Total pages: " + logEntries.getTotalPages());
 
             return ResponseEntity.ok(successResponse);
 
         } catch (Exception e) {
-            log.error("Request ID: {}, Error getting log entries: {}", requestId, e.getMessage());
+            log.error("RequestEntity ID: {}, Error getting log entries: {}", requestId, e.getMessage());
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Error getting log entries: " + e.getMessage());
+                    "RequestEntity ID: " + requestId + ", Error getting log entries: " + e.getMessage());
 
             Map<String, Object> errorResponse = createErrorResponse(500,
                     "Failed to fetch log entries: " + e.getMessage(), requestId);
@@ -236,7 +236,7 @@ public class SystemLogController {
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting log file content");
         if (authValidation != null) {
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Authorization failed for getting log file content: " + filename);
+                    "RequestEntity ID: " + requestId + ", Authorization failed for getting log file content: " + filename);
             return authValidation;
         }
 
@@ -246,7 +246,7 @@ public class SystemLogController {
 
         try {
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId +
+                    "RequestEntity ID: " + requestId +
                             ", Getting log file content - Filename: " + filename +
                             ", Search: " + search +
                             ", Requested by: " + userId);
@@ -256,7 +256,7 @@ public class SystemLogController {
 
             if (fileContent.getContent().contains("File not found") || fileContent.getContent().contains("Error reading file")) {
                 loggerUtil.log("web-application-firewall",
-                        "Request ID: " + requestId + ", Log file not found: " + filename);
+                        "RequestEntity ID: " + requestId + ", Log file not found: " + filename);
 
                 Map<String, Object> errorResponse = createErrorResponse(404,
                         "Log file not found or cannot be read: " + filename, requestId);
@@ -266,15 +266,15 @@ public class SystemLogController {
             Map<String, Object> successResponse = createSuccessResponse(200, "Log file content retrieved successfully", fileContent, requestId);
 
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Get log file content completed. Filename: " + filename +
+                    "RequestEntity ID: " + requestId + ", Get log file content completed. Filename: " + filename +
                             ", Content length: " + fileContent.getContent().length());
 
             return ResponseEntity.ok(successResponse);
 
         } catch (Exception e) {
-            log.error("Request ID: {}, Error getting log file content: {}", requestId, e.getMessage());
+            log.error("RequestEntity ID: {}, Error getting log file content: {}", requestId, e.getMessage());
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Error getting log file content: " + e.getMessage());
+                    "RequestEntity ID: " + requestId + ", Error getting log file content: " + e.getMessage());
 
             Map<String, Object> errorResponse = createErrorResponse(500,
                     "Failed to fetch log file content: " + e.getMessage(), requestId);
@@ -307,7 +307,7 @@ public class SystemLogController {
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "exporting logs to CSV");
         if (authValidation != null) {
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Authorization failed for exporting logs to CSV");
+                    "RequestEntity ID: " + requestId + ", Authorization failed for exporting logs to CSV");
             return authValidation;
         }
 
@@ -317,7 +317,7 @@ public class SystemLogController {
 
         try {
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId +
+                    "RequestEntity ID: " + requestId +
                             ", Exporting logs to CSV - Search: " + search +
                             ", Severity: " + severity +
                             ", TimeFilter: " + timeFilter +
@@ -331,7 +331,7 @@ public class SystemLogController {
             Resource resource = new UrlResource(tempFile.toUri());
 
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Export logs to CSV completed. File size: " + csvContent.length());
+                    "RequestEntity ID: " + requestId + ", Export logs to CSV completed. File size: " + csvContent.length());
 
             return ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType("text/csv"))
@@ -339,9 +339,9 @@ public class SystemLogController {
                     .body(resource);
 
         } catch (Exception e) {
-            log.error("Request ID: {}, Error exporting logs to CSV: {}", requestId, e.getMessage());
+            log.error("RequestEntity ID: {}, Error exporting logs to CSV: {}", requestId, e.getMessage());
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Error exporting logs to CSV: " + e.getMessage());
+                    "RequestEntity ID: " + requestId + ", Error exporting logs to CSV: " + e.getMessage());
 
             Map<String, Object> errorResponse = createErrorResponse(500,
                     "Failed to export logs to CSV: " + e.getMessage(), requestId);
@@ -367,7 +367,7 @@ public class SystemLogController {
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting log statistics");
         if (authValidation != null) {
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Authorization failed for getting log statistics");
+                    "RequestEntity ID: " + requestId + ", Authorization failed for getting log statistics");
             return authValidation;
         }
 
@@ -377,7 +377,7 @@ public class SystemLogController {
 
         try {
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId +
+                    "RequestEntity ID: " + requestId +
                             ", Getting log statistics" +
                             ", Requested by: " + userId);
 
@@ -387,14 +387,14 @@ public class SystemLogController {
             Map<String, Object> successResponse = createSuccessResponse(200, "Log statistics retrieved successfully", statistics, requestId);
 
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Get log statistics completed");
+                    "RequestEntity ID: " + requestId + ", Get log statistics completed");
 
             return ResponseEntity.ok(successResponse);
 
         } catch (Exception e) {
-            log.error("Request ID: {}, Error getting log statistics: {}", requestId, e.getMessage());
+            log.error("RequestEntity ID: {}, Error getting log statistics: {}", requestId, e.getMessage());
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Error getting log statistics: " + e.getMessage());
+                    "RequestEntity ID: " + requestId + ", Error getting log statistics: " + e.getMessage());
 
             Map<String, Object> errorResponse = createErrorResponse(500,
                     "Failed to fetch log statistics: " + e.getMessage(), requestId);
@@ -427,7 +427,7 @@ public class SystemLogController {
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "searching logs");
         if (authValidation != null) {
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Authorization failed for searching logs");
+                    "RequestEntity ID: " + requestId + ", Authorization failed for searching logs");
             return authValidation;
         }
 
@@ -437,7 +437,7 @@ public class SystemLogController {
 
         try {
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId +
+                    "RequestEntity ID: " + requestId +
                             ", Searching logs - Query: " + query +
                             ", Page: " + pageable.getPageNumber() +
                             ", Size: " + pageable.getPageSize() +
@@ -448,7 +448,7 @@ public class SystemLogController {
 
             if (searchResults.isEmpty()) {
                 loggerUtil.log("web-application-firewall",
-                        "Request ID: " + requestId + ", No logs found for query: " + query);
+                        "RequestEntity ID: " + requestId + ", No logs found for query: " + query);
 
                 Map<String, Object> noContentResponse = createSuccessResponse(204, "No logs found for the given query", null, requestId);
                 return ResponseEntity.ok(noContentResponse);
@@ -465,15 +465,15 @@ public class SystemLogController {
             ));
 
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Search logs completed. Found " + searchResults.getTotalElements() +
+                    "RequestEntity ID: " + requestId + ", Search logs completed. Found " + searchResults.getTotalElements() +
                             " logs matching the query");
 
             return ResponseEntity.ok(successResponse);
 
         } catch (Exception e) {
-            log.error("Request ID: {}, Error searching logs: {}", requestId, e.getMessage());
+            log.error("RequestEntity ID: {}, Error searching logs: {}", requestId, e.getMessage());
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Error searching logs: " + e.getMessage());
+                    "RequestEntity ID: " + requestId + ", Error searching logs: " + e.getMessage());
 
             Map<String, Object> errorResponse = createErrorResponse(500,
                     "Failed to search logs: " + e.getMessage(), requestId);

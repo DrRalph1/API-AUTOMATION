@@ -132,7 +132,7 @@ public class AccountLockService {
                 "<li>Changing your password if you suspect unauthorized access</li>" +
                 "<li>Enabling two-factor authentication if available</li>" +
                 "</ul>" +
-                "<p>If you did not request this unlock or need any assistance, please contact the infosec support team immediately.</p>" +
+                "<p>If you did not requestEntity this unlock or need any assistance, please contact the infosec support team immediately.</p>" +
                 "<br/>" +
                 "<p>Best Regards,<br/>Security Team</p>" +
                 "</body>" +

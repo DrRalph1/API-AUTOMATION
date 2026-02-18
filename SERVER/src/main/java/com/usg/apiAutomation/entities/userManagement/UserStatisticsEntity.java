@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.entities;
+package com.usg.apiAutomation.entities.userManagement;
 
 import jakarta.persistence.*;
 import lombok.*;

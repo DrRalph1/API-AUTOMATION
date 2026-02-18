@@ -11,7 +11,7 @@ import jakarta.validation.constraints.*;
 @NoArgsConstructor
 @AllArgsConstructor
 public class FavoriteRequest {
-    @NotBlank(message = "Collection ID is required")
+    @NotBlank(message = "CollectionEntity ID is required")
     private String collectionId;
 
     private String requestId;

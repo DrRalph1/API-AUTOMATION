@@ -55,14 +55,14 @@ public class SchemaBrowserController {
 
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting schema connections");
         if (authValidation != null) {
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Authorization failed for getting schema connections");
             return authValidation;
         }
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Getting schema connections for user: " + performedBy);
 
             SchemaConnectionsResponse connections = schemaBrowserService.getSchemaConnections(requestId, req, performedBy);
@@ -73,13 +73,13 @@ public class SchemaBrowserController {
             response.put("data", connections);
             response.put("requestId", requestId);
 
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Schema connections retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Error getting schema connections: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -117,7 +117,7 @@ public class SchemaBrowserController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Getting schema objects for connection: " + connectionId + ", type: " + objectType);
 
             SchemaObjectsResponse objects = schemaBrowserService.getSchemaObjects(requestId, req, performedBy,
@@ -132,7 +132,7 @@ public class SchemaBrowserController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Error getting schema objects: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -170,7 +170,7 @@ public class SchemaBrowserController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Getting details for object: " + objectType + "." + objectName);
 
             ObjectDetailsResponse details = schemaBrowserService.getObjectDetails(requestId, req, performedBy,
@@ -185,7 +185,7 @@ public class SchemaBrowserController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Error getting object details: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -229,7 +229,7 @@ public class SchemaBrowserController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Getting table data for: " + tableName + ", page: " + page);
 
             TableDataResponse tableData = schemaBrowserService.getTableData(requestId, req, performedBy,
@@ -244,7 +244,7 @@ public class SchemaBrowserController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Error getting table data: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -282,7 +282,7 @@ public class SchemaBrowserController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Getting DDL for: " + objectType + "." + objectName);
 
             DDLResponse ddl = schemaBrowserService.getObjectDDL(requestId, req, performedBy,
@@ -297,7 +297,7 @@ public class SchemaBrowserController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Error getting object DDL: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -337,7 +337,7 @@ public class SchemaBrowserController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Searching schema with query: " + searchQuery);
 
             SearchResponse searchResults = schemaBrowserService.searchSchema(requestId, req, performedBy,
@@ -352,7 +352,7 @@ public class SchemaBrowserController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Error searching schema: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -398,7 +398,7 @@ public class SchemaBrowserController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Executing query for user: " + performedBy);
 
             ExecuteQueryResponse queryResult = schemaBrowserService.executeQuery(requestId, req, performedBy,
@@ -414,7 +414,7 @@ public class SchemaBrowserController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Error executing query: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -460,7 +460,7 @@ public class SchemaBrowserController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Generating API for object: " + apiRequest.getObjectType() + "." + apiRequest.getObjectName());
 
             GenerateAPIResponse apiResponse = schemaBrowserService.generateAPIFromObject(requestId, req, performedBy,
@@ -476,7 +476,7 @@ public class SchemaBrowserController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Error generating API: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -512,7 +512,7 @@ public class SchemaBrowserController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Getting comprehensive schema data for connection: " + connectionId);
 
             // Fetch comprehensive schema data
@@ -552,7 +552,7 @@ public class SchemaBrowserController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Error getting comprehensive schema data: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -583,7 +583,7 @@ public class SchemaBrowserController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Clearing schema cache for user: " + performedBy);
 
             schemaBrowserService.clearSchemaCache(requestId, req, performedBy);
@@ -596,7 +596,7 @@ public class SchemaBrowserController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Error clearing schema cache: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -634,7 +634,7 @@ public class SchemaBrowserController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Getting hierarchy for: " + objectType + "." + objectName);
 
             // Get object details first
@@ -659,7 +659,7 @@ public class SchemaBrowserController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Error getting object hierarchy: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -705,7 +705,7 @@ public class SchemaBrowserController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Exporting schema data for user: " + performedBy + ", format: " + exportRequest.getFormat());
 
             // In a real implementation, this would generate and return the export file
@@ -730,7 +730,7 @@ public class SchemaBrowserController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Error exporting schema data: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -776,7 +776,7 @@ public class SchemaBrowserController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Performing advanced search for user: " + performedBy);
 
             // Perform the search using the service
@@ -794,7 +794,7 @@ public class SchemaBrowserController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Error performing advanced search: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -841,7 +841,7 @@ public class SchemaBrowserController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("schemaBrowser", "Request ID: " + requestId +
+            loggerUtil.log("schemaBrowser", "RequestEntity ID: " + requestId +
                     ", Health check failed: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();

@@ -44,7 +44,7 @@ public class GlobalExceptionHandler {
         }
     }
 
-    // Handle validation errors - 400 Bad Request
+    // Handle validation errors - 400 Bad RequestEntity
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponseDTO<Map<String, String>>> handleValidationExceptions(
             MethodArgumentNotValidException ex) {
@@ -136,7 +136,7 @@ public class GlobalExceptionHandler {
                 .body(ApiResponseDTO.error(422, ex.getMessage()));
     }
 
-    // Handle illegal arguments - 400 Bad Request
+    // Handle illegal arguments - 400 Bad RequestEntity
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiResponseDTO<Void>> handleIllegalArgumentException(
             IllegalArgumentException ex) {
@@ -150,19 +150,19 @@ public class GlobalExceptionHandler {
                 .body(ApiResponseDTO.badRequest(ex.getMessage()));
     }
 
-    // Handle malformed requests - 400 Bad Request
+    // Handle malformed requestEntities - 400 Bad RequestEntity
     @ExceptionHandler({HttpMessageNotReadableException.class,
             MethodArgumentTypeMismatchException.class})
     public ResponseEntity<ApiResponseDTO<Map<String, String>>> handleBadRequestExceptions(Exception ex) {
 
-        log.warn("Bad request: {} - {}", ex.getClass().getSimpleName(), ex.getMessage());
+        log.warn("Bad requestEntity: {} - {}", ex.getClass().getSimpleName(), ex.getMessage());
 
         // Log the full exception for debugging
         if (ex.getCause() != null) {
             log.warn("Root cause: {}", ex.getCause().getMessage());
         }
 
-        String message = "Malformed or invalid request";
+        String message = "Malformed or invalid requestEntity";
         Map<String, String> details = new HashMap<>();
 
         if (ex instanceof MethodArgumentTypeMismatchException) {
@@ -174,19 +174,19 @@ public class GlobalExceptionHandler {
             details.put("actualValue", String.valueOf(mismatchEx.getValue()));
 
             // Log specific mismatch details
-            log.warn("Type mismatch - Parameter: {}, Expected: {}, Actual: {}",
+            log.warn("Type mismatch - ParameterEntity: {}, Expected: {}, Actual: {}",
                     mismatchEx.getName(),
                     mismatchEx.getRequiredType() != null ? mismatchEx.getRequiredType().getSimpleName() : "unknown",
                     mismatchEx.getValue());
 
         } else if (ex instanceof HttpMessageNotReadableException) {
-            message = "Invalid request body";
+            message = "Invalid requestEntity body";
             if (ex.getCause() != null) {
                 details.put("cause", ex.getCause().getMessage());
                 // Log parsing error details
                 log.warn("Message not readable - Cause: {}", ex.getCause().getMessage());
             }
-            details.put("error", "Failed to parse request body");
+            details.put("error", "Failed to parse requestEntity body");
 
             // Log HTTP message reading error
             log.debug("HTTP message not readable stack trace:", ex);

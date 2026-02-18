@@ -5,7 +5,6 @@ import lombok.Builder;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 
-import java.util.Date;
 import java.util.List;
 
 @Data
@@ -23,5 +22,5 @@ public class SearchResult {
     private List<String> languages;
     private String lastModified;
     private Integer implementations;
-    private String matchType; // "name", "description", "code", "tag"
+    private String matchType;
 }

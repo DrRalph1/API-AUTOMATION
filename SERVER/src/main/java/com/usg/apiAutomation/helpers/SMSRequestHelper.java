@@ -99,7 +99,7 @@ public class SMSRequestHelper {
 
             httpConnection.setRequestProperty("Content-Type", "application/json");
             httpConnection.setRequestProperty("Authorization", "Basic VW5pb25TeXN0ZW1zOnUkZ0AxbkYweDFvbw==");
-            System.out.println("[SMSRequestHelper] HTTP headers set");
+            System.out.println("[SMSRequestHelper] HTTP headerEntities set");
 
             String jsonPayload = String.format(
                     "{\"from\": \"%s\", \"to\": \"%s\", \"text\": \"%s\"}",
@@ -366,13 +366,13 @@ public class SMSRequestHelper {
             httpConnection.setConnectTimeout(10000);
             httpConnection.setReadTimeout(10000);
 
-            // Set headers as in the original method
+            // Set headerEntities as in the original method
             httpConnection.setRequestProperty("X-Wallet", "Token e62c9cc1868a49d1a36c5490d326a111");
             httpConnection.setRequestProperty("Authorization", "Basic ZDUyYTI4MTg6OGIxYWYzMDE3YmRkNDRiMWFlNmQ1YTNiMGM3MDZhNDQ=");
             httpConnection.setRequestProperty("Content-Type", "application/json");
             httpConnection.setRequestProperty("accept", "application/json");
 
-            System.out.println("[SMSRequestHelper] HTTP headers set");
+            System.out.println("[SMSRequestHelper] HTTP headerEntities set");
 
             // Send JSON payload
             try (OutputStream os = httpConnection.getOutputStream()) {

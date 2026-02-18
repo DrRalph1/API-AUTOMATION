@@ -49,7 +49,7 @@ public class OtpService {
         String htmlContent = "<p>Dear " + name + ",</p>" +
                 "<p>Your OTP for the API Automation login is: <strong>" + otpCode + "</strong></p>" +
                 "<p>This code will expire in " + OTP_EXPIRATION_MINUTES + " minutes.</p>" +
-                "<p>If you did not request this, please contact support immediately.</p>" +
+                "<p>If you did not requestEntity this, please contact support immediately.</p>" +
                 "<br/><p>Best Regards,<br/>Digital Support Team</p>";
         emailService.sendEmail(toEmail, subject, htmlContent);
     }

@@ -124,7 +124,7 @@ public class EmailService {
                 "        <p style=\"text-align: center; margin: 30px 0;\">" +
                 "            <a href=\"" + loginUrl + "\" class=\"button\">Login to Your Account</a>" +
                 "        </p>" +
-                "        <p>If you did not request this account, please contact the support team immediately at " + supportEmail + ".</p>" +
+                "        <p>If you did not requestEntity this account, please contact the support team immediately at " + supportEmail + ".</p>" +
                 "    </div>" +
                 "    <div class=\"footer\">" +
                 "        <p>© 2025 " + bankName + ". All rights reserved.</p>" +

@@ -103,6 +103,12 @@
             <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>org.modelmapper</groupId>
+            <artifactId>modelmapper</artifactId>
+            <version>3.2.2</version> <!-- or latest -->
+        </dependency>
+
 
         <!-- KEEP THESE - Correct modern JJWT dependencies -->
         <dependency>

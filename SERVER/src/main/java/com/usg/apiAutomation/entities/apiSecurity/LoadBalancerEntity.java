@@ -1,33 +1,56 @@
-package com.usg.apiAutomation.entities;
+package com.usg.apiAutomation.entities.apiSecurity;
 
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-@Setter
-@Getter
 @Entity
-@Table(name = "tb_load_balancers")
+@Table(name = "tb_load_balancer")
 public class LoadBalancerEntity {
-    // Getters and Setters
+
+    @Getter
+    @Setter
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
+    @Getter
+    @Setter
     private String name;
+
+    @Getter
+    @Setter
     private String algorithm;
+
+    @Getter
+    @Setter
     private String healthCheck;
-    private String healthCheckInterval;
+
+    @Getter
+    @Setter
+    private Integer healthCheckInterval;
+
+    @Getter
+    @Setter
     private String status;
+
+    @Getter
+    @Setter
     private Integer totalConnections;
+
+    @Getter
+    @Setter
     private LocalDateTime createdAt;
+
+    @Getter
+    @Setter
     private LocalDateTime updatedAt;
 
-    @OneToMany(mappedBy = "loadBalancer", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    @OneToMany(mappedBy = "loadBalancer", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Getter
+    @Setter
     private List<LoadBalancerServerEntity> servers = new ArrayList<>();
-
 }

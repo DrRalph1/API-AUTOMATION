@@ -13,7 +13,7 @@ import java.util.UUID;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@Schema(description = "Audit log search request")
+@Schema(description = "Audit log search requestEntity")
 public class AuditLogSearchRequest {
 
     // Add getters for validation

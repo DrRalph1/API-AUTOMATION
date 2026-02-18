@@ -36,16 +36,16 @@ public class CollectionsService {
 
     public CollectionsListResponse getCollectionsList(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting collections list for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Getting collections list for user: {}", requestId, performedBy);
             loggerUtil.log("collections",
-                    "Request ID: " + requestId + ", Getting collections list for user: " + performedBy);
+                    "RequestEntity ID: " + requestId + ", Getting collections list for user: " + performedBy);
 
             // Check cache first
             String cacheKey = "collections_list_" + performedBy;
             CollectionsCache cachedData = collectionsCache.get(cacheKey);
 
             if (cachedData != null && !isCacheExpired(cachedData)) {
-                log.debug("Request ID: {}, Returning cached collections list", requestId);
+                log.debug("RequestEntity ID: {}, Returning cached collections list", requestId);
                 return (CollectionsListResponse) cachedData.getData();
             }
 
@@ -54,13 +54,13 @@ public class CollectionsService {
             // Update cache
             collectionsCache.put(cacheKey, new CollectionsCache(collections, System.currentTimeMillis()));
 
-            log.info("Request ID: {}, Retrieved {} collections", requestId, collections.getCollections().size());
+            log.info("RequestEntity ID: {}, Retrieved {} collections", requestId, collections.getCollections().size());
 
             return collections;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving collections list: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return getFallbackCollectionsList();
         }
     }
@@ -68,14 +68,14 @@ public class CollectionsService {
     public CollectionDetailsResponse getCollectionDetails(String requestId, HttpServletRequest req, String performedBy,
                                                           String collectionId) {
         try {
-            log.info("Request ID: {}, Getting collection details for: {}", requestId, collectionId);
+            log.info("RequestEntity ID: {}, Getting collectionEntity details for: {}", requestId, collectionId);
 
             // Check cache first
             String cacheKey = "collection_details_" + performedBy + "_" + collectionId;
             CollectionsCache cachedData = collectionsCache.get(cacheKey);
 
             if (cachedData != null && !isCacheExpired(cachedData)) {
-                log.debug("Request ID: {}, Returning cached collection details", requestId);
+                log.debug("RequestEntity ID: {}, Returning cached collectionEntity details", requestId);
                 return (CollectionDetailsResponse) cachedData.getData();
             }
 
@@ -84,13 +84,13 @@ public class CollectionsService {
             // Update cache
             collectionsCache.put(cacheKey, new CollectionsCache(details, System.currentTimeMillis()));
 
-            log.info("Request ID: {}, Retrieved details for collection: {}", requestId, collectionId);
+            log.info("RequestEntity ID: {}, Retrieved details for collectionEntity: {}", requestId, collectionId);
 
             return details;
 
         } catch (Exception e) {
-            String errorMsg = "Error retrieving collection details: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            String errorMsg = "Error retrieving collectionEntity details: " + e.getMessage();
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return getFallbackCollectionDetails(collectionId);
         }
     }
@@ -98,14 +98,14 @@ public class CollectionsService {
     public RequestDetailsResponse getRequestDetails(String requestId, HttpServletRequest req, String performedBy,
                                                     String collectionId, String requestIdParam) {
         try {
-            log.info("Request ID: {}, Getting request details for: {}", requestId, requestIdParam);
+            log.info("RequestEntity ID: {}, Getting requestEntity details for: {}", requestId, requestIdParam);
 
             // Check cache first
             String cacheKey = "request_details_" + performedBy + "_" + collectionId + "_" + requestIdParam;
             CollectionsCache cachedData = collectionsCache.get(cacheKey);
 
             if (cachedData != null && !isCacheExpired(cachedData)) {
-                log.debug("Request ID: {}, Returning cached request details", requestId);
+                log.debug("RequestEntity ID: {}, Returning cached requestEntity details", requestId);
                 return (RequestDetailsResponse) cachedData.getData();
             }
 
@@ -114,13 +114,13 @@ public class CollectionsService {
             // Update cache
             collectionsCache.put(cacheKey, new CollectionsCache(details, System.currentTimeMillis()));
 
-            log.info("Request ID: {}, Retrieved details for request: {}", requestId, requestIdParam);
+            log.info("RequestEntity ID: {}, Retrieved details for requestEntity: {}", requestId, requestIdParam);
 
             return details;
 
         } catch (Exception e) {
-            String errorMsg = "Error retrieving request details: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            String errorMsg = "Error retrieving requestEntity details: " + e.getMessage();
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return getFallbackRequestDetails(requestIdParam);
         }
     }
@@ -128,24 +128,24 @@ public class CollectionsService {
     public ExecuteRequestResponse executeRequest(String requestId, HttpServletRequest req, String performedBy,
                                                  ExecuteRequestDto requestDto) {
         try {
-            log.info("Request ID: {}, Executing request for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Executing requestEntity for user: {}", requestId, performedBy);
             loggerUtil.log("collections",
-                    "Request ID: " + requestId + ", Executing request: " + requestDto.getMethod() + " " + requestDto.getUrl());
+                    "RequestEntity ID: " + requestId + ", Executing requestEntity: " + requestDto.getMethod() + " " + requestDto.getUrl());
 
             ExecuteRequestResponse response = executeSampleRequest(requestDto);
 
-            log.info("Request ID: {}, Request executed successfully, status: {}",
+            log.info("RequestEntity ID: {}, RequestEntity executed successfully, status: {}",
                     requestId, response.getStatusCode());
 
             return response;
 
         } catch (Exception e) {
-            String errorMsg = "Error executing request: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            String errorMsg = "Error executing requestEntity: " + e.getMessage();
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new ExecuteRequestResponse(
                     "",
                     500,
-                    "Error executing request: " + e.getMessage(),
+                    "Error executing requestEntity: " + e.getMessage(),
                     Collections.emptyList(),
                     0L,
                     0L
@@ -156,11 +156,11 @@ public class CollectionsService {
     public SaveRequestResponse saveRequest(String requestId, HttpServletRequest req, String performedBy,
                                            SaveRequestDto requestDto) {
         try {
-            log.info("Request ID: {}, Saving request for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Saving requestEntity for user: {}", requestId, performedBy);
 
             SaveRequestResponse response = saveSampleRequest(requestDto);
 
-            log.info("Request ID: {}, Request saved successfully: {}", requestId, response.getRequestId());
+            log.info("RequestEntity ID: {}, RequestEntity saved successfully: {}", requestId, response.getRequestId());
 
             // Clear relevant cache
             clearCollectionCache(performedBy, requestDto.getCollectionId());
@@ -168,20 +168,20 @@ public class CollectionsService {
             return response;
 
         } catch (Exception e) {
-            String errorMsg = "Error saving request: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
-            return new SaveRequestResponse("", "Error saving request: " + e.getMessage());
+            String errorMsg = "Error saving requestEntity: " + e.getMessage();
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
+            return new SaveRequestResponse("", "Error saving requestEntity: " + e.getMessage());
         }
     }
 
     public CreateCollectionResponse createCollection(String requestId, HttpServletRequest req, String performedBy,
                                                      CreateCollectionDto collectionDto) {
         try {
-            log.info("Request ID: {}, Creating collection for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Creating collectionEntity for user: {}", requestId, performedBy);
 
             CreateCollectionResponse response = createSampleCollection(collectionDto);
 
-            log.info("Request ID: {}, Collection created successfully: {}", requestId, response.getCollectionId());
+            log.info("RequestEntity ID: {}, CollectionEntity created successfully: {}", requestId, response.getCollectionId());
 
             // Clear collections list cache
             clearUserCollectionsCache(performedBy);
@@ -189,27 +189,27 @@ public class CollectionsService {
             return response;
 
         } catch (Exception e) {
-            String errorMsg = "Error creating collection: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
-            return new CreateCollectionResponse("", "Error creating collection: " + e.getMessage());
+            String errorMsg = "Error creating collectionEntity: " + e.getMessage();
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
+            return new CreateCollectionResponse("", "Error creating collectionEntity: " + e.getMessage());
         }
     }
 
     public CodeSnippetResponse generateCodeSnippet(String requestId, HttpServletRequest req, String performedBy,
                                                    CodeSnippetRequestDto snippetRequest) {
         try {
-            log.info("Request ID: {}, Generating code snippet for language: {}",
+            log.info("RequestEntity ID: {}, Generating code snippet for language: {}",
                     requestId, snippetRequest.getLanguage());
 
             CodeSnippetResponse snippet = generateSampleCodeSnippet(snippetRequest);
 
-            log.info("Request ID: {}, Generated code snippet for {}", requestId, snippetRequest.getLanguage());
+            log.info("RequestEntity ID: {}, Generated code snippet for {}", requestId, snippetRequest.getLanguage());
 
             return snippet;
 
         } catch (Exception e) {
             String errorMsg = "Error generating code snippet: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new CodeSnippetResponse("", snippetRequest.getLanguage(),
                     "Error generating code snippet: " + e.getMessage());
         }
@@ -217,17 +217,17 @@ public class CollectionsService {
 
     public EnvironmentsResponse getEnvironments(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting environments for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Getting environments for user: {}", requestId, performedBy);
 
             EnvironmentsResponse environments = generateStaticEnvironments();
 
-            log.info("Request ID: {}, Retrieved {} environments", requestId, environments.getEnvironments().size());
+            log.info("RequestEntity ID: {}, Retrieved {} environments", requestId, environments.getEnvironments().size());
 
             return environments;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving environments: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new EnvironmentsResponse(Collections.emptyList());
         }
     }
@@ -235,11 +235,11 @@ public class CollectionsService {
     public ImportResponse importCollection(String requestId, HttpServletRequest req, String performedBy,
                                            ImportRequestDto importRequest) {
         try {
-            log.info("Request ID: {}, Importing collection for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Importing collectionEntity for user: {}", requestId, performedBy);
 
             ImportResponse response = importSampleCollection(importRequest);
 
-            log.info("Request ID: {}, Collection imported successfully: {}", requestId, response.getCollectionId());
+            log.info("RequestEntity ID: {}, CollectionEntity imported successfully: {}", requestId, response.getCollectionId());
 
             // Clear collections list cache
             clearUserCollectionsCache(performedBy);
@@ -247,15 +247,15 @@ public class CollectionsService {
             return response;
 
         } catch (Exception e) {
-            String errorMsg = "Error importing collection: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
-            return new ImportResponse("", "Error importing collection: " + e.getMessage());
+            String errorMsg = "Error importing collectionEntity: " + e.getMessage();
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
+            return new ImportResponse("", "Error importing collectionEntity: " + e.getMessage());
         }
     }
 
     public void clearCollectionsCache(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Clearing collections cache for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Clearing collections cache for user: {}", requestId, performedBy);
 
             int beforeSize = collectionsCache.size();
 
@@ -264,13 +264,13 @@ public class CollectionsService {
 
             int afterSize = collectionsCache.size();
 
-            log.info("Request ID: {}, Cleared {} collections cache entries", requestId, beforeSize - afterSize);
+            log.info("RequestEntity ID: {}, Cleared {} collections cache entries", requestId, beforeSize - afterSize);
             loggerUtil.log("collections",
-                    "Request ID: " + requestId + ", Cleared collections cache for user: " + performedBy);
+                    "RequestEntity ID: " + requestId + ", Cleared collections cache for user: " + performedBy);
 
         } catch (Exception e) {
             String errorMsg = "Error clearing collections cache: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
         }
     }
 
@@ -279,7 +279,7 @@ public class CollectionsService {
     private CollectionsListResponse generateStaticCollectionsList(String userId) {
         List<CollectionDto> collections = new ArrayList<>();
 
-        // First collection - E-Commerce API (from React component)
+        // First collectionEntity - E-Commerce API (from React component)
         CollectionDto ecommerceCollection = new CollectionDto();
         ecommerceCollection.setId("col-1");
         ecommerceCollection.setName("E-Commerce API");
@@ -294,7 +294,7 @@ public class CollectionsService {
         ecommerceVariables.add(createVariable("var-1", "baseUrl", "{{base_url}}", "string", true));
         ecommerceCollection.setVariables(ecommerceVariables);
 
-        // Second collection - Social Media API (from React component)
+        // Second collectionEntity - Social Media API (from React component)
         CollectionDto socialMediaCollection = new CollectionDto();
         socialMediaCollection.setId("col-2");
         socialMediaCollection.setName("Social Media API");
@@ -331,7 +331,7 @@ public class CollectionsService {
         } else if ("col-2".equals(collectionId)) {
             return generateSocialMediaCollectionDetails();
         }
-        return generateEcommerceCollectionDetails(); // Default to first collection
+        return generateEcommerceCollectionDetails(); // Default to first collectionEntity
     }
 
     private CollectionDetailsResponse generateEcommerceCollectionDetails() {
@@ -350,12 +350,12 @@ public class CollectionsService {
         variables.add(createVariable("var-1", "baseUrl", "{{base_url}}", "string", true));
         details.setVariables(variables);
 
-        // Generate folders with requests
+        // Generate folderEntities with requestEntities
         List<FolderDto> folders = new ArrayList<>();
 
-        // Authentication folder
+        // Authentication folderEntity
         FolderDto authFolder = new FolderDto();
-        authFolder.setId("folder-1");
+        authFolder.setId("folderEntity-1");
         authFolder.setName("Authentication");
         authFolder.setDescription("User authentication and authorization");
         authFolder.setExpanded(true);
@@ -364,7 +364,7 @@ public class CollectionsService {
 
         List<RequestDto> authRequests = new ArrayList<>();
 
-        // Login request
+        // Login requestEntity
         RequestDto loginRequest = new RequestDto();
         loginRequest.setId("req-1");
         loginRequest.setName("Login");
@@ -392,10 +392,10 @@ public class CollectionsService {
         loginRequest.setPreRequestScript("");
         loginRequest.setSaved(true);
         loginRequest.setCollectionId("col-1");
-        loginRequest.setFolderId("folder-1");
+        loginRequest.setFolderId("folderEntity-1");
         authRequests.add(loginRequest);
 
-        // Refresh Token request
+        // Refresh Token requestEntity
         RequestDto refreshRequest = new RequestDto();
         refreshRequest.setId("req-2");
         refreshRequest.setName("Refresh Token");
@@ -422,15 +422,15 @@ public class CollectionsService {
         refreshRequest.setPreRequestScript("");
         refreshRequest.setSaved(true);
         refreshRequest.setCollectionId("col-1");
-        refreshRequest.setFolderId("folder-1");
+        refreshRequest.setFolderId("folderEntity-1");
         authRequests.add(refreshRequest);
 
         authFolder.setRequests(authRequests);
         folders.add(authFolder);
 
-        // Products folder
+        // Products folderEntity
         FolderDto productsFolder = new FolderDto();
-        productsFolder.setId("folder-2");
+        productsFolder.setId("folderEntity-2");
         productsFolder.setName("Products");
         productsFolder.setDescription("Product management endpoints");
         productsFolder.setExpanded(true);
@@ -439,7 +439,7 @@ public class CollectionsService {
 
         List<RequestDto> productRequests = new ArrayList<>();
 
-        // Get Products request
+        // Get Products requestEntity
         RequestDto getProductsRequest = new RequestDto();
         getProductsRequest.setId("req-3");
         getProductsRequest.setName("Get Products");
@@ -470,10 +470,10 @@ public class CollectionsService {
         getProductsRequest.setPreRequestScript("");
         getProductsRequest.setSaved(true);
         getProductsRequest.setCollectionId("col-1");
-        getProductsRequest.setFolderId("folder-2");
+        getProductsRequest.setFolderId("folderEntity-2");
         productRequests.add(getProductsRequest);
 
-        // Create Product request
+        // Create Product requestEntity
         RequestDto createProductRequest = new RequestDto();
         createProductRequest.setId("req-4");
         createProductRequest.setName("Create Product");
@@ -501,14 +501,14 @@ public class CollectionsService {
         createProductRequest.setPreRequestScript("");
         createProductRequest.setSaved(true);
         createProductRequest.setCollectionId("col-1");
-        createProductRequest.setFolderId("folder-2");
+        createProductRequest.setFolderId("folderEntity-2");
         productRequests.add(createProductRequest);
 
         productsFolder.setRequests(productRequests);
         folders.add(productsFolder);
 
         details.setFolders(folders);
-        details.setComments("Sample e-commerce API collection for testing");
+        details.setComments("Sample e-commerce API collectionEntity for testing");
         details.setLastActivity(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
 
         return details;
@@ -530,12 +530,12 @@ public class CollectionsService {
         variables.add(createVariable("var-2", "apiUrl", "{{api_url}}", "string", true));
         details.setVariables(variables);
 
-        // Generate folders with requests
+        // Generate folderEntities with requestEntities
         List<FolderDto> folders = new ArrayList<>();
 
-        // Posts folder
+        // Posts folderEntity
         FolderDto postsFolder = new FolderDto();
-        postsFolder.setId("folder-3");
+        postsFolder.setId("folderEntity-3");
         postsFolder.setName("Posts");
         postsFolder.setDescription("Post management endpoints");
         postsFolder.setExpanded(false);
@@ -544,7 +544,7 @@ public class CollectionsService {
 
         List<RequestDto> postRequests = new ArrayList<>();
 
-        // Create Post request
+        // Create Post requestEntity
         RequestDto createPostRequest = new RequestDto();
         createPostRequest.setId("req-5");
         createPostRequest.setName("Create Post");
@@ -571,21 +571,21 @@ public class CollectionsService {
         createPostRequest.setPreRequestScript("");
         createPostRequest.setSaved(true);
         createPostRequest.setCollectionId("col-2");
-        createPostRequest.setFolderId("folder-3");
+        createPostRequest.setFolderId("folderEntity-3");
         postRequests.add(createPostRequest);
 
         postsFolder.setRequests(postRequests);
         folders.add(postsFolder);
 
         details.setFolders(folders);
-        details.setComments("Sample social media API collection");
+        details.setComments("Sample social media API collectionEntity");
         details.setLastActivity(LocalDateTime.now().minusDays(2).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
 
         return details;
     }
 
     private RequestDetailsResponse generateStaticRequestDetails(String collectionId, String requestId) {
-        // Based on the requestId, return the appropriate request details
+        // Based on the requestId, return the appropriate requestEntity details
         switch (requestId) {
             case "req-1":
                 return getLoginRequestDetails();
@@ -598,7 +598,7 @@ public class CollectionsService {
             case "req-5":
                 return getCreatePostRequestDetails();
             default:
-                return getLoginRequestDetails(); // Default to login request
+                return getLoginRequestDetails(); // Default to login requestEntity
         }
     }
 
@@ -638,7 +638,7 @@ public class CollectionsService {
         details.setCreatedAt("2024-01-15T09:45:00Z");
         details.setUpdatedAt("2024-01-15T09:45:00Z");
         details.setCollectionId("col-1");
-        details.setFolderId("folder-1");
+        details.setFolderId("folderEntity-1");
         details.setSaved(true);
 
         return details;
@@ -678,7 +678,7 @@ public class CollectionsService {
         details.setCreatedAt("2024-01-14T14:20:00Z");
         details.setUpdatedAt("2024-01-14T14:20:00Z");
         details.setCollectionId("col-1");
-        details.setFolderId("folder-1");
+        details.setFolderId("folderEntity-1");
         details.setSaved(true);
 
         return details;
@@ -721,7 +721,7 @@ public class CollectionsService {
         details.setCreatedAt("2024-01-15T08:15:00Z");
         details.setUpdatedAt("2024-01-15T08:15:00Z");
         details.setCollectionId("col-1");
-        details.setFolderId("folder-2");
+        details.setFolderId("folderEntity-2");
         details.setSaved(true);
 
         return details;
@@ -762,7 +762,7 @@ public class CollectionsService {
         details.setCreatedAt("2024-01-14T16:45:00Z");
         details.setUpdatedAt("2024-01-14T16:45:00Z");
         details.setCollectionId("col-1");
-        details.setFolderId("folder-2");
+        details.setFolderId("folderEntity-2");
         details.setSaved(true);
 
         return details;
@@ -802,7 +802,7 @@ public class CollectionsService {
         details.setCreatedAt("2024-01-12T11:30:00Z");
         details.setUpdatedAt("2024-01-12T11:30:00Z");
         details.setCollectionId("col-2");
-        details.setFolderId("folder-3");
+        details.setFolderId("folderEntity-3");
         details.setSaved(true);
 
         return details;
@@ -885,7 +885,7 @@ public class CollectionsService {
             CollectionsListResponse collections = generateStaticCollectionsList("admin");
             collectionsCache.put("collections_list_admin", new CollectionsCache(collections, System.currentTimeMillis()));
 
-            // Preload collection details
+            // Preload collectionEntity details
             CollectionDetailsResponse ecommerceDetails = generateEcommerceCollectionDetails();
             collectionsCache.put("collection_details_admin_col-1",
                     new CollectionsCache(ecommerceDetails, System.currentTimeMillis()));
@@ -894,7 +894,7 @@ public class CollectionsService {
             collectionsCache.put("collection_details_admin_col-2",
                     new CollectionsCache(socialMediaDetails, System.currentTimeMillis()));
 
-            // Preload request details
+            // Preload requestEntity details
             RequestDetailsResponse loginRequest = getLoginRequestDetails();
             collectionsCache.put("request_details_admin_col-1_req-1",
                     new CollectionsCache(loginRequest, System.currentTimeMillis()));
@@ -922,7 +922,7 @@ public class CollectionsService {
 
     private ExecuteRequestResponse executeSampleRequest(ExecuteRequestDto requestDto) {
         try {
-            // Generate sample response based on request
+            // Generate sample response based on requestEntity
             String method = requestDto.getMethod();
             String statusCode = method.equals("GET") ? "200" : method.equals("POST") ? "201" : "200";
             String statusText = statusCode.equals("200") ? "OK" : statusCode.equals("201") ? "Created" : "OK";
@@ -965,7 +965,7 @@ public class CollectionsService {
             } else {
                 responseBody = "{\n" +
                         "  \"success\": true,\n" +
-                        "  \"message\": \"Request processed successfully\",\n" +
+                        "  \"message\": \"RequestEntity processed successfully\",\n" +
                         "  \"timestamp\": \"" + LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) + "\",\n" +
                         "  \"endpoint\": \"" + requestDto.getUrl() + "\",\n" +
                         "  \"method\": \"" + method + "\"\n" +
@@ -975,7 +975,7 @@ public class CollectionsService {
             long timeMs = (long) (Math.random() * 200) + 100;
             long sizeBytes = responseBody.getBytes().length;
 
-            // Generate headers
+            // Generate headerEntities
             List<HeaderDto> headers = new ArrayList<>();
             headers.add(createHeader("res-header-1", "Content-Type", "application/json", true, ""));
             headers.add(createHeader("res-header-2", "X-RateLimit-Limit", "1000", true, ""));
@@ -996,7 +996,7 @@ public class CollectionsService {
             return new ExecuteRequestResponse(
                     "",
                     500,
-                    "Error executing request: " + e.getMessage(),
+                    "Error executing requestEntity: " + e.getMessage(),
                     Collections.emptyList(),
                     0L,
                     0L
@@ -1007,21 +1007,21 @@ public class CollectionsService {
     private SaveRequestResponse saveSampleRequest(SaveRequestDto requestDto) {
         return new SaveRequestResponse(
                 "req-" + System.currentTimeMillis(),
-                "Request saved successfully"
+                "RequestEntity saved successfully"
         );
     }
 
     private CreateCollectionResponse createSampleCollection(CreateCollectionDto collectionDto) {
         return new CreateCollectionResponse(
                 "col-" + System.currentTimeMillis(),
-                "Collection created successfully"
+                "CollectionEntity created successfully"
         );
     }
 
     private ImportResponse importSampleCollection(ImportRequestDto importRequest) {
         return new ImportResponse(
                 "col-import-" + System.currentTimeMillis(),
-                "Collection imported successfully from " + importRequest.getSource()
+                "CollectionEntity imported successfully from " + importRequest.getSource()
         );
     }
 
@@ -1089,7 +1089,7 @@ public class CollectionsService {
         js.append("  method: \"").append(request.getMethod()).append("\",\n");
 
         if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
-            js.append("  headers: {\n");
+            js.append("  headerEntities: {\n");
             for (int i = 0; i < request.getHeaders().size(); i++) {
                 HeaderDto header = request.getHeaders().get(i);
                 if (header.isEnabled()) {
@@ -1115,10 +1115,10 @@ public class CollectionsService {
 
     private String generatePythonSnippet(CodeSnippetRequestDto request) {
         StringBuilder python = new StringBuilder();
-        python.append("import requests\n\n");
+        python.append("import requestEntities\n\n");
 
         if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
-            python.append("headers = {\n");
+            python.append("headerEntities = {\n");
             for (HeaderDto header : request.getHeaders()) {
                 if (header.isEnabled()) {
                     python.append("    \"").append(header.getKey()).append("\": \"").append(header.getValue()).append("\",\n");
@@ -1126,17 +1126,17 @@ public class CollectionsService {
             }
             python.append("}\n\n");
         } else {
-            python.append("headers = {}\n\n");
+            python.append("headerEntities = {}\n\n");
         }
 
         if (request.getBody() != null && !request.getBody().trim().isEmpty() &&
                 !request.getMethod().equals("GET")) {
             python.append("data = ").append(request.getBody()).append("\n\n");
-            python.append("response = requests.").append(request.getMethod().toLowerCase());
-            python.append("(\"").append(request.getUrl()).append("\", json=data, headers=headers)\n");
+            python.append("response = requestEntities.").append(request.getMethod().toLowerCase());
+            python.append("(\"").append(request.getUrl()).append("\", json=data, headerEntities=headerEntities)\n");
         } else {
-            python.append("response = requests.").append(request.getMethod().toLowerCase());
-            python.append("(\"").append(request.getUrl()).append("\", headers=headers)\n");
+            python.append("response = requestEntities.").append(request.getMethod().toLowerCase());
+            python.append("(\"").append(request.getUrl()).append("\", headerEntities=headerEntities)\n");
         }
 
         python.append("print(response.json())");
@@ -1203,7 +1203,7 @@ public class CollectionsService {
         node.append("  method: '").append(request.getMethod()).append("',\n");
 
         if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
-            node.append("  headers: {\n");
+            node.append("  headerEntities: {\n");
             for (int i = 0; i < request.getHeaders().size(); i++) {
                 HeaderDto header = request.getHeaders().get(i);
                 if (header.isEnabled()) {
@@ -1216,7 +1216,7 @@ public class CollectionsService {
 
         node.append("};\n\n");
 
-        node.append("const req = https.request(options, (res) => {\n");
+        node.append("const req = https.requestEntity(options, (res) => {\n");
         node.append("  let data = '';\n");
         node.append("  res.on('data', (chunk) => {\n");
         node.append("    data += chunk;\n");
@@ -1250,14 +1250,14 @@ public class CollectionsService {
         php.append("curl_setopt($ch, CURLOPT_CUSTOMREQUEST, \"").append(request.getMethod()).append("\");\n\n");
 
         if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
-            php.append("$headers = [\n");
+            php.append("$headerEntities = [\n");
             for (HeaderDto header : request.getHeaders()) {
                 if (header.isEnabled()) {
                     php.append("    \"").append(header.getKey()).append(": ").append(header.getValue()).append("\",\n");
                 }
             }
             php.append("];\n");
-            php.append("curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);\n\n");
+            php.append("curl_setopt($ch, CURLOPT_HTTPHEADER, $headerEntities);\n\n");
         }
 
         if (request.getBody() != null && !request.getBody().trim().isEmpty() &&
@@ -1284,23 +1284,23 @@ public class CollectionsService {
         ruby.append("http = Net::HTTP.new(uri.host, uri.port)\n");
         ruby.append("http.use_ssl = true if uri.scheme == 'https'\n\n");
 
-        ruby.append("request = Net::HTTP::").append(request.getMethod().charAt(0) + request.getMethod().substring(1).toLowerCase());
+        ruby.append("requestEntity = Net::HTTP::").append(request.getMethod().charAt(0) + request.getMethod().substring(1).toLowerCase());
         ruby.append(".new(uri.request_uri)\n\n");
 
         if (request.getHeaders() != null) {
             for (HeaderDto header : request.getHeaders()) {
                 if (header.isEnabled()) {
-                    ruby.append("request[\"").append(header.getKey()).append("\"] = \"").append(header.getValue()).append("\"\n");
+                    ruby.append("requestEntity[\"").append(header.getKey()).append("\"] = \"").append(header.getValue()).append("\"\n");
                 }
             }
         }
 
         if (request.getBody() != null && !request.getBody().trim().isEmpty() &&
                 !request.getMethod().equals("GET")) {
-            ruby.append("request.body = ").append(request.getBody()).append(".to_json\n\n");
+            ruby.append("requestEntity.body = ").append(request.getBody()).append(".to_json\n\n");
         }
 
-        ruby.append("response = http.request(request)\n");
+        ruby.append("response = http.requestEntity(requestEntity)\n");
         ruby.append("puts response.body");
 
         return ruby.toString();
@@ -1314,7 +1314,7 @@ public class CollectionsService {
         CollectionDto collection = new CollectionDto();
         collection.setId("col-1");
         collection.setName("E-Commerce API");
-        collection.setDescription("Fallback collection");
+        collection.setDescription("Fallback collectionEntity");
         collection.setOwner("admin");
         collection.setFavorite(true);
         collection.setCreatedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
@@ -1331,8 +1331,8 @@ public class CollectionsService {
     private CollectionDetailsResponse getFallbackCollectionDetails(String collectionId) {
         CollectionDetailsResponse details = new CollectionDetailsResponse();
         details.setCollectionId(collectionId);
-        details.setName("Fallback Collection");
-        details.setDescription("Fallback collection details");
+        details.setName("Fallback CollectionEntity");
+        details.setDescription("Fallback collectionEntity details");
         details.setCreatedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         details.setUpdatedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         details.setTotalRequests(3);
@@ -1342,9 +1342,9 @@ public class CollectionsService {
 
         List<FolderDto> folders = new ArrayList<>();
         FolderDto folder = new FolderDto();
-        folder.setId("folder-1");
-        folder.setName("Fallback Folder");
-        folder.setDescription("Fallback folder");
+        folder.setId("folderEntity-1");
+        folder.setName("Fallback FolderEntity");
+        folder.setDescription("Fallback folderEntity");
         folder.setRequestCount(2);
         folder.setExpanded(true);
         folders.add(folder);
@@ -1357,15 +1357,15 @@ public class CollectionsService {
     private RequestDetailsResponse getFallbackRequestDetails(String requestId) {
         RequestDetailsResponse details = new RequestDetailsResponse();
         details.setRequestId(requestId);
-        details.setName("Fallback Request");
+        details.setName("Fallback RequestEntity");
         details.setMethod("GET");
         details.setUrl("{{base_url}}/api/v1/fallback");
-        details.setDescription("Fallback request details");
+        details.setDescription("Fallback requestEntity details");
         details.setAuthType("noauth");
         details.setCreatedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         details.setUpdatedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         details.setCollectionId("col-1");
-        details.setFolderId("folder-1");
+        details.setFolderId("folderEntity-1");
         details.setSaved(true);
 
         return details;

@@ -57,16 +57,16 @@ public class DashboardService {
 
     public DashboardStatsResponse getDashboardStats(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting dashboard statistics for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Getting dashboard statistics for user: {}", requestId, performedBy);
             loggerUtil.log("dashboard",
-                    "Request ID: " + requestId + ", Getting dashboard statistics for user: " + performedBy);
+                    "RequestEntity ID: " + requestId + ", Getting dashboard statistics for user: " + performedBy);
 
             // Check cache first
             String cacheKey = "dashboard_stats_" + performedBy;
             DashboardCache cachedData = dashboardCache.get(cacheKey);
 
             if (cachedData != null && !isCacheExpired(cachedData)) {
-                log.debug("Request ID: {}, Returning cached dashboard statistics", requestId);
+                log.debug("RequestEntity ID: {}, Returning cached dashboard statistics", requestId);
                 return (DashboardStatsResponse) cachedData.getData();
             }
 
@@ -75,31 +75,31 @@ public class DashboardService {
             // Update cache
             dashboardCache.put(cacheKey, new DashboardCache(stats, System.currentTimeMillis()));
 
-            log.info("Request ID: {}, Retrieved dashboard statistics", requestId);
+            log.info("RequestEntity ID: {}, Retrieved dashboard statistics", requestId);
             loggerUtil.log("dashboard",
-                    "Request ID: " + requestId + ", Retrieved dashboard statistics for user: " + performedBy);
+                    "RequestEntity ID: " + requestId + ", Retrieved dashboard statistics for user: " + performedBy);
 
             return stats;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving dashboard statistics: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             loggerUtil.log("dashboard",
-                    "Request ID: " + requestId + ", " + errorMsg);
+                    "RequestEntity ID: " + requestId + ", " + errorMsg);
             return getFallbackDashboardStats();
         }
     }
 
     public DashboardConnectionsResponse getDashboardConnections(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting dashboard connections for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Getting dashboard connections for user: {}", requestId, performedBy);
 
             // Check cache first
             String cacheKey = "dashboard_connections_" + performedBy;
             DashboardCache cachedData = dashboardCache.get(cacheKey);
 
             if (cachedData != null && !isCacheExpired(cachedData)) {
-                log.debug("Request ID: {}, Returning cached dashboard connections", requestId);
+                log.debug("RequestEntity ID: {}, Returning cached dashboard connections", requestId);
                 return (DashboardConnectionsResponse) cachedData.getData();
             }
 
@@ -108,27 +108,27 @@ public class DashboardService {
             // Update cache
             dashboardCache.put(cacheKey, new DashboardCache(connections, System.currentTimeMillis()));
 
-            log.info("Request ID: {}, Retrieved {} dashboard connections", requestId, connections.getConnections().size());
+            log.info("RequestEntity ID: {}, Retrieved {} dashboard connections", requestId, connections.getConnections().size());
 
             return connections;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving dashboard connections: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return getFallbackDashboardConnections();
         }
     }
 
     public DashboardApisResponse getDashboardApis(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting dashboard APIs for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Getting dashboard APIs for user: {}", requestId, performedBy);
 
             // Check cache first
             String cacheKey = "dashboard_apis_" + performedBy;
             DashboardCache cachedData = dashboardCache.get(cacheKey);
 
             if (cachedData != null && !isCacheExpired(cachedData)) {
-                log.debug("Request ID: {}, Returning cached dashboard APIs", requestId);
+                log.debug("RequestEntity ID: {}, Returning cached dashboard APIs", requestId);
                 return (DashboardApisResponse) cachedData.getData();
             }
 
@@ -137,13 +137,13 @@ public class DashboardService {
             // Update cache
             dashboardCache.put(cacheKey, new DashboardCache(apis, System.currentTimeMillis()));
 
-            log.info("Request ID: {}, Retrieved {} dashboard APIs", requestId, apis.getApis().size());
+            log.info("RequestEntity ID: {}, Retrieved {} dashboard APIs", requestId, apis.getApis().size());
 
             return apis;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving dashboard APIs: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return getFallbackDashboardApis();
         }
     }
@@ -151,7 +151,7 @@ public class DashboardService {
     public DashboardActivitiesResponse getDashboardActivities(String requestId, HttpServletRequest req,
                                                               String performedBy, int page, int size) {
         try {
-            log.info("Request ID: {}, Getting dashboard activities for user: {}, Page: {}, Size: {}",
+            log.info("RequestEntity ID: {}, Getting dashboard activities for user: {}, Page: {}, Size: {}",
                     requestId, performedBy, page, size);
 
             // Check cache first
@@ -159,7 +159,7 @@ public class DashboardService {
             DashboardCache cachedData = dashboardCache.get(cacheKey);
 
             if (cachedData != null && !isCacheExpired(cachedData)) {
-                log.debug("Request ID: {}, Returning cached dashboard activities", requestId);
+                log.debug("RequestEntity ID: {}, Returning cached dashboard activities", requestId);
                 return (DashboardActivitiesResponse) cachedData.getData();
             }
 
@@ -180,28 +180,28 @@ public class DashboardService {
             // Update cache
             dashboardCache.put(cacheKey, new DashboardCache(response, System.currentTimeMillis()));
 
-            log.info("Request ID: {}, Retrieved {} dashboard activities (page {})",
+            log.info("RequestEntity ID: {}, Retrieved {} dashboard activities (page {})",
                     requestId, paginatedActivities.size(), page);
 
             return response;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving dashboard activities: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new DashboardActivitiesResponse(Collections.emptyList(), page, size, 0, 0);
         }
     }
 
     public DashboardSchemaStatsResponse getDashboardSchemaStats(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting dashboard schema statistics for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Getting dashboard schema statistics for user: {}", requestId, performedBy);
 
             // Check cache first
             String cacheKey = "dashboard_schema_stats_" + performedBy;
             DashboardCache cachedData = dashboardCache.get(cacheKey);
 
             if (cachedData != null && !isCacheExpired(cachedData)) {
-                log.debug("Request ID: {}, Returning cached dashboard schema statistics", requestId);
+                log.debug("RequestEntity ID: {}, Returning cached dashboard schema statistics", requestId);
                 return (DashboardSchemaStatsResponse) cachedData.getData();
             }
 
@@ -210,20 +210,20 @@ public class DashboardService {
             // Update cache
             dashboardCache.put(cacheKey, new DashboardCache(schemaStats, System.currentTimeMillis()));
 
-            log.info("Request ID: {}, Retrieved dashboard schema statistics", requestId);
+            log.info("RequestEntity ID: {}, Retrieved dashboard schema statistics", requestId);
 
             return schemaStats;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving dashboard schema statistics: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return getFallbackDashboardSchemaStats();
         }
     }
 
     public Map<String, Object> getDashboardSystemHealth(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting dashboard systemActivities health for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Getting dashboard systemActivities health for user: {}", requestId, performedBy);
 
             Map<String, Object> systemHealth = new HashMap<>();
 
@@ -258,20 +258,20 @@ public class DashboardService {
             // Last updated
             systemHealth.put("lastUpdated", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
 
-            log.info("Request ID: {}, Retrieved dashboard systemActivities health", requestId);
+            log.info("RequestEntity ID: {}, Retrieved dashboard systemActivities health", requestId);
 
             return systemHealth;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving dashboard systemActivities health: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return Map.of("error", "Failed to fetch systemActivities health: " + e.getMessage());
         }
     }
 
     public Map<String, Object> getCodeGenerationStats(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting code generation statistics for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Getting code generation statistics for user: {}", requestId, performedBy);
 
             Map<String, Object> codeStats = new HashMap<>();
 
@@ -306,32 +306,32 @@ public class DashboardService {
             codeStats.put("lastGenerated", LocalDateTime.now().minusHours(2).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
             codeStats.put("generatedBy", performedBy);
 
-            log.info("Request ID: {}, Retrieved code generation statistics", requestId);
+            log.info("RequestEntity ID: {}, Retrieved code generation statistics", requestId);
 
             return codeStats;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving code generation statistics: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return Map.of("error", "Failed to fetch code generation statistics: " + e.getMessage());
         }
     }
 
     public void clearDashboardCache(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Clearing dashboard cache for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Clearing dashboard cache for user: {}", requestId, performedBy);
 
             int beforeSize = dashboardCache.size();
             dashboardCache.clear();
             int afterSize = dashboardCache.size();
 
-            log.info("Request ID: {}, Cleared {} dashboard cache entries", requestId, beforeSize - afterSize);
+            log.info("RequestEntity ID: {}, Cleared {} dashboard cache entries", requestId, beforeSize - afterSize);
             loggerUtil.log("dashboard",
-                    "Request ID: " + requestId + ", Cleared dashboard cache for user: " + performedBy);
+                    "RequestEntity ID: " + requestId + ", Cleared dashboard cache for user: " + performedBy);
 
         } catch (Exception e) {
             String errorMsg = "Error clearing dashboard cache: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
         }
     }
 
@@ -452,7 +452,7 @@ public class DashboardService {
             api.setDocumentation("https://docs.example.com/api/" + getApiVersion(i));
             api.setSupportedMethods(getApiMethods(i));
             api.setSecurity(getApiSecurity(i));
-            api.setRateLimit((int) (Math.random() * 2000 + 500) + " requests/hour");
+            api.setRateLimit((int) (Math.random() * 2000 + 500) + " requestEntities/hour");
             api.setErrors((int) (Math.random() * 20 + 1)); // 1-20 errors
             api.setAvgResponseTime(String.format("%.0fms", Math.random() * 35 + 15)); // 15-50ms
             api.setUptime(String.format("%.1f%%", 99 + Math.random() * 1)); // 99-100%

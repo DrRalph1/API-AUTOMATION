@@ -59,14 +59,14 @@ public class UserRoleController {
         // Validate Authorization header
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "creating a role");
         if (authValidation != null) {
-            log.warn("Request ID: {}, Authorization failed for creating role: {}", requestId, dto.getRoleName());
+            log.warn("RequestEntity ID: {}, Authorization failed for creating role: {}", requestId, dto.getRoleName());
             return (ResponseEntity<ApiResponseDTO<AppRoleDTO>>) authValidation;
         }
 
         // Extract performedBy from token
         String performedBy = jwtHelper.extractPerformedBy(req);
 
-        log.info("Request ID: {}, Creating role: {}, Requested by: {}", requestId, dto.getRoleName(), performedBy);
+        log.info("RequestEntity ID: {}, Creating role: {}, Requested by: {}", requestId, dto.getRoleName(), performedBy);
         auditLogHelper.logAuditAction("CREATE_ROLE_REQUEST", performedBy,
                 String.format("Creating role: %s", dto.getRoleName()), requestId);
 
@@ -100,14 +100,14 @@ public class UserRoleController {
         // Validate Authorization header
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "bulk creating roles");
         if (authValidation != null) {
-            log.warn("Request ID: {}, Authorization failed for bulk create roles", requestId);
+            log.warn("RequestEntity ID: {}, Authorization failed for bulk create roles", requestId);
             return (ResponseEntity<BulkRoleResponseDTO>) authValidation;
         }
 
         // Extract performedBy from token
         String performedBy = jwtHelper.extractPerformedBy(req);
 
-        log.info("Request ID: {}, Bulk creating {} roles, Requested by: {}", requestId, dtos.size(), performedBy);
+        log.info("RequestEntity ID: {}, Bulk creating {} roles, Requested by: {}", requestId, dtos.size(), performedBy);
         auditLogHelper.logAuditAction("BULK_CREATE_ROLES_REQUEST", performedBy,
                 String.format("Bulk creating %d roles", dtos.size()), requestId);
 
@@ -146,14 +146,14 @@ public class UserRoleController {
         // Validate Authorization header
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting a role");
         if (authValidation != null) {
-            log.warn("Request ID: {}, Authorization failed for getting role: {}", requestId, roleId);
+            log.warn("RequestEntity ID: {}, Authorization failed for getting role: {}", requestId, roleId);
             return (ResponseEntity<ApiResponseDTO<AppRoleDTO>>) authValidation;
         }
 
         // Extract performedBy from token
         String performedBy = jwtHelper.extractPerformedBy(req);
 
-        log.debug("Request ID: {}, Getting role with ID: {}, Requested by: {}", requestId, roleId, performedBy);
+        log.debug("RequestEntity ID: {}, Getting role with ID: {}, Requested by: {}", requestId, roleId, performedBy);
         auditLogHelper.logAuditAction("RETRIEVE_ROLE", performedBy,
                 String.format("Getting role with ID: %s", roleId), requestId);
 
@@ -184,14 +184,14 @@ public class UserRoleController {
         // Validate Authorization header
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting all roles");
         if (authValidation != null) {
-            log.warn("Request ID: {}, Authorization failed for getting all roles", requestId);
+            log.warn("RequestEntity ID: {}, Authorization failed for getting all roles", requestId);
             return (ResponseEntity<ApiResponseDTO<Page<AppRoleDTO>>>) authValidation;
         }
 
         // Extract performedBy from token
         String performedBy = jwtHelper.extractPerformedBy(req);
 
-        log.debug("Request ID: {}, Getting all roles with pagination - Page: {}, Size: {}, Sort: {}, Requested by: {}",
+        log.debug("RequestEntity ID: {}, Getting all roles with pagination - Page: {}, Size: {}, Sort: {}, Requested by: {}",
                 requestId, pageable.getPageNumber(), pageable.getPageSize(), pageable.getSort(), performedBy);
         auditLogHelper.logAuditAction("GET_ALL_ROLES", performedBy,
                 String.format("Getting all roles - Page: %d, Size: %d, Sort: %s",
@@ -200,11 +200,11 @@ public class UserRoleController {
 
         Page<AppRoleDTO> page = roleService.getAllRoles(pageable, requestId, req, performedBy);
 
-        log.debug("Request ID: {}, Service returned - Total: {}, Content size: {}, Empty: {}",
+        log.debug("RequestEntity ID: {}, Service returned - Total: {}, Content size: {}, Empty: {}",
                 requestId, page.getTotalElements(), page.getContent().size(), page.isEmpty());
 
         if (page.isEmpty()) {
-            log.info("Request ID: {}, No roles found in database", requestId);
+            log.info("RequestEntity ID: {}, No roles found in database", requestId);
             auditLogHelper.logAuditAction("GET_ALL_ROLES_NO_CONTENT", performedBy,
                     "No roles found", requestId);
 
@@ -251,14 +251,14 @@ public class UserRoleController {
         // Validate Authorization header
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "updating a role");
         if (authValidation != null) {
-            log.warn("Request ID: {}, Authorization failed for updating role: {}", requestId, roleId);
+            log.warn("RequestEntity ID: {}, Authorization failed for updating role: {}", requestId, roleId);
             return (ResponseEntity<ApiResponseDTO<AppRoleDTO>>) authValidation;
         }
 
         // Extract performedBy from token
         String performedBy = jwtHelper.extractPerformedBy(req);
 
-        log.info("Request ID: {}, Updating role with ID: {}, Requested by: {}", requestId, roleId, performedBy);
+        log.info("RequestEntity ID: {}, Updating role with ID: {}, Requested by: {}", requestId, roleId, performedBy);
         auditLogHelper.logAuditAction("UPDATE_ROLE_REQUEST", performedBy,
                 String.format("Updating role with ID: %s, New name: %s", roleId, dto.getRoleName()), requestId);
 
@@ -290,20 +290,20 @@ public class UserRoleController {
         // Validate Authorization header
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "deleting a role");
         if (authValidation != null) {
-            log.warn("Request ID: {}, Authorization failed for deleting role: {}", requestId, roleId);
+            log.warn("RequestEntity ID: {}, Authorization failed for deleting role: {}", requestId, roleId);
             return (ResponseEntity<ApiResponseDTO<Void>>) authValidation;
         }
 
         // Extract performedBy from token
         String performedBy = jwtHelper.extractPerformedBy(req);
 
-        log.info("Request ID: {}, Deleting role with ID: {}, Requested by: {}", requestId, roleId, performedBy);
+        log.info("RequestEntity ID: {}, Deleting role with ID: {}, Requested by: {}", requestId, roleId, performedBy);
         auditLogHelper.logAuditAction("DELETE_ROLE_REQUEST", performedBy,
                 String.format("Deleting role with ID: %s", roleId), requestId);
 
         roleService.deleteRole(roleId, requestId, req, performedBy);
 
-        log.info("Request ID: {}, Role deleted successfully: {}", requestId, roleId);
+        log.info("RequestEntity ID: {}, Role deleted successfully: {}", requestId, roleId);
         auditLogHelper.logAuditAction("DELETE_ROLE_SUCCESS", performedBy,
                 String.format("Role deleted successfully. Role ID: %s", roleId), requestId);
 

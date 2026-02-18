@@ -99,21 +99,21 @@ public class UserController {
         String requestId = UUID.randomUUID().toString();
 
         try {
-            // Log the incoming request
+            // Log the incoming requestEntity
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Login attempt for username: " +
+                    "RequestEntity ID: " + requestId + ", Login attempt for username: " +
                             userLoginRequestDTO.getUserId());
             auditLogHelper.logAuditAction("USER_LOGIN_REQUEST", null,
                     String.format("Login attempt for username: %s", userLoginRequestDTO.getUserId()), requestId);
 
-            // Validate request body
+            // Validate requestEntity body
             if (bindingResult.hasErrors()) {
                 String validationErrors = bindingResult.getAllErrors().stream()
                         .map(error -> error.getDefaultMessage())
                         .collect(Collectors.joining(", "));
 
                 loggerUtil.log("api-automation",
-                        "Request ID: " + requestId + ", Validation errors: " + validationErrors);
+                        "RequestEntity ID: " + requestId + ", Validation errors: " + validationErrors);
                 auditLogHelper.logAuditAction("USER_LOGIN_VALIDATION_FAILED", null,
                         String.format("Validation errors for login of username %s: %s", userLoginRequestDTO.getUserId(), validationErrors),
                         requestId);
@@ -138,14 +138,14 @@ public class UserController {
             if (responseEntity != null && responseEntity.getBody() != null) {
                 String jsonResponse = objectMapper.writeValueAsString(responseEntity.getBody());
                 loggerUtil.log("api-automation",
-                        "Request ID: " + requestId + ", Login response: " + jsonResponse);
+                        "RequestEntity ID: " + requestId + ", Login response: " + jsonResponse);
                 auditLogHelper.logAuditAction("USER_LOGIN_RESPONSE", null,
                         String.format("Login response for username %s: %s", userLoginRequestDTO.getUserId(), jsonResponse),
                         requestId);
                 return responseEntity;
             } else {
                 loggerUtil.log("api-automation",
-                        "Request ID: " + requestId + ", Empty response from user service for login request");
+                        "RequestEntity ID: " + requestId + ", Empty response from user service for login requestEntity");
                 auditLogHelper.logAuditAction("USER_LOGIN_EMPTY_RESPONSE", null,
                         String.format("Empty response from authentication service for username %s", userLoginRequestDTO.getUserId()),
                         requestId);
@@ -159,7 +159,7 @@ public class UserController {
 
         } catch (JsonProcessingException e) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", JSON processing error: " + e.getMessage());
+                    "RequestEntity ID: " + requestId + ", JSON processing error: " + e.getMessage());
             auditLogHelper.logAuditAction("USER_LOGIN_JSON_ERROR", null,
                     String.format("JSON processing error during login for username %s: %s", userLoginRequestDTO.getUserId(), e.getMessage()),
                     requestId);
@@ -172,7 +172,7 @@ public class UserController {
 
         } catch (Exception e) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Login error: " + e.getMessage());
+                    "RequestEntity ID: " + requestId + ", Login error: " + e.getMessage());
             auditLogHelper.logAuditAction("USER_LOGIN_ERROR", null,
                     String.format("Error during login for username %s: %s", userLoginRequestDTO.getUserId(), e.getMessage()),
                     requestId);
@@ -209,7 +209,7 @@ public class UserController {
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "creating a user");
         if (authValidation != null) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Authorization failed for creating user: " + dto.getUsername());
+                    "RequestEntity ID: " + requestId + ", Authorization failed for creating user: " + dto.getUsername());
             return authValidation;
         }
 
@@ -217,14 +217,14 @@ public class UserController {
         String token = jwtHelper.extractTokenFromHeader(req);
         String performedBy = jwtUtil.extractUserId(token);
 
-        // Validate request body
+        // Validate requestEntity body
         if (bindingResult.hasErrors()) {
             String validationErrors = bindingResult.getAllErrors().stream()
                     .map(error -> error.getDefaultMessage())
                     .collect(Collectors.joining(", "));
 
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Validation errors: " + validationErrors);
+                    "RequestEntity ID: " + requestId + ", Validation errors: " + validationErrors);
             auditLogHelper.logAuditAction("CREATE_USER_VALIDATION_FAILED", performedBy,
                     String.format("Validation errors creating user %s: %s", dto.getUsername(), validationErrors), requestId);
 
@@ -237,7 +237,7 @@ public class UserController {
         }
 
         loggerUtil.log("api-automation",
-                "Request ID: " + requestId +
+                "RequestEntity ID: " + requestId +
                         ", Creating user: " + dto.getUsername() +
                         ", Requested by: " + performedBy);
         auditLogHelper.logAuditAction("CREATE_USER_REQUEST", performedBy,
@@ -250,7 +250,7 @@ public class UserController {
         if (response.getBody() instanceof Map) {
             Map<?, ?> responseBody = (Map<?, ?>) response.getBody();
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", User creation completed. Response code: " +
+                    "RequestEntity ID: " + requestId + ", User creation completed. Response code: " +
                             responseBody.get("responseCode") + ", Message: " + responseBody.get("message"));
             auditLogHelper.logAuditAction("CREATE_USER_COMPLETED", performedBy,
                     String.format("User creation completed for %s. Response code: %s, Message: %s",
@@ -291,7 +291,7 @@ public class UserController {
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "resetting default password");
         if (authValidation != null) {
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Authorization failed for resetting default password");
+                    "RequestEntity ID: " + requestId + ", Authorization failed for resetting default password");
             return authValidation;
         }
 
@@ -299,14 +299,14 @@ public class UserController {
         String token = jwtHelper.extractTokenFromHeader(req);
         String performedBy = jwtUtil.extractUserId(token);
 
-        // Validate request body
+        // Validate requestEntity body
         if (bindingResult.hasErrors()) {
             String validationErrors = bindingResult.getAllErrors().stream()
                     .map(error -> error.getDefaultMessage())
                     .collect(Collectors.joining(", "));
 
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Validation errors: " + validationErrors);
+                    "RequestEntity ID: " + requestId + ", Validation errors: " + validationErrors);
             auditLogHelper.logAuditAction("RESET_DEFAULT_PASSWORD_VALIDATION_FAILED", performedBy,
                     String.format("Validation errors resetting default password for user %s: %s", resetRequest.getUserId(), validationErrors),
                     requestId);
@@ -320,7 +320,7 @@ public class UserController {
         }
 
         loggerUtil.log("web-application-firewall",
-                "Request ID: " + requestId +
+                "RequestEntity ID: " + requestId +
                         ", Resetting default password for user: " + resetRequest.getUserId() +
                         ", Requested by: " + performedBy);
         auditLogHelper.logAuditAction("RESET_DEFAULT_PASSWORD_REQUEST", performedBy,
@@ -333,7 +333,7 @@ public class UserController {
         if (response.getBody() instanceof Map) {
             Map<?, ?> responseBody = (Map<?, ?>) response.getBody();
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Default password reset completed. Response code: " +
+                    "RequestEntity ID: " + requestId + ", Default password reset completed. Response code: " +
                             responseBody.get("responseCode") + ", Message: " + responseBody.get("message"));
             auditLogHelper.logAuditAction("RESET_DEFAULT_PASSWORD_COMPLETED", performedBy,
                     String.format("Default password reset completed for user %s. Response code: %s, Message: %s",
@@ -392,22 +392,22 @@ public class UserController {
         }
 
         try {
-            // Log incoming request
+            // Log incoming requestEntity
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Forgot password attempt for user: " +
+                    "RequestEntity ID: " + requestId + ", Forgot password attempt for user: " +
                             forgotPasswordRequestDTO.getUserId());
             auditLogHelper.logAuditAction("FORGOT_PASSWORD_REQUEST", apiKey,
                     String.format("Forgot password attempt for user: %s by API client: %s", forgotPasswordRequestDTO.getUserId(), apiKey),
                     requestId);
 
-            // Validate request body
+            // Validate requestEntity body
             if (bindingResult.hasErrors()) {
                 String validationErrors = bindingResult.getAllErrors().stream()
                         .map(error -> error.getDefaultMessage())
                         .collect(Collectors.joining(", "));
 
                 loggerUtil.log("web-application-firewall",
-                        "Request ID: " + requestId + ", Validation errors: " + validationErrors);
+                        "RequestEntity ID: " + requestId + ", Validation errors: " + validationErrors);
                 auditLogHelper.logAuditAction("FORGOT_PASSWORD_VALIDATION_FAILED", apiKey,
                         String.format("Validation errors for forgot password of user %s: %s", forgotPasswordRequestDTO.getUserId(), validationErrors),
                         requestId);
@@ -430,7 +430,7 @@ public class UserController {
             // Handle empty or null response
             if (responseEntity == null || responseEntity.getBody() == null) {
                 loggerUtil.log("web-application-firewall",
-                        "Request ID: " + requestId + ", Empty response from forgot password service");
+                        "RequestEntity ID: " + requestId + ", Empty response from forgot password service");
                 auditLogHelper.logAuditAction("FORGOT_PASSWORD_EMPTY_RESPONSE", apiKey,
                         String.format("Empty response from forgot password service for user %s", forgotPasswordRequestDTO.getUserId()),
                         requestId);
@@ -446,7 +446,7 @@ public class UserController {
             if (responseEntity.getBody() instanceof Map) {
                 Map<?, ?> responseBody = (Map<?, ?>) responseEntity.getBody();
                 loggerUtil.log("web-application-firewall",
-                        "Request ID: " + requestId + ", Forgot password completed. Response code: " +
+                        "RequestEntity ID: " + requestId + ", Forgot password completed. Response code: " +
                                 responseBody.get("responseCode") + ", Message: " + responseBody.get("message"));
                 auditLogHelper.logAuditAction("FORGOT_PASSWORD_COMPLETED", apiKey,
                         String.format("Forgot password completed for user %s. Response code: %s, Message: %s",
@@ -458,7 +458,7 @@ public class UserController {
 
         } catch (Exception e) {
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Error during forgot password: " + e.getMessage());
+                    "RequestEntity ID: " + requestId + ", Error during forgot password: " + e.getMessage());
             auditLogHelper.logAuditAction("FORGOT_PASSWORD_ERROR", apiKey,
                     String.format("Error during forgot password for user %s: %s", forgotPasswordRequestDTO.getUserId(), e.getMessage()),
                     requestId);
@@ -521,22 +521,22 @@ public class UserController {
         String requestId = UUID.randomUUID().toString();
 
         try {
-            // Log incoming request
+            // Log incoming requestEntity
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Password reset attempt for user: " +
+                    "RequestEntity ID: " + requestId + ", Password reset attempt for user: " +
                             userPasswordResetRequestDTO.getUserId());
             auditLogHelper.logAuditAction("PASSWORD_RESET_REQUEST", apiKey,
                     String.format("Password reset attempt for user: %s by API client: %s", userPasswordResetRequestDTO.getUserId(), apiKey),
                     requestId);
 
-            // Validate request body
+            // Validate requestEntity body
             if (bindingResult.hasErrors()) {
                 String validationErrors = bindingResult.getAllErrors().stream()
                         .map(error -> error.getDefaultMessage())
                         .collect(Collectors.joining(", "));
 
                 loggerUtil.log("web-application-firewall",
-                        "Request ID: " + requestId + ", Validation errors: " + validationErrors);
+                        "RequestEntity ID: " + requestId + ", Validation errors: " + validationErrors);
                 auditLogHelper.logAuditAction("PASSWORD_RESET_VALIDATION_FAILED", apiKey,
                         String.format("Validation errors resetting password for user %s: %s", userPasswordResetRequestDTO.getUserId(), validationErrors),
                         requestId);
@@ -554,13 +554,13 @@ public class UserController {
                     userPasswordResetRequestDTO,
                     requestId,
                     req,
-                    null // performedBy can be null for API-key driven request
+                    null // performedBy can be null for API-key driven requestEntity
             );
 
             // Handle empty or null response
             if (responseEntity == null || responseEntity.getBody() == null) {
                 loggerUtil.log("web-application-firewall",
-                        "Request ID: " + requestId + ", Empty response from password reset service");
+                        "RequestEntity ID: " + requestId + ", Empty response from password reset service");
                 auditLogHelper.logAuditAction("PASSWORD_RESET_EMPTY_RESPONSE", apiKey,
                         String.format("Empty response from password reset service for user %s", userPasswordResetRequestDTO.getUserId()),
                         requestId);
@@ -576,7 +576,7 @@ public class UserController {
             if (responseEntity.getBody() instanceof Map) {
                 Map<?, ?> responseBody = (Map<?, ?>) responseEntity.getBody();
                 loggerUtil.log("web-application-firewall",
-                        "Request ID: " + requestId + ", Password reset completed. Response code: " +
+                        "RequestEntity ID: " + requestId + ", Password reset completed. Response code: " +
                                 responseBody.get("responseCode") + ", Message: " + responseBody.get("message"));
                 auditLogHelper.logAuditAction("PASSWORD_RESET_COMPLETED", apiKey,
                         String.format("Password reset completed for user %s. Response code: %s, Message: %s",
@@ -588,7 +588,7 @@ public class UserController {
 
         } catch (Exception e) {
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Error resetting password: " + e.getMessage());
+                    "RequestEntity ID: " + requestId + ", Error resetting password: " + e.getMessage());
             auditLogHelper.logAuditAction("PASSWORD_RESET_ERROR", apiKey,
                     String.format("Error resetting password for user %s: %s", userPasswordResetRequestDTO.getUserId(), e.getMessage()),
                     requestId);
@@ -628,7 +628,7 @@ public class UserController {
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "bulk creating users");
         if (authValidation != null) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Authorization failed for bulk create");
+                    "RequestEntity ID: " + requestId + ", Authorization failed for bulk create");
             return authValidation;
         }
 
@@ -636,14 +636,14 @@ public class UserController {
         String token = jwtHelper.extractTokenFromHeader(req);
         String performedBy = jwtUtil.extractUserId(token);
 
-        // Validate request body
+        // Validate requestEntity body
         if (bindingResult.hasErrors()) {
             String validationErrors = bindingResult.getAllErrors().stream()
                     .map(error -> error.getDefaultMessage())
                     .collect(Collectors.joining(", "));
 
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Validation errors: " + validationErrors);
+                    "RequestEntity ID: " + requestId + ", Validation errors: " + validationErrors);
             auditLogHelper.logAuditAction("BULK_CREATE_USERS_VALIDATION_FAILED", performedBy,
                     String.format("Validation errors for bulk create users: %s", validationErrors), requestId);
 
@@ -656,7 +656,7 @@ public class UserController {
         }
 
         loggerUtil.log("api-automation",
-                "Request ID: " + requestId +
+                "RequestEntity ID: " + requestId +
                         ", Bulk creating " + dtos.size() + " users" +
                         ", Requested by: " + performedBy);
         auditLogHelper.logAuditAction("BULK_CREATE_USERS_REQUEST", performedBy,
@@ -669,7 +669,7 @@ public class UserController {
         if (response.getBody() instanceof Map) {
             Map<?, ?> responseBody = (Map<?, ?>) response.getBody();
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Bulk create completed. Response code: " +
+                    "RequestEntity ID: " + requestId + ", Bulk create completed. Response code: " +
                             responseBody.get("responseCode") + ", Message: " + responseBody.get("message"));
             auditLogHelper.logAuditAction("BULK_CREATE_USERS_COMPLETED", performedBy,
                     String.format("Bulk create completed. Response code: %s, Message: %s",
@@ -724,9 +724,9 @@ public class UserController {
         String requestId = UUID.randomUUID().toString();
 
         try {
-            // Log incoming request
+            // Log incoming requestEntity
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Retrieving user with ID: " + userId +
+                    "RequestEntity ID: " + requestId + ", Retrieving user with ID: " + userId +
                             ", Requested by API client with key: " + apiKey);
             auditLogHelper.logAuditAction("RETRIEVE_USER_REQUEST", apiKey,
                     String.format("Retrieving user with ID: %s by API client: %s", userId, apiKey),
@@ -738,7 +738,7 @@ public class UserController {
             // Handle empty or null response
             if (responseEntity == null || responseEntity.getBody() == null) {
                 loggerUtil.log("api-automation",
-                        "Request ID: " + requestId + ", Empty response from getUser service");
+                        "RequestEntity ID: " + requestId + ", Empty response from getUser service");
                 auditLogHelper.logAuditAction("RETRIEVE_USER_EMPTY_RESPONSE", apiKey,
                         String.format("Empty response from getUser service for user %s", userId), requestId);
 
@@ -753,7 +753,7 @@ public class UserController {
             if (responseEntity.getBody() instanceof Map) {
                 Map<?, ?> responseBody = (Map<?, ?>) responseEntity.getBody();
                 loggerUtil.log("api-automation",
-                        "Request ID: " + requestId + ", User retrieval completed. Response code: " +
+                        "RequestEntity ID: " + requestId + ", User retrieval completed. Response code: " +
                                 responseBody.get("responseCode") + ", Message: " + responseBody.get("message"));
                 auditLogHelper.logAuditAction("RETRIEVE_USER_COMPLETED", apiKey,
                         String.format("User retrieval completed for %s. Response code: %s, Message: %s",
@@ -764,7 +764,7 @@ public class UserController {
 
         } catch (Exception e) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Error retrieving user: " + e.getMessage());
+                    "RequestEntity ID: " + requestId + ", Error retrieving user: " + e.getMessage());
             auditLogHelper.logAuditAction("RETRIEVE_USER_ERROR", apiKey,
                     String.format("Error retrieving user %s: %s", userId, e.getMessage()), requestId);
 
@@ -785,7 +785,7 @@ public class UserController {
     )
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "SMS sent successfully", content = @Content),
-            @ApiResponse(responseCode = "400", description = "Invalid request data", content = @Content),
+            @ApiResponse(responseCode = "400", description = "Invalid requestEntity data", content = @Content),
             @ApiResponse(responseCode = "401", description = "Authorization required", content = @Content),
             @ApiResponse(responseCode = "500", description = "Failed to send SMS", content = @Content)
     })
@@ -801,7 +801,7 @@ public class UserController {
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "sending SMS");
         if (authValidation != null) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Authorization failed for sending SMS");
+                    "RequestEntity ID: " + requestId + ", Authorization failed for sending SMS");
             return authValidation;
         }
 
@@ -809,16 +809,16 @@ public class UserController {
         String token = jwtHelper.extractTokenFromHeader(req);
         String performedBy = jwtUtil.extractUserId(token);
 
-        // Validate request body
+        // Validate requestEntity body
         if (bindingResult.hasErrors()) {
             String validationErrors = bindingResult.getAllErrors().stream()
                     .map(error -> error.getDefaultMessage())
                     .collect(Collectors.joining(", "));
 
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Validation errors for SMS request: " + validationErrors);
+                    "RequestEntity ID: " + requestId + ", Validation errors for SMS requestEntity: " + validationErrors);
             auditLogHelper.logAuditAction("SEND_SMS_VALIDATION_FAILED", performedBy,
-                    String.format("Validation errors for SMS request to %s: %s", smsRequest.getTo(), validationErrors),
+                    String.format("Validation errors for SMS requestEntity to %s: %s", smsRequest.getTo(), validationErrors),
                     requestId);
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -830,7 +830,7 @@ public class UserController {
         }
 
         loggerUtil.log("api-automation",
-                "Request ID: " + requestId +
+                "RequestEntity ID: " + requestId +
                         ", Sending SMS to: " + smsRequest.getTo() +
                         ", Message length: " + (smsRequest.getMessage() != null ? smsRequest.getMessage().length() : 0) +
                         ", Requested by: " + performedBy);
@@ -877,7 +877,7 @@ public class UserController {
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting all users");
         if (authValidation != null) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Authorization failed for getting all users");
+                    "RequestEntity ID: " + requestId + ", Authorization failed for getting all users");
             return authValidation;
         }
 
@@ -886,7 +886,7 @@ public class UserController {
         String performedBy = jwtUtil.extractUserId(token);
 
         loggerUtil.log("api-automation",
-                "Request ID: " + requestId +
+                "RequestEntity ID: " + requestId +
                         ", Getting all users with pagination - Page: " +
                         pageable.getPageNumber() + ", Size: " + pageable.getPageSize() + ", Sort: " + pageable.getSort() +
                         ", Requested by: " + performedBy);
@@ -914,7 +914,7 @@ public class UserController {
             // Handle no content
             if (users == null || users.isEmpty()) {
                 loggerUtil.log("api-automation",
-                        "Request ID: " + requestId + ", No users found in database");
+                        "RequestEntity ID: " + requestId + ", No users found in database");
 
                 Map<String, Object> noContentResponse = new HashMap<>();
                 noContentResponse.put("responseCode", 204);
@@ -937,7 +937,7 @@ public class UserController {
             successResponse.put("requestId", requestId);
 
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Get all users completed. Total elements: " +
+                    "RequestEntity ID: " + requestId + ", Get all users completed. Total elements: " +
                             pagination.get("total_elements") + ", Total pages: " + pagination.get("total_pages") +
                             ", Unique roles: " + (uniqueRoles != null ? uniqueRoles.size() : 0) +
                             ", Unique usernames: " + (uniqueUsernames != null ? uniqueUsernames.size() : 0));
@@ -954,13 +954,13 @@ public class UserController {
             badResponse.put("message", e.getMessage());
 
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Invalid pagination parameters: " + e.getMessage());
+                    "RequestEntity ID: " + requestId + ", Invalid pagination parameters: " + e.getMessage());
 
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(badResponse);
 
         } catch (Exception e) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Error getting all users: " + e.getMessage());
+                    "RequestEntity ID: " + requestId + ", Error getting all users: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
@@ -993,7 +993,7 @@ public class UserController {
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "searching users");
         if (authValidation != null) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Authorization failed for searching users");
+                    "RequestEntity ID: " + requestId + ", Authorization failed for searching users");
             return authValidation;
         }
 
@@ -1002,7 +1002,7 @@ public class UserController {
         String performedBy = jwtUtil.extractUserId(token);
 
         loggerUtil.log("api-automation",
-                "Request ID: " + requestId +
+                "RequestEntity ID: " + requestId +
                         ", Searching users with filters - username: " +
                         username + ", fullName: " + fullName + ", roleId: " + roleId +
                         ", Requested by: " + performedBy);
@@ -1037,7 +1037,7 @@ public class UserController {
         if (response.getBody() instanceof Map) {
             Map<?, ?> responseBody = (Map<?, ?>) response.getBody();
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Search completed. Response code: " +
+                    "RequestEntity ID: " + requestId + ", Search completed. Response code: " +
                             responseBody.get("responseCode") + ", Total elements: " +
                             responseBody.get("total_elements"));
             auditLogHelper.logAuditAction("SEARCH_USERS_COMPLETED", performedBy,
@@ -1072,7 +1072,7 @@ public class UserController {
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "updating a user");
         if (authValidation != null) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Authorization failed for updating user: " + userId);
+                    "RequestEntity ID: " + requestId + ", Authorization failed for updating user: " + userId);
             return authValidation;
         }
 
@@ -1080,14 +1080,14 @@ public class UserController {
         String token = jwtHelper.extractTokenFromHeader(req);
         String performedBy = jwtUtil.extractUserId(token);
 
-        // Validate request body
+        // Validate requestEntity body
         if (bindingResult.hasErrors()) {
             String validationErrors = bindingResult.getAllErrors().stream()
                     .map(error -> error.getDefaultMessage())
                     .collect(Collectors.joining(", "));
 
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Validation errors: " + validationErrors);
+                    "RequestEntity ID: " + requestId + ", Validation errors: " + validationErrors);
             auditLogHelper.logAuditAction("UPDATE_USER_VALIDATION_FAILED", performedBy,
                     String.format("Validation errors updating user %s: %s", userId, validationErrors), requestId);
 
@@ -1100,7 +1100,7 @@ public class UserController {
         }
 
         loggerUtil.log("api-automation",
-                "Request ID: " + requestId +
+                "RequestEntity ID: " + requestId +
                         ", Updating user with ID: " + userId +
                         ", Requested by: " + performedBy);
         auditLogHelper.logAuditAction("UPDATE_USER_REQUEST", performedBy,
@@ -1113,7 +1113,7 @@ public class UserController {
         if (response.getBody() instanceof Map) {
             Map<?, ?> responseBody = (Map<?, ?>) response.getBody();
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", User update completed. Response code: " +
+                    "RequestEntity ID: " + requestId + ", User update completed. Response code: " +
                             responseBody.get("responseCode") + ", Message: " + responseBody.get("message"));
             auditLogHelper.logAuditAction("UPDATE_USER_COMPLETED", performedBy,
                     String.format("User update completed for %s. Response code: %s, Message: %s",
@@ -1144,7 +1144,7 @@ public class UserController {
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "deleting a user");
         if (authValidation != null) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Authorization failed for deleting user: " + userId);
+                    "RequestEntity ID: " + requestId + ", Authorization failed for deleting user: " + userId);
             return authValidation;
         }
 
@@ -1153,7 +1153,7 @@ public class UserController {
         String performedBy = jwtUtil.extractUserId(token);
 
         loggerUtil.log("api-automation",
-                "Request ID: " + requestId +
+                "RequestEntity ID: " + requestId +
                         ", Deleting user with ID: " + userId +
                         ", Requested by: " + performedBy);
         auditLogHelper.logAuditAction("DELETE_USER_REQUEST", performedBy,
@@ -1166,7 +1166,7 @@ public class UserController {
         if (response.getBody() instanceof Map) {
             Map<?, ?> responseBody = (Map<?, ?>) response.getBody();
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", User deletion completed. Response code: " +
+                    "RequestEntity ID: " + requestId + ", User deletion completed. Response code: " +
                             responseBody.get("responseCode") + ", Message: " + responseBody.get("message"));
             auditLogHelper.logAuditAction("DELETE_USER_COMPLETED", performedBy,
                     String.format("User deletion completed for %s. Response code: %s, Message: %s",

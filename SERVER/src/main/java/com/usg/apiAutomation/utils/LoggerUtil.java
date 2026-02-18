@@ -161,7 +161,7 @@ public class LoggerUtil {
                 return String.format(
                         "## %s Log Entry\n" +
                                 "- **Timestamp**: %s\n" +
-                                "- **Request ID**: %s\n" +
+                                "- **RequestEntity ID**: %s\n" +
                                 "- **Level**: %s\n" +
                                 "- **Source**: %s\n" +
                                 "- **Message**: %s\n\n",

@@ -195,6 +195,10 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   
   // Ref to track if this is the first load
   const isFirstLoad = useRef(true);
+  // Ref for global loading state
+  const globalLoadingRef = useRef(false);
+  // Add loading state for overlay
+  const [globalLoading, setGlobalLoading] = useState(false);
 
   // Color scheme
   const colors = isDark ? {
@@ -277,6 +281,83 @@ const CodeBase = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const showToast = (message, type = 'info') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
+  };
+
+  // Enhanced loading overlay component matching UserManagement style
+  const LoadingOverlay = () => {
+    if (!globalLoading) return null;
+    
+    return (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+        {/* Full-page backdrop */}
+        <div className="absolute inset-0 bg-white/95 dark:bg-gray-950/95 backdrop-blur-sm transition-colors duration-300" />
+        
+        {/* Centered Loading Content */}
+        <div className="relative flex flex-col items-center gap-6 p-8 max-w-md w-full">
+          {/* Main Spinner */}
+          <div className="relative">
+            {/* Outer ring */}
+            <div className="w-20 h-20 rounded-full border-4 border-gray-100 dark:border-gray-800 animate-pulse" />
+            
+            {/* Inner spinning ring */}
+            <div 
+              className="absolute top-0 left-0 w-20 h-20 rounded-full border-4 border-t-transparent border-l-transparent animate-spin"
+              style={{ 
+                borderColor: `${colors.primary} transparent transparent transparent`,
+                filter: 'drop-shadow(0 0 6px rgba(59, 130, 246, 0.3))'
+              }}
+            />
+            
+            {/* Center dot */}
+            <div 
+              className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
+              style={{ backgroundColor: colors.primary }}
+            />
+          </div>
+          
+          {/* Loading Text */}
+          <div className="text-center space-y-2">
+            <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
+              Loading Code Base
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Please wait while we prepare your collections and implementations
+            </p>
+          </div>
+          
+          {/* Progress Bar */}
+          <div className="w-64 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+            <div 
+              className="h-full rounded-full animate-pulse"
+              style={{ 
+                width: '70%', 
+                backgroundColor: colors.primary,
+                opacity: 0.8
+              }}
+            />
+          </div>
+          
+          {/* Optional loading tips */}
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">
+            Fetching API collections and generating code...
+          </p>
+        </div>
+      </div>
+    );
+  };
+
+  // Wrapper for async operations with global loading
+  const withGlobalLoading = async (asyncFn) => {
+    if (globalLoadingRef.current) return;
+    
+    try {
+      globalLoadingRef.current = true;
+      setGlobalLoading(true);
+      await asyncFn();
+    } finally {
+      globalLoadingRef.current = false;
+      setGlobalLoading(false);
+    }
   };
 
   // Load collections from codebase
@@ -1104,14 +1185,14 @@ useEffect(() => {
       // Clear cache to force fresh API call
       clearCachedCodebaseData(extractedUserId);
       
-      // Fetch fresh data
-      fetchCollectionsList().catch(error => {
-        console.error('Error in fetchCollectionsList:', error);
+      // Wrap initial data fetch with global loading
+      withGlobalLoading(async () => {
+        await Promise.all([
+          fetchCollectionsList(),
+          fetchLanguages()
+        ]);
       });
       
-      fetchLanguages().catch(error => {
-        console.error('Error in fetchLanguages:', error);
-      });
     } else {
       console.log('🔒 [CodeBase] No auth token, skipping fetch');
     }
@@ -1754,6 +1835,9 @@ useEffect(() => {
         }
       `}</style>
 
+      {/* Loading Overlay */}
+      <LoadingOverlay />
+
       {/* TOP NAVIGATION */}
       <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
         backgroundColor: colors.header,
@@ -1780,7 +1864,9 @@ useEffect(() => {
             className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
             onClick={async () => {
               try {
-                await fetchCollectionsList();
+                await withGlobalLoading(async () => {
+                  await fetchCollectionsList();
+                });
                 showToast('Collections refreshed', 'success');
               } catch (error) {
                 showToast('Failed to refresh collections', 'error');
@@ -1847,7 +1933,9 @@ useEffect(() => {
                 <button className="mt-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
                   onClick={async () => {
                     try {
-                      await fetchCollectionsList();
+                      await withGlobalLoading(async () => {
+                        await fetchCollectionsList();
+                      });
                     } catch (error) {
                       showToast('Failed to load collections', 'error');
                     }

@@ -52,7 +52,7 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
             return false;
         }
 
-        // Optionally set authenticated userId as request attribute
+        // Optionally set authenticated userId as requestEntity attribute
         String userId = jwtUtil.extractUserId(token);
         request.setAttribute("authenticatedUserId", userId);
 

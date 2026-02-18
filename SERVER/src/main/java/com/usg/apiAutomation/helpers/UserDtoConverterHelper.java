@@ -1,11 +1,13 @@
-package com.usg.apiAutomation.services;
+package com.usg.apiAutomation.helpers;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.usg.apiAutomation.dtos.userManagement.ActivityLog;
-import com.usg.apiAutomation.dtos.userManagement.DeviceInfo;
-import com.usg.apiAutomation.dtos.userManagement.UserDto;
+import com.usg.apiAutomation.dtos.userManagement.ActivityLogDTO;
+import com.usg.apiAutomation.dtos.userManagement.DeviceInfoDTO;
+import com.usg.apiAutomation.dtos.userManagement.UserDTO;
 import com.usg.apiAutomation.entities.*;
+import com.usg.apiAutomation.entities.userManagement.UserActivityEntity;
+import com.usg.apiAutomation.entities.userManagement.UserDeviceEntity;
+import com.usg.apiAutomation.entities.userManagement.UserTagEntity;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -16,19 +18,19 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-public class UserDtoConverterService {
+public class UserDtoConverterHelper {
 
     private final ObjectMapper objectMapper;
     private final DateTimeFormatter isoFormatter = DateTimeFormatter.ISO_DATE_TIME;
 
-    public UserDto convertToDto(UserEntity userEntity,
+    public UserDTO convertToDto(UserEntity userEntity,
                                 UserRoleEntity roleEntity,
                                 List<UserDeviceEntity> devices,
                                 List<UserTagEntity> tags,
                                 long apiKeysCount,
                                 long activeSessionsCount) {
 
-        UserDto dto = new UserDto();
+        UserDTO dto = new UserDTO();
 
         dto.setId(userEntity.getUserId());
         dto.setUsername(userEntity.getUsername());
@@ -70,14 +72,14 @@ public class UserDtoConverterService {
         return dto;
     }
 
-    public List<DeviceInfo> convertDevicesToDeviceInfo(List<UserDeviceEntity> devices) {
+    public List<DeviceInfoDTO> convertDevicesToDeviceInfo(List<UserDeviceEntity> devices) {
         return devices.stream()
                 .map(this::convertToDeviceInfo)
                 .collect(Collectors.toList());
     }
 
-    private DeviceInfo convertToDeviceInfo(UserDeviceEntity device) {
-        DeviceInfo info = new DeviceInfo();
+    private DeviceInfoDTO convertToDeviceInfo(UserDeviceEntity device) {
+        DeviceInfoDTO info = new DeviceInfoDTO();
         info.setType(device.getDeviceType());
         info.setLastUsed(device.getLastUsed() != null ?
                 device.getLastUsed().format(DateTimeFormatter.ofPattern("MMMM d, yyyy h:mm a")) :
@@ -94,8 +96,8 @@ public class UserDtoConverterService {
         return map;
     }
 
-    public ActivityLog convertToActivityLog(UserActivityEntity activity) {
-        return ActivityLog.builder()
+    public ActivityLogDTO convertToActivityLog(UserActivityEntity activity) {
+        return ActivityLogDTO.builder()
                 .id(activity.getActivityId().toString())
                 .type(activity.getActivityType())
                 .description(activity.getDescription())

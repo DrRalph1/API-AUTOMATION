@@ -31,7 +31,7 @@ public class SMSService {
     @Transactional
     public void sendAccountUnlockedSms(String phoneNumber, String name) {
         String message = String.format(
-                "Dear %s, your account has been unlocked. You can now log in again. Contact the InfoSec team if you didn't request this.",
+                "Dear %s, your account has been unlocked. You can now log in again. Contact the InfoSec team if you didn't requestEntity this.",
                 name
         );
         sendSms(phoneNumber, message);

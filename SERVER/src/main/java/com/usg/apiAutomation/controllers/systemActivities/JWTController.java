@@ -101,7 +101,7 @@ public class JWTController {
         boolean validClientIP = clientIpHelper.validateAPIClientIp(apiKey, apiSecret);
 
         if (!validAPICredentials) {
-            loggerUtil.log("api-gateway", "Request ID: " + requestId + " - Access Forbidden. Invalid API Key or Secret.");
+            loggerUtil.log("api-gateway", "RequestEntity ID: " + requestId + " - Access Forbidden. Invalid API Key or Secret.");
             auditLogHelper.logAuditAction("REFRESH_TOKEN_AUTH_FAILED", apiKey,
                     "Access Forbidden. Invalid API Key or Secret.", requestId);
 
@@ -113,7 +113,7 @@ public class JWTController {
         }
 
         if (!validClientIP) {
-            loggerUtil.log("api-gateway", "Request ID: " + requestId + " - Access Forbidden. Unknown Client IP.");
+            loggerUtil.log("api-gateway", "RequestEntity ID: " + requestId + " - Access Forbidden. Unknown Client IP.");
             auditLogHelper.logAuditAction("REFRESH_TOKEN_CLIENT_IP_FAILED", apiKey,
                     "Access Forbidden. Unknown Client IP.", requestId);
 
@@ -125,20 +125,20 @@ public class JWTController {
         }
 
         try {
-            loggerUtil.log("api-gateway", "Request ID: " + requestId + " - Refresh token request received");
+            loggerUtil.log("api-gateway", "RequestEntity ID: " + requestId + " - Refresh token requestEntity received");
             auditLogHelper.logAuditAction("REFRESH_TOKEN_REQUEST", apiKey,
-                    "Refresh token request received", requestId);
+                    "Refresh token requestEntity received", requestId);
 
             // Delegate to service method which already handles response structure
             ResponseEntity<?> serviceResponse = jwtService.refreshToken(refreshTokenRequestDTO.getRefreshToken(), requestId, req);
 
-            loggerUtil.log("api-gateway", "Request ID: " + requestId + " - Refresh token processed. Status: " + serviceResponse.getStatusCode());
+            loggerUtil.log("api-gateway", "RequestEntity ID: " + requestId + " - Refresh token processed. Status: " + serviceResponse.getStatusCode());
             auditLogHelper.logAuditAction("REFRESH_TOKEN_COMPLETED", apiKey,
                     "Refresh token processed. Status: " + serviceResponse.getStatusCode(), requestId);
 
             return serviceResponse;
         } catch (Exception e) {
-            loggerUtil.log("api-gateway", "Request ID: " + requestId + " - Refresh token error: " + e.getMessage());
+            loggerUtil.log("api-gateway", "RequestEntity ID: " + requestId + " - Refresh token error: " + e.getMessage());
             auditLogHelper.logAuditAction("REFRESH_TOKEN_ERROR", apiKey,
                     "Error refreshing token: " + e.getMessage(), requestId);
 
@@ -203,7 +203,7 @@ public class JWTController {
         boolean validClientIP = clientIpHelper.validateAPIClientIp(apiKey, apiSecret);
 
         if (!validAPICredentials) {
-            loggerUtil.log("api-gateway", "Request ID: " + requestId + " - Access Forbidden. Invalid API Key or Secret.");
+            loggerUtil.log("api-gateway", "RequestEntity ID: " + requestId + " - Access Forbidden. Invalid API Key or Secret.");
             auditLogHelper.logAuditAction("CHECK_TOKEN_EXPIRY_AUTH_FAILED", apiKey,
                     "Access Forbidden. Invalid API Key or Secret.", requestId);
 
@@ -215,7 +215,7 @@ public class JWTController {
         }
 
         if (!validClientIP) {
-            loggerUtil.log("api-gateway", "Request ID: " + requestId + " - Access Forbidden. Unknown Client IP.");
+            loggerUtil.log("api-gateway", "RequestEntity ID: " + requestId + " - Access Forbidden. Unknown Client IP.");
             auditLogHelper.logAuditAction("CHECK_TOKEN_EXPIRY_CLIENT_IP_FAILED", apiKey,
                     "Access Forbidden. Unknown Client IP.", requestId);
 
@@ -227,20 +227,20 @@ public class JWTController {
         }
 
         try {
-            loggerUtil.log("api-gateway", "Request ID: " + requestId + " - Check token expiry request received");
+            loggerUtil.log("api-gateway", "RequestEntity ID: " + requestId + " - Check token expiry requestEntity received");
             auditLogHelper.logAuditAction("CHECK_TOKEN_EXPIRY_REQUEST", apiKey,
-                    "Check token expiry request received", requestId);
+                    "Check token expiry requestEntity received", requestId);
 
             // Delegate to service method which already handles response structure
             ResponseEntity<?> serviceResponse = jwtService.checkTokenExpiry(checkTokenExpiryRequestDTO.getToken(), requestId, req);
 
-            loggerUtil.log("api-gateway", "Request ID: " + requestId + " - Check token expiry processed. Status: " + serviceResponse.getStatusCode());
+            loggerUtil.log("api-gateway", "RequestEntity ID: " + requestId + " - Check token expiry processed. Status: " + serviceResponse.getStatusCode());
             auditLogHelper.logAuditAction("CHECK_TOKEN_EXPIRY_COMPLETED", apiKey,
                     "Check token expiry processed. Status: " + serviceResponse.getStatusCode(), requestId);
 
             return serviceResponse;
         } catch (Exception e) {
-            loggerUtil.log("api-gateway", "Request ID: " + requestId + " - Check token expiry error: " + e.getMessage());
+            loggerUtil.log("api-gateway", "RequestEntity ID: " + requestId + " - Check token expiry error: " + e.getMessage());
             auditLogHelper.logAuditAction("CHECK_TOKEN_EXPIRY_ERROR", apiKey,
                     "Error checking token expiry: " + e.getMessage(), requestId);
 

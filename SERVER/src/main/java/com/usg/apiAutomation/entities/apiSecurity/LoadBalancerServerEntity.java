@@ -1,39 +1,38 @@
-package com.usg.apiAutomation.entities;
+package com.usg.apiAutomation.entities.apiSecurity;
 
-import com.usg.apiAutomation.dtos.apiSecurity.LoadBalancer;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 @Entity
 @Table(name = "tb_load_balancer_servers")
 public class LoadBalancerServerEntity {
-    // Getters and Setters
+
     @Getter
     @Setter
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
-    @Setter
     @Getter
+    @Setter
     private String name;
-    @Setter
+
     @Getter
+    @Setter
     private String address;
-    @Setter
+
     @Getter
+    @Setter
     private String status;
-    @Setter
+
     @Getter
+    @Setter
     private Integer connections;
 
     @ManyToOne
     @JoinColumn(name = "load_balancer_id")
-    private LoadBalancerEntity loadBalancerEntity;
-
-    public LoadBalancer getLoadBalancer() { return loadBalancer; }
-    public void setLoadBalancer(LoadBalancer loadBalancer) { this.loadBalancer = loadBalancer; }
+    @Getter
+    @Setter
+    private LoadBalancerEntity loadBalancer;  // This MUST be LoadBalancerEntity, not LoadBalancerDTO DTO
 }

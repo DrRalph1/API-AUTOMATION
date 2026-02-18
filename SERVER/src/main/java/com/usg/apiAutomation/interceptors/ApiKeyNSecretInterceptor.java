@@ -109,7 +109,7 @@ public class ApiKeyNSecretInterceptor implements HandlerInterceptor {
                     requestBodyMap.put("contentType", contentType);
                 }
             } catch (Exception e) {
-                loggerUtil.log("api-automation", "Failed to parse request body: " + e.getMessage());
+                loggerUtil.log("api-automation", "Failed to parse requestEntity body: " + e.getMessage());
                 requestBodyMap = new HashMap<>();
                 requestBodyMap.put("rawBody", rawRequestBody);
             }
@@ -120,7 +120,7 @@ public class ApiKeyNSecretInterceptor implements HandlerInterceptor {
         String maskedApiKey = DataMaskingHelper.maskSensitiveData(apiKey);
         String maskedApiSecret = DataMaskingHelper.maskSensitiveData(apiSecret);
 
-        loggerUtil.log("api-automation", "Incoming Request: x-api-key=" + maskedApiKey
+        loggerUtil.log("api-automation", "Incoming RequestEntity: x-api-key=" + maskedApiKey
                 + ", x-api-secret=" + maskedApiSecret);
 
         if (apiKey == null || apiKey.isEmpty()) {

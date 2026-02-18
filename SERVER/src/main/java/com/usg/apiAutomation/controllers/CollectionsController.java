@@ -51,14 +51,14 @@ public class CollectionsController {
 
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting collections list");
         if (authValidation != null) {
-            loggerUtil.log("collections", "Request ID: " + requestId +
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Authorization failed for getting collections list");
             return authValidation;
         }
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("collections", "Request ID: " + requestId +
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Getting collections list for user: " + performedBy);
 
             CollectionsListResponse collections = collectionsService.getCollectionsList(requestId, req, performedBy);
@@ -69,13 +69,13 @@ public class CollectionsController {
             response.put("data", collections);
             response.put("requestId", requestId);
 
-            loggerUtil.log("collections", "Request ID: " + requestId +
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Collections list retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("collections", "Request ID: " + requestId +
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Error getting collections list: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -90,44 +90,44 @@ public class CollectionsController {
     // 2. GET COLLECTION DETAILS
     // ============================================================
     @GetMapping("/{collectionId}")
-    @Operation(summary = "Get collection details", description = "Retrieve details for a specific collection")
+    @Operation(summary = "Get collectionEntity details", description = "Retrieve details for a specific collectionEntity")
     public ResponseEntity<?> getCollectionDetails(
             @PathVariable String collectionId,
             HttpServletRequest req) {
 
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting collection details");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting collectionEntity details");
         if (authValidation != null) {
             return authValidation;
         }
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Getting collection details for: " + collectionId);
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", Getting collectionEntity details for: " + collectionId);
 
             CollectionDetailsResponse details = collectionsService.getCollectionDetails(
                     requestId, req, performedBy, collectionId);
 
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
-            response.put("message", "Collection details retrieved successfully");
+            response.put("message", "CollectionEntity details retrieved successfully");
             response.put("data", details);
             response.put("requestId", requestId);
 
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Collection details retrieved successfully");
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", CollectionEntity details retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Error getting collection details: " + e.getMessage());
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", Error getting collectionEntity details: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting collection details: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while getting collectionEntity details: " + e.getMessage());
             errorResponse.put("requestId", requestId);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
@@ -137,7 +137,7 @@ public class CollectionsController {
     // 3. GET REQUEST DETAILS
     // ============================================================
     @GetMapping("/{collectionId}/requests/{requestId}")
-    @Operation(summary = "Get request details", description = "Retrieve details for a specific API request")
+    @Operation(summary = "Get requestEntity details", description = "Retrieve details for a specific API requestEntity")
     public ResponseEntity<?> getRequestDetails(
             @PathVariable String collectionId,
             @PathVariable String requestId,
@@ -145,37 +145,37 @@ public class CollectionsController {
 
         String requestIdParam = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting request details");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting requestEntity details");
         if (authValidation != null) {
             return authValidation;
         }
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("collections", "Request ID: " + requestIdParam +
-                    ", Getting request details for: " + requestId);
+            loggerUtil.log("collections", "RequestEntity ID: " + requestIdParam +
+                    ", Getting requestEntity details for: " + requestId);
 
             RequestDetailsResponse details = collectionsService.getRequestDetails(
                     requestIdParam, req, performedBy, collectionId, requestId);
 
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
-            response.put("message", "Request details retrieved successfully");
+            response.put("message", "RequestEntity details retrieved successfully");
             response.put("data", details);
             response.put("requestId", requestIdParam);
 
-            loggerUtil.log("collections", "Request ID: " + requestIdParam +
-                    ", Request details retrieved successfully");
+            loggerUtil.log("collections", "RequestEntity ID: " + requestIdParam +
+                    ", RequestEntity details retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("collections", "Request ID: " + requestIdParam +
-                    ", Error getting request details: " + e.getMessage());
+            loggerUtil.log("collections", "RequestEntity ID: " + requestIdParam +
+                    ", Error getting requestEntity details: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting request details: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while getting requestEntity details: " + e.getMessage());
             errorResponse.put("requestId", requestIdParam);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
@@ -185,7 +185,7 @@ public class CollectionsController {
     // 4. EXECUTE REQUEST
     // ============================================================
     @PostMapping("/execute")
-    @Operation(summary = "Execute API request", description = "Execute an API request and get the response")
+    @Operation(summary = "Execute API requestEntity", description = "Execute an API requestEntity and get the response")
     public ResponseEntity<?> executeRequest(
             @Valid @RequestBody ExecuteRequestDto requestDto,
             BindingResult bindingResult,
@@ -193,7 +193,7 @@ public class CollectionsController {
 
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "executing API request");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "executing API requestEntity");
         if (authValidation != null) {
             return authValidation;
         }
@@ -212,30 +212,30 @@ public class CollectionsController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Executing request for user: " + performedBy);
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", Executing requestEntity for user: " + performedBy);
 
             ExecuteRequestResponse response = collectionsService.executeRequest(
                     requestId, req, performedBy, requestDto);
 
             Map<String, Object> apiResponse = new HashMap<>();
             apiResponse.put("responseCode", 200);
-            apiResponse.put("message", "Request executed successfully");
+            apiResponse.put("message", "RequestEntity executed successfully");
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Request executed successfully");
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", RequestEntity executed successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Error executing request: " + e.getMessage());
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", Error executing requestEntity: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while executing request: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while executing requestEntity: " + e.getMessage());
             errorResponse.put("requestId", requestId);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
@@ -245,7 +245,7 @@ public class CollectionsController {
     // 5. SAVE REQUEST
     // ============================================================
     @PostMapping("/save")
-    @Operation(summary = "Save API request", description = "Save an API request to a collection")
+    @Operation(summary = "Save API requestEntity", description = "Save an API requestEntity to a collectionEntity")
     public ResponseEntity<?> saveRequest(
             @Valid @RequestBody SaveRequestDto requestDto,
             BindingResult bindingResult,
@@ -253,7 +253,7 @@ public class CollectionsController {
 
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "saving API request");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "saving API requestEntity");
         if (authValidation != null) {
             return authValidation;
         }
@@ -272,30 +272,30 @@ public class CollectionsController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Saving request for user: " + performedBy);
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", Saving requestEntity for user: " + performedBy);
 
             SaveRequestResponse response = collectionsService.saveRequest(
                     requestId, req, performedBy, requestDto);
 
             Map<String, Object> apiResponse = new HashMap<>();
             apiResponse.put("responseCode", 200);
-            apiResponse.put("message", "Request saved successfully");
+            apiResponse.put("message", "RequestEntity saved successfully");
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Request saved successfully");
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", RequestEntity saved successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Error saving request: " + e.getMessage());
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", Error saving requestEntity: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while saving request: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while saving requestEntity: " + e.getMessage());
             errorResponse.put("requestId", requestId);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
@@ -305,7 +305,7 @@ public class CollectionsController {
     // 6. CREATE COLLECTION
     // ============================================================
     @PostMapping("/create")
-    @Operation(summary = "Create new collection", description = "Create a new API collection")
+    @Operation(summary = "Create new collectionEntity", description = "Create a new API collectionEntity")
     public ResponseEntity<?> createCollection(
             @Valid @RequestBody CreateCollectionDto collectionDto,
             BindingResult bindingResult,
@@ -313,7 +313,7 @@ public class CollectionsController {
 
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "creating collection");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "creating collectionEntity");
         if (authValidation != null) {
             return authValidation;
         }
@@ -332,30 +332,30 @@ public class CollectionsController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Creating collection for user: " + performedBy);
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", Creating collectionEntity for user: " + performedBy);
 
             CreateCollectionResponse response = collectionsService.createCollection(
                     requestId, req, performedBy, collectionDto);
 
             Map<String, Object> apiResponse = new HashMap<>();
             apiResponse.put("responseCode", 200);
-            apiResponse.put("message", "Collection created successfully");
+            apiResponse.put("message", "CollectionEntity created successfully");
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Collection created successfully");
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", CollectionEntity created successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Error creating collection: " + e.getMessage());
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", Error creating collectionEntity: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while creating collection: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while creating collectionEntity: " + e.getMessage());
             errorResponse.put("requestId", requestId);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
@@ -365,7 +365,7 @@ public class CollectionsController {
     // 7. GENERATE CODE SNIPPET
     // ============================================================
     @PostMapping("/code-snippet")
-    @Operation(summary = "Generate code snippet", description = "Generate code snippet for API request in various languages")
+    @Operation(summary = "Generate code snippet", description = "Generate code snippet for API requestEntity in various languages")
     public ResponseEntity<?> generateCodeSnippet(
             @Valid @RequestBody CodeSnippetRequestDto snippetRequest,
             BindingResult bindingResult,
@@ -392,7 +392,7 @@ public class CollectionsController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("collections", "Request ID: " + requestId +
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Generating code snippet for language: " + snippetRequest.getLanguage());
 
             CodeSnippetResponse snippet = collectionsService.generateCodeSnippet(
@@ -404,13 +404,13 @@ public class CollectionsController {
             apiResponse.put("data", snippet);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("collections", "Request ID: " + requestId +
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Code snippet generated successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("collections", "Request ID: " + requestId +
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Error generating code snippet: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -437,7 +437,7 @@ public class CollectionsController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("collections", "Request ID: " + requestId +
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Getting environments for user: " + performedBy);
 
             EnvironmentsResponse environments = collectionsService.getEnvironments(
@@ -449,13 +449,13 @@ public class CollectionsController {
             response.put("data", environments);
             response.put("requestId", requestId);
 
-            loggerUtil.log("collections", "Request ID: " + requestId +
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Environments retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("collections", "Request ID: " + requestId +
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Error getting environments: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -470,7 +470,7 @@ public class CollectionsController {
     // 9. IMPORT COLLECTION
     // ============================================================
     @PostMapping("/import")
-    @Operation(summary = "Import collection", description = "Import a collection from external source")
+    @Operation(summary = "Import collectionEntity", description = "Import a collectionEntity from external source")
     public ResponseEntity<?> importCollection(
             @Valid @RequestBody ImportRequestDto importRequest,
             BindingResult bindingResult,
@@ -478,7 +478,7 @@ public class CollectionsController {
 
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "importing collection");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "importing collectionEntity");
         if (authValidation != null) {
             return authValidation;
         }
@@ -497,30 +497,30 @@ public class CollectionsController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Importing collection for user: " + performedBy);
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", Importing collectionEntity for user: " + performedBy);
 
             ImportResponse response = collectionsService.importCollection(
                     requestId, req, performedBy, importRequest);
 
             Map<String, Object> apiResponse = new HashMap<>();
             apiResponse.put("responseCode", 200);
-            apiResponse.put("message", "Collection imported successfully");
+            apiResponse.put("message", "CollectionEntity imported successfully");
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Collection imported successfully");
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", CollectionEntity imported successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Error importing collection: " + e.getMessage());
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", Error importing collectionEntity: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while importing collection: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while importing collectionEntity: " + e.getMessage());
             errorResponse.put("requestId", requestId);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
@@ -542,7 +542,7 @@ public class CollectionsController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("collections", "Request ID: " + requestId +
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Clearing collections cache for user: " + performedBy);
 
             collectionsService.clearCollectionsCache(requestId, req, performedBy);
@@ -552,13 +552,13 @@ public class CollectionsController {
             response.put("message", "Collections cache cleared successfully");
             response.put("requestId", requestId);
 
-            loggerUtil.log("collections", "Request ID: " + requestId +
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Collections cache cleared successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("collections", "Request ID: " + requestId +
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Error clearing collections cache: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -573,22 +573,22 @@ public class CollectionsController {
     // 11. DELETE COLLECTION
     // ============================================================
     @DeleteMapping("/{collectionId}")
-    @Operation(summary = "Delete collection", description = "Delete a specific collection")
+    @Operation(summary = "Delete collectionEntity", description = "Delete a specific collectionEntity")
     public ResponseEntity<?> deleteCollection(
             @PathVariable String collectionId,
             HttpServletRequest req) {
 
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "deleting collection");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "deleting collectionEntity");
         if (authValidation != null) {
             return authValidation;
         }
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Deleting collection: " + collectionId + " for user: " + performedBy);
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", Deleting collectionEntity: " + collectionId + " for user: " + performedBy);
 
             // Note: The service doesn't have a deleteCollection method yet
             // This would need to be added to the service
@@ -596,22 +596,22 @@ public class CollectionsController {
 
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
-            response.put("message", "Collection deleted successfully");
+            response.put("message", "CollectionEntity deleted successfully");
             response.put("data", Map.of("collectionId", collectionId, "deleted", true));
             response.put("requestId", requestId);
 
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Collection deleted successfully: " + collectionId);
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", CollectionEntity deleted successfully: " + collectionId);
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Error deleting collection: " + e.getMessage());
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", Error deleting collectionEntity: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while deleting collection: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while deleting collectionEntity: " + e.getMessage());
             errorResponse.put("requestId", requestId);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
@@ -621,7 +621,7 @@ public class CollectionsController {
     // 12. DELETE REQUEST
     // ============================================================
     @DeleteMapping("/{collectionId}/requests/{requestId}")
-    @Operation(summary = "Delete API request", description = "Delete a specific API request from a collection")
+    @Operation(summary = "Delete API requestEntity", description = "Delete a specific API requestEntity from a collectionEntity")
     public ResponseEntity<?> deleteRequest(
             @PathVariable String collectionId,
             @PathVariable String requestId,
@@ -629,15 +629,15 @@ public class CollectionsController {
 
         String requestIdParam = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "deleting API request");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "deleting API requestEntity");
         if (authValidation != null) {
             return authValidation;
         }
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("collections", "Request ID: " + requestIdParam +
-                    ", Deleting request: " + requestId + " from collection: " + collectionId);
+            loggerUtil.log("collections", "RequestEntity ID: " + requestIdParam +
+                    ", Deleting requestEntity: " + requestId + " from collectionEntity: " + collectionId);
 
             // Note: The service doesn't have a deleteRequest method yet
             // This would need to be added to the service
@@ -645,7 +645,7 @@ public class CollectionsController {
 
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
-            response.put("message", "Request deleted successfully");
+            response.put("message", "RequestEntity deleted successfully");
             response.put("data", Map.of(
                     "collectionId", collectionId,
                     "requestId", requestId,
@@ -653,18 +653,18 @@ public class CollectionsController {
             ));
             response.put("requestId", requestIdParam);
 
-            loggerUtil.log("collections", "Request ID: " + requestIdParam +
-                    ", Request deleted successfully: " + requestId);
+            loggerUtil.log("collections", "RequestEntity ID: " + requestIdParam +
+                    ", RequestEntity deleted successfully: " + requestId);
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("collections", "Request ID: " + requestIdParam +
-                    ", Error deleting request: " + e.getMessage());
+            loggerUtil.log("collections", "RequestEntity ID: " + requestIdParam +
+                    ", Error deleting requestEntity: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while deleting request: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while deleting requestEntity: " + e.getMessage());
             errorResponse.put("requestId", requestIdParam);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
@@ -674,7 +674,7 @@ public class CollectionsController {
     // 13. UPDATE COLLECTION
     // ============================================================
     @PutMapping("/{collectionId}")
-    @Operation(summary = "Update collection", description = "Update an existing collection")
+    @Operation(summary = "Update collectionEntity", description = "Update an existing collectionEntity")
     public ResponseEntity<?> updateCollection(
             @PathVariable String collectionId,
             @Valid @RequestBody UpdateCollectionDto collectionDto,
@@ -683,7 +683,7 @@ public class CollectionsController {
 
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "updating collection");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "updating collectionEntity");
         if (authValidation != null) {
             return authValidation;
         }
@@ -702,8 +702,8 @@ public class CollectionsController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Updating collection: " + collectionId + " for user: " + performedBy);
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", Updating collectionEntity: " + collectionId + " for user: " + performedBy);
 
             // Note: The service doesn't have an updateCollection method yet
             // This would need to be added to the service
@@ -711,7 +711,7 @@ public class CollectionsController {
 
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
-            response.put("message", "Collection updated successfully");
+            response.put("message", "CollectionEntity updated successfully");
             response.put("data", Map.of(
                     "collectionId", collectionId,
                     "name", collectionDto.getName(),
@@ -720,18 +720,18 @@ public class CollectionsController {
             ));
             response.put("requestId", requestId);
 
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Collection updated successfully: " + collectionId);
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", CollectionEntity updated successfully: " + collectionId);
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Error updating collection: " + e.getMessage());
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", Error updating collectionEntity: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while updating collection: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while updating collectionEntity: " + e.getMessage());
             errorResponse.put("requestId", requestId);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
@@ -741,7 +741,7 @@ public class CollectionsController {
     // 14. EXPORT COLLECTION
     // ============================================================
     @GetMapping("/{collectionId}/export")
-    @Operation(summary = "Export collection", description = "Export a collection to external format")
+    @Operation(summary = "Export collectionEntity", description = "Export a collectionEntity to external format")
     public ResponseEntity<?> exportCollection(
             @PathVariable String collectionId,
             @RequestParam(required = false, defaultValue = "json") String format,
@@ -749,15 +749,15 @@ public class CollectionsController {
 
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "exporting collection");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "exporting collectionEntity");
         if (authValidation != null) {
             return authValidation;
         }
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Exporting collection: " + collectionId + " in format: " + format);
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", Exporting collectionEntity: " + collectionId + " in format: " + format);
 
             // Note: The service doesn't have an exportCollection method yet
             // This would need to be added to the service
@@ -766,29 +766,29 @@ public class CollectionsController {
             Map<String, Object> exportData = new HashMap<>();
             exportData.put("collectionId", collectionId);
             exportData.put("name", "E-Commerce API");
-            exportData.put("description", "Exported collection");
+            exportData.put("description", "Exported collectionEntity");
             exportData.put("format", format);
             exportData.put("exportedAt", java.time.LocalDateTime.now().toString());
             exportData.put("requests", 12);
 
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
-            response.put("message", "Collection exported successfully");
+            response.put("message", "CollectionEntity exported successfully");
             response.put("data", exportData);
             response.put("requestId", requestId);
 
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Collection exported successfully: " + collectionId);
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", CollectionEntity exported successfully: " + collectionId);
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("collections", "Request ID: " + requestId +
-                    ", Error exporting collection: " + e.getMessage());
+            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
+                    ", Error exporting collectionEntity: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while exporting collection: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while exporting collectionEntity: " + e.getMessage());
             errorResponse.put("requestId", requestId);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }

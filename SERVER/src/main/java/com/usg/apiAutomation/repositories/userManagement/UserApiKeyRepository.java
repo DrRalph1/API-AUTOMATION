@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.repositories;
+package com.usg.apiAutomation.repositories.userManagement;
 
 import com.usg.apiAutomation.entities.userManagement.UserApiKeyEntity;
 import com.usg.apiAutomation.entities.UserEntity;

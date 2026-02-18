@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.entities;
+package com.usg.apiAutomation.entities.apiSecurity;
 
 import jakarta.persistence.*;
 import lombok.Getter;

@@ -47,16 +47,16 @@ public class DocumentationService {
 
     public APICollectionResponse getAPICollections(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting API collections for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Getting API collections for user: {}", requestId, performedBy);
             loggerUtil.log("documentation",
-                    "Request ID: " + requestId + ", Getting API collections for user: " + performedBy);
+                    "RequestEntity ID: " + requestId + ", Getting API collections for user: " + performedBy);
 
             // Check cache first
             String cacheKey = "api_collections_" + performedBy;
             DocCache cachedData = documentationCache.get(cacheKey);
 
             if (cachedData != null && !isCacheExpired(cachedData)) {
-                log.debug("Request ID: {}, Returning cached API collections", requestId);
+                log.debug("RequestEntity ID: {}, Returning cached API collections", requestId);
                 return (APICollectionResponse) cachedData.getData();
             }
 
@@ -65,13 +65,13 @@ public class DocumentationService {
             // Update cache
             documentationCache.put(cacheKey, new DocCache(collections, System.currentTimeMillis()));
 
-            log.info("Request ID: {}, Retrieved {} API collections", requestId, collections.getCollections().size());
+            log.info("RequestEntity ID: {}, Retrieved {} API collections", requestId, collections.getCollections().size());
 
             return collections;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving API collections: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return getFallbackAPICollections();
         }
     }
@@ -79,7 +79,7 @@ public class DocumentationService {
     public APIEndpointResponse getAPIEndpoints(String requestId, HttpServletRequest req, String performedBy,
                                                String collectionId, String folderId) {
         try {
-            log.info("Request ID: {}, Getting API endpoints for collection: {}, folder: {}",
+            log.info("RequestEntity ID: {}, Getting API endpoints for collectionEntity: {}, folderEntity: {}",
                     requestId, collectionId, folderId);
 
             // Check cache first
@@ -87,7 +87,7 @@ public class DocumentationService {
             DocCache cachedData = documentationCache.get(cacheKey);
 
             if (cachedData != null && !isCacheExpired(cachedData)) {
-                log.debug("Request ID: {}, Returning cached API endpoints", requestId);
+                log.debug("RequestEntity ID: {}, Returning cached API endpoints", requestId);
                 return (APIEndpointResponse) cachedData.getData();
             }
 
@@ -96,13 +96,13 @@ public class DocumentationService {
             // Update cache
             documentationCache.put(cacheKey, new DocCache(endpoints, System.currentTimeMillis()));
 
-            log.info("Request ID: {}, Retrieved {} API endpoints", requestId, endpoints.getEndpoints().size());
+            log.info("RequestEntity ID: {}, Retrieved {} API endpoints", requestId, endpoints.getEndpoints().size());
 
             return endpoints;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving API endpoints: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new APIEndpointResponse(Collections.emptyList(), collectionId, 0);
         }
     }
@@ -110,7 +110,7 @@ public class DocumentationService {
     public EndpointDetailResponse getEndpointDetails(String requestId, HttpServletRequest req, String performedBy,
                                                      String collectionId, String endpointId) {
         try {
-            log.info("Request ID: {}, Getting endpoint details for: {}",
+            log.info("RequestEntity ID: {}, Getting endpoint details for: {}",
                     requestId, endpointId);
 
             // Check cache first
@@ -118,7 +118,7 @@ public class DocumentationService {
             DocCache cachedData = documentationCache.get(cacheKey);
 
             if (cachedData != null && !isCacheExpired(cachedData)) {
-                log.debug("Request ID: {}, Returning cached endpoint details", requestId);
+                log.debug("RequestEntity ID: {}, Returning cached endpoint details", requestId);
                 return (EndpointDetailResponse) cachedData.getData();
             }
 
@@ -127,13 +127,13 @@ public class DocumentationService {
             // Update cache
             documentationCache.put(cacheKey, new DocCache(details, System.currentTimeMillis()));
 
-            log.info("Request ID: {}, Retrieved details for endpoint: {}", requestId, endpointId);
+            log.info("RequestEntity ID: {}, Retrieved details for endpoint: {}", requestId, endpointId);
 
             return details;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving endpoint details: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return getFallbackEndpointDetails(endpointId);
         }
     }
@@ -141,18 +141,18 @@ public class DocumentationService {
     public CodeExampleResponse getCodeExamples(String requestId, HttpServletRequest req, String performedBy,
                                                String endpointId, String language) {
         try {
-            log.info("Request ID: {}, Getting code examples for endpoint: {}, language: {}",
+            log.info("RequestEntity ID: {}, Getting code examples for endpoint: {}, language: {}",
                     requestId, endpointId, language);
 
             CodeExampleResponse examples = generateCodeExamples(endpointId, language);
 
-            log.info("Request ID: {}, Retrieved code examples for {}", requestId, language);
+            log.info("RequestEntity ID: {}, Retrieved code examples for {}", requestId, language);
 
             return examples;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving code examples: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new CodeExampleResponse(language, endpointId, "", "Error generating code examples: " + e.getMessage());
         }
     }
@@ -160,19 +160,19 @@ public class DocumentationService {
     public SearchDocumentationResponse searchDocumentation(String requestId, HttpServletRequest req, String performedBy,
                                                            String searchQuery, String searchType, int maxResults) {
         try {
-            log.info("Request ID: {}, Searching documentation with query: {}, type: {}",
+            log.info("RequestEntity ID: {}, Searching documentation with query: {}, type: {}",
                     requestId, searchQuery, searchType);
 
             SearchDocumentationResponse searchResults = performDocumentationSearch(searchQuery, searchType, maxResults);
 
-            log.info("Request ID: {}, Found {} search results for query: {}",
+            log.info("RequestEntity ID: {}, Found {} search results for query: {}",
                     requestId, searchResults.getResults().size(), searchQuery);
 
             return searchResults;
 
         } catch (Exception e) {
             String errorMsg = "Error searching documentation: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new SearchDocumentationResponse(Collections.emptyList(), searchQuery, 0);
         }
     }
@@ -181,52 +181,52 @@ public class DocumentationService {
                                                              String collectionId, String title,
                                                              String visibility, String customDomain) {
         try {
-            log.info("Request ID: {}, Publishing documentation for collection: {}", requestId, collectionId);
+            log.info("RequestEntity ID: {}, Publishing documentation for collectionEntity: {}", requestId, collectionId);
 
             PublishDocumentationResponse publishResponse = generatePublishResponse(collectionId, title, visibility, customDomain);
 
-            log.info("Request ID: {}, Documentation published successfully with URL: {}",
+            log.info("RequestEntity ID: {}, Documentation published successfully with URL: {}",
                     requestId, publishResponse.getPublishedUrl());
 
             return publishResponse;
 
         } catch (Exception e) {
             String errorMsg = "Error publishing documentation: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new PublishDocumentationResponse("", collectionId, "Error publishing documentation: " + e.getMessage());
         }
     }
 
     public EnvironmentResponse getEnvironments(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting environments for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Getting environments for user: {}", requestId, performedBy);
 
             EnvironmentResponse environments = generateEnvironments();
 
-            log.info("Request ID: {}, Retrieved {} environments", requestId, environments.getEnvironments().size());
+            log.info("RequestEntity ID: {}, Retrieved {} environments", requestId, environments.getEnvironments().size());
 
             return environments;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving environments: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new EnvironmentResponse(Collections.emptyList());
         }
     }
 
     public NotificationResponse getNotifications(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting notifications for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Getting notifications for user: {}", requestId, performedBy);
 
             NotificationResponse notifications = generateNotifications();
 
-            log.info("Request ID: {}, Retrieved {} notifications", requestId, notifications.getNotifications().size());
+            log.info("RequestEntity ID: {}, Retrieved {} notifications", requestId, notifications.getNotifications().size());
 
             return notifications;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving notifications: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new NotificationResponse(Collections.emptyList());
         }
     }
@@ -234,17 +234,17 @@ public class DocumentationService {
     public ChangelogResponse getChangelog(String requestId, HttpServletRequest req, String performedBy,
                                           String collectionId) {
         try {
-            log.info("Request ID: {}, Getting changelog for collection: {}", requestId, collectionId);
+            log.info("RequestEntity ID: {}, Getting changelog for collectionEntity: {}", requestId, collectionId);
 
             ChangelogResponse changelog = generateChangelog(collectionId);
 
-            log.info("Request ID: {}, Retrieved {} changelog entries", requestId, changelog.getEntries().size());
+            log.info("RequestEntity ID: {}, Retrieved {} changelog entries", requestId, changelog.getEntries().size());
 
             return changelog;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving changelog: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new ChangelogResponse(Collections.emptyList(), collectionId);
         }
     }
@@ -252,18 +252,18 @@ public class DocumentationService {
     public GenerateMockResponse generateMockServer(String requestId, HttpServletRequest req, String performedBy,
                                                    String collectionId, Map<String, String> options) {
         try {
-            log.info("Request ID: {}, Generating mock server for collection: {}", requestId, collectionId);
+            log.info("RequestEntity ID: {}, Generating mock server for collectionEntity: {}", requestId, collectionId);
 
             GenerateMockResponse mockResponse = generateMockServerResponse(collectionId, options);
 
-            log.info("Request ID: {}, Generated mock server with {} endpoints",
+            log.info("RequestEntity ID: {}, Generated mock server with {} endpoints",
                     requestId, mockResponse.getMockEndpoints().size());
 
             return mockResponse;
 
         } catch (Exception e) {
             String errorMsg = "Error generating mock server: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new GenerateMockResponse(Collections.emptyList(), collectionId,
                     "Error generating mock server: " + e.getMessage());
         }
@@ -271,19 +271,19 @@ public class DocumentationService {
 
     public void clearDocumentationCache(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Clearing documentation cache for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Clearing documentation cache for user: {}", requestId, performedBy);
 
             int beforeSize = documentationCache.size();
             documentationCache.clear();
             int afterSize = documentationCache.size();
 
-            log.info("Request ID: {}, Cleared {} documentation cache entries", requestId, beforeSize - afterSize);
+            log.info("RequestEntity ID: {}, Cleared {} documentation cache entries", requestId, beforeSize - afterSize);
             loggerUtil.log("documentation",
-                    "Request ID: " + requestId + ", Cleared documentation cache for user: " + performedBy);
+                    "RequestEntity ID: " + requestId + ", Cleared documentation cache for user: " + performedBy);
 
         } catch (Exception e) {
             String errorMsg = "Error clearing documentation cache: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
         }
     }
 
@@ -316,7 +316,7 @@ public class DocumentationService {
     private APICollectionResponse generateAPICollections() {
         List<APICollectionDto> collections = new ArrayList<>();
 
-        // Generate FinTech Core Banking API collection
+        // Generate FinTech Core Banking API collectionEntity
         APICollectionDto coreCollection = new APICollectionDto();
         coreCollection.setId("fintech-core");
         coreCollection.setName("FinTech Core Banking API");
@@ -333,7 +333,7 @@ public class DocumentationService {
         coreCollection.setColor("#3B82F6"); // Blue
         collections.add(coreCollection);
 
-        // Generate Loan Management API collection
+        // Generate Loan Management API collectionEntity
         APICollectionDto loansCollection = new APICollectionDto();
         loansCollection.setId("fintech-loans");
         loansCollection.setName("Loan Management API");
@@ -350,7 +350,7 @@ public class DocumentationService {
         loansCollection.setColor("#10B981"); // Green
         collections.add(loansCollection);
 
-        // Generate Compliance & AML API collection
+        // Generate Compliance & AML API collectionEntity
         APICollectionDto complianceCollection = new APICollectionDto();
         complianceCollection.setId("fintech-compliance");
         complianceCollection.setName("Compliance & AML API");
@@ -367,7 +367,7 @@ public class DocumentationService {
         complianceCollection.setColor("#8B5CF6"); // Purple
         collections.add(complianceCollection);
 
-        // Generate Payment Processing API collection
+        // Generate Payment Processing API collectionEntity
         APICollectionDto paymentsCollection = new APICollectionDto();
         paymentsCollection.setId("fintech-payments");
         paymentsCollection.setName("Payment Processing API");
@@ -384,7 +384,7 @@ public class DocumentationService {
         paymentsCollection.setColor("#F59E0B"); // Amber
         collections.add(paymentsCollection);
 
-        // Generate Webhooks API collection
+        // Generate Webhooks API collectionEntity
         APICollectionDto webhooksCollection = new APICollectionDto();
         webhooksCollection.setId("fintech-webhooks");
         webhooksCollection.setName("Webhooks & Notifications API");
@@ -441,7 +441,7 @@ public class DocumentationService {
                     endpoints.add(createCardEndpoint("card-transactions"));
                     break;
                 default:
-                    // Return all endpoints for the collection
+                    // Return all endpoints for the collectionEntity
                     endpoints.add(createAccountEndpoint("create-account"));
                     endpoints.add(createTransactionEndpoint("cash-deposit"));
                     endpoints.add(createEnquiryEndpoint("balance-enquiry"));
@@ -465,10 +465,10 @@ public class DocumentationService {
         details.setLastModified(getLastModifiedTime(endpointId));
         details.setVersion("v2.1");
         details.setRequiresAuthentication(true);
-        details.setRateLimit("100 requests/minute");
+        details.setRateLimit("100 requestEntities/minute");
         details.setDeprecated(false);
 
-        // Add headers
+        // Add headerEntities
         List<HeaderDto> headers = new ArrayList<>();
         headers.add(new HeaderDto("Content-Type", "application/json", "Required", true));
         headers.add(new HeaderDto("Authorization", "Bearer {access-token}", "Required", true));
@@ -478,7 +478,7 @@ public class DocumentationService {
         }
         details.setHeaders(headers);
 
-        // Add request parameters
+        // Add requestEntity parameters
         if (endpointId.contains("account")) {
             List<ParameterDto> parameters = new ArrayList<>();
             parameters.add(new ParameterDto("customerId", "string", "body", true, "Customer identifier"));
@@ -487,7 +487,7 @@ public class DocumentationService {
             parameters.add(new ParameterDto("initialDeposit", "number", "body", false, "Initial deposit amount"));
             details.setParameters(parameters);
 
-            // Request body example
+            // RequestEntity body example
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("customerId", "CUST123456");
             requestBody.put("accountType", "SAVINGS");
@@ -521,12 +521,12 @@ public class DocumentationService {
         // Error responses
         ResponseExampleDto errorResponse = new ResponseExampleDto();
         errorResponse.setStatusCode(400);
-        errorResponse.setDescription("Bad Request");
+        errorResponse.setDescription("Bad RequestEntity");
 
         Map<String, Object> errorExample = new HashMap<>();
         Map<String, Object> errorDetails = new HashMap<>();
         errorDetails.put("code", "VALIDATION_ERROR");
-        errorDetails.put("message", "Invalid request parameters");
+        errorDetails.put("message", "Invalid requestEntity parameters");
         errorDetails.put("details", Arrays.asList("accountNumber must be valid format"));
         errorExample.put("error", errorDetails);
         errorResponse.setExample(formatJson(errorExample));
@@ -573,7 +573,7 @@ public class DocumentationService {
                 codeExample = String.format(
                         "fetch('%s', {\n" +
                                 "  method: '%s',\n" +
-                                "  headers: {\n" +
+                                "  headerEntities: {\n" +
                                 "    'Content-Type': 'application/json',\n" +
                                 "    'Authorization': 'Bearer YOUR_ACCESS_TOKEN',\n" +
                                 "    'X-Client-Id': 'YOUR_CLIENT_ID'\n" +
@@ -586,13 +586,13 @@ public class DocumentationService {
 
             case "python":
                 codeExample = String.format(
-                        "import requests\n\n" +
-                                "headers = {\n" +
+                        "import requestEntities\n\n" +
+                                "headerEntities = {\n" +
                                 "    'Content-Type': 'application/json',\n" +
                                 "    'Authorization': 'Bearer YOUR_ACCESS_TOKEN',\n" +
                                 "    'X-Client-Id': 'YOUR_CLIENT_ID'\n" +
                                 "}\n\n" +
-                                "response = requests.%s('%s', headers=headers%s)",
+                                "response = requestEntities.%s('%s', headerEntities=headerEntities%s)",
                         method.toLowerCase(), endpointUrl,
                         (method.equals("POST") || method.equals("PUT")) ? ", json=" + getSampleRequestBody() : ""
                 );
@@ -605,7 +605,7 @@ public class DocumentationService {
                                 "  hostname: 'api.fintech.com',\n" +
                                 "  path: '%s',\n" +
                                 "  method: '%s',\n" +
-                                "  headers: {\n" +
+                                "  headerEntities: {\n" +
                                 "    'Content-Type': 'application/json',\n" +
                                 "    'Authorization': 'Bearer YOUR_ACCESS_TOKEN',\n" +
                                 "    'X-Client-Id': 'YOUR_CLIENT_ID'\n" +
@@ -618,7 +618,7 @@ public class DocumentationService {
             case "java":
                 codeExample = String.format(
                         "HttpClient client = HttpClient.newHttpClient();\n" +
-                                "HttpRequest request = HttpRequest.newBuilder()\n" +
+                                "HttpRequest requestEntity = HttpRequest.newBuilder()\n" +
                                 "    .uri(URI.create(\"%s\"))\n" +
                                 "    .header(\"Content-Type\", \"application/json\")\n" +
                                 "    .header(\"Authorization\", \"Bearer YOUR_ACCESS_TOKEN\")\n" +
@@ -730,7 +730,7 @@ public class DocumentationService {
     private GenerateMockResponse generateMockServerResponse(String collectionId, Map<String, String> options) {
         List<MockEndpointDto> mockEndpoints = new ArrayList<>();
 
-        // Generate mock endpoints for the collection
+        // Generate mock endpoints for the collectionEntity
         if ("fintech-core".equals(collectionId)) {
             mockEndpoints.add(createMockEndpoint("create-account", "POST", "/api/v2.1/accounts", 201));
             mockEndpoints.add(createMockEndpoint("get-account", "GET", "/api/v2.1/accounts/{id}", 200));
@@ -976,7 +976,7 @@ public class DocumentationService {
     }
 
     private String getSearchResultType(int index) {
-        String[] types = {"Endpoint", "Collection", "Folder", "Parameter", "Response", "Example"};
+        String[] types = {"Endpoint", "CollectionEntity", "FolderEntity", "ParameterEntity", "Response", "Example"};
         return types[(index - 1) % types.length];
     }
 
@@ -1059,7 +1059,7 @@ public class DocumentationService {
         details.setLastModified(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         details.setVersion("v1.0");
         details.setRequiresAuthentication(true);
-        details.setRateLimit("10 requests/minute");
+        details.setRateLimit("10 requestEntities/minute");
         details.setDeprecated(false);
 
         return details;

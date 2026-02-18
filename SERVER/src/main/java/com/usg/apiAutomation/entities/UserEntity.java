@@ -80,6 +80,33 @@ public class UserEntity {
     @Column(name = "last_modified_date")
     private LocalDateTime lastModifiedDate;
 
+    @Column(name = "mfa_enabled", nullable = false)
+    @Builder.Default
+    private Boolean mfaEnabled = false;
+
+    @Column(name = "email_verified", nullable = false)
+    @Builder.Default
+    private Boolean emailVerified = false;
+
+    @Column(name = "phone_verified", nullable = false)
+    @Builder.Default
+    private Boolean phoneVerified = false;
+
+    @Column(name = "security_score")
+    private Integer securityScore;
+
+    @Column(name = "avatar_color", length = 20)
+    private String avatarColor;
+
+    @Column(name = "timezone", length = 50)
+    private String timezone;
+
+    @Column(name = "location", length = 255)
+    private String location;
+
+    @Column(name = "last_login_ip", length = 45)
+    private String lastLoginIp;
+
     @PrePersist
     protected void onCreate() {
         createdDate = LocalDateTime.now();

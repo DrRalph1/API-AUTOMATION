@@ -20,10 +20,10 @@ public class CopyImplementationRequest {
     @NotBlank(message = "Target language is required")
     private String targetLanguage;
 
-    @NotBlank(message = "Request ID is required")
+    @NotBlank(message = "RequestEntity ID is required")
     private String requestId;
 
-    @NotBlank(message = "Collection ID is required")
+    @NotBlank(message = "CollectionEntity ID is required")
     private String collectionId;
 
     private List<String> components;

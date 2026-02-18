@@ -59,17 +59,17 @@ public class UserManagementController {
 
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting users list");
         if (authValidation != null) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Authorization failed for getting users list");
             return authValidation;
         }
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Getting users list for user: " + performedBy);
 
-            UsersListResponse users = userManagementService.getUsersList(
+            UsersListResponseDTO users = userManagementService.getUsersList(
                     requestId, performedBy, searchQuery, roleFilter, statusFilter,
                     sortField, sortDirection, page, pageSize);
 
@@ -79,13 +79,13 @@ public class UserManagementController {
             response.put("data", users);
             response.put("requestId", requestId);
 
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Users list retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error getting users list: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -114,10 +114,10 @@ public class UserManagementController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Getting user details for: " + userId);
 
-            UserDetailsResponse details = userManagementService.getUserDetails(
+            UserDetailsResponseDTO details = userManagementService.getUserDetails(
                     requestId, performedBy, userId);
 
             Map<String, Object> response = new HashMap<>();
@@ -126,13 +126,13 @@ public class UserManagementController {
             response.put("data", details);
             response.put("requestId", requestId);
 
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", User details retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error getting user details: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -149,7 +149,7 @@ public class UserManagementController {
     @PostMapping("/users")
     @Operation(summary = "Create user", description = "Create a new user account")
     public ResponseEntity<?> createUser(
-            @Valid @RequestBody CreateUserRequest requestDto,
+            @Valid @RequestBody CreateUserRequestDTO requestDto,
             BindingResult bindingResult,
             HttpServletRequest req) {
 
@@ -174,10 +174,10 @@ public class UserManagementController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Creating new user with email: " + requestDto.getEmail());
 
-            CreateUserResponse response = userManagementService.createUser(
+            CreateUserResponseDTO response = userManagementService.createUser(
                     requestId, performedBy, requestDto);
 
             Map<String, Object> apiResponse = new HashMap<>();
@@ -186,13 +186,13 @@ public class UserManagementController {
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", User created successfully");
 
             return ResponseEntity.status(HttpStatus.CREATED).body(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error creating user: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -210,7 +210,7 @@ public class UserManagementController {
     @Operation(summary = "Update user", description = "Update an existing user account")
     public ResponseEntity<?> updateUser(
             @PathVariable String userId,
-            @Valid @RequestBody UpdateUserRequest requestDto,
+            @Valid @RequestBody UpdateUserRequestDTO requestDto,
             BindingResult bindingResult,
             HttpServletRequest req) {
 
@@ -235,10 +235,10 @@ public class UserManagementController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Updating user: " + userId);
 
-            UpdateUserResponse response = userManagementService.updateUser(
+            UpdateUserResponseDTO response = userManagementService.updateUser(
                     requestId, performedBy, userId, requestDto);
 
             Map<String, Object> apiResponse = new HashMap<>();
@@ -247,13 +247,13 @@ public class UserManagementController {
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", User updated successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error updating user: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -282,10 +282,10 @@ public class UserManagementController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Deleting user: " + userId);
 
-            DeleteUserResponse response = userManagementService.deleteUser(
+            DeleteUserResponseDTO response = userManagementService.deleteUser(
                     requestId, performedBy, userId);
 
             Map<String, Object> apiResponse = new HashMap<>();
@@ -294,13 +294,13 @@ public class UserManagementController {
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", User deleted successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error deleting user: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -317,7 +317,7 @@ public class UserManagementController {
     @PostMapping("/users/bulk")
     @Operation(summary = "Bulk operations", description = "Perform bulk operations on multiple users")
     public ResponseEntity<?> bulkOperation(
-            @Valid @RequestBody BulkOperationRequest requestDto,
+            @Valid @RequestBody BulkOperationRequestDTO requestDto,
             BindingResult bindingResult,
             HttpServletRequest req) {
 
@@ -342,10 +342,10 @@ public class UserManagementController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Performing bulk operation: " + requestDto.getOperation());
 
-            BulkOperationResponse response = userManagementService.bulkOperation(
+            BulkOperationResponseDTO response = userManagementService.bulkOperation(
                     requestId, performedBy, requestDto);
 
             Map<String, Object> apiResponse = new HashMap<>();
@@ -354,13 +354,13 @@ public class UserManagementController {
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Bulk operation completed successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error performing bulk operation: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -378,7 +378,7 @@ public class UserManagementController {
     @Operation(summary = "Reset password", description = "Reset password for a user account")
     public ResponseEntity<?> resetPassword(
             @PathVariable String userId,
-            @Valid @RequestBody ResetPasswordRequest requestDto,
+            @Valid @RequestBody ResetPasswordRequestDTO requestDto,
             BindingResult bindingResult,
             HttpServletRequest req) {
 
@@ -403,13 +403,13 @@ public class UserManagementController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Resetting password for user: " + userId);
 
             // Set userId from path variable
             requestDto.setUserId(userId);
 
-            ResetPasswordResponse response = userManagementService.resetPassword(
+            ResetPasswordResponseDTO response = userManagementService.resetPassword(
                     requestId, performedBy, requestDto);
 
             Map<String, Object> apiResponse = new HashMap<>();
@@ -418,13 +418,13 @@ public class UserManagementController {
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Password reset initiated successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error resetting password: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -451,10 +451,10 @@ public class UserManagementController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Getting user statistics");
 
-            UserStatisticsResponse statistics = userManagementService.getUserStatistics(
+            UserStatisticsResponseDTO statistics = userManagementService.getUserStatistics(
                     requestId, performedBy);
 
             Map<String, Object> response = new HashMap<>();
@@ -463,13 +463,13 @@ public class UserManagementController {
             response.put("data", statistics);
             response.put("requestId", requestId);
 
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", User statistics retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error getting user statistics: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -486,7 +486,7 @@ public class UserManagementController {
     @PostMapping("/users/search")
     @Operation(summary = "Search users", description = "Search users with advanced criteria")
     public ResponseEntity<?> searchUsers(
-            @Valid @RequestBody SearchUsersRequest searchRequest,
+            @Valid @RequestBody SearchUsersRequestDTO searchRequest,
             BindingResult bindingResult,
             HttpServletRequest req) {
 
@@ -511,10 +511,10 @@ public class UserManagementController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Searching users with query: " + searchRequest.getQuery());
 
-            SearchUsersResponse response = userManagementService.searchUsers(
+            SearchUsersResponseDTO response = userManagementService.searchUsers(
                     requestId, performedBy, searchRequest);
 
             Map<String, Object> apiResponse = new HashMap<>();
@@ -523,13 +523,13 @@ public class UserManagementController {
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Search completed successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error searching users: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -546,7 +546,7 @@ public class UserManagementController {
     @PostMapping("/users/import")
     @Operation(summary = "Import users", description = "Import users from external file")
     public ResponseEntity<?> importUsers(
-            @Valid @RequestBody ImportUsersRequest importRequest,
+            @Valid @RequestBody ImportUsersRequestDTO importRequest,
             BindingResult bindingResult,
             HttpServletRequest req) {
 
@@ -571,10 +571,10 @@ public class UserManagementController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Importing users from file: " + importRequest.getFileName());
 
-            ImportUsersResponse response = userManagementService.importUsers(
+            ImportUsersResponseDTO response = userManagementService.importUsers(
                     requestId, performedBy, importRequest);
 
             Map<String, Object> apiResponse = new HashMap<>();
@@ -583,13 +583,13 @@ public class UserManagementController {
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Users imported successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error importing users: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -606,7 +606,7 @@ public class UserManagementController {
     @PostMapping("/users/export")
     @Operation(summary = "Export users", description = "Export users data in specified format")
     public ResponseEntity<?> exportUsers(
-            @Valid @RequestBody ExportUsersRequest exportRequest,
+            @Valid @RequestBody ExportUsersRequestDTO exportRequest,
             BindingResult bindingResult,
             HttpServletRequest req) {
 
@@ -631,10 +631,10 @@ public class UserManagementController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Exporting users in format: " + exportRequest.getFormat());
 
-            ExportUsersResponse response = userManagementService.exportUsers(
+            ExportUsersResponseDTO response = userManagementService.exportUsers(
                     requestId, performedBy, exportRequest);
 
             Map<String, Object> apiResponse = new HashMap<>();
@@ -643,13 +643,13 @@ public class UserManagementController {
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Users exported successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error exporting users: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -680,10 +680,10 @@ public class UserManagementController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Getting activity log for user: " + userId);
 
-            UserActivityResponse activity = userManagementService.getUserActivity(
+            UserActivityResponseDTO activity = userManagementService.getUserActivity(
                     requestId, performedBy, userId, startDate, endDate);
 
             Map<String, Object> response = new HashMap<>();
@@ -692,13 +692,13 @@ public class UserManagementController {
             response.put("data", activity);
             response.put("requestId", requestId);
 
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", User activity retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error getting user activity: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -728,10 +728,10 @@ public class UserManagementController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Updating status for user: " + userId + " to " + status);
 
-            UpdateStatusResponse response = userManagementService.updateUserStatus(
+            UpdateStatusResponseDTO response = userManagementService.updateUserStatus(
                     requestId, performedBy, userId, status);
 
             Map<String, Object> apiResponse = new HashMap<>();
@@ -740,13 +740,13 @@ public class UserManagementController {
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", User status updated successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error updating user status: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -773,10 +773,10 @@ public class UserManagementController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Getting roles and permissions");
 
-            RolesPermissionsResponse response = userManagementService.getRolesAndPermissions(
+            RolesPermissionsResponseDTO response = userManagementService.getRolesAndPermissions(
                     requestId, performedBy);
 
             Map<String, Object> apiResponse = new HashMap<>();
@@ -785,13 +785,13 @@ public class UserManagementController {
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Roles and permissions retrieved successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error getting roles and permissions: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -808,7 +808,7 @@ public class UserManagementController {
     @PostMapping("/validate")
     @Operation(summary = "Validate user data", description = "Validate user data before creation or update")
     public ResponseEntity<?> validateUserData(
-            @Valid @RequestBody ValidateUserRequest validationRequest,
+            @Valid @RequestBody ValidateUserRequestDTO validationRequest,
             BindingResult bindingResult,
             HttpServletRequest req) {
 
@@ -833,10 +833,10 @@ public class UserManagementController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Validating user data");
 
-            ValidationResponse response = userManagementService.validateUserData(
+            ValidationResponseDTO response = userManagementService.validateUserData(
                     requestId, performedBy, validationRequest);
 
             Map<String, Object> apiResponse = new HashMap<>();
@@ -845,13 +845,13 @@ public class UserManagementController {
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", User data validated successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error validating user data: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();

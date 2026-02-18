@@ -17,10 +17,10 @@ public class TestImplementationRequest {
     @NotBlank(message = "Language is required")
     private String language;
 
-    @NotBlank(message = "Request ID is required")
+    @NotBlank(message = "RequestEntity ID is required")
     private String requestId;
 
-    @NotBlank(message = "Collection ID is required")
+    @NotBlank(message = "CollectionEntity ID is required")
     private String collectionId;
 
     private List<String> components;

@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.entities;
+package com.usg.apiAutomation.entities.apiSecurity;
 
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -21,6 +21,7 @@ public class SecurityAlertEntity {
     private String message;
     private String endpoint;
     private Boolean isRead;
+    private LocalDateTime readAt;
     private LocalDateTime timestamp;
     private String resolvedBy;
     private LocalDateTime resolvedAt;

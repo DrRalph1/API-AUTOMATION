@@ -14,10 +14,10 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class GenerateImplementationRequest {
-    @NotBlank(message = "Request ID is required")
+    @NotBlank(message = "RequestEntity ID is required")
     private String requestId;
 
-    @NotBlank(message = "Collection ID is required")
+    @NotBlank(message = "CollectionEntity ID is required")
     private String collectionId;
 
     @NotBlank(message = "Language is required")

@@ -17,7 +17,7 @@ public class FileUtil {
         String lowerName = fileName.toLowerCase();
 
         if (lowerName.contains("web-application-firewall") || lowerName.contains("gateway")) {
-            return "API Gateway access logs and request routing information";
+            return "API Gateway access logs and requestEntity routing information";
         } else if (lowerName.contains("audit") || lowerName.contains("security")) {
             return "Security audit, authentication, and compliance event logs";
         } else if (lowerName.contains("behavioral") || lowerName.contains("analysis")) {
@@ -40,8 +40,8 @@ public class FileUtil {
             return "Web Application Firewall (WAF) core systemActivities and traffic inspection logs";
         } else if (lowerName.contains("web-socket") || lowerName.contains("socket")) {
             return "WebSocket configuration, connections, and communication logs";
-        } else if (lowerName.contains("access") || lowerName.contains("request")) {
-            return "HTTP access and request logs";
+        } else if (lowerName.contains("access") || lowerName.contains("requestEntity")) {
+            return "HTTP access and requestEntity logs";
         } else if (lowerName.contains("error") || lowerName.contains("exception")) {
             return "Error and exception logs";
         } else if (lowerName.contains("debug") || lowerName.contains("trace")) {

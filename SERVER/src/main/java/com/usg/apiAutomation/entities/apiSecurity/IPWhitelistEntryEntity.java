@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.entities;
+package com.usg.apiAutomation.entities.apiSecurity;
 
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -24,5 +24,5 @@ public class IPWhitelistEntryEntity {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private String createdBy;
-
+    private String updatedBy;
 }

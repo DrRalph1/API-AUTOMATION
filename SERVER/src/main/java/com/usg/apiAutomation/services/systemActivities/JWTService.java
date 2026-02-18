@@ -75,11 +75,11 @@ public class JWTService {
 
             // Log the token refresh activity
             loggerUtil.log("api-gateway",
-                    String.format("Token refreshed for user %s. Request ID: %s", userId, requestId));
+                    String.format("Token refreshed for user %s. RequestEntity ID: %s", userId, requestId));
 
         } catch (Exception e) {
             loggerUtil.log("api-gateway",
-                    String.format("Refresh token failed - Error: %s, Request ID: %s", e.getMessage(), requestId));
+                    String.format("Refresh token failed - Error: %s, RequestEntity ID: %s", e.getMessage(), requestId));
 
             result.put("status", "failed");
             result.put("message", e.getMessage() != null ? e.getMessage() : "Unknown error");

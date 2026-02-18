@@ -44,13 +44,13 @@ public class ErrorHandlingHelper {
             return HttpStatus.FORBIDDEN.value();
         if (lowerErrorMessage.contains("not found") || lowerErrorMessage.contains("resource not available"))
             return HttpStatus.NOT_FOUND.value();
-        if (lowerErrorMessage.contains("payload too large") || lowerErrorMessage.contains("request entity too large"))
+        if (lowerErrorMessage.contains("payload too large") || lowerErrorMessage.contains("requestEntity entity too large"))
             return HttpStatus.PAYLOAD_TOO_LARGE.value();
         if (lowerErrorMessage.contains("unsupported media type"))
             return HttpStatus.UNSUPPORTED_MEDIA_TYPE.value();
-        if (lowerErrorMessage.contains("too many requests"))
+        if (lowerErrorMessage.contains("too many requestEntities"))
             return HttpStatus.TOO_MANY_REQUESTS.value();
-        if (lowerErrorMessage.contains("bad request") || lowerErrorMessage.contains("invalid input"))
+        if (lowerErrorMessage.contains("bad requestEntity") || lowerErrorMessage.contains("invalid input"))
             return HttpStatus.BAD_REQUEST.value();
         if (lowerErrorMessage.contains("method not allowed"))
             return HttpStatus.METHOD_NOT_ALLOWED.value();
@@ -126,7 +126,7 @@ public class ErrorHandlingHelper {
             }
 
             loggerUtil.log(microService,
-                    String.format("Exception: %d %s on %s request for \"%s\": \"%s\"",
+                    String.format("Exception: %d %s on %s requestEntity for \"%s\": \"%s\"",
                             statusCode, HttpStatus.valueOf(statusCode).getReasonPhrase(), httpMethod, requestUrl, responseMessage));
 
             return ResponseEntity.status(statusCode).body(responseBody);

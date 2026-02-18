@@ -4,7 +4,7 @@ import lombok.Data;
 
 import java.util.List;
 
-// Request/Response DTOs
+// RequestEntity/Response DTOs
 @Data
 public class CollectionsListResponse {
     private List<CollectionDto> collections;

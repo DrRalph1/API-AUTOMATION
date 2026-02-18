@@ -15,10 +15,10 @@ public class CachedBodyFilter implements Filter {
 
         HttpServletRequest httpRequest = (HttpServletRequest) request;
 
-        // Wrap the request with cached body
+        // Wrap the requestEntity with cached body
         CachedBodyHttpServletRequest cachedRequest = new CachedBodyHttpServletRequest(httpRequest);
 
-        // Pass the wrapped request down the filter chain
+        // Pass the wrapped requestEntity down the filter chain
         chain.doFilter(cachedRequest, response);
     }
 }

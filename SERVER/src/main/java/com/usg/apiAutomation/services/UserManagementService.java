@@ -2,14 +2,20 @@ package com.usg.apiAutomation.services;
 
 import com.usg.apiAutomation.dtos.userManagement.*;
 import com.usg.apiAutomation.entities.*;
+import com.usg.apiAutomation.entities.userManagement.UserActivityEntity;
+import com.usg.apiAutomation.entities.userManagement.UserDeviceEntity;
+import com.usg.apiAutomation.entities.userManagement.UserTagEntity;
+import com.usg.apiAutomation.exceptions.GlobalExceptionHandler;
 import com.usg.apiAutomation.repositories.*;
-import com.usg.apiAutomation.services.UserDtoConverterService;
+import com.usg.apiAutomation.helpers.UserDtoConverterHelper;
+import com.usg.apiAutomation.repositories.userManagement.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,8 +35,9 @@ public class UserManagementService {
     private final UserSessionRepository sessionRepository;
     private final UserTagRepository tagRepository;
     private final UserActivityRepository activityRepository;
+    private final BCryptPasswordEncoder passwordEncoder;
     private final AuditLogRepository auditLogRepository;
-    private final UserDtoConverterService dtoConverter;
+    private final UserDtoConverterHelper dtoConverter;
     private final LoggerUtil loggerUtil;
 
     // Statistics storage - can be cached or computed on demand
@@ -40,18 +47,18 @@ public class UserManagementService {
     // 1. GET USERS LIST WITH FILTERS
     // ============================================================
     @Transactional(readOnly = true)
-    public UsersListResponse getUsersList(String requestId, String performedBy,
-                                          String searchQuery, String roleFilter,
-                                          String statusFilter, String sortField,
-                                          String sortDirection, int page, int pageSize) {
+    public UsersListResponseDTO getUsersList(String requestId, String performedBy,
+                                             String searchQuery, String roleFilter,
+                                             String statusFilter, String sortField,
+                                             String sortDirection, int page, int pageSize) {
         try {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Getting users list with filters - search: " + searchQuery +
                     ", role: " + roleFilter + ", status: " + statusFilter);
 
-            UsersListResponse response = new UsersListResponse();
+            UsersListResponseDTO response = new UsersListResponseDTO();
 
-            // Create pageable request
+            // Create pageable requestEntity
             Sort sort = createSort(sortField, sortDirection);
             Pageable pageable = PageRequest.of(page - 1, pageSize, sort);
 
@@ -59,11 +66,11 @@ public class UserManagementService {
             Page<UserEntity> userPage = findUsersWithFilters(searchQuery, roleFilter, statusFilter, pageable);
 
             // Convert to DTOs with all related data
-            List<UserDto> userDtos = userPage.getContent().stream()
+            List<UserDTO> userDTOS = userPage.getContent().stream()
                     .map(this::buildUserDto)
                     .collect(Collectors.toList());
 
-            response.setUsers(userDtos);
+            response.setUsers(userDTOS);
             response.setTotal((int) userPage.getTotalElements());
             response.setPage(page);
             response.setPageSize(pageSize);
@@ -78,7 +85,7 @@ public class UserManagementService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error getting users list: " + e.getMessage());
             throw e;
         }
@@ -107,7 +114,7 @@ public class UserManagementService {
         return users;
     }
 
-    private UserDto buildUserDto(UserEntity userEntity) {
+    private UserDTO buildUserDto(UserEntity userEntity) {
         // Get role
         UserRoleEntity role = userEntity.getRole();
 
@@ -148,17 +155,17 @@ public class UserManagementService {
     // 2. GET USER DETAILS
     // ============================================================
     @Transactional(readOnly = true)
-    public UserDetailsResponse getUserDetails(String requestId, String performedBy, String userId) {
+    public UserDetailsResponseDTO getUserDetails(String requestId, String performedBy, String userId) {
         try {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Getting user details for: " + userId);
 
-            UserDetailsResponse response = new UserDetailsResponse();
+            UserDetailsResponseDTO response = new UserDetailsResponseDTO();
 
             UserEntity userEntity = userRepository.findByUserIdIgnoreCase(userId)
                     .orElseThrow(() -> new RuntimeException("User not found: " + userId));
 
-            UserDto userDto = buildUserDto(userEntity);
+            UserDTO userDto = buildUserDto(userEntity);
 
             // Populate basic user info
             response.setId(userDto.getId());
@@ -199,8 +206,8 @@ public class UserManagementService {
             response.setDevices(dtoConverter.convertDevicesToDeviceInfo(devices));
 
             // Add activity log
-            List<ActivityLog> activityLog = getUserActivityLog(userId);
-            response.setActivityLog(activityLog);
+            List<ActivityLogDTO> activityLogDTO = getUserActivityLog(userId);
+            response.setActivityLogDTO(activityLogDTO);
 
             // Add permissions breakdown
             Map<String, Boolean> permissionsBreakdown = getPermissionsBreakdown(userDto.getRole());
@@ -209,13 +216,13 @@ public class UserManagementService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error getting user details: " + e.getMessage());
             throw e;
         }
     }
 
-    private List<ActivityLog> getUserActivityLog(String userId) {
+    private List<ActivityLogDTO> getUserActivityLog(String userId) {
         Pageable latestActivities = PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "createdDate"));
         Page<UserActivityEntity> activities = activityRepository.findByUserUserId(userId, latestActivities);
 
@@ -228,12 +235,12 @@ public class UserManagementService {
     // 3. CREATE NEW USER
     // ============================================================
     @Transactional
-    public CreateUserResponse createUser(String requestId, String performedBy, CreateUserRequest request) {
+    public CreateUserResponseDTO createUser(String requestId, String performedBy, CreateUserRequestDTO request) {
         try {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Creating new user: " + request.getEmail());
 
-            CreateUserResponse response = new CreateUserResponse();
+            CreateUserResponseDTO response = new CreateUserResponseDTO();
 
             // Check if user already exists
             if (userRepository.findByEmailAddress(request.getEmail()).isPresent() ||
@@ -242,14 +249,20 @@ public class UserManagementService {
             }
 
             // Get role
-            UserRoleEntity role = roleRepository.findByRoleNameIgnoreCase(request.getRole())
-                    .orElseThrow(() -> new RuntimeException("Role not found: " + request.getRole()));
+            UserRoleEntity role = roleRepository.findById(request.getRoleId())
+                    .orElseThrow(() -> new GlobalExceptionHandler.ResourceNotFoundException(
+                            String.format("Role with ID %s not found", request.getRoleId())
+                    ));
 
             // Create new user
-            String userId = "user-" + UUID.randomUUID().toString().substring(0, 8);
+            String userId = request.getUsername();
 
+            // Generate user ID
+            String generatedUserId = "user-" + UUID.randomUUID().toString().substring(0, 8);
+
+            // Create new user
             UserEntity newUser = UserEntity.builder()
-                    .userId(userId)
+                    .userId(request.getUsername())
                     .username(request.getUsername())
                     .emailAddress(request.getEmail())
                     .fullName(request.getFullName())
@@ -261,6 +274,12 @@ public class UserManagementService {
                     .failedLoginAttempts(0)
                     .createdDate(LocalDateTime.now())
                     .build();
+
+            // Set default password
+            if (newUser.getPassword() == null) {
+                String defaultPassword = "P@$s1234"; // Or generate a random one
+                newUser.setPassword(passwordEncoder.encode(defaultPassword));
+            }
 
             newUser = userRepository.save(newUser);
 
@@ -280,7 +299,7 @@ public class UserManagementService {
             // Log the creation
             logUserAction(performedBy, userId, "CREATE_USER", "User created successfully");
 
-            UserDto userDto = buildUserDto(newUser);
+            UserDTO userDto = buildUserDto(newUser);
 
             response.setId(userId);
             response.setSuccess(true);
@@ -300,7 +319,7 @@ public class UserManagementService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error creating user: " + e.getMessage());
             throw e;
         }
@@ -310,13 +329,13 @@ public class UserManagementService {
     // 4. UPDATE USER
     // ============================================================
     @Transactional
-    public UpdateUserResponse updateUser(String requestId, String performedBy,
-                                         String userId, UpdateUserRequest request) {
+    public UpdateUserResponseDTO updateUser(String requestId, String performedBy,
+                                            String userId, UpdateUserRequestDTO request) {
         try {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Updating user: " + userId);
 
-            UpdateUserResponse response = new UpdateUserResponse();
+            UpdateUserResponseDTO response = new UpdateUserResponseDTO();
 
             UserEntity user = userRepository.findByUserIdIgnoreCase(userId)
                     .orElseThrow(() -> new RuntimeException("User not found: " + userId));
@@ -376,7 +395,7 @@ public class UserManagementService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error updating user: " + e.getMessage());
             throw e;
         }
@@ -386,18 +405,18 @@ public class UserManagementService {
     // 5. DELETE USER
     // ============================================================
     @Transactional
-    public DeleteUserResponse deleteUser(String requestId, String performedBy, String userId) {
+    public DeleteUserResponseDTO deleteUser(String requestId, String performedBy, String userId) {
         try {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Deleting user: " + userId);
 
-            DeleteUserResponse response = new DeleteUserResponse();
+            DeleteUserResponseDTO response = new DeleteUserResponseDTO();
 
             UserEntity user = userRepository.findByUserIdIgnoreCase(userId)
                     .orElseThrow(() -> new RuntimeException("User not found: " + userId));
 
             // Store user data for response before deletion
-            UserDto userDto = buildUserDto(user);
+            UserDTO userDto = buildUserDto(user);
 
             // Delete all related entities
             deviceRepository.deleteByUserId(userId);
@@ -422,7 +441,7 @@ public class UserManagementService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error deleting user: " + e.getMessage());
             throw e;
         }
@@ -432,14 +451,14 @@ public class UserManagementService {
     // 6. BULK OPERATIONS
     // ============================================================
     @Transactional
-    public BulkOperationResponse bulkOperation(String requestId, String performedBy,
-                                               BulkOperationRequest request) {
+    public BulkOperationResponseDTO bulkOperation(String requestId, String performedBy,
+                                                  BulkOperationRequestDTO request) {
         try {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Performing bulk operation: " + request.getOperation() +
                     " on " + request.getUserIds().size() + " users");
 
-            BulkOperationResponse response = new BulkOperationResponse();
+            BulkOperationResponseDTO response = new BulkOperationResponseDTO();
 
             List<String> processedUsers = new ArrayList<>();
             List<String> failedUsers = new ArrayList<>();
@@ -494,7 +513,7 @@ public class UserManagementService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error performing bulk operation: " + e.getMessage());
             throw e;
         }
@@ -504,13 +523,13 @@ public class UserManagementService {
     // 7. RESET USER PASSWORD
     // ============================================================
     @Transactional
-    public ResetPasswordResponse resetPassword(String requestId, String performedBy,
-                                               ResetPasswordRequest request) {
+    public ResetPasswordResponseDTO resetPassword(String requestId, String performedBy,
+                                                  ResetPasswordRequestDTO request) {
         try {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Resetting password for user: " + request.getUserId());
 
-            ResetPasswordResponse response = new ResetPasswordResponse();
+            ResetPasswordResponseDTO response = new ResetPasswordResponseDTO();
 
             UserEntity user = userRepository.findByUserIdIgnoreCase(request.getUserId())
                     .orElseThrow(() -> new RuntimeException("User not found: " + request.getUserId()));
@@ -554,7 +573,7 @@ public class UserManagementService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error resetting password: " + e.getMessage());
             throw e;
         }
@@ -564,12 +583,12 @@ public class UserManagementService {
     // 8. GET USER STATISTICS
     // ============================================================
     @Transactional(readOnly = true)
-    public UserStatisticsResponse getUserStatistics(String requestId, String performedBy) {
+    public UserStatisticsResponseDTO getUserStatistics(String requestId, String performedBy) {
         try {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Getting user statistics");
 
-            UserStatisticsResponse response = new UserStatisticsResponse();
+            UserStatisticsResponseDTO response = new UserStatisticsResponseDTO();
 
             // Calculate statistics
             updateStatistics();
@@ -607,7 +626,7 @@ public class UserManagementService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error getting user statistics: " + e.getMessage());
             throw e;
         }
@@ -617,13 +636,13 @@ public class UserManagementService {
     // 9. SEARCH USERS
     // ============================================================
     @Transactional(readOnly = true)
-    public SearchUsersResponse searchUsers(String requestId, String performedBy,
-                                           SearchUsersRequest searchRequest) {
+    public SearchUsersResponseDTO searchUsers(String requestId, String performedBy,
+                                              SearchUsersRequestDTO searchRequest) {
         try {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Searching users with query: " + searchRequest.getQuery());
 
-            SearchUsersResponse response = new SearchUsersResponse();
+            SearchUsersResponseDTO response = new SearchUsersResponseDTO();
 
             // Build search specification
             Pageable pageable = PageRequest.of(0, 100); // Limit results
@@ -638,7 +657,7 @@ public class UserManagementService {
                 );
             }, pageable);
 
-            List<UserDto> searchResults = userPage.getContent().stream()
+            List<UserDTO> searchResults = userPage.getContent().stream()
                     .map(this::buildUserDto)
                     .collect(Collectors.toList());
 
@@ -657,7 +676,7 @@ public class UserManagementService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error searching users: " + e.getMessage());
             throw e;
         }
@@ -667,13 +686,13 @@ public class UserManagementService {
     // 10. IMPORT USERS
     // ============================================================
     @Transactional
-    public ImportUsersResponse importUsers(String requestId, String performedBy,
-                                           ImportUsersRequest importRequest) {
+    public ImportUsersResponseDTO importUsers(String requestId, String performedBy,
+                                              ImportUsersRequestDTO importRequest) {
         try {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Importing users from file: " + importRequest.getFileName());
 
-            ImportUsersResponse response = new ImportUsersResponse();
+            ImportUsersResponseDTO response = new ImportUsersResponseDTO();
 
             // In real implementation, this would parse the file and create users
             // For now, we'll simulate the response structure
@@ -699,7 +718,7 @@ public class UserManagementService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error importing users: " + e.getMessage());
             throw e;
         }
@@ -709,13 +728,13 @@ public class UserManagementService {
     // 11. EXPORT USERS
     // ============================================================
     @Transactional(readOnly = true)
-    public ExportUsersResponse exportUsers(String requestId, String performedBy,
-                                           ExportUsersRequest exportRequest) {
+    public ExportUsersResponseDTO exportUsers(String requestId, String performedBy,
+                                              ExportUsersRequestDTO exportRequest) {
         try {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Exporting users in format: " + exportRequest.getFormat());
 
-            ExportUsersResponse response = new ExportUsersResponse();
+            ExportUsersResponseDTO response = new ExportUsersResponseDTO();
 
             // Get all users (or filtered)
             List<UserEntity> allUsers = userRepository.findAll();
@@ -750,7 +769,7 @@ public class UserManagementService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error exporting users: " + e.getMessage());
             throw e;
         }
@@ -760,19 +779,19 @@ public class UserManagementService {
     // 12. GET USER ACTIVITY LOG
     // ============================================================
     @Transactional(readOnly = true)
-    public UserActivityResponse getUserActivity(String requestId, String performedBy,
-                                                String userId, Date startDate, Date endDate) {
+    public UserActivityResponseDTO getUserActivity(String requestId, String performedBy,
+                                                   String userId, Date startDate, Date endDate) {
         try {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Getting activity log for user: " + userId);
 
-            UserActivityResponse response = new UserActivityResponse();
+            UserActivityResponseDTO response = new UserActivityResponseDTO();
 
-            List<ActivityLog> activityLog = getUserActivityLog(userId);
+            List<ActivityLogDTO> activityLogDTO = getUserActivityLog(userId);
 
             response.setUserId(userId);
-            response.setActivities(activityLog);
-            response.setTotalActivities(activityLog.size());
+            response.setActivities(activityLogDTO);
+            response.setTotalActivities(activityLogDTO.size());
             response.setGeneratedAt(new Date());
 
             // Add activity statistics
@@ -795,7 +814,7 @@ public class UserManagementService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error getting user activity: " + e.getMessage());
             throw e;
         }
@@ -805,13 +824,13 @@ public class UserManagementService {
     // 13. UPDATE USER STATUS
     // ============================================================
     @Transactional
-    public UpdateStatusResponse updateUserStatus(String requestId, String performedBy,
-                                                 String userId, String status) {
+    public UpdateStatusResponseDTO updateUserStatus(String requestId, String performedBy,
+                                                    String userId, String status) {
         try {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Updating status for user: " + userId + " to " + status);
 
-            UpdateStatusResponse response = new UpdateStatusResponse();
+            UpdateStatusResponseDTO response = new UpdateStatusResponseDTO();
 
             UserEntity user = userRepository.findByUserIdIgnoreCase(userId)
                     .orElseThrow(() -> new RuntimeException("User not found: " + userId));
@@ -845,7 +864,7 @@ public class UserManagementService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error updating user status: " + e.getMessage());
             throw e;
         }
@@ -855,16 +874,16 @@ public class UserManagementService {
     // 14. GET ROLES AND PERMISSIONS
     // ============================================================
     @Transactional(readOnly = true)
-    public RolesPermissionsResponse getRolesAndPermissions(String requestId, String performedBy) {
+    public RolesPermissionsResponseDTO getRolesAndPermissions(String requestId, String performedBy) {
         try {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Getting roles and permissions");
 
-            RolesPermissionsResponse response = new RolesPermissionsResponse();
+            RolesPermissionsResponseDTO response = new RolesPermissionsResponseDTO();
 
             List<UserRoleEntity> roleEntities = roleRepository.findAll();
 
-            List<RoleDto> roles = roleEntities.stream()
+            List<RoleDTO> roles = roleEntities.stream()
                     .map(this::convertToRoleDto)
                     .collect(Collectors.toList());
 
@@ -887,7 +906,7 @@ public class UserManagementService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error getting roles and permissions: " + e.getMessage());
             throw e;
         }
@@ -897,15 +916,15 @@ public class UserManagementService {
     // 15. VALIDATE USER DATA
     // ============================================================
     @Transactional(readOnly = true)
-    public ValidationResponse validateUserData(String requestId, String performedBy,
-                                               ValidateUserRequest validationRequest) {
+    public ValidationResponseDTO validateUserData(String requestId, String performedBy,
+                                                  ValidateUserRequestDTO validationRequest) {
         try {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Validating user data");
 
-            ValidationResponse response = new ValidationResponse();
+            ValidationResponseDTO response = new ValidationResponseDTO();
 
-            List<ValidationIssue> issues = new ArrayList<>();
+            List<ValidationIssueDTO> issues = new ArrayList<>();
             boolean isValid = true;
 
             // Validate email
@@ -915,7 +934,7 @@ public class UserManagementService {
                         .orElse(false);
 
                 if (emailExists) {
-                    issues.add(ValidationIssue.builder()
+                    issues.add(ValidationIssueDTO.builder()
                             .type("error")
                             .field("email")
                             .message("Email already exists")
@@ -925,7 +944,7 @@ public class UserManagementService {
                 }
 
                 if (!validationRequest.getEmail().matches("^[A-Za-z0-9+_.-]+@(.+)$")) {
-                    issues.add(ValidationIssue.builder()
+                    issues.add(ValidationIssueDTO.builder()
                             .type("error")
                             .field("email")
                             .message("Invalid email format")
@@ -942,7 +961,7 @@ public class UserManagementService {
                         .orElse(false);
 
                 if (usernameExists) {
-                    issues.add(ValidationIssue.builder()
+                    issues.add(ValidationIssueDTO.builder()
                             .type("error")
                             .field("username")
                             .message("Username already exists")
@@ -952,7 +971,7 @@ public class UserManagementService {
                 }
 
                 if (validationRequest.getUsername().length() < 3) {
-                    issues.add(ValidationIssue.builder()
+                    issues.add(ValidationIssueDTO.builder()
                             .type("warning")
                             .field("username")
                             .message("Username is too short (minimum 3 characters)")
@@ -969,7 +988,7 @@ public class UserManagementService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("user-management", "Request ID: " + requestId +
+            loggerUtil.log("user-management", "RequestEntity ID: " + requestId +
                     ", Error validating user data: " + e.getMessage());
             throw e;
         }
@@ -983,7 +1002,7 @@ public class UserManagementService {
         long totalUsers = userRepository.count();
         long activeUsers = userRepository.count((root, query, cb) ->
                 cb.isTrue(root.get("isActive")));
-        long admins = countUsersByRole("admin");
+        long admins = countUsersByRole("oracle");
         long developers = countUsersByRole("developer");
         long viewers = countUsersByRole("viewer");
         long pendingUsers = userRepository.count((root, query, cb) ->
@@ -1062,8 +1081,8 @@ public class UserManagementService {
                 cb.greaterThanOrEqualTo(root.get("createdDate"), since));
     }
 
-    private RoleDto convertToRoleDto(UserRoleEntity roleEntity) {
-        RoleDto dto = new RoleDto();
+    private RoleDTO convertToRoleDto(UserRoleEntity roleEntity) {
+        RoleDTO dto = new RoleDTO();
         dto.setId(roleEntity.getRoleId().toString());
         dto.setName(roleEntity.getRoleName());
         dto.setDescription(roleEntity.getDescription());
@@ -1147,6 +1166,24 @@ public class UserManagementService {
         } catch (Exception e) {
             // Log error but don't fail the main operation
             loggerUtil.log("user-management", "Error logging user action: " + e.getMessage());
+        }
+    }
+
+
+    private List<String> getPermissionsForRole(UserRoleEntity role) {
+        if (role == null) return Arrays.asList("read");
+
+        switch (role.getRoleName().toLowerCase()) {
+            case "admin":
+                return Arrays.asList("read", "write", "delete", "admin", "manage_users", "manage_roles");
+            case "developer":
+                return Arrays.asList("read", "write", "api_access", "debug");
+            case "viewer":
+                return Arrays.asList("read");
+            case "moderator":
+                return Arrays.asList("read", "write", "moderate", "review");
+            default:
+                return Arrays.asList("read");
         }
     }
 }

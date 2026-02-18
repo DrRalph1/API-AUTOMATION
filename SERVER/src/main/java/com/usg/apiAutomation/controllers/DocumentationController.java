@@ -49,14 +49,14 @@ public class DocumentationController {
 
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting API collections");
         if (authValidation != null) {
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Authorization failed for getting API collections");
             return authValidation;
         }
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Getting API collections for user: " + performedBy);
 
             APICollectionResponse collections = documentationService.getAPICollections(requestId, req, performedBy);
@@ -67,13 +67,13 @@ public class DocumentationController {
             response.put("data", collections);
             response.put("requestId", requestId);
 
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", API collections retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Error getting API collections: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -88,7 +88,7 @@ public class DocumentationController {
     // 2. GET API ENDPOINTS
     // ============================================================
     @GetMapping("/collections/{collectionId}/folders/{folderId}/endpoints")
-    @Operation(summary = "Get API endpoints", description = "Retrieve endpoints for a specific collection and folder")
+    @Operation(summary = "Get API endpoints", description = "Retrieve endpoints for a specific collectionEntity and folderEntity")
     public ResponseEntity<?> getAPIEndpoints(
             @PathVariable String collectionId,
             @PathVariable String folderId,
@@ -103,8 +103,8 @@ public class DocumentationController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("documentation", "Request ID: " + requestId +
-                    ", Getting API endpoints for collection: " + collectionId + ", folder: " + folderId);
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
+                    ", Getting API endpoints for collectionEntity: " + collectionId + ", folderEntity: " + folderId);
 
             APIEndpointResponse endpoints = documentationService.getAPIEndpoints(
                     requestId, req, performedBy, collectionId, folderId);
@@ -115,13 +115,13 @@ public class DocumentationController {
             response.put("data", endpoints);
             response.put("requestId", requestId);
 
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", API endpoints retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Error getting API endpoints: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -151,7 +151,7 @@ public class DocumentationController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Getting endpoint details for: " + endpointId);
 
             EndpointDetailResponse details = documentationService.getEndpointDetails(
@@ -163,13 +163,13 @@ public class DocumentationController {
             response.put("data", details);
             response.put("requestId", requestId);
 
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Endpoint details retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Error getting endpoint details: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -199,7 +199,7 @@ public class DocumentationController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Getting code examples for endpoint: " + endpointId + ", language: " + language);
 
             CodeExampleResponse examples = documentationService.getCodeExamples(
@@ -211,13 +211,13 @@ public class DocumentationController {
             response.put("data", examples);
             response.put("requestId", requestId);
 
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Code examples retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Error getting code examples: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -248,7 +248,7 @@ public class DocumentationController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Searching documentation with query: " + query + ", type: " + type);
 
             SearchDocumentationResponse searchResults = documentationService.searchDocumentation(
@@ -260,13 +260,13 @@ public class DocumentationController {
             response.put("data", searchResults);
             response.put("requestId", requestId);
 
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Documentation search completed successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Error searching documentation: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -308,8 +308,8 @@ public class DocumentationController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("documentation", "Request ID: " + requestId +
-                    ", Publishing documentation for collection: " + publishRequest.getCollectionId());
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
+                    ", Publishing documentation for collectionEntity: " + publishRequest.getCollectionId());
 
             PublishDocumentationResponse publishResponse = documentationService.publishDocumentation(
                     requestId, req, performedBy,
@@ -324,13 +324,13 @@ public class DocumentationController {
             response.put("data", publishResponse);
             response.put("requestId", requestId);
 
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Documentation published successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Error publishing documentation: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -357,7 +357,7 @@ public class DocumentationController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Getting environments for user: " + performedBy);
 
             EnvironmentResponse environments = documentationService.getEnvironments(requestId, req, performedBy);
@@ -368,13 +368,13 @@ public class DocumentationController {
             response.put("data", environments);
             response.put("requestId", requestId);
 
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Environments retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Error getting environments: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -401,7 +401,7 @@ public class DocumentationController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Getting notifications for user: " + performedBy);
 
             NotificationResponse notifications = documentationService.getNotifications(requestId, req, performedBy);
@@ -412,13 +412,13 @@ public class DocumentationController {
             response.put("data", notifications);
             response.put("requestId", requestId);
 
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Notifications retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Error getting notifications: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -433,7 +433,7 @@ public class DocumentationController {
     // 9. GET CHANGELOG
     // ============================================================
     @GetMapping("/collections/{collectionId}/changelog")
-    @Operation(summary = "Get changelog", description = "Retrieve changelog for a specific collection")
+    @Operation(summary = "Get changelog", description = "Retrieve changelog for a specific collectionEntity")
     public ResponseEntity<?> getChangelog(
             @PathVariable String collectionId,
             HttpServletRequest req) {
@@ -447,8 +447,8 @@ public class DocumentationController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("documentation", "Request ID: " + requestId +
-                    ", Getting changelog for collection: " + collectionId);
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
+                    ", Getting changelog for collectionEntity: " + collectionId);
 
             ChangelogResponse changelog = documentationService.getChangelog(requestId, req, performedBy, collectionId);
 
@@ -458,13 +458,13 @@ public class DocumentationController {
             response.put("data", changelog);
             response.put("requestId", requestId);
 
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Changelog retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Error getting changelog: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -506,8 +506,8 @@ public class DocumentationController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("documentation", "Request ID: " + requestId +
-                    ", Generating mock server for collection: " + mockRequest.getCollectionId());
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
+                    ", Generating mock server for collectionEntity: " + mockRequest.getCollectionId());
 
             GenerateMockResponse mockResponse = documentationService.generateMockServer(
                     requestId, req, performedBy, mockRequest.getCollectionId(), mockRequest.getOptions());
@@ -518,13 +518,13 @@ public class DocumentationController {
             response.put("data", mockResponse);
             response.put("requestId", requestId);
 
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Mock server generated successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Error generating mock server: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -551,7 +551,7 @@ public class DocumentationController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Clearing documentation cache for user: " + performedBy);
 
             documentationService.clearDocumentationCache(requestId, req, performedBy);
@@ -561,13 +561,13 @@ public class DocumentationController {
             response.put("message", "Documentation cache cleared successfully");
             response.put("requestId", requestId);
 
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Documentation cache cleared successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("documentation", "Request ID: " + requestId +
+            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Error clearing documentation cache: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();

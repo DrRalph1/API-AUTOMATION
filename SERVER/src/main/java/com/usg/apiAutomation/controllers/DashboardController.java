@@ -53,14 +53,14 @@ public class DashboardController {
 
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting dashboard statistics");
         if (authValidation != null) {
-            loggerUtil.log("dashboard", "Request ID: " + requestId +
+            loggerUtil.log("dashboard", "RequestEntity ID: " + requestId +
                     ", Authorization failed for getting dashboard statistics");
             return authValidation;
         }
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("dashboard", "Request ID: " + requestId +
+            loggerUtil.log("dashboard", "RequestEntity ID: " + requestId +
                     ", Getting dashboard statistics for user: " + performedBy);
 
             DashboardStatsResponse stats = dashboardService.getDashboardStats(requestId, req, performedBy);
@@ -71,13 +71,13 @@ public class DashboardController {
             response.put("data", stats);
             response.put("requestId", requestId);
 
-            loggerUtil.log("dashboard", "Request ID: " + requestId +
+            loggerUtil.log("dashboard", "RequestEntity ID: " + requestId +
                     ", Dashboard statistics retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("dashboard", "Request ID: " + requestId +
+            loggerUtil.log("dashboard", "RequestEntity ID: " + requestId +
                     ", Error getting dashboard statistics: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();

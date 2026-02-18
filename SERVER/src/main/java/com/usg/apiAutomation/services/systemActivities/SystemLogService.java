@@ -59,14 +59,14 @@ public class SystemLogService {
 
     public List<LogFileResponse> getLogFiles(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting systemActivities log files for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Getting systemActivities log files for user: {}", requestId, performedBy);
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Getting systemActivities log files for user: " + performedBy);
+                    "RequestEntity ID: " + requestId + ", Getting systemActivities log files for user: " + performedBy);
 
             Path logsPath = Paths.get(logsDirectory);
             if (!Files.exists(logsPath) || !Files.isDirectory(logsPath)) {
                 String message = "System logs directory not found at path: " + logsPath;
-                log.warn("Request ID: {}, {}", requestId, message);
+                log.warn("RequestEntity ID: {}, {}", requestId, message);
                 return Collections.emptyList();
             }
 
@@ -77,17 +77,17 @@ public class SystemLogService {
                     .sorted((f1, f2) -> f2.getLastModified().compareTo(f1.getLastModified()))
                     .collect(Collectors.toList());
 
-            log.info("Request ID: {}, Retrieved {} systemActivities log files", requestId, logFiles.size());
+            log.info("RequestEntity ID: {}, Retrieved {} systemActivities log files", requestId, logFiles.size());
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", Retrieved " + logFiles.size() + " systemActivities log files");
+                    "RequestEntity ID: " + requestId + ", Retrieved " + logFiles.size() + " systemActivities log files");
 
             return logFiles;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving systemActivities log files: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             loggerUtil.log("web-application-firewall",
-                    "Request ID: " + requestId + ", " + errorMsg);
+                    "RequestEntity ID: " + requestId + ", " + errorMsg);
             return Collections.emptyList();
         }
     }
@@ -95,7 +95,7 @@ public class SystemLogService {
     public LogEntriesResponse getLogEntries(String search, String severity, String timeFilter, int page, int size,
                                             String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting systemActivities log entries - Search: {}, Severity: {}, TimeFilter: {}, Page: {}, Size: {}",
+            log.info("RequestEntity ID: {}, Getting systemActivities log entries - Search: {}, Severity: {}, TimeFilter: {}, Page: {}, Size: {}",
                     requestId, search, severity, timeFilter, page, size);
 
             List<LogEntry> filteredLogs = parseAndFilterLogsStreaming(search, severity, timeFilter, page * size + size);
@@ -108,14 +108,14 @@ public class SystemLogService {
             List<LogEntry> paginatedLogs = filteredLogs.subList(startIndex, endIndex);
             LogEntriesResponse response = new LogEntriesResponse(paginatedLogs, page, size, totalItems, totalPages);
 
-            log.info("Request ID: {}, Retrieved {} systemActivities log entries out of {} total, {} pages",
+            log.info("RequestEntity ID: {}, Retrieved {} systemActivities log entries out of {} total, {} pages",
                     requestId, paginatedLogs.size(), totalItems, totalPages);
 
             return response;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving systemActivities log entries: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new LogEntriesResponse(Collections.emptyList(), page, size, 0, 0);
         }
     }
@@ -123,28 +123,28 @@ public class SystemLogService {
     public LogFileContentResponse getLogFileContent(String filename, String search, String requestId,
                                                     HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting content of systemActivities log file: {} with search: {}",
+            log.info("RequestEntity ID: {}, Getting content of systemActivities log file: {} with search: {}",
                     requestId, filename, search);
 
             Path filePath = Paths.get(logsDirectory, filename).normalize();
 
             if (!filePath.startsWith(Paths.get(logsDirectory)) || !Files.exists(filePath)) {
                 String message = "System log file not found or access denied: " + filename;
-                log.warn("Request ID: {}, {}", requestId, message);
+                log.warn("RequestEntity ID: {}, {}", requestId, message);
                 return new LogFileContentResponse(filename, "File not found or access denied", search);
             }
 
             String content = readFileContentEfficiently(filePath, search);
             LogFileContentResponse response = new LogFileContentResponse(filename, content, search);
 
-            log.info("Request ID: {}, Retrieved content from systemActivities log file: {}, Content length: {}",
+            log.info("RequestEntity ID: {}, Retrieved content from systemActivities log file: {}, Content length: {}",
                     requestId, filename, content.length());
 
             return response;
 
         } catch (Exception e) {
             String errorMsg = "Error reading systemActivities log file content: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new LogFileContentResponse(filename, "Error reading file: " + e.getMessage(), search);
         }
     }
@@ -152,37 +152,37 @@ public class SystemLogService {
     public String exportLogsToCsv(String search, String severity, String timeFilter, String requestId,
                                   HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Exporting systemActivities logs to CSV - Search: {}, Severity: {}, TimeFilter: {}",
+            log.info("RequestEntity ID: {}, Exporting systemActivities logs to CSV - Search: {}, Severity: {}, TimeFilter: {}",
                     requestId, search, severity, timeFilter);
 
             List<LogEntry> filteredLogs = parseAndFilterLogsStreaming(search, severity, timeFilter, 10000);
             String csvContent = generateCsvContent(filteredLogs);
 
-            log.info("Request ID: {}, Exported {} systemActivities log entries to CSV, CSV length: {}",
+            log.info("RequestEntity ID: {}, Exported {} systemActivities log entries to CSV, CSV length: {}",
                     requestId, filteredLogs.size(), csvContent.length());
 
             return csvContent;
 
         } catch (Exception e) {
             String errorMsg = "Error exporting systemActivities logs to CSV: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
-            return "Timestamp,Source IP,Rule ID,Message,Severity,Action,Request URL,Log File\n";
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
+            return "Timestamp,Source IP,Rule ID,Message,Severity,Action,RequestEntity URL,Log File\n";
         }
     }
 
     public Map<String, Object> getLogStatistics(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting systemActivities log statistics", requestId);
+            log.info("RequestEntity ID: {}, Getting systemActivities log statistics", requestId);
 
             Map<String, Object> statistics = getLogStatisticsFromCache();
 
-            log.info("Request ID: {}, Retrieved systemActivities log statistics", requestId);
+            log.info("RequestEntity ID: {}, Retrieved systemActivities log statistics", requestId);
 
             return statistics;
 
         } catch (Exception e) {
             String errorMsg = "Error getting systemActivities log statistics: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return Map.of("error", "Failed to fetch systemActivities log statistics: " + e.getMessage());
         }
     }
@@ -190,7 +190,7 @@ public class SystemLogService {
     public Page<LogEntry> searchLogs(String query, Pageable pageable, String requestId,
                                      HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Searching systemActivities logs - Query: {}, Page: {}, Size: {}",
+            log.info("RequestEntity ID: {}, Searching systemActivities logs - Query: {}, Page: {}, Size: {}",
                     requestId, query, pageable.getPageNumber(), pageable.getPageSize());
 
             List<LogEntry> filteredLogs = searchLogsStreaming(query, pageable.getPageSize() * (pageable.getPageNumber() + 1));
@@ -202,14 +202,14 @@ public class SystemLogService {
             List<LogEntry> paginatedLogs = filteredLogs.subList(startIndex, endIndex);
             Page<LogEntry> resultPage = new PageImpl<>(paginatedLogs, pageable, totalItems);
 
-            log.info("Request ID: {}, Search completed - Found {} systemActivities logs, Total pages: {}",
+            log.info("RequestEntity ID: {}, Search completed - Found {} systemActivities logs, Total pages: {}",
                     requestId, totalItems, resultPage.getTotalPages());
 
             return resultPage;
 
         } catch (Exception e) {
             String errorMsg = "Error searching systemActivities logs: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new PageImpl<>(Collections.emptyList());
         }
     }
@@ -674,7 +674,7 @@ public class SystemLogService {
 
     private String generateCsvContent(List<LogEntry> logs) {
         StringBuilder csv = new StringBuilder();
-        csv.append("Timestamp,Source IP,Rule ID,Message,Severity,Action,Request URL,Log File,Performed By,Request ID,Error,URI\n");
+        csv.append("Timestamp,Source IP,Rule ID,Message,Severity,Action,RequestEntity URL,Log File,Performed By,RequestEntity ID,Error,URI\n");
 
         for (LogEntry log : logs) {
             csv.append(String.format("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"\n",

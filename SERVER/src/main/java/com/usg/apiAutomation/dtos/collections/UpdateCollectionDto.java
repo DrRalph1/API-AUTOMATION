@@ -13,8 +13,8 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class UpdateCollectionDto {
 
-    @NotBlank(message = "Collection name is required")
-    @Size(min = 1, max = 100, message = "Collection name must be between 1 and 100 characters")
+    @NotBlank(message = "CollectionEntity name is required")
+    @Size(min = 1, max = 100, message = "CollectionEntity name must be between 1 and 100 characters")
     private String name;
 
     @Size(max = 500, message = "Description cannot exceed 500 characters")

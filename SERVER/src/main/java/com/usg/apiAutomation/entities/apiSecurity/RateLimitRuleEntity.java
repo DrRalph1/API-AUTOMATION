@@ -1,17 +1,16 @@
-package com.usg.apiAutomation.entities;
+package com.usg.apiAutomation.entities.apiSecurity;
 
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-
 import java.time.LocalDateTime;
 
-@Setter
-@Getter
 @Entity
 @Table(name = "tb_rate_limit_rules")
+@Getter
+@Setter
 public class RateLimitRuleEntity {
-    // Getters and Setters
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
@@ -20,8 +19,13 @@ public class RateLimitRuleEntity {
     private String description;
     private String endpoint;
     private String method;
+
+    @Column(name = "limit_value")
     private Integer limitValue;
+
+    @Column(name = "time_window")  // Changed from "window" to "time_window"
     private String window;
+
     private Integer burst;
     private String action;
     private String status;
@@ -29,5 +33,4 @@ public class RateLimitRuleEntity {
     private LocalDateTime updatedAt;
     private String createdBy;
     private String updatedBy;
-
 }

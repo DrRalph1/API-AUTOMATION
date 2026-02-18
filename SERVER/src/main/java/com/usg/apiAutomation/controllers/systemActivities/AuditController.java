@@ -75,7 +75,7 @@ public class AuditController {
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "creating an audit log");
         if (authValidation != null) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Authorization failed for creating audit log: " + dto.getAction());
+                    "RequestEntity ID: " + requestId + ", Authorization failed for creating audit log: " + dto.getAction());
             return authValidation;
         }
 
@@ -84,18 +84,18 @@ public class AuditController {
         String performedBy = jwtUtil.extractUserId(token);
 
         try {
-            // Log the incoming request
+            // Log the incoming requestEntity
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Creating audit log for action: " + dto.getAction());
+                    "RequestEntity ID: " + requestId + ", Creating audit log for action: " + dto.getAction());
 
-            // Validate request body
+            // Validate requestEntity body
             if (bindingResult.hasErrors()) {
                 String validationErrors = bindingResult.getAllErrors().stream()
                         .map(error -> error.getDefaultMessage())
                         .collect(Collectors.joining(", "));
 
                 loggerUtil.log("api-automation",
-                        "Request ID: " + requestId + ", Validation errors: " + validationErrors);
+                        "RequestEntity ID: " + requestId + ", Validation errors: " + validationErrors);
 
                 Map<String, Object> errorResponse = new HashMap<>();
                 errorResponse.put("responseCode", 400);
@@ -106,7 +106,7 @@ public class AuditController {
             }
 
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId +
+                    "RequestEntity ID: " + requestId +
                             ", Creating audit log: " + dto.getAction() +
                             ", Requested by: " + performedBy);
 
@@ -121,13 +121,13 @@ public class AuditController {
             successResponse.put("requestId", requestId);
 
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Audit log created successfully. Audit ID: " + createdLog.getAuditId());
+                    "RequestEntity ID: " + requestId + ", Audit log created successfully. Audit ID: " + createdLog.getAuditId());
 
             return ResponseEntity.status(HttpStatus.CREATED).body(successResponse);
 
         } catch (Exception e) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Error creating audit log: " + e.getMessage());
+                    "RequestEntity ID: " + requestId + ", Error creating audit log: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
@@ -158,7 +158,7 @@ public class AuditController {
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting all audit logs");
         if (authValidation != null) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Authorization failed for getting all audit logs");
+                    "RequestEntity ID: " + requestId + ", Authorization failed for getting all audit logs");
             return authValidation;
         }
 
@@ -168,7 +168,7 @@ public class AuditController {
 
         try {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId +
+                    "RequestEntity ID: " + requestId +
                             ", Getting all audit logs with pagination - Page: " +
                             pageable.getPageNumber() + ", Size: " + pageable.getPageSize() + ", Sort: " + pageable.getSort() +
                             ", Requested by: " + performedBy);
@@ -186,7 +186,7 @@ public class AuditController {
             // Check if no content
             if (logs.isEmpty()) {
                 loggerUtil.log("api-automation",
-                        "Request ID: " + requestId + ", No audit logs found");
+                        "RequestEntity ID: " + requestId + ", No audit logs found");
 
                 Map<String, Object> noContentResponse = new HashMap<>();
                 noContentResponse.put("responseCode", 204);
@@ -210,7 +210,7 @@ public class AuditController {
             successResponse.put("requestId", requestId);
 
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Get all audit logs completed. Total elements: " +
+                    "RequestEntity ID: " + requestId + ", Get all audit logs completed. Total elements: " +
                             pagination.get("total_elements") + ", Total pages: " + pagination.get("total_pages") +
                             ", Unique actions: " + uniqueActions.size() +
                             ", Unique users: " + uniqueUsers.size() +
@@ -220,7 +220,7 @@ public class AuditController {
 
         } catch (Exception e) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Error getting audit logs: " + e.getMessage());
+                    "RequestEntity ID: " + requestId + ", Error getting audit logs: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
@@ -254,7 +254,7 @@ public class AuditController {
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "searching audit logs");
         if (authValidation != null) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Authorization failed for searching audit logs");
+                    "RequestEntity ID: " + requestId + ", Authorization failed for searching audit logs");
             return authValidation;
         }
 
@@ -263,18 +263,18 @@ public class AuditController {
         String performedBy = jwtUtil.extractUserId(token);
 
         try {
-            // Validate request body
+            // Validate requestEntity body
             if (bindingResult.hasErrors()) {
                 String validationErrors = bindingResult.getAllErrors().stream()
                         .map(error -> error.getDefaultMessage())
                         .collect(Collectors.joining(", "));
 
                 loggerUtil.log("api-automation",
-                        "Request ID: " + requestId + ", Validation errors in search request: " + validationErrors);
+                        "RequestEntity ID: " + requestId + ", Validation errors in search requestEntity: " + validationErrors);
 
                 Map<String, Object> errorResponse = new HashMap<>();
                 errorResponse.put("responseCode", 400);
-                errorResponse.put("message", "Validation errors in search request");
+                errorResponse.put("message", "Validation errors in search requestEntity");
                 errorResponse.put("errors", validationErrors);
                 errorResponse.put("requestId", requestId);
                 return ResponseEntity.badRequest().body(errorResponse);
@@ -291,9 +291,9 @@ public class AuditController {
                 }
             }
 
-            // Log the search request
+            // Log the search requestEntity
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId +
+                    "RequestEntity ID: " + requestId +
                             ", Searching audit logs with filters: " + objectMapper.writeValueAsString(searchRequest) +
                             ", Page: " + pageable.getPageNumber() + ", Size: " + pageable.getPageSize() +
                             ", Requested by: " + performedBy);
@@ -304,7 +304,7 @@ public class AuditController {
             // Check if no content
             if (logsPage.isEmpty()) {
                 loggerUtil.log("api-automation",
-                        "Request ID: " + requestId + ", No audit logs found for the given search criteria");
+                        "RequestEntity ID: " + requestId + ", No audit logs found for the given search criteria");
 
                 Map<String, Object> noContentResponse = new HashMap<>();
                 noContentResponse.put("responseCode", 204);
@@ -331,14 +331,14 @@ public class AuditController {
             successResponse.put("requestId", requestId);
 
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Search completed. Found " + logsPage.getTotalElements() +
+                    "RequestEntity ID: " + requestId + ", Search completed. Found " + logsPage.getTotalElements() +
                             " audit logs matching the criteria");
 
             return ResponseEntity.ok(successResponse);
 
         } catch (Exception e) {
             loggerUtil.log("api-automation",
-                    "Request ID: " + requestId + ", Error searching audit logs: " + e.getMessage());
+                    "RequestEntity ID: " + requestId + ", Error searching audit logs: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
@@ -376,7 +376,7 @@ public class AuditController {
             @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
             HttpServletRequest req) {
 
-        // Create search request from query parameters
+        // Create search requestEntity from query parameters
         AuditLogSearchRequest searchRequest = new AuditLogSearchRequest();
         searchRequest.setUserId(userId);
         searchRequest.setAction(action);
@@ -389,7 +389,7 @@ public class AuditController {
         DataBinder dataBinder = new DataBinder(searchRequest);
         BindingResult bindingResult = dataBinder.getBindingResult();
 
-        // Manually validate the request object
+        // Manually validate the requestEntity object
         Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
         Set<ConstraintViolation<AuditLogSearchRequest>> violations = validator.validate(searchRequest);
 

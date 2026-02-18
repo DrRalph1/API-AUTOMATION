@@ -44,16 +44,16 @@ public class SchemaBrowserService {
 
     public SchemaConnectionsResponse getSchemaConnections(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Getting schema connections for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Getting schema connections for user: {}", requestId, performedBy);
             loggerUtil.log("schemaBrowser",
-                    "Request ID: " + requestId + ", Getting schema connections for user: " + performedBy);
+                    "RequestEntity ID: " + requestId + ", Getting schema connections for user: " + performedBy);
 
             // Check cache first
             String cacheKey = "schema_connections_" + performedBy;
             SchemaCache cachedData = schemaCache.get(cacheKey);
 
             if (cachedData != null && !isCacheExpired(cachedData)) {
-                log.debug("Request ID: {}, Returning cached schema connections", requestId);
+                log.debug("RequestEntity ID: {}, Returning cached schema connections", requestId);
                 return (SchemaConnectionsResponse) cachedData.getData();
             }
 
@@ -62,13 +62,13 @@ public class SchemaBrowserService {
             // Update cache
             schemaCache.put(cacheKey, new SchemaCache(connections, System.currentTimeMillis()));
 
-            log.info("Request ID: {}, Retrieved {} schema connections", requestId, connections.getConnections().size());
+            log.info("RequestEntity ID: {}, Retrieved {} schema connections", requestId, connections.getConnections().size());
 
             return connections;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving schema connections: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return getFallbackSchemaConnections();
         }
     }
@@ -76,7 +76,7 @@ public class SchemaBrowserService {
     public SchemaObjectsResponse getSchemaObjects(String requestId, HttpServletRequest req, String performedBy,
                                                   String connectionId, String objectType, String filter) {
         try {
-            log.info("Request ID: {}, Getting schema objects for connection: {}, type: {}, filter: {}",
+            log.info("RequestEntity ID: {}, Getting schema objects for connection: {}, type: {}, filter: {}",
                     requestId, connectionId, objectType, filter);
 
             // Check cache first
@@ -85,7 +85,7 @@ public class SchemaBrowserService {
             SchemaCache cachedData = schemaCache.get(cacheKey);
 
             if (cachedData != null && !isCacheExpired(cachedData)) {
-                log.debug("Request ID: {}, Returning cached schema objects", requestId);
+                log.debug("RequestEntity ID: {}, Returning cached schema objects", requestId);
                 return (SchemaObjectsResponse) cachedData.getData();
             }
 
@@ -94,14 +94,14 @@ public class SchemaBrowserService {
             // Update cache
             schemaCache.put(cacheKey, new SchemaCache(objects, System.currentTimeMillis()));
 
-            log.info("Request ID: {}, Retrieved {} schema objects of type {}",
+            log.info("RequestEntity ID: {}, Retrieved {} schema objects of type {}",
                     requestId, objects.getObjects().size(), objectType);
 
             return objects;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving schema objects: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new SchemaObjectsResponse(Collections.emptyList(), objectType, 0);
         }
     }
@@ -109,7 +109,7 @@ public class SchemaBrowserService {
     public ObjectDetailsResponse getObjectDetails(String requestId, HttpServletRequest req, String performedBy,
                                                   String connectionId, String objectType, String objectName) {
         try {
-            log.info("Request ID: {}, Getting object details for: {}.{}",
+            log.info("RequestEntity ID: {}, Getting object details for: {}.{}",
                     requestId, objectType, objectName);
 
             // Check cache first
@@ -118,7 +118,7 @@ public class SchemaBrowserService {
             SchemaCache cachedData = schemaCache.get(cacheKey);
 
             if (cachedData != null && !isCacheExpired(cachedData)) {
-                log.debug("Request ID: {}, Returning cached object details", requestId);
+                log.debug("RequestEntity ID: {}, Returning cached object details", requestId);
                 return (ObjectDetailsResponse) cachedData.getData();
             }
 
@@ -127,13 +127,13 @@ public class SchemaBrowserService {
             // Update cache
             schemaCache.put(cacheKey, new SchemaCache(details, System.currentTimeMillis()));
 
-            log.info("Request ID: {}, Retrieved details for {}.{}", requestId, objectType, objectName);
+            log.info("RequestEntity ID: {}, Retrieved details for {}.{}", requestId, objectType, objectName);
 
             return details;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving object details: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return getFallbackObjectDetails(objectType, objectName);
         }
     }
@@ -142,7 +142,7 @@ public class SchemaBrowserService {
                                           String connectionId, String tableName,
                                           int page, int pageSize, String sortColumn, String sortDirection) {
         try {
-            log.info("Request ID: {}, Getting table data for: {}, page: {}, size: {}",
+            log.info("RequestEntity ID: {}, Getting table data for: {}, page: {}, size: {}",
                     requestId, tableName, page, pageSize);
 
             // Check cache first (with pagination)
@@ -151,7 +151,7 @@ public class SchemaBrowserService {
             SchemaCache cachedData = schemaCache.get(cacheKey);
 
             if (cachedData != null && !isCacheExpired(cachedData)) {
-                log.debug("Request ID: {}, Returning cached table data", requestId);
+                log.debug("RequestEntity ID: {}, Returning cached table data", requestId);
                 return (TableDataResponse) cachedData.getData();
             }
 
@@ -160,14 +160,14 @@ public class SchemaBrowserService {
             // Update cache
             schemaCache.put(cacheKey, new SchemaCache(tableData, System.currentTimeMillis()));
 
-            log.info("Request ID: {}, Retrieved {} rows from table {}",
+            log.info("RequestEntity ID: {}, Retrieved {} rows from table {}",
                     requestId, tableData.getData().size(), tableName);
 
             return tableData;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving table data: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new TableDataResponse(Collections.emptyList(), 0, page, pageSize, 0);
         }
     }
@@ -175,17 +175,17 @@ public class SchemaBrowserService {
     public DDLResponse getObjectDDL(String requestId, HttpServletRequest req, String performedBy,
                                     String connectionId, String objectType, String objectName) {
         try {
-            log.info("Request ID: {}, Getting DDL for: {}.{}", requestId, objectType, objectName);
+            log.info("RequestEntity ID: {}, Getting DDL for: {}.{}", requestId, objectType, objectName);
 
             DDLResponse ddl = generateObjectDDL(objectType, objectName);
 
-            log.info("Request ID: {}, Retrieved DDL for {}.{}", requestId, objectType, objectName);
+            log.info("RequestEntity ID: {}, Retrieved DDL for {}.{}", requestId, objectType, objectName);
 
             return ddl;
 
         } catch (Exception e) {
             String errorMsg = "Error retrieving object DDL: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new DDLResponse("", objectType, objectName, "Error generating DDL: " + e.getMessage());
         }
     }
@@ -194,19 +194,19 @@ public class SchemaBrowserService {
                                        String connectionId, String searchQuery,
                                        String searchType, int maxResults) {
         try {
-            log.info("Request ID: {}, Searching schema with query: {}, type: {}",
+            log.info("RequestEntity ID: {}, Searching schema with query: {}, type: {}",
                     requestId, searchQuery, searchType);
 
             SearchResponse searchResults = performSchemaSearch(searchQuery, searchType, maxResults);
 
-            log.info("Request ID: {}, Found {} search results for query: {}",
+            log.info("RequestEntity ID: {}, Found {} search results for query: {}",
                     requestId, searchResults.getResults().size(), searchQuery);
 
             return searchResults;
 
         } catch (Exception e) {
             String errorMsg = "Error searching schema: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new SearchResponse(Collections.emptyList(), searchQuery, 0);
         }
     }
@@ -215,18 +215,18 @@ public class SchemaBrowserService {
                                              String connectionId, String query,
                                              int timeoutSeconds, boolean readOnly) {
         try {
-            log.info("Request ID: {}, Executing query for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Executing query for user: {}", requestId, performedBy);
 
             ExecuteQueryResponse queryResult = executeSampleQuery(query, timeoutSeconds, readOnly);
 
-            log.info("Request ID: {}, Query executed successfully, returned {} rows",
+            log.info("RequestEntity ID: {}, Query executed successfully, returned {} rows",
                     requestId, queryResult.getRowCount());
 
             return queryResult;
 
         } catch (Exception e) {
             String errorMsg = "Error executing query: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new ExecuteQueryResponse(Collections.emptyList(), query, 0, "Error: " + e.getMessage());
         }
     }
@@ -236,19 +236,19 @@ public class SchemaBrowserService {
                                                      String objectName, String apiType,
                                                      Map<String, String> options) {
         try {
-            log.info("Request ID: {}, Generating API for: {}.{}, type: {}",
+            log.info("RequestEntity ID: {}, Generating API for: {}.{}, type: {}",
                     requestId, objectType, objectName, apiType);
 
             GenerateAPIResponse apiResponse = generateSampleAPI(objectType, objectName, apiType, options);
 
-            log.info("Request ID: {}, Generated API for {}.{} with {} endpoints",
+            log.info("RequestEntity ID: {}, Generated API for {}.{} with {} endpoints",
                     requestId, objectType, objectName, apiResponse.getEndpoints().size());
 
             return apiResponse;
 
         } catch (Exception e) {
             String errorMsg = "Error generating API: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
             return new GenerateAPIResponse(Collections.emptyList(), objectType, objectName,
                     "Error generating API: " + e.getMessage());
         }
@@ -256,19 +256,19 @@ public class SchemaBrowserService {
 
     public void clearSchemaCache(String requestId, HttpServletRequest req, String performedBy) {
         try {
-            log.info("Request ID: {}, Clearing schema cache for user: {}", requestId, performedBy);
+            log.info("RequestEntity ID: {}, Clearing schema cache for user: {}", requestId, performedBy);
 
             int beforeSize = schemaCache.size();
             schemaCache.clear();
             int afterSize = schemaCache.size();
 
-            log.info("Request ID: {}, Cleared {} schema cache entries", requestId, beforeSize - afterSize);
+            log.info("RequestEntity ID: {}, Cleared {} schema cache entries", requestId, beforeSize - afterSize);
             loggerUtil.log("schemaBrowser",
-                    "Request ID: " + requestId + ", Cleared schema cache for user: " + performedBy);
+                    "RequestEntity ID: " + requestId + ", Cleared schema cache for user: " + performedBy);
 
         } catch (Exception e) {
             String errorMsg = "Error clearing schema cache: " + e.getMessage();
-            log.error("Request ID: {}, {}", requestId, errorMsg);
+            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
         }
     }
 

@@ -11,10 +11,10 @@ import jakarta.validation.constraints.*;
 @NoArgsConstructor
 @AllArgsConstructor
 public class DeleteRequestRequest {
-    @NotBlank(message = "Request ID is required")
+    @NotBlank(message = "RequestEntity ID is required")
     private String requestId;
 
-    @NotBlank(message = "Collection ID is required")
+    @NotBlank(message = "CollectionEntity ID is required")
     private String collectionId;
 
     private String folderId;

@@ -49,14 +49,14 @@ public class CodeBaseController {
 
         ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting collections list from codebase");
         if (authValidation != null) {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Authorization failed for getting collections list from codebase");
             return authValidation;
         }
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Getting collections list from codebase for user: " + performedBy);
 
             CollectionsListResponse collections = codeBaseService.getCollectionsList(requestId, performedBy);
@@ -67,13 +67,13 @@ public class CodeBaseController {
             response.put("data", collections);
             response.put("requestId", requestId);
 
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Collections list retrieved successfully from codebase");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Error getting collections list from codebase: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -88,44 +88,44 @@ public class CodeBaseController {
     // 2. GET COLLECTION DETAILS
     // ============================================================
     @GetMapping("/collections/{collectionId}")
-    @Operation(summary = "Get collection details", description = "Retrieve details for a specific collection from codebase")
+    @Operation(summary = "Get collectionEntity details", description = "Retrieve details for a specific collectionEntity from codebase")
     public ResponseEntity<?> getCollectionDetails(
             @PathVariable String collectionId,
             HttpServletRequest req) {
 
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting collection details from codebase");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting collectionEntity details from codebase");
         if (authValidation != null) {
             return authValidation;
         }
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Getting collection details from codebase for: " + collectionId);
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+                    ", Getting collectionEntity details from codebase for: " + collectionId);
 
             CollectionDetailsResponse details = codeBaseService.getCollectionDetails(
                     requestId, performedBy, collectionId);
 
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
-            response.put("message", "Collection details retrieved successfully from codebase");
+            response.put("message", "CollectionEntity details retrieved successfully from codebase");
             response.put("data", details);
             response.put("requestId", requestId);
 
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Collection details retrieved successfully from codebase");
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+                    ", CollectionEntity details retrieved successfully from codebase");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Error getting collection details from codebase: " + e.getMessage());
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+                    ", Error getting collectionEntity details from codebase: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting collection details from codebase: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while getting collectionEntity details from codebase: " + e.getMessage());
             errorResponse.put("requestId", requestId);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
@@ -135,7 +135,7 @@ public class CodeBaseController {
     // 3. GET FOLDER REQUESTS
     // ============================================================
     @GetMapping("/collections/{collectionId}/folders/{folderId}/requests")
-    @Operation(summary = "Get folder requests", description = "Retrieve all requests in a specific folder")
+    @Operation(summary = "Get folderEntity requestEntities", description = "Retrieve all requestEntities in a specific folderEntity")
     public ResponseEntity<?> getFolderRequests(
             @PathVariable String collectionId,
             @PathVariable String folderId,
@@ -143,37 +143,37 @@ public class CodeBaseController {
 
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting folder requests from codebase");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting folderEntity requestEntities from codebase");
         if (authValidation != null) {
             return authValidation;
         }
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Getting folder requests from codebase for folder: " + folderId + " in collection: " + collectionId);
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+                    ", Getting folderEntity requestEntities from codebase for folderEntity: " + folderId + " in collectionEntity: " + collectionId);
 
             FolderRequestsResponse details = codeBaseService.getFolderRequests(
                     requestId, performedBy, collectionId, folderId);
 
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
-            response.put("message", "Folder requests retrieved successfully from codebase");
+            response.put("message", "FolderEntity requestEntities retrieved successfully from codebase");
             response.put("data", details);
             response.put("requestId", requestId);
 
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Folder requests retrieved successfully from codebase");
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+                    ", FolderEntity requestEntities retrieved successfully from codebase");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Error getting folder requests from codebase: " + e.getMessage());
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+                    ", Error getting folderEntity requestEntities from codebase: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting folder requests from codebase: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while getting folderEntity requestEntities from codebase: " + e.getMessage());
             errorResponse.put("requestId", requestId);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
@@ -183,7 +183,7 @@ public class CodeBaseController {
     // 4. GET REQUEST DETAILS
     // ============================================================
     @GetMapping("/collections/{collectionId}/requests/{requestId}")
-    @Operation(summary = "Get request details", description = "Retrieve details for a specific API request from codebase")
+    @Operation(summary = "Get requestEntity details", description = "Retrieve details for a specific API requestEntity from codebase")
     public ResponseEntity<?> getRequestDetails(
             @PathVariable String collectionId,
             @PathVariable String requestId,
@@ -191,37 +191,37 @@ public class CodeBaseController {
 
         String requestIdParam = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting request details from codebase");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting requestEntity details from codebase");
         if (authValidation != null) {
             return authValidation;
         }
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("codebase", "Request ID: " + requestIdParam +
-                    ", Getting request details from codebase for: " + requestId);
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestIdParam +
+                    ", Getting requestEntity details from codebase for: " + requestId);
 
             RequestDetailsResponse details = codeBaseService.getRequestDetails(
                     requestIdParam, performedBy, collectionId, requestId);
 
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
-            response.put("message", "Request details retrieved successfully from codebase");
+            response.put("message", "RequestEntity details retrieved successfully from codebase");
             response.put("data", details);
             response.put("requestId", requestIdParam);
 
-            loggerUtil.log("codebase", "Request ID: " + requestIdParam +
-                    ", Request details retrieved successfully from codebase");
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestIdParam +
+                    ", RequestEntity details retrieved successfully from codebase");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestIdParam +
-                    ", Error getting request details from codebase: " + e.getMessage());
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestIdParam +
+                    ", Error getting requestEntity details from codebase: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting request details from codebase: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while getting requestEntity details from codebase: " + e.getMessage());
             errorResponse.put("requestId", requestIdParam);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
@@ -248,7 +248,7 @@ public class CodeBaseController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("codebase", "Request ID: " + requestIdParam +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestIdParam +
                     ", Getting implementation details for language: " + language + ", component: " + component);
 
             ImplementationResponse details = codeBaseService.getImplementationDetails(
@@ -256,17 +256,17 @@ public class CodeBaseController {
 
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
-            response.put("message", "Implementation details retrieved successfully");
+            response.put("message", "ImplementationEntity details retrieved successfully");
             response.put("data", details);
             response.put("requestId", requestIdParam);
 
-            loggerUtil.log("codebase", "Request ID: " + requestIdParam +
-                    ", Implementation details retrieved successfully");
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestIdParam +
+                    ", ImplementationEntity details retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestIdParam +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestIdParam +
                     ", Error getting implementation details: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -281,7 +281,7 @@ public class CodeBaseController {
     // 6. GET ALL IMPLEMENTATIONS FOR REQUEST
     // ============================================================
     @GetMapping("/collections/{collectionId}/requests/{requestId}/implementations")
-    @Operation(summary = "Get all implementations", description = "Retrieve all available implementations for a specific request")
+    @Operation(summary = "Get all implementationEntities", description = "Retrieve all available implementationEntities for a specific requestEntity")
     public ResponseEntity<?> getAllImplementations(
             @PathVariable String collectionId,
             @PathVariable String requestId,
@@ -289,37 +289,37 @@ public class CodeBaseController {
 
         String requestIdParam = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting all implementations");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting all implementationEntities");
         if (authValidation != null) {
             return authValidation;
         }
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("codebase", "Request ID: " + requestIdParam +
-                    ", Getting all implementations for request: " + requestId);
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestIdParam +
+                    ", Getting all implementationEntities for requestEntity: " + requestId);
 
             AllImplementationsResponse implementations = codeBaseService.getAllImplementations(
                     requestIdParam, performedBy, collectionId, requestId);
 
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
-            response.put("message", "All implementations retrieved successfully");
+            response.put("message", "All implementationEntities retrieved successfully");
             response.put("data", implementations);
             response.put("requestId", requestIdParam);
 
-            loggerUtil.log("codebase", "Request ID: " + requestIdParam +
-                    ", All implementations retrieved successfully");
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestIdParam +
+                    ", All implementationEntities retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestIdParam +
-                    ", Error getting all implementations: " + e.getMessage());
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestIdParam +
+                    ", Error getting all implementationEntities: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting all implementations: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while getting all implementationEntities: " + e.getMessage());
             errorResponse.put("requestId", requestIdParam);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
@@ -356,7 +356,7 @@ public class CodeBaseController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Generating implementation for language: " + requestDto.getLanguage());
 
             GenerateImplementationResponse response = codeBaseService.generateImplementation(
@@ -364,17 +364,17 @@ public class CodeBaseController {
 
             Map<String, Object> apiResponse = new HashMap<>();
             apiResponse.put("responseCode", 200);
-            apiResponse.put("message", "Implementation generated successfully");
+            apiResponse.put("message", "ImplementationEntity generated successfully");
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Implementation generated successfully");
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+                    ", ImplementationEntity generated successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Error generating implementation: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -416,7 +416,7 @@ public class CodeBaseController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Exporting implementation in format: " + exportRequest.getFormat());
 
             ExportResponse response = codeBaseService.exportImplementation(
@@ -424,17 +424,17 @@ public class CodeBaseController {
 
             Map<String, Object> apiResponse = new HashMap<>();
             apiResponse.put("responseCode", 200);
-            apiResponse.put("message", "Implementation exported successfully");
+            apiResponse.put("message", "ImplementationEntity exported successfully");
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Implementation exported successfully");
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+                    ", ImplementationEntity exported successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Error exporting implementation: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -449,7 +449,7 @@ public class CodeBaseController {
     // 9. GET LANGUAGES
     // ============================================================
     @GetMapping("/languages")
-    @Operation(summary = "Get languages", description = "Retrieve available programming languages for implementations")
+    @Operation(summary = "Get languages", description = "Retrieve available programming languages for implementationEntities")
     public ResponseEntity<?> getLanguages(HttpServletRequest req) {
 
         String requestId = UUID.randomUUID().toString();
@@ -461,7 +461,7 @@ public class CodeBaseController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Getting available languages");
 
             LanguagesResponse languages = codeBaseService.getLanguages(requestId, performedBy);
@@ -472,13 +472,13 @@ public class CodeBaseController {
             response.put("data", languages);
             response.put("requestId", requestId);
 
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Languages retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Error getting languages: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -493,7 +493,7 @@ public class CodeBaseController {
     // 10. SEARCH IMPLEMENTATIONS
     // ============================================================
     @PostMapping("/search")
-    @Operation(summary = "Search implementations", description = "Search for implementations across collections")
+    @Operation(summary = "Search implementationEntities", description = "Search for implementationEntities across collections")
     public ResponseEntity<?> searchImplementations(
             @Valid @RequestBody SearchRequest searchRequest,
             BindingResult bindingResult,
@@ -501,7 +501,7 @@ public class CodeBaseController {
 
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "searching implementations");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "searching implementationEntities");
         if (authValidation != null) {
             return authValidation;
         }
@@ -520,8 +520,8 @@ public class CodeBaseController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Searching implementations for query: " + searchRequest.getQuery());
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+                    ", Searching implementationEntities for query: " + searchRequest.getQuery());
 
             SearchResponse response = codeBaseService.searchImplementations(
                     requestId, performedBy, searchRequest);
@@ -532,18 +532,18 @@ public class CodeBaseController {
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Search completed successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Error searching implementations: " + e.getMessage());
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+                    ", Error searching implementationEntities: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while searching implementations: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while searching implementationEntities: " + e.getMessage());
             errorResponse.put("requestId", requestId);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
@@ -580,7 +580,7 @@ public class CodeBaseController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Importing specification from source: " + importRequest.getSource());
 
             ImportSpecResponse response = codeBaseService.importSpecification(
@@ -592,13 +592,13 @@ public class CodeBaseController {
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Specification imported successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Error importing specification: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -640,7 +640,7 @@ public class CodeBaseController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Validating implementation for language: " + validationRequest.getLanguage());
 
             ValidationResponse response = codeBaseService.validateImplementation(
@@ -648,17 +648,17 @@ public class CodeBaseController {
 
             Map<String, Object> apiResponse = new HashMap<>();
             apiResponse.put("responseCode", 200);
-            apiResponse.put("message", "Implementation validated successfully");
+            apiResponse.put("message", "ImplementationEntity validated successfully");
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Implementation validated successfully");
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+                    ", ImplementationEntity validated successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Error validating implementation: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -700,25 +700,25 @@ public class CodeBaseController {
             }
 
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Testing implementation for request: " + testRequest.getRequestId());
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+                    ", Testing implementation for requestEntity: " + testRequest.getRequestId());
 
             TestResponse response = codeBaseService.testImplementation(
                     requestId, performedBy, testRequest);
 
             Map<String, Object> apiResponse = new HashMap<>();
             apiResponse.put("responseCode", 200);
-            apiResponse.put("message", "Implementation tested successfully");
+            apiResponse.put("message", "ImplementationEntity tested successfully");
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Implementation tested successfully");
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+                    ", ImplementationEntity tested successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Error testing implementation: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -745,7 +745,7 @@ public class CodeBaseController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Clearing codebase cache for user: " + performedBy);
 
             codeBaseService.clearCache(requestId, performedBy);
@@ -755,13 +755,13 @@ public class CodeBaseController {
             response.put("message", "Codebase cache cleared successfully");
             response.put("requestId", requestId);
 
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Codebase cache cleared successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Error clearing codebase cache: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -788,7 +788,7 @@ public class CodeBaseController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Getting supported programming languages");
 
             Map<String, Object> response = codeBaseService.getSupportedProgrammingLanguages(requestId, performedBy);
@@ -799,13 +799,13 @@ public class CodeBaseController {
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Supported programming languages retrieved successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Error getting supported programming languages: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
@@ -834,7 +834,7 @@ public class CodeBaseController {
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Getting quick start guide for language: " + language);
 
             Map<String, Object> guide = codeBaseService.getQuickStartGuide(requestId, performedBy, language);
@@ -845,13 +845,13 @@ public class CodeBaseController {
             response.put("data", guide);
             response.put("requestId", requestId);
 
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Quick start guide retrieved successfully");
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
+            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Error getting quick start guide: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();

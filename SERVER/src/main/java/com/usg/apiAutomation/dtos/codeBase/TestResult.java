@@ -12,12 +12,19 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class TestResult {
+    private String requestId;
+    private String language;
+    private String testName;
+    private Integer testsPassed;
+    private Integer testsFailed;
+    private Integer totalTests;
+    private String coverage;
     private String name;
     private String duration;
     private String message;
     private String component;
     private Boolean passed;
     private List<TestCase> testCases;
-    private Double executionTime;
+    private String executionTime;
     private String status;
 }
