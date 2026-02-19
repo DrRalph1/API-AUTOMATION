@@ -26,6 +26,23 @@ export const getAPICollections = async (authorizationHeader) => {
   );
 };
 
+
+/**
+ * Get folders for a collection
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} collectionId - Collection ID
+ * @returns {Promise} API response
+ */
+export const getAPIFolders = async (authorizationHeader, collectionId) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`/documentation/collections/${collectionId}/folders`, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
 /**
  * Get API endpoints
  * @param {string} authorizationHeader - Bearer token
@@ -42,6 +59,29 @@ export const getAPIEndpoints = async (authorizationHeader, collectionId, folderI
     })
   );
 };
+
+
+/**
+ * Get folders for a collection
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} collectionId - Collection ID
+ * @returns {Promise} API response
+ */
+export const getFolders = async (authorizationHeader, collectionId) => {
+  console.log('🔍 getFolders called for collection:', collectionId);
+  
+  const url = `/documentation/collections/${collectionId}/folders`;
+  console.log('📡 Calling API with URL:', url);
+  
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(url, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
 
 /**
  * Get endpoint details
@@ -1199,7 +1239,9 @@ export const clearCachedDocumentationData = (userId = null) => {
 export default {
   // Main API methods
   getAPICollections,
+  getAPIFolders,
   getAPIEndpoints,
+  getFolders,
   getEndpointDetails,
   getCodeExamples,
   searchDocumentation,

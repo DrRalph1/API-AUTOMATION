@@ -19,17 +19,18 @@ public class CustomUserDetailsService implements UserDetailsService {
     public UserDetails loadUserByUsername(String username)
             throws UsernameNotFoundException {
 
-        UserEntity user = appUserRepository.findByUserIdWithRole(username)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+        // Fix: Use findByUsername instead of findByUserIdWithRole
+        UserEntity user = appUserRepository.findByUsername(username)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
 
         if (Boolean.FALSE.equals(user.getIsActive())) {
             throw new DisabledException("User is deactivated");
         }
 
         return org.springframework.security.core.userdetails.User
-                .withUsername(user.getUserId())       // <- same ID you use in login
-                .password(user.getPassword())         // <- BCrypt password
-                .roles(user.getRole().getRoleName())  // <- your DB role
+                .withUsername(user.getUsername())  // Use username, not userId
+                .password(user.getPassword())
+                .roles(user.getRole().getRoleName())
                 .build();
     }
 }

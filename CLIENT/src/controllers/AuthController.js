@@ -93,7 +93,7 @@ const buildQueryParams = (params = {}) => {
 
 // User login - UPDATED to match Java controller
 export const userLogin = async (loginRequest, apiKey, apiSecret) => {
-    console.log('🔐 Login request payload:', JSON.stringify(loginRequest, null, 2));
+    // console.log('🔐 Login request payload:', JSON.stringify(loginRequest, null, 2));
     
     try {
         const response = await apiCall(`/users/login`, {

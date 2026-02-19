@@ -132,6 +132,7 @@ import {
 import {
   getAPICollections,
   getAPIEndpoints,
+  getFolders,
   getEndpointDetails,
   getCodeExamples,
   searchDocumentation,
@@ -181,6 +182,9 @@ import {
   getSupportedEnvironmentTypes,
   getSupportedDocumentationFormats
 } from "../controllers/DocumentationController.js";
+
+// Also import apiCall for debug purposes
+import { apiCall } from "@/helpers/APIHelper.js";
 
 // SyntaxHighlighter Component
 const SyntaxHighlighter = ({ language, code }) => {
@@ -260,7 +264,8 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     environments: false,
     notifications: false,
     endpointDetails: false,
-    endpoints: false
+    endpoints: false,
+    folders: false
   });
   const [endpointDetails, setEndpointDetails] = useState(null);
   const [codeExamples, setCodeExamples] = useState({});
@@ -415,176 +420,357 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     return '';
   };
 
-  // Load API collections
-  const fetchAPICollections = useCallback(async () => {
-    console.log('🔥 [Documentation] fetchAPICollections called');
+  // Add this debug function
+  const debugDatabaseContents = async () => {
+    console.log('🔍 DEBUG: Checking database contents');
     
-    if (!authToken) {
-      console.log('❌ No auth token available');
-      showToast('Authentication required. Please login.', 'error');
-      setIsLoading(prev => ({ ...prev, collections: false }));
-      return;
+    // Check each collection
+    for (const collection of collections) {
+      console.log(`\n📁 Collection: ${collection.name} (${collection.id})`);
+      console.log(`   Total endpoints according to API: ${collection.totalEndpoints || 0}`);
+      
+      // Try to fetch endpoints for this collection
+      try {
+        const response = await getAPIEndpoints(authToken, collection.id, collection.id);
+        console.log(`   API Response for ${collection.id}:`, response);
+        
+        if (response.data && response.data.endpoints) {
+          console.log(`   Actual endpoints found: ${response.data.endpoints.length}`);
+          if (response.data.endpoints.length > 0) {
+            console.log('   First endpoint:', response.data.endpoints[0]);
+          }
+        }
+      } catch (error) {
+        console.error(`   Error fetching endpoints for ${collection.id}:`, error.message);
+      }
     }
-
-    setIsLoading(prev => ({ ...prev, collections: true }));
-    console.log('📡 [Documentation] Fetching API collections...');
-
+    
+    // Also check if there are any endpoints at all in the database
     try {
-      // Get collections from API
-      const response = await getAPICollections(authToken);
-      console.log('📦 [Documentation] API response:', response);
-      
-      if (!response) {
-        throw new Error('No response from documentation service');
-      }
-      
-      const handledResponse = handleDocumentationResponse(response);
-      const collectionsData = extractAPICollections(handledResponse);
-      
-      console.log('📊 [Documentation] Extracted collections data:', collectionsData.length, 'collections');
-      
-      // Format collections for display - IMPORTANT: Ensure folders array exists
-      const formattedCollections = collectionsData.map(collection => {
-        const formatted = formatDocumentationCollection(collection);
-        
-        // CRITICAL FIX: Ensure each collection has a folders array
-        if (!formatted.folders || formatted.folders.length === 0) {
-          formatted.folders = [
-            {
-              id: `${formatted.id}-default-folder`,
-              name: `${formatted.name} Endpoints`,
-              description: `Endpoints for ${formatted.name}`,
-              requests: [] // Will be populated when we fetch endpoints
-            }
-          ];
-        }
-        
-        return formatted;
-      });
-      
-      setCollections(formattedCollections);
-      console.log('📊 [Documentation] Formatted collections with folders:', formattedCollections);
-      
-      // Cache the data if we have userId
-      const userId = extractUserIdFromToken(authToken);
-      if (userId) {
-        cacheDocumentationData(userId, 'collections', formattedCollections);
-      }
-      
-      // Auto-select first collection if available
-      if (formattedCollections.length > 0) {
-        const firstCollection = formattedCollections[0];
-        setSelectedCollection(firstCollection);
-        setExpandedCollections([firstCollection.id]);
-        
-        // Try to load endpoints for the first folder if available
-        if (firstCollection.folders && firstCollection.folders.length > 0) {
-          const firstFolder = firstCollection.folders[0];
-          setExpandedFolders([firstFolder.id]);
-          await fetchAPIEndpoints(firstCollection.id, firstFolder.id);
-        }
-      }
-      
-      showToast('Collections loaded successfully', 'success');
-      
+      // You might need to add this endpoint to your backend
+      // For now, we'll just check the first collection again
+      console.log('\n📊 Summary: No endpoints found in database');
     } catch (error) {
-      console.error('❌ [Documentation] Error fetching API collections:', error);
-      showToast(`Failed to load collections: ${error.message}`, 'error');
-      setCollections([]);
-    } finally {
-      setIsLoading(prev => ({ ...prev, collections: false }));
-      console.log('🏁 [Documentation] fetchAPICollections completed');
+      console.error('Error checking database:', error);
     }
-  }, [authToken]);
-
-  // Load API endpoints for a folder - FIXED VERSION
-  const fetchAPIEndpoints = useCallback(async (collectionId, folderId) => {
-    console.log(`📡 [Documentation] Fetching endpoints for collection ${collectionId}, folder ${folderId}`);
     
-    if (!authToken || !collectionId || !folderId) {
-      console.log('Missing params for fetchAPIEndpoints');
-      return;
-    }
+    showToast('Check console for database debug info', 'info');
+  };
 
-    setIsLoading(prev => ({ ...prev, endpoints: true }));
+  // Fetch folders for a collection - FIXED: Return a folder using collection ID
+const fetchFolders = useCallback(async (collectionId) => {
+  console.log(`📁 [Documentation] Fetching folders for collection: ${collectionId}`);
+  
+  if (!authToken || !collectionId) {
+    return [];
+  }
+
+  try {
+    setIsLoading(prev => ({ ...prev, folders: true }));
     
-    try {
-      const response = await getAPIEndpoints(authToken, collectionId, folderId);
-      console.log('📦 [Documentation] Endpoints response:', response);
+    // Since your backend doesn't have folders, create a virtual folder
+    // using the collection ID as the folder ID
+    const virtualFolder = {
+      id: collectionId, // Use collection ID as folder ID
+      name: "Endpoints",
+      description: "All endpoints",
+      collectionId: collectionId,
+      requests: [],
+      isLoading: false,
+      error: null
+    };
+    
+    setFolders(prev => ({
+      ...prev,
+      [collectionId]: [virtualFolder]
+    }));
+    
+    return [virtualFolder];
+    
+  } catch (error) {
+    console.error('Error fetching folders:', error);
+    return [];
+  } finally {
+    setIsLoading(prev => ({ ...prev, folders: false }));
+  }
+}, [authToken]);
+
+
+// Fetch folders for a specific collection and check all for endpoints
+const fetchFoldersForCollection = useCallback(async (collectionId) => {
+  console.log(`📁 [Documentation] Fetching folders for collection: ${collectionId}`);
+  
+  if (!authToken || !collectionId) {
+    return;
+  }
+
+  try {
+    setIsLoading(prev => ({ ...prev, folders: true }));
+    
+    // Make API call to get folders
+    const response = await getFolders(authToken, collectionId);
+    console.log(`📦 [Documentation] Folders response for ${collectionId}:`, response);
+    
+    if (response && response.data && response.data.folders) {
+      const foldersData = response.data.folders;
+      console.log(`📁 Found ${foldersData.length} folders`);
       
-      const handledResponse = handleDocumentationResponse(response);
-      const endpoints = extractAPIEndpoints(handledResponse);
-      
-      console.log('📊 [Documentation] Extracted endpoints:', endpoints);
-      
-      // Format endpoints for display
-      const formattedEndpoints = endpoints.map(endpoint => 
-        formatDocumentationEndpoint(endpoint)
-      );
-      
-      console.log('📊 [Documentation] Formatted endpoints:', formattedEndpoints.length);
-      
-      // Update collection with endpoints - FIXED: Properly update the nested structure
+      // Update the collection with its folders
       setCollections(prevCollections => 
         prevCollections.map(collection => {
           if (collection.id === collectionId) {
-            const updatedFolders = collection.folders?.map(folder => {
-              if (folder.id === folderId) {
-                return { 
-                  ...folder, 
-                  requests: formattedEndpoints,
-                  isLoading: false
-                };
-              }
-              return folder;
-            }) || [];
-            
-            return { 
-              ...collection, 
-              folders: updatedFolders,
-              lastFetched: new Date().toISOString()
+            return {
+              ...collection,
+              folders: foldersData.map(folder => ({
+                id: folder.id,
+                name: folder.name,
+                description: folder.description,
+                requests: [],
+                isLoading: false,
+                error: null
+              }))
             };
           }
           return collection;
         })
       );
       
-      // Auto-select first endpoint if available
-      if (formattedEndpoints.length > 0 && !selectedRequest) {
-        console.log('🎯 [Documentation] Auto-selecting first endpoint');
-        await handleSelectRequest(formattedEndpoints[0], collectionId, folderId);
+      // Check each folder for endpoints
+      for (const folder of foldersData) {
+        console.log(`🔍 Checking folder: ${folder.name} (${folder.id})`);
+        try {
+          const endpointResponse = await getAPIEndpoints(authToken, collectionId, folder.id);
+          console.log(`   Endpoints in ${folder.name}:`, endpointResponse?.data?.totalEndpoints || 0);
+        } catch (error) {
+          console.error(`   Error checking folder ${folder.name}:`, error.message);
+        }
       }
       
-      showToast(`Loaded ${formattedEndpoints.length} endpoints`, 'success');
+      // Also try fetching endpoints without a folder ID (directly under collection)
+      try {
+        console.log(`🔍 Checking endpoints directly under collection (no folder)`);
+        // You might need a different endpoint for this
+        // This depends on your backend implementation
+      } catch (error) {
+        console.log('No direct collection endpoints');
+      }
       
-    } catch (error) {
-      console.error('❌ [Documentation] Error loading API endpoints:', error);
-      showToast(`Failed to load endpoints: ${error.message}`, 'error');
-      
-      // Update folder to show error state
-      setCollections(prevCollections => 
-        prevCollections.map(collection => {
-          if (collection.id === collectionId) {
-            const updatedFolders = collection.folders?.map(folder => {
-              if (folder.id === folderId) {
-                return { 
-                  ...folder, 
-                  requests: [],
-                  error: error.message,
-                  isLoading: false
-                };
-              }
-              return folder;
-            }) || [];
-            return { ...collection, folders: updatedFolders };
-          }
-          return collection;
-        })
-      );
-    } finally {
-      setIsLoading(prev => ({ ...prev, endpoints: false }));
+      // Auto-expand first folder and load its endpoints if it has any
+      if (foldersData.length > 0) {
+        const firstFolder = foldersData[0];
+        setExpandedFolders(prev => [...prev, firstFolder.id]);
+        await fetchAPIEndpoints(collectionId, firstFolder.id);
+      }
     }
-  }, [authToken, selectedRequest]);
+    
+  } catch (error) {
+    console.error('❌ Error fetching folders:', error);
+  } finally {
+    setIsLoading(prev => ({ ...prev, folders: false }));
+  }
+}, [authToken]);
+
+ // Load API collections and their folders
+const fetchAPICollections = useCallback(async () => {
+  console.log('🔥 [Documentation] fetchAPICollections called');
+  
+  if (!authToken) {
+    console.log('❌ No auth token available');
+    showToast('Authentication required. Please login.', 'error');
+    setIsLoading(prev => ({ ...prev, collections: false }));
+    return;
+  }
+
+  setIsLoading(prev => ({ ...prev, collections: true }));
+  console.log('📡 [Documentation] Fetching API collections...');
+
+  try {
+    // Get collections from API
+    const response = await getAPICollections(authToken);
+    console.log('📦 [Documentation] API response:', response);
+    
+    if (!response) {
+      throw new Error('No response from documentation service');
+    }
+    
+    const handledResponse = handleDocumentationResponse(response);
+    const collectionsData = extractAPICollections(handledResponse);
+    
+    console.log('📊 [Documentation] Extracted collections data:', collectionsData.length, 'collections');
+
+    // Format collections with empty folders array
+    const formattedCollections = collectionsData.map(collection => {
+      const formatted = formatDocumentationCollection(collection);
+      formatted.folders = []; // Will be populated by folder fetch
+      return formatted;
+    });
+    
+    setCollections(formattedCollections);
+    console.log('📊 [Documentation] Formatted collections:', formattedCollections);
+    
+    // Cache the data if we have userId
+    const userId = extractUserIdFromToken(authToken);
+    if (userId) {
+      cacheDocumentationData(userId, 'collections', formattedCollections);
+    }
+    
+    // Fetch folders for the first collection
+    if (formattedCollections.length > 0) {
+      const firstCollection = formattedCollections[0];
+      setSelectedCollection(firstCollection);
+      setExpandedCollections([firstCollection.id]);
+      
+      // Fetch folders for the first collection
+      await fetchFoldersForCollection(firstCollection.id);
+    }
+    
+    showToast('Collections loaded successfully', 'success');
+    
+  } catch (error) {
+    console.error('❌ [Documentation] Error fetching API collections:', error);
+    showToast(`Failed to load collections: ${error.message}`, 'error');
+    setCollections([]);
+  } finally {
+    setIsLoading(prev => ({ ...prev, collections: false }));
+    console.log('🏁 [Documentation] fetchAPICollections completed');
+  }
+}, [authToken]);
+
+  // Load API endpoints for a folder - with better debugging
+const fetchAPIEndpoints = useCallback(async (collectionId, folderId) => {
+  console.log(`📡 [Documentation] Fetching endpoints for collection ${collectionId}, folder ${folderId}`);
+  
+  if (!authToken || !collectionId || !folderId) {
+    console.log('Missing params for fetchAPIEndpoints');
+    return;
+  }
+
+  // Set loading state for this specific folder
+  setCollections(prevCollections => {
+    const updatedCollections = prevCollections.map(collection => {
+      if (collection.id === collectionId) {
+        const updatedFolders = (collection.folders || []).map(folder => {
+          if (folder.id === folderId) {
+            return { ...folder, isLoading: true, error: null };
+          }
+          return folder;
+        });
+        return { ...collection, folders: updatedFolders };
+      }
+      return collection;
+    });
+    return updatedCollections;
+  });
+
+  setIsLoading(prev => ({ ...prev, endpoints: true }));
+  
+  try {
+    console.log(`🔍 Making API call to get endpoints for folder: ${folderId}`);
+    const response = await getAPIEndpoints(authToken, collectionId, folderId);
+    console.log('📦 [Documentation] Raw endpoints response:', JSON.stringify(response, null, 2));
+    
+    // Check if the response has the expected structure
+    console.log('🔍 Response structure:', {
+      hasData: !!response?.data,
+      dataType: response?.data ? typeof response.data : 'undefined',
+      dataKeys: response?.data ? Object.keys(response.data) : [],
+      responseCode: response?.responseCode
+    });
+    
+    const handledResponse = handleDocumentationResponse(response);
+    console.log('🔄 Handled response:', handledResponse);
+    
+    const endpoints = extractAPIEndpoints(handledResponse);
+    console.log(`📊 Extracted ${endpoints.length} endpoints:`, endpoints);
+    
+    // Format endpoints for display
+    const formattedEndpoints = endpoints.map(endpoint => 
+      formatDocumentationEndpoint(endpoint)
+    );
+    
+    console.log('📊 Formatted endpoints:', formattedEndpoints);
+    
+    // Update collection with endpoints
+    setCollections(prevCollections => {
+      const updatedCollections = prevCollections.map(collection => {
+        if (collection.id === collectionId) {
+          const updatedFolders = (collection.folders || []).map(folder => {
+            if (folder.id === folderId) {
+              return { 
+                ...folder, 
+                requests: formattedEndpoints,
+                isLoading: false,
+                error: null
+              };
+            }
+            return folder;
+          });
+          
+          return { 
+            ...collection, 
+            folders: updatedFolders,
+            lastFetched: new Date().toISOString()
+          };
+        }
+        return collection;
+      });
+      
+      console.log('📊 Updated collections:', updatedCollections);
+      return updatedCollections;
+    });
+    
+    if (formattedEndpoints.length > 0) {
+      console.log('🎯 Auto-selecting first endpoint');
+      const firstEndpoint = formattedEndpoints[0];
+      
+      setSelectedRequest(firstEndpoint);
+      
+      const collection = collections.find(c => c.id === collectionId);
+      if (collection) {
+        setSelectedCollection(collection);
+      }
+      
+      await fetchEndpointDetails(collectionId, firstEndpoint.id);
+      showToast(`Loaded ${formattedEndpoints.length} endpoints`, 'success');
+    } else {
+      console.log('⚠️ No endpoints found for this folder');
+      showToast('No endpoints found in this folder', 'info');
+    }
+    
+  } catch (error) {
+    console.error('❌ [Documentation] Error loading API endpoints:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      response: error.response
+    });
+    
+    setCollections(prevCollections => {
+      const updatedCollections = prevCollections.map(collection => {
+        if (collection.id === collectionId) {
+          const updatedFolders = (collection.folders || []).map(folder => {
+            if (folder.id === folderId) {
+              return { 
+                ...folder, 
+                requests: [],
+                error: error.message,
+                isLoading: false
+              };
+            }
+            return folder;
+          });
+          return { ...collection, folders: updatedFolders };
+        }
+        return collection;
+      });
+      return updatedCollections;
+    });
+    
+    showToast(`Failed to load endpoints: ${error.message}`, 'error');
+  } finally {
+    setIsLoading(prev => ({ ...prev, endpoints: false }));
+  }
+}, [authToken, selectedRequest, collections]);
 
   // Load endpoint details
   const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
@@ -668,7 +854,6 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
       const handledResponse = handleDocumentationResponse(response);
       const results = extractSearchResults(handledResponse);
       
-      // Format search results for display
       const formattedResults = results.map(result => 
         formatSearchResult(result)
       );
@@ -704,13 +889,11 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
       
       setEnvironments(envs);
       
-      // Cache the data
       const userId = extractUserIdFromToken(authToken);
       if (userId) {
         cacheDocumentationData(userId, 'environments', envs);
       }
       
-      // Set active environment
       if (envs.length > 0) {
         const activeEnv = envs.find(e => e.isActive) || envs[0];
         setActiveEnvironment(activeEnv.id || '');
@@ -743,7 +926,6 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
       
       setNotifications(notifs);
       
-      // Cache the data
       const userId = extractUserIdFromToken(authToken);
       if (userId) {
         cacheDocumentationData(userId, 'notifications', notifs);
@@ -776,7 +958,6 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
       
     } catch (error) {
       console.error('❌ [Documentation] Error loading changelog:', error);
-      // Don't show toast for this as it's not critical
     }
   }, [authToken]);
 
@@ -865,31 +1046,25 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     setTimeout(() => setToast(null), 3000);
   };
 
-  // FIXED: toggleCollection function
-  const toggleCollection = async (collectionId) => {
-    console.log(`📂 [Documentation] Toggling collection ${collectionId}`);
-    
-    const isExpanding = !expandedCollections.includes(collectionId);
-    
-    setExpandedCollections(prev =>
-      prev.includes(collectionId)
-        ? prev.filter(id => id !== collectionId)
-        : [...prev, collectionId]
-    );
-    
-    // Load endpoints for the collection if expanding
-    if (isExpanding) {
-      const collection = collections.find(c => c.id === collectionId);
-      if (collection?.folders && collection.folders.length > 0) {
-        const firstFolder = collection.folders[0];
-        console.log(`📂 [Documentation] Expanding first folder: ${firstFolder.name}`);
-        setExpandedFolders(prev => [...prev, firstFolder.id]);
-        await fetchAPIEndpoints(collectionId, firstFolder.id);
-      } else {
-        console.warn(`⚠️ [Documentation] No folders found in collection ${collectionId}`);
-      }
+ const toggleCollection = async (collectionId) => {
+  console.log(`📂 [Documentation] Toggling collection ${collectionId}`);
+  
+  const isExpanding = !expandedCollections.includes(collectionId);
+  
+  setExpandedCollections(prev =>
+    prev.includes(collectionId)
+      ? prev.filter(id => id !== collectionId)
+      : [...prev, collectionId]
+  );
+  
+  // Fetch folders if expanding and collection has no folders yet
+  if (isExpanding) {
+    const collection = collections.find(c => c.id === collectionId);
+    if (collection && (!collection.folders || collection.folders.length === 0)) {
+      await fetchFoldersForCollection(collectionId);
     }
-  };
+  }
+};
 
   // FIXED: toggleFolder function
   const toggleFolder = async (folderId) => {
@@ -906,23 +1081,28 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     // Load endpoints for the folder if expanding
     if (isExpanding && selectedCollection) {
       console.log(`📁 [Documentation] Fetching endpoints for folder ${folderId}`);
-      await fetchAPIEndpoints(selectedCollection.id, folderId);
+      
+      const collection = collections.find(c => c.id === selectedCollection.id);
+      const folder = collection?.folders?.find(f => f.id === folderId);
+      
+      if (folder && (!folder.requests || folder.requests.length === 0) && !folder.isLoading) {
+        await fetchAPIEndpoints(selectedCollection.id, folderId);
+      }
     }
   };
 
   const handleSelectRequest = async (request, collectionId, folderId) => {
     console.log('🎯 [Documentation] Selecting request:', request.name);
-    setSelectedRequest(request);
     
-    // Find the collection
     const collection = collections.find(c => c.id === collectionId);
     if (collection) {
       setSelectedCollection(collection);
     }
     
+    setSelectedRequest(request);
+    
     showToast(`Viewing documentation for ${request.name}`, 'info');
     
-    // Load endpoint details
     await fetchEndpointDetails(collectionId, request.id);
   };
 
@@ -981,7 +1161,6 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
       return currentExamples.code;
     }
     
-    // Fallback to generating a basic example
     const baseUrl = getActiveBaseUrl();
     const url = selectedRequest.url || selectedRequest.path || '';
     
@@ -1053,15 +1232,12 @@ req.end();`
   useEffect(() => {
     console.log('🚀 [Documentation] Component mounted, fetching data...');
     
-    // Extract userId from token
     if (authToken) {
       const extractedUserId = extractUserIdFromToken(authToken);
       setUserId(extractedUserId);
       
-      // Clear cache to force fresh API call
       clearCachedDocumentationData(extractedUserId);
       
-      // Fetch fresh data
       fetchAPICollections().catch(error => {
         console.error('Error in fetchAPICollections:', error);
       });
@@ -1072,6 +1248,51 @@ req.end();`
     fetchEnvironments();
     fetchNotifications();
   }, [authToken, fetchAPICollections, fetchEnvironments, fetchNotifications]);
+
+  // Update the debug button in the sidebar
+  const renderDebugButton = () => {
+    return (
+      <button 
+  className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+  onClick={async () => {
+    console.log('🔍 DEBUG: Checking all folders for endpoints');
+    
+    for (const collection of collections) {
+      console.log(`\n📁 Collection: ${collection.name} (${collection.id})`);
+      console.log(`   Total endpoints: ${collection.totalEndpoints}`);
+      
+      if (collection.folders && collection.folders.length > 0) {
+        console.log(`   Folders: ${collection.folders.length}`);
+        
+        for (const folder of collection.folders) {
+          console.log(`\n   📂 Checking folder: ${folder.name} (${folder.id})`);
+          try {
+            const response = await getAPIEndpoints(authToken, collection.id, folder.id);
+            console.log(`      ✅ Response:`, response);
+            if (response.data && response.data.endpoints) {
+              console.log(`      📊 Endpoints: ${response.data.endpoints.length}`);
+              if (response.data.endpoints.length > 0) {
+                console.log(`      First endpoint:`, response.data.endpoints[0]);
+              }
+            }
+          } catch (error) {
+            console.error(`      ❌ Error:`, error.message);
+          }
+        }
+      } else {
+        console.log(`   No folders found`);
+      }
+    }
+    
+    showToast('Check console for debug info', 'info');
+  }}
+  style={{ backgroundColor: colors.hover }}
+  title="Debug All Folders"
+>
+  <Database size={12} style={{ color: colors.textSecondary }} />
+</button>
+    );
+  };
 
   const renderCodePanel = () => {
     const languages = getSupportedLanguages ? getSupportedLanguages() : [
@@ -1124,7 +1345,6 @@ req.end();`
                     onClick={() => {
                       setSelectedLanguage(lang.value);
                       setShowLanguageDropdown(false);
-                      // Load code examples for the new language
                       if (selectedRequest) {
                         fetchCodeExamples(selectedRequest.id, lang.value);
                       }
@@ -1596,20 +1816,7 @@ req.end();`
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Collections</h3>
                 <div className="flex gap-1">
-                  <button 
-                    className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                    onClick={() => {
-                      console.log('🔍 DEBUG: Current state:', {
-                        collections,
-                        expandedCollections,
-                        expandedFolders,
-                        selectedCollection
-                      });
-                    }}
-                    style={{ backgroundColor: colors.hover }}
-                  >
-                    <Activity size={12} style={{ color: colors.textSecondary }} />
-                  </button>
+                  {renderDebugButton()}
                   <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
                     onClick={async () => {
                       try {
@@ -1695,7 +1902,6 @@ req.end();`
                         )}
                         <button onClick={(e) => {
                           e.stopPropagation();
-                          // Toggle favorite
                           const newCollections = collections.map(c => 
                             c.id === collection.id ? { ...c, isFavorite: !c.isFavorite } : c
                           );
@@ -1712,6 +1918,10 @@ req.end();`
                         <span className="text-sm font-medium flex-1 truncate" style={{ color: colors.text }}>
                           {collection.name}
                         </span>
+                        
+                        {(!collection.folders || collection.folders.length === 0) && isLoading.folders && (
+                          <RefreshCw size={10} className="animate-spin" style={{ color: colors.textSecondary }} />
+                        )}
                       </div>
 
                       {expandedCollections.includes(collection.id) && collection.folders && (
@@ -1731,18 +1941,22 @@ req.end();`
                                 <span className="text-sm flex-1 truncate" style={{ color: colors.text }}>
                                   {folder.name}
                                 </span>
+                                
+                                {folder.isLoading && (
+                                  <RefreshCw size={10} className="animate-spin" style={{ color: colors.textSecondary }} />
+                                )}
                               </div>
 
                               {expandedFolders.includes(folder.id) && (
                                 <div className="ml-6">
-                                  {isLoading.endpoints ? (
+                                  {folder.isLoading ? (
                                     <div className="py-2 text-center">
                                       <RefreshCw size={12} className="animate-spin mx-auto mb-1" style={{ color: colors.textSecondary }} />
                                       <p className="text-xs" style={{ color: colors.textTertiary }}>Loading endpoints...</p>
                                     </div>
                                   ) : folder.error ? (
                                     <div className="py-2 text-center">
-                                      <p className="text-xs" style={{ color: colors.error }}>Failed to load endpoints</p>
+                                      <p className="text-xs" style={{ color: colors.error }}>{folder.error}</p>
                                       <button 
                                         className="text-xs mt-1 px-2 py-1 rounded hover:bg-opacity-50 transition-colors"
                                         onClick={() => fetchAPIEndpoints(collection.id, folder.id)}
