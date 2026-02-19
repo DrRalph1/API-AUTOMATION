@@ -4,8 +4,8 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
-@Entity
-@Table(name = "tb_load_balancer_servers")
+@Entity(name = "LoadBalancerServerEntity")
+@Table(name = "tb_sec_load_balancer_servers")
 public class LoadBalancerServerEntity {
 
     @Getter

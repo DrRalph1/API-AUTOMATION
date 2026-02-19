@@ -9,15 +9,17 @@ import java.util.List;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class APIEndpointResponse {
-    private List<APIEndpointDto> endpoints;
+public class APIEndpointResponseDTO {
+    private List<APIEndpointDTO> endpoints;
     private String collectionId;
+    private String folderId;
     private int totalEndpoints;
     private String timestamp;
 
-    public APIEndpointResponse(List<APIEndpointDto> endpoints, String collectionId, int totalEndpoints) {
+    public APIEndpointResponseDTO(List<APIEndpointDTO> endpoints, String collectionId, String folderId, int totalEndpoints) {
         this.endpoints = endpoints;
         this.collectionId = collectionId;
+        this.folderId = folderId;
         this.totalEndpoints = totalEndpoints;
         this.timestamp = LocalDateTime.now().toString();
     }

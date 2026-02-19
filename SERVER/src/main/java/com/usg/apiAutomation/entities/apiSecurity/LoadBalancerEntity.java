@@ -7,8 +7,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-@Entity
-@Table(name = "tb_load_balancer")
+@Entity(name = "LoadBalancerEntity")
+@Table(name = "tb_sec_load_balancer")
 public class LoadBalancerEntity {
 
     @Getter

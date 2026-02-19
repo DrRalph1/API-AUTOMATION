@@ -9,11 +9,11 @@ import java.util.List;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class EnvironmentResponse {
-    private List<EnvironmentDto> environments;
+public class EnvironmentResponseDTO {
+    private List<EnvironmentDTO> environments;
     private String timestamp;
 
-    public EnvironmentResponse(List<EnvironmentDto> environments) {
+    public EnvironmentResponseDTO(List<EnvironmentDTO> environments) {
         this.environments = environments;
         this.timestamp = LocalDateTime.now().toString();
     }

@@ -9,7 +9,7 @@ import java.util.Map;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class ImportCollectionRequest {
+public class ImportCollectionRequestDTO {
     private String importType; // postman, openapi, curl
     private String content;
     private String url;

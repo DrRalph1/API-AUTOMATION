@@ -12,8 +12,8 @@ import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
 import java.util.Map;
 
-@Entity
-@Table(name = "tb_export_jobs")
+@Entity(name = "ExportJobEntity")
+@Table(name = "tb_cbase_export_jobs")
 @Data
 @Builder
 @NoArgsConstructor

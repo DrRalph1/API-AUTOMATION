@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class NotificationDto {
+public class NotificationDTO {
     private String id;
     private String title;
     private String message;
@@ -16,4 +16,6 @@ public class NotificationDto {
     private String time;
     private String icon;
     private String actionUrl;
+    private String collectionId;
+    private String endpointId;
 }

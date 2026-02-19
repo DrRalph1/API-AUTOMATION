@@ -5,11 +5,9 @@ import com.usg.apiAutomation.helpers.JwtHelper;
 import com.usg.apiAutomation.services.CollectionsService;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -61,7 +59,7 @@ public class CollectionsController {
             loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Getting collections list for user: " + performedBy);
 
-            CollectionsListResponse collections = collectionsService.getCollectionsList(requestId, req, performedBy);
+            CollectionsListResponseDTO collections = collectionsService.getCollectionsList(requestId, req, performedBy);
 
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
@@ -107,7 +105,7 @@ public class CollectionsController {
             loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Getting collectionEntity details for: " + collectionId);
 
-            CollectionDetailsResponse details = collectionsService.getCollectionDetails(
+            CollectionDetailsResponseDTO details = collectionsService.getCollectionDetails(
                     requestId, req, performedBy, collectionId);
 
             Map<String, Object> response = new HashMap<>();
@@ -155,7 +153,7 @@ public class CollectionsController {
             loggerUtil.log("collections", "RequestEntity ID: " + requestIdParam +
                     ", Getting requestEntity details for: " + requestId);
 
-            RequestDetailsResponse details = collectionsService.getRequestDetails(
+            RequestDetailsResponseDTO details = collectionsService.getRequestDetails(
                     requestIdParam, req, performedBy, collectionId, requestId);
 
             Map<String, Object> response = new HashMap<>();
@@ -187,7 +185,7 @@ public class CollectionsController {
     @PostMapping("/execute")
     @Operation(summary = "Execute API requestEntity", description = "Execute an API requestEntity and get the response")
     public ResponseEntity<?> executeRequest(
-            @Valid @RequestBody ExecuteRequestDto requestDto,
+            @Valid @RequestBody ExecuteRequestDTO requestDto,
             BindingResult bindingResult,
             HttpServletRequest req) {
 
@@ -215,7 +213,7 @@ public class CollectionsController {
             loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Executing requestEntity for user: " + performedBy);
 
-            ExecuteRequestResponse response = collectionsService.executeRequest(
+            ExecuteRequestResponseDTO response = collectionsService.executeRequest(
                     requestId, req, performedBy, requestDto);
 
             Map<String, Object> apiResponse = new HashMap<>();
@@ -247,7 +245,7 @@ public class CollectionsController {
     @PostMapping("/save")
     @Operation(summary = "Save API requestEntity", description = "Save an API requestEntity to a collectionEntity")
     public ResponseEntity<?> saveRequest(
-            @Valid @RequestBody SaveRequestDto requestDto,
+            @Valid @RequestBody SaveRequestDTO requestDto,
             BindingResult bindingResult,
             HttpServletRequest req) {
 
@@ -275,7 +273,7 @@ public class CollectionsController {
             loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Saving requestEntity for user: " + performedBy);
 
-            SaveRequestResponse response = collectionsService.saveRequest(
+            SaveRequestResponseDTO response = collectionsService.saveRequest(
                     requestId, req, performedBy, requestDto);
 
             Map<String, Object> apiResponse = new HashMap<>();
@@ -307,7 +305,7 @@ public class CollectionsController {
     @PostMapping("/create")
     @Operation(summary = "Create new collectionEntity", description = "Create a new API collectionEntity")
     public ResponseEntity<?> createCollection(
-            @Valid @RequestBody CreateCollectionDto collectionDto,
+            @Valid @RequestBody CreateCollectionDTO collectionDto,
             BindingResult bindingResult,
             HttpServletRequest req) {
 
@@ -335,7 +333,7 @@ public class CollectionsController {
             loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Creating collectionEntity for user: " + performedBy);
 
-            CreateCollectionResponse response = collectionsService.createCollection(
+            CreateCollectionResponseDTO response = collectionsService.createCollection(
                     requestId, req, performedBy, collectionDto);
 
             Map<String, Object> apiResponse = new HashMap<>();
@@ -367,7 +365,7 @@ public class CollectionsController {
     @PostMapping("/code-snippet")
     @Operation(summary = "Generate code snippet", description = "Generate code snippet for API requestEntity in various languages")
     public ResponseEntity<?> generateCodeSnippet(
-            @Valid @RequestBody CodeSnippetRequestDto snippetRequest,
+            @Valid @RequestBody CodeSnippetRequestDTO snippetRequest,
             BindingResult bindingResult,
             HttpServletRequest req) {
 
@@ -395,7 +393,7 @@ public class CollectionsController {
             loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Generating code snippet for language: " + snippetRequest.getLanguage());
 
-            CodeSnippetResponse snippet = collectionsService.generateCodeSnippet(
+            CodeSnippetResponseDTO snippet = collectionsService.generateCodeSnippet(
                     requestId, req, performedBy, snippetRequest);
 
             Map<String, Object> apiResponse = new HashMap<>();
@@ -440,7 +438,7 @@ public class CollectionsController {
             loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Getting environments for user: " + performedBy);
 
-            EnvironmentsResponse environments = collectionsService.getEnvironments(
+            EnvironmentsResponseDTO environments = collectionsService.getEnvironments(
                     requestId, req, performedBy);
 
             Map<String, Object> response = new HashMap<>();
@@ -472,7 +470,7 @@ public class CollectionsController {
     @PostMapping("/import")
     @Operation(summary = "Import collectionEntity", description = "Import a collectionEntity from external source")
     public ResponseEntity<?> importCollection(
-            @Valid @RequestBody ImportRequestDto importRequest,
+            @Valid @RequestBody ImportRequestDTO importRequest,
             BindingResult bindingResult,
             HttpServletRequest req) {
 
@@ -500,7 +498,7 @@ public class CollectionsController {
             loggerUtil.log("collections", "RequestEntity ID: " + requestId +
                     ", Importing collectionEntity for user: " + performedBy);
 
-            ImportResponse response = collectionsService.importCollection(
+            ImportResponseDTO response = collectionsService.importCollection(
                     requestId, req, performedBy, importRequest);
 
             Map<String, Object> apiResponse = new HashMap<>();
@@ -677,7 +675,7 @@ public class CollectionsController {
     @Operation(summary = "Update collectionEntity", description = "Update an existing collectionEntity")
     public ResponseEntity<?> updateCollection(
             @PathVariable String collectionId,
-            @Valid @RequestBody UpdateCollectionDto collectionDto,
+            @Valid @RequestBody UpdateCollectionDTO collectionDto,
             BindingResult bindingResult,
             HttpServletRequest req) {
 

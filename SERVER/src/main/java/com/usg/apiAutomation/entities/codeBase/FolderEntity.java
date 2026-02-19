@@ -10,8 +10,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "tb_folders")
+@Entity(name = "FolderEntityCodeBase")
+@Table(name = "tb_cbase_folders")
 @Data
 @Builder
 @NoArgsConstructor

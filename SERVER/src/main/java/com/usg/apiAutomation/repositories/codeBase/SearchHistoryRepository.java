@@ -10,14 +10,14 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
-@Repository
+@Repository("SearchHistoryRepositoryCodeBase")
 public interface SearchHistoryRepository extends JpaRepository<SearchHistoryEntity, String> {
 
     List<SearchHistoryEntity> findByPerformedBy(String performedBy);
 
     Page<SearchHistoryEntity> findByPerformedByOrderBySearchedAtDesc(String performedBy, Pageable pageable);
 
-    @Query("SELECT s.query, COUNT(s) as frequency FROM SearchHistoryEntity s " +
+    @Query("SELECT s.query, COUNT(s) as frequency FROM SearchHistoryEntityCodeBase s " +
             "WHERE s.performedBy = :performedBy " +
             "GROUP BY s.query ORDER BY frequency DESC")
     List<Object[]> findPopularSearchQueries(@Param("performedBy") String performedBy, Pageable pageable);

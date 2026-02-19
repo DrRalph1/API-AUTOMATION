@@ -8,7 +8,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
-@Repository
+@Repository("FolderRepositoryCodeBase")
 public interface FolderRepository extends JpaRepository<FolderEntity, String> {
 
     List<FolderEntity> findByCollectionId(String collectionId);
@@ -19,11 +19,11 @@ public interface FolderRepository extends JpaRepository<FolderEntity, String> {
 
     boolean existsByNameAndCollectionId(String name, String collectionId);
 
-    @Query("SELECT f FROM FolderEntity f WHERE f.collection.id = :collectionId AND f.isExpanded = true")
+    @Query("SELECT f FROM FolderEntityCodeBase f WHERE f.collection.id = :collectionId AND f.isExpanded = true")
     List<FolderEntity> findExpandedFoldersByCollectionId(@Param("collectionId") String collectionId);
 
     // Optional: Find folders with their request counts
-    @Query("SELECT f, COUNT(r) FROM FolderEntity f LEFT JOIN RequestEntity r ON r.folder.id = f.id WHERE f.collection.id = :collectionId GROUP BY f")
+    @Query("SELECT f, COUNT(r) FROM FolderEntityCodeBase f LEFT JOIN RequestEntity r ON r.folder.id = f.id WHERE f.collection.id = :collectionId GROUP BY f")
     List<Object[]> findFoldersWithRequestCount(@Param("collectionId") String collectionId);
 
     // Delete all folders in a collection

@@ -12,8 +12,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-@Entity
-@Table(name = "tb_collections")
+@Entity(name = "CollectionEntity")
+@Table(name = "tb_cbase_collections")
 @Data
 @Builder
 @NoArgsConstructor

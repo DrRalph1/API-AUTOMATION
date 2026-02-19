@@ -8,14 +8,14 @@ import java.time.LocalDateTime;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class CodeExampleResponse {
+public class CodeExampleResponseDTO {
     private String language;
     private String endpointId;
     private String codeExample;
     private String description;
     private String timestamp;
 
-    public CodeExampleResponse(String language, String endpointId, String codeExample, String description) {
+    public CodeExampleResponseDTO(String language, String endpointId, String codeExample, String description) {
         this.language = language;
         this.endpointId = endpointId;
         this.codeExample = codeExample;

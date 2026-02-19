@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.entities.documentation;
+package com.usg.apiAutomation.helpers;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;

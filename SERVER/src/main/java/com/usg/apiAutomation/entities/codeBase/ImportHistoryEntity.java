@@ -9,8 +9,8 @@ import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "tb_import_history")
+@Entity(name = "ImportHistoryEntity")
+@Table(name = "tb_cbase_import_history")
 @Data
 @Builder
 @NoArgsConstructor

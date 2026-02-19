@@ -10,17 +10,17 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
-@Repository
+@Repository("ParameterRepositoryCodeBase")
 public interface ParameterRepository extends JpaRepository<ParameterEntity, String> {
 
     // FIXED: Use @Query with proper path navigation through requestEntity
-    @Query("SELECT p FROM ParameterEntity p WHERE p.requestEntity.id = :requestId AND p.type = :type")
+    @Query("SELECT p FROM ParameterEntityCodeBase p WHERE p.requestEntity.id = :requestId AND p.type = :type")
     List<ParameterEntity> findByRequestIdAndType(@Param("requestId") String requestId, @Param("type") String type);
 
     // FIXED: Use @Modifying and @Query for delete operation
     @Modifying
     @Transactional
-    @Query("DELETE FROM ParameterEntity p WHERE p.requestEntity.id = :requestId")
+    @Query("DELETE FROM ParameterEntityCodeBase p WHERE p.requestEntity.id = :requestId")
     void deleteByRequestId(@Param("requestId") String requestId);
 
     // Additional useful methods you might want to add:
@@ -29,15 +29,15 @@ public interface ParameterRepository extends JpaRepository<ParameterEntity, Stri
 
     List<ParameterEntity> findByRequestEntityIdAndRequiredTrue(String requestEntityId);
 
-    @Query("SELECT p FROM ParameterEntity p WHERE p.requestEntity.id = :requestId ORDER BY p.name ASC")
+    @Query("SELECT p FROM ParameterEntityCodeBase p WHERE p.requestEntity.id = :requestId ORDER BY p.name ASC")
     List<ParameterEntity> findByRequestIdOrdered(@Param("requestId") String requestId);
 
     @Modifying
     @Transactional
-    @Query("DELETE FROM ParameterEntity p WHERE p.requestEntity.id = :requestId AND p.type = :type")
+    @Query("DELETE FROM ParameterEntityCodeBase p WHERE p.requestEntity.id = :requestId AND p.type = :type")
     void deleteByRequestIdAndType(@Param("requestId") String requestId, @Param("type") String type);
 
-    @Query("SELECT COUNT(p) FROM ParameterEntity p WHERE p.requestEntity.id = :requestId")
+    @Query("SELECT COUNT(p) FROM ParameterEntityCodeBase p WHERE p.requestEntity.id = :requestId")
     long countByRequestId(@Param("requestId") String requestId);
 
     boolean existsByRequestEntityIdAndName(String requestEntityId, String name);

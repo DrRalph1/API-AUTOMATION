@@ -9,11 +9,11 @@ import java.util.List;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class ResponseExampleDto {
+public class ResponseExampleDTO {
     private int statusCode;
     private String description;
     private String example;
     private String contentType;
-    private List<HeaderDto> headers;
+    private List<HeaderDTO> headers;
     private String schema;
 }

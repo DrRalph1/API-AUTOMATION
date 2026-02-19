@@ -10,8 +10,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "tb_language_configs")
+@Entity(name = "LanguageConfigEntity")
+@Table(name = "tb_cbase_language_configs")
 @Data
 @Builder
 @NoArgsConstructor

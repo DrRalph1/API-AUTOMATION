@@ -7,7 +7,7 @@ import lombok.*;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-@Entity
+@Entity(name = "UserSessionEntity")
 @Table(name = "tb_user_sessions")
 @Getter
 @Setter

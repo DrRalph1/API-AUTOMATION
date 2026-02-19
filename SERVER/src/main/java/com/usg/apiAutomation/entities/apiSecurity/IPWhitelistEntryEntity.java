@@ -1,15 +1,17 @@
 package com.usg.apiAutomation.entities.apiSecurity;
 
 import jakarta.persistence.*;
+import lombok.Data;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
 
-@Setter
-@Getter
-@Entity
-@Table(name = "tb_ip_whitelist_entries")
+@Entity(name = "IPWhitelistEntryEntity")
+@Table(name = "tb_sec_ip_whitelist_entries")
+@Data
+@NoArgsConstructor
 public class IPWhitelistEntryEntity {
     // Getters and Setters
     @Id

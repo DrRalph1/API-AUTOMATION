@@ -6,8 +6,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-@Entity
-@Table(name = "tb_parameters")
+@Entity(name = "ParameterEntityCodeBase")
+@Table(name = "tb_cbase_parameters")
 @Data
 @Builder
 @NoArgsConstructor

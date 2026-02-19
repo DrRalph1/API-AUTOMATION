@@ -9,7 +9,7 @@ import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-@Entity
+@Entity(name = "UserApiKeyEntity")
 @Table(name = "tb_user_api_keys")
 @Getter
 @Setter

@@ -9,7 +9,7 @@ import java.util.Map;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class ExportCollectionRequest {
+public class ExportCollectionRequestDTO {
     private String collectionId;
     private String format; // json, yaml, markdown, postman
     private boolean includeExamples;

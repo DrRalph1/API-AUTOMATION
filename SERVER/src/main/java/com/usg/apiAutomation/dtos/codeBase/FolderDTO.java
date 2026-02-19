@@ -19,6 +19,8 @@ public class FolderDTO {
     private Boolean hasRequests;
     private Integer requestCount;
     private String collectionId;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
+    private String parentFolderId;
+    private Integer displayOrder;
+    private String createdAt;
+    private String updatedAt;
 }

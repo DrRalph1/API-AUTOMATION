@@ -14,8 +14,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-@Entity
-@Table(name = "tb_test_results")
+@Entity(name = "TestResultEntityCodeBase")
+@Table(name = "tb_cbase_test_results")
 @Data
 @Builder
 @NoArgsConstructor

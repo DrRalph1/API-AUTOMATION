@@ -9,7 +9,7 @@ import java.util.Map;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class DocumentationSettingsDto {
+public class DocumentationSettingsDTO {
     private boolean autoSave;
     private boolean darkMode;
     private String defaultLanguage;

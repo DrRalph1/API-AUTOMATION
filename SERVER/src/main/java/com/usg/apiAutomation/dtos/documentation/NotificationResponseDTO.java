@@ -9,12 +9,12 @@ import java.util.List;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class NotificationResponse {
-    private List<NotificationDto> notifications;
+public class NotificationResponseDTO {
+    private List<NotificationDTO> notifications;
     private int unreadCount;
     private String timestamp;
 
-    public NotificationResponse(List<NotificationDto> notifications) {
+    public NotificationResponseDTO(List<NotificationDTO> notifications) {
         this.notifications = notifications;
         this.unreadCount = notifications != null ?
                 (int) notifications.stream().filter(n -> !n.isRead()).count() : 0;

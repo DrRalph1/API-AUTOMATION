@@ -873,25 +873,6 @@ public class CodeBaseService {
     }
 
     // ============================================================
-    // 14. CLEAR CACHE
-    // ============================================================
-    public void clearCache(String requestId, String performedBy) {
-        try {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
-                    ", Clearing codebase cache for user: " + performedBy);
-
-            // Clear any cached data (implementation depends on your caching solution)
-            // For example, if using Spring Cache:
-            // cacheManager.getCache("codebase").clear();
-
-        } catch (Exception e) {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
-                    ", Error clearing cache: " + e.getMessage());
-            throw e;
-        }
-    }
-
-    // ============================================================
     // 15. GET SUPPORTED PROGRAMMING LANGUAGES
     // ============================================================
     public Map<String, Object> getSupportedProgrammingLanguages(String requestId, String performedBy) {

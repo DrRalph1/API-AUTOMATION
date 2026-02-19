@@ -9,13 +9,13 @@ import java.util.List;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class SearchDocumentationResponse {
-    private List<SearchResultDto> results;
+public class SearchDocumentationResponseDTO {
+    private List<SearchResultDTO> results;
     private String searchQuery;
     private int totalResults;
     private String timestamp;
 
-    public SearchDocumentationResponse(List<SearchResultDto> results, String searchQuery, int totalResults) {
+    public SearchDocumentationResponseDTO(List<SearchResultDTO> results, String searchQuery, int totalResults) {
         this.results = results;
         this.searchQuery = searchQuery;
         this.totalResults = totalResults;

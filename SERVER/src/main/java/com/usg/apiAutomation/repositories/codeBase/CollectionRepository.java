@@ -26,7 +26,7 @@ public interface CollectionRepository extends JpaRepository<CollectionEntity, St
     @Query("SELECT COUNT(r) FROM RequestEntity r WHERE r.collection.id = :collectionId")
     int countRequestsByCollectionId(@Param("collectionId") String collectionId);
 
-    @Query("SELECT COUNT(f) FROM FolderEntity f WHERE f.collection.id = :collectionId")
+    @Query("SELECT COUNT(f) FROM FolderEntityCodeBase f WHERE f.collection.id = :collectionId")
     int countFoldersByCollectionId(@Param("collectionId") String collectionId);
 
     boolean existsByNameAndOwner(String name, String owner);
@@ -54,7 +54,7 @@ public interface CollectionRepository extends JpaRepository<CollectionEntity, St
     @Query("SELECT c, COUNT(r) as requestCount, COUNT(f) as folderCount " +
             "FROM CollectionEntity c " +
             "LEFT JOIN RequestEntity r ON r.collection.id = c.id " +
-            "LEFT JOIN FolderEntity f ON f.collection.id = c.id " +
+            "LEFT JOIN FolderEntityCodeBase f ON f.collection.id = c.id " +
             "WHERE c.id = :collectionId " +
             "GROUP BY c")
     Optional<Object[]> findCollectionWithCounts(@Param("collectionId") String collectionId);

@@ -51,28 +51,28 @@ public interface TestResultRepository extends JpaRepository<TestResultEntity, St
             LocalDateTime endDate);
 
     // Find failed tests
-    @Query("SELECT t FROM TestResultEntity t WHERE t.testsFailed > 0 ORDER BY t.testedAt DESC")
+    @Query("SELECT t FROM TestResultEntityCodeBase t WHERE t.testsFailed > 0 ORDER BY t.testedAt DESC")
     List<TestResultEntity> findFailedTests();
 
-    @Query("SELECT t FROM TestResultEntity t WHERE t.requestId = :requestId AND t.testsFailed > 0")
+    @Query("SELECT t FROM TestResultEntityCodeBase t WHERE t.requestId = :requestId AND t.testsFailed > 0")
     List<TestResultEntity> findFailedTestsByRequestId(@Param("requestId") String requestId);
 
     // Statistical queries
-    @Query("SELECT AVG(t.successRate) FROM TestResultEntity t WHERE t.requestId = :requestId")
+    @Query("SELECT AVG(t.successRate) FROM TestResultEntityCodeBase t WHERE t.requestId = :requestId")
     Double getAverageSuccessRateByRequestId(@Param("requestId") String requestId);
 
-    @Query("SELECT AVG(t.testsPassed * 100.0 / t.totalTests) FROM TestResultEntity t " +
+    @Query("SELECT AVG(t.testsPassed * 100.0 / t.totalTests) FROM TestResultEntityCodeBase t " +
             "WHERE t.requestId = :requestId AND t.language = :language")
     Double getAverageSuccessRateByRequestAndLanguage(
             @Param("requestId") String requestId,
             @Param("language") String language);
 
-    @Query("SELECT t.language, AVG(t.successRate) FROM TestResultEntity t " +
+    @Query("SELECT t.language, AVG(t.successRate) FROM TestResultEntityCodeBase t " +
             "WHERE t.requestId = :requestId GROUP BY t.language")
     List<Object[]> getAverageSuccessRateByLanguage(@Param("requestId") String requestId);
 
     // Trend analysis
-    @Query("SELECT DATE(t.testedAt), AVG(t.successRate) FROM TestResultEntity t " +
+    @Query("SELECT DATE(t.testedAt), AVG(t.successRate) FROM TestResultEntityCodeBase t " +
             "WHERE t.requestId = :requestId AND t.testedAt BETWEEN :startDate AND :endDate " +
             "GROUP BY DATE(t.testedAt) ORDER BY DATE(t.testedAt)")
     List<Object[]> getSuccessRateTrend(
@@ -81,52 +81,49 @@ public interface TestResultRepository extends JpaRepository<TestResultEntity, St
             @Param("endDate") LocalDateTime endDate);
 
     // Performance metrics
-    @Query("SELECT t FROM TestResultEntity t WHERE t.performanceMetrics IS NOT NULL " +
-            "AND t.requestId = :requestId ORDER BY t.testedAt DESC")
-    List<TestResultEntity> findPerformanceTestsByRequestId(@Param("requestId") String requestId);
 
     // Baseline comparisons
-    @Query("SELECT t FROM TestResultEntity t WHERE t.requestId = :requestId AND t.isBaseline = true")
+    @Query("SELECT t FROM TestResultEntityCodeBase t WHERE t.requestId = :requestId AND t.isBaseline = true")
     Optional<TestResultEntity> findBaselineByRequestId(@Param("requestId") String requestId);
 
-    @Query("SELECT t FROM TestResultEntity t WHERE t.baselineId = :baselineId ORDER BY t.testedAt DESC")
+    @Query("SELECT t FROM TestResultEntityCodeBase t WHERE t.baselineId = :baselineId ORDER BY t.testedAt DESC")
     List<TestResultEntity> findTestRunsComparedToBaseline(@Param("baselineId") String baselineId);
 
     // Flaky tests
-    @Query("SELECT t FROM TestResultEntity t WHERE t.flakyTests > 0 ORDER BY t.flakyTests DESC")
+    @Query("SELECT t FROM TestResultEntityCodeBase t WHERE t.flakyTests > 0 ORDER BY t.flakyTests DESC")
     List<TestResultEntity> findTestRunsWithFlakyTests();
 
-    @Query("SELECT t.requestId, AVG(t.flakyTests) FROM TestResultEntity t " +
+    @Query("SELECT t.requestId, AVG(t.flakyTests) FROM TestResultEntityCodeBase t " +
             "WHERE t.flakyTests > 0 GROUP BY t.requestId")
     List<Object[]> getAverageFlakyTestsByRequest();
 
     // Coverage analysis
-    @Query("SELECT t FROM TestResultEntity t WHERE t.coverage IS NOT NULL " +
+    @Query("SELECT t FROM TestResultEntityCodeBase t WHERE t.coverage IS NOT NULL " +
             "AND t.requestId = :requestId ORDER BY t.testedAt DESC")
     List<TestResultEntity> findCoverageReportsByRequestId(@Param("requestId") String requestId);
 
     @Query("SELECT MAX(CAST(SUBSTRING(t.coverage, 1, LENGTH(t.coverage)-1) AS double)) " +
-            "FROM TestResultEntity t WHERE t.requestId = :requestId")
+            "FROM TestResultEntityCodeBase t WHERE t.requestId = :requestId")
     Double getMaxCoverageByRequestId(@Param("requestId") String requestId);
 
     // Time-based queries
-    @Query("SELECT t FROM TestResultEntity t WHERE t.testedAt > :since " +
+    @Query("SELECT t FROM TestResultEntityCodeBase t WHERE t.testedAt > :since " +
             "AND t.testsFailed > 0 ORDER BY t.testedAt DESC")
     List<TestResultEntity> findRecentFailures(@Param("since") LocalDateTime since);
 
-    @Query("SELECT COUNT(t) FROM TestResultEntity t WHERE t.testedAt > :since")
+    @Query("SELECT COUNT(t) FROM TestResultEntityCodeBase t WHERE t.testedAt > :since")
     long countTestsRunSince(@Param("since") LocalDateTime since);
 
     // Aggregation queries
-    @Query("SELECT t.status, COUNT(t) FROM TestResultEntity t GROUP BY t.status")
+    @Query("SELECT t.status, COUNT(t) FROM TestResultEntityCodeBase t GROUP BY t.status")
     List<Object[]> getTestResultStatistics();
 
-    @Query("SELECT t.testType, COUNT(t), AVG(t.successRate) FROM TestResultEntity t " +
+    @Query("SELECT t.testType, COUNT(t), AVG(t.successRate) FROM TestResultEntityCodeBase t " +
             "WHERE t.testedAt > :since GROUP BY t.testType")
     List<Object[]> getTestTypeStatistics(@Param("since") LocalDateTime since);
 
     // Search with multiple criteria
-    @Query("SELECT t FROM TestResultEntity t WHERE " +
+    @Query("SELECT t FROM TestResultEntityCodeBase t WHERE " +
             "(:requestId IS NULL OR t.requestId = :requestId) AND " +
             "(:language IS NULL OR t.language = :language) AND " +
             "(:status IS NULL OR t.status = :status) AND " +
@@ -145,13 +142,13 @@ public interface TestResultRepository extends JpaRepository<TestResultEntity, St
     // Delete old test results
     @Modifying
     @Transactional
-    @Query("DELETE FROM TestResultEntity t WHERE t.testedAt < :cutoffDate AND t.isBaseline = false")
+    @Query("DELETE FROM TestResultEntityCodeBase t WHERE t.testedAt < :cutoffDate AND t.isBaseline = false")
     int deleteOldTestResults(@Param("cutoffDate") LocalDateTime cutoffDate);
 
     // Update operations
     @Modifying
     @Transactional
-    @Query("UPDATE TestResultEntity t SET t.isBaseline = false " +
+    @Query("UPDATE TestResultEntityCodeBase t SET t.isBaseline = false " +
             "WHERE t.requestId = :requestId AND t.id != :currentBaselineId")
     int clearOtherBaselines(
             @Param("requestId") String requestId,
@@ -159,33 +156,33 @@ public interface TestResultRepository extends JpaRepository<TestResultEntity, St
 
     // Most/Least stable requests
     @Query("SELECT t.requestId, t.requestName, AVG(t.successRate) as avgRate " +
-            "FROM TestResultEntity t GROUP BY t.requestId, t.requestName " +
+            "FROM TestResultEntityCodeBase t GROUP BY t.requestId, t.requestName " +
             "ORDER BY avgRate DESC")
     List<Object[]> findMostStableRequests(Pageable pageable);
 
     @Query("SELECT t.requestId, t.requestName, AVG(t.successRate) as avgRate " +
-            "FROM TestResultEntity t GROUP BY t.requestId, t.requestName " +
+            "FROM TestResultEntityCodeBase t GROUP BY t.requestId, t.requestName " +
             "ORDER BY avgRate ASC")
     List<Object[]> findLeastStableRequests(Pageable pageable);
 
     // Performance percentiles
     @Query("SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY t.executionTime) " +
-            "FROM TestResultEntity t WHERE t.requestId = :requestId")
+            "FROM TestResultEntityCodeBase t WHERE t.requestId = :requestId")
     Double getMedianExecutionTime(@Param("requestId") String requestId);
 
     @Query("SELECT PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY t.executionTime) " +
-            "FROM TestResultEntity t WHERE t.requestId = :requestId")
+            "FROM TestResultEntityCodeBase t WHERE t.requestId = :requestId")
     Double getP95ExecutionTime(@Param("requestId") String requestId);
 
     // Recent test runs with details
-    @Query("SELECT t FROM TestResultEntity t WHERE t.requestId IN :requestIds " +
-            "AND t.testedAt IN (SELECT MAX(t2.testedAt) FROM TestResultEntity t2 " +
+    @Query("SELECT t FROM TestResultEntityCodeBase t WHERE t.requestId IN :requestIds " +
+            "AND t.testedAt IN (SELECT MAX(t2.testedAt) FROM TestResultEntityCodeBase t2 " +
             "WHERE t2.requestId = t.requestId GROUP BY t2.requestId)")
     List<TestResultEntity> findLatestTestResultsForRequests(@Param("requestIds") List<String> requestIds);
 
     // Count by date for reporting
     @Query("SELECT DATE(t.testedAt), COUNT(t), AVG(t.successRate) " +
-            "FROM TestResultEntity t WHERE t.testedAt BETWEEN :startDate AND :endDate " +
+            "FROM TestResultEntityCodeBase t WHERE t.testedAt BETWEEN :startDate AND :endDate " +
             "GROUP BY DATE(t.testedAt) ORDER BY DATE(t.testedAt)")
     List<Object[]> getDailyTestStats(
             @Param("startDate") LocalDateTime startDate,

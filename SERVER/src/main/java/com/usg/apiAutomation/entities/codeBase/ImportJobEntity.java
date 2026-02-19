@@ -12,8 +12,8 @@ import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
 import java.util.Map;
 
-@Entity
-@Table(name = "tb_import_jobs")
+@Entity(name = "ImportJobEntity")
+@Table(name = "tb_cbase_import_jobs")
 @Data
 @Builder
 @NoArgsConstructor

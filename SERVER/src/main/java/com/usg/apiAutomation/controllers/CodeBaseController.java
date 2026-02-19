@@ -730,49 +730,6 @@ public class CodeBaseController {
     }
 
     // ============================================================
-    // 14. CLEAR CACHE
-    // ============================================================
-    @PostMapping("/cache/clear")
-    @Operation(summary = "Clear cache", description = "Clear cache for codebase data")
-    public ResponseEntity<?> clearCache(HttpServletRequest req) {
-
-        String requestId = UUID.randomUUID().toString();
-
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "clearing codebase cache");
-        if (authValidation != null) {
-            return authValidation;
-        }
-
-        try {
-            String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
-                    ", Clearing codebase cache for user: " + performedBy);
-
-            codeBaseService.clearCache(requestId, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Codebase cache cleared successfully");
-            response.put("requestId", requestId);
-
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
-                    ", Codebase cache cleared successfully");
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
-                    ", Error clearing codebase cache: " + e.getMessage());
-
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while clearing codebase cache: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-        }
-    }
-
-    // ============================================================
     // 15. GET SUPPORTED PROGRAMMING LANGUAGES
     // ============================================================
     @GetMapping("/supported-languages")

@@ -9,12 +9,12 @@ import java.util.List;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class ChangelogResponse {
-    private List<ChangelogEntryDto> entries;
+public class ChangelogResponseDTO {
+    private List<ChangelogEntryDTO> entries;
     private String collectionId;
     private String timestamp;
 
-    public ChangelogResponse(List<ChangelogEntryDto> entries, String collectionId) {
+    public ChangelogResponseDTO(List<ChangelogEntryDTO> entries, String collectionId) {
         this.entries = entries;
         this.collectionId = collectionId;
         this.timestamp = LocalDateTime.now().toString();

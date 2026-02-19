@@ -10,14 +10,14 @@ import java.util.UUID;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class GenerateMockResponse {
-    private List<MockEndpointDto> mockEndpoints;
+public class GenerateMockResponseDTO {
+    private List<MockEndpointDTO> mockEndpoints;
     private String collectionId;
     private String message;
     private String mockServerUrl;
     private String timestamp;
 
-    public GenerateMockResponse(List<MockEndpointDto> mockEndpoints, String collectionId, String message) {
+    public GenerateMockResponseDTO(List<MockEndpointDTO> mockEndpoints, String collectionId, String message) {
         this.mockEndpoints = mockEndpoints;
         this.collectionId = collectionId;
         this.message = message;

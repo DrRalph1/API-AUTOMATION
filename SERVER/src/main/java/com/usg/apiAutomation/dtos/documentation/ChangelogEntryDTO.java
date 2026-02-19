@@ -9,7 +9,7 @@ import java.util.List;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class ChangelogEntryDto {
+public class ChangelogEntryDTO {
     private String version;
     private String date;
     private List<String> changes;
@@ -17,7 +17,7 @@ public class ChangelogEntryDto {
     private String author;
 
     // Constructor for single change
-    public ChangelogEntryDto(String version, String date, String change) {
+    public ChangelogEntryDTO(String version, String date, String change) {
         this.version = version;
         this.date = date;
         this.changes = Arrays.asList(change);
@@ -25,7 +25,7 @@ public class ChangelogEntryDto {
     }
 
     // Constructor for list of changes
-    public ChangelogEntryDto(String version, String date, List<String> changes) {
+    public ChangelogEntryDTO(String version, String date, List<String> changes) {
         this.version = version;
         this.date = date;
         this.changes = changes;
@@ -33,7 +33,7 @@ public class ChangelogEntryDto {
     }
 
     // Constructor with type
-    public ChangelogEntryDto(String version, String date, List<String> changes, String type) {
+    public ChangelogEntryDTO(String version, String date, List<String> changes, String type) {
         this.version = version;
         this.date = date;
         this.changes = changes;

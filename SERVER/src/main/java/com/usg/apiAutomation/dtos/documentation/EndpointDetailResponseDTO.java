@@ -1,8 +1,10 @@
 package com.usg.apiAutomation.dtos.documentation;
 
-import lombok.AllArgsConstructor;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 
 import java.util.List;
 import java.util.Map;
@@ -10,7 +12,10 @@ import java.util.Map;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class EndpointDetailResponse {
+@Builder
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class EndpointDetailResponseDTO {
+
     private String endpointId;
     private String name;
     private String method;
@@ -20,15 +25,15 @@ public class EndpointDetailResponse {
     private List<String> tags;
     private String lastModified;
     private String version;
-    private boolean requiresAuthentication;
-    private String rateLimit;
-    private boolean deprecated;
-    private List<HeaderDto> headers;
-    private List<ParameterDto> parameters;
+    private Boolean requiresAuthentication;
+    private Map<String, Object> rateLimit;  // Changed from String to Map
+    private String formattedRateLimit;
+    private Boolean deprecated;
+    private List<HeaderDTO> headers;
+    private List<ParameterDTO> parameters;
     private String requestBodyExample;
-    private List<ResponseExampleDto> responseExamples;
+    private List<ResponseExampleDTO> responseExamples;
     private Map<String, Object> rateLimitInfo;
-    private List<ChangelogEntryDto> changelog;
-    private String timestamp;
-
+    private List<ChangelogEntryDTO> changelog;
+    private Map<String, Object> metadata;
 }

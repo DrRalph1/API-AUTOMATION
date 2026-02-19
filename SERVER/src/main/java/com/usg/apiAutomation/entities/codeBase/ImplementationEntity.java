@@ -14,8 +14,8 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
-@Entity
-@Table(name = "tb_implementations",
+@Entity(name = "ImplementationEntity")
+@Table(name = "tb_cbase_implementations",
         indexes = {
                 @Index(name = "idx_implementations_request", columnList = "request_id"),
                 @Index(name = "idx_implementations_language", columnList = "language"),

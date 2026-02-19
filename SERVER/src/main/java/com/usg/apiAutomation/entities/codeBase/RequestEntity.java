@@ -15,8 +15,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-@Entity
-@Table(name = "tb_requests",
+@Entity(name = "RequestEntity")
+@Table(name = "tb_cbase_requests",
         indexes = {
                 @Index(name = "idx_requests_collection", columnList = "collection_id"),
                 @Index(name = "idx_requests_folder", columnList = "folder_id"),
@@ -48,7 +48,7 @@ public class RequestEntity {
     private String description;
 
     @ElementCollection
-    @CollectionTable(name = "tb_request_tags",
+    @CollectionTable(name = "tb_cbase_request_tags",
             joinColumns = @JoinColumn(name = "request_id"),
             indexes = @Index(name = "idx_request_tags_tag", columnList = "tag"))
     @Column(name = "tag")

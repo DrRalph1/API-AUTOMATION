@@ -9,7 +9,7 @@ import java.util.Map;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class DocumentationStatsDto {
+public class DocumentationStatsDTO {
     private int totalCollections;
     private int totalEndpoints;
     private int publishedCollections;

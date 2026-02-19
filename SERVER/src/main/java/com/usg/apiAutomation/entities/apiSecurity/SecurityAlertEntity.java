@@ -8,8 +8,8 @@ import java.time.LocalDateTime;
 
 @Setter
 @Getter
-@Entity
-@Table(name = "tb_security_alerts")
+@Entity(name = "SecurityAlertEntity")
+@Table(name = "tb_sec_alerts")
 public class SecurityAlertEntity {
     // Getters and Setters
     @Id

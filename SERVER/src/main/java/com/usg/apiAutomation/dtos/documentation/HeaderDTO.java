@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class HeaderDto {
+public class HeaderDTO {
     private String key;
     private String value;
     private String description;

@@ -1,7 +1,9 @@
 package com.usg.apiAutomation.controllers;
 
 import com.usg.apiAutomation.dtos.documentation.*;
+import com.usg.apiAutomation.entities.documentation.FolderEntity;
 import com.usg.apiAutomation.helpers.JwtHelper;
+import com.usg.apiAutomation.repositories.documentation.FolderRepository;
 import com.usg.apiAutomation.services.DocumentationService;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import io.swagger.v3.oas.annotations.Operation;
@@ -10,14 +12,18 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -30,6 +36,7 @@ import java.util.stream.Collectors;
 public class DocumentationController {
 
     private final DocumentationService documentationService;
+    private final FolderRepository folderRepository;
     private final LoggerUtil loggerUtil;
     private final JwtHelper jwtHelper;
 
@@ -59,7 +66,7 @@ public class DocumentationController {
             loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Getting API collections for user: " + performedBy);
 
-            APICollectionResponse collections = documentationService.getAPICollections(requestId, req, performedBy);
+            APICollectionResponseDTO collections = documentationService.getAPICollections(requestId, req, performedBy);
 
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
@@ -106,7 +113,7 @@ public class DocumentationController {
             loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Getting API endpoints for collectionEntity: " + collectionId + ", folderEntity: " + folderId);
 
-            APIEndpointResponse endpoints = documentationService.getAPIEndpoints(
+            APIEndpointResponseDTO endpoints = documentationService.getAPIEndpoints(
                     requestId, req, performedBy, collectionId, folderId);
 
             Map<String, Object> response = new HashMap<>();
@@ -132,6 +139,7 @@ public class DocumentationController {
         }
     }
 
+
     // ============================================================
     // 3. GET ENDPOINT DETAILS
     // ============================================================
@@ -154,7 +162,7 @@ public class DocumentationController {
             loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Getting endpoint details for: " + endpointId);
 
-            EndpointDetailResponse details = documentationService.getEndpointDetails(
+            EndpointDetailResponseDTO details = documentationService.getEndpointDetails(
                     requestId, req, performedBy, collectionId, endpointId);
 
             Map<String, Object> response = new HashMap<>();
@@ -202,7 +210,7 @@ public class DocumentationController {
             loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Getting code examples for endpoint: " + endpointId + ", language: " + language);
 
-            CodeExampleResponse examples = documentationService.getCodeExamples(
+            CodeExampleResponseDTO examples = documentationService.getCodeExamples(
                     requestId, req, performedBy, endpointId, language);
 
             Map<String, Object> response = new HashMap<>();
@@ -251,7 +259,7 @@ public class DocumentationController {
             loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Searching documentation with query: " + query + ", type: " + type);
 
-            SearchDocumentationResponse searchResults = documentationService.searchDocumentation(
+            SearchDocumentationResponseDTO searchResults = documentationService.searchDocumentation(
                     requestId, req, performedBy, query, type, maxResults);
 
             Map<String, Object> response = new HashMap<>();
@@ -311,7 +319,7 @@ public class DocumentationController {
             loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Publishing documentation for collectionEntity: " + publishRequest.getCollectionId());
 
-            PublishDocumentationResponse publishResponse = documentationService.publishDocumentation(
+            PublishDocumentationResponseDTO publishResponse = documentationService.publishDocumentation(
                     requestId, req, performedBy,
                     publishRequest.getCollectionId(),
                     publishRequest.getTitle(),
@@ -360,7 +368,7 @@ public class DocumentationController {
             loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Getting environments for user: " + performedBy);
 
-            EnvironmentResponse environments = documentationService.getEnvironments(requestId, req, performedBy);
+            EnvironmentResponseDTO environments = documentationService.getEnvironments(requestId, req, performedBy);
 
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
@@ -404,7 +412,7 @@ public class DocumentationController {
             loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Getting notifications for user: " + performedBy);
 
-            NotificationResponse notifications = documentationService.getNotifications(requestId, req, performedBy);
+            NotificationResponseDTO notifications = documentationService.getNotifications(requestId, req, performedBy);
 
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
@@ -450,7 +458,7 @@ public class DocumentationController {
             loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Getting changelog for collectionEntity: " + collectionId);
 
-            ChangelogResponse changelog = documentationService.getChangelog(requestId, req, performedBy, collectionId);
+            ChangelogResponseDTO changelog = documentationService.getChangelog(requestId, req, performedBy, collectionId);
 
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
@@ -509,7 +517,7 @@ public class DocumentationController {
             loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
                     ", Generating mock server for collectionEntity: " + mockRequest.getCollectionId());
 
-            GenerateMockResponse mockResponse = documentationService.generateMockServer(
+            GenerateMockResponseDTO mockResponse = documentationService.generateMockServer(
                     requestId, req, performedBy, mockRequest.getCollectionId(), mockRequest.getOptions());
 
             Map<String, Object> response = new HashMap<>();
@@ -536,77 +544,87 @@ public class DocumentationController {
     }
 
     // ============================================================
-    // 11. CLEAR DOCUMENTATION CACHE
+    // DTO CLASSES FOR REQUEST BODIES
     // ============================================================
-    @PostMapping("/cache/clear")
-    @Operation(summary = "Clear documentation cache", description = "Clear cache for documentation data")
-    public ResponseEntity<?> clearDocumentationCache(HttpServletRequest req) {
+
+    @Setter
+    @Getter
+    public static class PublishDocumentationRequestDto {
+        // Getters and setters
+        private String collectionId;
+        private String title;
+        private String visibility;
+        private String customDomain;
+
+    }
+
+    @Setter
+    @Getter
+    public static class GenerateMockRequestDto {
+        // Getters and setters
+        private String collectionId;
+        private Map<String, String> options;
+
+    }
+
+
+    // ============================================================
+    // 12. GET API FOLDERS
+    // ============================================================
+    @GetMapping("/collections/{collectionId}/folders")
+    @Operation(summary = "Get folders", description = "Retrieve folders for a specific collection")
+    public ResponseEntity<?> getFolders(
+            @PathVariable String collectionId,
+            HttpServletRequest req) {
 
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "clearing documentation cache");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting folders");
         if (authValidation != null) {
             return authValidation;
         }
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
-                    ", Clearing documentation cache for user: " + performedBy);
+            loggerUtil.log("documentation", "Request ID: " + requestId +
+                    ", Getting folders for collection: " + collectionId);
 
-            documentationService.clearDocumentationCache(requestId, req, performedBy);
+            // Get folders from database
+            List<FolderEntity> folders = folderRepository.findByCollectionId(collectionId);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Documentation cache cleared successfully");
-            response.put("requestId", requestId);
+            // Convert to DTOs
+            List<FolderDTO> folderDTOs = folders.stream()
+                    .map(FolderDTO::fromEntity)
+                    .collect(Collectors.toList());
 
-            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
-                    ", Documentation cache cleared successfully");
+            Map<String, Object> responseData = new HashMap<>();
+            responseData.put("folders", folderDTOs);
+            responseData.put("collectionId", collectionId);
+            responseData.put("totalFolders", folderDTOs.size());
+            responseData.put("timestamp", LocalDateTime.now().toString());
 
-            return ResponseEntity.ok(response);
+            Map<String, Object> apiResponse = new HashMap<>();
+            apiResponse.put("responseCode", 200);
+            apiResponse.put("message", "Folders retrieved successfully");
+            apiResponse.put("data", responseData);
+            apiResponse.put("requestId", requestId);
+
+            loggerUtil.log("documentation", "Request ID: " + requestId +
+                    ", Folders retrieved successfully: " + folderDTOs.size());
+
+            return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("documentation", "RequestEntity ID: " + requestId +
-                    ", Error clearing documentation cache: " + e.getMessage());
+            loggerUtil.log("documentation", "Request ID: " + requestId +
+                    ", Error getting folders: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while clearing documentation cache: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while getting folders: " + e.getMessage());
             errorResponse.put("requestId", requestId);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 
-    // ============================================================
-    // DTO CLASSES FOR REQUEST BODIES
-    // ============================================================
 
-    public static class PublishDocumentationRequestDto {
-        private String collectionId;
-        private String title;
-        private String visibility;
-        private String customDomain;
-
-        // Getters and setters
-        public String getCollectionId() { return collectionId; }
-        public void setCollectionId(String collectionId) { this.collectionId = collectionId; }
-        public String getTitle() { return title; }
-        public void setTitle(String title) { this.title = title; }
-        public String getVisibility() { return visibility; }
-        public void setVisibility(String visibility) { this.visibility = visibility; }
-        public String getCustomDomain() { return customDomain; }
-        public void setCustomDomain(String customDomain) { this.customDomain = customDomain; }
-    }
-
-    public static class GenerateMockRequestDto {
-        private String collectionId;
-        private Map<String, String> options;
-
-        // Getters and setters
-        public String getCollectionId() { return collectionId; }
-        public void setCollectionId(String collectionId) { this.collectionId = collectionId; }
-        public Map<String, String> getOptions() { return options; }
-        public void setOptions(Map<String, String> options) { this.options = options; }
-    }
 }

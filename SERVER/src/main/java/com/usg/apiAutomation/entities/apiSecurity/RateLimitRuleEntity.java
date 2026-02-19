@@ -5,8 +5,8 @@ import lombok.Getter;
 import lombok.Setter;
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "tb_rate_limit_rules")
+@Entity(name = "RateLimitRuleEntity")
+@Table(name = "tb_sec_rate_limit_rules")
 @Getter
 @Setter
 public class RateLimitRuleEntity {

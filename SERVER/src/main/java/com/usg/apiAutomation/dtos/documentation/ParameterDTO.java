@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class ParameterDto {
+public class ParameterDTO {
     private String name;
     private String type;
     private String in; // path, query, header, body
@@ -18,7 +18,7 @@ public class ParameterDto {
     private String format;
 
     // Additional constructors for convenience
-    public ParameterDto(String name, String type, String in, boolean required, String description) {
+    public ParameterDTO(String name, String type, String in, boolean required, String description) {
         this.name = name;
         this.type = type;
         this.in = in;
@@ -26,7 +26,7 @@ public class ParameterDto {
         this.description = description;
     }
 
-    public ParameterDto(String name, String type, String in, boolean required, String description, String example) {
+    public ParameterDTO(String name, String type, String in, boolean required, String description, String example) {
         this.name = name;
         this.type = type;
         this.in = in;

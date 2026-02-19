@@ -9,8 +9,8 @@ import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "tb_test_execution_results")
+@Entity(name = "TestExecutionResultEntity")
+        @Table(name = "tb_cbase_test_execution_results")
 @Data
 @Builder
 @NoArgsConstructor
