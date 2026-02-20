@@ -135,7 +135,6 @@ import {
   validateExecuteRequest,
   formatCollection,
   formatRequest
-  // Note: cache utilities removed as they're no longer used
 } from "../controllers/CollectionsController.js";
 
 // Syntax highlighter component
@@ -360,7 +359,17 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   const [showPassword, setShowPassword] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [toast, setToast] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState({
+    initialLoad: false,
+    collections: false,
+    environments: false,
+    request: false,
+    execute: false,
+    save: false,
+    create: false,
+    import: false,
+    generateSnippet: false
+  });
   const [error, setError] = useState(null);
 
   const [newCollectionName, setNewCollectionName] = useState('');
@@ -476,11 +485,11 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     if (!authToken) {
       console.log('❌ No auth token available');
       setError('Authentication required. Please login.');
-      setLoading(false);
+      setLoading(prev => ({ ...prev, initialLoad: false, collections: false }));
       return;
     }
 
-    setLoading(true);
+    setLoading(prev => ({ ...prev, initialLoad: true, collections: true }));
     setError(null);
     console.log('📡 [Collections] Fetching from API...');
 
@@ -566,7 +575,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       setCollections([]);
       showToast(`Error loading collections: ${error.message}`, 'error');
     } finally {
-      setLoading(false);
+      setLoading(prev => ({ ...prev, initialLoad: false, collections: false }));
       console.log('🏁 [Collections] fetchCollections completed');
     }
   }, [authToken]);
@@ -576,6 +585,8 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       setEnvironments([]);
       return;
     }
+
+    setLoading(prev => ({ ...prev, environments: true }));
 
     try {
       const response = await getEnvironments(authToken);
@@ -596,6 +607,8 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       console.error('Error fetching environments:', error);
       setEnvironments([]);
       setActiveEnvironment(null);
+    } finally {
+      setLoading(prev => ({ ...prev, environments: false }));
     }
   }, [authToken]);
 
@@ -630,6 +643,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     });
     
     if (authToken && request.id && collectionId) {
+      setLoading(prev => ({ ...prev, request: true }));
       try {
         const response = await getRequestDetails(authToken, collectionId, request.id);
         const processedResponse = handleCollectionsResponse(response);
@@ -655,6 +669,8 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         }
       } catch (apiError) {
         console.error('Error fetching request details from API:', apiError);
+      } finally {
+        setLoading(prev => ({ ...prev, request: false }));
       }
     }
   }, [authToken]);
@@ -677,7 +693,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       return;
     }
 
-    setIsSending(true);
+    setLoading(prev => ({ ...prev, save: true }));
 
     try {
       // Build request DTO matching backend SaveRequestDTO structure
@@ -777,7 +793,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       console.error('Error saving request:', error);
       showToast(`Failed to save request: ${error.message}`, 'error');
     } finally {
-      setIsSending(false);
+      setLoading(prev => ({ ...prev, save: false }));
     }
   }, [authToken, selectedRequest, requestMethod, requestUrl, requestHeaders, requestParams, requestBody, authType, authConfig]);
 
@@ -787,6 +803,8 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       showToast(validationErrors[0], 'error');
       return null;
     }
+
+    setLoading(prev => ({ ...prev, create: true }));
 
     try {
       let createResults = null;
@@ -828,6 +846,8 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       console.error('Error creating collection:', error);
       showToast(`Failed to create collection: ${error.message}`, 'error');
       throw error;
+    } finally {
+      setLoading(prev => ({ ...prev, create: false }));
     }
   }, [authToken]);
 
@@ -842,6 +862,8 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       showToast(validationErrors[0], 'error');
       return null;
     }
+
+    setLoading(prev => ({ ...prev, generateSnippet: true }));
 
     try {
       if (!authToken) {
@@ -872,6 +894,8 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       console.error('Error generating code snippet:', error);
       showToast(`Failed to generate code snippet: ${error.message}`, 'error');
       return null;
+    } finally {
+      setLoading(prev => ({ ...prev, generateSnippet: false }));
     }
   }, [authToken, selectedLanguage, requestMethod, requestUrl, requestHeaders, requestBody]);
 
@@ -886,6 +910,8 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       showToast(validationErrors[0], 'error');
       return null;
     }
+
+    setLoading(prev => ({ ...prev, import: true }));
 
     try {
       let importResults = null;
@@ -912,6 +938,8 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       console.error('Error importing collection:', error);
       showToast(`Failed to import: ${error.message}`, 'error');
       throw error;
+    } finally {
+      setLoading(prev => ({ ...prev, import: false }));
     }
   }, [authToken, fetchCollections]);
 
@@ -926,13 +954,13 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       return;
     }
 
-    setIsSending(true);
+    setLoading(prev => ({ ...prev, execute: true }));
     setResponse(null);
 
     try {
       if (!authToken) {
         showToast('Authentication required', 'error');
-        setIsSending(false);
+        setLoading(prev => ({ ...prev, execute: false }));
         return;
       }
       
@@ -975,7 +1003,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         success: false
       });
     } finally {
-      setIsSending(false);
+      setLoading(prev => ({ ...prev, execute: false }));
     }
   }, [authToken, requestMethod, requestUrl, requestHeaders, requestBody, requestParams, authType, authConfig]);
 
@@ -1254,6 +1282,120 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     setRequestHeaders(headers => headers.filter(header => header.id !== id));
   };
 
+  // ==================== LOADING OVERLAY ====================
+  // Loading Overlay Component - Matches UserManagement pattern
+  const LoadingOverlay = () => {
+    // Check if any loading state is active
+    const isLoading = loading.initialLoad || 
+                     loading.collections || 
+                     loading.environments || 
+                     loading.request || 
+                     loading.execute || 
+                     loading.save || 
+                     loading.create || 
+                     loading.import || 
+                     loading.generateSnippet;
+    
+    // Determine loading message based on what's loading
+    const getLoadingMessage = () => {
+      if (loading.initialLoad) return 'Initializing Collections...';
+      if (loading.collections) return 'Loading collections...';
+      if (loading.environments) return 'Loading environments...';
+      if (loading.request) return 'Loading request details...';
+      if (loading.execute) return 'Executing request...';
+      if (loading.save) return 'Saving request...';
+      if (loading.create) return 'Creating collection...';
+      if (loading.import) return 'Importing collection...';
+      if (loading.generateSnippet) return 'Generating code snippet...';
+      return 'Please wait while we prepare your content';
+    };
+
+    // Determine loading tips based on context
+    const getLoadingTip = () => {
+      if (loading.collections) {
+        return `Loading ${collections.length || ''} collections and their requests...`;
+      }
+      if (loading.environments) {
+        return `Loading ${environments.length || ''} environments...`;
+      }
+      if (loading.execute) {
+        return 'Sending request to server...';
+      }
+      if (loading.save) {
+        return 'Saving your changes...';
+      }
+      if (loading.import) {
+        return 'Processing import file...';
+      }
+      return 'This won\'t take long';
+    };
+
+    if (!isLoading) return null;
+    
+    return (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+        {/* Full-page backdrop with blur - exactly matching APISecurity/UserManagement */}
+        <div className="absolute inset-0 bg-white/95 dark:bg-gray-950/95 backdrop-blur-sm transition-colors duration-300" />
+        
+        {/* Centered Loading Content */}
+        <div className="relative flex flex-col items-center gap-6 p-8 max-w-md w-full">
+          {/* Main Spinner - exactly matching APISecurity/UserManagement */}
+          <div className="relative">
+            {/* Outer ring */}
+            <div className="w-20 h-20 rounded-full border-4 border-gray-100 dark:border-gray-800 animate-pulse" />
+            
+            {/* Inner spinning ring */}
+            <div 
+              className="absolute top-0 left-0 w-20 h-20 rounded-full border-4 border-t-transparent border-l-transparent animate-spin"
+              style={{ 
+                borderColor: `${colors.primary} transparent transparent transparent`,
+                filter: 'drop-shadow(0 0 6px rgba(59, 130, 246, 0.3))'
+              }}
+            />
+            
+            {/* Center dot */}
+            <div 
+              className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
+              style={{ backgroundColor: colors.primary }}
+            />
+          </div>
+          
+          {/* Loading Text */}
+          <div className="text-center space-y-2">
+            <h3 className="text-xl font-semibold" style={{ color: colors.text }}>
+              API Collections
+            </h3>
+            <p className="text-sm" style={{ color: colors.textSecondary }}>
+              {getLoadingMessage()}
+            </p>
+          </div>
+          
+          {/* Progress Bar - exactly matching APISecurity/UserManagement */}
+          <div className="w-64 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+            <div 
+              className="h-full rounded-full animate-pulse"
+              style={{ 
+                width: '70%', 
+                backgroundColor: colors.primary,
+                opacity: 0.8
+              }}
+            />
+          </div>
+          
+          {/* Loading tips */}
+          <div className="text-center space-y-1">
+            <p className="text-xs" style={{ color: colors.textTertiary }}>
+              {getLoadingTip()}
+            </p>
+            <p className="text-xs" style={{ color: colors.textTertiary }}>
+              This won't take long
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // ==================== UI COMPONENTS ====================
 
   // Render Code panel with API integration
@@ -1270,11 +1412,9 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
 
     const currentLanguage = languages.find(lang => lang.id === selectedLanguage);
     const [codeSnippet, setCodeSnippet] = useState('');
-    const [isLoadingSnippet, setIsLoadingSnippet] = useState(false);
     
     useEffect(() => {
       const loadCodeSnippet = async () => {
-        setIsLoadingSnippet(true);
         try {
           const snippet = await handleGenerateCodeSnippet();
           if (snippet && snippet.code) {
@@ -1285,8 +1425,6 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         } catch (error) {
           console.error('Error loading code snippet:', error);
           setCodeSnippet('// Error loading code snippet');
-        } finally {
-          setIsLoadingSnippet(false);
         }
       };
       
@@ -1357,7 +1495,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         </div>
 
         <div className="flex-1 overflow-auto p-4">
-          {isLoadingSnippet ? (
+          {loading.generateSnippet ? (
             <div className="flex items-center justify-center h-full">
               <RefreshCw className="animate-spin" size={16} style={{ color: colors.textSecondary }} />
             </div>
@@ -1376,7 +1514,8 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               navigator.clipboard.writeText(codeSnippet);
               showToast('Copied to clipboard!', 'success');
             }}
-            style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
+            disabled={loading.generateSnippet}
+            style={{ backgroundColor: colors.primaryDark, color: colors.white, opacity: loading.generateSnippet ? 0.5 : 1 }}>
             <Copy size={12} />
             Copy to Clipboard
           </button>
@@ -2481,11 +2620,23 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       if (!response) {
         return (
           <div className="h-full flex flex-col items-center justify-center text-center p-8">
-            <Send size={32} style={{ color: colors.textSecondary }} className="mb-4 opacity-50" />
-            <h3 className="text-sm font-semibold mb-2" style={{ color: colors.text }}>No Response</h3>
-            <p className="text-sm max-w-sm" style={{ color: colors.textSecondary }}>
-              Send a request to see the response here.
-            </p>
+            {loading.execute ? (
+              <>
+                <RefreshCw size={32} className="animate-spin mb-4" style={{ color: colors.textSecondary }} />
+                <h3 className="text-sm font-semibold mb-2" style={{ color: colors.text }}>Sending Request...</h3>
+                <p className="text-sm max-w-sm" style={{ color: colors.textSecondary }}>
+                  Please wait while we process your request.
+                </p>
+              </>
+            ) : (
+              <>
+                <Send size={32} style={{ color: colors.textSecondary }} className="mb-4 opacity-50" />
+                <h3 className="text-sm font-semibold mb-2" style={{ color: colors.text }}>No Response</h3>
+                <p className="text-sm max-w-sm" style={{ color: colors.textSecondary }}>
+                  Send a request to see the response here.
+                </p>
+              </>
+            )}
           </div>
         );
       }
@@ -2824,8 +2975,13 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               <Upload size={32} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
               <p className="text-sm mb-2" style={{ color: colors.text }}>Drag and drop files here</p>
               <p className="text-xs" style={{ color: colors.textSecondary }}>Supports: Postman collections, OpenAPI, etc.</p>
-              <button className="mt-4 px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-                style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+              <button 
+                className="mt-4 px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                style={{ 
+                  backgroundColor: colors.primaryDark, 
+                  color: colors.white,
+                  opacity: loading.import ? 0.7 : 1
+                }}
                 onClick={() => {
                   const input = document.createElement('input');
                   input.type = 'file';
@@ -2843,8 +2999,17 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                     }
                   };
                   input.click();
-                }}>
-                Browse Files
+                }}
+                disabled={loading.import}
+              >
+                {loading.import ? (
+                  <div className="flex items-center gap-2">
+                    <RefreshCw size={14} className="animate-spin" />
+                    Importing...
+                  </div>
+                ) : (
+                  'Browse Files'
+                )}
               </button>
             </div>
           </div>
@@ -3017,7 +3182,8 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                   }}
                 />
               </div>
-              <button className="w-full py-2.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+              <button 
+                className="w-full py-2.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                 onClick={() => {
                   if (!newCollectionName.trim()) {
                     showToast('Please enter a collection name', 'error');
@@ -3025,8 +3191,21 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                   }
                   addNewCollection(newCollectionName, newCollectionDescription);
                 }}
-                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
-                Create Collection
+                style={{ 
+                  backgroundColor: colors.primaryDark, 
+                  color: colors.white,
+                  opacity: loading.create ? 0.7 : 1
+                }}
+                disabled={loading.create}
+              >
+                {loading.create ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <RefreshCw size={14} className="animate-spin" />
+                    Creating...
+                  </div>
+                ) : (
+                  'Create Collection'
+                )}
               </button>
             </div>
           </div>
@@ -3037,7 +3216,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
 
   // Render Collections tree
   const renderCollectionsTree = () => {
-    if (loading) {
+    if (loading.collections || loading.initialLoad) {
       return (
         <div className="flex items-center justify-center h-32">
           <RefreshCw className="animate-spin" size={16} style={{ color: colors.textSecondary }} />
@@ -3052,13 +3231,21 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
           <div className="text-sm" style={{ color: colors.text }}>{error}</div>
           <button 
             onClick={fetchCollections}
-            className="mt-3 px-4 py-2 rounded text-sm font-medium transition-colors"
+            className="mt-3 px-4 py-2 rounded text-sm font-medium transition-colors hover-lift"
             style={{ 
               backgroundColor: colors.hover,
               color: colors.text
             }}
+            disabled={loading.collections}
           >
-            Retry
+            {loading.collections ? (
+              <div className="flex items-center gap-2">
+                <RefreshCw size={12} className="animate-spin" />
+                Retrying...
+              </div>
+            ) : (
+              'Retry'
+            )}
           </button>
         </div>
       );
@@ -3207,7 +3394,9 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                               style={{ 
                                 color: selectedRequest?.id === request.id ? colors.primary : colors.text,
                                 backgroundColor: selectedRequest?.id === request.id ? colors.selected : 'transparent'
-                              }}>
+                              }}
+                              disabled={loading.request}
+                            >
                               <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
                                 backgroundColor: getMethodColor(request.method)
                               }} />
@@ -3269,7 +3458,9 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                         <button
                           onClick={() => addNewRequest(collection.id, folder.id)}
                           className="ml-6 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1 hover-lift"
-                          style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>
+                          style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+                          disabled={loading.request}
+                        >
                           <Plus size={10} />
                           Add Request
                         </button>
@@ -3280,7 +3471,9 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                 <button
                   onClick={() => addNewFolder(collection.id)}
                   className="ml-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1 hover-lift"
-                  style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>
+                  style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+                  disabled={loading.request}
+                >
                   <Plus size={10} />
                   Add Folder
                 </button>
@@ -3385,6 +3578,9 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
           background: linear-gradient(135deg, ${colors.primary}20 0%, ${colors.info}20 50%, ${colors.warning}20 100%);
         }
       `}</style>
+
+      {/* Loading Overlay */}
+      <LoadingOverlay />
 
       {/* TOP NAVIGATION */}
       <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
@@ -3605,12 +3801,12 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                   placeholder="Enter request URL" />
               </div>
               
-              <button onClick={handleExecuteRequest} disabled={isSending || !requestUrl}
+              <button onClick={handleExecuteRequest} disabled={isSending || !requestUrl || loading.execute}
                 className={`px-4 py-2 rounded text-sm font-medium flex items-center gap-2 transition-colors min-w-32 hover-lift ${
-                  isSending || !requestUrl ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'
+                  isSending || !requestUrl || loading.execute ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'
                 }`}
                 style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
-                {isSending ? (
+                {loading.execute ? (
                   <>
                     <RefreshCw size={12} className="animate-spin" />
                     Sending...
@@ -3624,10 +3820,21 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               </button>
               
               <button className="px-3 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-                style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+                style={{ 
+                  backgroundColor: colors.primaryDark, 
+                  color: colors.white,
+                  opacity: loading.save ? 0.7 : 1
+                }}
                 onClick={handleSaveRequest}
-                disabled={!selectedRequest}>
-                Save
+                disabled={!selectedRequest || loading.save}>
+                {loading.save ? (
+                  <div className="flex items-center gap-2">
+                    <RefreshCw size={12} className="animate-spin" />
+                    Saving...
+                  </div>
+                ) : (
+                  'Save'
+                )}
               </button>
             </div>
 
