@@ -1,4 +1,4 @@
-// Dashboard.jsx - UPDATED COLOR SCHEME
+// Dashboard.jsx - UPDATED COLOR SCHEME AND GRADIENT MATCHING LOGIN COMPONENT
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Database, Server, FileCode, Activity, Zap, Settings,
@@ -309,7 +309,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     accentPink: 'rgb(244 114 182)',
     accentCyan: 'rgb(34 211 238)',
     
-    // Gradient
+    // Gradient - EXACT MATCH from Login component
     gradient: 'from-blue-500/20 via-violet-500/20 to-orange-500/20'
   } : {
     // Light mode colors
@@ -833,7 +833,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     }
   };
 
-  // Stat Card Component - EXACT MATCH from static version
+  // Stat Card Component - EXACT MATCH from static version with gradient button styling
   const StatCard = ({ title, value, icon: Icon, change, color, onClick }) => {
     const iconSize = getResponsiveIconSize();
     return (
@@ -842,7 +842,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
         onClick={onClick}
         style={{ 
           borderColor: colors.border,
-          backgroundColor: colors.card
+          backgroundColor: colors.card,
+          backdropFilter: isDark ? 'blur(10px)' : 'none'
         }}
       >
         <div className="flex items-center justify-between mb-1 sm:mb-2">
@@ -876,7 +877,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
         onClick={() => handleViewConnectionDetails(connection)}
         style={{ 
           borderColor: colors.border,
-          backgroundColor: colors.card
+          backgroundColor: colors.card,
+          backdropFilter: isDark ? 'blur(10px)' : 'none'
         }}
       >
         <div className="flex items-center justify-between mb-1">
@@ -1008,6 +1010,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
       <div className="border rounded-xl p-3 sm:p-4 hover-lift transition-all duration-200" style={{ 
         borderColor: colors.border,
         backgroundColor: colors.card,
+        backdropFilter: isDark ? 'blur(10px)' : 'none',
         boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
       }}>
         {/* Header */}
@@ -1296,12 +1299,14 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
           style={{ 
             backgroundColor: colors.bg,
             borderColor: colors.modalborder,
+            backdropFilter: isDark ? 'blur(10px)' : 'none',
             zIndex: zIndex
           }}
         >
           <div className="sticky top-0 p-3 sm:p-4 border-b flex items-center justify-between backdrop-blur-sm" style={{ 
             borderColor: colors.border,
-            backgroundColor: colors.modalBg
+            backgroundColor: colors.modalBg,
+            backdropFilter: isDark ? 'blur(10px)' : 'none'
           }}>
             <div className="flex items-center gap-2">
               {showBackButton && (
@@ -2440,7 +2445,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
       borderColor: colors.border,
       height: '100vh',
       maxHeight: '100vh',
-      top: 0
+      top: 0,
+      backdropFilter: isDark ? 'blur(10px)' : 'none'
     }}>
       {/* Mobile sidebar header */}
       <div className="flex items-center justify-between p-3 border-b md:hidden mb-1 mt-2" style={{ borderColor: colors.border }}>
@@ -2465,9 +2471,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
           <div className="space-y-6 sm:space-y-6 ">
             <button 
               onClick={handleApiGeneration}
-              className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
+              className="w-full px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2 hover-lift cursor-pointer"
               style={{ 
-                // backgroundColor: colors.card,
                 color: colors.text 
               }}
             >
@@ -2476,9 +2481,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             </button>
             <button 
               onClick={handleNavigateToAPICollection}
-              className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
+              className="w-full px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2 hover-lift cursor-pointer"
               style={{ 
-                // backgroundColor: colors.card,
                 color: colors.text 
               }}
             >
@@ -2487,9 +2491,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             </button>
             <button 
               onClick={handleNavigateToDocumentation}
-              className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
+              className="w-full px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2 hover-lift cursor-pointer"
               style={{ 
-                // backgroundColor: colors.card,
                 color: colors.text 
               }}
             >
@@ -2498,9 +2501,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             </button>
             <button 
               onClick={handleNavigateToCodeBase}
-              className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
+              className="w-full px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2 hover-lift cursor-pointer"
               style={{ 
-                // backgroundColor: colors.card,
                 color: colors.text 
               }}
             >
@@ -2509,9 +2511,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             </button>
             <button 
               onClick={handleNavigateToAPISecurity}
-              className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
+              className="w-full px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2 hover-lift cursor-pointer"
               style={{ 
-                // backgroundColor: colors.card,
                 color: colors.text 
               }}
             >
@@ -2520,9 +2521,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             </button>
             <button 
               onClick={handleNavigateToUserManagement}
-              className="w-full px-3 py-2 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
+              className="w-full px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2 hover-lift cursor-pointer"
               style={{ 
-                // backgroundColor: colors.card,
                 color: colors.text 
               }}
             >
@@ -2629,12 +2629,19 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                   dashboardData.recentActivities.content?.length > 0;
 
   return (
-    <div className="flex flex-col h-screen min-h-screen" style={{ 
+    <div className="flex flex-col h-screen min-h-screen relative overflow-hidden" style={{ 
       backgroundColor: colors.bg,
       color: colors.text,
       fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
       fontSize: '13px'
     }}>
+      
+      {/* Animated Background Elements - EXACT MATCH from Login component */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className={`absolute -top-40 -right-40 w-80 h-80 rounded-full bg-gradient-to-br ${colors.gradient} blur-3xl animate-pulse`}></div>
+        <div className={`absolute -bottom-40 -left-40 w-80 h-80 rounded-full bg-gradient-to-br ${colors.gradient} blur-3xl animate-pulse delay-1000`}></div>
+      </div>
+
       <style>{`
         .hover-lift:hover {
           transform: translateY(-2px);
@@ -2655,6 +2662,25 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             opacity: 1;
             transform: translateY(0);
           }
+        }
+        
+        @keyframes pulse {
+          0%, 100% {
+            opacity: 0.3;
+            transform: scale(1);
+          }
+          50% {
+            opacity: 0.5;
+            transform: scale(1.05);
+          }
+        }
+        
+        .animate-pulse {
+          animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        
+        .delay-1000 {
+          animation-delay: 1s;
         }
         
         /* Custom scrollbar - Updated to match Login component */
@@ -2691,6 +2717,11 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             height: 4px;
           }
         }
+
+        /* Smooth transitions */
+        * {
+          transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+        }
       `}</style>
 
       <MobileSearchBar />
@@ -2699,7 +2730,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
       <ModalRenderer />
 
       {/* Main Content */}
-      <div className="flex-1 overflow-hidden flex z-20">
+      <div className="flex-1 overflow-hidden flex z-20 relative">
         {/* Mobile sidebar overlay */}
         {isRightSidebarVisible && (
           <div 
@@ -2712,7 +2743,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
         <RightSidebar />
 
         {/* Main content area */}
-        <div className="flex-1 overflow-auto p-2 sm:p-3 md:p-4 h-[calc(100vh-4rem)]">
+        <div className="flex-1 overflow-auto p-2 sm:p-3 md:p-4 h-[calc(100vh-4rem)] relative z-10">
           <div className="max-w-9xl mx-auto px-1 sm:px-2 md:pl-5 md:pr-5">
             {/* Desktop Header */}
             <div className="hidden md:flex items-center justify-between mb-4 md:mb-6">
@@ -2737,14 +2768,14 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                 </button>
                 <button 
                   onClick={handleApiGeneration}
-                  className="w-full px-3 py-2 bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift cursor-pointer"
+                  className="px-3 py-2 bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 rounded text-sm font-medium transition-all duration-300 hover-lift hover:shadow-lg flex items-center gap-2 cursor-pointer relative overflow-hidden group"
                   style={{ 
-                // backgroundColor: colors.card,
-                color: 'white' 
-              }}
+                    color: 'white'
+                  }}
                 >
-                  <FileCode size={14} />
-                  <span className="truncate">Generate New API</span>
+                  <div className="absolute inset-0 bg-white/20 transform -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
+                  <FileCode size={14} className="relative z-10" />
+                  <span className="truncate relative z-10">Generate New API</span>
                 </button>
                 <button 
                   onClick={handleRefresh}
@@ -2756,6 +2787,28 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                   disabled={refreshLoading}
                 >
                   <RefreshCw size={18} className={refreshLoading ? 'animate-spin' : ''} />
+                </button>
+              </div>
+            </div>
+
+            {/* Mobile Header */}
+            <div className="md:hidden flex items-center justify-between mb-3">
+              <h1 className="text-base font-bold" style={{ color: colors.text }}>Dashboard</h1>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={toggleMobileSearch}
+                  className="p-1.5 rounded-lg transition-all duration-200"
+                  style={{ backgroundColor: colors.hover }}
+                >
+                  <Search size={16} style={{ color: colors.text }} />
+                </button>
+                <button 
+                  onClick={handleRefresh}
+                  className="p-1.5 rounded-lg transition-all duration-200"
+                  style={{ backgroundColor: colors.hover }}
+                  disabled={refreshLoading}
+                >
+                  <RefreshCw size={16} className={refreshLoading ? 'animate-spin' : ''} style={{ color: colors.text }} />
                 </button>
               </div>
             </div>
@@ -2805,7 +2858,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                   {dashboardData.connections.content?.length > 0 && (
                     <div className="border rounded-xl" style={{ 
                       borderColor: colors.border,
-                      backgroundColor: colors.card
+                      backgroundColor: colors.card,
+                      backdropFilter: isDark ? 'blur(10px)' : 'none'
                     }}>
                       <div className="p-2 sm:p-3 md:p-4 border-b" style={{ borderColor: colors.border }}>
                         <div className="flex items-center justify-between">
@@ -2846,7 +2900,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                 <div className="flex flex-col gap-3 sm:gap-4 md:gap-6">
                   <div className="border rounded-xl flex flex-col h-full" style={{ 
                     borderColor: colors.border,
-                    backgroundColor: colors.card
+                    backgroundColor: colors.card,
+                    backdropFilter: isDark ? 'blur(10px)' : 'none'
                   }}>
                     <div className="p-2 sm:p-3 md:p-4 border-b flex-shrink-0" style={{ borderColor: colors.border }}>
                       <div className="flex items-center justify-between">
@@ -2897,6 +2952,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
       <div className="md:hidden fixed bottom-0 left-0 right-0 border-t" style={{ 
         borderColor: colors.border,
         backgroundColor: colors.header,
+        backdropFilter: isDark ? 'blur(10px)' : 'none',
         zIndex: 40
       }}>
         <div className="grid grid-cols-4 p-2">

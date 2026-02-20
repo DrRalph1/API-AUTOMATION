@@ -375,6 +375,63 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   const [newCollectionName, setNewCollectionName] = useState('');
   const [newCollectionDescription, setNewCollectionDescription] = useState('');
 
+  // Add URL parsing function
+  const parseUrlParams = useCallback((url) => {
+    try {
+      // Check if it's a valid URL
+      const urlObj = new URL(url);
+      const params = [];
+      
+      // Parse query parameters
+      urlObj.searchParams.forEach((value, key) => {
+        params.push({
+          id: `param-${Date.now()}-${Math.random()}`,
+          key: key,
+          value: value,
+          description: '',
+          enabled: true
+        });
+      });
+      
+      return params;
+    } catch (e) {
+      // Not a valid URL or no query string
+      return [];
+    }
+  }, []);
+
+  // Handle URL change with parameter parsing
+  const handleUrlChange = useCallback((e) => {
+    const newUrl = e.target.value;
+    setRequestUrl(newUrl);
+    
+    // Parse and update params when URL changes
+    if (newUrl.includes('?')) {
+      const parsedParams = parseUrlParams(newUrl);
+      if (parsedParams.length > 0) {
+        // Replace existing params with new parsed ones
+        setRequestParams(parsedParams);
+      }
+    } else {
+      // Clear params if no query string
+      setRequestParams([]);
+    }
+  }, [parseUrlParams]);
+
+  // Handle paste event for URL
+  const handleUrlPaste = useCallback((e) => {
+    // Let the paste happen naturally, then parse
+    setTimeout(() => {
+      if (requestUrl.includes('?')) {
+        const parsedParams = parseUrlParams(requestUrl);
+        if (parsedParams.length > 0) {
+          setRequestParams(parsedParams);
+          showToast(`Parsed ${parsedParams.length} query parameters`, 'success');
+        }
+      }
+    }, 0);
+  }, [requestUrl, parseUrlParams]);
+
   // ==================== API METHODS ====================
 
   // Transform API data to match UI structure based on backend DTOs
@@ -1442,7 +1499,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       }}>
         <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: colors.border }}>
           <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Code</h3>
-          <button onClick={() => setShowCodePanel(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+          <button type="button" onClick={() => setShowCodePanel(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
             style={{ backgroundColor: colors.hover }}>
             <X size={14} style={{ color: colors.textSecondary }} />
           </button>
@@ -1450,6 +1507,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
 
         <div className="relative px-4 py-3 border-b" style={{ borderColor: colors.border }}>
           <button
+            type="button"
             onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
             className="w-full px-3 py-2 rounded text-sm font-medium flex items-center justify-between hover:bg-opacity-50 transition-colors hover-lift"
             style={{ backgroundColor: colors.hover, color: colors.text }}
@@ -1474,6 +1532,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                 {languages.map(lang => (
                   <button
                     key={lang.id}
+                    type="button"
                     onClick={() => {
                       setSelectedLanguage(lang.id);
                       setShowLanguageDropdown(false);
@@ -1509,6 +1568,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
 
         <div className="p-4 border-t" style={{ borderColor: colors.border }}>
           <button 
+            type="button"
             className="w-full py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center justify-center gap-2 hover-lift"
             onClick={() => {
               navigator.clipboard.writeText(codeSnippet);
@@ -1544,6 +1604,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
           </label>
           <div className="relative">
             <button
+              type="button"
               onClick={() => setShowAuthDropdown(!showAuthDropdown)}
               className="w-full px-3 py-2 rounded text-sm flex items-center justify-between hover:bg-opacity-50 transition-colors border hover-lift"
               style={{ 
@@ -1563,7 +1624,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                 <div className="fixed inset-0 z-40" onClick={() => setShowAuthDropdown(false)} />
                 <div className="absolute left-0 right-0 top-full mt-1 py-2 rounded shadow-lg z-50 border"
                   style={{ 
-                    backgroundColor: colors.dropdownBg,
+                    backgroundColor: colors.bg,
                     borderColor: colors.border,
                     maxHeight: '300px',
                     overflowY: 'auto'
@@ -1571,6 +1632,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                   {authTypes.map(type => (
                     <button
                       key={type.id}
+                      type="button"
                       onClick={() => {
                         setAuthType(type.id);
                         setShowAuthDropdown(false);
@@ -1760,7 +1822,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                   onChange={(e) => setAuthConfig({ ...authConfig, addTo: e.target.value })}
                   className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
                   style={{
-                    backgroundColor: colors.inputBg,
+                    backgroundColor: colors.bg,
                     borderColor: colors.border,
                     color: colors.text
                   }}>
@@ -1828,7 +1890,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
             <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Query Parameters</h3>
             {hasParams && (
               <div className="flex items-center gap-2">
-                <button className="text-xs px-2 py-1 rounded hover-lift" style={{ 
+                <button type="button" className="text-xs px-2 py-1 rounded hover-lift" style={{ 
                   backgroundColor: colors.hover,
                   color: colors.textSecondary
                 }}
@@ -1842,7 +1904,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               </div>
             )}
           </div>
-          <button onClick={addParam} className="px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2 hover:opacity-90 transition-colors hover-lift"
+          <button type="button" onClick={addParam} className="px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2 hover:opacity-90 transition-colors hover-lift"
             style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
             <Plus size={12} />
             Add
@@ -1942,6 +2004,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                       </td>
                       <td className="p-3">
                         <button
+                          type="button"
                           onClick={() => deleteParam(param.id)}
                           className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                           style={{ backgroundColor: colors.hover }}>
@@ -1961,6 +2024,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                 Query parameters are appended to the URL in the form of key=value pairs, separated by &.
               </p>
               <button
+                type="button"
                 onClick={addParam}
                 className="px-3 py-1.5 text-sm font-medium rounded flex items-center gap-2 hover:opacity-90 transition-colors hover-lift"
                 style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
@@ -1981,7 +2045,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         <div className="flex justify-between items-center p-4">
           <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Headers</h3>
           <div className="flex items-center gap-2">
-            <button className="text-xs px-2 py-1 rounded hover-lift" style={{ 
+            <button type="button" className="text-xs px-2 py-1 rounded hover-lift" style={{ 
               backgroundColor: colors.hover,
               color: colors.textSecondary
             }}
@@ -1993,6 +2057,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               Bulk Edit
             </button>
             <button
+              type="button"
               onClick={addHeader}
               className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 hover-lift"
               style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
@@ -2093,6 +2158,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                   </td>
                   <td className="px-4 py-3">
                     <button
+                      type="button"
                       onClick={() => deleteHeader(header.id)}
                       className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                       style={{ backgroundColor: colors.hover }}>
@@ -2109,6 +2175,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                       <Layers size={24} style={{ opacity: 0.5 }} />
                       <p className="text-sm">No headers added</p>
                       <button
+                        type="button"
                         onClick={addHeader}
                         className="mt-2 px-3 py-1.5 text-sm font-medium rounded flex items-center gap-2 hover:opacity-90 transition-colors hover-lift"
                         style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
@@ -2159,6 +2226,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                     <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>TYPE</th>
                     <th className="w-20 px-4 py-3">
                       <button
+                        type="button"
                         onClick={() => setFormData([...formData, { id: `form-${Date.now()}`, key: '', value: '', type: 'text', enabled: true }])}
                         className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
                         style={{ backgroundColor: colors.hover }}>
@@ -2226,7 +2294,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                             placeholder="Value"
                           />
                         ) : (
-                          <button className="w-full px-2 py-1.5 border rounded-sm text-sm text-left hover:bg-opacity-50 transition-colors hover-lift"
+                          <button type="button" className="w-full px-2 py-1.5 border rounded-sm text-sm text-left hover:bg-opacity-50 transition-colors hover-lift"
                             style={{ 
                               borderColor: colors.border,
                               color: colors.textSecondary,
@@ -2270,6 +2338,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                       </td>
                       <td className="px-4 py-3">
                         <button
+                          type="button"
                           onClick={() => {
                             const newData = formData.filter((_, i) => i !== index);
                             setFormData(newData);
@@ -2315,6 +2384,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                     <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>DESCRIPTION</th>
                     <th className="w-20 px-4 py-3">
                       <button
+                        type="button"
                         onClick={() => setUrlEncodedData([...urlEncodedData, { id: `url-${Date.now()}`, key: '', value: '', description: '', enabled: true }])}
                         className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
                         style={{ backgroundColor: colors.hover }}>
@@ -2401,6 +2471,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                       </td>
                       <td className="px-4 py-3">
                         <button
+                          type="button"
                           onClick={() => {
                             const newData = urlEncodedData.filter((_, i) => i !== index);
                             setUrlEncodedData(newData);
@@ -2442,6 +2513,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                     <option value="xml">XML</option>
                   </select>
                   <button 
+                    type="button"
                     className="px-2 py-1 text-sm rounded hover:bg-opacity-50 transition-colors hover-lift" 
                     style={{ 
                       backgroundColor: colors.hover,
@@ -2464,6 +2536,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                     {requestBody.length} characters
                   </span>
                   <button 
+                    type="button"
                     className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift" 
                     style={{ backgroundColor: colors.hover }}
                     onClick={() => {
@@ -2497,7 +2570,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               <p className="text-xs mb-6 max-w-sm mx-auto" style={{ color: colors.textSecondary }}>
                 Select a file to send as the request body. Files are sent as-is without any processing.
               </p>
-              <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 mx-auto hover-lift"
+              <button type="button" className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 mx-auto hover-lift"
                 style={{ backgroundColor: colors.primaryDark, color: colors.white }}
                 onClick={() => {
                   const input = document.createElement('input');
@@ -2522,7 +2595,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                       <File size={14} style={{ color: colors.textSecondary }} />
                       <span className="text-sm" style={{ color: colors.text }}>{binaryFile.name}</span>
                     </div>
-                    <button onClick={() => setBinaryFile(null)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                    <button type="button" onClick={() => setBinaryFile(null)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
                       style={{ backgroundColor: colors.card }}>
                       <X size={12} style={{ color: colors.textSecondary }} />
                     </button>
@@ -2595,6 +2668,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
             {['none', 'form-data', 'x-www-form-urlencoded', 'raw', 'binary', 'graphql'].map(type => (
               <button
                 key={type}
+                type="button"
                 onClick={() => setRequestBodyType(type)}
                 className={`px-3 py-1.5 rounded text-sm font-medium capitalize transition-colors hover-lift ${
                   requestBodyType === type ? '' : 'hover:bg-opacity-50'
@@ -2761,6 +2835,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               <div className="flex items-center gap-1">
                 {['raw', 'preview', 'headers'].map(view => (
                   <button key={view}
+                    type="button"
                     onClick={() => setResponseView(view)}
                     className={`px-3 py-1 rounded text-xs font-medium capitalize transition-colors hover-lift ${
                       responseView === view ? '' : 'hover:bg-opacity-50'
@@ -2777,7 +2852,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
           </div>
           {response && (
             <div className="flex items-center gap-2">
-              <button className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+              <button type="button" className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
                 onClick={() => {
                   try {
@@ -2793,7 +2868,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                 }}>
                 Beautify
               </button>
-              <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+              <button type="button" className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover }}
                 onClick={() => {
                   navigator.clipboard.writeText(responseBody);
@@ -2835,7 +2910,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     }}>
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: colors.border }}>
         <h3 className="text-sm font-semibold" style={{ color: colors.text }}>APIs</h3>
-        <button onClick={() => setShowAPIs(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+        <button type="button" onClick={() => setShowAPIs(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
           style={{ backgroundColor: colors.hover }}>
           <X size={14} style={{ color: colors.textSecondary }} />
         </button>
@@ -2853,7 +2928,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     }}>
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: colors.border }}>
         <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Environments</h3>
-        <button onClick={() => setShowEnvironments(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+        <button type="button" onClick={() => setShowEnvironments(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
           style={{ backgroundColor: colors.hover }}>
           <X size={14} style={{ color: colors.textSecondary }} />
         </button>
@@ -2865,6 +2940,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
           <>
             {environments.map(env => (
               <button key={env.id}
+                type="button"
                 onClick={() => {
                   setActiveEnvironment(env.id);
                   setEnvironments(envs => envs.map(e => ({ ...e, isActive: e.id === env.id })));
@@ -2904,7 +2980,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     }}>
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: colors.border }}>
         <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Mock Servers</h3>
-        <button onClick={() => setShowMockServers(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+        <button type="button" onClick={() => setShowMockServers(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
           style={{ backgroundColor: colors.hover }}>
           <X size={14} style={{ color: colors.textSecondary }} />
         </button>
@@ -2922,7 +2998,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     }}>
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: colors.border }}>
         <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Monitors</h3>
-        <button onClick={() => setShowMonitors(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+        <button type="button" onClick={() => setShowMonitors(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
           style={{ backgroundColor: colors.hover }}>
           <X size={14} style={{ color: colors.textSecondary }} />
         </button>
@@ -2960,12 +3036,12 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
         <div className="rounded-lg w-full max-w-md" style={{ 
-          backgroundColor: colors.modalBg,
+          backgroundColor: colors.bg,
           border: `1px solid ${colors.modalBorder}`
         }}>
           <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: colors.border }}>
             <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Import</h3>
-            <button onClick={() => setShowImportModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+            <button type="button" onClick={() => setShowImportModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover }}>
               <X size={14} style={{ color: colors.textSecondary }} />
             </button>
@@ -2976,6 +3052,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               <p className="text-sm mb-2" style={{ color: colors.text }}>Drag and drop files here</p>
               <p className="text-xs" style={{ color: colors.textSecondary }}>Supports: Postman collections, OpenAPI, etc.</p>
               <button 
+                type="button"
                 className="mt-4 px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                 style={{ 
                   backgroundColor: colors.primaryDark, 
@@ -3034,7 +3111,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         }}>
           <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: colors.border }}>
             <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Share {selectedRequest ? 'Request' : 'Collection'}</h3>
-            <button onClick={() => setShowShareModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+            <button type="button" onClick={() => setShowShareModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover }}>
               <X size={14} style={{ color: colors.textSecondary }} />
             </button>
@@ -3059,7 +3136,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                       color: colors.text
                     }}
                   />
-                  <button className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                  <button type="button" className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                     onClick={() => {
                       navigator.clipboard.writeText(shareLink);
                       showToast('Link copied to clipboard!', 'success');
@@ -3087,7 +3164,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         }}>
           <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: colors.border }}>
             <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Settings</h3>
-            <button onClick={() => setShowSettingsModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+            <button type="button" onClick={() => setShowSettingsModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover }}>
               <X size={14} style={{ color: colors.textSecondary }} />
             </button>
@@ -3123,7 +3200,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
             </div>
           </div>
           <div className="p-4 border-t" style={{ borderColor: colors.border }}>
-            <button className="w-full py-2.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+            <button type="button" className="w-full py-2.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
               onClick={() => {
                 showToast('Settings saved!', 'success');
                 setShowSettingsModal(false);
@@ -3142,12 +3219,12 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="rounded-lg w-full max-w-md" style={{ 
-            backgroundColor: colors.modalBg,
+            backgroundColor: colors.bg,
             border: `1px solid ${colors.modalBorder}`
           }}>
             <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: colors.border }}>
               <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Create Collection</h3>
-              <button onClick={() => setShowCreateModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+              <button type="button" onClick={() => setShowCreateModal(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover }}>
                 <X size={14} style={{ color: colors.textSecondary }} />
               </button>
@@ -3183,6 +3260,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                 />
               </div>
               <button 
+                type="button"
                 className="w-full py-2.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                 onClick={() => {
                   if (!newCollectionName.trim()) {
@@ -3230,6 +3308,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
           <AlertCircle size={24} className="mx-auto mb-2" style={{ color: colors.error }} />
           <div className="text-sm" style={{ color: colors.text }}>{error}</div>
           <button 
+            type="button"
             onClick={fetchCollections}
             className="mt-3 px-4 py-2 rounded text-sm font-medium transition-colors hover-lift"
             style={{ 
@@ -3257,6 +3336,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
           <Folder size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
           <p className="text-sm" style={{ color: colors.text }}>No collections found</p>
           <button 
+            type="button"
             onClick={() => setShowCreateModal(true)}
             className="mt-3 px-4 py-2 rounded text-sm font-medium transition-colors hover-lift"
             style={{ 
@@ -3282,7 +3362,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               ) : (
                 <ChevronRight size={12} style={{ color: colors.textSecondary }} />
               )}
-              <button onClick={(e) => {
+              <button type="button" onClick={(e) => {
                 e.stopPropagation();
                 toggleFavorite(collection.id);
               }}>
@@ -3369,6 +3449,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                       )}
                       
                       <button 
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           setCollections(cols => cols.map(col => ({
@@ -3389,6 +3470,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                         {folder.requests.map(request => (
                           <div key={request.id} className="flex items-center gap-2 ml-6 mb-1.5 group">
                             <button
+                              type="button"
                               onClick={() => handleSelectRequest(request, collection.id, folder.id)}
                               className="flex items-center gap-2 text-sm text-left transition-colors hover:text-opacity-80 flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
                               style={{ 
@@ -3434,6 +3516,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                             
                             {!request.isEditing && (
                               <button 
+                                type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setCollections(cols => cols.map(col => ({
@@ -3456,6 +3539,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                           </div>
                         ))}
                         <button
+                          type="button"
                           onClick={() => addNewRequest(collection.id, folder.id)}
                           className="ml-6 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1 hover-lift"
                           style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
@@ -3469,6 +3553,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                   </div>
                 ))}
                 <button
+                  type="button"
                   onClick={() => addNewFolder(collection.id)}
                   className="ml-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1.5 mt-1 hover-lift"
                   style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
@@ -3594,7 +3679,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         <div className="flex items-center gap-2">
           {/* Environment Selector */}
           <div className="relative">
-            <button className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:bg-opacity-50 transition-colors hover-lift"
+            <button type="button" className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:bg-opacity-50 transition-colors hover-lift"
               style={{ backgroundColor: colors.hover }}
               onClick={() => {
                 if (environments.length === 0) {
@@ -3619,20 +3704,20 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
           <div className="w-px h-4" style={{ backgroundColor: colors.border }}></div>
 
           {/* Code Panel Toggle */}
-          <button onClick={() => {setShowCodePanel(!showCodePanel); setShowAPIs(false); setShowEnvironments(false); setShowMockServers(false); setShowMonitors(false);}} 
+          <button type="button" onClick={() => {setShowCodePanel(!showCodePanel); setShowAPIs(false); setShowEnvironments(false); setShowMockServers(false); setShowMonitors(false);}} 
             className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
             style={{ backgroundColor: showCodePanel ? colors.selected : colors.hover }}>
             <Code size={14} style={{ color: showCodePanel ? colors.primary : colors.textSecondary }} />
           </button>
 
           {/* Share Button */}
-          <button onClick={() => setShowShareModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+          <button type="button" onClick={() => setShowShareModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
             style={{ backgroundColor: colors.hover }}>
             <Share2 size={14} style={{ color: colors.textSecondary }} />
           </button>
 
           {/* Settings */}
-          <button onClick={() => setShowSettingsModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+          <button type="button" onClick={() => setShowSettingsModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
             style={{ backgroundColor: colors.hover }}>
             <Settings size={14} style={{ color: colors.textSecondary }} />
           </button>
@@ -3650,11 +3735,11 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Collections</h3>
               <div className="flex gap-1">
-                <button onClick={() => setShowCreateModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                <button type="button" onClick={() => setShowCreateModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                   style={{ backgroundColor: colors.hover }}>
                   <Plus size={12} style={{ color: colors.textSecondary }} />
                 </button>
-                <button onClick={() => setShowImportModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                <button type="button" onClick={() => setShowImportModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                   style={{ backgroundColor: colors.hover }}>
                   <Upload size={12} style={{ color: colors.textSecondary }} />
                 </button>
@@ -3672,7 +3757,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               />
               {searchQuery && (
                 <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                  <button onClick={() => setSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                  <button type="button" onClick={() => setSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                     style={{ backgroundColor: colors.hover }}>
                     <X size={12} style={{ color: colors.textSecondary }} />
                   </button>
@@ -3720,7 +3805,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                       {tab.name}
                     </span>
                   </div>
-                  <button onClick={(e) => {
+                  <button type="button" onClick={(e) => {
                     e.stopPropagation();
                     if (requestTabs.length > 1) {
                       setRequestTabs(tabs => tabs.filter(t => t.id !== tab.id));
@@ -3746,6 +3831,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                 </div>
               ))}
               <button
+                type="button"
                 onClick={() => {
                   const newRequest = {
                     id: `req-${Date.now()}`,
@@ -3779,7 +3865,9 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
             <div className="flex items-center gap-2 p-4" style={{ 
               backgroundColor: colors.card
             }}>
-              <select value={requestMethod} onChange={(e) => setRequestMethod(e.target.value)}
+              <select 
+                value={requestMethod} 
+                onChange={(e) => setRequestMethod(e.target.value)}
                 className="px-3 py-2 rounded text-sm font-medium focus:outline-none hover-lift"
                 style={{ 
                   backgroundColor: colors.inputBg,
@@ -3795,13 +3883,21 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               <div className="flex-1 flex items-center rounded overflow-hidden hover-lift" style={{ 
                 border: `1px solid ${colors.inputBorder}`
               }}>
-                <input type="text" value={requestUrl} onChange={(e) => setRequestUrl(e.target.value)}
+                <input 
+                  type="text" 
+                  value={requestUrl} 
+                  onChange={handleUrlChange}
+                  onPaste={handleUrlPaste}
                   className="flex-1 px-3 py-2 text-sm focus:outline-none min-w-0"
                   style={{ backgroundColor: colors.inputBg, color: colors.text }}
-                  placeholder="Enter request URL" />
+                  placeholder="Enter request URL" 
+                />
               </div>
               
-              <button onClick={handleExecuteRequest} disabled={isSending || !requestUrl || loading.execute}
+              <button 
+                type="button"
+                onClick={handleExecuteRequest} 
+                disabled={isSending || !requestUrl || loading.execute}
                 className={`px-4 py-2 rounded text-sm font-medium flex items-center gap-2 transition-colors min-w-32 hover-lift ${
                   isSending || !requestUrl || loading.execute ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'
                 }`}
@@ -3819,7 +3915,9 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                 )}
               </button>
               
-              <button className="px-3 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+              <button 
+                type="button"
+                className="px-3 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
                 style={{ 
                   backgroundColor: colors.primaryDark, 
                   color: colors.white,
@@ -3846,7 +3944,10 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               {['Params', 'Authorization', 'Headers', 'Body', 'Pre-request Script', 'Tests', 'Settings'].map(tab => {
                 const tabId = tab.toLowerCase().replace(' ', '-');
                 return (
-                  <button key={tabId} onClick={() => setActiveTab(tabId)}
+                  <button 
+                    key={tabId} 
+                    type="button"
+                    onClick={() => setActiveTab(tabId)}
                     className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors hover-lift ${
                       activeTab === tabId ? '' : 'hover:bg-opacity-50'
                     }`}
