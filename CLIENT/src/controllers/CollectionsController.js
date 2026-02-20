@@ -191,21 +191,6 @@ export const importCollection = async (authorizationHeader, importRequest) => {
 };
 
 /**
- * Clear collections cache
- * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response
- */
-export const clearCollectionsCache = async (authorizationHeader) => {
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(`/collections/cache/clear`, {
-      method: 'POST',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
-};
-
-/**
  * Delete collection
  * @param {string} authorizationHeader - Bearer token
  * @param {string} collectionId - Collection ID
@@ -962,8 +947,13 @@ export const getDefaultEnvironmentVariables = () => {
   };
 };
 
+// ============ CLIENT-SIDE CACHING UTILITIES ============
+// Note: Server-side caching has been removed from the backend.
+// The following utilities are for optional client-side caching only.
+// Use them if you want to implement caching on the frontend.
+
 /**
- * Cache collections data in localStorage
+ * Cache collections data in localStorage (client-side only)
  * @param {string} userId - User ID
  * @param {Object} collectionsData - Collections data to cache
  * @param {number} ttlMinutes - Time to live in minutes (default: 15)
@@ -986,7 +976,7 @@ export const cacheCollectionsData = (userId, collectionsData, ttlMinutes = 15) =
 };
 
 /**
- * Get cached collections data
+ * Get cached collections data from localStorage (client-side only)
  * @param {string} userId - User ID
  * @returns {Object|null} Cached collections data or null
  */
@@ -1019,7 +1009,7 @@ export const getCachedCollectionsData = (userId) => {
 };
 
 /**
- * Clear cached collections data
+ * Clear cached collections data from localStorage (client-side only)
  * @param {string} userId - User ID (optional, clears all if not provided)
  */
 export const clearCachedCollectionsData = (userId = null) => {
@@ -1037,63 +1027,4 @@ export const clearCachedCollectionsData = (userId = null) => {
   } catch (error) {
     console.error('Failed to clear cached collections data:', error);
   }
-};
-
-// Export all functions
-export default {
-  // Main API methods
-  getCollectionsList,
-  getCollectionDetails,
-  getRequestDetails,
-  executeRequest,
-  saveRequest,
-  createCollection,
-  generateCodeSnippet,
-  getEnvironments,
-  importCollection,
-  clearCollectionsCache,
-  deleteCollection,
-  deleteRequest,
-  updateCollection,
-  exportCollection,
-  searchCollections,
-  duplicateCollection,
-  
-  // Response handlers
-  handleCollectionsResponse,
-  extractCollectionsList,
-  extractCollectionDetails,
-  extractRequestDetails,
-  extractExecuteResults,
-  extractSaveRequestResults,
-  extractCreateCollectionResults,
-  extractCodeSnippetResults,
-  extractEnvironments,
-  extractImportResults,
-  
-  // Validation functions
-  validateSaveRequest,
-  validateExecuteRequest,
-  validateCreateCollection,
-  validateCodeSnippetRequest,
-  validateImportRequest,
-  
-  // Utility functions
-  isValidUrl,
-  buildHeadersObject,
-  buildQueryString,
-  formatCollection,
-  formatRequest,
-  formatAuthType,
-  getMethodColor,
-  getBodyPreview,
-  formatDateForDisplay,
-  getSupportedLanguages,
-  getSupportedImportFormats,
-  getDefaultEnvironmentVariables,
-  
-  // Cache functions
-  cacheCollectionsData,
-  getCachedCollectionsData,
-  clearCachedCollectionsData
 };
