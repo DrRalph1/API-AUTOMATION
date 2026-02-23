@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-@Entity(name = "CollectionEntity")
+@Entity(name = "CollectionEntityCodeBase")
 @Table(name = "tb_cbase_collections")
 @Data
 @Builder

@@ -80,7 +80,7 @@ public interface ImportJobRepository extends JpaRepository<ImportJobEntity, Stri
      * Find imports that took too long (potential performance issues)
      * FIXED: Using native query for PostgreSQL EXTRACT function
      */
-    @Query(value = "SELECT * FROM tb_import_jobs WHERE status = 'COMPLETED' AND " +
+    @Query(value = "SELECT * FROM tb_cbase_import_jobs WHERE status = 'COMPLETED' AND " +
             "EXTRACT(EPOCH FROM (completed_at - created_at)) > :thresholdSeconds",
             nativeQuery = true)
     List<ImportJobEntity> findSlowImports(@Param("thresholdSeconds") long thresholdSeconds);

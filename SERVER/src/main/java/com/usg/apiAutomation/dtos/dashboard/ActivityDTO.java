@@ -11,7 +11,7 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ActivityDto {
+public class ActivityDTO {
     private String id;
     private String action;
     private String description;

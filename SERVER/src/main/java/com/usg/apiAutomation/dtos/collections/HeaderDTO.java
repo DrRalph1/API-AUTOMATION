@@ -1,8 +1,12 @@
 package com.usg.apiAutomation.dtos.collections;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class HeaderDTO {
     private String id;
     private String key;

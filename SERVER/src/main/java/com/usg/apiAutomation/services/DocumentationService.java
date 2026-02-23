@@ -65,7 +65,7 @@ public class DocumentationService {
             loggerUtil.log("documentation", "Getting API collections for user: " + performedBy);
 
             // Get collections from database
-            List<APICollectionEntity> collections = collectionRepository.findByOwner(performedBy);
+            List<APICollectionEntity> collections = collectionRepository.findAll();
 
             // If no collections for this user, get all collections (or you can return empty)
             if (collections.isEmpty()) {

@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 @Data
-@Entity
+@Entity(name = "EnvironmentRepositoryEntityDocumentation")
 @Table(name = "tb_doc_environments")
 public class EnvironmentEntity {
     @Id

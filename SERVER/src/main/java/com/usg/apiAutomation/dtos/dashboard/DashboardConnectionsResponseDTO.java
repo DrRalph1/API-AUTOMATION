@@ -11,8 +11,8 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class DashboardConnectionsResponse {
-    private List<ConnectionDto> connections;
+public class DashboardConnectionsResponseDTO {
+    private List<ConnectionDTO> connections;
     private int total;
     private int active;
     private int idle;
@@ -20,7 +20,7 @@ public class DashboardConnectionsResponse {
     private String timestamp;
 
     // Constructor for easy instantiation
-    public DashboardConnectionsResponse(List<ConnectionDto> connections) {
+    public DashboardConnectionsResponseDTO(List<ConnectionDTO> connections) {
         this.connections = connections;
         this.total = connections.size();
         this.active = (int) connections.stream().filter(c -> "connected".equals(c.getStatus())).count();
@@ -30,7 +30,7 @@ public class DashboardConnectionsResponse {
     }
 
     // Constructor with all parameters
-    public DashboardConnectionsResponse(List<ConnectionDto> connections, int total, int active, int idle, int disconnected) {
+    public DashboardConnectionsResponseDTO(List<ConnectionDTO> connections, int total, int active, int idle, int disconnected) {
         this.connections = connections;
         this.total = total;
         this.active = active;

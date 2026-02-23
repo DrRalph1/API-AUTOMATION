@@ -11,8 +11,8 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class DashboardActivitiesResponse {
-    private List<ActivityDto> activities;
+public class DashboardActivitiesResponseDTO {
+    private List<ActivityDTO> activities;
     private int page;
     private int size;
     private int totalItems;
@@ -20,7 +20,7 @@ public class DashboardActivitiesResponse {
     private String timestamp;
 
     // Constructor for easy instantiation
-    public DashboardActivitiesResponse(List<ActivityDto> activities, int page, int size, int totalItems, int totalPages) {
+    public DashboardActivitiesResponseDTO(List<ActivityDTO> activities, int page, int size, int totalItems, int totalPages) {
         this.activities = activities;
         this.page = page;
         this.size = size;

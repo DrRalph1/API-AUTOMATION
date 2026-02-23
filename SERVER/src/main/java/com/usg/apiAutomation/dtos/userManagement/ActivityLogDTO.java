@@ -16,6 +16,9 @@ public class ActivityLogDTO {
     private Date timestamp;
     private String ipAddress;
     private String device;
+    private String severity;
+    private String performedBy;
+    private String action;
     private String location;
     private boolean success;
     private Map<String, Object> details;

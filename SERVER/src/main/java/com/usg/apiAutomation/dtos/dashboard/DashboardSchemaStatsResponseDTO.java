@@ -11,7 +11,7 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class DashboardSchemaStatsResponse {
+public class DashboardSchemaStatsResponseDTO {
     // Basic counts
     private int totalObjects;
     private int tables;

@@ -520,21 +520,42 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   };
 
   const transformEnvironmentsData = (apiData) => {
-    if (!apiData || !apiData.environments) return [];
-    
-    return apiData.environments.map(env => ({
-      id: env.id || `env-${Date.now()}`,
-      name: env.name || 'Environment',
-      isActive: env.active || false,
-      variables: (env.variables || []).map(v => ({
-        id: v.id || `var-${Date.now()}`,
-        key: v.key,
-        value: v.value,
-        type: v.type || 'text',
-        enabled: v.enabled !== false
-      }))
-    }));
-  };
+  console.log('🔄 [Transform Environments] Input:', apiData);
+  
+  if (!apiData) {
+    console.warn('⚠️ [Transform Environments] No data provided');
+    return [];
+  }
+  
+  // Handle the nested data structure
+  let environmentsArray = [];
+  
+  if (apiData.data && apiData.data.environments && Array.isArray(apiData.data.environments)) {
+    environmentsArray = apiData.data.environments;
+  } else if (apiData.environments && Array.isArray(apiData.environments)) {
+    environmentsArray = apiData.environments;
+  } else if (Array.isArray(apiData)) {
+    environmentsArray = apiData;
+  } else {
+    console.warn('⚠️ [Transform Environments] Unknown data structure:', apiData);
+    return [];
+  }
+  
+  console.log(`📊 [Transform Environments] Processing ${environmentsArray.length} environments`);
+  
+  return environmentsArray.map(env => ({
+    id: env.id || `env-${Date.now()}`,
+    name: env.name || 'Environment',
+    isActive: env.active || false,
+    variables: (env.variables || []).map(v => ({
+      id: v.id || `var-${Date.now()}`,
+      key: v.key,
+      value: v.value,
+      type: v.type || 'text',
+      enabled: v.enabled !== false
+    }))
+  }));
+};
 
   const fetchCollections = useCallback(async () => {
     console.log('🔥 [Collections] fetchCollections called');
@@ -638,36 +659,63 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   }, [authToken]);
 
   const fetchEnvironments = useCallback(async () => {
-    if (!authToken) {
-      setEnvironments([]);
-      return;
-    }
+  console.log('🔥 [Environments] fetchEnvironments called');
+  
+  if (!authToken) {
+    console.log('❌ No auth token available');
+    setEnvironments([]);
+    setActiveEnvironment(null);
+    return;
+  }
 
-    setLoading(prev => ({ ...prev, environments: true }));
+  setLoading(prev => ({ ...prev, environments: true }));
+  console.log('📡 [Environments] Fetching from API...');
 
-    try {
-      const response = await getEnvironments(authToken);
-      const processedResponse = handleCollectionsResponse(response);
-      const environmentsData = extractEnvironments(processedResponse);
-      
-      const transformedEnvs = transformEnvironmentsData(environmentsData);
-      setEnvironments(transformedEnvs);
-      
+  try {
+    const response = await getEnvironments(authToken);
+    console.log('📦 [Environments] Raw API response:', response);
+    
+    const processedResponse = handleCollectionsResponse(response);
+    console.log('🔄 [Environments] Processed response:', processedResponse);
+    
+    const environmentsData = extractEnvironments(processedResponse);
+    console.log('📊 [Environments] Extracted data:', environmentsData);
+    
+    const transformedEnvs = transformEnvironmentsData(environmentsData);
+    console.log('✅ [Environments] Transformed environments:', transformedEnvs);
+    
+    setEnvironments(transformedEnvs);
+    
+    // Set active environment
+    if (transformedEnvs.length > 0) {
       const activeEnv = transformedEnvs.find(e => e.isActive);
       if (activeEnv) {
+        console.log('🎯 [Environments] Setting active environment:', activeEnv.name);
         setActiveEnvironment(activeEnv.id);
-      } else if (transformedEnvs.length > 0) {
+      } else {
+        // Default to first environment if none is marked active
+        console.log('🎯 [Environments] No active environment found, defaulting to first');
         setActiveEnvironment(transformedEnvs[0].id);
+        // Update the local state to reflect this
+        setEnvironments(envs => envs.map((e, idx) => ({ 
+          ...e, 
+          isActive: idx === 0 
+        })));
       }
-      
-    } catch (error) {
-      console.error('Error fetching environments:', error);
-      setEnvironments([]);
+    } else {
       setActiveEnvironment(null);
-    } finally {
-      setLoading(prev => ({ ...prev, environments: false }));
     }
-  }, [authToken]);
+    
+  } catch (error) {
+    console.error('❌ [Environments] Error fetching environments:', error);
+    setEnvironments([]);
+    setActiveEnvironment(null);
+    showToast(`Failed to load environments: ${error.message}`, 'error');
+  } finally {
+    setLoading(prev => ({ ...prev, environments: false }));
+    console.log('🏁 [Environments] fetchEnvironments completed');
+  }
+}, [authToken]);
 
   const handleSelectRequest = useCallback(async (request, collectionId, folderId) => {
     const requestWithContext = { ...request, collectionId, folderId };

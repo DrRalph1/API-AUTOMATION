@@ -1,18 +1,36 @@
 package com.usg.apiAutomation.services;
 
 import com.usg.apiAutomation.dtos.collections.*;
+import com.usg.apiAutomation.entities.collections.*;
+import com.usg.apiAutomation.entities.collections.RequestEntity;
+import com.usg.apiAutomation.helpers.CollectionMapper;
+import com.usg.apiAutomation.repositories.collections.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestTemplate;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -21,829 +39,851 @@ import java.util.concurrent.ConcurrentHashMap;
 public class CollectionsService {
 
     private final LoggerUtil loggerUtil;
+    private final CollectionRepository collectionRepository;
+    private final FolderRepository folderRepository;
+    private final RequestRepository requestRepository;
+    private final HeaderRepository headerRepository;
+    private final AuthConfigRepository authConfigRepository;
+    private final ParameterRepository parameterRepository;
+    private final VariableRepository variableRepository;
+    private final EnvironmentRepository environmentRepository;
 
-    // Cache for collections data
-    private final Map<String, CollectionsCache> collectionsCache = new ConcurrentHashMap<>();
-    private static final long CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache TTL
+    // Add RestTemplate as a dependency
+    private final RestTemplate restTemplate;
 
     @PostConstruct
     public void init() {
-        log.info("CollectionsService initialized");
-        preloadCollectionsCache();
+        log.info("CollectionsService initialized with database");
     }
 
     // ========== PUBLIC SERVICE METHODS ==========
 
     public CollectionsListResponseDTO getCollectionsList(String requestId, HttpServletRequest req, String performedBy) {
-        try {
-            log.info("RequestEntity ID: {}, Getting collections list for user: {}", requestId, performedBy);
-            loggerUtil.log("collections",
-                    "RequestEntity ID: " + requestId + ", Getting collections list for user: " + performedBy);
+        log.info("Request ID: {}, Getting collections list for user: {}", requestId, performedBy);
+        loggerUtil.log("collections",
+                "Request ID: " + requestId + ", Getting collections list for user: " + performedBy);
 
-            // Check cache first
-            String cacheKey = "collections_list_" + performedBy;
-            CollectionsCache cachedData = collectionsCache.get(cacheKey);
+        // Get from database
+        List<CollectionEntity> collections = collectionRepository.findAll();
+        List<CollectionDTO> collectionDTOs = collections.stream()
+                .map(this::mapToCollectionDTO)
+                .collect(Collectors.toList());
 
-            if (cachedData != null && !isCacheExpired(cachedData)) {
-                log.debug("RequestEntity ID: {}, Returning cached collections list", requestId);
-                return (CollectionsListResponseDTO) cachedData.getData();
-            }
+        log.info("Request ID: {}, Retrieved {} collections from database", requestId, collectionDTOs.size());
 
-            CollectionsListResponseDTO collections = generateStaticCollectionsList(performedBy);
-
-            // Update cache
-            collectionsCache.put(cacheKey, new CollectionsCache(collections, System.currentTimeMillis()));
-
-            log.info("RequestEntity ID: {}, Retrieved {} collections", requestId, collections.getCollections().size());
-
-            return collections;
-
-        } catch (Exception e) {
-            String errorMsg = "Error retrieving collections list: " + e.getMessage();
-            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
-            return getFallbackCollectionsList();
-        }
+        return new CollectionsListResponseDTO(collectionDTOs, collectionDTOs.size());
     }
 
     public CollectionDetailsResponseDTO getCollectionDetails(String requestId, HttpServletRequest req, String performedBy,
                                                              String collectionId) {
-        try {
-            log.info("RequestEntity ID: {}, Getting collectionEntity details for: {}", requestId, collectionId);
+        log.info("Request ID: {}, Getting collection details for: {}", requestId, collectionId);
 
-            // Check cache first
-            String cacheKey = "collection_details_" + performedBy + "_" + collectionId;
-            CollectionsCache cachedData = collectionsCache.get(cacheKey);
+        // Get collection without fetching relationships
+        CollectionEntity collection = collectionRepository.findById(collectionId)
+                .orElseThrow(() -> new EntityNotFoundException("Collection not found: " + collectionId));
 
-            if (cachedData != null && !isCacheExpired(cachedData)) {
-                log.debug("RequestEntity ID: {}, Returning cached collectionEntity details", requestId);
-                return (CollectionDetailsResponseDTO) cachedData.getData();
+        // Verify ownership
+        if (!collection.getOwner().equals(performedBy)) {
+            log.warn("Request ID: {}, User {} attempted to access collection {} owned by {}",
+                    requestId, performedBy, collectionId, collection.getOwner());
+            throw new SecurityException("Access denied to collection: " + collectionId);
+        }
+
+        // Create response DTO
+        CollectionDetailsResponseDTO details = new CollectionDetailsResponseDTO();
+        details.setCollectionId(collection.getId());
+        details.setName(collection.getName());
+        details.setDescription(collection.getDescription());
+        details.setCreatedAt(collection.getCreatedAt() != null ?
+                collection.getCreatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : null);
+        details.setUpdatedAt(collection.getUpdatedAt() != null ?
+                collection.getUpdatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : null);
+        details.setFavorite(collection.isFavorite());
+        details.setOwner(collection.getOwner());
+        details.setComments(collection.getComments());
+        details.setLastActivity(collection.getLastActivity() != null ?
+                collection.getLastActivity().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : null);
+
+        // Fetch folders
+        List<FolderEntity> folders = folderRepository.findByCollectionId(collectionId);
+        List<FolderDTO> folderDTOs = new ArrayList<>();
+
+        int totalRequests = 0;
+
+        for (FolderEntity folder : folders) {
+            FolderDTO folderDTO = new FolderDTO();
+            folderDTO.setId(folder.getId());
+            folderDTO.setName(folder.getName());
+            folderDTO.setDescription(folder.getDescription());
+            folderDTO.setExpanded(folder.isExpanded());
+            folderDTO.setEditing(folder.isEditing());
+
+            // Fetch request summaries for this folder (without relationships)
+            List<RequestSummaryDTO> requestSummaries = requestRepository.findRequestSummariesByFolderId(folder.getId());
+            List<RequestDTO> requestDTOs = new ArrayList<>();
+
+            for (RequestSummaryDTO summary : requestSummaries) {
+                RequestDTO requestDTO = new RequestDTO();
+                requestDTO.setId(summary.getId());
+                requestDTO.setName(summary.getName());
+                requestDTO.setMethod(summary.getMethod());
+                requestDTO.setUrl(summary.getUrl());
+                requestDTO.setDescription(summary.getDescription());
+                requestDTO.setAuthType(summary.getAuthType());
+                requestDTO.setBody(summary.getBody());
+                requestDTO.setTests(summary.getTests());
+                requestDTO.setPreRequestScript(summary.getPreRequestScript());
+                requestDTO.setSaved(summary.isSaved());
+                requestDTO.setCollectionId(collectionId);
+                requestDTO.setFolderId(folder.getId());
+
+                // Fetch headers as DTOs
+                List<HeaderDTO> headers = headerRepository.findHeaderDTOsByRequestId(summary.getId());
+                requestDTO.setHeaders(headers);
+
+                // Fetch params as DTOs
+                List<ParameterDTO> params = parameterRepository.findParameterDTOsByRequestId(summary.getId());
+                requestDTO.setParams(params);
+
+                // Fetch auth config as DTO
+                authConfigRepository.findAuthConfigDTOByRequestId(summary.getId()).ifPresent(requestDTO::setAuth);
+
+                requestDTOs.add(requestDTO);
             }
 
-            CollectionDetailsResponseDTO details = generateStaticCollectionDetails(collectionId);
+            folderDTO.setRequests(requestDTOs);
+            folderDTO.setRequestCount(requestDTOs.size());
+            folderDTOs.add(folderDTO);
 
-            // Update cache
-            collectionsCache.put(cacheKey, new CollectionsCache(details, System.currentTimeMillis()));
-
-            log.info("RequestEntity ID: {}, Retrieved details for collectionEntity: {}", requestId, collectionId);
-
-            return details;
-
-        } catch (Exception e) {
-            String errorMsg = "Error retrieving collectionEntity details: " + e.getMessage();
-            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
-            return getFallbackCollectionDetails(collectionId);
+            totalRequests += requestDTOs.size();
         }
+
+        details.setFolders(folderDTOs);
+        details.setTotalFolders(folders.size());
+        details.setTotalRequests(totalRequests);
+
+        // Fetch variables
+        if (collection.getVariables() != null) {
+            List<VariableDTO> variableDTOs = collection.getVariables().stream()
+                    .map(this::mapToVariableDTO)
+                    .collect(Collectors.toList());
+            details.setVariables(variableDTOs);
+        }
+
+        log.info("Request ID: {}, Retrieved details for collection: {} with {} folders and {} requests",
+                requestId, collectionId, folders.size(), totalRequests);
+
+        return details;
     }
+
 
     public RequestDetailsResponseDTO getRequestDetails(String requestId, HttpServletRequest req, String performedBy,
                                                        String collectionId, String requestIdParam) {
-        try {
-            log.info("RequestEntity ID: {}, Getting requestEntity details for: {}", requestId, requestIdParam);
+        log.info("Request ID: {}, Getting request details for: {}", requestId, requestIdParam);
 
-            // Check cache first
-            String cacheKey = "request_details_" + performedBy + "_" + collectionId + "_" + requestIdParam;
-            CollectionsCache cachedData = collectionsCache.get(cacheKey);
+        // Get basic request entity (without fetching relationships)
+        RequestEntity request = requestRepository.findById(requestIdParam)
+                .orElseThrow(() -> new EntityNotFoundException("Request not found: " + requestIdParam));
 
-            if (cachedData != null && !isCacheExpired(cachedData)) {
-                log.debug("RequestEntity ID: {}, Returning cached requestEntity details", requestId);
-                return (RequestDetailsResponseDTO) cachedData.getData();
-            }
-
-            RequestDetailsResponseDTO details = generateStaticRequestDetails(collectionId, requestIdParam);
-
-            // Update cache
-            collectionsCache.put(cacheKey, new CollectionsCache(details, System.currentTimeMillis()));
-
-            log.info("RequestEntity ID: {}, Retrieved details for requestEntity: {}", requestId, requestIdParam);
-
-            return details;
-
-        } catch (Exception e) {
-            String errorMsg = "Error retrieving requestEntity details: " + e.getMessage();
-            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
-            return getFallbackRequestDetails(requestIdParam);
+        // Verify ownership through collection
+        if (!request.getCollection().getOwner().equals(performedBy)) {
+            log.warn("Request ID: {}, User {} attempted to access request {} owned by {}",
+                    requestId, performedBy, requestIdParam, request.getCollection().getOwner());
+            throw new SecurityException("Access denied to request: " + requestIdParam);
         }
+
+        // Build response DTO manually
+        RequestDetailsResponseDTO details = new RequestDetailsResponseDTO();
+        details.setRequestId(request.getId());
+        details.setName(request.getName());
+        details.setMethod(request.getMethod());
+        details.setUrl(request.getUrl());
+        details.setDescription(request.getDescription());
+        details.setAuthType(request.getAuthType());
+
+        // Set timestamps
+        if (request.getCreatedAt() != null) {
+            details.setCreatedAt(request.getCreatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        }
+        if (request.getUpdatedAt() != null) {
+            details.setUpdatedAt(request.getUpdatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        }
+
+        // Set collection and folder IDs
+        if (request.getCollection() != null) {
+            details.setCollectionId(request.getCollection().getId());
+        }
+        if (request.getFolder() != null) {
+            details.setFolderId(request.getFolder().getId());
+        }
+
+        details.setSaved(request.isSaved());
+        details.setPreRequestScript(request.getPreRequestScript());
+        details.setTests(request.getTests());
+
+        // Fetch headers as DTOs (separate query)
+        List<HeaderDTO> headerDTOs = headerRepository.findHeaderDTOsByRequestId(requestIdParam);
+        details.setHeaders(headerDTOs);
+
+        // Fetch params as DTOs (separate query)
+        List<ParameterDTO> parameterDTOs = parameterRepository.findParameterDTOsByRequestId(requestIdParam);
+        details.setParameters(parameterDTOs);
+
+        // Fetch auth config as DTO (separate query)
+        authConfigRepository.findAuthConfigDTOByRequestId(requestIdParam).ifPresent(details::setAuthConfig);
+
+        // Create BodyDTO
+        BodyDTO body = new BodyDTO();
+        if (request.getBody() != null && !request.getBody().isEmpty()) {
+            body.setType("raw");
+            body.setRawType("json");
+            body.setContent(request.getBody());
+        } else {
+            body.setType("none");
+        }
+        details.setBody(body);
+
+        log.info("Request ID: {}, Retrieved details for request: {}", requestId, requestIdParam);
+
+        return details;
     }
+
+
 
     public ExecuteRequestResponseDTO executeRequest(String requestId, HttpServletRequest req, String performedBy,
                                                     ExecuteRequestDTO requestDto) {
+        log.info("Request ID: {}, Executing request for user: {}", requestId, performedBy);
+        loggerUtil.log("collections",
+                "Request ID: " + requestId + ", Executing request: " + requestDto.getMethod() + " " + requestDto.getUrl());
+
+        ExecuteRequestResponseDTO response = executeActualRequest(requestDto);
+
+        log.info("Request ID: {}, Request executed successfully, status: {}",
+                requestId, response.getStatusCode());
+
+        return response;
+    }
+
+
+    private ExecuteRequestResponseDTO executeActualRequest(ExecuteRequestDTO requestDto) {
         try {
-            log.info("RequestEntity ID: {}, Executing requestEntity for user: {}", requestId, performedBy);
-            loggerUtil.log("collections",
-                    "RequestEntity ID: " + requestId + ", Executing requestEntity: " + requestDto.getMethod() + " " + requestDto.getUrl());
+            // Create HTTP headers
+            HttpHeaders headers = new HttpHeaders();
+            if (requestDto.getHeaders() != null) {
+                for (HeaderDTO header : requestDto.getHeaders()) {
+                    if (header.isEnabled()) {
+                        headers.add(header.getKey(), header.getValue());
+                    }
+                }
+            }
 
-            ExecuteRequestResponseDTO response = executeSampleRequest(requestDto);
+            // Set default content type if not provided
+            if (!headers.containsKey("Content-Type")) {
+                headers.setContentType(MediaType.APPLICATION_JSON);
+            }
 
-            log.info("RequestEntity ID: {}, RequestEntity executed successfully, status: {}",
-                    requestId, response.getStatusCode());
+            // Create HTTP entity with body
+            HttpEntity<String> requestEntity;
+            if (requestDto.getBody() != null && !requestDto.getBody().trim().isEmpty()) {
+                requestEntity = new HttpEntity<>(requestDto.getBody(), headers);
+            } else {
+                requestEntity = new HttpEntity<>(headers);
+            }
 
-            return response;
+            // Start timing
+            long startTime = System.currentTimeMillis();
 
-        } catch (Exception e) {
-            String errorMsg = "Error executing requestEntity: " + e.getMessage();
-            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
-            return new ExecuteRequestResponseDTO(
-                    "",
-                    500,
-                    "Error executing requestEntity: " + e.getMessage(),
-                    Collections.emptyList(),
-                    0L,
-                    0L
+            // Execute request
+            ResponseEntity<String> response = restTemplate.exchange(
+                    requestDto.getUrl(),
+                    HttpMethod.valueOf(requestDto.getMethod()),
+                    requestEntity,
+                    String.class
             );
+
+            // Calculate time taken
+            long timeMs = System.currentTimeMillis() - startTime;
+
+            // Extract response headers
+            List<HeaderDTO> responseHeaders = new ArrayList<>();
+            for (Map.Entry<String, List<String>> entry : response.getHeaders().entrySet()) {
+                String headerName = entry.getKey();
+                String headerValue = String.join(", ", entry.getValue());
+                responseHeaders.add(createHeader(
+                        UUID.randomUUID().toString(),
+                        headerName,
+                        headerValue,
+                        true,
+                        ""
+                ));
+            }
+
+            // Calculate response size
+            String responseBody = response.getBody() != null ? response.getBody() : "";
+            long sizeBytes = responseBody.getBytes(StandardCharsets.UTF_8).length;
+
+            // Get status text from HttpStatus enum
+            HttpStatus status = HttpStatus.valueOf(response.getStatusCode().value());
+
+            return new ExecuteRequestResponseDTO(
+                    responseBody,
+                    response.getStatusCode().value(),
+                    status.getReasonPhrase(),
+                    responseHeaders,
+                    timeMs,
+                    sizeBytes
+            );
+
+        } catch (HttpClientErrorException | HttpServerErrorException e) {
+            // Handle HTTP errors (4xx, 5xx)
+            log.error("HTTP error executing request: {} - {}", e.getStatusCode(), e.getResponseBodyAsString());
+
+            List<HeaderDTO> responseHeaders = new ArrayList<>();
+            if (e.getResponseHeaders() != null) {
+                for (Map.Entry<String, List<String>> entry : e.getResponseHeaders().entrySet()) {
+                    String headerName = entry.getKey();
+                    if (headerName != null) {
+                        String headerValue = String.join(", ", entry.getValue());
+                        responseHeaders.add(createHeader(
+                                UUID.randomUUID().toString(),
+                                headerName,
+                                headerValue,
+                                true,
+                                ""
+                        ));
+                    }
+                }
+            }
+
+            // Get status text from HttpStatus enum
+            HttpStatus status = HttpStatus.valueOf(e.getStatusCode().value());
+
+            return new ExecuteRequestResponseDTO(
+                    e.getResponseBodyAsString(),
+                    e.getStatusCode().value(),
+                    status.getReasonPhrase(),
+                    responseHeaders,
+                    0,
+                    e.getResponseBodyAsString() != null ? e.getResponseBodyAsString().getBytes(StandardCharsets.UTF_8).length : 0
+            );
+
+        } catch (ResourceAccessException e) {
+            log.error("Connection error: {}", e.getMessage());
+            throw new RuntimeException("Connection error: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("Error executing request: {}", e.getMessage());
+            throw new RuntimeException("Failed to execute request: " + e.getMessage(), e);
         }
     }
 
+
     public SaveRequestResponseDTO saveRequest(String requestId, HttpServletRequest req, String performedBy,
                                               SaveRequestDTO requestDto) {
-        try {
-            log.info("RequestEntity ID: {}, Saving requestEntity for user: {}", requestId, performedBy);
+        log.info("Request ID: {}, Saving request for user: {}", requestId, performedBy);
 
-            SaveRequestResponseDTO response = saveSampleRequest(requestDto);
+        RequestDTO requestData = requestDto.getRequest();
+        CollectionEntity collection = collectionRepository.findById(requestDto.getCollectionId())
+                .orElseThrow(() -> new EntityNotFoundException("Collection not found: " + requestDto.getCollectionId()));
 
-            log.info("RequestEntity ID: {}, RequestEntity saved successfully: {}", requestId, response.getRequestId());
-
-            // Clear relevant cache
-            clearCollectionCache(performedBy, requestDto.getCollectionId());
-
-            return response;
-
-        } catch (Exception e) {
-            String errorMsg = "Error saving requestEntity: " + e.getMessage();
-            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
-            return new SaveRequestResponseDTO("", "Error saving requestEntity: " + e.getMessage());
+        // Verify ownership
+        if (!collection.getOwner().equals(performedBy)) {
+            throw new SecurityException("Access denied to collection: " + requestDto.getCollectionId());
         }
+
+        RequestEntity requestEntity;
+        if (requestDto.getRequestId() != null && !requestDto.getRequestId().isEmpty()) {
+            // Update existing request
+            requestEntity = requestRepository.findByIdWithDetails(requestDto.getRequestId())
+                    .orElseThrow(() -> new EntityNotFoundException("Request not found: " + requestDto.getRequestId()));
+
+            // Update fields
+            updateRequestEntity(requestEntity, requestData);
+
+            // Clear and update relationships
+            updateRequestRelationships(requestEntity, requestData);
+
+        } else {
+            // Create new request
+            requestEntity = createNewRequest(requestData, collection, requestDto.getFolderId());
+        }
+
+        RequestEntity saved = requestRepository.save(requestEntity);
+
+        // Update folder request count if in folder
+        if (saved.getFolder() != null) {
+            updateFolderRequestCount(saved.getFolder().getId());
+        }
+
+        // Update collection last activity
+        collection.setLastActivity(LocalDateTime.now());
+        collectionRepository.save(collection);
+
+        log.info("Request ID: {}, Request saved successfully: {}", requestId, saved.getId());
+
+        return new SaveRequestResponseDTO(saved.getId(), "Request saved successfully");
     }
 
     public CreateCollectionResponseDTO createCollection(String requestId, HttpServletRequest req, String performedBy,
                                                         CreateCollectionDTO collectionDto) {
-        try {
-            log.info("RequestEntity ID: {}, Creating collectionEntity for user: {}", requestId, performedBy);
+        log.info("Request ID: {}, Creating collection for user: {}", requestId, performedBy);
 
-            CreateCollectionResponseDTO response = createSampleCollection(collectionDto);
+        CollectionEntity collection = new CollectionEntity();
+        collection.setName(collectionDto.getName());
+        collection.setDescription(collectionDto.getDescription());
+        collection.setOwner(performedBy);
+        collection.setExpanded(false);
+        collection.setEditing(false);
+        collection.setFavorite(false);
+        collection.setLastActivity(LocalDateTime.now());
 
-            log.info("RequestEntity ID: {}, CollectionEntity created successfully: {}", requestId, response.getCollectionId());
-
-            // Clear collections list cache
-            clearUserCollectionsCache(performedBy);
-
-            return response;
-
-        } catch (Exception e) {
-            String errorMsg = "Error creating collectionEntity: " + e.getMessage();
-            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
-            return new CreateCollectionResponseDTO("", "Error creating collectionEntity: " + e.getMessage());
+        // Add variables if provided
+        if (collectionDto.getVariables() != null) {
+            for (VariableDTO varDTO : collectionDto.getVariables()) {
+                VariableEntity variable = new VariableEntity();
+                variable.setKey(varDTO.getKey());
+                variable.setValue(varDTO.getValue());
+                variable.setType(varDTO.getType());
+                variable.setEnabled(varDTO.isEnabled());
+                variable.setCollection(collection);
+                collection.getVariables().add(variable);
+            }
         }
+
+        CollectionEntity saved = collectionRepository.save(collection);
+
+        log.info("Request ID: {}, Collection created successfully: {}", requestId, saved.getId());
+
+        return new CreateCollectionResponseDTO(saved.getId(), "Collection created successfully");
     }
 
     public CodeSnippetResponseDTO generateCodeSnippet(String requestId, HttpServletRequest req, String performedBy,
                                                       CodeSnippetRequestDTO snippetRequest) {
-        try {
-            log.info("RequestEntity ID: {}, Generating code snippet for language: {}",
-                    requestId, snippetRequest.getLanguage());
+        log.info("Request ID: {}, Generating code snippet for language: {}",
+                requestId, snippetRequest.getLanguage());
 
-            CodeSnippetResponseDTO snippet = generateSampleCodeSnippet(snippetRequest);
+        CodeSnippetResponseDTO snippet = generateSampleCodeSnippet(snippetRequest);
 
-            log.info("RequestEntity ID: {}, Generated code snippet for {}", requestId, snippetRequest.getLanguage());
+        log.info("Request ID: {}, Generated code snippet for {}", requestId, snippetRequest.getLanguage());
 
-            return snippet;
-
-        } catch (Exception e) {
-            String errorMsg = "Error generating code snippet: " + e.getMessage();
-            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
-            return new CodeSnippetResponseDTO("", snippetRequest.getLanguage(),
-                    "Error generating code snippet: " + e.getMessage());
-        }
+        return snippet;
     }
 
     public EnvironmentsResponseDTO getEnvironments(String requestId, HttpServletRequest req, String performedBy) {
-        try {
-            log.info("RequestEntity ID: {}, Getting environments for user: {}", requestId, performedBy);
+        log.info("Request ID: {}, Getting environments for user: {}", requestId, performedBy);
 
-            EnvironmentsResponseDTO environments = generateStaticEnvironments();
+        List<EnvironmentEntity> environments = environmentRepository.findAll();
 
-            log.info("RequestEntity ID: {}, Retrieved {} environments", requestId, environments.getEnvironments().size());
+        List<EnvironmentDTO> environmentDTOs = environments.stream()
+                .map(this::mapToEnvironmentDTO)
+                .collect(Collectors.toList());
 
-            return environments;
+        log.info("Request ID: {}, Retrieved {} environments from database", requestId, environmentDTOs.size());
 
-        } catch (Exception e) {
-            String errorMsg = "Error retrieving environments: " + e.getMessage();
-            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
-            return new EnvironmentsResponseDTO(Collections.emptyList());
-        }
+        return new EnvironmentsResponseDTO(environmentDTOs);
     }
 
     public ImportResponseDTO importCollection(String requestId, HttpServletRequest req, String performedBy,
                                               ImportRequestDTO importRequest) {
-        try {
-            log.info("RequestEntity ID: {}, Importing collectionEntity for user: {}", requestId, performedBy);
+        log.info("Request ID: {}, Importing collection for user: {}", requestId, performedBy);
 
-            ImportResponseDTO response = importSampleCollection(importRequest);
+        // Create a new collection from import
+        CollectionEntity collection = new CollectionEntity();
+        collection.setName("Imported Collection");
+        collection.setDescription("Imported from " + importRequest.getSource());
+        collection.setOwner(performedBy);
+        collection.setLastActivity(LocalDateTime.now());
 
-            log.info("RequestEntity ID: {}, CollectionEntity imported successfully: {}", requestId, response.getCollectionId());
+        CollectionEntity saved = collectionRepository.save(collection);
 
-            // Clear collections list cache
-            clearUserCollectionsCache(performedBy);
+        log.info("Request ID: {}, Collection imported successfully: {}", requestId, saved.getId());
 
-            return response;
+        return new ImportResponseDTO(saved.getId(), "Collection imported successfully from " + importRequest.getSource());
+    }
 
-        } catch (Exception e) {
-            String errorMsg = "Error importing collectionEntity: " + e.getMessage();
-            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
-            return new ImportResponseDTO("", "Error importing collectionEntity: " + e.getMessage());
+    // ========== MAPPING METHODS ==========
+
+    private CollectionDTO mapToCollectionDTO(CollectionEntity entity) {
+        CollectionDTO dto = new CollectionDTO();
+        dto.setId(entity.getId());
+        dto.setName(entity.getName());
+        dto.setDescription(entity.getDescription());
+        dto.setExpanded(entity.isExpanded());
+        dto.setFavorite(entity.isFavorite());
+        dto.setEditing(entity.isEditing());
+        dto.setOwner(entity.getOwner());
+        dto.setColor(entity.getColor());
+        dto.setTags(entity.getTags());
+
+        if (entity.getCreatedAt() != null) {
+            dto.setCreatedAt(entity.getCreatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         }
-    }
-
-    public void clearCollectionsCache(String requestId, HttpServletRequest req, String performedBy) {
-        try {
-            log.info("RequestEntity ID: {}, Clearing collections cache for user: {}", requestId, performedBy);
-
-            int beforeSize = collectionsCache.size();
-
-            // Clear all cache entries for this user
-            collectionsCache.keySet().removeIf(key -> key.contains(performedBy));
-
-            int afterSize = collectionsCache.size();
-
-            log.info("RequestEntity ID: {}, Cleared {} collections cache entries", requestId, beforeSize - afterSize);
-            loggerUtil.log("collections",
-                    "RequestEntity ID: " + requestId + ", Cleared collections cache for user: " + performedBy);
-
-        } catch (Exception e) {
-            String errorMsg = "Error clearing collections cache: " + e.getMessage();
-            log.error("RequestEntity ID: {}, {}", requestId, errorMsg);
+        if (entity.getUpdatedAt() != null) {
+            dto.setUpdatedAt(entity.getUpdatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         }
-    }
 
-    // ========== STATIC DATA GENERATORS ==========
-
-    private CollectionsListResponseDTO generateStaticCollectionsList(String userId) {
-        List<CollectionDTO> collections = new ArrayList<>();
-
-        // First collectionEntity - E-Commerce API (from React component)
-        CollectionDTO ecommerceCollection = new CollectionDTO();
-        ecommerceCollection.setId("col-1");
-        ecommerceCollection.setName("E-Commerce API");
-        ecommerceCollection.setDescription("Complete e-commerce platform endpoints");
-        ecommerceCollection.setExpanded(true);
-        ecommerceCollection.setFavorite(true);
-        ecommerceCollection.setEditing(false);
-        ecommerceCollection.setCreatedAt("2024-01-15T10:30:00Z");
-        ecommerceCollection.setRequestsCount(12);
-
-        List<VariableDTO> ecommerceVariables = new ArrayList<>();
-        ecommerceVariables.add(createVariable("var-1", "baseUrl", "{{base_url}}", "string", true));
-        ecommerceCollection.setVariables(ecommerceVariables);
-
-        // Second collectionEntity - Social Media API (from React component)
-        CollectionDTO socialMediaCollection = new CollectionDTO();
-        socialMediaCollection.setId("col-2");
-        socialMediaCollection.setName("Social Media API");
-        socialMediaCollection.setDescription("Social media platform endpoints");
-        socialMediaCollection.setExpanded(false);
-        socialMediaCollection.setFavorite(false);
-        socialMediaCollection.setEditing(false);
-        socialMediaCollection.setCreatedAt("2024-01-10T14:20:00Z");
-        socialMediaCollection.setRequestsCount(8);
-
-        List<VariableDTO> socialMediaVariables = new ArrayList<>();
-        socialMediaVariables.add(createVariable("var-2", "apiUrl", "{{api_url}}", "string", true));
-        socialMediaCollection.setVariables(socialMediaVariables);
-
-        // Set other properties
-        ecommerceCollection.setOwner(userId);
-        socialMediaCollection.setOwner(userId);
-        ecommerceCollection.setUpdatedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-        socialMediaCollection.setUpdatedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-        ecommerceCollection.setTags(Arrays.asList("ecommerce", "api", "rest", "favorite"));
-        socialMediaCollection.setTags(Arrays.asList("social", "api", "rest"));
-        ecommerceCollection.setColor("blue");
-        socialMediaCollection.setColor("green");
-
-        collections.add(ecommerceCollection);
-        collections.add(socialMediaCollection);
-
-        return new CollectionsListResponseDTO(collections, collections.size());
-    }
-
-    private CollectionDetailsResponseDTO generateStaticCollectionDetails(String collectionId) {
-        if ("col-1".equals(collectionId)) {
-            return generateEcommerceCollectionDetails();
-        } else if ("col-2".equals(collectionId)) {
-            return generateSocialMediaCollectionDetails();
+        // Calculate requests count - need to fetch folders and requests
+        List<FolderEntity> folders = folderRepository.findByCollectionId(entity.getId());
+        int requestsCount = 0;
+        for (FolderEntity folder : folders) {
+            requestsCount += requestRepository.countByFolderId(folder.getId());
         }
-        return generateEcommerceCollectionDetails(); // Default to first collectionEntity
-    }
+        dto.setRequestsCount(requestsCount);
 
-    private CollectionDetailsResponseDTO generateEcommerceCollectionDetails() {
-        CollectionDetailsResponseDTO details = new CollectionDetailsResponseDTO();
-        details.setCollectionId("col-1");
-        details.setName("E-Commerce API");
-        details.setDescription("Complete e-commerce platform endpoints");
-        details.setCreatedAt("2024-01-15T10:30:00Z");
-        details.setUpdatedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-        details.setTotalRequests(12);
-        details.setTotalFolders(2);
-        details.setFavorite(true);
-        details.setOwner("admin");
+        dto.setFolderCount(folders.size());
 
-        List<VariableDTO> variables = new ArrayList<>();
-        variables.add(createVariable("var-1", "baseUrl", "{{base_url}}", "string", true));
-        details.setVariables(variables);
-
-        // Generate folderEntities with requestEntities
-        List<FolderDTO> folders = new ArrayList<>();
-
-        // Authentication folderEntity
-        FolderDTO authFolder = new FolderDTO();
-        authFolder.setId("folderEntity-1");
-        authFolder.setName("Authentication");
-        authFolder.setDescription("User authentication and authorization");
-        authFolder.setExpanded(true);
-        authFolder.setEditing(false);
-        authFolder.setRequestCount(2);
-
-        List<RequestDTO> authRequests = new ArrayList<>();
-
-        // Login requestEntity
-        RequestDTO loginRequest = new RequestDTO();
-        loginRequest.setId("req-1");
-        loginRequest.setName("Login");
-        loginRequest.setMethod("POST");
-        loginRequest.setUrl("http://com.example.com/api/v1/auth/login");
-        loginRequest.setDescription("Authenticate user with email and password");
-        loginRequest.setEditing(false);
-        loginRequest.setStatus("saved");
-        loginRequest.setLastModified("2024-01-15T09:45:00Z");
-
-        AuthConfigDTO noAuth = new AuthConfigDTO();
-        noAuth.setType("noauth");
-        loginRequest.setAuth(noAuth);
-
-        List<ParameterDTO> loginParams = new ArrayList<>();
-        loginParams.add(createParameter("p-1", "test_param", "test_value", "Test parameter", true));
-        loginRequest.setParams(loginParams);
-
-        List<HeaderDTO> loginHeaders = new ArrayList<>();
-        loginHeaders.add(createHeader("h-1", "Content-Type", "application/json", true, ""));
-        loginRequest.setHeaders(loginHeaders);
-
-        loginRequest.setBody("{\n  \"email\": \"user@example.com\",\n  \"password\": \"password123\"\n}");
-        loginRequest.setTests("pm.test('Status code is 200', function() {\n  pm.response.to.have.status(200);\n});");
-        loginRequest.setPreRequestScript("");
-        loginRequest.setSaved(true);
-        loginRequest.setCollectionId("col-1");
-        loginRequest.setFolderId("folderEntity-1");
-        authRequests.add(loginRequest);
-
-        // Refresh Token requestEntity
-        RequestDTO refreshRequest = new RequestDTO();
-        refreshRequest.setId("req-2");
-        refreshRequest.setName("Refresh Token");
-        refreshRequest.setMethod("POST");
-        refreshRequest.setUrl("http://com.example.com/api/v1/auth/refresh");
-        refreshRequest.setDescription("Refresh access token");
-        refreshRequest.setEditing(false);
-        refreshRequest.setStatus("saved");
-        refreshRequest.setLastModified("2024-01-14T14:20:00Z");
-
-        AuthConfigDTO bearerAuth = new AuthConfigDTO();
-        bearerAuth.setType("bearer");
-        bearerAuth.setToken("{{access_token}}");
-        refreshRequest.setAuth(bearerAuth);
-
-        refreshRequest.setParams(new ArrayList<>());
-
-        List<HeaderDTO> refreshHeaders = new ArrayList<>();
-        refreshHeaders.add(createHeader("h-2", "Content-Type", "application/json", true, ""));
-        refreshRequest.setHeaders(refreshHeaders);
-
-        refreshRequest.setBody("{\n  \"refresh_token\": \"{{refresh_token}}\"\n}");
-        refreshRequest.setTests("");
-        refreshRequest.setPreRequestScript("");
-        refreshRequest.setSaved(true);
-        refreshRequest.setCollectionId("col-1");
-        refreshRequest.setFolderId("folderEntity-1");
-        authRequests.add(refreshRequest);
-
-        authFolder.setRequests(authRequests);
-        folders.add(authFolder);
-
-        // Products folderEntity
-        FolderDTO productsFolder = new FolderDTO();
-        productsFolder.setId("folderEntity-2");
-        productsFolder.setName("Products");
-        productsFolder.setDescription("Product management endpoints");
-        productsFolder.setExpanded(true);
-        productsFolder.setEditing(false);
-        productsFolder.setRequestCount(2);
-
-        List<RequestDTO> productRequests = new ArrayList<>();
-
-        // Get Products requestEntity
-        RequestDTO getProductsRequest = new RequestDTO();
-        getProductsRequest.setId("req-3");
-        getProductsRequest.setName("Get Products");
-        getProductsRequest.setMethod("GET");
-        getProductsRequest.setUrl("http://com.example.com/api/v1/products");
-        getProductsRequest.setDescription("Retrieve list of products");
-        getProductsRequest.setEditing(false);
-        getProductsRequest.setStatus("saved");
-        getProductsRequest.setLastModified("2024-01-15T08:15:00Z");
-
-        AuthConfigDTO bearerAuth2 = new AuthConfigDTO();
-        bearerAuth2.setType("bearer");
-        bearerAuth2.setToken("{{access_token}}");
-        getProductsRequest.setAuth(bearerAuth2);
-
-        List<ParameterDTO> productParams = new ArrayList<>();
-        productParams.add(createParameter("p-1", "page", "1", "Page number", true));
-        productParams.add(createParameter("p-2", "limit", "20", "Items per page", true));
-        productParams.add(createParameter("p-3", "category", "", "Filter by category", false));
-        getProductsRequest.setParams(productParams);
-
-        List<HeaderDTO> productHeaders = new ArrayList<>();
-        productHeaders.add(createHeader("h-3", "Authorization", "Bearer {{access_token}}", true, ""));
-        getProductsRequest.setHeaders(productHeaders);
-
-        getProductsRequest.setBody("");
-        getProductsRequest.setTests("pm.test('Status code is 200', function() {\n  pm.response.to.have.status(200);\n});");
-        getProductsRequest.setPreRequestScript("");
-        getProductsRequest.setSaved(true);
-        getProductsRequest.setCollectionId("col-1");
-        getProductsRequest.setFolderId("folderEntity-2");
-        productRequests.add(getProductsRequest);
-
-        // Create Product requestEntity
-        RequestDTO createProductRequest = new RequestDTO();
-        createProductRequest.setId("req-4");
-        createProductRequest.setName("Create Product");
-        createProductRequest.setMethod("POST");
-        createProductRequest.setUrl("http://com.example.com/api/v1/products");
-        createProductRequest.setDescription("Create a new product");
-        createProductRequest.setEditing(false);
-        createProductRequest.setStatus("saved");
-        createProductRequest.setLastModified("2024-01-14T16:45:00Z");
-
-        AuthConfigDTO bearerAuth3 = new AuthConfigDTO();
-        bearerAuth3.setType("bearer");
-        bearerAuth3.setToken("{{access_token}}");
-        createProductRequest.setAuth(bearerAuth3);
-
-        createProductRequest.setParams(new ArrayList<>());
-
-        List<HeaderDTO> createProductHeaders = new ArrayList<>();
-        createProductHeaders.add(createHeader("h-4", "Authorization", "Bearer {{access_token}}", true, ""));
-        createProductHeaders.add(createHeader("h-5", "Content-Type", "application/json", true, ""));
-        createProductRequest.setHeaders(createProductHeaders);
-
-        createProductRequest.setBody("{\n  \"name\": \"New Product\",\n  \"price\": 99.99,\n  \"category\": \"electronics\"\n}");
-        createProductRequest.setTests("pm.test('Status code is 201', function() {\n  pm.response.to.have.status(201);\n});");
-        createProductRequest.setPreRequestScript("");
-        createProductRequest.setSaved(true);
-        createProductRequest.setCollectionId("col-1");
-        createProductRequest.setFolderId("folderEntity-2");
-        productRequests.add(createProductRequest);
-
-        productsFolder.setRequests(productRequests);
-        folders.add(productsFolder);
-
-        details.setFolders(folders);
-        details.setComments("Sample e-commerce API collectionEntity for testing");
-        details.setLastActivity(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-
-        return details;
-    }
-
-    private CollectionDetailsResponseDTO generateSocialMediaCollectionDetails() {
-        CollectionDetailsResponseDTO details = new CollectionDetailsResponseDTO();
-        details.setCollectionId("col-2");
-        details.setName("Social Media API");
-        details.setDescription("Social media platform endpoints");
-        details.setCreatedAt("2024-01-10T14:20:00Z");
-        details.setUpdatedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-        details.setTotalRequests(8);
-        details.setTotalFolders(1);
-        details.setFavorite(false);
-        details.setOwner("admin");
-
-        List<VariableDTO> variables = new ArrayList<>();
-        variables.add(createVariable("var-2", "apiUrl", "{{api_url}}", "string", true));
-        details.setVariables(variables);
-
-        // Generate folderEntities with requestEntities
-        List<FolderDTO> folders = new ArrayList<>();
-
-        // Posts folderEntity
-        FolderDTO postsFolder = new FolderDTO();
-        postsFolder.setId("folderEntity-3");
-        postsFolder.setName("Posts");
-        postsFolder.setDescription("Post management endpoints");
-        postsFolder.setExpanded(false);
-        postsFolder.setEditing(false);
-        postsFolder.setRequestCount(1);
-
-        List<RequestDTO> postRequests = new ArrayList<>();
-
-        // Create Post requestEntity
-        RequestDTO createPostRequest = new RequestDTO();
-        createPostRequest.setId("req-5");
-        createPostRequest.setName("Create Post");
-        createPostRequest.setMethod("POST");
-        createPostRequest.setUrl("{{apiUrl}}/api/v1/posts");
-        createPostRequest.setDescription("Create a new post");
-        createPostRequest.setEditing(false);
-        createPostRequest.setStatus("saved");
-        createPostRequest.setLastModified("2024-01-12T11:30:00Z");
-
-        AuthConfigDTO bearerAuth = new AuthConfigDTO();
-        bearerAuth.setType("bearer");
-        bearerAuth.setToken("{{access_token}}");
-        createPostRequest.setAuth(bearerAuth);
-
-        createPostRequest.setParams(new ArrayList<>());
-
-        List<HeaderDTO> postHeaders = new ArrayList<>();
-        postHeaders.add(createHeader("h-6", "Content-Type", "application/json", true, ""));
-        createPostRequest.setHeaders(postHeaders);
-
-        createPostRequest.setBody("{\n  \"content\": \"Hello world!\",\n  \"media_urls\": [\"https://example.com/image.jpg\"]\n}");
-        createPostRequest.setTests("pm.test('Status code is 201', function() {\n  pm.response.to.have.status(201);\n});");
-        createPostRequest.setPreRequestScript("");
-        createPostRequest.setSaved(true);
-        createPostRequest.setCollectionId("col-2");
-        createPostRequest.setFolderId("folderEntity-3");
-        postRequests.add(createPostRequest);
-
-        postsFolder.setRequests(postRequests);
-        folders.add(postsFolder);
-
-        details.setFolders(folders);
-        details.setComments("Sample social media API collectionEntity");
-        details.setLastActivity(LocalDateTime.now().minusDays(2).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-
-        return details;
-    }
-
-    private RequestDetailsResponseDTO generateStaticRequestDetails(String collectionId, String requestId) {
-        // Based on the requestId, return the appropriate requestEntity details
-        switch (requestId) {
-            case "req-1":
-                return getLoginRequestDetails();
-            case "req-2":
-                return getRefreshTokenRequestDetails();
-            case "req-3":
-                return getProductsRequestDetails();
-            case "req-4":
-                return getCreateProductRequestDetails();
-            case "req-5":
-                return getCreatePostRequestDetails();
-            default:
-                return getLoginRequestDetails(); // Default to login requestEntity
+        if (entity.getVariables() != null) {
+            List<VariableDTO> variableDTOs = entity.getVariables().stream()
+                    .map(this::mapToVariableDTO)
+                    .collect(Collectors.toList());
+            dto.setVariables(variableDTOs);
         }
+
+        return dto;
     }
 
-    private RequestDetailsResponseDTO getLoginRequestDetails() {
-        RequestDetailsResponseDTO details = new RequestDetailsResponseDTO();
-        details.setRequestId("req-1");
-        details.setName("Login");
-        details.setMethod("POST");
-        details.setUrl("http://com.example.com/api/v1/auth/login");
-        details.setDescription("Authenticate user with email and password");
-        details.setAuthType("noauth");
+    private CollectionDetailsResponseDTO mapToCollectionDetailsDTO(CollectionEntity entity) {
+        CollectionDetailsResponseDTO dto = new CollectionDetailsResponseDTO();
+        dto.setCollectionId(entity.getId());
+        dto.setName(entity.getName());
+        dto.setDescription(entity.getDescription());
 
-        // Headers
-        List<HeaderDTO> headers = new ArrayList<>();
-        headers.add(createHeader("h-1", "Content-Type", "application/json", true, ""));
-        details.setHeaders(headers);
+        if (entity.getCreatedAt() != null) {
+            dto.setCreatedAt(entity.getCreatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        }
+        if (entity.getUpdatedAt() != null) {
+            dto.setUpdatedAt(entity.getUpdatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        }
 
-        // Parameters
-        List<ParameterDTO> parameters = new ArrayList<>();
-        parameters.add(createParameter("p-1", "test_param", "test_value", "Test parameter", true));
-        details.setParameters(parameters);
+        // Calculate total requests
+        int totalRequests = 0;
+        if (entity.getFolders() != null) {
+            for (FolderEntity folder : entity.getFolders()) {
+                totalRequests += folder.getRequests() != null ? folder.getRequests().size() : 0;
+            }
+        }
+        dto.setTotalRequests(totalRequests);
 
-        // Body
+        dto.setTotalFolders(entity.getFolders() != null ? entity.getFolders().size() : 0);
+        dto.setFavorite(entity.isFavorite());
+        dto.setOwner(entity.getOwner());
+        dto.setComments(entity.getComments());
+
+        if (entity.getLastActivity() != null) {
+            dto.setLastActivity(entity.getLastActivity().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        }
+
+        if (entity.getVariables() != null) {
+            List<VariableDTO> variableDTOs = entity.getVariables().stream()
+                    .map(this::mapToVariableDTO)
+                    .collect(Collectors.toList());
+            dto.setVariables(variableDTOs);
+        }
+
+        if (entity.getFolders() != null) {
+            List<FolderDTO> folderDTOs = entity.getFolders().stream()
+                    .map(this::mapToFolderDTO)
+                    .collect(Collectors.toList());
+            dto.setFolders(folderDTOs);
+        }
+
+        return dto;
+    }
+
+    private FolderDTO mapToFolderDTO(FolderEntity entity) {
+        FolderDTO dto = new FolderDTO();
+        dto.setId(entity.getId());
+        dto.setName(entity.getName());
+        dto.setDescription(entity.getDescription());
+        dto.setExpanded(entity.isExpanded());
+        dto.setEditing(entity.isEditing());
+        dto.setRequestCount(entity.getRequestCount());
+
+        if (entity.getRequests() != null) {
+            List<RequestDTO> requestDTOs = entity.getRequests().stream()
+                    .map(this::mapToRequestDTO)
+                    .collect(Collectors.toList());
+            dto.setRequests(requestDTOs);
+        }
+
+        return dto;
+    }
+
+    private RequestDTO mapToRequestDTO(RequestEntity entity) {
+        RequestDTO dto = new RequestDTO();
+        dto.setId(entity.getId());
+        dto.setName(entity.getName());
+        dto.setMethod(entity.getMethod());
+        dto.setUrl(entity.getUrl());
+        dto.setDescription(entity.getDescription());
+        dto.setEditing(entity.isEditing());
+        dto.setStatus(entity.getStatus());
+
+        if (entity.getLastModified() != null) {
+            dto.setLastModified(entity.getLastModified().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        }
+
+        dto.setBody(entity.getBody());
+        dto.setTests(entity.getTests());
+        dto.setPreRequestScript(entity.getPreRequestScript());
+        dto.setSaved(entity.isSaved());
+
+        if (entity.getAuthConfig() != null) {
+            dto.setAuth(mapToAuthConfigDTO(entity.getAuthConfig()));
+        }
+
+        if (entity.getHeaders() != null) {
+            List<HeaderDTO> headerDTOs = entity.getHeaders().stream()
+                    .map(this::mapToHeaderDTO)
+                    .collect(Collectors.toList());
+            dto.setHeaders(headerDTOs);
+        }
+
+        if (entity.getParams() != null) {
+            List<ParameterDTO> paramDTOs = entity.getParams().stream()
+                    .map(this::mapToParameterDTO)
+                    .collect(Collectors.toList());
+            dto.setParams(paramDTOs);
+        }
+
+        if (entity.getCollection() != null) {
+            dto.setCollectionId(entity.getCollection().getId());
+        }
+
+        if (entity.getFolder() != null) {
+            dto.setFolderId(entity.getFolder().getId());
+        }
+
+        return dto;
+    }
+
+    private RequestDetailsResponseDTO mapToRequestDetailsDTO(RequestEntity entity) {
+        RequestDetailsResponseDTO dto = new RequestDetailsResponseDTO();
+        dto.setRequestId(entity.getId());
+        dto.setName(entity.getName());
+        dto.setMethod(entity.getMethod());
+        dto.setUrl(entity.getUrl());
+        dto.setDescription(entity.getDescription());
+        dto.setAuthType(entity.getAuthType());
+
+        if (entity.getHeaders() != null) {
+            List<HeaderDTO> headerDTOs = entity.getHeaders().stream()
+                    .map(this::mapToHeaderDTO)
+                    .collect(Collectors.toList());
+            dto.setHeaders(headerDTOs);
+        }
+
+        if (entity.getParams() != null) {
+            List<ParameterDTO> paramDTOs = entity.getParams().stream()
+                    .map(this::mapToParameterDTO)
+                    .collect(Collectors.toList());
+            dto.setParameters(paramDTOs);
+        }
+
+        // Create BodyDTO
         BodyDTO body = new BodyDTO();
-        body.setType("raw");
-        body.setRawType("json");
-        body.setContent("{\n  \"email\": \"user@example.com\",\n  \"password\": \"password123\"\n}");
-        details.setBody(body);
+        if (entity.getBody() != null && !entity.getBody().isEmpty()) {
+            body.setType("raw");
+            body.setRawType("json");
+            body.setContent(entity.getBody());
+        } else {
+            body.setType("none");
+        }
+        dto.setBody(body);
 
-        // Auth config
-        AuthConfigDTO authConfig = new AuthConfigDTO();
-        authConfig.setType("noauth");
-        details.setAuthConfig(authConfig);
+        if (entity.getAuthConfig() != null) {
+            dto.setAuthConfig(mapToAuthConfigDTO(entity.getAuthConfig()));
+        }
 
-        details.setPreRequestScript("");
-        details.setTests("pm.test('Status code is 200', function() {\n  pm.response.to.have.status(200);\n});");
-        details.setCreatedAt("2024-01-15T09:45:00Z");
-        details.setUpdatedAt("2024-01-15T09:45:00Z");
-        details.setCollectionId("col-1");
-        details.setFolderId("folderEntity-1");
-        details.setSaved(true);
+        dto.setPreRequestScript(entity.getPreRequestScript());
+        dto.setTests(entity.getTests());
 
-        return details;
+        if (entity.getCreatedAt() != null) {
+            dto.setCreatedAt(entity.getCreatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        }
+        if (entity.getUpdatedAt() != null) {
+            dto.setUpdatedAt(entity.getUpdatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        }
+
+        if (entity.getCollection() != null) {
+            dto.setCollectionId(entity.getCollection().getId());
+        }
+
+        if (entity.getFolder() != null) {
+            dto.setFolderId(entity.getFolder().getId());
+        }
+
+        dto.setSaved(entity.isSaved());
+
+        return dto;
     }
 
-    private RequestDetailsResponseDTO getRefreshTokenRequestDetails() {
-        RequestDetailsResponseDTO details = new RequestDetailsResponseDTO();
-        details.setRequestId("req-2");
-        details.setName("Refresh Token");
-        details.setMethod("POST");
-        details.setUrl("http://com.example.com/api/v1/auth/refresh");
-        details.setDescription("Refresh access token");
-        details.setAuthType("bearer");
-
-        // Headers
-        List<HeaderDTO> headers = new ArrayList<>();
-        headers.add(createHeader("h-2", "Content-Type", "application/json", true, ""));
-        details.setHeaders(headers);
-
-        details.setParameters(new ArrayList<>());
-
-        // Body
-        BodyDTO body = new BodyDTO();
-        body.setType("raw");
-        body.setRawType("json");
-        body.setContent("{\n  \"refresh_token\": \"{{refresh_token}}\"\n}");
-        details.setBody(body);
-
-        // Auth config
-        AuthConfigDTO authConfig = new AuthConfigDTO();
-        authConfig.setType("bearer");
-        authConfig.setToken("{{access_token}}");
-        details.setAuthConfig(authConfig);
-
-        details.setPreRequestScript("");
-        details.setTests("");
-        details.setCreatedAt("2024-01-14T14:20:00Z");
-        details.setUpdatedAt("2024-01-14T14:20:00Z");
-        details.setCollectionId("col-1");
-        details.setFolderId("folderEntity-1");
-        details.setSaved(true);
-
-        return details;
+    private AuthConfigDTO mapToAuthConfigDTO(AuthConfigEntity entity) {
+        AuthConfigDTO dto = new AuthConfigDTO();
+        dto.setType(entity.getType());
+        dto.setToken(entity.getToken());
+        dto.setTokenType(entity.getTokenType());
+        dto.setUsername(entity.getUsername());
+        dto.setPassword(entity.getPassword());
+        dto.setKey(entity.getKey());
+        dto.setValue(entity.getValue());
+        dto.setAddTo(entity.getAddTo());
+        return dto;
     }
 
-    private RequestDetailsResponseDTO getProductsRequestDetails() {
-        RequestDetailsResponseDTO details = new RequestDetailsResponseDTO();
-        details.setRequestId("req-3");
-        details.setName("Get Products");
-        details.setMethod("GET");
-        details.setUrl("http://com.example.com/api/v1/products");
-        details.setDescription("Retrieve list of products");
-        details.setAuthType("bearer");
-
-        // Headers
-        List<HeaderDTO> headers = new ArrayList<>();
-        headers.add(createHeader("h-3", "Authorization", "Bearer {{access_token}}", true, ""));
-        details.setHeaders(headers);
-
-        // Parameters
-        List<ParameterDTO> parameters = new ArrayList<>();
-        parameters.add(createParameter("p-1", "page", "1", "Page number", true));
-        parameters.add(createParameter("p-2", "limit", "20", "Items per page", true));
-        parameters.add(createParameter("p-3", "category", "", "Filter by category", false));
-        details.setParameters(parameters);
-
-        // Body
-        BodyDTO body = new BodyDTO();
-        body.setType("none");
-        details.setBody(body);
-
-        // Auth config
-        AuthConfigDTO authConfig = new AuthConfigDTO();
-        authConfig.setType("bearer");
-        authConfig.setToken("{{access_token}}");
-        details.setAuthConfig(authConfig);
-
-        details.setPreRequestScript("");
-        details.setTests("pm.test('Status code is 200', function() {\n  pm.response.to.have.status(200);\n});");
-        details.setCreatedAt("2024-01-15T08:15:00Z");
-        details.setUpdatedAt("2024-01-15T08:15:00Z");
-        details.setCollectionId("col-1");
-        details.setFolderId("folderEntity-2");
-        details.setSaved(true);
-
-        return details;
+    private VariableDTO mapToVariableDTO(VariableEntity entity) {
+        VariableDTO dto = new VariableDTO();
+        dto.setId(entity.getId());
+        dto.setKey(entity.getKey());
+        dto.setValue(entity.getValue());
+        dto.setType(entity.getType());
+        dto.setEnabled(entity.isEnabled());
+        return dto;
     }
 
-    private RequestDetailsResponseDTO getCreateProductRequestDetails() {
-        RequestDetailsResponseDTO details = new RequestDetailsResponseDTO();
-        details.setRequestId("req-4");
-        details.setName("Create Product");
-        details.setMethod("POST");
-        details.setUrl("http://com.example.com/api/v1/products");
-        details.setDescription("Create a new product");
-        details.setAuthType("bearer");
-
-        // Headers
-        List<HeaderDTO> headers = new ArrayList<>();
-        headers.add(createHeader("h-4", "Authorization", "Bearer {{access_token}}", true, ""));
-        headers.add(createHeader("h-5", "Content-Type", "application/json", true, ""));
-        details.setHeaders(headers);
-
-        details.setParameters(new ArrayList<>());
-
-        // Body
-        BodyDTO body = new BodyDTO();
-        body.setType("raw");
-        body.setRawType("json");
-        body.setContent("{\n  \"name\": \"New Product\",\n  \"price\": 99.99,\n  \"category\": \"electronics\"\n}");
-        details.setBody(body);
-
-        // Auth config
-        AuthConfigDTO authConfig = new AuthConfigDTO();
-        authConfig.setType("bearer");
-        authConfig.setToken("{{access_token}}");
-        details.setAuthConfig(authConfig);
-
-        details.setPreRequestScript("");
-        details.setTests("pm.test('Status code is 201', function() {\n  pm.response.to.have.status(201);\n});");
-        details.setCreatedAt("2024-01-14T16:45:00Z");
-        details.setUpdatedAt("2024-01-14T16:45:00Z");
-        details.setCollectionId("col-1");
-        details.setFolderId("folderEntity-2");
-        details.setSaved(true);
-
-        return details;
+    private VariableDTO mapToVariableDTO(EnvironmentVariableEntity entity) {
+        VariableDTO dto = new VariableDTO();
+        dto.setId(entity.getId());
+        dto.setKey(entity.getKey());
+        dto.setValue(entity.getValue());
+        dto.setType(entity.getType());
+        dto.setEnabled(entity.isEnabled());
+        return dto;
     }
 
-    private RequestDetailsResponseDTO getCreatePostRequestDetails() {
-        RequestDetailsResponseDTO details = new RequestDetailsResponseDTO();
-        details.setRequestId("req-5");
-        details.setName("Create Post");
-        details.setMethod("POST");
-        details.setUrl("{{apiUrl}}/api/v1/posts");
-        details.setDescription("Create a new post");
-        details.setAuthType("bearer");
-
-        // Headers
-        List<HeaderDTO> headers = new ArrayList<>();
-        headers.add(createHeader("h-6", "Content-Type", "application/json", true, ""));
-        details.setHeaders(headers);
-
-        details.setParameters(new ArrayList<>());
-
-        // Body
-        BodyDTO body = new BodyDTO();
-        body.setType("raw");
-        body.setRawType("json");
-        body.setContent("{\n  \"content\": \"Hello world!\",\n  \"media_urls\": [\"https://example.com/image.jpg\"]\n}");
-        details.setBody(body);
-
-        // Auth config
-        AuthConfigDTO authConfig = new AuthConfigDTO();
-        authConfig.setType("bearer");
-        authConfig.setToken("{{access_token}}");
-        details.setAuthConfig(authConfig);
-
-        details.setPreRequestScript("");
-        details.setTests("pm.test('Status code is 201', function() {\n  pm.response.to.have.status(201);\n});");
-        details.setCreatedAt("2024-01-12T11:30:00Z");
-        details.setUpdatedAt("2024-01-12T11:30:00Z");
-        details.setCollectionId("col-2");
-        details.setFolderId("folderEntity-3");
-        details.setSaved(true);
-
-        return details;
+    private HeaderDTO mapToHeaderDTO(HeaderEntity entity) {
+        HeaderDTO dto = new HeaderDTO();
+        dto.setId(entity.getId());
+        dto.setKey(entity.getKey());
+        dto.setValue(entity.getValue());
+        dto.setDescription(entity.getDescription());
+        dto.setEnabled(entity.isEnabled());
+        return dto;
     }
 
-    private EnvironmentsResponseDTO generateStaticEnvironments() {
-        List<EnvironmentDTO> environments = new ArrayList<>();
+    private ParameterDTO mapToParameterDTO(ParameterEntity entity) {
+        ParameterDTO dto = new ParameterDTO();
+        dto.setId(entity.getId());
+        dto.setKey(entity.getKey());
+        dto.setValue(entity.getValue());
+        dto.setDescription(entity.getDescription());
+        dto.setEnabled(entity.isEnabled());
+        return dto;
+    }
 
-        EnvironmentDTO noEnv = new EnvironmentDTO();
-        noEnv.setId("env-1");
-        noEnv.setName("No Environment");
-        noEnv.setActive(true);
-        noEnv.setVariables(new ArrayList<>());
-        environments.add(noEnv);
+    private EnvironmentDTO mapToEnvironmentDTO(EnvironmentEntity entity) {
+        EnvironmentDTO dto = new EnvironmentDTO();
+        dto.setId(entity.getId());
+        dto.setName(entity.getName());
+        dto.setActive(entity.isActive());
 
-        EnvironmentDTO devEnv = new EnvironmentDTO();
-        devEnv.setId("env-2");
-        devEnv.setName("Development");
-        devEnv.setActive(false);
+        if (entity.getVariables() != null) {
+            List<VariableDTO> variableDTOs = entity.getVariables().stream()
+                    .map(this::mapToVariableDTO)
+                    .collect(Collectors.toList());
+            dto.setVariables(variableDTOs);
+        }
 
-        List<VariableDTO> devVariables = new ArrayList<>();
-        devVariables.add(createVariable("env-var-1", "base_url", "https://api.dev.example.com", "string", true));
-        devVariables.add(createVariable("env-var-2", "access_token", "dev_token_123", "string", true));
-        devEnv.setVariables(devVariables);
-        environments.add(devEnv);
-
-        EnvironmentDTO prodEnv = new EnvironmentDTO();
-        prodEnv.setId("env-3");
-        prodEnv.setName("Production");
-        prodEnv.setActive(false);
-
-        List<VariableDTO> prodVariables = new ArrayList<>();
-        prodVariables.add(createVariable("env-var-3", "base_url", "https://api.example.com", "string", true));
-        prodVariables.add(createVariable("env-var-4", "access_token", "prod_token_456", "string", true));
-        prodEnv.setVariables(prodVariables);
-        environments.add(prodEnv);
-
-        return new EnvironmentsResponseDTO(environments);
+        return dto;
     }
 
     // ========== HELPER METHODS ==========
+
+    private RequestEntity createNewRequest(RequestDTO requestData, CollectionEntity collection, String folderId) {
+        RequestEntity requestEntity = new RequestEntity();
+        requestEntity.setName(requestData.getName());
+        requestEntity.setMethod(requestData.getMethod());
+        requestEntity.setUrl(requestData.getUrl());
+        requestEntity.setDescription(requestData.getDescription());
+        requestEntity.setBody(requestData.getBody());
+        requestEntity.setTests(requestData.getTests());
+        requestEntity.setPreRequestScript(requestData.getPreRequestScript());
+        requestEntity.setSaved(true);
+        requestEntity.setLastModified(LocalDateTime.now());
+        requestEntity.setCollection(collection);
+        requestEntity.setAuthType(requestData.getAuth() != null ? requestData.getAuth().getType() : null);
+
+        // Set folder if provided
+        if (folderId != null && !folderId.isEmpty()) {
+            FolderEntity folder = folderRepository.findById(folderId)
+                    .orElseThrow(() -> new EntityNotFoundException("Folder not found: " + folderId));
+            requestEntity.setFolder(folder);
+        }
+
+        return requestEntity;
+    }
+
+    private void updateRequestEntity(RequestEntity entity, RequestDTO data) {
+        entity.setName(data.getName());
+        entity.setMethod(data.getMethod());
+        entity.setUrl(data.getUrl());
+        entity.setDescription(data.getDescription());
+        entity.setBody(data.getBody());
+        entity.setTests(data.getTests());
+        entity.setPreRequestScript(data.getPreRequestScript());
+        entity.setSaved(true);
+        entity.setLastModified(LocalDateTime.now());
+        entity.setAuthType(data.getAuth() != null ? data.getAuth().getType() : null);
+    }
+
+    private void updateRequestRelationships(RequestEntity entity, RequestDTO data) {
+        // Update auth config
+        if (data.getAuth() != null) {
+            if (entity.getAuthConfig() == null) {
+                AuthConfigEntity authConfig = new AuthConfigEntity();
+                authConfig.setRequest(entity);
+                entity.setAuthConfig(authConfig);
+            }
+            AuthConfigEntity authConfig = entity.getAuthConfig();
+            authConfig.setType(data.getAuth().getType());
+            authConfig.setToken(data.getAuth().getToken());
+            authConfig.setTokenType(data.getAuth().getTokenType());
+            authConfig.setUsername(data.getAuth().getUsername());
+            authConfig.setPassword(data.getAuth().getPassword());
+            authConfig.setKey(data.getAuth().getKey());
+            authConfig.setValue(data.getAuth().getValue());
+            authConfig.setAddTo(data.getAuth().getAddTo());
+        } else if (entity.getAuthConfig() != null) {
+            entity.setAuthConfig(null);
+        }
+
+        // Update headers
+        entity.getHeaders().clear();
+        if (data.getHeaders() != null) {
+            for (HeaderDTO headerDTO : data.getHeaders()) {
+                HeaderEntity header = new HeaderEntity();
+                header.setKey(headerDTO.getKey());
+                header.setValue(headerDTO.getValue());
+                header.setDescription(headerDTO.getDescription());
+                header.setEnabled(headerDTO.isEnabled());
+                header.setRequest(entity);
+                entity.getHeaders().add(header);
+            }
+        }
+
+        // Update params
+        entity.getParams().clear();
+        if (data.getParams() != null) {
+            for (ParameterDTO paramDTO : data.getParams()) {
+                ParameterEntity param = new ParameterEntity();
+                param.setKey(paramDTO.getKey());
+                param.setValue(paramDTO.getValue());
+                param.setDescription(paramDTO.getDescription());
+                param.setEnabled(paramDTO.isEnabled());
+                param.setRequest(entity);
+                entity.getParams().add(param);
+            }
+        }
+    }
+
+    private void updateFolderRequestCount(String folderId) {
+        if (folderId != null) {
+            int count = requestRepository.countByFolderId(folderId);
+            folderRepository.findById(folderId).ifPresent(folder -> {
+                folder.setRequestCount(count);
+                folderRepository.save(folder);
+            });
+        }
+    }
 
     private VariableDTO createVariable(String id, String key, String value, String type, boolean enabled) {
         VariableDTO variable = new VariableDTO();
@@ -875,54 +915,11 @@ public class CollectionsService {
         return header;
     }
 
-    // ========== OTHER METHODS ==========
-
-    private void preloadCollectionsCache() {
-        try {
-            log.info("Preloading collections cache with static data");
-
-            // Preload collections list
-            CollectionsListResponseDTO collections = generateStaticCollectionsList("admin");
-            collectionsCache.put("collections_list_admin", new CollectionsCache(collections, System.currentTimeMillis()));
-
-            // Preload collectionEntity details
-            CollectionDetailsResponseDTO ecommerceDetails = generateEcommerceCollectionDetails();
-            collectionsCache.put("collection_details_admin_col-1",
-                    new CollectionsCache(ecommerceDetails, System.currentTimeMillis()));
-
-            CollectionDetailsResponseDTO socialMediaDetails = generateSocialMediaCollectionDetails();
-            collectionsCache.put("collection_details_admin_col-2",
-                    new CollectionsCache(socialMediaDetails, System.currentTimeMillis()));
-
-            // Preload requestEntity details
-            RequestDetailsResponseDTO loginRequest = getLoginRequestDetails();
-            collectionsCache.put("request_details_admin_col-1_req-1",
-                    new CollectionsCache(loginRequest, System.currentTimeMillis()));
-
-            log.info("Collections cache preloaded with {} entries", collectionsCache.size());
-
-        } catch (Exception e) {
-            log.warn("Failed to preload collections cache: {}", e.getMessage());
-        }
-    }
-
-    private boolean isCacheExpired(CollectionsCache cache) {
-        return (System.currentTimeMillis() - cache.getTimestamp()) > CACHE_TTL_MS;
-    }
-
-    private void clearCollectionCache(String performedBy, String collectionId) {
-        collectionsCache.keySet().removeIf(key ->
-                key.contains(performedBy) && key.contains(collectionId)
-        );
-    }
-
-    private void clearUserCollectionsCache(String performedBy) {
-        collectionsCache.keySet().removeIf(key -> key.contains("collections_list_" + performedBy));
-    }
+    // ========== EXECUTION AND CODE SNIPPET METHODS ==========
 
     private ExecuteRequestResponseDTO executeSampleRequest(ExecuteRequestDTO requestDto) {
         try {
-            // Generate sample response based on requestEntity
+            // Generate sample response based on request
             String method = requestDto.getMethod();
             String statusCode = method.equals("GET") ? "200" : method.equals("POST") ? "201" : "200";
             String statusText = statusCode.equals("200") ? "OK" : statusCode.equals("201") ? "Created" : "OK";
@@ -965,7 +962,7 @@ public class CollectionsService {
             } else {
                 responseBody = "{\n" +
                         "  \"success\": true,\n" +
-                        "  \"message\": \"RequestEntity processed successfully\",\n" +
+                        "  \"message\": \"Request processed successfully\",\n" +
                         "  \"timestamp\": \"" + LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) + "\",\n" +
                         "  \"endpoint\": \"" + requestDto.getUrl() + "\",\n" +
                         "  \"method\": \"" + method + "\"\n" +
@@ -975,7 +972,7 @@ public class CollectionsService {
             long timeMs = (long) (Math.random() * 200) + 100;
             long sizeBytes = responseBody.getBytes().length;
 
-            // Generate headerEntities
+            // Generate headers
             List<HeaderDTO> headers = new ArrayList<>();
             headers.add(createHeader("res-header-1", "Content-Type", "application/json", true, ""));
             headers.add(createHeader("res-header-2", "X-RateLimit-Limit", "1000", true, ""));
@@ -993,36 +990,9 @@ public class CollectionsService {
             );
 
         } catch (Exception e) {
-            return new ExecuteRequestResponseDTO(
-                    "",
-                    500,
-                    "Error executing requestEntity: " + e.getMessage(),
-                    Collections.emptyList(),
-                    0L,
-                    0L
-            );
+            log.error("Error executing sample request: {}", e.getMessage());
+            throw new RuntimeException("Failed to execute request: " + e.getMessage(), e);
         }
-    }
-
-    private SaveRequestResponseDTO saveSampleRequest(SaveRequestDTO requestDto) {
-        return new SaveRequestResponseDTO(
-                "req-" + System.currentTimeMillis(),
-                "RequestEntity saved successfully"
-        );
-    }
-
-    private CreateCollectionResponseDTO createSampleCollection(CreateCollectionDTO collectionDto) {
-        return new CreateCollectionResponseDTO(
-                "col-" + System.currentTimeMillis(),
-                "CollectionEntity created successfully"
-        );
-    }
-
-    private ImportResponseDTO importSampleCollection(ImportRequestDTO importRequest) {
-        return new ImportResponseDTO(
-                "col-import-" + System.currentTimeMillis(),
-                "CollectionEntity imported successfully from " + importRequest.getSource()
-        );
     }
 
     private CodeSnippetResponseDTO generateSampleCodeSnippet(CodeSnippetRequestDTO snippetRequest) {
@@ -1059,7 +1029,6 @@ public class CollectionsService {
         return new CodeSnippetResponseDTO(code, language, "Code snippet generated successfully");
     }
 
-    // Code snippet generators (same as before but using the static data)
     private String generateCurlSnippet(CodeSnippetRequestDTO request) {
         StringBuilder curl = new StringBuilder();
         curl.append("curl -X ").append(request.getMethod()).append(" \\\n");
@@ -1089,7 +1058,7 @@ public class CollectionsService {
         js.append("  method: \"").append(request.getMethod()).append("\",\n");
 
         if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
-            js.append("  headerEntities: {\n");
+            js.append("  headers: {\n");
             for (int i = 0; i < request.getHeaders().size(); i++) {
                 HeaderDTO header = request.getHeaders().get(i);
                 if (header.isEnabled()) {
@@ -1102,7 +1071,7 @@ public class CollectionsService {
 
         if (request.getBody() != null && !request.getBody().trim().isEmpty() &&
                 !request.getMethod().equals("GET")) {
-            js.append("  body: ").append(request.getBody()).append("\n");
+            js.append("  body: JSON.stringify(").append(request.getBody()).append(")\n");
         }
 
         js.append("})\n");
@@ -1115,10 +1084,10 @@ public class CollectionsService {
 
     private String generatePythonSnippet(CodeSnippetRequestDTO request) {
         StringBuilder python = new StringBuilder();
-        python.append("import requestEntities\n\n");
+        python.append("import requests\n\n");
 
         if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
-            python.append("headerEntities = {\n");
+            python.append("headers = {\n");
             for (HeaderDTO header : request.getHeaders()) {
                 if (header.isEnabled()) {
                     python.append("    \"").append(header.getKey()).append("\": \"").append(header.getValue()).append("\",\n");
@@ -1126,17 +1095,17 @@ public class CollectionsService {
             }
             python.append("}\n\n");
         } else {
-            python.append("headerEntities = {}\n\n");
+            python.append("headers = {}\n\n");
         }
 
         if (request.getBody() != null && !request.getBody().trim().isEmpty() &&
                 !request.getMethod().equals("GET")) {
             python.append("data = ").append(request.getBody()).append("\n\n");
-            python.append("response = requestEntities.").append(request.getMethod().toLowerCase());
-            python.append("(\"").append(request.getUrl()).append("\", json=data, headerEntities=headerEntities)\n");
+            python.append("response = requests.").append(request.getMethod().toLowerCase());
+            python.append("(\"").append(request.getUrl()).append("\", json=data, headers=headers)\n");
         } else {
-            python.append("response = requestEntities.").append(request.getMethod().toLowerCase());
-            python.append("(\"").append(request.getUrl()).append("\", headerEntities=headerEntities)\n");
+            python.append("response = requests.").append(request.getMethod().toLowerCase());
+            python.append("(\"").append(request.getUrl()).append("\", headers=headers)\n");
         }
 
         python.append("print(response.json())");
@@ -1197,13 +1166,13 @@ public class CollectionsService {
         node.append("const https = require('https');\n\n");
 
         node.append("const options = {\n");
-        node.append("  hostname: 'api.example.com',\n");
+        node.append("  hostname: '").append(extractHostname(request.getUrl())).append("',\n");
         node.append("  port: 443,\n");
-        node.append("  path: '/api/v1/endpoint',\n");
+        node.append("  path: '").append(extractPath(request.getUrl())).append("',\n");
         node.append("  method: '").append(request.getMethod()).append("',\n");
 
         if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
-            node.append("  headerEntities: {\n");
+            node.append("  headers: {\n");
             for (int i = 0; i < request.getHeaders().size(); i++) {
                 HeaderDTO header = request.getHeaders().get(i);
                 if (header.isEnabled()) {
@@ -1216,7 +1185,7 @@ public class CollectionsService {
 
         node.append("};\n\n");
 
-        node.append("const req = https.requestEntity(options, (res) => {\n");
+        node.append("const req = https.request(options, (res) => {\n");
         node.append("  let data = '';\n");
         node.append("  res.on('data', (chunk) => {\n");
         node.append("    data += chunk;\n");
@@ -1232,7 +1201,7 @@ public class CollectionsService {
 
         if (request.getBody() != null && !request.getBody().trim().isEmpty() &&
                 !request.getMethod().equals("GET")) {
-            node.append("req.write(").append(request.getBody()).append(");\n");
+            node.append("req.write(JSON.stringify(").append(request.getBody()).append("));\n");
         }
 
         node.append("req.end();");
@@ -1250,14 +1219,14 @@ public class CollectionsService {
         php.append("curl_setopt($ch, CURLOPT_CUSTOMREQUEST, \"").append(request.getMethod()).append("\");\n\n");
 
         if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
-            php.append("$headerEntities = [\n");
+            php.append("$headers = [\n");
             for (HeaderDTO header : request.getHeaders()) {
                 if (header.isEnabled()) {
                     php.append("    \"").append(header.getKey()).append(": ").append(header.getValue()).append("\",\n");
                 }
             }
             php.append("];\n");
-            php.append("curl_setopt($ch, CURLOPT_HTTPHEADER, $headerEntities);\n\n");
+            php.append("curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);\n\n");
         }
 
         if (request.getBody() != null && !request.getBody().trim().isEmpty() &&
@@ -1284,110 +1253,46 @@ public class CollectionsService {
         ruby.append("http = Net::HTTP.new(uri.host, uri.port)\n");
         ruby.append("http.use_ssl = true if uri.scheme == 'https'\n\n");
 
-        ruby.append("requestEntity = Net::HTTP::").append(request.getMethod().charAt(0) + request.getMethod().substring(1).toLowerCase());
+        ruby.append("request = Net::HTTP::").append(request.getMethod().charAt(0) + request.getMethod().substring(1).toLowerCase());
         ruby.append(".new(uri.request_uri)\n\n");
 
         if (request.getHeaders() != null) {
             for (HeaderDTO header : request.getHeaders()) {
                 if (header.isEnabled()) {
-                    ruby.append("requestEntity[\"").append(header.getKey()).append("\"] = \"").append(header.getValue()).append("\"\n");
+                    ruby.append("request[\"").append(header.getKey()).append("\"] = \"").append(header.getValue()).append("\"\n");
                 }
             }
         }
 
         if (request.getBody() != null && !request.getBody().trim().isEmpty() &&
                 !request.getMethod().equals("GET")) {
-            ruby.append("requestEntity.body = ").append(request.getBody()).append(".to_json\n\n");
+            ruby.append("request.body = ").append(request.getBody()).append(".to_json\n\n");
         }
 
-        ruby.append("response = http.requestEntity(requestEntity)\n");
+        ruby.append("response = http.request(request)\n");
         ruby.append("puts response.body");
 
         return ruby.toString();
     }
 
-    // ========== FALLBACK METHODS ==========
-
-    private CollectionsListResponseDTO getFallbackCollectionsList() {
-        List<CollectionDTO> collections = new ArrayList<>();
-
-        CollectionDTO collection = new CollectionDTO();
-        collection.setId("col-1");
-        collection.setName("E-Commerce API");
-        collection.setDescription("Fallback collectionEntity");
-        collection.setOwner("admin");
-        collection.setFavorite(true);
-        collection.setCreatedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-        collection.setUpdatedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-        collection.setRequestsCount(5);
-        collection.setFolderCount(2);
-        collection.setTags(Arrays.asList("api", "fallback"));
-
-        collections.add(collection);
-
-        return new CollectionsListResponseDTO(collections, 1);
-    }
-
-    private CollectionDetailsResponseDTO getFallbackCollectionDetails(String collectionId) {
-        CollectionDetailsResponseDTO details = new CollectionDetailsResponseDTO();
-        details.setCollectionId(collectionId);
-        details.setName("Fallback CollectionEntity");
-        details.setDescription("Fallback collectionEntity details");
-        details.setCreatedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-        details.setUpdatedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-        details.setTotalRequests(3);
-        details.setTotalFolders(1);
-        details.setFavorite(false);
-        details.setOwner("admin");
-
-        List<FolderDTO> folders = new ArrayList<>();
-        FolderDTO folder = new FolderDTO();
-        folder.setId("folderEntity-1");
-        folder.setName("Fallback FolderEntity");
-        folder.setDescription("Fallback folderEntity");
-        folder.setRequestCount(2);
-        folder.setExpanded(true);
-        folders.add(folder);
-
-        details.setFolders(folders);
-
-        return details;
-    }
-
-    private RequestDetailsResponseDTO getFallbackRequestDetails(String requestId) {
-        RequestDetailsResponseDTO details = new RequestDetailsResponseDTO();
-        details.setRequestId(requestId);
-        details.setName("Fallback RequestEntity");
-        details.setMethod("GET");
-        details.setUrl("{{base_url}}/api/v1/fallback");
-        details.setDescription("Fallback requestEntity details");
-        details.setAuthType("noauth");
-        details.setCreatedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-        details.setUpdatedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-        details.setCollectionId("col-1");
-        details.setFolderId("folderEntity-1");
-        details.setSaved(true);
-
-        return details;
-    }
-
-    // ========== INNER CLASSES ==========
-
-    private static class CollectionsCache {
-        private final Object data;
-        private final long timestamp;
-
-        public CollectionsCache(Object data, long timestamp) {
-            this.data = data;
-            this.timestamp = timestamp;
+    private String extractHostname(String url) {
+        try {
+            String[] parts = url.replace("http://", "").replace("https://", "").split("/");
+            return parts[0];
+        } catch (Exception e) {
+            return "api.example.com";
         }
+    }
 
-        public Object getData() {
-            return data;
-        }
-
-        public long getTimestamp() {
-            return timestamp;
+    private String extractPath(String url) {
+        try {
+            String[] parts = url.replace("http://", "").replace("https://", "").split("/");
+            if (parts.length > 1) {
+                return "/" + String.join("/", Arrays.copyOfRange(parts, 1, parts.length));
+            }
+            return "/";
+        } catch (Exception e) {
+            return "/api/v1/endpoint";
         }
     }
 }

@@ -525,49 +525,6 @@ public class CollectionsController {
     }
 
     // ============================================================
-    // 10. CLEAR COLLECTIONS CACHE
-    // ============================================================
-    @PostMapping("/cache/clear")
-    @Operation(summary = "Clear collections cache", description = "Clear cache for collections data")
-    public ResponseEntity<?> clearCollectionsCache(HttpServletRequest req) {
-
-        String requestId = UUID.randomUUID().toString();
-
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "clearing collections cache");
-        if (authValidation != null) {
-            return authValidation;
-        }
-
-        try {
-            String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
-                    ", Clearing collections cache for user: " + performedBy);
-
-            collectionsService.clearCollectionsCache(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Collections cache cleared successfully");
-            response.put("requestId", requestId);
-
-            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
-                    ", Collections cache cleared successfully");
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
-                    ", Error clearing collections cache: " + e.getMessage());
-
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while clearing collections cache: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-        }
-    }
-
-    // ============================================================
     // 11. DELETE COLLECTION
     // ============================================================
     @DeleteMapping("/{collectionId}")

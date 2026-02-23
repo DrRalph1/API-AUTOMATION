@@ -11,8 +11,8 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class DashboardApisResponse {
-    private List<ApiDto> apis;
+public class DashboardApisResponseDTO {
+    private List<ApiDTO> apis;
     private int total;
     private int active;
     private int deprecated;
@@ -23,7 +23,7 @@ public class DashboardApisResponse {
     private String lastUpdated;
 
     // Constructor for easy instantiation
-    public DashboardApisResponse(List<ApiDto> apis) {
+    public DashboardApisResponseDTO(List<ApiDTO> apis) {
         this.apis = apis;
         this.total = apis.size();
         this.active = (int) apis.stream().filter(a -> "active".equals(a.getStatus())).count();
@@ -42,15 +42,15 @@ public class DashboardApisResponse {
                 .orElse(0.0);
         this.avgLatency = String.format("%.0fms", avgLatency);
 
-        this.totalEndpoints = apis.stream().mapToInt(ApiDto::getEndpointCount).sum();
-        this.totalCalls = apis.stream().mapToInt(ApiDto::getCalls).sum();
+        this.totalEndpoints = apis.stream().mapToInt(ApiDTO::getEndpointCount).sum();
+        this.totalCalls = apis.stream().mapToInt(ApiDTO::getCalls).sum();
         this.lastUpdated = java.time.LocalDateTime.now().toString();
     }
 
     // Constructor with all parameters
-    public DashboardApisResponse(List<ApiDto> apis, int total, int active, int deprecated,
-                                 String avgSuccessRate, String avgLatency, int totalEndpoints,
-                                 int totalCalls) {
+    public DashboardApisResponseDTO(List<ApiDTO> apis, int total, int active, int deprecated,
+                                    String avgSuccessRate, String avgLatency, int totalEndpoints,
+                                    int totalCalls) {
         this.apis = apis;
         this.total = total;
         this.active = active;

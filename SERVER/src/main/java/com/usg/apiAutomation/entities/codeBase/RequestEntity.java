@@ -15,7 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-@Entity(name = "RequestEntity")
+@Entity(name = "RequestEntityCodeBase")
 @Table(name = "tb_cbase_requests",
         indexes = {
                 @Index(name = "idx_requests_collection", columnList = "collection_id"),

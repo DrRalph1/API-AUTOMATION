@@ -9,17 +9,17 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
-@Repository
+@Repository("EnvironmentRepositoryDocumentation")
 public interface EnvironmentRepository extends JpaRepository<EnvironmentEntity, String> {
 
     List<EnvironmentEntity> findByCreatedBy(String createdBy);
 
     Optional<EnvironmentEntity> findByNameAndCreatedBy(String name, String createdBy);
 
-    @Query("SELECT e FROM EnvironmentEntity e WHERE e.active = true AND e.createdBy = :createdBy")
+    @Query("SELECT e FROM EnvironmentRepositoryEntityDocumentation e WHERE e.active = true AND e.createdBy = :createdBy")
     List<EnvironmentEntity> findActiveEnvironmentsByUser(@Param("createdBy") String createdBy);
 
-    @Query("SELECT e FROM EnvironmentEntity e WHERE e.createdBy = :createdBy ORDER BY e.lastUsed DESC")
+    @Query("SELECT e FROM EnvironmentRepositoryEntityDocumentation e WHERE e.createdBy = :createdBy ORDER BY e.lastUsed DESC")
     List<EnvironmentEntity> findRecentlyUsedByUser(@Param("createdBy") String createdBy);
 
     boolean existsByNameAndCreatedBy(String name, String createdBy);

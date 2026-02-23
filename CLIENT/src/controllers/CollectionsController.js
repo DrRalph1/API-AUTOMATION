@@ -521,23 +521,31 @@ export const extractCodeSnippetResults = (response) => {
  * @returns {Array} Environments list
  */
 export const extractEnvironments = (response) => {
-  if (!response || !response.data) return [];
+  console.log('🔍 [Extract] Extracting environments from:', response);
   
-  const data = response.data;
-  
-  if (Array.isArray(data)) {
-    return data;
+  if (!response) {
+    console.warn('⚠️ [Extract] No response provided');
+    return null;
   }
   
-  if (data.environments && Array.isArray(data.environments)) {
-    return data.environments;
+  // Handle different response structures
+  if (response.data && response.data.environments) {
+    console.log('📊 [Extract] Found environments in data.environments:', response.data.environments);
+    return response.data;
   }
   
-  if (data.data && Array.isArray(data.data)) {
-    return data.data;
+  if (response.environments) {
+    console.log('📊 [Extract] Found environments in response.environments:', response.environments);
+    return response;
   }
   
-  return [];
+  if (Array.isArray(response)) {
+    console.log('📊 [Extract] Response is array:', response);
+    return { environments: response };
+  }
+  
+  console.warn('⚠️ [Extract] No environments found in response');
+  return null;
 };
 
 /**

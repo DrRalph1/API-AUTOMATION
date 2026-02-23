@@ -9,6 +9,7 @@ public class RequestDTO {
     private String name;
     private String method;
     private String url;
+    private String authType;
     private String description;
     private boolean isEditing;
     private String status;
