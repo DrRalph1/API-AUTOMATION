@@ -16,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -32,7 +33,7 @@ public class OracleSchemaController {
     private final JwtHelper jwtHelper;
 
     // ============================================================
-    // 1. TABLE ENDPOINTS
+    // 1. TABLE ENDPOINTS - EXISTING METHODS
     // ============================================================
 
     @GetMapping("/tables")
@@ -410,7 +411,7 @@ public class OracleSchemaController {
     }
 
     // ============================================================
-    // 2. VIEW ENDPOINTS
+    // 2. VIEW ENDPOINTS - EXISTING METHODS
     // ============================================================
 
     @GetMapping("/views")
@@ -556,7 +557,7 @@ public class OracleSchemaController {
     }
 
     // ============================================================
-    // 3. PROCEDURE ENDPOINTS
+    // 3. PROCEDURE ENDPOINTS - EXISTING METHODS
     // ============================================================
 
     @GetMapping("/procedures")
@@ -702,7 +703,7 @@ public class OracleSchemaController {
     }
 
     // ============================================================
-    // 4. FUNCTION ENDPOINTS
+    // 4. FUNCTION ENDPOINTS - EXISTING METHODS
     // ============================================================
 
     @GetMapping("/functions")
@@ -848,7 +849,7 @@ public class OracleSchemaController {
     }
 
     // ============================================================
-    // 5. PACKAGE ENDPOINTS
+    // 5. PACKAGE ENDPOINTS - EXISTING METHODS
     // ============================================================
 
     @GetMapping("/packages")
@@ -994,7 +995,7 @@ public class OracleSchemaController {
     }
 
     // ============================================================
-    // 6. TRIGGER ENDPOINTS
+    // 6. TRIGGER ENDPOINTS - EXISTING METHODS
     // ============================================================
 
     @GetMapping("/triggers")
@@ -1140,7 +1141,7 @@ public class OracleSchemaController {
     }
 
     // ============================================================
-    // 7. SYNONYM ENDPOINTS
+    // 7. SYNONYM ENDPOINTS - EXISTING METHODS
     // ============================================================
 
     @GetMapping("/synonyms")
@@ -1263,7 +1264,7 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting details for Oracle synonym: " + synonymName);
 
-            Map<String, Object> details = oracleSchemaService.getSynonymDetails(requestId, req, performedBy, synonymName);
+            Map<String, Object> details = oracleSchemaService.getSynonymDetailsEnhanced(requestId, req, performedBy, synonymName);
 
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
@@ -1286,7 +1287,7 @@ public class OracleSchemaController {
     }
 
     // ============================================================
-    // 8. SEQUENCE ENDPOINTS
+    // 8. SEQUENCE ENDPOINTS - EXISTING METHODS
     // ============================================================
 
     @GetMapping("/sequences")
@@ -1432,7 +1433,7 @@ public class OracleSchemaController {
     }
 
     // ============================================================
-    // 9. TYPE ENDPOINTS
+    // 9. TYPE ENDPOINTS - EXISTING METHODS
     // ============================================================
 
     @GetMapping("/types")
@@ -1578,7 +1579,7 @@ public class OracleSchemaController {
     }
 
     // ============================================================
-    // 10. DATABASE LINK ENDPOINTS
+    // 10. DATABASE LINK ENDPOINTS - EXISTING METHODS
     // ============================================================
 
     @GetMapping("/db-links")
@@ -1677,7 +1678,7 @@ public class OracleSchemaController {
     }
 
     // ============================================================
-    // 11. GENERAL OBJECT ENDPOINTS
+    // 11. GENERAL OBJECT ENDPOINTS - EXISTING METHODS
     // ============================================================
 
     @GetMapping("/objects")
@@ -1876,7 +1877,7 @@ public class OracleSchemaController {
     }
 
     // ============================================================
-    // 12. DIAGNOSTICS
+    // 12. DIAGNOSTICS - EXISTING METHODS
     // ============================================================
 
     @GetMapping("/diagnose")
@@ -1927,52 +1928,670 @@ public class OracleSchemaController {
         }
     }
 
+
     // ============================================================
-    // 13. HEALTH CHECK
+    // 14. NEW FRONTEND-FRIENDLY ENDPOINTS
     // ============================================================
 
-    @GetMapping("/health")
-    @Operation(summary = "Oracle schema browser health check",
-            description = "Checks the health status of the Oracle schema browser service",
+    @GetMapping("/frontend/tables")
+    @Operation(summary = "Get all Oracle tables (Frontend format)",
+            description = "Retrieves all tables from the current Oracle schema in a frontend-friendly format",
             parameters = {
                     @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
                             required = true, in = ParameterIn.HEADER)
             })
-    public ResponseEntity<?> healthCheck(HttpServletRequest req) {
+    public ResponseEntity<?> getAllTablesForFrontend(HttpServletRequest req) {
 
         String requestId = UUID.randomUUID().toString();
 
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting Oracle tables for frontend");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting Oracle tables for frontend");
+            return authValidation;
+        }
+
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting all Oracle tables for frontend, user: " + performedBy);
 
-            Map<String, Object> healthData = new HashMap<>();
-            healthData.put("status", "UP");
-            healthData.put("timestamp", java.time.LocalDateTime.now().toString());
-            healthData.put("service", "OracleSchemaBrowserService");
-            healthData.put("database", "Oracle");
-            healthData.put("version", "1.0.0");
-            healthData.put("checkedBy", performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle schema browser service is healthy");
-            response.put("data", healthData);
-            response.put("requestId", requestId);
+            Map<String, Object> result = oracleSchemaService.getAllTablesForFrontend(requestId, req, performedBy);
 
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
-                    ", Health check passed for user: " + performedBy);
+                    ", Oracle tables for frontend retrieved successfully, count: " + result.get("totalCount"));
 
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
-                    ", Health check failed: " + e.getMessage());
+                    ", Error getting Oracle tables for frontend: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 503);
-            errorResponse.put("message", "Oracle schema browser service is unhealthy: " + e.getMessage());
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting Oracle tables for frontend: " + e.getMessage());
+            errorResponse.put("data", null);
             errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(errorResponse);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/tables/{tableName}/details")
+    @Operation(summary = "Get table details (Frontend format)",
+            description = "Retrieves detailed information about a specific Oracle table in a frontend-friendly format",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "tableName", description = "Table name",
+                            required = true, in = ParameterIn.PATH)
+            })
+    public ResponseEntity<?> getTableDetailsForFrontend(
+            @PathVariable String tableName,
+            HttpServletRequest req) {
+
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting Oracle table details for frontend");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting details for Oracle table for frontend: " + tableName);
+
+            Map<String, Object> result = oracleSchemaService.getTableDetailsForFrontend(requestId, req, performedBy, tableName);
+
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Oracle table details for frontend retrieved successfully for: " + tableName);
+
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting details for Oracle table for frontend " + tableName + ": " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting table details for frontend: " + e.getMessage());
+            errorResponse.put("data", null);
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/tables/{tableName}/data")
+    @Operation(summary = "Get table data with pagination",
+            description = "Retrieves paginated data from a specific Oracle table",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "tableName", description = "Table name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "page", description = "Page number (0-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of rows per page",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "sortColumn", description = "Column to sort by",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "sortDirection", description = "Sort direction (ASC/DESC)",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getTableData(
+            @PathVariable String tableName,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int pageSize,
+            @RequestParam(required = false) String sortColumn,
+            @RequestParam(defaultValue = "ASC") String sortDirection,
+            HttpServletRequest req) {
+
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting Oracle table data");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting data for Oracle table: " + tableName + ", page: " + page + ", pageSize: " + pageSize);
+
+            Map<String, Object> result = oracleSchemaService.getTableData(requestId, req, performedBy,
+                    tableName, page, pageSize, sortColumn, sortDirection);
+
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Oracle table data retrieved successfully for: " + tableName);
+
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting data for Oracle table " + tableName + ": " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting table data: " + e.getMessage());
+            errorResponse.put("data", Map.of("rows", new ArrayList<>(), "columns", new ArrayList<>()));
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/views")
+    @Operation(summary = "Get all Oracle views (Frontend format)",
+            description = "Retrieves all views from the current Oracle schema in a frontend-friendly format",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER)
+            })
+    public ResponseEntity<?> getAllViewsForFrontend(HttpServletRequest req) {
+
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting Oracle views for frontend");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting Oracle views for frontend");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting all Oracle views for frontend, user: " + performedBy);
+
+            Map<String, Object> result = oracleSchemaService.getAllViewsForFrontend(requestId, req, performedBy);
+
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Oracle views for frontend retrieved successfully, count: " + result.get("totalCount"));
+
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting Oracle views for frontend: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting Oracle views for frontend: " + e.getMessage());
+            errorResponse.put("data", null);
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/procedures")
+    @Operation(summary = "Get all Oracle procedures (Frontend format)",
+            description = "Retrieves all procedures from the current Oracle schema in a frontend-friendly format",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER)
+            })
+    public ResponseEntity<?> getAllProceduresForFrontend(HttpServletRequest req) {
+
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting Oracle procedures for frontend");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting Oracle procedures for frontend");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting all Oracle procedures for frontend, user: " + performedBy);
+
+            Map<String, Object> result = oracleSchemaService.getAllProceduresForFrontend(requestId, req, performedBy);
+
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Oracle procedures for frontend retrieved successfully, count: " + result.get("totalCount"));
+
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting Oracle procedures for frontend: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting Oracle procedures for frontend: " + e.getMessage());
+            errorResponse.put("data", null);
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/functions")
+    @Operation(summary = "Get all Oracle functions (Frontend format)",
+            description = "Retrieves all functions from the current Oracle schema in a frontend-friendly format",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER)
+            })
+    public ResponseEntity<?> getAllFunctionsForFrontend(HttpServletRequest req) {
+
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting Oracle functions for frontend");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting Oracle functions for frontend");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting all Oracle functions for frontend, user: " + performedBy);
+
+            Map<String, Object> result = oracleSchemaService.getAllFunctionsForFrontend(requestId, req, performedBy);
+
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Oracle functions for frontend retrieved successfully, count: " + result.get("totalCount"));
+
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting Oracle functions for frontend: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting Oracle functions for frontend: " + e.getMessage());
+            errorResponse.put("data", null);
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/packages")
+    @Operation(summary = "Get all Oracle packages (Frontend format)",
+            description = "Retrieves all packages from the current Oracle schema in a frontend-friendly format",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER)
+            })
+    public ResponseEntity<?> getAllPackagesForFrontend(HttpServletRequest req) {
+
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting Oracle packages for frontend");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting Oracle packages for frontend");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting all Oracle packages for frontend, user: " + performedBy);
+
+            Map<String, Object> result = oracleSchemaService.getAllPackagesForFrontend(requestId, req, performedBy);
+
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Oracle packages for frontend retrieved successfully, count: " + result.get("totalCount"));
+
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting Oracle packages for frontend: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting Oracle packages for frontend: " + e.getMessage());
+            errorResponse.put("data", null);
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/sequences")
+    @Operation(summary = "Get all Oracle sequences (Frontend format)",
+            description = "Retrieves all sequences from the current Oracle schema in a frontend-friendly format",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER)
+            })
+    public ResponseEntity<?> getAllSequencesForFrontend(HttpServletRequest req) {
+
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting Oracle sequences for frontend");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting Oracle sequences for frontend");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting all Oracle sequences for frontend, user: " + performedBy);
+
+            Map<String, Object> result = oracleSchemaService.getAllSequencesForFrontend(requestId, req, performedBy);
+
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Oracle sequences for frontend retrieved successfully, count: " + result.get("totalCount"));
+
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting Oracle sequences for frontend: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting Oracle sequences for frontend: " + e.getMessage());
+            errorResponse.put("data", null);
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/synonyms")
+    @Operation(summary = "Get all Oracle synonyms (Frontend format)",
+            description = "Retrieves all synonyms from the current Oracle schema in a frontend-friendly format",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER)
+            })
+    public ResponseEntity<?> getAllSynonymsForFrontend(HttpServletRequest req) {
+
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting Oracle synonyms for frontend");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting Oracle synonyms for frontend");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting all Oracle synonyms for frontend, user: " + performedBy);
+
+            Map<String, Object> result = oracleSchemaService.getAllSynonymsForFrontend(requestId, req, performedBy);
+
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Oracle synonyms for frontend retrieved successfully, count: " + result.get("totalCount"));
+
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting Oracle synonyms for frontend: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting Oracle synonyms for frontend: " + e.getMessage());
+            errorResponse.put("data", null);
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/types")
+    @Operation(summary = "Get all Oracle types (Frontend format)",
+            description = "Retrieves all types from the current Oracle schema in a frontend-friendly format",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER)
+            })
+    public ResponseEntity<?> getAllTypesForFrontend(HttpServletRequest req) {
+
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting Oracle types for frontend");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting Oracle types for frontend");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting all Oracle types for frontend, user: " + performedBy);
+
+            Map<String, Object> result = oracleSchemaService.getAllTypesForFrontend(requestId, req, performedBy);
+
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Oracle types for frontend retrieved successfully, count: " + result.get("totalCount"));
+
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting Oracle types for frontend: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting Oracle types for frontend: " + e.getMessage());
+            errorResponse.put("data", null);
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/triggers")
+    @Operation(summary = "Get all Oracle triggers (Frontend format)",
+            description = "Retrieves all triggers from the current Oracle schema in a frontend-friendly format",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER)
+            })
+    public ResponseEntity<?> getAllTriggersForFrontend(HttpServletRequest req) {
+
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting Oracle triggers for frontend");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting Oracle triggers for frontend");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting all Oracle triggers for frontend, user: " + performedBy);
+
+            Map<String, Object> result = oracleSchemaService.getAllTriggersForFrontend(requestId, req, performedBy);
+
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Oracle triggers for frontend retrieved successfully, count: " + result.get("totalCount"));
+
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting Oracle triggers for frontend: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting Oracle triggers for frontend: " + e.getMessage());
+            errorResponse.put("data", null);
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/search")
+    @Operation(summary = "Search Oracle objects",
+            description = "Searches for Oracle objects by name pattern",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "query", description = "Search query",
+                            required = true, in = ParameterIn.QUERY),
+                    @Parameter(name = "type", description = "Object type to search (optional)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "maxResults", description = "Maximum number of results (default: 100)",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> searchObjects(
+            @RequestParam String query,
+            @RequestParam(required = false) String type,
+            @RequestParam(defaultValue = "100") int maxResults,
+            HttpServletRequest req) {
+
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "searching Oracle objects");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for searching Oracle objects");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Searching Oracle objects with query: " + query + ", type: " + type);
+
+            Map<String, Object> result = oracleSchemaService.searchObjectsForFrontend(
+                    requestId, req, performedBy, query, type, maxResults);
+
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Oracle objects search completed, found: " +
+                    ((Map<String, Object>)result.get("data")).get("totalCount"));
+
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error searching Oracle objects: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while searching Oracle objects: " + e.getMessage());
+            errorResponse.put("data", Map.of("results", new ArrayList<>(), "totalCount", 0));
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/{objectType}s/{objectName}/ddl")
+    @Operation(summary = "Get object DDL",
+            description = "Retrieves the DDL for a specific Oracle object",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "objectType", description = "Object type (table, view, procedure, function, package, trigger, synonym, sequence, type)",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "objectName", description = "Object name",
+                            required = true, in = ParameterIn.PATH)
+            })
+    public ResponseEntity<?> getObjectDDL(
+            @PathVariable String objectType,
+            @PathVariable String objectName,
+            HttpServletRequest req) {
+
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting Oracle object DDL");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting Oracle object DDL");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting DDL for Oracle " + objectType + ": " + objectName);
+
+            Map<String, Object> result = oracleSchemaService.getObjectDDL(
+                    requestId, req, performedBy, objectType, objectName);
+
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", DDL retrieved successfully for " + objectType + ": " + objectName);
+
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting DDL for Oracle " + objectType + " " + objectName + ": " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting object DDL: " + e.getMessage());
+            errorResponse.put("data", "-- Error retrieving DDL: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @PostMapping("/execute")
+    @Operation(summary = "Execute SQL query",
+            description = "Executes a SQL query against the Oracle database",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER)
+            })
+    public ResponseEntity<?> executeQuery(
+            @RequestBody Map<String, Object> queryRequest,
+            HttpServletRequest req) {
+
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "executing Oracle query");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for executing Oracle query");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            String query = (String) queryRequest.get("query");
+            int timeoutSeconds = queryRequest.get("timeoutSeconds") != null ?
+                    (int) queryRequest.get("timeoutSeconds") : 30;
+            boolean readOnly = queryRequest.get("readOnly") != null ?
+                    (boolean) queryRequest.get("readOnly") : true;
+
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Executing query for user: " + performedBy);
+
+            Map<String, Object> result = oracleSchemaService.executeQuery(
+                    requestId, req, performedBy, query, timeoutSeconds, readOnly);
+
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Query executed successfully");
+
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error executing query: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while executing query: " + e.getMessage());
+            errorResponse.put("data", Map.of("rows", new ArrayList<>(), "columns", new ArrayList<>(), "rowCount", 0));
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 }

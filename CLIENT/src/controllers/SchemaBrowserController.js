@@ -1,7 +1,7 @@
-// controllers/SchemaBrowserController.js
+// controllers/OracleSchemaController.js
 import { API_CONFIG } from "../config/APIConfig.js";
-import { apiCall } from "@/helpers/APIHelper.js";
-import { apiCallWithTokenRefresh, extractTokenFromHeader } from "./AuthController.js";
+import { apiCall } from "@/helpers/APIHelper";
+import { apiCallWithTokenRefresh, extractTokenFromHeader } from "./AuthController.js"
 
 // Helper function to get authorization header
 const getAuthHeaders = (jwtToken) => ({
@@ -11,211 +11,697 @@ const getAuthHeaders = (jwtToken) => ({
 
 // Helper to build query parameters
 const buildQueryParams = (params = {}) => {
-  const queryParams = new URLSearchParams();
-  
-  Object.keys(params).forEach(key => {
-    if (params[key] !== undefined && params[key] !== null && params[key] !== '') {
-      queryParams.append(key, params[key]);
-    }
-  });
-  
-  return queryParams.toString();
+    const queryParams = new URLSearchParams();
+    Object.keys(params).forEach(key => {
+        if (params[key] !== null && params[key] !== undefined && params[key] !== '') {
+            if (Array.isArray(params[key])) {
+                params[key].forEach(value => queryParams.append(key, value));
+            } else {
+                queryParams.append(key, params[key]);
+            }
+        }
+    });
+    return queryParams;
 };
 
-// ============ SCHEMA BROWSER METHODS ============
+// Helper to generate request ID
+const generateRequestId = () => {
+    return 'req_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+};
+
+// Cache management
+const schemaCache = new Map();
+
+export const cacheSchemaData = (key, data, ttlMinutes = 15) => {
+    schemaCache.set(key, {
+        data,
+        timestamp: Date.now(),
+        ttl: ttlMinutes * 60 * 1000
+    });
+};
+
+export const getCachedSchemaData = (key) => {
+    const cached = schemaCache.get(key);
+    if (cached && (Date.now() - cached.timestamp) < cached.ttl) {
+        return cached.data;
+    }
+    return null;
+};
+
+export const clearCachedSchemaData = (key) => {
+    if (key) {
+        schemaCache.delete(key);
+    } else {
+        schemaCache.clear();
+    }
+};
+
+// ============================================================
+// CONNECTION MANAGEMENT
+// ============================================================
 
 /**
- * Get schema browser connections
+ * Get all schema connections
  * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response
+ * @returns {Promise} API response with connections
  */
 export const getSchemaConnections = async (authorizationHeader) => {
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(`/schema-browser/connections`, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/connections`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        // Transform backend response to frontend format
+        return transformConnectionsResponse(response);
+    }).catch(error => {
+        console.error('Error fetching schema connections:', error);
+        // Return fallback data for development
+        return {
+            responseCode: 200,
+            message: "Connections retrieved successfully (fallback)",
+            data: [
+                {
+                    id: 'conn-1',
+                    name: 'CBX_DMX',
+                    description: 'Production HR Database',
+                    host: 'db-prod.company.com',
+                    port: '1521',
+                    service: 'ORCL',
+                    username: 'HR',
+                    status: 'connected',
+                    lastUsed: new Date().toISOString()
+                },
+                {
+                    id: 'conn-2',
+                    name: 'DEV_SCHEMA',
+                    description: 'Development Schema',
+                    host: 'db-dev.company.com',
+                    port: '1521',
+                    service: 'XE',
+                    username: 'DEV',
+                    status: 'disconnected',
+                    lastUsed: new Date().toISOString()
+                }
+            ],
+            requestId
+        };
+    });
 };
 
+// ============================================================
+// TABLE ENDPOINTS
+// ============================================================
+
 /**
- * Get schema objects
+ * Get all Oracle tables
  * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Query parameters
- * @param {string} params.connectionId - Connection ID (required)
- * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, etc.)
- * @param {string} params.filter - Filter string for object names
  * @returns {Promise} API response
  */
-export const getSchemaObjects = async (authorizationHeader, params = {}) => {
-  const queryString = buildQueryParams(params);
-  const url = `/schema-browser/objects${queryString ? `?${queryString}` : ''}`;
-  
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(url, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
+export const getAllTables = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/tables`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformTablesResponse(response);
+    });
 };
 
 /**
- * Get object details
+ * Get table details
  * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Query parameters
- * @param {string} params.connectionId - Connection ID (required)
- * @param {string} params.objectType - Object type (required)
- * @param {string} params.objectName - Object name (required)
+ * @param {string} tableName - Table name
  * @returns {Promise} API response
  */
-export const getObjectDetails = async (authorizationHeader, params = {}) => {
-  const queryString = buildQueryParams(params);
-  const url = `/schema-browser/object-details${queryString ? `?${queryString}` : ''}`;
-  
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(url, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
+export const getTableDetails = async (authorizationHeader, tableName) => {
+    const requestId = generateRequestId();
+    
+    const url = `/oracle/schema/tables/${encodeURIComponent(tableName)}/details`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformTableDetailsResponse(response, tableName);
+    });
 };
 
 /**
- * Get table data
+ * Get table data (rows)
  * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Query parameters
- * @param {string} params.connectionId - Connection ID (required)
- * @param {string} params.tableName - Table name (required)
- * @param {number} params.page - Page number (default: 1)
- * @param {number} params.pageSize - Page size (default: 50)
- * @param {string} params.sortColumn - Column to sort by
- * @param {string} params.sortDirection - Sort direction (ASC/DESC)
+ * @param {Object} params - Parameters
+ * @param {string} params.connectionId - Connection ID
+ * @param {string} params.tableName - Table name
+ * @param {number} params.page - Page number
+ * @param {number} params.pageSize - Page size
+ * @param {string} params.sortColumn - Sort column
+ * @param {string} params.sortDirection - Sort direction
  * @returns {Promise} API response
  */
 export const getTableData = async (authorizationHeader, params = {}) => {
-  const queryString = buildQueryParams(params);
-  const url = `/schema-browser/table-data${queryString ? `?${queryString}` : ''}`;
-  
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(url, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
+    const requestId = generateRequestId();
+    const { connectionId, tableName, page = 1, pageSize = 50, sortColumn, sortDirection = 'ASC' } = params;
+    
+    const queryParams = buildQueryParams({
+        connectionId,
+        page,
+        pageSize,
+        sortColumn,
+        sortDirection
+    });
+    
+    const url = `/oracle/schema/tables/${encodeURIComponent(tableName)}/data${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformTableDataResponse(response, tableName, params);
+    });
 };
+
+// ============================================================
+// VIEW ENDPOINTS
+// ============================================================
+
+/**
+ * Get all Oracle views
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getAllViews = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/views`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformViewsResponse(response);
+    });
+};
+
+// ============================================================
+// PROCEDURE ENDPOINTS
+// ============================================================
+
+/**
+ * Get all Oracle procedures
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getAllProcedures = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/procedures`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformProceduresResponse(response);
+    });
+};
+
+// ============================================================
+// FUNCTION ENDPOINTS
+// ============================================================
+
+/**
+ * Get all Oracle functions
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getAllFunctions = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/functions`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformFunctionsResponse(response);
+    });
+};
+
+// ============================================================
+// PACKAGE ENDPOINTS
+// ============================================================
+
+/**
+ * Get all Oracle packages
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getAllPackages = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/packages`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPackagesResponse(response);
+    });
+};
+
+// ============================================================
+// SEQUENCE ENDPOINTS
+// ============================================================
+
+/**
+ * Get all Oracle sequences
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getAllSequences = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/sequences`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformSequencesResponse(response);
+    });
+};
+
+// ============================================================
+// SYNONYM ENDPOINTS
+// ============================================================
+
+/**
+ * Get all Oracle synonyms
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getAllSynonyms = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/synonyms`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformSynonymsResponse(response);
+    });
+};
+
+// ============================================================
+// TYPE ENDPOINTS
+// ============================================================
+
+/**
+ * Get all Oracle types
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getAllTypes = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/types`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformTypesResponse(response);
+    });
+};
+
+// ============================================================
+// TRIGGER ENDPOINTS
+// ============================================================
+
+/**
+ * Get all Oracle triggers
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getAllTriggers = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/triggers`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformTriggersResponse(response);
+    });
+};
+
+// ============================================================
+// COMPREHENSIVE SCHEMA DATA
+// ============================================================
+
+/**
+ * Get comprehensive schema data including all object types
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Request parameters
+ * @param {string} params.connectionId - Connection ID
+ * @returns {Promise} API response with all schema objects
+ */
+export const getComprehensiveSchemaData = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { connectionId } = params;
+    
+    try {
+        // Fetch all object types in parallel
+        const [tables, views, procedures, functions, packages, sequences, synonyms, types, triggers] = await Promise.all([
+            getAllTables(authorizationHeader).catch(() => ({ data: [] })),
+            getAllViews(authorizationHeader).catch(() => ({ data: [] })),
+            getAllProcedures(authorizationHeader).catch(() => ({ data: [] })),
+            getAllFunctions(authorizationHeader).catch(() => ({ data: [] })),
+            getAllPackages(authorizationHeader).catch(() => ({ data: [] })),
+            getAllSequences(authorizationHeader).catch(() => ({ data: [] })),
+            getAllSynonyms(authorizationHeader).catch(() => ({ data: [] })),
+            getAllTypes(authorizationHeader).catch(() => ({ data: [] })),
+            getAllTriggers(authorizationHeader).catch(() => ({ data: [] }))
+        ]);
+
+        const response = {
+            responseCode: 200,
+            message: "Comprehensive schema data retrieved successfully",
+            data: {
+                tables: {
+                    objects: tables.data || [],
+                    totalCount: (tables.data || []).length
+                },
+                views: {
+                    objects: views.data || [],
+                    totalCount: (views.data || []).length
+                },
+                procedures: {
+                    objects: procedures.data || [],
+                    totalCount: (procedures.data || []).length
+                },
+                functions: {
+                    objects: functions.data || [],
+                    totalCount: (functions.data || []).length
+                },
+                packages: {
+                    objects: packages.data || [],
+                    totalCount: (packages.data || []).length
+                },
+                sequences: {
+                    objects: sequences.data || [],
+                    totalCount: (sequences.data || []).length
+                },
+                synonyms: {
+                    objects: synonyms.data || [],
+                    totalCount: (synonyms.data || []).length
+                },
+                types: {
+                    objects: types.data || [],
+                    totalCount: (types.data || []).length
+                },
+                triggers: {
+                    objects: triggers.data || [],
+                    totalCount: (triggers.data || []).length
+                }
+            },
+            requestId
+        };
+
+        return response;
+    } catch (error) {
+        console.error('Error fetching comprehensive schema data:', error);
+        return {
+            responseCode: 500,
+            message: error.message,
+            data: {
+                tables: { objects: [], totalCount: 0 },
+                views: { objects: [], totalCount: 0 },
+                procedures: { objects: [], totalCount: 0 },
+                functions: { objects: [], totalCount: 0 },
+                packages: { objects: [], totalCount: 0 },
+                sequences: { objects: [], totalCount: 0 },
+                synonyms: { objects: [], totalCount: 0 },
+                types: { objects: [], totalCount: 0 },
+                triggers: { objects: [], totalCount: 0 }
+            },
+            requestId
+        };
+    }
+};
+
+// ============================================================
+// OBJECT DDL
+// ============================================================
 
 /**
  * Get object DDL
  * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Query parameters
- * @param {string} params.connectionId - Connection ID (required)
- * @param {string} params.objectType - Object type (required)
- * @param {string} params.objectName - Object name (required)
- * @returns {Promise} API response
+ * @param {Object} params - Parameters
+ * @param {string} params.connectionId - Connection ID
+ * @param {string} params.objectType - Object type
+ * @param {string} params.objectName - Object name
+ * @returns {Promise} API response with DDL
  */
 export const getObjectDDL = async (authorizationHeader, params = {}) => {
-  const queryString = buildQueryParams(params);
-  const url = `/schema-browser/ddl${queryString ? `?${queryString}` : ''}`;
-  
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(url, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
+    const requestId = generateRequestId();
+    const { connectionId, objectType, objectName } = params;
+    
+    const queryParams = buildQueryParams({ connectionId });
+    const url = `/oracle/schema/${objectType.toLowerCase()}s/${encodeURIComponent(objectName)}/ddl${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformDDLResponse(response);
+    });
 };
 
+// ============================================================
+// OBJECT DETAILS
+// ============================================================
+
 /**
- * Search schema
+ * Get object details
  * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Query parameters
- * @param {string} params.connectionId - Connection ID (required)
- * @param {string} params.searchQuery - Search query string (required)
- * @param {string} params.searchType - Search type (ALL, TABLE, VIEW, etc.)
- * @param {number} params.maxResults - Maximum results to return (default: 100)
- * @returns {Promise} API response
+ * @param {Object} params - Parameters
+ * @param {string} params.connectionId - Connection ID
+ * @param {string} params.objectType - Object type
+ * @param {string} params.objectName - Object name
+ * @returns {Promise} API response with object details
+ */
+export const getObjectDetails = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { connectionId, objectType, objectName } = params;
+    
+    const queryParams = buildQueryParams({ connectionId });
+    const url = `/oracle/schema/${objectType.toLowerCase()}s/${encodeURIComponent(objectName)}/details${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformObjectDetailsResponse(response, objectType, objectName);
+    });
+};
+
+// ============================================================
+// SEARCH
+// ============================================================
+
+/**
+ * Search schema objects
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.connectionId - Connection ID
+ * @param {string} params.searchQuery - Search query
+ * @param {string} params.searchType - Search type (optional)
+ * @param {number} params.maxResults - Max results
+ * @returns {Promise} API response with search results
  */
 export const searchSchema = async (authorizationHeader, params = {}) => {
-  const queryString = buildQueryParams(params);
-  const url = `/schema-browser/search${queryString ? `?${queryString}` : ''}`;
-  
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(url, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
+    const requestId = generateRequestId();
+    const { connectionId, searchQuery, searchType, maxResults = 100 } = params;
+    
+    const queryParams = buildQueryParams({
+        connectionId,
+        query: searchQuery,
+        type: searchType,
+        maxResults
+    });
+    
+    const url = `/oracle/schema/search${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformSearchResponse(response);
+    });
 };
+
+// ============================================================
+// EXECUTE QUERY
+// ============================================================
 
 /**
  * Execute SQL query
  * @param {string} authorizationHeader - Bearer token
- * @param {Object} queryData - Query request data
- * @param {string} queryData.connectionId - Connection ID (required)
- * @param {string} queryData.query - SQL query to execute (required)
- * @param {number} queryData.timeoutSeconds - Query timeout in seconds
- * @param {boolean} queryData.readOnly - Whether query is read-only
- * @returns {Promise} API response
+ * @param {Object} queryRequest - Query request
+ * @param {string} queryRequest.connectionId - Connection ID
+ * @param {string} queryRequest.query - SQL query
+ * @param {number} queryRequest.timeoutSeconds - Timeout in seconds
+ * @param {boolean} queryRequest.readOnly - Read only flag
+ * @returns {Promise} API response with query results
  */
-export const executeQuery = async (authorizationHeader, queryData) => {
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(`/schema-browser/execute-query`, {
-      method: 'POST',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-      body: JSON.stringify(queryData)
-    })
-  );
+export const executeQuery = async (authorizationHeader, queryRequest = {}) => {
+    const requestId = generateRequestId();
+    const { connectionId, query, timeoutSeconds = 30, readOnly = true } = queryRequest;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/execute`, {
+            method: 'POST',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            body: JSON.stringify({
+                connectionId,
+                query,
+                timeoutSeconds,
+                readOnly
+            }),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformQueryResponse(response);
+    });
 };
 
+// ============================================================
+// GENERATE API
+// ============================================================
+
 /**
- * Generate API from object
+ * Generate API from database object
  * @param {string} authorizationHeader - Bearer token
- * @param {Object} apiRequest - API generation request data
- * @param {string} apiRequest.connectionId - Connection ID (required)
- * @param {string} apiRequest.objectType - Object type (required)
- * @param {string} apiRequest.objectName - Object name (required)
+ * @param {Object} apiRequest - API generation request
+ * @param {string} apiRequest.connectionId - Connection ID
+ * @param {string} apiRequest.objectType - Object type
+ * @param {string} apiRequest.objectName - Object name
  * @param {string} apiRequest.apiType - API type (REST, GraphQL, etc.)
- * @param {Object} apiRequest.options - Generation options
- * @returns {Promise} API response
+ * @param {Object} apiRequest.options - Additional options
+ * @returns {Promise} API response with generated API
  */
-export const generateAPIFromObject = async (authorizationHeader, apiRequest) => {
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(`/schema-browser/generate-api`, {
-      method: 'POST',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-      body: JSON.stringify(apiRequest)
-    })
-  );
+export const generateAPIFromObject = async (authorizationHeader, apiRequest = {}) => {
+    const requestId = generateRequestId();
+    const { connectionId, objectType, objectName, apiType = 'REST', options = {} } = apiRequest;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/generate-api`, {
+            method: 'POST',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            body: JSON.stringify({
+                connectionId,
+                objectType,
+                objectName,
+                apiType,
+                ...options
+            }),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformApiResponse(response);
+    });
 };
 
+// ============================================================
+// EXPORT SCHEMA
+// ============================================================
+
 /**
- * Get comprehensive schema data
+ * Export schema data
  * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Query parameters
- * @param {string} params.connectionId - Connection ID (required)
- * @param {string} params.schema - Schema name
- * @returns {Promise} API response
+ * @param {Object} exportRequest - Export request
+ * @param {string} exportRequest.connectionId - Connection ID
+ * @param {string} exportRequest.format - Export format (JSON, SQL, CSV)
+ * @param {Array} exportRequest.objectTypes - Object types to export
+ * @param {Array} exportRequest.objectNames - Object names to export
+ * @returns {Promise} API response with export data
  */
-export const getComprehensiveSchemaData = async (authorizationHeader, params = {}) => {
-  const queryString = buildQueryParams(params);
-  const url = `/schema-browser/comprehensive${queryString ? `?${queryString}` : ''}`;
-  
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(url, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
+export const exportSchemaData = async (authorizationHeader, exportRequest = {}) => {
+    const requestId = generateRequestId();
+    const { connectionId, format = 'JSON', objectTypes = [], objectNames = [], options = {} } = exportRequest;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/export`, {
+            method: 'POST',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            body: JSON.stringify({
+                connectionId,
+                format,
+                objectTypes,
+                objectNames,
+                options
+            }),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformExportResponse(response);
+    });
 };
+
+// ============================================================
+// CLEAR CACHE
+// ============================================================
 
 /**
  * Clear schema cache
@@ -223,1106 +709,995 @@ export const getComprehensiveSchemaData = async (authorizationHeader, params = {
  * @returns {Promise} API response
  */
 export const clearSchemaCache = async (authorizationHeader) => {
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(`/schema-browser/clear-cache`, {
-      method: 'POST',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/cache/clear`, {
+            method: 'POST',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    );
 };
 
-/**
- * Get object hierarchy
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Query parameters
- * @param {string} params.connectionId - Connection ID (required)
- * @param {string} params.objectType - Object type (required)
- * @param {string} params.objectName - Object name (required)
- * @returns {Promise} API response
- */
-export const getObjectHierarchy = async (authorizationHeader, params = {}) => {
-  const queryString = buildQueryParams(params);
-  const url = `/schema-browser/object-hierarchy${queryString ? `?${queryString}` : ''}`;
-  
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(url, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
-};
+// ============================================================
+// HEALTH CHECK
+// ============================================================
 
 /**
- * Export schema data
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} exportRequest - Export request data
- * @param {string} exportRequest.connectionId - Connection ID (required)
- * @param {string} exportRequest.schema - Schema name
- * @param {string} exportRequest.format - Export format (JSON, XML, SQL, CSV)
- * @param {Array} exportRequest.objectTypes - Object types to include
- * @param {Array} exportRequest.objectNames - Specific object names to include
- * @param {Object} exportRequest.options - Export options
- * @returns {Promise} API response
- */
-export const exportSchemaData = async (authorizationHeader, exportRequest) => {
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(`/schema-browser/export`, {
-      method: 'POST',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-      body: JSON.stringify(exportRequest)
-    })
-  );
-};
-
-/**
- * Advanced schema search
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} searchRequest - Advanced search request data
- * @param {string} searchRequest.connectionId - Connection ID (required)
- * @param {string} searchRequest.searchQuery - Search query string (required)
- * @param {string} searchRequest.searchType - Search type (ALL, TABLE, VIEW, etc.)
- * @param {number} searchRequest.maxResults - Maximum results to return (default: 100)
- * @param {Object} searchRequest.filters - Advanced filters
- * @param {Array} searchRequest.objectTypes - Filter by object types
- * @param {string} searchRequest.schema - Filter by schema
- * @returns {Promise} API response
- */
-export const advancedSearch = async (authorizationHeader, searchRequest) => {
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(`/schema-browser/advanced-search`, {
-      method: 'POST',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-      body: JSON.stringify(searchRequest)
-    })
-  );
-};
-
-/**
- * Schema browser health check
+ * Health check
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
  */
 export const healthCheck = async (authorizationHeader) => {
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(`/schema-browser/health`, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/health`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    );
 };
 
-// ============ RESPONSE HANDLERS & UTILITIES ============
+// ============================================================
+// RESPONSE HANDLERS
+// ============================================================
 
 /**
- * Handle standardized API responses for schema browser operations
+ * Handle standardized API responses
  * @param {Object} response - API response
  * @returns {Object} Processed response data
  */
 export const handleSchemaBrowserResponse = (response) => {
-  if (!response) {
-    throw new Error('No response received from schema browser service');
-  }
-
-  const responseCode = response.responseCode || response.status;
-  
-  if (responseCode === 200 || responseCode === 201) {
-    return {
-      ...response,
-      data: response.data || {},
-      responseCode: responseCode,
-      requestId: response.requestId
-    };
-  }
-
-  const errorMessage = response.message || response.error || 'Unknown error';
-  switch (responseCode) {
-    case 400: 
-      throw new Error(`Bad Request: ${errorMessage}`);
-    case 401: 
-      throw new Error(`Unauthorized: ${errorMessage}`);
-    case 403: 
-      throw new Error(`Forbidden: ${errorMessage}`);
-    case 404: 
-      throw new Error(`Not Found: ${errorMessage}`);
-    case 500: 
-      throw new Error(`Server Error: ${errorMessage}`);
-    default: 
-      throw new Error(`Error ${responseCode || 'Unknown'}: ${errorMessage}`);
-  }
-};
-
-/**
- * Extract schema connections from response
- * @param {Object} response - API response
- * @returns {Array} Schema connections
- */
-export const extractSchemaConnections = (response) => {
-  if (!response || !response.data) return [];
-  
-  const data = response.data;
-  
-  if (Array.isArray(data)) {
-    return data;
-  }
-  
-  if (data.connections && Array.isArray(data.connections)) {
-    return data.connections;
-  }
-  
-  return [];
-};
-
-/**
- * Extract schema objects from response
- * @param {Object} response - API response
- * @param {string} objectType - Type of objects to extract
- * @returns {Array} Schema objects
- */
-export const extractSchemaObjects = (response, objectType = null) => {
-  if (!response || !response.data) return [];
-  
-  const data = response.data;
-  
-  if (data.objects && Array.isArray(data.objects)) {
-    if (objectType) {
-      return data.objects.filter(obj => 
-        !objectType || obj.objectType === objectType.toUpperCase()
-      );
+    if (!response) {
+        throw new Error('No response received from schema browser service');
     }
-    return data.objects;
-  }
-  
-  if (Array.isArray(data)) {
-    return data;
-  }
-  
-  return [];
+
+    if (response.responseCode === 200 || response.responseCode === 201) {
+        return response.data || response;
+    }
+
+    switch (response.responseCode) {
+        case 204:
+            return { message: 'No data found', data: [] };
+        case 400: throw new Error(`Bad Request: ${response.message}`);
+        case 401: throw new Error(`Unauthorized: ${response.message}`);
+        case 403: throw new Error(`Forbidden: ${response.message}`);
+        case 404: throw new Error(`Object not found: ${response.message}`);
+        case 500: throw new Error(`Server Error: ${response.message}`);
+        case 503: throw new Error(`Service Unavailable: ${response.message}`);
+        default: throw new Error(`Error ${response.responseCode}: ${response.message}`);
+    }
 };
 
-/**
- * Extract object details from response
- * @param {Object} response - API response
- * @returns {Object} Object details
- */
-export const extractObjectDetails = (response) => {
-  if (!response || !response.data) return null;
-  
-  const details = response.data;
-  
-  // Standardize the response format
-  return {
-    name: details.objectName || details.name,
-    type: details.objectType || details.type,
-    columns: details.columns || [],
-    constraints: details.constraints || [],
-    indexes: details.indexes || [],
-    foreignKeys: details.foreignKeys || [],
-    ddl: details.ddl || details.definition,
-    rowCount: details.rowCount || details.count,
-    created: details.createdDate || details.created,
-    lastModified: details.lastModifiedDate || details.modified,
-    size: details.size || details.storage,
-    description: details.description || details.comments,
-    schema: details.schema || details.owner,
-    connectionId: details.connectionId,
-    metadata: details.metadata || {}
-  };
-};
+// ============================================================
+// TRANSFORMATION FUNCTIONS - Match frontend expectations
+// ============================================================
 
 /**
- * Extract table data from response
- * @param {Object} response - API response
- * @returns {Object} Table data with pagination
+ * Transform connections response to frontend format
  */
-export const extractTableData = (response) => {
-  if (!response || !response.data) return null;
-  
-  const data = response.data;
-  
-  return {
-    rows: data.rows || data.data || [],
-    columns: data.columns || [],
-    totalRows: data.totalRows || data.totalCount || 0,
-    page: data.page || data.currentPage || 1,
-    pageSize: data.pageSize || data.pageSize || 50,
-    totalPages: data.totalPages || Math.ceil((data.totalRows || 0) / (data.pageSize || 50)),
-    sortColumn: data.sortColumn,
-    sortDirection: data.sortDirection,
-    queryTime: data.queryTime || data.executionTime,
-    rowLimitExceeded: data.rowLimitExceeded || false,
-    metadata: data.metadata || {}
-  };
-};
-
-/**
- * Extract DDL from response
- * @param {Object} response - API response
- * @returns {string} DDL string
- */
-export const extractDDL = (response) => {
-  if (!response || !response.data) return '';
-  
-  const data = response.data;
-  return data.ddl || data.definition || data.sql || '';
-};
-
-/**
- * Extract search results from response
- * @param {Object} response - API response
- * @returns {Object} Search results
- */
-export const extractSearchResults = (response) => {
-  if (!response || !response.data) return null;
-  
-  const data = response.data;
-  
-  return {
-    results: data.results || data.matches || [],
-    totalCount: data.totalCount || data.totalMatches || 0,
-    searchQuery: data.searchQuery,
-    searchType: data.searchType,
-    connectionId: data.connectionId,
-    executionTime: data.executionTime || data.queryTime,
-    highlight: data.highlight || {},
-    facets: data.facets || {},
-    metadata: data.metadata || {}
-  };
-};
-
-/**
- * Extract query execution results
- * @param {Object} response - API response
- * @returns {Object} Query execution results
- */
-export const extractQueryResults = (response) => {
-  if (!response || !response.data) return null;
-  
-  const data = response.data;
-  
-  return {
-    rows: data.rows || data.results || [],
-    columns: data.columns || [],
-    rowCount: data.rowCount || data.affectedRows || 0,
-    queryTime: data.queryTime || data.executionTime,
-    success: data.success !== undefined ? data.success : true,
-    message: data.message || data.status,
-    warnings: data.warnings || [],
-    metadata: data.metadata || {},
-    isReadOnly: data.readOnly || false,
-    limitReached: data.limitReached || false
-  };
-};
-
-/**
- * Extract API generation results
- * @param {Object} response - API response
- * @returns {Object} API generation results
- */
-export const extractAPIGenerationResults = (response) => {
-  if (!response || !response.data) return null;
-  
-  const data = response.data;
-  
-  return {
-    apiId: data.apiId || data.generatedId,
-    objectName: data.objectName,
-    objectType: data.objectType,
-    apiType: data.apiType,
-    endpoints: data.endpoints || [],
-    models: data.models || [],
-    controllers: data.controllers || [],
-    services: data.services || [],
-    repository: data.repository,
-    totalFiles: data.totalFiles,
-    zipUrl: data.zipUrl || data.downloadUrl,
-    generationTime: data.generationTime,
-    status: data.status || 'SUCCESS',
-    warnings: data.warnings || [],
-    metadata: data.metadata || {}
-  };
-};
-
-/**
- * Extract comprehensive schema data
- * @param {Object} response - API response
- * @returns {Object} Comprehensive schema data
- */
-export const extractComprehensiveSchemaData = (response) => {
-  if (!response || !response.data) return null;
-  
-  const data = response.data;
-  
-  return {
-    connections: data.connections || [],
-    tables: data.tables || { objects: [], totalCount: 0 },
-    views: data.views || { objects: [], totalCount: 0 },
-    procedures: data.procedures || { objects: [], totalCount: 0 },
-    functions: data.functions || { objects: [], totalCount: 0 },
-    packages: data.packages || { objects: [], totalCount: 0 },
-    totalObjects: data.totalObjects || 0,
-    lastUpdated: data.lastUpdated || new Date().toISOString(),
-    generatedFor: data.generatedFor || 'Unknown',
-    connectionId: data.connectionId,
-    schema: data.schema || 'ALL',
-    statistics: data.statistics || {},
-    health: data.health || {}
-  };
-};
-
-/**
- * Extract object hierarchy
- * @param {Object} response - API response
- * @returns {Object} Object hierarchy
- */
-export const extractObjectHierarchy = (response) => {
-  if (!response || !response.data) return null;
-  
-  const data = response.data;
-  
-  return {
-    objectName: data.objectName,
-    objectType: data.objectType,
-    dependencies: data.dependencies || {},
-    dependents: data.dependents || {},
-    hierarchyLevel: data.hierarchyLevel || 1,
-    lastUpdated: data.lastUpdated,
-    depth: data.depth || 0,
-    children: data.children || [],
-    parents: data.parents || [],
-    references: data.references || [],
-    metadata: data.metadata || {}
-  };
-};
-
-/**
- * Extract export results
- * @param {Object} response - API response
- * @returns {Object} Export results
- */
-export const extractExportResults = (response) => {
-  if (!response || !response.data) return null;
-  
-  const data = response.data;
-  
-  return {
-    exportId: data.exportId,
-    format: data.format,
-    fileName: data.fileName,
-    fileSize: data.fileSize,
-    downloadUrl: data.downloadUrl,
-    generatedAt: data.generatedAt,
-    generatedBy: data.generatedBy,
-    objectCount: data.objectCount,
-    status: data.status,
-    progress: data.progress || 100,
-    estimatedTimeRemaining: data.estimatedTimeRemaining,
-    metadata: data.metadata || {}
-  };
-};
-
-/**
- * Extract health check results
- * @param {Object} response - API response
- * @returns {Object} Health check results
- */
-export const extractHealthCheck = (response) => {
-  if (!response || !response.data) return null;
-  
-  const data = response.data;
-  
-  return {
-    status: data.status || 'UNKNOWN',
-    timestamp: data.timestamp,
-    service: data.service || 'SchemaBrowserService',
-    cacheItems: data.cacheItems || 0,
-    uptime: data.uptime || 'Unknown',
-    version: data.version || '1.0.0',
-    environment: data.environment || 'Development',
-    databaseConnections: data.databaseConnections || 0,
-    activeQueries: data.activeQueries || 0,
-    memoryUsage: data.memoryUsage || 'Normal',
-    cpuUsage: data.cpuUsage || 'Normal',
-    lastBackup: data.lastBackup,
-    metrics: data.metrics || {}
-  };
-};
-
-// ============ VALIDATION & UTILITY FUNCTIONS ============
-
-/**
- * Validate schema search criteria
- * @param {Object} searchCriteria - Search criteria to validate
- * @returns {Array} Array of validation errors
- */
-export const validateSchemaSearchCriteria = (searchCriteria) => {
-  const errors = [];
-  
-  if (!searchCriteria.connectionId) {
-    errors.push('Connection ID is required');
-  }
-  
-  if (!searchCriteria.searchQuery || searchCriteria.searchQuery.trim().length === 0) {
-    errors.push('Search query is required');
-  }
-  
-  if (searchCriteria.maxResults !== undefined && (searchCriteria.maxResults < 1 || searchCriteria.maxResults > 1000)) {
-    errors.push('Maximum results must be between 1 and 1000');
-  }
-  
-  return errors;
-};
-
-/**
- * Validate execute query request
- * @param {Object} queryRequest - Query request to validate
- * @returns {Array} Array of validation errors
- */
-export const validateExecuteQueryRequest = (queryRequest) => {
-  const errors = [];
-  
-  if (!queryRequest.connectionId) {
-    errors.push('Connection ID is required');
-  }
-  
-  if (!queryRequest.query || queryRequest.query.trim().length === 0) {
-    errors.push('Query is required');
-  }
-  
-  if (queryRequest.query && queryRequest.query.trim().toUpperCase().includes('DROP TABLE')) {
-    errors.push('DROP TABLE queries are not allowed');
-  }
-  
-  if (queryRequest.query && queryRequest.query.trim().toUpperCase().includes('DELETE FROM') && 
-      !queryRequest.query.toUpperCase().includes('WHERE')) {
-    errors.push('DELETE queries must include a WHERE clause');
-  }
-  
-  if (queryRequest.timeoutSeconds !== undefined && (queryRequest.timeoutSeconds < 1 || queryRequest.timeoutSeconds > 300)) {
-    errors.push('Timeout must be between 1 and 300 seconds');
-  }
-  
-  return errors;
-};
-
-/**
- * Validate API generation request
- * @param {Object} apiRequest - API generation request to validate
- * @returns {Array} Array of validation errors
- */
-export const validateAPIGenerationRequest = (apiRequest) => {
-  const errors = [];
-  
-  if (!apiRequest.connectionId) {
-    errors.push('Connection ID is required');
-  }
-  
-  if (!apiRequest.objectType) {
-    errors.push('Object type is required');
-  }
-  
-  if (!apiRequest.objectName) {
-    errors.push('Object name is required');
-  }
-  
-  if (!apiRequest.apiType) {
-    errors.push('API type is required');
-  }
-  
-  const validApiTypes = ['REST', 'GRAPHQL', 'SOAP', 'GRPC', 'ALL'];
-  if (apiRequest.apiType && !validApiTypes.includes(apiRequest.apiType.toUpperCase())) {
-    errors.push(`API type must be one of: ${validApiTypes.join(', ')}`);
-  }
-  
-  return errors;
-};
-
-/**
- * Validate export request
- * @param {Object} exportRequest - Export request to validate
- * @returns {Array} Array of validation errors
- */
-export const validateExportRequest = (exportRequest) => {
-  const errors = [];
-  
-  if (!exportRequest.connectionId) {
-    errors.push('Connection ID is required');
-  }
-  
-  if (!exportRequest.format) {
-    errors.push('Export format is required');
-  }
-  
-  const validFormats = ['JSON', 'XML', 'SQL', 'CSV', 'EXCEL', 'PDF'];
-  if (exportRequest.format && !validFormats.includes(exportRequest.format.toUpperCase())) {
-    errors.push(`Export format must be one of: ${validFormats.join(', ')}`);
-  }
-  
-  if (exportRequest.objectTypes && !Array.isArray(exportRequest.objectTypes)) {
-    errors.push('Object types must be an array');
-  }
-  
-  return errors;
-};
-
-/**
- * Build schema objects request parameters
- * @param {string} connectionId - Connection ID
- * @param {string} objectType - Object type
- * @param {string} filter - Filter string
- * @returns {Object} Request parameters
- */
-export const buildSchemaObjectsParams = (connectionId, objectType = null, filter = null) => ({
-  connectionId,
-  ...(objectType && { objectType }),
-  ...(filter && { filter })
-});
-
-/**
- * Build object details parameters
- * @param {string} connectionId - Connection ID
- * @param {string} objectType - Object type
- * @param {string} objectName - Object name
- * @returns {Object} Request parameters
- */
-export const buildObjectDetailsParams = (connectionId, objectType, objectName) => ({
-  connectionId,
-  objectType,
-  objectName
-});
-
-/**
- * Build table data parameters
- * @param {string} connectionId - Connection ID
- * @param {string} tableName - Table name
- * @param {number} page - Page number
- * @param {number} pageSize - Page size
- * @param {string} sortColumn - Sort column
- * @param {string} sortDirection - Sort direction
- * @returns {Object} Request parameters
- */
-export const buildTableDataParams = (
-  connectionId, 
-  tableName, 
-  page = 1, 
-  pageSize = 50, 
-  sortColumn = null, 
-  sortDirection = null
-) => ({
-  connectionId,
-  tableName,
-  page,
-  pageSize,
-  ...(sortColumn && { sortColumn }),
-  ...(sortDirection && { sortDirection })
-});
-
-/**
- * Build search parameters
- * @param {string} connectionId - Connection ID
- * @param {string} searchQuery - Search query
- * @param {string} searchType - Search type
- * @param {number} maxResults - Maximum results
- * @returns {Object} Request parameters
- */
-export const buildSearchParams = (connectionId, searchQuery, searchType = null, maxResults = 100) => ({
-  connectionId,
-  searchQuery,
-  ...(searchType && { searchType }),
-  maxResults
-});
-
-/**
- * Format object details for display
- * @param {Object} objectDetails - Object details
- * @returns {Object} Formatted object details
- */
-export const formatObjectDetails = (objectDetails) => {
-  if (!objectDetails) return {};
-  
-  const formatted = { ...objectDetails };
-  
-  // Format dates
-  if (formatted.created) {
-    formatted.formattedCreated = formatDateForDisplay(formatted.created);
-  }
-  
-  if (formatted.lastModified) {
-    formatted.formattedLastModified = formatDateForDisplay(formatted.lastModified);
-  }
-  
-  // Format size
-  if (formatted.size) {
-    formatted.formattedSize = formatBytes(formatted.size);
-  }
-  
-  // Format row count
-  if (typeof formatted.rowCount === 'number') {
-    formatted.formattedRowCount = formatted.rowCount.toLocaleString();
-  }
-  
-  // Format columns
-  if (Array.isArray(formatted.columns)) {
-    formatted.formattedColumns = formatted.columns.map(col => ({
-      ...col,
-      formattedType: formatDataType(col.dataType)
+const transformConnectionsResponse = (response) => {
+    const data = response.data || [];
+    
+    const transformedData = data.map((conn, index) => ({
+        id: conn.id || `conn-${index + 1}`,
+        name: conn.name || conn.connectionName || 'Unknown',
+        description: conn.description || '',
+        host: conn.host || 'localhost',
+        port: conn.port || '1521',
+        service: conn.service || conn.serviceName || 'ORCL',
+        username: conn.username || conn.user || 'HR',
+        status: conn.status || 'connected',
+        lastUsed: conn.lastUsed || new Date().toISOString()
     }));
-  }
-  
-  return formatted;
+
+    return {
+        ...response,
+        data: transformedData
+    };
 };
 
 /**
- * Format table data for display
- * @param {Object} tableData - Table data
- * @returns {Object} Formatted table data
+ * Transform tables response to frontend format
  */
-export const formatTableData = (tableData) => {
-  if (!tableData) return {};
-  
-  const formatted = { ...tableData };
-  
-  // Format pagination info
-  if (formatted.totalRows) {
-    formatted.formattedTotalRows = formatted.totalRows.toLocaleString();
-  }
-  
-  if (formatted.page && formatted.pageSize) {
-    const startRow = (formatted.page - 1) * formatted.pageSize + 1;
-    const endRow = Math.min(formatted.page * formatted.pageSize, formatted.totalRows || 0);
-    formatted.range = `${startRow.toLocaleString()} - ${endRow.toLocaleString()}`;
-  }
-  
-  // Format query time
-  if (formatted.queryTime) {
-    formatted.formattedQueryTime = `${formatted.queryTime}ms`;
-  }
-  
-  return formatted;
+const transformTablesResponse = (response) => {
+    const data = response.data || [];
+    
+    const transformedData = data.map((table, index) => ({
+        id: `table-${index + 1}`,
+        name: table.table_name || table.name,
+        owner: table.owner || 'HR',
+        type: 'TABLE',
+        status: table.status || table.object_status || table.table_status || 'VALID',
+        rowCount: table.num_rows || 0,
+        size: formatBytes(table.bytes || 0),
+        comment: table.comments || '',
+        columns: table.columns || [],
+        constraints: table.constraints || [],
+        indexes: table.indexes || [],
+        created: table.created,
+        lastModified: table.last_ddl_time || table.last_analyzed,
+        tablespace: table.tablespace_name
+    }));
+
+    return {
+        ...response,
+        data: transformedData
+    };
 };
 
 /**
- * Format bytes to human-readable format
- * @param {number} bytes - Bytes
- * @param {number} decimals - Decimal places
- * @returns {string} Formatted size
+ * Transform views response to frontend format
+ */
+const transformViewsResponse = (response) => {
+    const data = response.data || [];
+    
+    const transformedData = data.map((view, index) => ({
+        id: `view-${index + 1}`,
+        name: view.view_name || view.name,
+        owner: view.owner || 'HR',
+        type: 'VIEW',
+        status: view.status || view.object_status || 'VALID',
+        text: view.text || view.viewDefinition || '',
+        textLength: view.text_length || 0,
+        readOnly: view.read_only === 'Y' || view.read_only === true,
+        columns: view.columns || [],
+        created: view.created,
+        lastModified: view.last_ddl_time,
+        comment: view.comments || ''
+    }));
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform procedures response to frontend format
+ */
+const transformProceduresResponse = (response) => {
+    const data = response.data || [];
+    
+    const transformedData = data.map((proc, index) => ({
+        id: `procedure-${index + 1}`,
+        name: proc.procedure_name || proc.name || proc.object_name,
+        owner: proc.owner || 'HR',
+        type: 'PROCEDURE',
+        status: proc.status || proc.object_status || 'VALID',
+        parameters: proc.parameters || [],
+        parameterCount: proc.parameter_count || 0,
+        created: proc.created,
+        lastModified: proc.last_ddl_time,
+        comment: proc.comments || ''
+    }));
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform functions response to frontend format
+ */
+const transformFunctionsResponse = (response) => {
+    const data = response.data || [];
+    
+    const transformedData = data.map((func, index) => ({
+        id: `function-${index + 1}`,
+        name: func.function_name || func.name || func.object_name,
+        owner: func.owner || 'HR',
+        type: 'FUNCTION',
+        status: func.status || func.object_status || 'VALID',
+        parameters: func.parameters || [],
+        parameterCount: func.parameter_count || 0,
+        returnType: func.return_type || func.returnType || '',
+        created: func.created,
+        lastModified: func.last_ddl_time,
+        comment: func.comments || ''
+    }));
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform packages response to frontend format
+ */
+const transformPackagesResponse = (response) => {
+    const data = response.data || [];
+    
+    const transformedData = data.map((pkg, index) => ({
+        id: `package-${index + 1}`,
+        name: pkg.package_name || pkg.name || pkg.object_name,
+        owner: pkg.owner || 'HR',
+        type: 'PACKAGE',
+        status: pkg.status || pkg.object_status || 'VALID',
+        spec: pkg.specification || pkg.spec || '',
+        body: pkg.body || '',
+        procedures: pkg.procedures || [],
+        functions: pkg.functions || [],
+        variables: pkg.variables || [],
+        created: pkg.created,
+        lastModified: pkg.last_ddl_time,
+        comment: pkg.comments || ''
+    }));
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform sequences response to frontend format
+ */
+const transformSequencesResponse = (response) => {
+    const data = response.data || [];
+    
+    const transformedData = data.map((seq, index) => ({
+        id: `sequence-${index + 1}`,
+        name: seq.sequence_name || seq.name,
+        owner: seq.owner || seq.sequence_owner || 'HR',
+        type: 'SEQUENCE',
+        minValue: seq.min_value || 0,
+        maxValue: seq.max_value || 0,
+        incrementBy: seq.increment_by || 1,
+        cycleFlag: seq.cycle_flag === 'Y' || seq.cycle_flag === true,
+        orderFlag: seq.order_flag === 'Y' || seq.order_flag === true,
+        cacheSize: seq.cache_size || 0,
+        lastNumber: seq.last_number || 0,
+        comment: seq.comments || ''
+    }));
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform synonyms response to frontend format
+ */
+const transformSynonymsResponse = (response) => {
+    const data = response.data || [];
+    
+    const transformedData = data.map((syn, index) => ({
+        id: `synonym-${index + 1}`,
+        name: syn.synonym_name || syn.name,
+        owner: syn.owner || 'HR',
+        type: 'SYNONYM',
+        tableOwner: syn.table_owner || '',
+        tableName: syn.table_name || syn.target_object || '',
+        dbLink: syn.db_link || '',
+        public: syn.public === 'Y' || syn.public === true,
+        comment: syn.comments || ''
+    }));
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform types response to frontend format
+ */
+const transformTypesResponse = (response) => {
+    const data = response.data || [];
+    
+    const transformedData = data.map((type, index) => ({
+        id: `type-${index + 1}`,
+        name: type.type_name || type.name,
+        owner: type.owner || 'HR',
+        type: 'TYPE',
+        status: type.status || type.object_status || 'VALID',
+        typecode: type.typecode || '',
+        attributes: type.attributes || [],
+        methods: type.methods || [],
+        attributeCount: type.attribute_count || (type.attributes || []).length,
+        methodCount: type.method_count || (type.methods || []).length,
+        created: type.created,
+        lastModified: type.last_ddl_time,
+        comment: type.comments || ''
+    }));
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform triggers response to frontend format
+ */
+const transformTriggersResponse = (response) => {
+    const data = response.data || [];
+    
+    const transformedData = data.map((trigger, index) => ({
+        id: `trigger-${index + 1}`,
+        name: trigger.trigger_name || trigger.name,
+        owner: trigger.owner || 'HR',
+        type: 'TRIGGER',
+        status: trigger.trigger_status || trigger.status || 'ENABLED',
+        objectStatus: trigger.object_status || 'VALID',
+        triggerType: trigger.trigger_type || '',
+        triggeringEvent: trigger.triggering_event || '',
+        tableName: trigger.table_name || '',
+        tableOwner: trigger.table_owner || '',
+        body: trigger.trigger_body || '',
+        description: trigger.description || '',
+        whenClause: trigger.when_clause || '',
+        referencing: trigger.referencing_names || '',
+        created: trigger.created,
+        lastModified: trigger.last_ddl_time,
+        comment: trigger.comments || ''
+    }));
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform table details response to frontend format
+ */
+const transformTableDetailsResponse = (response, tableName) => {
+    const data = response.data || {};
+    
+    // Get columns from various possible locations in the response
+    let columns = [];
+    if (data.columns) {
+        columns = data.columns;
+    } else if (data.columnInfo) {
+        columns = data.columnInfo;
+    } else if (data.tableInfo && data.tableInfo.columns) {
+        columns = data.tableInfo.columns;
+    }
+
+    // Get constraints
+    let constraints = [];
+    if (data.constraints) {
+        constraints = data.constraints;
+    } else if (data.constraintInfo) {
+        constraints = data.constraintInfo;
+    }
+
+    // Get indexes
+    let indexes = [];
+    if (data.indexes) {
+        indexes = data.indexes;
+    } else if (data.indexInfo) {
+        indexes = data.indexInfo;
+    }
+
+    // Get statistics
+    let statistics = {};
+    if (data.statistics) {
+        statistics = data.statistics;
+    } else if (data.stats) {
+        statistics = data.stats;
+    }
+
+    const transformedData = {
+        id: `table-${Date.now()}`,
+        name: data.table_name || tableName,
+        owner: data.owner || 'HR',
+        type: 'TABLE',
+        status: data.table_status || data.status || data.object_status || 'VALID',
+        rowCount: data.num_rows || statistics.num_rows || 0,
+        size: formatBytes(data.bytes || statistics.bytes || 0),
+        comment: data.comments || '',
+        
+        // Columns with proper formatting
+        columns: (columns || []).map((col, idx) => ({
+            name: col.column_name || col.name,
+            type: col.data_type || col.type,
+            nullable: col.nullable === 'Y' || col.nullable === true ? 'Y' : 'N',
+            key: getColumnKey(col, constraints),
+            position: col.column_id || col.position || idx + 1,
+            dataLength: col.data_length || 0,
+            dataPrecision: col.data_precision,
+            dataScale: col.data_scale,
+            defaultValue: col.data_default || col.default_value
+        })),
+        
+        // Constraints
+        constraints: (constraints || []).map(con => ({
+            name: con.constraint_name || con.name,
+            type: formatConstraintType(con.constraint_type || con.type),
+            columns: con.columns || '',
+            status: con.constraint_status || con.status || 'ENABLED',
+            refTable: con.references_owner ? `${con.references_owner}.${con.references_constraint}` : '',
+            deleteRule: con.delete_rule || '',
+            deferrable: con.deferrable || '',
+            validated: con.validated || ''
+        })),
+        
+        // Indexes
+        indexes: (indexes || []).map(idx => ({
+            name: idx.index_name || idx.name,
+            type: idx.index_type || '',
+            uniqueness: idx.uniqueness || 'NONUNIQUE',
+            columns: idx.columns || '',
+            status: idx.index_status || idx.status || 'VALID',
+            visibility: idx.visibility || 'VISIBLE',
+            tablespace: idx.tablespace_name || ''
+        })),
+        
+        // Statistics
+        statistics: {
+            numRows: statistics.num_rows || 0,
+            blocks: statistics.blocks || 0,
+            emptyBlocks: statistics.empty_blocks || 0,
+            avgRowLen: statistics.avg_row_len || 0,
+            lastAnalyzed: statistics.last_analyzed,
+            sampleSize: statistics.sample_size || 0,
+            globalStats: statistics.global_stats || '',
+            userStats: statistics.user_stats || '',
+            stattypeLocked: statistics.stattype_locked || ''
+        },
+        
+        created: data.created,
+        lastModified: data.last_ddl_time || data.last_analyzed,
+        tablespace: data.tablespace_name || ''
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform table data response to frontend format
+ */
+const transformTableDataResponse = (response, tableName, params = {}) => {
+    const data = response.data || {};
+    const { page = 1, pageSize = 50 } = params;
+    
+    // Get rows from response
+    let rows = [];
+    if (data.rows) {
+        rows = data.rows;
+    } else if (data.data) {
+        rows = Array.isArray(data.data) ? data.data : [data.data];
+    } else if (Array.isArray(data)) {
+        rows = data;
+    }
+
+    // Get columns from response or derive from rows
+    let columns = [];
+    if (data.columns) {
+        columns = data.columns;
+    } else if (rows.length > 0) {
+        // Derive columns from first row
+        columns = Object.keys(rows[0]).map(key => ({
+            name: key,
+            type: 'VARCHAR2',
+            nullable: 'Y'
+        }));
+    }
+
+    // Get pagination info
+    const totalRows = data.total_rows || data.totalCount || rows.length;
+    const totalPages = Math.ceil(totalRows / pageSize);
+
+    const transformedData = {
+        rows: rows,
+        columns: columns,
+        page: data.page || page,
+        pageSize: data.pageSize || pageSize,
+        totalRows: totalRows,
+        totalPages: totalPages,
+        queryTime: data.queryTime || data.executionTime || 0
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform object details response to frontend format
+ */
+const transformObjectDetailsResponse = (response, objectType, objectName) => {
+    const data = response.data || {};
+    
+    let transformedData = {
+        id: `${objectType.toLowerCase()}-${Date.now()}`,
+        name: objectName,
+        owner: data.owner || 'HR',
+        type: objectType,
+        status: data.status || data.object_status || 'VALID'
+    };
+
+    // Add type-specific details
+    switch (objectType.toUpperCase()) {
+        case 'TABLE':
+            transformedData = {
+                ...transformedData,
+                ...transformTableDetailsResponse(response, objectName).data
+            };
+            break;
+            
+        case 'VIEW':
+            transformedData = {
+                ...transformedData,
+                text: data.text || data.viewDefinition || '',
+                readOnly: data.read_only === 'Y' || data.read_only === true,
+                columns: (data.columns || []).map(col => ({
+                    name: col.column_name || col.name,
+                    type: col.data_type || col.type,
+                    nullable: col.nullable === 'Y' || col.nullable === true ? 'Y' : 'N',
+                    position: col.column_id || col.position
+                }))
+            };
+            break;
+            
+        case 'PROCEDURE':
+        case 'FUNCTION':
+            transformedData = {
+                ...transformedData,
+                parameters: (data.parameters || []).map(param => ({
+                    name: param.argument_name || param.name,
+                    type: param.data_type || param.type,
+                    inOut: param.in_out || param.mode || 'IN',
+                    position: param.position || 0,
+                    dataType: param.data_type || param.type,
+                    dataLength: param.data_length,
+                    dataPrecision: param.data_precision,
+                    dataScale: param.data_scale,
+                    defaultValue: param.default_value || param.defaulted
+                })),
+                returnType: data.return_type || data.returnType
+            };
+            break;
+            
+        case 'PACKAGE':
+            transformedData = {
+                ...transformedData,
+                spec: data.spec || data.packageSpec || '',
+                body: data.body || data.packageBody || '',
+                procedures: data.procedures || [],
+                functions: data.functions || [],
+                variables: data.variables || []
+            };
+            break;
+            
+        case 'TRIGGER':
+            transformedData = {
+                ...transformedData,
+                triggerType: data.trigger_type || data.type,
+                triggeringEvent: data.triggering_event || data.event,
+                tableName: data.table_name || data.table,
+                tableOwner: data.table_owner,
+                body: data.trigger_body || data.body,
+                description: data.description,
+                whenClause: data.when_clause,
+                referencing: data.referencing_names
+            };
+            break;
+            
+        case 'TYPE':
+            transformedData = {
+                ...transformedData,
+                typecode: data.typecode,
+                attributes: data.attributes || [],
+                methods: data.methods || []
+            };
+            break;
+            
+        case 'SEQUENCE':
+            transformedData = {
+                ...transformedData,
+                minValue: data.min_value || data.minValue,
+                maxValue: data.max_value || data.maxValue,
+                incrementBy: data.increment_by || data.incrementBy,
+                cycleFlag: data.cycle_flag === 'Y' || data.cycleFlag === true,
+                orderFlag: data.order_flag === 'Y' || data.orderFlag === true,
+                cacheSize: data.cache_size || data.cacheSize,
+                lastNumber: data.last_number || data.lastNumber
+            };
+            break;
+            
+        case 'SYNONYM':
+            transformedData = {
+                ...transformedData,
+                tableOwner: data.table_owner,
+                tableName: data.table_name,
+                dbLink: data.db_link
+            };
+            break;
+    }
+
+    return {
+                ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform DDL response to frontend format
+ */
+const transformDDLResponse = (response) => {
+    const data = response.data || {};
+    
+    const ddl = data.ddl || data.text || data.source || '';
+
+    return {
+        ...response,
+        data: ddl
+    };
+};
+
+/**
+ * Transform search response to frontend format
+ */
+const transformSearchResponse = (response) => {
+    const data = response.data || [];
+    
+    const transformedData = {
+        results: data.map((item, index) => ({
+            id: `search-${index + 1}`,
+            name: item.object_name || item.name,
+            owner: item.owner || 'HR',
+            type: item.object_type || item.type,
+            status: item.status || 'VALID',
+            created: item.created,
+            lastModified: item.last_ddl_time
+        })),
+        totalCount: data.length,
+        query: data.query || ''
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform query response to frontend format
+ */
+const transformQueryResponse = (response) => {
+    const data = response.data || {};
+    
+    let rows = [];
+    if (data.rows) {
+        rows = data.rows;
+    } else if (Array.isArray(data)) {
+        rows = data;
+    }
+
+    let columns = [];
+    if (data.columns) {
+        columns = data.columns;
+    } else if (rows.length > 0) {
+        columns = Object.keys(rows[0]).map(key => ({
+            name: key,
+            type: 'VARCHAR2'
+        }));
+    }
+
+    const transformedData = {
+        rows: rows,
+        columns: columns,
+        rowCount: rows.length,
+        executionTime: data.executionTime || data.queryTime || 0,
+        message: data.message || `Query executed successfully, ${rows.length} rows returned`
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform API generation response to frontend format
+ */
+const transformApiResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        apiName: data.apiName || data.name || 'Generated API',
+        apiType: data.apiType || 'REST',
+        endpoints: data.endpoints || [],
+        code: data.code || data.source || '',
+        documentation: data.documentation || '',
+        curlExample: data.curlExample || '',
+        message: data.message || 'API generated successfully'
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform export response to frontend format
+ */
+const transformExportResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        format: data.format || 'JSON',
+        content: data.content || data.data || '',
+        filename: data.filename || `export_${Date.now()}.${(data.format || 'json').toLowerCase()}`,
+        size: data.size || 0,
+        message: data.message || 'Export completed successfully'
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+// ============================================================
+// EXTRACT FUNCTIONS - For use in the frontend
+// ============================================================
+
+export const extractSchemaConnections = (response) => {
+    return response?.data || [];
+};
+
+export const extractSchemaObjects = (response, objectType) => {
+    if (objectType) {
+        return response?.data?.[objectType]?.objects || [];
+    }
+    return response?.data || [];
+};
+
+export const extractObjectDetails = (response) => {
+    return response?.data || {};
+};
+
+export const extractTableData = (response) => {
+    return response?.data || { rows: [], columns: [] };
+};
+
+export const extractDDL = (response) => {
+    return response?.data || '';
+};
+
+export const extractSearchResults = (response) => {
+    return response?.data || { results: [], totalCount: 0 };
+};
+
+export const extractQueryResults = (response) => {
+    return response?.data || { rows: [], columns: [] };
+};
+
+export const extractAPIGenerationResults = (response) => {
+    return response?.data || {};
+};
+
+export const extractComprehensiveSchemaData = (response) => {
+    return response?.data || {
+        tables: { objects: [], totalCount: 0 },
+        views: { objects: [], totalCount: 0 },
+        procedures: { objects: [], totalCount: 0 },
+        functions: { objects: [], totalCount: 0 },
+        packages: { objects: [], totalCount: 0 },
+        sequences: { objects: [], totalCount: 0 },
+        synonyms: { objects: [], totalCount: 0 },
+        types: { objects: [], totalCount: 0 },
+        triggers: { objects: [], totalCount: 0 }
+    };
+};
+
+export const extractExportResults = (response) => {
+    return response?.data || {};
+};
+
+export const extractHealthCheck = (response) => {
+    return response?.data || { status: 'UNKNOWN' };
+};
+
+// ============================================================
+// UTILITY FUNCTIONS
+// ============================================================
+
+/**
+ * Format bytes to human readable string
  */
 export const formatBytes = (bytes, decimals = 2) => {
-  if (bytes === 0) return '0 Bytes';
-  
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
-  
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+    if (bytes === 0 || !bytes) return '0 Bytes';
+    
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+    
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 };
 
 /**
- * Format date for display (import from AuditController or define here)
- * @param {string|Date} date - Date to format
- * @returns {string} Formatted date string
+ * Format date for display
  */
-export const formatDateForDisplay = (date) => {
-  if (!date) return '';
-  
-  const d = new Date(date);
-  return d.toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  });
+export const formatDateForDisplay = (dateString) => {
+    if (!dateString) return '-';
+    try {
+        const date = new Date(dateString);
+        return date.toLocaleString();
+    } catch (e) {
+        return dateString;
+    }
 };
 
 /**
  * Format data type for display
- * @param {string} dataType - Data type
- * @returns {string} Formatted data type
  */
-export const formatDataType = (dataType) => {
-  if (!dataType) return '';
-  
-  const type = dataType.toUpperCase();
-  
-  // Common data type mappings
-  const typeMap = {
-    'VARCHAR2': 'String',
-    'VARCHAR': 'String',
-    'CHAR': 'String',
-    'NVARCHAR2': 'String',
-    'NUMBER': 'Number',
-    'INT': 'Integer',
-    'INTEGER': 'Integer',
-    'FLOAT': 'Float',
-    'DOUBLE': 'Double',
-    'DATE': 'Date',
-    'TIMESTAMP': 'Timestamp',
-    'CLOB': 'Text',
-    'BLOB': 'Binary',
-    'BOOLEAN': 'Boolean',
-    'JSON': 'JSON'
-  };
-  
-  return typeMap[type] || dataType;
+export const formatDataType = (type, length, precision, scale) => {
+    if (!type) return '';
+    
+    let formatted = type;
+    if (length && type.includes('CHAR')) {
+        formatted += `(${length})`;
+    } else if (precision) {
+        if (scale && scale > 0) {
+            formatted += `(${precision},${scale})`;
+        } else {
+            formatted += `(${precision})`;
+        }
+    }
+    
+    return formatted;
 };
 
 /**
  * Get object type icon
- * @param {string} objectType - Object type
- * @returns {string} Icon class or identifier
  */
-export const getObjectTypeIcon = (objectType) => {
-  if (!objectType) return 'help';
-  
-  const type = objectType.toUpperCase();
-  
-  const iconMap = {
-    'TABLE': 'table_chart',
-    'VIEW': 'visibility',
-    'PROCEDURE': 'code',
-    'FUNCTION': 'functions',
-    'PACKAGE': 'inventory_2',
-    'INDEX': 'trending_up',
-    'TRIGGER': 'bolt',
-    'SEQUENCE': 'linear_scale',
-    'SYNONYM': 'link',
-    'MATERIALIZED_VIEW': 'view_quilt',
-    'TYPE': 'category',
-    'DATABASE': 'storage',
-    'SCHEMA': 'folder',
-    'COLUMN': 'view_column'
-  };
-  
-  return iconMap[type] || 'help';
+export const getObjectTypeIcon = (type) => {
+    const icons = {
+        'TABLE': '📊',
+        'VIEW': '👁️',
+        'PROCEDURE': '⚙️',
+        'FUNCTION': '🔧',
+        'PACKAGE': '📦',
+        'SEQUENCE': '🔢',
+        'SYNONYM': '🔄',
+        'TYPE': '📐',
+        'TRIGGER': '⚡',
+        'INDEX': '📌'
+    };
+    return icons[type] || '📄';
 };
 
 /**
  * Get object type color
- * @param {string} objectType - Object type
- * @returns {string} Color code or class
  */
-export const getObjectTypeColor = (objectType) => {
-  if (!objectType) return '#757575';
-  
-  const type = objectType.toUpperCase();
-  
-  const colorMap = {
-    'TABLE': '#1976d2',
-    'VIEW': '#388e3c',
-    'PROCEDURE': '#f57c00',
-    'FUNCTION': '#7b1fa2',
-    'PACKAGE': '#00897b',
-    'INDEX': '#d81b60',
-    'TRIGGER': '#5d4037',
-    'SEQUENCE': '#00acc1',
-    'SYNONYM': '#455a64'
-  };
-  
-  return colorMap[type] || '#757575';
+export const getObjectTypeColor = (type, isDark = true) => {
+    const colors = {
+        'TABLE': isDark ? '#60A5FA' : '#3B82F6',
+        'VIEW': isDark ? '#34D399' : '#10B981',
+        'PROCEDURE': isDark ? '#A78BFA' : '#8B5CF6',
+        'FUNCTION': isDark ? '#FBBF24' : '#F59E0B',
+        'PACKAGE': isDark ? '#94A3B8' : '#6B7280',
+        'SEQUENCE': isDark ? '#64748B' : '#4B5563',
+        'SYNONYM': isDark ? '#22D3EE' : '#06B6D4',
+        'TYPE': isDark ? '#C084FC' : '#A855F7',
+        'TRIGGER': isDark ? '#F472B6' : '#EC4899',
+        'INDEX': isDark ? '#2DD4BF' : '#14B8A6'
+    };
+    return colors[type] || (isDark ? '#94A3B8' : '#6B7280');
 };
 
 /**
- * Check if object type is supported for API generation
- * @param {string} objectType - Object type
- * @returns {boolean} True if supported
+ * Check if object is supported for API generation
  */
 export const isSupportedForAPIGeneration = (objectType) => {
-  if (!objectType) return false;
-  
-  const type = objectType.toUpperCase();
-  const supportedTypes = ['TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION'];
-  
-  return supportedTypes.includes(type);
+    const supportedTypes = ['TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'PACKAGE'];
+    return supportedTypes.includes(objectType.toUpperCase());
 };
 
 /**
- * Generate sample SQL query based on object type
- * @param {string} objectType - Object type
- * @param {string} objectName - Object name
- * @returns {string} Sample SQL query
+ * Generate sample query for object
  */
-export const generateSampleQuery = (objectType, objectName) => {
-  if (!objectType || !objectName) return '';
-  
-  const type = objectType.toUpperCase();
-  
-  switch (type) {
-    case 'TABLE':
-      return `SELECT * FROM ${objectName} WHERE rownum <= 100`;
-    case 'VIEW':
-      return `SELECT * FROM ${objectName} WHERE rownum <= 100`;
-    case 'PROCEDURE':
-      return `BEGIN\n  ${objectName};\nEND;`;
-    case 'FUNCTION':
-      return `SELECT ${objectName}() FROM dual`;
-    default:
-      return `SELECT * FROM ${objectName} WHERE rownum <= 100`;
-  }
-};
-
-/**
- * Monitor schema browser health
- * @param {string} authorizationHeader - Bearer token
- * @param {number} intervalSeconds - Monitoring interval in seconds
- * @param {Function} callback - Callback function for health updates
- * @returns {Function} Function to stop monitoring
- */
-export const monitorSchemaHealth = (authorizationHeader, intervalSeconds = 30, callback) => {
-  let isMonitoring = true;
-  
-  const monitor = async () => {
-    while (isMonitoring) {
-      try {
-        const healthResponse = await healthCheck(authorizationHeader);
-        const healthData = extractHealthCheck(healthResponse);
-        
-        if (callback) {
-          callback(healthData);
-        }
-      } catch (error) {
-        console.error('Schema health monitoring error:', error);
-        
-        if (callback) {
-          callback({
-            status: 'DOWN',
-            timestamp: new Date().toISOString(),
-            error: error.message
-          });
-        }
-      }
-      
-      // Wait for the specified interval
-      await new Promise(resolve => 
-        setTimeout(resolve, intervalSeconds * 1000)
-      );
+export const generateSampleQuery = (objectName, objectType) => {
+    switch (objectType.toUpperCase()) {
+        case 'TABLE':
+            return `SELECT * FROM ${objectName} WHERE ROWNUM <= 10`;
+        case 'VIEW':
+            return `SELECT * FROM ${objectName} WHERE ROWNUM <= 10`;
+        case 'PROCEDURE':
+            return `BEGIN ${objectName}(parameter1 => value1); END;`;
+        case 'FUNCTION':
+            return `SELECT ${objectName}(parameter1) FROM DUAL`;
+        case 'SEQUENCE':
+            return `SELECT ${objectName}.NEXTVAL FROM DUAL`;
+        default:
+            return `-- No sample query available for ${objectType}`;
     }
-  };
-  
-  // Start monitoring
-  monitor();
-  
-  // Return stop function
-  return () => {
-    isMonitoring = false;
-  };
 };
 
 /**
- * Refresh all schema data for a connection
- * @param {string} authorizationHeader - Bearer token
- * @param {string} connectionId - Connection ID
- * @returns {Promise} Combined schema data
+ * Refresh schema data
  */
 export const refreshSchemaData = async (authorizationHeader, connectionId) => {
-  try {
-    const comprehensiveResponse = await getComprehensiveSchemaData(authorizationHeader, { connectionId });
-    const comprehensiveData = handleSchemaBrowserResponse(comprehensiveResponse);
-    
-    if (comprehensiveData && comprehensiveData.data) {
-      return comprehensiveData;
-    }
-    
-    // If comprehensive fails, fetch individual components
-    const [
-      connectionsResponse,
-      tablesResponse,
-      viewsResponse,
-      proceduresResponse
-    ] = await Promise.all([
-      getSchemaConnections(authorizationHeader),
-      getSchemaObjects(authorizationHeader, { connectionId, objectType: 'TABLE' }),
-      getSchemaObjects(authorizationHeader, { connectionId, objectType: 'VIEW' }),
-      getSchemaObjects(authorizationHeader, { connectionId, objectType: 'PROCEDURE' })
-    ]);
-    
-    const connections = handleSchemaBrowserResponse(connectionsResponse);
-    const tables = handleSchemaBrowserResponse(tablesResponse);
-    const views = handleSchemaBrowserResponse(viewsResponse);
-    const procedures = handleSchemaBrowserResponse(proceduresResponse);
-    
-    return {
-      responseCode: 200,
-      message: 'Schema data refreshed successfully',
-      data: {
-        connections: connections.data,
-        tables: tables.data,
-        views: views.data,
-        procedures: procedures.data,
-        lastUpdated: new Date().toISOString(),
-        connectionId
-      },
-      requestId: `refresh-${Date.now()}`
-    };
-    
-  } catch (error) {
-    throw new Error(`Failed to refresh schema data: ${error.message}`);
-  }
+    clearCachedSchemaData(`schema_objects_${connectionId}`);
+    return getComprehensiveSchemaData(authorizationHeader, { connectionId });
 };
 
 /**
  * Download exported schema data
- * @param {string} exportId - Export ID
- * @param {string} fileName - File name
  */
-export const downloadExportedSchema = (exportId, fileName = 'schema_export') => {
-  const downloadUrl = `${API_CONFIG.baseUrl}/schema-browser/download/${exportId}`;
-  
-  // Create a temporary anchor element
-  const link = document.createElement('a');
-  link.href = downloadUrl;
-  link.download = fileName;
-  link.target = '_blank';
-  
-  // Trigger the download
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+export const downloadExportedSchema = (exportResult, filename) => {
+    if (!exportResult || !exportResult.content) return;
+    
+    const blob = new Blob([exportResult.content], { type: 'application/json' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename || exportResult.filename || 'export.json';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
 };
 
-/**
- * Cache schema data in localStorage
- * @param {string} connectionId - Connection ID
- * @param {Object} schemaData - Schema data to cache
- * @param {number} ttlMinutes - Time to live in minutes (default: 30)
- */
-export const cacheSchemaData = (connectionId, schemaData, ttlMinutes = 30) => {
-  if (!connectionId || !schemaData) return;
-  
-  const cacheKey = `schema_cache_${connectionId}`;
-  const cacheData = {
-    data: schemaData,
-    timestamp: Date.now(),
-    ttl: ttlMinutes * 60 * 1000 // Convert to milliseconds
-  };
-  
-  try {
-    localStorage.setItem(cacheKey, JSON.stringify(cacheData));
-  } catch (error) {
-    console.error('Failed to cache schema data:', error);
-  }
+
+// Add this function to the exports section at the bottom of the file
+export const formatObjectDetails = (details) => {
+    if (!details) return null;
+    
+    // Format object details for display in the UI
+    return {
+        ...details,
+        // Ensure columns are properly formatted
+        columns: (details.columns || []).map(col => ({
+            ...col,
+            // Add display-friendly properties
+            displayType: formatDataType(col.type, col.dataLength, col.dataPrecision, col.dataScale),
+            nullable: col.nullable === 'Y' || col.nullable === true ? 'Y' : 'N'
+        })),
+        // Add formatted timestamps
+        createdFormatted: formatDateForDisplay(details.created),
+        lastModifiedFormatted: formatDateForDisplay(details.lastModified || details.last_ddl_time),
+        // Add size in human-readable format
+        sizeFormatted: details.size ? formatBytes(details.size) : undefined
+    };
 };
 
-/**
- * Get cached schema data
- * @param {string} connectionId - Connection ID
- * @returns {Object|null} Cached schema data or null
- */
-export const getCachedSchemaData = (connectionId) => {
-  if (!connectionId) return null;
-  
-  const cacheKey = `schema_cache_${connectionId}`;
-  
-  try {
-    const cached = localStorage.getItem(cacheKey);
+// Helper functions
+const getColumnKey = (column, constraints) => {
+    if (!constraints || !column) return '';
     
-    if (!cached) return null;
-    
-    const cacheData = JSON.parse(cached);
-    
-    // Check if cache is expired
-    const now = Date.now();
-    const isExpired = now - cacheData.timestamp > cacheData.ttl;
-    
-    if (isExpired) {
-      localStorage.removeItem(cacheKey);
-      return null;
-    }
-    
-    return cacheData.data;
-  } catch (error) {
-    console.error('Failed to get cached schema data:', error);
-    return null;
-  }
-};
-
-/**
- * Clear cached schema data
- * @param {string} connectionId - Connection ID (optional, clears all if not provided)
- */
-export const clearCachedSchemaData = (connectionId = null) => {
-  try {
-    if (connectionId) {
-      localStorage.removeItem(`schema_cache_${connectionId}`);
-    } else {
-      // Clear all schema cache
-      Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('schema_cache_')) {
-          localStorage.removeItem(key);
+    for (const con of constraints) {
+        if (con.columns && con.columns.includes(column.column_name || column.name)) {
+            if (con.constraint_type === 'P') return 'PK';
+            if (con.constraint_type === 'R') return 'FK';
+            if (con.constraint_type === 'U') return 'UQ';
         }
-      });
     }
-  } catch (error) {
-    console.error('Failed to clear cached schema data:', error);
-  }
+    return '';
 };
 
-// Export all functions
-export default {
-  // Main API methods
-  getSchemaConnections,
-  getSchemaObjects,
-  getObjectDetails,
-  getTableData,
-  getObjectDDL,
-  searchSchema,
-  executeQuery,
-  generateAPIFromObject,
-  getComprehensiveSchemaData,
-  clearSchemaCache,
-  getObjectHierarchy,
-  exportSchemaData,
-  advancedSearch,
-  healthCheck,
-  
-  // Response handlers
-  handleSchemaBrowserResponse,
-  extractSchemaConnections,
-  extractSchemaObjects,
-  extractObjectDetails,
-  extractTableData,
-  extractDDL,
-  extractSearchResults,
-  extractQueryResults,
-  extractAPIGenerationResults,
-  extractComprehensiveSchemaData,
-  extractObjectHierarchy,
-  extractExportResults,
-  extractHealthCheck,
-  
-  // Validation functions
-  validateSchemaSearchCriteria,
-  validateExecuteQueryRequest,
-  validateAPIGenerationRequest,
-  validateExportRequest,
-  
-  // Utility functions
-  buildSchemaObjectsParams,
-  buildObjectDetailsParams,
-  buildTableDataParams,
-  buildSearchParams,
-  formatObjectDetails,
-  formatTableData,
-  formatBytes,
-  formatDateForDisplay,
-  formatDataType,
-  getObjectTypeIcon,
-  getObjectTypeColor,
-  isSupportedForAPIGeneration,
-  generateSampleQuery,
-  
-  // Advanced functions
-  monitorSchemaHealth,
-  refreshSchemaData,
-  downloadExportedSchema,
-  cacheSchemaData,
-  getCachedSchemaData,
-  clearCachedSchemaData
+const formatConstraintType = (type) => {
+    const types = {
+        'P': 'PRIMARY KEY',
+        'R': 'FOREIGN KEY',
+        'U': 'UNIQUE',
+        'C': 'CHECK',
+        'V': 'VIEW CHECK',
+        'O': 'READ ONLY VIEW',
+        'H': 'HASH EXPRESSION',
+        'F': 'REF COLUMN',
+        'S': 'SUPPLEMENTAL LOGGING'
+    };
+    return types[type] || type;
 };

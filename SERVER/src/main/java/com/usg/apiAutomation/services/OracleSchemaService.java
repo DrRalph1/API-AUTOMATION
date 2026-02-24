@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,10 +20,799 @@ public class OracleSchemaService {
     private final SchemaBrowserRepository schemaBrowserRepository;
     private final LoggerUtil loggerUtil;
 
-    // ==================== TABLE METHODS ====================
+    // ==================== ENHANCED SYNONYM METHODS ====================
 
     /**
-     * Get all tables from Oracle schema
+     * Get all synonyms with detailed information
+     * Endpoint: GET /plx/api/oracle/schema/synonyms/details
+     */
+    public Map<String, Object> getAllSynonymsWithDetails(String requestId, HttpServletRequest req, String performedBy) {
+        log.info("RequestEntity ID: {}, Getting all Oracle synonyms with details for user: {}", requestId, performedBy);
+
+        try {
+            List<Map<String, Object>> synonyms = schemaBrowserRepository.getAllSynonymsWithDetails();
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", synonyms);
+            result.put("totalCount", synonyms.size());
+            result.put("responseCode", 200);
+            result.put("message", "Synonyms retrieved successfully with details");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} synonyms with details", requestId, synonyms.size());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting synonyms with details: {}", requestId, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Get synonyms filtered by target type
+     * Endpoint: GET /plx/api/oracle/schema/synonyms/byTargetType/{targetType}
+     */
+    public Map<String, Object> getSynonymsByTargetType(String requestId, HttpServletRequest req,
+                                                       String performedBy, String targetType) {
+        log.info("RequestEntity ID: {}, Getting synonyms by target type: {} for user: {}",
+                requestId, targetType, performedBy);
+
+        try {
+            List<Map<String, Object>> synonyms = schemaBrowserRepository.getSynonymsByTargetType(targetType);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", synonyms);
+            result.put("totalCount", synonyms.size());
+            result.put("targetType", targetType);
+            result.put("responseCode", 200);
+            result.put("message", "Synonyms filtered by target type retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} synonyms for target type: {}",
+                    requestId, synonyms.size(), targetType);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting synonyms by target type: {}", requestId, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+
+    /**
+     * Get detailed information about a specific synonym
+     * Endpoint: GET /plx/api/oracle/schema/synonyms/{synonymName}/details
+     */
+    public Map<String, Object> getSynonymDetailsEnhanced(String requestId, HttpServletRequest req,
+                                                         String performedBy, String synonymName) {
+        log.info("RequestEntity ID: {}, Getting enhanced details for synonym: {} for user: {}",
+                requestId, synonymName, performedBy);
+
+        try {
+            Map<String, Object> synonymDetails = schemaBrowserRepository.getSynonymDetails(synonymName);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", synonymDetails);
+            result.put("responseCode", 200);
+            result.put("message", "Synonym details retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved enhanced details for synonym: {}", requestId, synonymName);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting enhanced details for synonym {}: {}",
+                    requestId, synonymName, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Resolve a synonym to its target object
+     * Endpoint: GET /plx/api/oracle/schema/synonyms/{synonymName}/resolve
+     */
+    public Map<String, Object> resolveSynonym(String requestId, HttpServletRequest req,
+                                              String performedBy, String synonymName) {
+        log.info("RequestEntity ID: {}, Resolving synonym: {} for user: {}", requestId, synonymName, performedBy);
+
+        try {
+            Map<String, Object> resolved = schemaBrowserRepository.resolveSynonym(synonymName);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", resolved);
+            result.put("responseCode", 200);
+            result.put("message", "Synonym resolved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Resolved synonym: {} to target", requestId, synonymName);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error resolving synonym {}: {}", requestId, synonymName, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Validate a synonym and check its target
+     * Endpoint: GET /plx/api/oracle/schema/synonyms/{synonymName}/validate
+     */
+    public Map<String, Object> validateSynonym(String requestId, HttpServletRequest req,
+                                               String performedBy, String synonymName) {
+        log.info("RequestEntity ID: {}, Validating synonym: {} for user: {}", requestId, synonymName, performedBy);
+
+        try {
+            Map<String, Object> validation = schemaBrowserRepository.validateSynonym(synonymName);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", validation);
+            result.put("responseCode", 200);
+            result.put("message", "Synonym validation completed");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Validation completed for synonym: {}, exists: {}",
+                    requestId, synonymName, validation.get("exists"));
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error validating synonym {}: {}", requestId, synonymName, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    // ==================== ENHANCED OBJECT METHODS ====================
+
+    /**
+     * Get details for any object by name and type
+     * Endpoint: GET /plx/api/oracle/schema/objects/{objectType}/{objectName}/details
+     */
+    public Map<String, Object> getObjectDetailsByNameAndType(String requestId, HttpServletRequest req,
+                                                             String performedBy, String objectName,
+                                                             String objectType, String owner) {
+        log.info("RequestEntity ID: {}, Getting details for {}: {}, owner: {}, user: {}",
+                requestId, objectType, objectName, owner, performedBy);
+
+        try {
+            Map<String, Object> objectDetails = schemaBrowserRepository.getObjectDetailsByNameAndType(
+                    objectName, objectType, owner);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", objectDetails);
+            result.put("responseCode", 200);
+            result.put("message", "Object details retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved details for {}: {}", requestId, objectType, objectName);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting details for {} {}: {}",
+                    requestId, objectType, objectName, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Validate if an object exists and is accessible
+     * Endpoint: GET /plx/api/oracle/schema/objects/validate
+     */
+    public Map<String, Object> validateObject(String requestId, HttpServletRequest req,
+                                              String performedBy, String objectName,
+                                              String objectType, String owner) {
+        log.info("RequestEntity ID: {}, Validating {}: {}, owner: {}, user: {}",
+                requestId, objectType, objectName, owner, performedBy);
+
+        try {
+            Map<String, Object> validation = schemaBrowserRepository.validateObject(objectName, objectType, owner);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", validation);
+            result.put("responseCode", 200);
+            result.put("message", "Object validation completed");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Validation completed for {}: {}, exists: {}",
+                    requestId, objectType, objectName, validation.get("exists"));
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error validating {} {}: {}",
+                    requestId, objectType, objectName, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    // ==================== ENHANCED SEARCH METHODS ====================
+
+    /**
+     * Comprehensive search across all objects including synonym targets
+     * Endpoint: GET /plx/api/oracle/schema/comprehensive-search
+     */
+    public Map<String, Object> comprehensiveSearch(String requestId, HttpServletRequest req,
+                                                   String performedBy, String searchPattern) {
+        log.info("RequestEntity ID: {}, Performing comprehensive search with pattern: {} for user: {}",
+                requestId, searchPattern, performedBy);
+
+        try {
+            List<Map<String, Object>> results = schemaBrowserRepository.comprehensiveSearch(searchPattern);
+
+            Map<String, Object> responseData = new HashMap<>();
+            responseData.put("results", results);
+            responseData.put("totalCount", results.size());
+            responseData.put("searchPattern", searchPattern);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", responseData);
+            result.put("responseCode", 200);
+            result.put("message", "Comprehensive search completed successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Comprehensive search found {} results for pattern: {}",
+                    requestId, results.size(), searchPattern);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error in comprehensive search: {}", requestId, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    // ==================== DDL METHODS ====================
+
+    /**
+     * Get object DDL
+     * Endpoint: GET /plx/api/oracle/schema/objects/{objectType}/{objectName}/ddl
+     */
+    public Map<String, Object> getObjectDDL(String requestId, HttpServletRequest req,
+                                            String performedBy, String objectType, String objectName) {
+        log.info("RequestEntity ID: {}, Getting DDL for {}: {}, user: {}",
+                requestId, objectType, objectName, performedBy);
+
+        try {
+            Map<String, Object> ddlResult = schemaBrowserRepository.getObjectDDLForFrontend(objectName, objectType);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", ddlResult.get("ddl"));
+            result.put("responseCode", 200);
+            result.put("message", "DDL retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved DDL for {}: {}", requestId, objectType, objectName);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting DDL for {} {}: {}",
+                    requestId, objectType, objectName, e.getMessage());
+
+            Map<String, Object> errorResult = new HashMap<>();
+            errorResult.put("data", "-- Error retrieving DDL: " + e.getMessage());
+            errorResult.put("responseCode", 500);
+            errorResult.put("message", e.getMessage());
+            errorResult.put("requestId", requestId);
+            errorResult.put("timestamp", java.time.Instant.now().toString());
+
+            return errorResult;
+        }
+    }
+
+    /**
+     * Get object size information
+     * Endpoint: GET /plx/api/oracle/schema/objects/{objectType}/{objectName}/size
+     */
+    public Map<String, Object> getObjectSize(String requestId, HttpServletRequest req,
+                                             String performedBy, String objectName, String objectType) {
+        log.info("RequestEntity ID: {}, Getting size for {}: {}, user: {}",
+                requestId, objectType, objectName, performedBy);
+
+        try {
+            Map<String, Object> sizeInfo = schemaBrowserRepository.getObjectSize(objectName, objectType);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", sizeInfo);
+            result.put("responseCode", 200);
+            result.put("message", "Object size retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved size for {}: {}", requestId, objectType, objectName);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting size for {} {}: {}",
+                    requestId, objectType, objectName, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    // ==================== FRONTEND TABLE METHODS ====================
+
+    /**
+     * Get all tables with frontend-friendly format
+     * Endpoint: GET /plx/api/oracle/schema/tables
+     */
+    public Map<String, Object> getAllTablesForFrontend(String requestId, HttpServletRequest req, String performedBy) {
+        log.info("RequestEntity ID: {}, Getting all Oracle tables for frontend, user: {}", requestId, performedBy);
+
+        try {
+            List<Map<String, Object>> tables = schemaBrowserRepository.getAllTablesForFrontend();
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", tables);
+            result.put("totalCount", tables.size());
+            result.put("responseCode", 200);
+            result.put("message", "Tables retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} tables for frontend", requestId, tables.size());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting tables for frontend: {}", requestId, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Get table details with frontend-friendly format
+     * Endpoint: GET /plx/api/oracle/schema/tables/{tableName}/details
+     */
+    public Map<String, Object> getTableDetailsForFrontend(String requestId, HttpServletRequest req,
+                                                          String performedBy, String tableName) {
+        log.info("RequestEntity ID: {}, Getting table details for frontend, table: {}, user: {}",
+                requestId, tableName, performedBy);
+
+        try {
+            Map<String, Object> tableDetails = schemaBrowserRepository.getTableDetailsForFrontend(tableName);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", tableDetails);
+            result.put("responseCode", 200);
+            result.put("message", "Table details retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved details for table: {}", requestId, tableName);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting table details for frontend, table {}: {}",
+                    requestId, tableName, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Get table data with pagination
+     * Endpoint: GET /plx/api/oracle/schema/tables/{tableName}/data
+     */
+    public Map<String, Object> getTableData(String requestId, HttpServletRequest req,
+                                            String performedBy, String tableName,
+                                            int page, int pageSize, String sortColumn, String sortDirection) {
+        log.info("RequestEntity ID: {}, Getting table data for frontend, table: {}, page: {}, pageSize: {}, user: {}",
+                requestId, tableName, page, pageSize, performedBy);
+
+        try {
+            Map<String, Object> tableData = schemaBrowserRepository.getTableDataWithPagination(
+                    tableName, page, pageSize, sortColumn, sortDirection);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", tableData);
+            result.put("responseCode", 200);
+            result.put("message", "Table data retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} rows for table: {}",
+                    requestId, ((List<?>) tableData.get("rows")).size(), tableName);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting table data for frontend, table {}: {}",
+                    requestId, tableName, e.getMessage());
+
+            Map<String, Object> errorData = new HashMap<>();
+            errorData.put("rows", new ArrayList<>());
+            errorData.put("columns", new ArrayList<>());
+            errorData.put("page", page);
+            errorData.put("pageSize", pageSize);
+            errorData.put("totalRows", 0);
+            errorData.put("totalPages", 0);
+
+            Map<String, Object> errorResult = new HashMap<>();
+            errorResult.put("data", errorData);
+            errorResult.put("responseCode", 500);
+            errorResult.put("message", e.getMessage());
+            errorResult.put("requestId", requestId);
+            errorResult.put("timestamp", java.time.Instant.now().toString());
+
+            return errorResult;
+        }
+    }
+
+    // ==================== FRONTEND VIEW METHODS ====================
+
+    /**
+     * Get all views with frontend-friendly format
+     * Endpoint: GET /plx/api/oracle/schema/views
+     */
+    public Map<String, Object> getAllViewsForFrontend(String requestId, HttpServletRequest req, String performedBy) {
+        log.info("RequestEntity ID: {}, Getting all Oracle views for frontend, user: {}", requestId, performedBy);
+
+        try {
+            List<Map<String, Object>> views = schemaBrowserRepository.getAllViewsForFrontend();
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", views);
+            result.put("totalCount", views.size());
+            result.put("responseCode", 200);
+            result.put("message", "Views retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} views for frontend", requestId, views.size());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting views for frontend: {}", requestId, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    // ==================== FRONTEND PROCEDURE METHODS ====================
+
+    /**
+     * Get all procedures with frontend-friendly format
+     * Endpoint: GET /plx/api/oracle/schema/procedures
+     */
+    public Map<String, Object> getAllProceduresForFrontend(String requestId, HttpServletRequest req, String performedBy) {
+        log.info("RequestEntity ID: {}, Getting all Oracle procedures for frontend, user: {}", requestId, performedBy);
+
+        try {
+            List<Map<String, Object>> procedures = schemaBrowserRepository.getAllProceduresForFrontend();
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", procedures);
+            result.put("totalCount", procedures.size());
+            result.put("responseCode", 200);
+            result.put("message", "Procedures retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} procedures for frontend", requestId, procedures.size());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting procedures for frontend: {}", requestId, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    // ==================== FRONTEND FUNCTION METHODS ====================
+
+    /**
+     * Get all functions with frontend-friendly format
+     * Endpoint: GET /plx/api/oracle/schema/functions
+     */
+    public Map<String, Object> getAllFunctionsForFrontend(String requestId, HttpServletRequest req, String performedBy) {
+        log.info("RequestEntity ID: {}, Getting all Oracle functions for frontend, user: {}", requestId, performedBy);
+
+        try {
+            List<Map<String, Object>> functions = schemaBrowserRepository.getAllFunctionsForFrontend();
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", functions);
+            result.put("totalCount", functions.size());
+            result.put("responseCode", 200);
+            result.put("message", "Functions retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} functions for frontend", requestId, functions.size());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting functions for frontend: {}", requestId, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    // ==================== FRONTEND PACKAGE METHODS ====================
+
+    /**
+     * Get all packages with frontend-friendly format
+     * Endpoint: GET /plx/api/oracle/schema/packages
+     */
+    public Map<String, Object> getAllPackagesForFrontend(String requestId, HttpServletRequest req, String performedBy) {
+        log.info("RequestEntity ID: {}, Getting all Oracle packages for frontend, user: {}", requestId, performedBy);
+
+        try {
+            List<Map<String, Object>> packages = schemaBrowserRepository.getAllPackagesForFrontend();
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", packages);
+            result.put("totalCount", packages.size());
+            result.put("responseCode", 200);
+            result.put("message", "Packages retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} packages for frontend", requestId, packages.size());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting packages for frontend: {}", requestId, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    // ==================== FRONTEND SEQUENCE METHODS ====================
+
+    /**
+     * Get all sequences with frontend-friendly format
+     * Endpoint: GET /plx/api/oracle/schema/sequences
+     */
+    public Map<String, Object> getAllSequencesForFrontend(String requestId, HttpServletRequest req, String performedBy) {
+        log.info("RequestEntity ID: {}, Getting all Oracle sequences for frontend, user: {}", requestId, performedBy);
+
+        try {
+            List<Map<String, Object>> sequences = schemaBrowserRepository.getAllSequencesForFrontend();
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", sequences);
+            result.put("totalCount", sequences.size());
+            result.put("responseCode", 200);
+            result.put("message", "Sequences retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} sequences for frontend", requestId, sequences.size());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting sequences for frontend: {}", requestId, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    // ==================== FRONTEND SYNONYM METHODS ====================
+
+    /**
+     * Get all synonyms with frontend-friendly format
+     * Endpoint: GET /plx/api/oracle/schema/synonyms
+     */
+    public Map<String, Object> getAllSynonymsForFrontend(String requestId, HttpServletRequest req, String performedBy) {
+        log.info("RequestEntity ID: {}, Getting all Oracle synonyms for frontend, user: {}", requestId, performedBy);
+
+        try {
+            List<Map<String, Object>> synonyms = schemaBrowserRepository.getAllSynonymsForFrontend();
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", synonyms);
+            result.put("totalCount", synonyms.size());
+            result.put("responseCode", 200);
+            result.put("message", "Synonyms retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} synonyms for frontend", requestId, synonyms.size());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting synonyms for frontend: {}", requestId, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    // ==================== FRONTEND TYPE METHODS ====================
+
+    /**
+     * Get all types with frontend-friendly format
+     * Endpoint: GET /plx/api/oracle/schema/types
+     */
+    public Map<String, Object> getAllTypesForFrontend(String requestId, HttpServletRequest req, String performedBy) {
+        log.info("RequestEntity ID: {}, Getting all Oracle types for frontend, user: {}", requestId, performedBy);
+
+        try {
+            List<Map<String, Object>> types = schemaBrowserRepository.getAllTypesForFrontend();
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", types);
+            result.put("totalCount", types.size());
+            result.put("responseCode", 200);
+            result.put("message", "Types retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} types for frontend", requestId, types.size());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting types for frontend: {}", requestId, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    // ==================== FRONTEND TRIGGER METHODS ====================
+
+    /**
+     * Get all triggers with frontend-friendly format
+     * Endpoint: GET /plx/api/oracle/schema/triggers
+     */
+    public Map<String, Object> getAllTriggersForFrontend(String requestId, HttpServletRequest req, String performedBy) {
+        log.info("RequestEntity ID: {}, Getting all Oracle triggers for frontend, user: {}", requestId, performedBy);
+
+        try {
+            List<Map<String, Object>> triggers = schemaBrowserRepository.getAllTriggersForFrontend();
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", triggers);
+            result.put("totalCount", triggers.size());
+            result.put("responseCode", 200);
+            result.put("message", "Triggers retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} triggers for frontend", requestId, triggers.size());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting triggers for frontend: {}", requestId, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    // ==================== FRONTEND SEARCH METHODS ====================
+
+    /**
+     * Search schema objects
+     * Endpoint: GET /plx/api/oracle/schema/search
+     */
+    public Map<String, Object> searchObjectsForFrontend(String requestId, HttpServletRequest req,
+                                                        String performedBy, String searchQuery,
+                                                        String searchType, int maxResults) {
+        log.info("RequestEntity ID: {}, Searching Oracle objects with query: {}, type: {}, maxResults: {}",
+                requestId, searchQuery, searchType, maxResults);
+
+        try {
+            List<Map<String, Object>> results = schemaBrowserRepository.searchObjectsForFrontend(
+                    searchQuery, searchType, maxResults);
+
+            Map<String, Object> responseData = new HashMap<>();
+            responseData.put("results", results);
+            responseData.put("totalCount", results.size());
+            responseData.put("query", searchQuery);
+            responseData.put("type", searchType);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", responseData);
+            result.put("responseCode", 200);
+            result.put("message", "Search completed successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Found {} objects matching query: {}",
+                    requestId, results.size(), searchQuery);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error searching objects: {}", requestId, e.getMessage());
+
+            Map<String, Object> errorData = new HashMap<>();
+            errorData.put("results", new ArrayList<>());
+            errorData.put("totalCount", 0);
+
+            Map<String, Object> errorResult = new HashMap<>();
+            errorResult.put("data", errorData);
+            errorResult.put("responseCode", 500);
+            errorResult.put("message", e.getMessage());
+            errorResult.put("requestId", requestId);
+            errorResult.put("timestamp", java.time.Instant.now().toString());
+
+            return errorResult;
+        }
+    }
+
+    // ==================== EXECUTE QUERY METHODS ====================
+
+    /**
+     * Execute SQL query
+     * Endpoint: POST /plx/api/oracle/schema/execute
+     */
+    public Map<String, Object> executeQuery(String requestId, HttpServletRequest req,
+                                            String performedBy, String query,
+                                            int timeoutSeconds, boolean readOnly) {
+        log.info("RequestEntity ID: {}, Executing query, timeout: {}, readOnly: {}, user: {}",
+                requestId, timeoutSeconds, readOnly, performedBy);
+
+        try {
+            Map<String, Object> queryResults = schemaBrowserRepository.executeQuery(query, timeoutSeconds, readOnly);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", queryResults);
+            result.put("responseCode", 200);
+            result.put("message", "Query executed successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Query executed, returned {} rows",
+                    requestId, queryResults.get("rowCount"));
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error executing query: {}", requestId, e.getMessage());
+
+            Map<String, Object> errorData = new HashMap<>();
+            errorData.put("rows", new ArrayList<>());
+            errorData.put("columns", new ArrayList<>());
+            errorData.put("rowCount", 0);
+
+            Map<String, Object> errorResult = new HashMap<>();
+            errorResult.put("data", errorData);
+            errorResult.put("responseCode", 500);
+            errorResult.put("message", e.getMessage());
+            errorResult.put("requestId", requestId);
+            errorResult.put("timestamp", java.time.Instant.now().toString());
+
+            return errorResult;
+        }
+    }
+
+    // ==================== EXISTING TABLE METHODS ====================
+
+    /**
+     * Get all tables from Oracle schema (legacy format)
      */
     public Map<String, Object> getAllTables(String requestId, HttpServletRequest req, String performedBy) {
         log.info("RequestEntity ID: {}, Getting all Oracle tables for user: {}", requestId, performedBy);
@@ -55,7 +845,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get tables from a specific Oracle schema
+     * Get tables from a specific Oracle schema (legacy format)
      */
     public Map<String, Object> getTablesBySchema(String requestId, HttpServletRequest req,
                                                  String performedBy, String schemaName) {
@@ -65,14 +855,10 @@ public class OracleSchemaService {
         try {
             List<Map<String, Object>> tables = schemaBrowserRepository.getTablesBySchema(schemaName);
 
-            // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
-
             Map<String, Object> result = new HashMap<>();
             result.put("tables", tables);
             result.put("totalCount", tables.size());
             result.put("database", "Oracle");
-            result.put("schema", currentSchema);
             result.put("schema", schemaName);
             result.put("generatedAt", java.time.LocalDateTime.now().toString());
             result.put("generatedBy", performedBy);
@@ -90,7 +876,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get detailed information about a specific table
+     * Get detailed information about a specific table (legacy format)
      */
     public Map<String, Object> getTableDetails(String requestId, HttpServletRequest req,
                                                String performedBy, String tableName) {
@@ -127,7 +913,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Search for tables by name pattern
+     * Search for tables by name pattern (legacy format)
      */
     public Map<String, Object> searchTables(String requestId, HttpServletRequest req,
                                             String performedBy, String searchPattern) {
@@ -163,7 +949,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get table statistics
+     * Get table statistics (legacy format)
      */
     public Map<String, Object> getTableStatistics(String requestId, HttpServletRequest req,
                                                   String performedBy, String tableName) {
@@ -191,7 +977,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get tables with row count
+     * Get tables with row count (legacy format)
      */
     public Map<String, Object> getTablesWithRowCount(String requestId, HttpServletRequest req, String performedBy) {
         log.info("RequestEntity ID: {}, Getting Oracle tables with row count for user: {}", requestId, performedBy);
@@ -221,7 +1007,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get table count by tablespace
+     * Get table count by tablespace (legacy format)
      */
     public Map<String, Object> getTableCountByTablespace(String requestId, HttpServletRequest req, String performedBy) {
         log.info("RequestEntity ID: {}, Getting Oracle table count by tablespace for user: {}", requestId, performedBy);
@@ -252,7 +1038,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get recent tables
+     * Get recent tables (legacy format)
      */
     public Map<String, Object> getRecentTables(String requestId, HttpServletRequest req,
                                                String performedBy, int days) {
@@ -285,10 +1071,10 @@ public class OracleSchemaService {
         }
     }
 
-    // ==================== VIEW METHODS ====================
+    // ==================== EXISTING VIEW METHODS ====================
 
     /**
-     * Get all views from Oracle schema
+     * Get all views from Oracle schema (legacy format)
      */
     public Map<String, Object> getAllViews(String requestId, HttpServletRequest req, String performedBy) {
         log.info("RequestEntity ID: {}, Getting all Oracle views for user: {}", requestId, performedBy);
@@ -318,7 +1104,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get views from a specific Oracle schema
+     * Get views from a specific Oracle schema (legacy format)
      */
     public Map<String, Object> getViewsBySchema(String requestId, HttpServletRequest req,
                                                 String performedBy, String schemaName) {
@@ -328,14 +1114,10 @@ public class OracleSchemaService {
         try {
             List<Map<String, Object>> views = schemaBrowserRepository.getViewsBySchema(schemaName);
 
-            // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
-
             Map<String, Object> result = new HashMap<>();
             result.put("views", views);
             result.put("totalCount", views.size());
             result.put("database", "Oracle");
-            result.put("schema", currentSchema);
             result.put("schema", schemaName);
             result.put("generatedAt", java.time.LocalDateTime.now().toString());
             result.put("generatedBy", performedBy);
@@ -353,7 +1135,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get detailed information about a specific view
+     * Get detailed information about a specific view (legacy format)
      */
     public Map<String, Object> getViewDetails(String requestId, HttpServletRequest req,
                                               String performedBy, String viewName) {
@@ -378,10 +1160,10 @@ public class OracleSchemaService {
         }
     }
 
-    // ==================== PROCEDURE METHODS ====================
+    // ==================== EXISTING PROCEDURE METHODS ====================
 
     /**
-     * Get all procedures from Oracle schema
+     * Get all procedures from Oracle schema (legacy format)
      */
     public Map<String, Object> getAllProcedures(String requestId, HttpServletRequest req, String performedBy) {
         log.info("RequestEntity ID: {}, Getting all Oracle procedures for user: {}", requestId, performedBy);
@@ -411,7 +1193,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get procedures from a specific Oracle schema
+     * Get procedures from a specific Oracle schema (legacy format)
      */
     public Map<String, Object> getProceduresBySchema(String requestId, HttpServletRequest req,
                                                      String performedBy, String schemaName) {
@@ -421,14 +1203,10 @@ public class OracleSchemaService {
         try {
             List<Map<String, Object>> procedures = schemaBrowserRepository.getProceduresBySchema(schemaName);
 
-            // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
-
             Map<String, Object> result = new HashMap<>();
             result.put("procedures", procedures);
             result.put("totalCount", procedures.size());
             result.put("database", "Oracle");
-            result.put("schema", currentSchema);
             result.put("schema", schemaName);
             result.put("generatedAt", java.time.LocalDateTime.now().toString());
             result.put("generatedBy", performedBy);
@@ -446,7 +1224,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get detailed information about a specific procedure
+     * Get detailed information about a specific procedure (legacy format)
      */
     public Map<String, Object> getProcedureDetails(String requestId, HttpServletRequest req,
                                                    String performedBy, String procedureName) {
@@ -471,10 +1249,10 @@ public class OracleSchemaService {
         }
     }
 
-    // ==================== FUNCTION METHODS ====================
+    // ==================== EXISTING FUNCTION METHODS ====================
 
     /**
-     * Get all functions from Oracle schema
+     * Get all functions from Oracle schema (legacy format)
      */
     public Map<String, Object> getAllFunctions(String requestId, HttpServletRequest req, String performedBy) {
         log.info("RequestEntity ID: {}, Getting all Oracle functions for user: {}", requestId, performedBy);
@@ -504,7 +1282,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get functions from a specific Oracle schema
+     * Get functions from a specific Oracle schema (legacy format)
      */
     public Map<String, Object> getFunctionsBySchema(String requestId, HttpServletRequest req,
                                                     String performedBy, String schemaName) {
@@ -514,14 +1292,10 @@ public class OracleSchemaService {
         try {
             List<Map<String, Object>> functions = schemaBrowserRepository.getFunctionsBySchema(schemaName);
 
-            // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
-
             Map<String, Object> result = new HashMap<>();
             result.put("functions", functions);
             result.put("totalCount", functions.size());
             result.put("database", "Oracle");
-            result.put("schema", currentSchema);
             result.put("schema", schemaName);
             result.put("generatedAt", java.time.LocalDateTime.now().toString());
             result.put("generatedBy", performedBy);
@@ -539,7 +1313,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get detailed information about a specific function
+     * Get detailed information about a specific function (legacy format)
      */
     public Map<String, Object> getFunctionDetails(String requestId, HttpServletRequest req,
                                                   String performedBy, String functionName) {
@@ -564,10 +1338,10 @@ public class OracleSchemaService {
         }
     }
 
-    // ==================== PACKAGE METHODS ====================
+    // ==================== EXISTING PACKAGE METHODS ====================
 
     /**
-     * Get all packages from Oracle schema
+     * Get all packages from Oracle schema (legacy format)
      */
     public Map<String, Object> getAllPackages(String requestId, HttpServletRequest req, String performedBy) {
         log.info("RequestEntity ID: {}, Getting all Oracle packages for user: {}", requestId, performedBy);
@@ -597,7 +1371,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get packages from a specific Oracle schema
+     * Get packages from a specific Oracle schema (legacy format)
      */
     public Map<String, Object> getPackagesBySchema(String requestId, HttpServletRequest req,
                                                    String performedBy, String schemaName) {
@@ -607,14 +1381,10 @@ public class OracleSchemaService {
         try {
             List<Map<String, Object>> packages = schemaBrowserRepository.getPackagesBySchema(schemaName);
 
-            // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
-
             Map<String, Object> result = new HashMap<>();
             result.put("packages", packages);
             result.put("totalCount", packages.size());
             result.put("database", "Oracle");
-            result.put("schema", currentSchema);
             result.put("schema", schemaName);
             result.put("generatedAt", java.time.LocalDateTime.now().toString());
             result.put("generatedBy", performedBy);
@@ -632,7 +1402,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get detailed information about a specific package
+     * Get detailed information about a specific package (legacy format)
      */
     public Map<String, Object> getPackageDetails(String requestId, HttpServletRequest req,
                                                  String performedBy, String packageName) {
@@ -657,10 +1427,10 @@ public class OracleSchemaService {
         }
     }
 
-    // ==================== TRIGGER METHODS ====================
+    // ==================== EXISTING TRIGGER METHODS ====================
 
     /**
-     * Get all triggers from Oracle schema
+     * Get all triggers from Oracle schema (legacy format)
      */
     public Map<String, Object> getAllTriggers(String requestId, HttpServletRequest req, String performedBy) {
         log.info("RequestEntity ID: {}, Getting all Oracle triggers for user: {}", requestId, performedBy);
@@ -690,7 +1460,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get triggers from a specific Oracle schema
+     * Get triggers from a specific Oracle schema (legacy format)
      */
     public Map<String, Object> getTriggersBySchema(String requestId, HttpServletRequest req,
                                                    String performedBy, String schemaName) {
@@ -700,14 +1470,10 @@ public class OracleSchemaService {
         try {
             List<Map<String, Object>> triggers = schemaBrowserRepository.getTriggersBySchema(schemaName);
 
-            // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
-
             Map<String, Object> result = new HashMap<>();
             result.put("triggers", triggers);
             result.put("totalCount", triggers.size());
             result.put("database", "Oracle");
-            result.put("schema", currentSchema);
             result.put("schema", schemaName);
             result.put("generatedAt", java.time.LocalDateTime.now().toString());
             result.put("generatedBy", performedBy);
@@ -725,7 +1491,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get detailed information about a specific trigger
+     * Get detailed information about a specific trigger (legacy format)
      */
     public Map<String, Object> getTriggerDetails(String requestId, HttpServletRequest req,
                                                  String performedBy, String triggerName) {
@@ -750,10 +1516,10 @@ public class OracleSchemaService {
         }
     }
 
-    // ==================== SYNONYM METHODS ====================
+    // ==================== EXISTING SYNONYM METHODS ====================
 
     /**
-     * Get all synonyms from Oracle schema
+     * Get all synonyms from Oracle schema (legacy format)
      */
     public Map<String, Object> getAllSynonyms(String requestId, HttpServletRequest req, String performedBy) {
         log.info("RequestEntity ID: {}, Getting all Oracle synonyms for user: {}", requestId, performedBy);
@@ -783,7 +1549,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get synonyms from a specific Oracle schema
+     * Get synonyms from a specific Oracle schema (legacy format)
      */
     public Map<String, Object> getSynonymsBySchema(String requestId, HttpServletRequest req,
                                                    String performedBy, String schemaName) {
@@ -793,14 +1559,10 @@ public class OracleSchemaService {
         try {
             List<Map<String, Object>> synonyms = schemaBrowserRepository.getSynonymsBySchema(schemaName);
 
-            // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
-
             Map<String, Object> result = new HashMap<>();
             result.put("synonyms", synonyms);
             result.put("totalCount", synonyms.size());
             result.put("database", "Oracle");
-            result.put("schema", currentSchema);
             result.put("schema", schemaName);
             result.put("generatedAt", java.time.LocalDateTime.now().toString());
             result.put("generatedBy", performedBy);
@@ -817,36 +1579,10 @@ public class OracleSchemaService {
         }
     }
 
-    /**
-     * Get detailed information about a specific synonym
-     */
-    public Map<String, Object> getSynonymDetails(String requestId, HttpServletRequest req,
-                                                 String performedBy, String synonymName) {
-        log.info("RequestEntity ID: {}, Getting details for Oracle synonym: {} for user: {}",
-                requestId, synonymName, performedBy);
-
-        try {
-            Map<String, Object> synonymDetails = schemaBrowserRepository.getSynonymDetails(synonymName);
-
-            synonymDetails.put("generatedAt", java.time.LocalDateTime.now().toString());
-            synonymDetails.put("generatedBy", performedBy);
-
-            log.info("RequestEntity ID: {}, Retrieved details for Oracle synonym: {}",
-                    requestId, synonymName);
-
-            return synonymDetails;
-
-        } catch (Exception e) {
-            log.error("RequestEntity ID: {}, Error getting details for Oracle synonym {}: {}",
-                    requestId, synonymName, e.getMessage());
-            throw new RuntimeException("Failed to retrieve details for Oracle synonym " + synonymName + ": " + e.getMessage(), e);
-        }
-    }
-
-    // ==================== SEQUENCE METHODS ====================
+    // ==================== EXISTING SEQUENCE METHODS ====================
 
     /**
-     * Get all sequences from Oracle schema
+     * Get all sequences from Oracle schema (legacy format)
      */
     public Map<String, Object> getAllSequences(String requestId, HttpServletRequest req, String performedBy) {
         log.info("RequestEntity ID: {}, Getting all Oracle sequences for user: {}", requestId, performedBy);
@@ -876,7 +1612,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get sequences from a specific Oracle schema
+     * Get sequences from a specific Oracle schema (legacy format)
      */
     public Map<String, Object> getSequencesBySchema(String requestId, HttpServletRequest req,
                                                     String performedBy, String schemaName) {
@@ -886,14 +1622,10 @@ public class OracleSchemaService {
         try {
             List<Map<String, Object>> sequences = schemaBrowserRepository.getSequencesBySchema(schemaName);
 
-            // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
-
             Map<String, Object> result = new HashMap<>();
             result.put("sequences", sequences);
             result.put("totalCount", sequences.size());
             result.put("database", "Oracle");
-            result.put("schema", currentSchema);
             result.put("schema", schemaName);
             result.put("generatedAt", java.time.LocalDateTime.now().toString());
             result.put("generatedBy", performedBy);
@@ -911,7 +1643,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get detailed information about a specific sequence
+     * Get detailed information about a specific sequence (legacy format)
      */
     public Map<String, Object> getSequenceDetails(String requestId, HttpServletRequest req,
                                                   String performedBy, String sequenceName) {
@@ -936,10 +1668,10 @@ public class OracleSchemaService {
         }
     }
 
-    // ==================== TYPE METHODS ====================
+    // ==================== EXISTING TYPE METHODS ====================
 
     /**
-     * Get all types from Oracle schema
+     * Get all types from Oracle schema (legacy format)
      */
     public Map<String, Object> getAllTypes(String requestId, HttpServletRequest req, String performedBy) {
         log.info("RequestEntity ID: {}, Getting all Oracle types for user: {}", requestId, performedBy);
@@ -969,7 +1701,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get types from a specific Oracle schema
+     * Get types from a specific Oracle schema (legacy format)
      */
     public Map<String, Object> getTypesBySchema(String requestId, HttpServletRequest req,
                                                 String performedBy, String schemaName) {
@@ -979,14 +1711,10 @@ public class OracleSchemaService {
         try {
             List<Map<String, Object>> types = schemaBrowserRepository.getTypesBySchema(schemaName);
 
-            // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
-
             Map<String, Object> result = new HashMap<>();
             result.put("types", types);
             result.put("totalCount", types.size());
             result.put("database", "Oracle");
-            result.put("schema", currentSchema);
             result.put("schema", schemaName);
             result.put("generatedAt", java.time.LocalDateTime.now().toString());
             result.put("generatedBy", performedBy);
@@ -1004,7 +1732,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get detailed information about a specific type
+     * Get detailed information about a specific type (legacy format)
      */
     public Map<String, Object> getTypeDetails(String requestId, HttpServletRequest req,
                                               String performedBy, String typeName) {
@@ -1029,10 +1757,10 @@ public class OracleSchemaService {
         }
     }
 
-    // ==================== DATABASE LINK METHODS ====================
+    // ==================== EXISTING DATABASE LINK METHODS ====================
 
     /**
-     * Get all database links from Oracle schema
+     * Get all database links from Oracle schema (legacy format)
      */
     public Map<String, Object> getAllDbLinks(String requestId, HttpServletRequest req, String performedBy) {
         log.info("RequestEntity ID: {}, Getting all Oracle database links for user: {}", requestId, performedBy);
@@ -1062,7 +1790,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get database links from a specific Oracle schema
+     * Get database links from a specific Oracle schema (legacy format)
      */
     public Map<String, Object> getDbLinksBySchema(String requestId, HttpServletRequest req,
                                                   String performedBy, String schemaName) {
@@ -1072,14 +1800,10 @@ public class OracleSchemaService {
         try {
             List<Map<String, Object>> dbLinks = schemaBrowserRepository.getDbLinksBySchema(schemaName);
 
-            // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
-
             Map<String, Object> result = new HashMap<>();
             result.put("dbLinks", dbLinks);
             result.put("totalCount", dbLinks.size());
             result.put("database", "Oracle");
-            result.put("schema", currentSchema);
             result.put("schema", schemaName);
             result.put("generatedAt", java.time.LocalDateTime.now().toString());
             result.put("generatedBy", performedBy);
@@ -1096,10 +1820,10 @@ public class OracleSchemaService {
         }
     }
 
-    // ==================== GENERAL OBJECT METHODS ====================
+    // ==================== EXISTING GENERAL OBJECT METHODS ====================
 
     /**
-     * Get all objects from Oracle schema
+     * Get all objects from Oracle schema (legacy format)
      */
     public Map<String, Object> getAllObjects(String requestId, HttpServletRequest req, String performedBy) {
         log.info("RequestEntity ID: {}, Getting all Oracle objects for user: {}", requestId, performedBy);
@@ -1129,7 +1853,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get objects from a specific Oracle schema
+     * Get objects from a specific Oracle schema (legacy format)
      */
     public Map<String, Object> getObjectsBySchema(String requestId, HttpServletRequest req,
                                                   String performedBy, String schemaName) {
@@ -1139,14 +1863,10 @@ public class OracleSchemaService {
         try {
             List<Map<String, Object>> objects = schemaBrowserRepository.getObjectsBySchema(schemaName);
 
-            // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
-
             Map<String, Object> result = new HashMap<>();
             result.put("objects", objects);
             result.put("totalCount", objects.size());
             result.put("database", "Oracle");
-            result.put("schema", currentSchema);
             result.put("schema", schemaName);
             result.put("generatedAt", java.time.LocalDateTime.now().toString());
             result.put("generatedBy", performedBy);
@@ -1164,7 +1884,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Search for objects by name pattern
+     * Search for objects by name pattern (legacy format)
      */
     public Map<String, Object> searchObjects(String requestId, HttpServletRequest req,
                                              String performedBy, String searchPattern) {
@@ -1199,7 +1919,7 @@ public class OracleSchemaService {
     }
 
     /**
-     * Get object count by type
+     * Get object count by type (legacy format)
      */
     public Map<String, Object> getObjectCountByType(String requestId, HttpServletRequest req, String performedBy) {
         log.info("RequestEntity ID: {}, Getting Oracle object count by type for user: {}", requestId, performedBy);
@@ -1228,10 +1948,10 @@ public class OracleSchemaService {
         }
     }
 
-    // ==================== DIAGNOSTIC METHODS ====================
+    // ==================== EXISTING DIAGNOSTIC METHODS ====================
 
     /**
-     * Run comprehensive database diagnostics
+     * Run comprehensive database diagnostics (legacy format)
      */
     public Map<String, Object> diagnoseDatabase(String requestId, HttpServletRequest req, String performedBy) {
         log.info("RequestEntity ID: {}, Running Oracle database diagnostics for user: {}", requestId, performedBy);
@@ -1251,5 +1971,21 @@ public class OracleSchemaService {
             log.error("RequestEntity ID: {}, Error diagnosing Oracle database: {}", requestId, e.getMessage());
             throw new RuntimeException("Failed to diagnose Oracle database: " + e.getMessage(), e);
         }
+    }
+
+
+    // ==================== HELPER METHODS ====================
+
+    /**
+     * Helper method to create a standard error response
+     */
+    private Map<String, Object> createErrorResponse(String requestId, String errorMessage) {
+        Map<String, Object> errorResult = new HashMap<>();
+        errorResult.put("data", null);
+        errorResult.put("responseCode", 500);
+        errorResult.put("message", errorMessage);
+        errorResult.put("requestId", requestId);
+        errorResult.put("timestamp", java.time.Instant.now().toString());
+        return errorResult;
     }
 }

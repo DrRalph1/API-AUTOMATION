@@ -1,53 +1,76 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
-  Database, Table, Columns, FileText, Code, Package, Hash, Link, Type,
+  Database, Table, FileText, Code, Package, Hash, Link, Type,
   Search, Filter, Star, ChevronDown, ChevronRight, ChevronUp, ChevronLeft,
-  MoreVertical, Settings, User, Moon, Sun, RefreshCw, Plus, X, Check, SlidersHorizontal,
+  MoreVertical, Settings, User, Moon, Sun, RefreshCw, Plus, X, Check,
   Eye, EyeOff, Copy, Download, Upload, Share2, Edit2, Trash2, Play,
-  Save, Folder, FolderOpen, Server, Activity, BarChart, Terminal,
+  Save, Folder, Server, Activity, BarChart, Terminal,
   Globe, Lock, Key, Shield, Users, Bell, HelpCircle, AlertCircle,
   Clock, Cpu, HardDrive, Network, Wifi, Bluetooth, Smartphone, Monitor,
   Printer, Inbox, Archive, Cloud, Home, Coffee, Grid, List, Maximize2,
   Minimize2, MoreHorizontal, Send, CheckCircle, XCircle, Info, Layers,
-  Box, FolderPlus, FilePlus, GitBranch, Bold, Italic, Image, Table as TableIcon,
-  ExternalLink, UploadCloud, DownloadCloud, ShieldCheck, LayoutDashboard,
-  BookOpen, Zap, History, Terminal as TerminalIcon,
-  ChevronsLeft, ChevronsRight, GripVertical, Circle, Dot, Type as TypeIcon,
-  FileCode, ChevronsUp, ChevronsDown, AlertTriangle, Menu
+  Box, GitBranch, Image, ExternalLink,
+  ShieldCheck, LayoutDashboard, BookOpen, Zap, History,
+  ChevronsLeft, ChevronsRight, GripVertical, Circle, Dot,
+  FileCode, ChevronsUp, ChevronsDown, AlertTriangle, Menu, DatabaseZap
 } from 'lucide-react';
 import ApiGenerationModal from '@/components/modals/ApiGenerationModal.js';
 
-// Import SchemaBrowserController
+// Import OracleSchemaController
 import {
-  getSchemaConnections,
-  getSchemaObjects,
-  getObjectDetails,
+  getAllTables,
+  getAllViews,
+  getAllProcedures,
+  getAllFunctions,
+  getAllPackages,
+  getAllSequences,
+  getAllSynonyms,
+  getAllTypes,
+  getAllTriggers,
+  getAllDbLinks,
+  getAllTablesForFrontend,
+  getAllViewsForFrontend,
+  getAllProceduresForFrontend,
+  getAllFunctionsForFrontend,
+  getAllPackagesForFrontend,
+  getAllSequencesForFrontend,
+  getAllSynonymsForFrontend,
+  getAllTypesForFrontend,
+  getAllTriggersForFrontend,
+  getTableDetails,
   getTableData,
+  getViewDetails,
+  getProcedureDetails,
+  getFunctionDetails,
+  getPackageDetails,
+  getTriggerDetails,
+  getSynonymDetails,
+  getSequenceDetails,
+  getTypeDetails,
+  getTableStatistics,
+  getTablesWithRowCount,
+  getTablespaceStats,
+  getRecentTables,
+  getAllObjects,
+  getObjectsBySchema,
+  searchObjects,
+  getObjectCountByType,
+  diagnoseDatabase,
+  searchObjectsAdvanced,
   getObjectDDL,
-  searchSchema,
   executeQuery,
-  generateAPIFromObject,
   getComprehensiveSchemaData,
-  clearSchemaCache,
-  getObjectHierarchy,
-  exportSchemaData,
-  advancedSearch,
-  healthCheck,
   handleSchemaBrowserResponse,
-  extractSchemaConnections,
   extractSchemaObjects,
   extractObjectDetails,
   extractTableData,
   extractDDL,
   extractSearchResults,
   extractQueryResults,
-  extractAPIGenerationResults,
   extractComprehensiveSchemaData,
-  extractObjectHierarchy,
-  extractExportResults,
-  extractHealthCheck,
-  formatObjectDetails,
-  formatTableData,
+  extractStatistics,
+  extractDiagnostics,
+  extractObjectCounts,
   formatBytes,
   formatDateForDisplay,
   formatDataType,
@@ -56,11 +79,8 @@ import {
   isSupportedForAPIGeneration,
   generateSampleQuery,
   refreshSchemaData,
-  downloadExportedSchema,
-  cacheSchemaData,
-  getCachedSchemaData,
-  clearCachedSchemaData
-} from "../controllers/SchemaBrowserController.js";
+  downloadExportedSchema
+} from "../controllers/OracleSchemaController.js";
 
 // Create a separate FilterInput component to prevent re-renders
 const FilterInput = React.memo(({ 
@@ -69,6 +89,7 @@ const FilterInput = React.memo(({
   onFilterChange, 
   onOwnerChange, 
   onClearFilters,
+  owners,
   colors 
 }) => {
   const searchInputRef = useRef(null);
@@ -131,6 +152,24 @@ const FilterInput = React.memo(({
               </button>
             )}
           </div>
+          
+          {/* Owner filter */}
+          <select
+            value={selectedOwner}
+            onChange={handleOwnerChange}
+            className="w-full px-3 py-2.5 rounded text-sm focus:outline-none hover-lift touch-target"
+            style={{ 
+              backgroundColor: colors.inputBg,
+              border: `1px solid ${colors.inputBorder}`,
+              color: colors.text
+            }}
+            aria-label="Filter by owner"
+          >
+            <option value="ALL">All Owners</option>
+            {owners.map(owner => (
+              <option key={owner} value={owner}>{owner}</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -195,13 +234,7 @@ const ObjectTreeSection = React.memo(({
       return (
         (obj.name && obj.name.toLowerCase().includes(searchLower)) ||
         (obj.owner && obj.owner.toLowerCase().includes(searchLower)) ||
-        (obj.comment && obj.comment.toLowerCase().includes(searchLower)) ||
-        (obj.columns && obj.columns.some(col => 
-          col.name && col.name.toLowerCase().includes(searchLower)
-        )) ||
-        (obj.parameters && obj.parameters.some(param => 
-          param.name && param.name.toLowerCase().includes(searchLower)
-        ))
+        (obj.comment && obj.comment && obj.comment.toLowerCase().includes(searchLower))
       );
     });
   }, [filterQuery, selectedOwner]);
@@ -221,7 +254,7 @@ const ObjectTreeSection = React.memo(({
             <ChevronDown size={14} style={{ color: colors.textSecondary }} /> :
             <ChevronRight size={14} style={{ color: colors.textSecondary }} />
           }
-          {getObjectIcon(type.slice(0, -1))}
+          {getObjectIcon(type.slice(0, -1).toUpperCase())}
           <span className="truncate text-xs sm:text-sm">{title}</span>
         </div>
         <span className="text-xs px-1.5 py-0.5 rounded shrink-0 min-w-6 text-center" style={{ 
@@ -257,16 +290,13 @@ const ObjectTreeSection = React.memo(({
                 aria-label={`Select ${obj.name}`}
               >
                 <div className="flex items-center gap-2 min-w-0 flex-1">
-                  {getObjectIcon(type.slice(0, -1))}
+                  {getObjectIcon(type.slice(0, -1).toUpperCase())}
                   <span className="text-xs sm:text-sm truncate">{obj.name}</span>
-                  {obj.status !== 'VALID' && (
+                  {obj.status !== 'VALID' && obj.status && (
                     <AlertCircle size={10} style={{ color: colors.error }} className="shrink-0" />
                   )}
                 </div>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2">
-                  {obj.isFavorite && (
-                    <Star size={10} fill={colors.warning} style={{ color: colors.warning }} />
-                  )}
                   {obj.rowCount && (
                     <span className="text-xs hidden sm:inline" style={{ color: activeObjectId === obj.id ? colors.primary : colors.textSecondary }}>
                       ({obj.rowCount})
@@ -288,8 +318,6 @@ ObjectTreeSection.displayName = 'ObjectTreeSection';
 const LeftSidebar = React.memo(({ 
   isLeftSidebarVisible, 
   setIsLeftSidebarVisible,
-  showConnectionManager,
-  setShowConnectionManager,
   filterQuery,
   selectedOwner,
   handleFilterChange,
@@ -303,50 +331,29 @@ const LeftSidebar = React.memo(({
   handleObjectSelect,
   getObjectIcon,
   handleContextMenu,
-  activeConnection,
-  connections,
-  loading
+  loading,
+  owners
 }) => {
-  const activeConnectionData = connections.find(c => c.id === activeConnection) || connections[0] || {};
-
   return (
     <div className={`w-full md:w-64 border-r flex flex-col absolute md:relative inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out ${
       isLeftSidebarVisible ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
     }`} style={{ 
       borderColor: colors.border,
       width: '16vw',
-      maxWidth: '320px'
+      maxWidth: '320px',
+      backgroundColor: colors.sidebar
     }}>
 
-      {/* Connection Info */}
+      {/* Schema Browser Header */}
       <div className="p-3 border-b" style={{ borderColor: colors.border }}>
         <div className="flex items-center justify-between mb-2">
-          <button 
-            className="flex items-center gap-2 flex-1 text-left touch-target"
-            onClick={() => setShowConnectionManager(true)}
-            aria-label="Open connection manager"
-            disabled={loading}
-          >
-            <div className="w-2 h-2 rounded-full" style={{ 
-              backgroundColor: activeConnectionData.status === 'connected' ? colors.connectionOnline : 
-                             activeConnectionData.status === 'disconnected' ? colors.connectionOffline : colors.connectionIdle 
-            }} />
+          <div className="flex items-center gap-2 flex-1 text-left">
+            <Database size={16} style={{ color: colors.primary }} />
             <span className="text-sm font-medium truncate" style={{ color: colors.text }}>
-              {activeConnectionData.name || 'Loading...'}
+              Schema Browser
             </span>
-            <ChevronRight size={12} style={{ color: colors.textSecondary }} className="ml-1" />
-          </button>
+          </div>
           <div className="flex gap-1">
-            <button 
-              className="rounded hover:bg-opacity-50 transition-colors hover-lift touch-target flex items-center justify-center w-8 h-8"
-              style={{ backgroundColor: colors.hover }}
-              onClick={() => setShowConnectionManager(true)}
-              aria-label="Server settings"
-              disabled={loading}
-            >
-              <Server size={12} style={{ color: colors.textSecondary }} />
-            </button>
-
             <button 
               className="rounded hover:bg-opacity-50 transition-colors hover-lift touch-target flex items-center justify-center w-8 h-8"
               style={{ backgroundColor: colors.hover }}
@@ -358,9 +365,6 @@ const LeftSidebar = React.memo(({
             </button>
           </div>
         </div>
-        <div className="text-xs truncate" style={{ color: colors.textSecondary }}>
-          {activeConnectionData.host ? `${activeConnectionData.host}:${activeConnectionData.port}` : 'Loading connection...'}
-        </div>
       </div>
 
       {/* Filter Input Component */}
@@ -370,6 +374,7 @@ const LeftSidebar = React.memo(({
         onFilterChange={handleFilterChange}
         onOwnerChange={handleOwnerChange}
         onClearFilters={handleClearFilters}
+        owners={owners}
         colors={colors}
       />
 
@@ -507,6 +512,20 @@ const LeftSidebar = React.memo(({
               getObjectIcon={getObjectIcon}
               handleContextMenu={handleContextMenu}
             />
+            <ObjectTreeSection
+              title="Database Links"
+              type="dbLinks"
+              objects={schemaObjects.dbLinks || []}
+              isExpanded={objectTree.dbLinks}
+              onToggle={() => handleToggleSection('dbLinks')}
+              onSelectObject={handleObjectSelect}
+              activeObjectId={activeObject?.id}
+              filterQuery={filterQuery}
+              selectedOwner={selectedOwner}
+              colors={colors}
+              getObjectIcon={getObjectIcon}
+              handleContextMenu={handleContextMenu}
+            />
           </>
         )}
       </div>
@@ -521,9 +540,6 @@ const MobileBottomNav = React.memo(({
   isLeftSidebarVisible, 
   setIsLeftSidebarVisible, 
   setShowApiModal, 
-  schemaObjects, 
-  tabs, 
-  handleObjectSelect,
   toggleTheme,
   isDark,
   colors,
@@ -542,23 +558,19 @@ const MobileBottomNav = React.memo(({
         aria-label="Open schema browser"
         disabled={loading}
       >
-        <div className="flex-1 flex items-center justify-center">
-          <Database size={16} style={{ color: colors.text }} />
-        </div>
+        <Database size={16} style={{ color: colors.text }} />
         <span className="text-xs" style={{ color: colors.textSecondary }}>Schema</span>
       </button>
 
       <button 
         onClick={() => setShowApiModal(true)}
-        className="w-full px-3 py-2 rounded text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 rounded hover:opacity-90 font-medium transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-        // style={{ backgroundColor: 'transparent' }}
-        aria-label="Generate API"
+        className="px-3 py-2 rounded text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 font-medium transition-colors flex items-center gap-2 hover-lift cursor-pointer"
+        style={{ color: "white" }}
+        aria-label="Generate New API"
         disabled={loading}
       >
-        <div className="flex-1 flex items-center justify-center">
-          <Code size={16} style={{ color: colors.primary }} />
-        </div>
-        <span className="text-xs" style={{ color: "white" }}>Generate New API</span>
+        <Code size={16} />
+        <span className="text-xs">Generate API</span>
       </button>
       
       <button 
@@ -592,35 +604,24 @@ MobileBottomNav.displayName = 'MobileBottomNav';
 const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   // Using EXACT Dashboard color system for consistency
   const colors = useMemo(() => isDark ? {
-    // Using your shade as base - EXACTLY matching Collections
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
     sidebar: 'rgb(41 53 72 / 19%)',
     main: 'rgb(1 14 35)',
     header: 'rgb(20 26 38)',
     card: 'rgb(41 53 72 / 19%)',
-    
-    // Text - coordinating grays - EXACTLY matching Collections
     text: '#F1F5F9',
     textSecondary: 'rgb(148 163 184)',
     textTertiary: 'rgb(100 116 139)',
-    
-    // Borders - variations of your shade - EXACTLY matching Collections
     border: 'rgb(51 65 85 / 19%)',
     borderLight: 'rgb(45 55 72)',
     borderDark: 'rgb(71 85 105)',
-    
-    // Interactive - layered transparency - EXACTLY matching Collections
     hover: 'rgb(45 46 72 / 33%)',
     active: 'rgb(59 74 99)',
     selected: 'rgb(44 82 130)',
-    
-    // Primary colors - EXACTLY matching Collections
     primary: 'rgb(96 165 250)',
     primaryLight: 'rgb(147 197 253)',
     primaryDark: 'rgb(37 99 235)',
-    
-    // Method colors - EXACTLY matching Collections
     method: {
       GET: 'rgb(52 211 153)',
       POST: 'rgb(96 165 250)',
@@ -632,64 +633,50 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
       LINK: 'rgb(34 211 238)',
       UNLINK: 'rgb(251 191 36)'
     },
-    
-    // Status colors - EXACTLY matching Collections
     success: 'rgb(52 211 153)',
     warning: 'rgb(251 191 36)',
     error: 'rgb(248 113 113)',
     info: 'rgb(96 165 250)',
-    
-    // UI Components - EXACTLY matching Collections
     tabActive: 'rgb(96 165 250)',
     tabInactive: 'rgb(148 163 184)',
     sidebarActive: 'rgb(96 165 250)',
     sidebarHover: 'rgb(45 46 72 / 33%)',
     inputBg: 'rgb(41 53 72 / 19%)',
-    inputborder: 'rgb(51 65 85 / 19%)',
+    inputBorder: 'rgb(51 65 85 / 19%)',
     tableHeader: 'rgb(41 53 72 / 19%)',
     tableRow: 'rgb(41 53 72 / 19%)',
     tableRowHover: 'rgb(45 46 72 / 33%)',
     dropdownBg: 'rgb(41 53 72 / 19%)',
-    dropdownborder: 'rgb(51 65 85 / 19%)',
+    dropdownBorder: 'rgb(51 65 85 / 19%)',
     modalBg: 'rgb(41 53 72 / 19%)',
-    modalborder: 'rgb(51 65 85 / 19%)',
+    modalBorder: 'rgb(51 65 85 / 19%)',
     codeBg: 'rgb(41 53 72 / 19%)',
-    
-    // Connection status - EXACTLY matching Collections
     connectionOnline: 'rgb(52 211 153)',
     connectionOffline: 'rgb(248 113 113)',
     connectionIdle: 'rgb(251 191 36)',
-    
-    // Accent colors - EXACTLY matching Collections
     accentPurple: 'rgb(167 139 250)',
     accentPink: 'rgb(244 114 182)',
     accentCyan: 'rgb(34 211 238)',
-    
-    // Object type colors - using Collections's color palette
     objectType: {
-      table: 'rgb(96 165 250)',      // primary color
-      view: 'rgb(52 211 153)',       // success color
-      procedure: 'rgb(167 139 250)', // accentPurple
-      function: 'rgb(251 191 36)',   // warning color
-      package: 'rgb(148 163 184)',   // textSecondary
-      sequence: 'rgb(100 116 139)',  // textTertiary
-      synonym: 'rgb(34 211 238)',    // accentCyan
-      type: 'rgb(139 92 246)',       // purple variant
-      trigger: 'rgb(244 114 182)',   // accentPink
-      index: 'rgb(16 185 129)',      // teal green
-      constraint: 'rgb(248 113 113)' // error color
+      TABLE: 'rgb(96 165 250)',
+      VIEW: 'rgb(52 211 153)',
+      PROCEDURE: 'rgb(167 139 250)',
+      FUNCTION: 'rgb(251 191 36)',
+      PACKAGE: 'rgb(148 163 184)',
+      SEQUENCE: 'rgb(100 116 139)',
+      SYNONYM: 'rgb(34 211 238)',
+      TYPE: 'rgb(139 92 246)',
+      TRIGGER: 'rgb(244 114 182)',
+      INDEX: 'rgb(16 185 129)',
+      'DATABASE LINK': 'rgb(249 115 22)',
+      DB_LINK: 'rgb(249 115 22)'
     },
-    
-    // Grid colors for tables - matching Collections's structure
     gridRowEven: 'rgb(41 53 72 / 19%)',
     gridRowOdd: 'rgb(45 46 72 / 33%)',
     gridHeader: 'rgb(41 53 72 / 19%)',
-    gridborder: 'rgb(51 65 85 / 19%)',
-    
-    // Gradient - EXACTLY matching Collections
+    gridBorder: 'rgb(51 65 85 / 19%)',
     gradient: 'from-blue-500/20 via-violet-500/20 to-orange-500/20'
   } : {
-    // LIGHT MODE - EXACTLY matching Collections's light mode
     bg: '#f8fafc',
     white: '#f8fafc',
     sidebar: '#ffffff',
@@ -708,8 +695,6 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     primary: '#1e293b',
     primaryLight: '#60a5fa',
     primaryDark: '#2563eb',
-    
-    // Method colors for light mode
     method: {
       GET: '#10b981',
       POST: '#3b82f6',
@@ -721,14 +706,10 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
       LINK: '#06b6d4',
       UNLINK: '#f97316'
     },
-    
-    // Status colors for light mode
     success: '#10b981',
     warning: '#f59e0b',
     error: '#ef4444',
     info: '#3b82f6',
-    
-    // UI Components for light mode
     tabActive: '#3b82f6',
     tabInactive: '#64748b',
     sidebarActive: '#3b82f6',
@@ -743,38 +724,30 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     modalBg: '#ffffff',
     modalBorder: '#e2e8f0',
     codeBg: '#f1f5f9',
-    
-    // Connection status for light mode
     connectionOnline: '#10b981',
     connectionOffline: '#ef4444',
     connectionIdle: '#f59e0b',
-    
-    // Accent colors for light mode
     accentPurple: '#8b5cf6',
     accentPink: '#ec4899',
     accentCyan: '#06b6d4',
-    
-    // Object type colors for light mode
     objectType: {
-      table: '#3b82f6',
-      view: '#10b981',
-      procedure: '#8b5cf6',
-      function: '#f59e0b',
-      package: '#6b7280',
-      sequence: '#64748b',
-      synonym: '#06b6d4',
-      type: '#6366f1',
-      trigger: '#ec4899',
-      index: '#0d9488',
-      constraint: '#ef4444'
+      TABLE: '#3b82f6',
+      VIEW: '#10b981',
+      PROCEDURE: '#8b5cf6',
+      FUNCTION: '#f59e0b',
+      PACKAGE: '#6b7280',
+      SEQUENCE: '#64748b',
+      SYNONYM: '#06b6d4',
+      TYPE: '#6366f1',
+      TRIGGER: '#ec4899',
+      INDEX: '#0d9488',
+      'DATABASE LINK': '#ea580c',
+      DB_LINK: '#ea580c'
     },
-    
-    // Grid colors for light mode
     gridRowEven: '#ffffff',
     gridRowOdd: '#f8fafc',
     gridHeader: '#f1f5f9',
     gridBorder: '#e2e8f0',
-    
     gradient: 'from-blue-400/20 via-violet-400/20 to-orange-400/20'
   }, [isDark]);
 
@@ -799,10 +772,9 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
   // Filter state
   const [filterQuery, setFilterQuery] = useState('');
   const [selectedOwner, setSelectedOwner] = useState('ALL');
+  const [owners, setOwners] = useState([]);
 
-  // State for API data
-  const [connections, setConnections] = useState([]);
-  const [activeConnection, setActiveConnection] = useState('');
+  // State for schema objects
   const [schemaObjects, setSchemaObjects] = useState({
     tables: [],
     views: [],
@@ -812,7 +784,8 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     sequences: [],
     synonyms: [],
     types: [],
-    triggers: []
+    triggers: [],
+    dbLinks: []
   });
   const [activeObject, setActiveObject] = useState(null);
   const [activeTab, setActiveTab] = useState('columns');
@@ -825,14 +798,16 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     sequences: false,
     synonyms: false,
     types: false,
-    triggers: false
+    triggers: false,
+    dbLinks: false
   });
   const [tabs, setTabs] = useState([]);
   const [tableData, setTableData] = useState(null);
   const [objectDDL, setObjectDDL] = useState('');
   const [searchResults, setSearchResults] = useState(null);
   const [objectDetails, setObjectDetails] = useState(null);
-  const [objectHierarchy, setObjectHierarchy] = useState(null);
+  const [statistics, setStatistics] = useState(null);
+  const [diagnostics, setDiagnostics] = useState(null);
 
   // Context menu state
   const [showContextMenu, setShowContextMenu] = useState(false);
@@ -840,7 +815,7 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
   const [contextObject, setContextObject] = useState(null);
   const [showConnectionManager, setShowConnectionManager] = useState(false);
   const [dataView, setDataView] = useState({
-    page: 1,
+    page: 0, // 0-based for API
     pageSize: 50,
     sortColumn: '',
     sortDirection: 'ASC',
@@ -866,28 +841,28 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
 
   // Get Object Icon
   const getObjectIcon = useCallback((type) => {
-    const objectType = type.toLowerCase();
-    const iconColor = colors.objectType[objectType] || colors.textSecondary;
+    const iconColor = colors.objectType[type] || colors.textSecondary;
     const iconProps = { size: 14, style: { color: iconColor } };
     
-    switch(objectType) {
-      case 'table': return <Table {...iconProps} />;
-      case 'view': return <FileText {...iconProps} />;
-      case 'procedure': return <Terminal {...iconProps} />;
-      case 'function': return <Code {...iconProps} />;
-      case 'package': return <Package {...iconProps} />;
-      case 'sequence': return <Hash {...iconProps} />;
-      case 'synonym': return <Link {...iconProps} />;
-      case 'type': return <Type {...iconProps} />;
-      case 'trigger': return <Zap {...iconProps} />;
-      case 'index': return <BarChart {...iconProps} />;
+    switch(type?.toUpperCase()) {
+      case 'TABLE': return <Table {...iconProps} />;
+      case 'VIEW': return <FileText {...iconProps} />;
+      case 'PROCEDURE': return <Terminal {...iconProps} />;
+      case 'FUNCTION': return <Code {...iconProps} />;
+      case 'PACKAGE': return <Package {...iconProps} />;
+      case 'SEQUENCE': return <Hash {...iconProps} />;
+      case 'SYNONYM': return <Link {...iconProps} />;
+      case 'TYPE': return <Type {...iconProps} />;
+      case 'TRIGGER': return <Zap {...iconProps} />;
+      case 'INDEX': return <BarChart {...iconProps} />;
+      case 'DATABASE LINK':
+      case 'DB_LINK': return <Globe {...iconProps} />;
       default: return <Database {...iconProps} />;
     }
   }, [colors]);
 
   // Function to get the first available schema object
   const getFirstSchemaObject = useCallback((schemaObjects) => {
-    // Define the order of object types to check
     const objectTypes = [
       { type: 'TABLE', key: 'tables' },
       { type: 'VIEW', key: 'views' },
@@ -897,10 +872,10 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
       { type: 'SEQUENCE', key: 'sequences' },
       { type: 'SYNONYM', key: 'synonyms' },
       { type: 'TYPE', key: 'types' },
-      { type: 'TRIGGER', key: 'triggers' }
+      { type: 'TRIGGER', key: 'triggers' },
+      { type: 'DB_LINK', key: 'dbLinks' }
     ];
     
-    // Find the first object type that has at least one item
     for (const objType of objectTypes) {
       const objects = schemaObjects[objType.key] || [];
       if (objects.length > 0) {
@@ -945,12 +920,10 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
       const diffX = touchEnd.x - touchStart.x;
       const diffY = touchEnd.y - touchStart.y;
 
-      // Swipe right from left edge to open sidebar
       if (diffX > 50 && Math.abs(diffY) < 50 && touchStart.x < 50) {
         setIsLeftSidebarVisible(true);
       }
       
-      // Swipe left to close sidebar
       if (diffX < -50 && Math.abs(diffY) < 50 && isLeftSidebarVisible) {
         setIsLeftSidebarVisible(false);
       }
@@ -967,8 +940,19 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     };
   }, [touchStart, isLeftSidebarVisible]);
 
-  // Fetch schema connections
-  const fetchSchemaConnections = useCallback(async () => {
+  // Extract unique owners from schema objects
+  const extractOwners = useCallback((objects) => {
+    const ownerSet = new Set();
+    Object.values(objects).forEach(category => {
+      category.forEach(obj => {
+        if (obj.owner) ownerSet.add(obj.owner);
+      });
+    });
+    return Array.from(ownerSet).sort();
+  }, []);
+
+  // Fetch schema objects
+  const fetchSchemaObjects = useCallback(async () => {
     if (!authToken) {
       setError('Authentication required');
       return;
@@ -978,78 +962,8 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     setError(null);
 
     try {
-      // Check cache first
-      const cachedConnections = getCachedSchemaData('connections');
-      if (cachedConnections) {
-        setConnections(cachedConnections);
-        if (cachedConnections.length > 0 && !activeConnection) {
-          setActiveConnection(cachedConnections[0].id);
-        }
-        setLoading(false);
-        return;
-      }
-
-      const response = await getSchemaConnections(authToken);
-      const processedResponse = handleSchemaBrowserResponse(response);
-      const connectionsData = extractSchemaConnections(processedResponse);
-      
-      setConnections(connectionsData);
-      cacheSchemaData('connections', connectionsData, 30); // Cache for 30 minutes
-      
-      if (connectionsData.length > 0 && !activeConnection) {
-        setActiveConnection(connectionsData[0].id);
-      }
-
-    } catch (error) {
-      console.error('Error fetching schema connections:', error);
-      setError(`Failed to load connections: ${error.message}`);
-      // Fallback to sample data if API fails
-      const fallbackConnections = [
-        {
-          id: 'conn-1',
-          name: 'CBX_DMX',
-          description: 'Production HR Database',
-          host: 'db-prod.company.com',
-          port: '1521',
-          service: 'ORCL',
-          username: 'HR',
-          status: 'connected',
-          color: colors.connectionOnline,
-          lastUsed: '2024-01-15T10:30:00Z'
-        }
-      ];
-      setConnections(fallbackConnections);
-      if (!activeConnection) {
-        setActiveConnection('conn-1');
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [authToken, activeConnection, colors]);
-
-  // Fetch schema objects for active connection
-  const fetchSchemaObjects = useCallback(async () => {
-    if (!authToken || !activeConnection) {
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Check cache first
-      const cacheKey = `schema_objects_${activeConnection}`;
-      const cachedObjects = getCachedSchemaData(cacheKey);
-      if (cachedObjects) {
-        setSchemaObjects(cachedObjects);
-        setLoading(false);
-        return;
-      }
-
-      // Fetch comprehensive schema data
-      const response = await getComprehensiveSchemaData(authToken, { 
-        connectionId: activeConnection 
-      });
+      // Fetch comprehensive schema data using frontend-optimized endpoints
+      const response = await getComprehensiveSchemaData(authToken, { useFrontendEndpoints: true });
       const processedResponse = handleSchemaBrowserResponse(response);
       const comprehensiveData = extractComprehensiveSchemaData(processedResponse);
       
@@ -1059,34 +973,55 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
         procedures: comprehensiveData.procedures?.objects || [],
         functions: comprehensiveData.functions?.objects || [],
         packages: comprehensiveData.packages?.objects || [],
-        sequences: [],
-        synonyms: [],
-        types: [],
-        triggers: []
+        sequences: comprehensiveData.sequences?.objects || [],
+        synonyms: comprehensiveData.synonyms?.objects || [],
+        types: comprehensiveData.types?.objects || [],
+        triggers: comprehensiveData.triggers?.objects || [],
+        dbLinks: comprehensiveData.dbLinks?.objects || []
       };
 
       setSchemaObjects(transformedObjects);
-      cacheSchemaData(cacheKey, transformedObjects, 15); // Cache for 15 minutes
+      
+      // Extract unique owners
+      const uniqueOwners = extractOwners(transformedObjects);
+      setOwners(uniqueOwners);
+
+      if (Object.values(transformedObjects).every(arr => arr.length === 0)) {
+        console.log('No schema objects found for this connection');
+      }
 
     } catch (error) {
       console.error('Error fetching schema objects:', error);
       setError(`Failed to load schema objects: ${error.message}`);
+      setSchemaObjects({
+        tables: [],
+        views: [],
+        procedures: [],
+        functions: [],
+        packages: [],
+        sequences: [],
+        synonyms: [],
+        types: [],
+        triggers: [],
+        dbLinks: []
+      });
+      setOwners([]);
     } finally {
       setLoading(false);
     }
-  }, [authToken, activeConnection]);
+  }, [authToken, extractOwners]);
 
   // Fetch table data
   const fetchTableData = useCallback(async (tableName) => {
-    if (!authToken || !activeConnection || !tableName) {
+    if (!authToken || !tableName) {
       return;
     }
 
     setTableDataLoading(true);
+    setError(null);
 
     try {
       const params = {
-        connectionId: activeConnection,
         tableName,
         page: dataView.page,
         pageSize: dataView.pageSize,
@@ -1103,45 +1038,83 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     } catch (error) {
       console.error('Error fetching table data:', error);
       setError(`Failed to load table data: ${error.message}`);
+      setTableData(null);
     } finally {
       setTableDataLoading(false);
     }
-  }, [authToken, activeConnection, dataView]);
+  }, [authToken, dataView]);
 
-  // Fetch object details
-  const fetchObjectDetails = useCallback(async (objectId, objectType, objectName) => {
-    if (!authToken || !activeConnection || !objectName) {
+  // Fetch object details based on type
+  const fetchObjectDetails = useCallback(async (objectType, objectName) => {
+    if (!authToken || !objectName) {
       return;
     }
 
     try {
-      const params = {
-        connectionId: activeConnection,
-        objectType,
-        objectName
-      };
+      let response;
+      const type = objectType?.toUpperCase();
 
-      const response = await getObjectDetails(authToken, params);
+      switch(type) {
+        case 'TABLE':
+          response = await getTableDetails(authToken, objectName);
+          break;
+        case 'VIEW':
+          response = await getViewDetails(authToken, objectName);
+          break;
+        case 'PROCEDURE':
+          response = await getProcedureDetails(authToken, objectName);
+          break;
+        case 'FUNCTION':
+          response = await getFunctionDetails(authToken, objectName);
+          break;
+        case 'PACKAGE':
+          response = await getPackageDetails(authToken, objectName);
+          break;
+        case 'TRIGGER':
+          response = await getTriggerDetails(authToken, objectName);
+          break;
+        case 'SYNONYM':
+          response = await getSynonymDetails(authToken, objectName);
+          break;
+        case 'SEQUENCE':
+          response = await getSequenceDetails(authToken, objectName);
+          break;
+        case 'TYPE':
+          response = await getTypeDetails(authToken, objectName);
+          break;
+        default:
+          return;
+      }
+
       const processedResponse = handleSchemaBrowserResponse(response);
-      const details = extractObjectDetails(processedResponse);
-      
-      setObjectDetails(formatObjectDetails(details));
+      setObjectDetails(processedResponse.data || processedResponse);
+
+      // Fetch statistics for tables
+      if (type === 'TABLE') {
+        try {
+          const statsResponse = await getTableStatistics(authToken, objectName);
+          const processedStats = handleSchemaBrowserResponse(statsResponse);
+          setStatistics(processedStats.data || processedStats);
+        } catch (statsError) {
+          console.error('Error fetching statistics:', statsError);
+        }
+      }
 
     } catch (error) {
       console.error('Error fetching object details:', error);
       setError(`Failed to load object details: ${error.message}`);
+      setObjectDetails(null);
     }
-  }, [authToken, activeConnection]);
+  }, [authToken]);
 
   // Fetch object DDL
   const fetchObjectDDL = useCallback(async (objectType, objectName) => {
-    if (!authToken || !activeConnection || !objectName) {
+    if (!authToken || !objectName) {
       return;
     }
 
     try {
       const params = {
-        connectionId: activeConnection,
         objectType,
         objectName
       };
@@ -1155,12 +1128,13 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     } catch (error) {
       console.error('Error fetching object DDL:', error);
       setError(`Failed to load object DDL: ${error.message}`);
+      setObjectDDL('');
     }
-  }, [authToken, activeConnection]);
+  }, [authToken]);
 
   // Search schema
   const handleSearchSchema = useCallback(async (searchQuery, searchType = null) => {
-    if (!authToken || !activeConnection || !searchQuery) {
+    if (!authToken || !searchQuery) {
       return;
     }
 
@@ -1168,13 +1142,12 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
 
     try {
       const params = {
-        connectionId: activeConnection,
-        searchQuery,
-        searchType,
+        query: searchQuery,
+        type: searchType,
         maxResults: 100
       };
 
-      const response = await searchSchema(authToken, params);
+      const response = await searchObjectsAdvanced(authToken, params);
       const processedResponse = handleSchemaBrowserResponse(response);
       const searchResults = extractSearchResults(processedResponse);
       
@@ -1183,22 +1156,23 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     } catch (error) {
       console.error('Error searching schema:', error);
       setError(`Search failed: ${error.message}`);
+      setSearchResults(null);
     } finally {
       setLoading(false);
     }
-  }, [authToken, activeConnection]);
+  }, [authToken]);
 
   // Execute query
   const handleExecuteQuery = useCallback(async (query, timeoutSeconds = 30, readOnly = true) => {
-    if (!authToken || !activeConnection || !query) {
+    if (!authToken || !query) {
       return;
     }
 
     setExecutingQuery(true);
+    setError(null);
 
     try {
       const queryRequest = {
-        connectionId: activeConnection,
         query,
         timeoutSeconds,
         readOnly
@@ -1217,104 +1191,26 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     } finally {
       setExecutingQuery(false);
     }
-  }, [authToken, activeConnection]);
+  }, [authToken]);
 
-  // Generate API from object
-  const handleGenerateAPI = useCallback(async (objectType, objectName, apiType = 'REST', options = {}) => {
-    if (!authToken || !activeConnection || !objectName) {
-      return;
-    }
-
-    try {
-      const apiRequest = {
-        connectionId: activeConnection,
-        objectType,
-        objectName,
-        apiType,
-        options
-      };
-
-      const response = await generateAPIFromObject(authToken, apiRequest);
-      const processedResponse = handleSchemaBrowserResponse(response);
-      const apiResults = extractAPIGenerationResults(processedResponse);
-      
-      return apiResults;
-
-    } catch (error) {
-      console.error('Error generating API:', error);
-      setError(`API generation failed: ${error.message}`);
-      throw error;
-    }
-  }, [authToken, activeConnection]);
-
-  // Export schema data
-  const handleExportSchema = useCallback(async (format = 'JSON', objectTypes = [], objectNames = []) => {
-    if (!authToken || !activeConnection) {
-      return;
-    }
-
-    try {
-      const exportRequest = {
-        connectionId: activeConnection,
-        format,
-        objectTypes,
-        objectNames,
-        options: {}
-      };
-
-      const response = await exportSchemaData(authToken, exportRequest);
-      const processedResponse = handleSchemaBrowserResponse(response);
-      const exportResults = extractExportResults(processedResponse);
-      
-      return exportResults;
-
-    } catch (error) {
-      console.error('Error exporting schema:', error);
-      setError(`Export failed: ${error.message}`);
-      throw error;
-    }
-  }, [authToken, activeConnection]);
-
-  // Clear schema cache
-  const handleClearSchemaCache = useCallback(async () => {
+  // Run diagnostics
+  const runDiagnostics = useCallback(async () => {
     if (!authToken) {
       return;
     }
 
     try {
-      await clearSchemaCache(authToken);
-      clearCachedSchemaData(); // Clear local cache
-      // Refresh data
-      fetchSchemaConnections();
-      if (activeConnection) {
-        fetchSchemaObjects();
-      }
-    } catch (error) {
-      console.error('Error clearing cache:', error);
-      setError(`Cache clear failed: ${error.message}`);
-    }
-  }, [authToken, activeConnection, fetchSchemaConnections, fetchSchemaObjects]);
-
-  // Health check
-  const checkSchemaHealth = useCallback(async () => {
-    if (!authToken) {
-      return;
-    }
-
-    try {
-      const response = await healthCheck(authToken);
+      const response = await diagnoseDatabase(authToken);
       const processedResponse = handleSchemaBrowserResponse(response);
-      const healthData = extractHealthCheck(processedResponse);
+      const diagnosticsData = extractDiagnostics(processedResponse);
       
-      return healthData;
+      setDiagnostics(diagnosticsData);
+      return diagnosticsData;
 
     } catch (error) {
-      console.error('Error checking health:', error);
-      return {
-        status: 'DOWN',
-        timestamp: new Date().toISOString(),
-        error: error.message
-      };
+      console.error('Error running diagnostics:', error);
+      setError(`Diagnostics failed: ${error.message}`);
+      throw error;
     }
   }, [authToken]);
 
@@ -1328,30 +1224,23 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     setError(null);
 
     try {
-      const healthData = await checkSchemaHealth();
+      await refreshSchemaData(authToken);
+      await fetchSchemaObjects();
       
-      if (healthData.status === 'UP') {
-        // Clear cache and fetch fresh data
-        clearCachedSchemaData();
-        await fetchSchemaConnections();
-        
-        if (activeConnection) {
-          await fetchSchemaObjects();
-          
-          // Refresh active object if selected
-          if (activeObject) {
-            await fetchObjectDetails(activeObject.id, activeObject.type, activeObject.name);
-            if (activeObject.type === 'TABLE') {
-              await fetchTableData(activeObject.name);
-            }
-          }
+      // Refresh active object if selected
+      if (activeObject) {
+        await fetchObjectDetails(activeObject.type, activeObject.name);
+        if (activeObject.type === 'TABLE') {
+          await fetchTableData(activeObject.name);
         }
-        
-        return { success: true, health: healthData };
-      } else {
-        setError('Schema browser service is unavailable');
-        return { success: false, health: healthData };
+        if (activeObject.type === 'VIEW' || activeObject.type === 'PROCEDURE' || 
+            activeObject.type === 'FUNCTION' || activeObject.type === 'PACKAGE' ||
+            activeObject.type === 'TRIGGER') {
+          await fetchObjectDDL(activeObject.type, activeObject.name);
+        }
       }
+      
+      return { success: true };
 
     } catch (error) {
       console.error('Error refreshing schema data:', error);
@@ -1360,22 +1249,16 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     } finally {
       setLoading(false);
     }
-  }, [authToken, activeConnection, activeObject, fetchSchemaConnections, fetchSchemaObjects, fetchObjectDetails, fetchTableData, checkSchemaHealth]);
+  }, [authToken, activeObject, fetchSchemaObjects, fetchObjectDetails, fetchTableData, fetchObjectDDL]);
 
   // Initialize data
   useEffect(() => {
-    fetchSchemaConnections();
-  }, [fetchSchemaConnections]);
+    fetchSchemaObjects();
+  }, [fetchSchemaObjects]);
 
-  useEffect(() => {
-    if (activeConnection) {
-      fetchSchemaObjects();
-    }
-  }, [activeConnection, fetchSchemaObjects]);
-
-  // Handle Object Selection - updated to be more robust
+  // Handle Object Selection
   const handleObjectSelect = useCallback(async (object, type) => {
-    if (!authToken || !activeConnection || !object) {
+    if (!authToken || !object) {
       return;
     }
 
@@ -1401,52 +1284,58 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     }
     
     // Set default tab based on object type
-    switch(type.toLowerCase()) {
-      case 'table':
+    switch(type.toUpperCase()) {
+      case 'TABLE':
         setActiveTab('columns');
-        // Fetch table data
         await fetchTableData(object.name);
         break;
-      case 'view':
+      case 'VIEW':
         setActiveTab('definition');
-        // Fetch view DDL
         await fetchObjectDDL(type, object.name);
         break;
-      case 'procedure':
-      case 'function':
+      case 'PROCEDURE':
+      case 'FUNCTION':
         setActiveTab('parameters');
-        // Fetch object details
-        await fetchObjectDetails(object.id, type, object.name);
         break;
-      case 'package':
+      case 'PACKAGE':
         setActiveTab('specification');
-        // Fetch package DDL
         await fetchObjectDDL(type, object.name);
         break;
-      case 'trigger':
+      case 'TRIGGER':
         setActiveTab('definition');
-        // Fetch trigger DDL
         await fetchObjectDDL(type, object.name);
+        break;
+      case 'SEQUENCE':
+        setActiveTab('properties');
+        break;
+      case 'SYNONYM':
+        setActiveTab('properties');
+        break;
+      case 'TYPE':
+        setActiveTab('attributes');
+        break;
+      case 'DB_LINK':
+      case 'DATABASE LINK':
+        setActiveTab('properties');
         break;
       default:
         setActiveTab('properties');
     }
 
     // Fetch object details
-    await fetchObjectDetails(object.id, type, object.name);
+    await fetchObjectDetails(type, object.name);
 
     // Close sidebar on mobile
     if (window.innerWidth < 768) {
       setIsLeftSidebarVisible(false);
     }
-  }, [authToken, activeConnection, tabs, fetchTableData, fetchObjectDDL, fetchObjectDetails]);
+  }, [authToken, tabs, fetchTableData, fetchObjectDDL, fetchObjectDetails]);
 
   // Auto-select first schema object when schema objects are loaded
   useEffect(() => {
-    // Check if we have schema objects but no active object yet, and we haven't auto-selected before
     const hasObjects = Object.values(schemaObjects).some(arr => arr.length > 0);
     
-    if (hasObjects && !activeObject && !hasAutoSelected && activeConnection) {
+    if (hasObjects && !activeObject && !hasAutoSelected) {
       const firstObjectData = getFirstSchemaObject(schemaObjects);
       
       if (firstObjectData) {
@@ -1454,7 +1343,7 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
         handleObjectSelect(firstObjectData.object, firstObjectData.type);
       }
     }
-  }, [schemaObjects, activeObject, hasAutoSelected, activeConnection, handleObjectSelect, getFirstSchemaObject]);
+  }, [schemaObjects, activeObject, hasAutoSelected, handleObjectSelect, getFirstSchemaObject]);
 
   // Handle Context Menu
   const handleContextMenu = useCallback((e, object, type) => {
@@ -1599,8 +1488,8 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                         {col.key && (
                           <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                             col.key === 'PK' ? 'bg-blue-500/10' :
-                            col.key === 'FK' ? 'bg-purple-500/10 text-purple-400' :
-                            'bg-green-500/10 text-green-400'
+                            col.key === 'FK' ? 'bg-purple-500/10' :
+                            'bg-green-500/10'
                           }`}>
                             {col.key}
                           </span>
@@ -1624,6 +1513,8 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
   const renderDataTab = () => {
     const data = tableData?.rows || [];
     const columns = tableData?.columns || activeObject?.columns || [];
+    const totalPages = tableData?.totalPages || 1;
+    const currentPage = tableData?.page || 0;
     
     return (
       <div className="flex-1 flex flex-col">
@@ -1638,54 +1529,32 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
               style={{ backgroundColor: colors.primaryDark, color: colors.white }}
               onClick={() => activeObject && fetchTableData(activeObject.name)}
               disabled={tableDataLoading || !activeObject}
-              aria-label="Execute query"
+              aria-label="Refresh data"
             >
               {tableDataLoading ? (
                 <RefreshCw size={12} className="animate-spin" />
               ) : (
-                <Play size={12} />
+                <RefreshCw size={12} />
               )}
-              <span className="hidden sm:inline">Execute</span>
+              <span className="hidden sm:inline">Refresh</span>
             </button>
-            <div className="ml-0 sm:ml-4 flex items-center gap-2">
-              <select 
-                className="px-2 py-1 border rounded text-sm focus:outline-none hover-lift touch-target"
-                style={{ 
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
-                  color: colors.text
-                }}
-                aria-label="Auto-refresh interval"
-                onChange={(e) => {
-                  if (e.target.value !== 'Off' && activeObject) {
-                    const interval = parseInt(e.target.value);
-                    // Implement auto-refresh logic here
-                  }
-                }}
-              >
-                <option>Refresh: Off</option>
-                <option value="5">5s</option>
-                <option value="10">10s</option>
-                <option value="30">30s</option>
-              </select>
-            </div>
           </div>
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs hidden sm:inline" style={{ color: colors.textSecondary }}>
-              Page: {tableData?.page || 1} of {tableData?.totalPages || 1} | 
-              Rows: {((tableData?.page || 1) - 1) * (tableData?.pageSize || 50) + 1}-
-              {Math.min((tableData?.page || 1) * (tableData?.pageSize || 50), tableData?.totalRows || 0)}
+              Page: {currentPage + 1} of {totalPages} | 
+              Rows: {currentPage * dataView.pageSize + 1}-
+              {Math.min((currentPage + 1) * dataView.pageSize, tableData?.totalRows || 0)}
             </span>
             <div className="flex items-center gap-2">
               <button 
                 className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift touch-target"
                 style={{ backgroundColor: colors.hover }}
                 onClick={() => {
-                  if (tableData && tableData.page > 1) {
+                  if (currentPage > 0) {
                     setDataView(prev => ({ ...prev, page: prev.page - 1 }));
                   }
                 }}
-                disabled={!tableData || tableData.page <= 1}
+                disabled={currentPage <= 0}
                 aria-label="Previous page"
               >
                 <ChevronLeft size={14} style={{ color: colors.textSecondary }} />
@@ -1694,11 +1563,11 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                 className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift touch-target"
                 style={{ backgroundColor: colors.hover }}
                 onClick={() => {
-                  if (tableData && tableData.page < tableData.totalPages) {
+                  if (currentPage < totalPages - 1) {
                     setDataView(prev => ({ ...prev, page: prev.page + 1 }));
                   }
                 }}
-                disabled={!tableData || tableData.page >= tableData.totalPages}
+                disabled={currentPage >= totalPages - 1}
                 aria-label="Next page"
               >
                 <ChevronRight size={14} style={{ color: colors.textSecondary }} />
@@ -1707,7 +1576,7 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
           </div>
         </div>
 
-        {/* Data Grid - Mobile optimized */}
+        {/* Data Grid */}
         <div className="flex-1 overflow-auto">
           <div className="border rounded" style={{ 
             borderColor: colors.gridBorder,
@@ -1722,13 +1591,13 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                 <Table size={32} className="mx-auto mb-4" style={{ color: colors.textSecondary }} />
                 <div className="text-sm" style={{ color: colors.text }}>No data available</div>
                 <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
-                  Execute query to load data
+                  Refresh to load data
                 </div>
               </div>
             ) : (
               <>
+                {/* Mobile card view */}
                 <div className="sm:hidden">
-                  {/* Mobile card view */}
                   {data.slice(0, 20).map((row, rowIndex) => (
                     <div 
                       key={rowIndex}
@@ -1745,7 +1614,7 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                               {col.name}:
                             </span>
                             <span className="text-xs truncate max-w-[150px]" style={{ color: colors.text }}>
-                              {row[col.name] !== null && row[col.name] !== undefined ? row[col.name] : (
+                              {row[col.name] !== null && row[col.name] !== undefined ? String(row[col.name]) : (
                                 <span className="italic" style={{ color: colors.textTertiary }}>NULL</span>
                               )}
                             </span>
@@ -1773,15 +1642,6 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                         }}>
                           <div className="flex items-center gap-1">
                             <span className="truncate">{col.name}</span>
-                            {col.key && (
-                              <span className={`px-1 py-0.5 rounded text-xs hidden sm:inline ${
-                                col.key === 'PK' ? 'bg-blue-500/10' :
-                                col.key === 'FK' ? 'bg-purple-500/10 text-purple-400' :
-                                'bg-green-500/10 text-green-400'
-                              }`}>
-                                {col.key}
-                              </span>
-                            )}
                           </div>
                         </th>
                       ))}
@@ -1798,13 +1658,13 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                         }}
                       >
                         {columns.slice(0, 5).map(col => (
-                          <td key={col.name} className="p-2 text-xs border-r" style={{ 
+                          <td key={col.name} className="p-2 text-xs" style={{ 
                             borderColor: colors.gridBorder,
                             color: colors.text,
                             whiteSpace: 'nowrap'
                           }}>
                             <div className="truncate max-w-[100px] sm:max-w-none">
-                              {row[col.name] !== null && row[col.name] !== undefined ? row[col.name] : (
+                              {row[col.name] !== null && row[col.name] !== undefined ? String(row[col.name]) : (
                                 <span className="italic" style={{ color: colors.textTertiary }}>NULL</span>
                               )}
                             </div>
@@ -1826,8 +1686,7 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
         }}>
           <div className="text-xs truncate" style={{ color: colors.textSecondary }}>
             <span className="block sm:inline">
-              {tableData?.rows?.length || 0} rows fetched {tableData?.queryTime ? `in ${tableData.queryTime}ms` : ''} | 
-              {window.innerWidth >= 640 && ` Table: ${activeObject?.name} | `}
+              {tableData?.rows?.length || 0} rows displayed | 
               Total: {(tableData?.totalRows || 0).toLocaleString()}
             </span>
           </div>
@@ -1838,7 +1697,7 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
 
   // Render Parameters Tab
   const renderParametersTab = () => {
-    const parameters = objectDetails?.parameters || activeObject?.parameters || [];
+    const parameters = objectDetails?.parameters || [];
     
     return (
       <div className="flex-1 overflow-auto">
@@ -1906,31 +1765,31 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                       <td className="p-2 text-xs font-medium truncate max-w-[120px] sm:max-w-none" style={{ color: colors.text }}>
                         <div className="flex flex-col">
                           <span>{param.name}</span>
-                          <span className="text-xs text-gray-500 md:hidden">{param.datatype}</span>
+                          <span className="text-xs text-gray-500 md:hidden">{param.type}</span>
                         </div>
                       </td>
                       <td className="p-2">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                          param.type === 'IN' ? 'bg-blue-500/10' :
-                          param.type === 'OUT' ? 'bg-purple-500/10 text-purple-400' :
-                          'bg-green-500/10 text-green-400'
+                          param.mode === 'IN' ? 'bg-blue-500/10' :
+                          param.mode === 'OUT' ? 'bg-purple-500/10' :
+                          'bg-green-500/10'
                         }`}>
-                          {param.type}
+                          {param.mode}
                         </span>
                       </td>
-                      <td className="p-2 text-xs font-mono truncate hidden md:table-cell" style={{ color: colors.text }}>{param.datatype}</td>
+                      <td className="p-2 text-xs font-mono truncate hidden md:table-cell" style={{ color: colors.text }}>{param.type}</td>
                       <td className="p-2 text-xs font-mono truncate hidden lg:table-cell" style={{ color: colors.textSecondary }}>
                         {param.defaultValue || <span className="italic">NULL</span>}
                       </td>
                     </tr>
                   ))
                 )}
-                {activeObject?.type === 'FUNCTION' && objectDetails?.returnType && (
+                {objectDetails?.returnType && (
                   <tr className="border-t" style={{ borderColor: colors.gridBorder }}>
                     <td className="p-2 text-xs font-medium hidden sm:table-cell" style={{ color: colors.textSecondary }}>-</td>
                     <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>RETURN</td>
                     <td className="p-2">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-500/10 text-green-400">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-500/10">
                         OUT
                       </span>
                     </td>
@@ -1939,7 +1798,6 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                     </td>
                     <td className="p-2 text-xs truncate hidden lg:table-cell" style={{ color: colors.textSecondary }}>
                       {objectDetails.deterministic ? 'DETERMINISTIC' : ''}
-                      {objectDetails.pipelined ? ' | PIPELINED' : ''}
                     </td>
                   </tr>
                 )}
@@ -1953,7 +1811,7 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
 
   // Render DDL Tab
   const renderDDLTab = () => {
-    const ddl = objectDDL || activeObject?.text || activeObject?.spec || activeObject?.body || '';
+    const ddl = objectDDL || objectDetails?.spec || objectDetails?.body || objectDetails?.text || '';
     
     return (
       <div className="flex-1 overflow-auto">
@@ -1985,9 +1843,9 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     );
   };
 
-  // Render Constraints Tab
-  const renderConstraintsTab = () => {
-    const constraints = objectDetails?.constraints || activeObject?.constraints || [];
+  // Render Attributes Tab (for Types)
+  const renderAttributesTab = () => {
+    const attributes = objectDetails?.attributes || [];
     
     return (
       <div className="flex-1 overflow-auto">
@@ -2000,7 +1858,7 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
             backgroundColor: colors.card
           }}>
             <div className="text-sm font-medium" style={{ color: colors.text }}>
-              Constraints ({constraints.length})
+              Attributes ({attributes.length})
             </div>
           </div>
           <div className="overflow-auto max-h-[calc(100vh-300px)] sm:max-h-none">
@@ -2008,56 +1866,34 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
               <thead>
                 <tr style={{ backgroundColor: colors.tableHeader }}>
                   <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary, minWidth: '100px' }}>Name</th>
-                  <th className="text-left p-2 text-xs font-medium border-b hidden sm:table-cell" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Type</th>
-                  <th className="text-left p-2 text-xs font-medium border-b hidden md:table-cell" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Columns</th>
-                  <th className="text-left p-2 text-xs font-medium border-b hidden lg:table-cell" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>References</th>
-                  <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Status</th>
+                  <th className="text-left p-2 text-xs font-medium border-b" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Type</th>
+                  <th className="text-left p-2 text-xs font-medium border-b hidden sm:table-cell" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Length</th>
+                  <th className="text-left p-2 text-xs font-medium border-b hidden md:table-cell" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Precision</th>
+                  <th className="text-left p-2 text-xs font-medium border-b hidden md:table-cell" style={{ borderColor: colors.gridBorder, color: colors.textSecondary }}>Scale</th>
                 </tr>
               </thead>
               <tbody>
-                {constraints.length === 0 ? (
+                {attributes.length === 0 ? (
                   <tr>
                     <td colSpan="5" className="p-4 text-center text-sm" style={{ color: colors.textSecondary }}>
-                      No constraints found
+                      No attributes found
                     </td>
                   </tr>
                 ) : (
-                  constraints.map((con, index) => (
+                  attributes.map((attr, index) => (
                     <tr 
-                      key={con.name}
+                      key={attr.name}
                       className="hover:bg-opacity-50 transition-colors"
                       style={{ 
                         backgroundColor: index % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
                         borderBottom: `1px solid ${colors.gridBorder}`
                       }}
                     >
-                      <td className="p-2 text-xs font-medium truncate max-w-[120px] sm:max-w-none" style={{ color: colors.text }}>
-                        <div className="flex flex-col">
-                          <span>{con.name}</span>
-                          <span className="text-xs text-gray-500 sm:hidden">{con.type}</span>
-                        </div>
-                      </td>
-                      <td className="p-2 hidden sm:table-cell">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                          con.type === 'PRIMARY KEY' ? 'bg-blue-500/10' :
-                          con.type === 'FOREIGN KEY' ? 'bg-purple-500/10 text-purple-400' :
-                          con.type === 'UNIQUE' ? 'bg-green-500/10 text-green-400' :
-                          'bg-yellow-500/10 text-yellow-400'
-                        }`}>
-                          {con.type}
-                        </span>
-                      </td>
-                      <td className="p-2 text-xs truncate hidden md:table-cell" style={{ color: colors.text }}>{con.columns}</td>
-                      <td className="p-2 text-xs truncate hidden lg:table-cell" style={{ color: colors.textSecondary }}>
-                        {con.refTable || '-'}
-                      </td>
-                      <td className="p-2">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                          con.status === 'ENABLED' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
-                        }`}>
-                          {con.status}
-                        </span>
-                      </td>
+                      <td className="p-2 text-xs font-medium truncate" style={{ color: colors.text }}>{attr.name}</td>
+                      <td className="p-2 text-xs truncate" style={{ color: colors.text }}>{attr.type}</td>
+                      <td className="p-2 text-xs hidden sm:table-cell" style={{ color: colors.textSecondary }}>{attr.dataLength || '-'}</td>
+                      <td className="p-2 text-xs hidden md:table-cell" style={{ color: colors.textSecondary }}>{attr.dataPrecision || '-'}</td>
+                      <td className="p-2 text-xs hidden md:table-cell" style={{ color: colors.textSecondary }}>{attr.dataScale || '-'}</td>
                     </tr>
                   ))
                 )}
@@ -2077,13 +1913,22 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
       { label: 'Object Name', value: details.name },
       { label: 'Owner', value: details.owner },
       { label: 'Object Type', value: details.type },
-      { label: 'Status', value: details.status },
-      { label: 'Created', value: details.created ? formatDateForDisplay(details.created) : '-' },
-      { label: 'Last DDL Time', value: details.lastDDL ? formatDateForDisplay(details.lastDDL) : '-' },
-      { label: 'Tablespace', value: details.tablespace || '-' },
+      ...(details.status ? [{ label: 'Status', value: details.status }] : []),
+      ...(details.created ? [{ label: 'Created', value: formatDateForDisplay(details.created) }] : []),
+      ...(details.lastModified ? [{ label: 'Last Modified', value: formatDateForDisplay(details.lastModified) }] : []),
+      ...(details.tablespace ? [{ label: 'Tablespace', value: details.tablespace }] : []),
       ...(details.rowCount ? [{ label: 'Row Count', value: details.rowCount.toLocaleString() }] : []),
-      ...(details.size ? [{ label: 'Size', value: details.size }] : []),
+      ...(details.sizeBytes ? [{ label: 'Size', value: formatBytes(details.sizeBytes) }] : []),
       ...(details.comment ? [{ label: 'Comment', value: details.comment }] : []),
+      ...(details.minValue !== undefined ? [{ label: 'Min Value', value: details.minValue }] : []),
+      ...(details.maxValue !== undefined ? [{ label: 'Max Value', value: details.maxValue }] : []),
+      ...(details.incrementBy ? [{ label: 'Increment By', value: details.incrementBy }] : []),
+      ...(details.cacheSize ? [{ label: 'Cache Size', value: details.cacheSize }] : []),
+      ...(details.cycleFlag !== undefined ? [{ label: 'Cycle', value: details.cycleFlag ? 'Yes' : 'No' }] : []),
+      ...(details.tableName ? [{ label: 'Table Name', value: details.tableName }] : []),
+      ...(details.tableOwner ? [{ label: 'Table Owner', value: details.tableOwner }] : []),
+      ...(details.dbLink ? [{ label: 'Database Link', value: details.dbLink }] : []),
+      ...(details.public !== undefined ? [{ label: 'Public', value: details.public ? 'Yes' : 'No' }] : [])
     ];
 
     return (
@@ -2103,7 +1948,7 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                     {prop.label}
                   </div>
                   <div className="text-sm truncate" style={{ color: colors.text }}>
-                    {prop.value}
+                    {prop.value || '-'}
                   </div>
                 </div>
               ))}
@@ -2119,23 +1964,26 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     const type = activeObject?.type?.toUpperCase();
     switch(type) {
       case 'TABLE':
-        return ['Columns', 'Data', 'Constraints', 'DDL', 'Properties'];
+        return ['Columns', 'Data', 'DDL', 'Properties'];
       case 'VIEW':
         return ['Definition', 'Columns', 'Properties'];
       case 'PROCEDURE':
-        return ['Parameters', 'DDL'];
+        return ['Parameters', 'DDL', 'Properties'];
       case 'FUNCTION':
-        return ['Parameters', 'DDL'];
+        return ['Parameters', 'DDL', 'Properties'];
       case 'PACKAGE':
         return ['Spec', 'Body', 'Properties'];
       case 'SEQUENCE':
-        return ['DDL', 'Properties'];
+        return ['Properties'];
       case 'SYNONYM':
         return ['Properties'];
       case 'TYPE':
         return ['Attributes', 'Properties'];
       case 'TRIGGER':
         return ['Definition', 'Properties'];
+      case 'DB_LINK':
+      case 'DATABASE LINK':
+        return ['Properties'];
       default:
         return ['Properties'];
     }
@@ -2143,8 +1991,6 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
 
   // Render Current Tab Content
   const renderTabContent = () => {
-    const isMobile = window.innerWidth < 640;
-    
     switch(activeTab.toLowerCase()) {
       case 'columns':
         return renderColumnsTab();
@@ -2152,8 +1998,8 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
         return renderDataTab();
       case 'parameters':
         return renderParametersTab();
-      case 'constraints':
-        return renderConstraintsTab();
+      case 'attributes':
+        return renderAttributesTab();
       case 'ddl':
       case 'definition':
       case 'spec':
@@ -2178,10 +2024,12 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     const menuItems = [
       { label: 'Open', icon: <ExternalLink size={14} />, action: () => handleObjectSelect(contextObject, contextObject.type) },
       { separator: true },
-      { label: 'Generate API', icon: <Code size={14} />, action: () => {
-        setShowApiModal(true);
-        setShowContextMenu(false);
-      }},
+      ...(isSupportedForAPIGeneration(contextObject.type) ? [
+        { label: 'Generate API', icon: <Code size={14} />, action: () => {
+          setShowApiModal(true);
+          setShowContextMenu(false);
+        }}
+      ] : []),
       { label: 'Copy DDL', icon: <Copy size={14} />, action: () => {
         const ddl = contextObject.text || contextObject.spec || contextObject.body || '';
         navigator.clipboard.writeText(ddl);
@@ -2241,100 +2089,6 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
           >
             Cancel
           </button>
-        </div>
-      </div>
-    );
-  };
-
-  // Render Connection Manager
-  const renderConnectionManager = () => {
-    if (!showConnectionManager) return null;
-
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="rounded w-full max-w-md max-h-[90vh] overflow-auto" style={{ 
-          backgroundColor: colors.modalBg,
-          border: `1px solid ${colors.modalBorder}`
-        }}>
-          <div className="flex items-center justify-between p-4 border-b sticky top-0" style={{ borderColor: colors.border, backgroundColor: colors.modalBg }}>
-            <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Connection Manager</h3>
-            <button 
-              onClick={() => setShowConnectionManager(false)} 
-              className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift touch-target"
-              style={{ backgroundColor: colors.hover }}
-              aria-label="Close connection manager"
-            >
-              <X size={16} style={{ color: colors.textSecondary }} />
-            </button>
-          </div>
-          
-          <div className="p-4">
-            {loading ? (
-              <div className="flex items-center justify-center h-32">
-                <RefreshCw className="animate-spin" size={24} style={{ color: colors.textSecondary }} />
-              </div>
-            ) : error ? (
-              <div className="p-4 text-center">
-                <AlertCircle size={24} className="mx-auto mb-2" style={{ color: colors.error }} />
-                <div className="text-sm" style={{ color: colors.text }}>{error}</div>
-                <button 
-                  onClick={fetchSchemaConnections}
-                  className="mt-3 px-4 py-2 rounded text-sm font-medium transition-colors"
-                  style={{ 
-                    backgroundColor: colors.hover,
-                    color: colors.text
-                  }}
-                >
-                  Retry
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {connections.map(conn => (
-                  <button
-                    key={conn.id}
-                    className={`w-full p-3 rounded border cursor-pointer transition-colors hover-lift touch-target text-left ${
-                      activeConnection === conn.id ? 'border-primary' : 'hover:border-primary/50'
-                    }`}
-                    style={{ 
-                      backgroundColor: activeConnection === conn.id ? colors.selected : colors.card,
-                      borderColor: activeConnection === conn.id ? colors.primary : colors.border
-                    }}
-                    onClick={() => {
-                      setActiveConnection(conn.id);
-                      setShowConnectionManager(false);
-                    }}
-                    aria-label={`Select connection ${conn.name}`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-3 h-3 rounded-full" style={{ 
-                          backgroundColor: conn.status === 'connected' ? colors.connectionOnline : 
-                                         conn.status === 'disconnected' ? colors.connectionOffline : colors.connectionIdle 
-                        }} />
-                        <div>
-                          <div className="text-sm font-medium truncate" style={{ color: colors.text }}>{conn.name}</div>
-                          <div className="text-xs truncate" style={{ color: colors.textSecondary }}>
-                            {conn.username}@{conn.host}
-                          </div>
-                        </div>
-                      </div>
-                      {activeConnection === conn.id && <Check size={16} style={{ color: colors.primary }} />}
-                    </div>
-                  </button>
-                ))}
-                
-                <button 
-                  className="w-full p-4 rounded border-2 border-dashed hover:border-primary/50 transition-colors flex items-center justify-center gap-2 hover-lift touch-target"
-                  style={{ borderColor: colors.border, color: colors.text }}
-                  aria-label="Add new connection"
-                >
-                  <Plus size={16} />
-                  Add New Connection
-                </button>
-              </div>
-            )}
-          </div>
         </div>
       </div>
     );
@@ -2534,20 +2288,16 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
             </button>
             <div className="flex flex-col items-center">
               <span className="text-sm font-medium truncate max-w-[200px]" style={{ color: colors.text }}>Schema Browser</span>
-              <span className="text-xs truncate max-w-[200px]" style={{ color: colors.textSecondary }}>
-                {connections.find(c => c.id === activeConnection)?.name || 'Loading...'} @ {connections.find(c => c.id === activeConnection)?.host || '...'}
-              </span>
             </div>
             <button
               onClick={() => setShowApiModal(true)}
-              className="w-full px-3 py-2 rounded text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 rounded hover:opacity-90 font-medium transition-colors flex items-center gap-2 hover-lift cursor-pointer"
+              className="px-3 py-2 rounded text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 font-medium transition-colors flex items-center gap-2 hover-lift cursor-pointer"
               style={{ color: "white" }}
               aria-label="Generate New API"
             >
-              <Code size={18} style={{ color: colors.primary }} />
+              <Code size={18} />
             </button>
           </div>
-
 
           {/* TOP NAVIGATION */}
           <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
@@ -2559,13 +2309,12 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
             </div>
 
             <div className="flex items-center gap-2">
-
               {/* Global Search */}
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
                 <input 
                   type="text" 
-                  placeholder="Search"
+                  placeholder="Search objects..."
                   value={globalSearchQuery}
                   onChange={(e) => setGlobalSearchQuery(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleGlobalSearch()}
@@ -2582,17 +2331,19 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                 )}
               </div>
 
-              {/* Code Panel Toggle */}
-              <button onClick={() => setShowCodePanel(!showCodePanel)} 
+              {/* Run Diagnostics */}
+              <button onClick={runDiagnostics} 
                 className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                style={{ backgroundColor: showCodePanel ? colors.selected : colors.hover }}>
-                <Code size={14} style={{ color: showCodePanel ? colors.primary : colors.textSecondary }} />
+                style={{ backgroundColor: colors.hover }}>
+                <Activity size={14} style={{ color: colors.textSecondary }} />
               </button>
 
-              {/* Share Button */}
-              <button onClick={() => handleExportSchema('JSON')} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                style={{ backgroundColor: colors.hover }}>
-                <Share2 size={14} style={{ color: colors.textSecondary }} />
+              {/* Refresh Button */}
+              <button onClick={refreshAllSchemaData} 
+                className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                style={{ backgroundColor: colors.hover }}
+                disabled={loading}>
+                <RefreshCw size={14} style={{ color: colors.textSecondary }} className={loading ? 'animate-spin' : ''} />
               </button>
 
               {/* Settings */}
@@ -2600,7 +2351,6 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                 style={{ backgroundColor: colors.hover }}>
                 <Settings size={14} style={{ color: colors.textSecondary }} />
               </button>
-
             </div>
           </div>
 
@@ -2618,8 +2368,6 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
             <LeftSidebar
               isLeftSidebarVisible={isLeftSidebarVisible}
               setIsLeftSidebarVisible={setIsLeftSidebarVisible}
-              showConnectionManager={showConnectionManager}
-              setShowConnectionManager={setShowConnectionManager}
               filterQuery={filterQuery}
               selectedOwner={selectedOwner}
               handleFilterChange={handleFilterChange}
@@ -2633,9 +2381,8 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
               handleObjectSelect={handleObjectSelect}
               getObjectIcon={getObjectIcon}
               handleContextMenu={handleContextMenu}
-              activeConnection={activeConnection}
-              connections={connections}
               loading={loading}
+              owners={owners}
             />
 
             {/* MAIN WORK AREA */}
@@ -2674,7 +2421,6 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                           fontWeight: tab.isActive ? '600' : '400'
                         }}>
                           {tab.name}
-                          {tab.isDirty && ' *'}
                         </span>
                       </div>
                       {tabs.length > 1 && (
@@ -2702,14 +2448,6 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                       )}
                     </button>
                   ))}
-                  {/* <button
-                    className="px-3 sm:px-4 py-2 border-r hover:bg-opacity-50 transition-colors hover-lift touch-target"
-                    style={{ borderRightColor: colors.border, backgroundColor: colors.hover }}
-                    onClick={() => console.log('New tab')}
-                    aria-label="New tab"
-                  >
-                    <Plus size={14} style={{ color: colors.textSecondary }} />
-                  </button> */}
                 </div>
               </div>
 
@@ -2729,16 +2467,15 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                             <span className="text-sm sm:text-base font-semibold truncate block" style={{ color: colors.text }}>
                               {activeObject.name} <span className="text-xs truncate" style={{ color: colors.textSecondary }}>[ {activeObject.owner} ]</span>
                             </span>
-                            {/* <span className="text-xs truncate block" style={{ color: colors.textSecondary }}>
-                              {activeObject.owner}
-                            </span> */}
                           </div>
-                          <span className="text-xs px-2 py-0.5 rounded shrink-0" style={{ 
-                            backgroundColor: activeObject.status === 'VALID' ? `${colors.success}20` : `${colors.error}20`,
-                            color: activeObject.status === 'VALID' ? colors.success : colors.error
-                          }}>
-                            {activeObject.status}
-                          </span>
+                          {activeObject.status && (
+                            <span className="text-xs px-2 py-0.5 rounded shrink-0" style={{ 
+                              backgroundColor: activeObject.status === 'VALID' ? `${colors.success}20` : `${colors.error}20`,
+                              color: activeObject.status === 'VALID' ? colors.success : colors.error
+                            }}>
+                              {activeObject.status}
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 sm:gap-4 text-xs">
                           {activeObject.rowCount && (
@@ -2754,19 +2491,18 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                         </div>
                       </div>
                       <div className="flex items-center gap-2 mt-2 sm:mt-0 self-end">
-                        <button 
-                          onClick={() => setShowApiModal(true)} 
-                          className="w-full px-3 py-2 rounded text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 rounded hover:opacity-90 font-medium transition-colors flex items-center gap-2 hover-lift cursor-pointer"
-                          style={{ 
-                            // backgroundColor: colors.primaryDark, 
-                            color: "white" 
-                          }}
-                          aria-label="Generate API"
-                        >
-                          <Code size={12} />
-                          <span className="hidden sm:inline">Generate New API</span>
-                          <span className="sm:hidden">API</span>
-                        </button>
+                        {isSupportedForAPIGeneration(activeObject.type) && (
+                          <button 
+                            onClick={() => setShowApiModal(true)} 
+                            className="px-3 py-2 rounded text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 font-medium transition-colors flex items-center gap-2 hover-lift cursor-pointer"
+                            style={{ color: "white" }}
+                            aria-label="Generate API"
+                          >
+                            <Code size={12} />
+                            <span className="hidden sm:inline">Generate API</span>
+                            <span className="sm:hidden">API</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2805,11 +2541,8 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                     <div className="h-full flex flex-col items-center justify-center p-4">
                       <Database size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mb-4" />
                       <p className="text-sm text-center" style={{ color: colors.textSecondary }}>
-                        Loading schema objects...
+                        Select an object from the schema browser to view details
                       </p>
-                      {loading && (
-                        <RefreshCw className="animate-spin mt-4" size={20} style={{ color: colors.textSecondary }} />
-                      )}
                     </div>
                   )}
                 </div>
@@ -2822,9 +2555,6 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
             isLeftSidebarVisible={isLeftSidebarVisible}
             setIsLeftSidebarVisible={setIsLeftSidebarVisible}
             setShowApiModal={setShowApiModal}
-            schemaObjects={schemaObjects}
-            tabs={tabs}
-            handleObjectSelect={handleObjectSelect}
             toggleTheme={toggleTheme}
             isDark={isDark}
             colors={colors}
@@ -2839,13 +2569,6 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
             borderColor: colors.border
           }}>
             <div className="flex items-center gap-4 overflow-x-auto">
-              <span>
-                {connections.find(c => c.id === activeConnection)?.name || 'No connection'} @ 
-                {connections.find(c => c.id === activeConnection)?.host || '...'}:
-                {connections.find(c => c.id === activeConnection)?.port || '...'}/
-                {connections.find(c => c.id === activeConnection)?.service || '...'}
-              </span>
-              <span className="opacity-75">|</span>
               <span>{Object.values(schemaObjects).flat().length} Objects</span>
               <span className="opacity-75">|</span>
               <span>{activeObject ? `Selected: ${activeObject.name}` : 'Ready'}</span>
@@ -2853,8 +2576,7 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
             <div className="hidden md:flex items-center gap-4">
               <span>F4: Describe</span>
               <span>F5: Refresh</span>
-              <span>F6: Switch Panels</span>
-              <span>F9: Execute</span>
+              <span>F9: Execute Query</span>
             </div>
           </div>
 
@@ -2867,7 +2589,6 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
               {renderContextMenu()}
             </div>
           )}
-          {renderConnectionManager()}
 
           {showApiModal && (
             <ApiGenerationModal
@@ -2876,7 +2597,6 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
               selectedObject={selectedForApiGeneration || activeObject}
               colors={colors}
               theme={theme}
-              onGenerateAPI={handleGenerateAPI}
             />
           )}
         </>
