@@ -1,6 +1,6 @@
 package com.usg.apiAutomation.services;
 
-import com.usg.apiAutomation.repositories.oracle.SchemaBrowserRepository;
+import com.usg.apiAutomation.repositories.oracle.OracleSchemaRepository;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -17,7 +17,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class OracleSchemaService {
 
-    private final SchemaBrowserRepository schemaBrowserRepository;
+    private final OracleSchemaRepository oracleSchemeRepository;
     private final LoggerUtil loggerUtil;
 
     // ==================== ENHANCED SYNONYM METHODS ====================
@@ -30,7 +30,7 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle synonyms with details for user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> synonyms = schemaBrowserRepository.getAllSynonymsWithDetails();
+            List<Map<String, Object>> synonyms = oracleSchemeRepository.getAllSynonymsWithDetails();
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", synonyms);
@@ -61,7 +61,7 @@ public class OracleSchemaService {
                 requestId, targetType, performedBy);
 
         try {
-            List<Map<String, Object>> synonyms = schemaBrowserRepository.getSynonymsByTargetType(targetType);
+            List<Map<String, Object>> synonyms = oracleSchemeRepository.getSynonymsByTargetType(targetType);
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", synonyms);
@@ -84,7 +84,6 @@ public class OracleSchemaService {
         }
     }
 
-
     /**
      * Get detailed information about a specific synonym
      * Endpoint: GET /plx/api/oracle/schema/synonyms/{synonymName}/details
@@ -95,7 +94,7 @@ public class OracleSchemaService {
                 requestId, synonymName, performedBy);
 
         try {
-            Map<String, Object> synonymDetails = schemaBrowserRepository.getSynonymDetails(synonymName);
+            Map<String, Object> synonymDetails = oracleSchemeRepository.getSynonymDetails(synonymName);
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", synonymDetails);
@@ -125,7 +124,7 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Resolving synonym: {} for user: {}", requestId, synonymName, performedBy);
 
         try {
-            Map<String, Object> resolved = schemaBrowserRepository.resolveSynonym(synonymName);
+            Map<String, Object> resolved = oracleSchemeRepository.resolveSynonym(synonymName);
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", resolved);
@@ -154,7 +153,7 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Validating synonym: {} for user: {}", requestId, synonymName, performedBy);
 
         try {
-            Map<String, Object> validation = schemaBrowserRepository.validateSynonym(synonymName);
+            Map<String, Object> validation = oracleSchemeRepository.validateSynonym(synonymName);
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", validation);
@@ -188,7 +187,7 @@ public class OracleSchemaService {
                 requestId, objectType, objectName, owner, performedBy);
 
         try {
-            Map<String, Object> objectDetails = schemaBrowserRepository.getObjectDetailsByNameAndType(
+            Map<String, Object> objectDetails = oracleSchemeRepository.getObjectDetailsByNameAndType(
                     objectName, objectType, owner);
 
             Map<String, Object> result = new HashMap<>();
@@ -221,7 +220,7 @@ public class OracleSchemaService {
                 requestId, objectType, objectName, owner, performedBy);
 
         try {
-            Map<String, Object> validation = schemaBrowserRepository.validateObject(objectName, objectType, owner);
+            Map<String, Object> validation = oracleSchemeRepository.validateObject(objectName, objectType, owner);
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", validation);
@@ -255,7 +254,7 @@ public class OracleSchemaService {
                 requestId, searchPattern, performedBy);
 
         try {
-            List<Map<String, Object>> results = schemaBrowserRepository.comprehensiveSearch(searchPattern);
+            List<Map<String, Object>> results = oracleSchemeRepository.comprehensiveSearch(searchPattern);
 
             Map<String, Object> responseData = new HashMap<>();
             responseData.put("results", results);
@@ -293,7 +292,7 @@ public class OracleSchemaService {
                 requestId, objectType, objectName, performedBy);
 
         try {
-            Map<String, Object> ddlResult = schemaBrowserRepository.getObjectDDLForFrontend(objectName, objectType);
+            Map<String, Object> ddlResult = oracleSchemeRepository.getObjectDDLForFrontend(objectName, objectType);
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", ddlResult.get("ddl"));
@@ -331,7 +330,7 @@ public class OracleSchemaService {
                 requestId, objectType, objectName, performedBy);
 
         try {
-            Map<String, Object> sizeInfo = schemaBrowserRepository.getObjectSize(objectName, objectType);
+            Map<String, Object> sizeInfo = oracleSchemeRepository.getObjectSize(objectName, objectType);
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", sizeInfo);
@@ -362,7 +361,7 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle tables for frontend, user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> tables = schemaBrowserRepository.getAllTablesForFrontend();
+            List<Map<String, Object>> tables = oracleSchemeRepository.getAllTablesForFrontend();
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", tables);
@@ -393,7 +392,7 @@ public class OracleSchemaService {
                 requestId, tableName, performedBy);
 
         try {
-            Map<String, Object> tableDetails = schemaBrowserRepository.getTableDetailsForFrontend(tableName);
+            Map<String, Object> tableDetails = oracleSchemeRepository.getTableDetailsForFrontend(tableName);
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", tableDetails);
@@ -425,7 +424,7 @@ public class OracleSchemaService {
                 requestId, tableName, page, pageSize, performedBy);
 
         try {
-            Map<String, Object> tableData = schemaBrowserRepository.getTableDataWithPagination(
+            Map<String, Object> tableData = oracleSchemeRepository.getTableDataWithPagination(
                     tableName, page, pageSize, sortColumn, sortDirection);
 
             Map<String, Object> result = new HashMap<>();
@@ -473,7 +472,7 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle views for frontend, user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> views = schemaBrowserRepository.getAllViewsForFrontend();
+            List<Map<String, Object>> views = oracleSchemeRepository.getAllViewsForFrontend();
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", views);
@@ -504,7 +503,7 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle procedures for frontend, user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> procedures = schemaBrowserRepository.getAllProceduresForFrontend();
+            List<Map<String, Object>> procedures = oracleSchemeRepository.getAllProceduresForFrontend();
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", procedures);
@@ -535,7 +534,7 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle functions for frontend, user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> functions = schemaBrowserRepository.getAllFunctionsForFrontend();
+            List<Map<String, Object>> functions = oracleSchemeRepository.getAllFunctionsForFrontend();
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", functions);
@@ -566,7 +565,7 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle packages for frontend, user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> packages = schemaBrowserRepository.getAllPackagesForFrontend();
+            List<Map<String, Object>> packages = oracleSchemeRepository.getAllPackagesForFrontend();
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", packages);
@@ -597,7 +596,7 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle sequences for frontend, user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> sequences = schemaBrowserRepository.getAllSequencesForFrontend();
+            List<Map<String, Object>> sequences = oracleSchemeRepository.getAllSequencesForFrontend();
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", sequences);
@@ -628,7 +627,7 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle synonyms for frontend, user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> synonyms = schemaBrowserRepository.getAllSynonymsForFrontend();
+            List<Map<String, Object>> synonyms = oracleSchemeRepository.getAllSynonymsForFrontend();
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", synonyms);
@@ -659,7 +658,7 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle types for frontend, user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> types = schemaBrowserRepository.getAllTypesForFrontend();
+            List<Map<String, Object>> types = oracleSchemeRepository.getAllTypesForFrontend();
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", types);
@@ -690,7 +689,7 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle triggers for frontend, user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> triggers = schemaBrowserRepository.getAllTriggersForFrontend();
+            List<Map<String, Object>> triggers = oracleSchemeRepository.getAllTriggersForFrontend();
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", triggers);
@@ -724,7 +723,7 @@ public class OracleSchemaService {
                 requestId, searchQuery, searchType, maxResults);
 
         try {
-            List<Map<String, Object>> results = schemaBrowserRepository.searchObjectsForFrontend(
+            List<Map<String, Object>> results = oracleSchemeRepository.searchObjectsForFrontend(
                     searchQuery, searchType, maxResults);
 
             Map<String, Object> responseData = new HashMap<>();
@@ -776,7 +775,7 @@ public class OracleSchemaService {
                 requestId, timeoutSeconds, readOnly, performedBy);
 
         try {
-            Map<String, Object> queryResults = schemaBrowserRepository.executeQuery(query, timeoutSeconds, readOnly);
+            Map<String, Object> queryResults = oracleSchemeRepository.executeQuery(query, timeoutSeconds, readOnly);
 
             Map<String, Object> result = new HashMap<>();
             result.put("data", queryResults);
@@ -820,10 +819,10 @@ public class OracleSchemaService {
                 "RequestEntity ID: " + requestId + ", Getting all Oracle tables for user: " + performedBy);
 
         try {
-            List<Map<String, Object>> tables = schemaBrowserRepository.getAllTables();
+            List<Map<String, Object>> tables = oracleSchemeRepository.getAllTables();
 
             // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
 
             Map<String, Object> result = new HashMap<>();
             result.put("tables", tables);
@@ -853,7 +852,7 @@ public class OracleSchemaService {
                 requestId, schemaName, performedBy);
 
         try {
-            List<Map<String, Object>> tables = schemaBrowserRepository.getTablesBySchema(schemaName);
+            List<Map<String, Object>> tables = oracleSchemeRepository.getTablesBySchema(schemaName);
 
             Map<String, Object> result = new HashMap<>();
             result.put("tables", tables);
@@ -884,10 +883,10 @@ public class OracleSchemaService {
                 requestId, tableName, performedBy);
 
         try {
-            Map<String, Object> tableDetails = schemaBrowserRepository.getTableDetails(tableName);
-            List<Map<String, Object>> columns = schemaBrowserRepository.getTableColumns(tableName);
-            List<Map<String, Object>> constraints = schemaBrowserRepository.getTableConstraints(tableName);
-            List<Map<String, Object>> indexes = schemaBrowserRepository.getTableIndexes(tableName);
+            Map<String, Object> tableDetails = oracleSchemeRepository.getTableDetails(tableName);
+            List<Map<String, Object>> columns = oracleSchemeRepository.getTableColumns(tableName);
+            List<Map<String, Object>> constraints = oracleSchemeRepository.getTableConstraints(tableName);
+            List<Map<String, Object>> indexes = oracleSchemeRepository.getTableIndexes(tableName);
 
             Map<String, Object> result = new HashMap<>();
             result.put("tableInfo", tableDetails);
@@ -921,10 +920,10 @@ public class OracleSchemaService {
                 requestId, searchPattern, performedBy);
 
         try {
-            List<Map<String, Object>> tables = schemaBrowserRepository.searchTables(searchPattern);
+            List<Map<String, Object>> tables = oracleSchemeRepository.searchTables(searchPattern);
 
             // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
 
             Map<String, Object> result = new HashMap<>();
             result.put("tables", tables);
@@ -957,7 +956,7 @@ public class OracleSchemaService {
                 requestId, tableName, performedBy);
 
         try {
-            Map<String, Object> statistics = schemaBrowserRepository.getTableStatistics(tableName);
+            Map<String, Object> statistics = oracleSchemeRepository.getTableStatistics(tableName);
 
             Map<String, Object> result = new HashMap<>();
             result.put("tableName", tableName);
@@ -983,10 +982,10 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting Oracle tables with row count for user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> tables = schemaBrowserRepository.getTablesWithRowCount();
+            List<Map<String, Object>> tables = oracleSchemeRepository.getTablesWithRowCount();
 
             // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
 
             Map<String, Object> result = new HashMap<>();
             result.put("tables", tables);
@@ -1013,10 +1012,10 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting Oracle table count by tablespace for user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> tablespaceStats = schemaBrowserRepository.getTableCountByTablespace();
+            List<Map<String, Object>> tablespaceStats = oracleSchemeRepository.getTableCountByTablespace();
 
             // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
 
             Map<String, Object> result = new HashMap<>();
             result.put("tablespaceStats", tablespaceStats);
@@ -1046,10 +1045,10 @@ public class OracleSchemaService {
                 requestId, days, performedBy);
 
         try {
-            List<Map<String, Object>> tables = schemaBrowserRepository.getRecentTables(days);
+            List<Map<String, Object>> tables = oracleSchemeRepository.getRecentTables(days);
 
             // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
 
             Map<String, Object> result = new HashMap<>();
             result.put("tables", tables);
@@ -1080,10 +1079,10 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle views for user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> views = schemaBrowserRepository.getAllViews();
+            List<Map<String, Object>> views = oracleSchemeRepository.getAllViews();
 
             // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
 
             Map<String, Object> result = new HashMap<>();
             result.put("views", views);
@@ -1112,7 +1111,7 @@ public class OracleSchemaService {
                 requestId, schemaName, performedBy);
 
         try {
-            List<Map<String, Object>> views = schemaBrowserRepository.getViewsBySchema(schemaName);
+            List<Map<String, Object>> views = oracleSchemeRepository.getViewsBySchema(schemaName);
 
             Map<String, Object> result = new HashMap<>();
             result.put("views", views);
@@ -1143,7 +1142,7 @@ public class OracleSchemaService {
                 requestId, viewName, performedBy);
 
         try {
-            Map<String, Object> viewDetails = schemaBrowserRepository.getViewDetails(viewName);
+            Map<String, Object> viewDetails = oracleSchemeRepository.getViewDetails(viewName);
 
             viewDetails.put("generatedAt", java.time.LocalDateTime.now().toString());
             viewDetails.put("generatedBy", performedBy);
@@ -1169,10 +1168,10 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle procedures for user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> procedures = schemaBrowserRepository.getAllProcedures();
+            List<Map<String, Object>> procedures = oracleSchemeRepository.getAllProcedures();
 
             // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
 
             Map<String, Object> result = new HashMap<>();
             result.put("procedures", procedures);
@@ -1201,7 +1200,7 @@ public class OracleSchemaService {
                 requestId, schemaName, performedBy);
 
         try {
-            List<Map<String, Object>> procedures = schemaBrowserRepository.getProceduresBySchema(schemaName);
+            List<Map<String, Object>> procedures = oracleSchemeRepository.getProceduresBySchema(schemaName);
 
             Map<String, Object> result = new HashMap<>();
             result.put("procedures", procedures);
@@ -1232,7 +1231,7 @@ public class OracleSchemaService {
                 requestId, procedureName, performedBy);
 
         try {
-            Map<String, Object> procedureDetails = schemaBrowserRepository.getProcedureDetails(procedureName);
+            Map<String, Object> procedureDetails = oracleSchemeRepository.getProcedureDetails(procedureName);
 
             procedureDetails.put("generatedAt", java.time.LocalDateTime.now().toString());
             procedureDetails.put("generatedBy", performedBy);
@@ -1258,10 +1257,10 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle functions for user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> functions = schemaBrowserRepository.getAllFunctions();
+            List<Map<String, Object>> functions = oracleSchemeRepository.getAllFunctions();
 
             // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
 
             Map<String, Object> result = new HashMap<>();
             result.put("functions", functions);
@@ -1290,7 +1289,7 @@ public class OracleSchemaService {
                 requestId, schemaName, performedBy);
 
         try {
-            List<Map<String, Object>> functions = schemaBrowserRepository.getFunctionsBySchema(schemaName);
+            List<Map<String, Object>> functions = oracleSchemeRepository.getFunctionsBySchema(schemaName);
 
             Map<String, Object> result = new HashMap<>();
             result.put("functions", functions);
@@ -1321,7 +1320,7 @@ public class OracleSchemaService {
                 requestId, functionName, performedBy);
 
         try {
-            Map<String, Object> functionDetails = schemaBrowserRepository.getFunctionDetails(functionName);
+            Map<String, Object> functionDetails = oracleSchemeRepository.getFunctionDetails(functionName);
 
             functionDetails.put("generatedAt", java.time.LocalDateTime.now().toString());
             functionDetails.put("generatedBy", performedBy);
@@ -1347,10 +1346,10 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle packages for user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> packages = schemaBrowserRepository.getAllPackages();
+            List<Map<String, Object>> packages = oracleSchemeRepository.getAllPackages();
 
             // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
 
             Map<String, Object> result = new HashMap<>();
             result.put("packages", packages);
@@ -1379,7 +1378,7 @@ public class OracleSchemaService {
                 requestId, schemaName, performedBy);
 
         try {
-            List<Map<String, Object>> packages = schemaBrowserRepository.getPackagesBySchema(schemaName);
+            List<Map<String, Object>> packages = oracleSchemeRepository.getPackagesBySchema(schemaName);
 
             Map<String, Object> result = new HashMap<>();
             result.put("packages", packages);
@@ -1410,7 +1409,7 @@ public class OracleSchemaService {
                 requestId, packageName, performedBy);
 
         try {
-            Map<String, Object> packageDetails = schemaBrowserRepository.getPackageDetails(packageName);
+            Map<String, Object> packageDetails = oracleSchemeRepository.getPackageDetails(packageName);
 
             packageDetails.put("generatedAt", java.time.LocalDateTime.now().toString());
             packageDetails.put("generatedBy", performedBy);
@@ -1436,10 +1435,10 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle triggers for user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> triggers = schemaBrowserRepository.getAllTriggers();
+            List<Map<String, Object>> triggers = oracleSchemeRepository.getAllTriggers();
 
             // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
 
             Map<String, Object> result = new HashMap<>();
             result.put("triggers", triggers);
@@ -1468,7 +1467,7 @@ public class OracleSchemaService {
                 requestId, schemaName, performedBy);
 
         try {
-            List<Map<String, Object>> triggers = schemaBrowserRepository.getTriggersBySchema(schemaName);
+            List<Map<String, Object>> triggers = oracleSchemeRepository.getTriggersBySchema(schemaName);
 
             Map<String, Object> result = new HashMap<>();
             result.put("triggers", triggers);
@@ -1499,7 +1498,7 @@ public class OracleSchemaService {
                 requestId, triggerName, performedBy);
 
         try {
-            Map<String, Object> triggerDetails = schemaBrowserRepository.getTriggerDetails(triggerName);
+            Map<String, Object> triggerDetails = oracleSchemeRepository.getTriggerDetails(triggerName);
 
             triggerDetails.put("generatedAt", java.time.LocalDateTime.now().toString());
             triggerDetails.put("generatedBy", performedBy);
@@ -1525,10 +1524,10 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle synonyms for user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> synonyms = schemaBrowserRepository.getAllSynonyms();
+            List<Map<String, Object>> synonyms = oracleSchemeRepository.getAllSynonyms();
 
             // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
 
             Map<String, Object> result = new HashMap<>();
             result.put("synonyms", synonyms);
@@ -1557,7 +1556,7 @@ public class OracleSchemaService {
                 requestId, schemaName, performedBy);
 
         try {
-            List<Map<String, Object>> synonyms = schemaBrowserRepository.getSynonymsBySchema(schemaName);
+            List<Map<String, Object>> synonyms = oracleSchemeRepository.getSynonymsBySchema(schemaName);
 
             Map<String, Object> result = new HashMap<>();
             result.put("synonyms", synonyms);
@@ -1588,10 +1587,10 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle sequences for user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> sequences = schemaBrowserRepository.getAllSequences();
+            List<Map<String, Object>> sequences = oracleSchemeRepository.getAllSequences();
 
             // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
 
             Map<String, Object> result = new HashMap<>();
             result.put("sequences", sequences);
@@ -1620,7 +1619,7 @@ public class OracleSchemaService {
                 requestId, schemaName, performedBy);
 
         try {
-            List<Map<String, Object>> sequences = schemaBrowserRepository.getSequencesBySchema(schemaName);
+            List<Map<String, Object>> sequences = oracleSchemeRepository.getSequencesBySchema(schemaName);
 
             Map<String, Object> result = new HashMap<>();
             result.put("sequences", sequences);
@@ -1651,7 +1650,7 @@ public class OracleSchemaService {
                 requestId, sequenceName, performedBy);
 
         try {
-            Map<String, Object> sequenceDetails = schemaBrowserRepository.getSequenceDetails(sequenceName);
+            Map<String, Object> sequenceDetails = oracleSchemeRepository.getSequenceDetails(sequenceName);
 
             sequenceDetails.put("generatedAt", java.time.LocalDateTime.now().toString());
             sequenceDetails.put("generatedBy", performedBy);
@@ -1677,10 +1676,10 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle types for user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> types = schemaBrowserRepository.getAllTypes();
+            List<Map<String, Object>> types = oracleSchemeRepository.getAllTypes();
 
             // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
 
             Map<String, Object> result = new HashMap<>();
             result.put("types", types);
@@ -1709,7 +1708,7 @@ public class OracleSchemaService {
                 requestId, schemaName, performedBy);
 
         try {
-            List<Map<String, Object>> types = schemaBrowserRepository.getTypesBySchema(schemaName);
+            List<Map<String, Object>> types = oracleSchemeRepository.getTypesBySchema(schemaName);
 
             Map<String, Object> result = new HashMap<>();
             result.put("types", types);
@@ -1740,7 +1739,7 @@ public class OracleSchemaService {
                 requestId, typeName, performedBy);
 
         try {
-            Map<String, Object> typeDetails = schemaBrowserRepository.getTypeDetails(typeName);
+            Map<String, Object> typeDetails = oracleSchemeRepository.getTypeDetails(typeName);
 
             typeDetails.put("generatedAt", java.time.LocalDateTime.now().toString());
             typeDetails.put("generatedBy", performedBy);
@@ -1766,10 +1765,10 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle database links for user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> dbLinks = schemaBrowserRepository.getAllDbLinks();
+            List<Map<String, Object>> dbLinks = oracleSchemeRepository.getAllDbLinks();
 
             // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
 
             Map<String, Object> result = new HashMap<>();
             result.put("dbLinks", dbLinks);
@@ -1798,7 +1797,7 @@ public class OracleSchemaService {
                 requestId, schemaName, performedBy);
 
         try {
-            List<Map<String, Object>> dbLinks = schemaBrowserRepository.getDbLinksBySchema(schemaName);
+            List<Map<String, Object>> dbLinks = oracleSchemeRepository.getDbLinksBySchema(schemaName);
 
             Map<String, Object> result = new HashMap<>();
             result.put("dbLinks", dbLinks);
@@ -1829,10 +1828,10 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting all Oracle objects for user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> objects = schemaBrowserRepository.getAllObjects();
+            List<Map<String, Object>> objects = oracleSchemeRepository.getAllObjects();
 
             // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
 
             Map<String, Object> result = new HashMap<>();
             result.put("objects", objects);
@@ -1861,7 +1860,7 @@ public class OracleSchemaService {
                 requestId, schemaName, performedBy);
 
         try {
-            List<Map<String, Object>> objects = schemaBrowserRepository.getObjectsBySchema(schemaName);
+            List<Map<String, Object>> objects = oracleSchemeRepository.getObjectsBySchema(schemaName);
 
             Map<String, Object> result = new HashMap<>();
             result.put("objects", objects);
@@ -1892,10 +1891,10 @@ public class OracleSchemaService {
                 requestId, searchPattern, performedBy);
 
         try {
-            List<Map<String, Object>> objects = schemaBrowserRepository.searchObjects(searchPattern);
+            List<Map<String, Object>> objects = oracleSchemeRepository.searchObjects(searchPattern);
 
             // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
 
             Map<String, Object> result = new HashMap<>();
             result.put("objects", objects);
@@ -1925,10 +1924,10 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Getting Oracle object count by type for user: {}", requestId, performedBy);
 
         try {
-            List<Map<String, Object>> objectCounts = schemaBrowserRepository.getObjectCountByType();
+            List<Map<String, Object>> objectCounts = oracleSchemeRepository.getObjectCountByType();
 
             // Get the actual schema name from the repository
-            String currentSchema = schemaBrowserRepository.getCurrentSchema();
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
 
             Map<String, Object> result = new HashMap<>();
             result.put("objectCounts", objectCounts);
@@ -1948,6 +1947,71 @@ public class OracleSchemaService {
         }
     }
 
+    /**
+     * Get invalid objects (legacy format)
+     */
+    public Map<String, Object> getInvalidObjects(String requestId, HttpServletRequest req, String performedBy) {
+        log.info("RequestEntity ID: {}, Getting invalid Oracle objects for user: {}", requestId, performedBy);
+
+        try {
+            List<Map<String, Object>> invalidObjects = oracleSchemeRepository.getInvalidObjects();
+
+            // Get the actual schema name from the repository
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("invalidObjects", invalidObjects);
+            result.put("totalCount", invalidObjects.size());
+            result.put("database", "Oracle");
+            result.put("schema", currentSchema);
+            result.put("generatedAt", java.time.LocalDateTime.now().toString());
+            result.put("generatedBy", performedBy);
+
+            log.info("RequestEntity ID: {}, Retrieved {} invalid Oracle objects", requestId, invalidObjects.size());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting invalid Oracle objects: {}", requestId, e.getMessage());
+            throw new RuntimeException("Failed to retrieve invalid Oracle objects: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get objects by status (legacy format)
+     */
+    public Map<String, Object> getObjectsByStatus(String requestId, HttpServletRequest req,
+                                                  String performedBy, String status) {
+        log.info("RequestEntity ID: {}, Getting Oracle objects with status: {} for user: {}",
+                requestId, status, performedBy);
+
+        try {
+            List<Map<String, Object>> objects = oracleSchemeRepository.getObjectsByStatus(status);
+
+            // Get the actual schema name from the repository
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("objects", objects);
+            result.put("totalCount", objects.size());
+            result.put("status", status);
+            result.put("database", "Oracle");
+            result.put("schema", currentSchema);
+            result.put("generatedAt", java.time.LocalDateTime.now().toString());
+            result.put("generatedBy", performedBy);
+
+            log.info("RequestEntity ID: {}, Retrieved {} Oracle objects with status: {}",
+                    requestId, objects.size(), status);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting Oracle objects with status {}: {}",
+                    requestId, status, e.getMessage());
+            throw new RuntimeException("Failed to retrieve Oracle objects by status: " + e.getMessage(), e);
+        }
+    }
+
     // ==================== EXISTING DIAGNOSTIC METHODS ====================
 
     /**
@@ -1957,7 +2021,7 @@ public class OracleSchemaService {
         log.info("RequestEntity ID: {}, Running Oracle database diagnostics for user: {}", requestId, performedBy);
 
         try {
-            Map<String, Object> diagnostics = schemaBrowserRepository.diagnoseDatabase();
+            Map<String, Object> diagnostics = oracleSchemeRepository.diagnoseDatabase();
 
             diagnostics.put("generatedAt", java.time.LocalDateTime.now().toString());
             diagnostics.put("generatedBy", performedBy);
@@ -1973,6 +2037,83 @@ public class OracleSchemaService {
         }
     }
 
+    /**
+     * Get current database schema information
+     * Endpoint: GET /plx/api/oracle/schema/info
+     */
+    public Map<String, Object> getCurrentSchemaInfo(String requestId, HttpServletRequest req, String performedBy) {
+        log.info("RequestEntity ID: {}, Getting current Oracle schema info for user: {}", requestId, performedBy);
+
+        try {
+            String currentUser = oracleSchemeRepository.getCurrentUser();
+            String currentSchema = oracleSchemeRepository.getCurrentSchema();
+            String dbVersion = oracleSchemeRepository.getDatabaseVersion();
+
+            Map<String, Object> schemaInfo = new HashMap<>();
+            schemaInfo.put("currentUser", currentUser);
+            schemaInfo.put("currentSchema", currentSchema);
+            schemaInfo.put("databaseVersion", dbVersion);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", schemaInfo);
+            result.put("responseCode", 200);
+            result.put("message", "Schema info retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved schema info: user={}, schema={}",
+                    requestId, currentUser, currentSchema);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting schema info: {}", requestId, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Get recent objects (modified in last N days)
+     * Endpoint: GET /plx/api/oracle/schema/recent/{days}
+     */
+    public Map<String, Object> getRecentObjects(String requestId, HttpServletRequest req,
+                                                String performedBy, int days) {
+        log.info("RequestEntity ID: {}, Getting recent Oracle objects modified in last {} days for user: {}",
+                requestId, days, performedBy);
+
+        try {
+            String sql = "SELECT owner, object_name, object_type, status, created, last_ddl_time " +
+                    "FROM all_objects " +
+                    "WHERE last_ddl_time > SYSDATE - ? AND owner = ? " +
+                    "ORDER BY last_ddl_time DESC";
+
+            String currentUser = oracleSchemeRepository.getCurrentUser();
+            List<Map<String, Object>> objects = oracleSchemeRepository.executeQuery(
+                    sql, 30, true).get("rows") instanceof List ?
+                    (List<Map<String, Object>>) oracleSchemeRepository.executeQuery(sql, 30, true).get("rows") :
+                    new ArrayList<>();
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", objects);
+            result.put("totalCount", objects.size());
+            result.put("days", days);
+            result.put("responseCode", 200);
+            result.put("message", "Recent objects retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Found {} objects modified in last {} days",
+                    requestId, objects.size(), days);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting recent objects: {}", requestId, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
 
     // ==================== HELPER METHODS ====================
 
@@ -1987,5 +2128,29 @@ public class OracleSchemaService {
         errorResult.put("requestId", requestId);
         errorResult.put("timestamp", java.time.Instant.now().toString());
         return errorResult;
+    }
+
+    /**
+     * Helper method to get the current user from the repository
+     */
+    public String getCurrentUser() {
+        try {
+            return oracleSchemeRepository.getCurrentUser();
+        } catch (Exception e) {
+            log.error("Error getting current user: {}", e.getMessage());
+            return "UNKNOWN";
+        }
+    }
+
+    /**
+     * Helper method to get the current schema from the repository
+     */
+    public String getCurrentSchema() {
+        try {
+            return oracleSchemeRepository.getCurrentSchema();
+        } catch (Exception e) {
+            log.error("Error getting current schema: {}", e.getMessage());
+            return "UNKNOWN";
+        }
     }
 }

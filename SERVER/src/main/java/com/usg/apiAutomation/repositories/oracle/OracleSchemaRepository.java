@@ -15,13 +15,13 @@ import java.util.stream.Collectors;
 
 @Repository
 @Slf4j
-public class SchemaBrowserRepository {
+public class OracleSchemaRepository {
 
     @Autowired
     @Qualifier("oracleJdbcTemplate")
     private JdbcTemplate oracleJdbcTemplate;
 
-    private static final Logger log = LoggerFactory.getLogger(SchemaBrowserRepository.class);
+    private static final Logger log = LoggerFactory.getLogger(OracleSchemaRepository.class);
 
     // ==================== ENHANCED SYNONYM METHODS ====================
 
@@ -340,6 +340,9 @@ public class SchemaBrowserRepository {
     /**
      * Get table details with owner
      */
+    /**
+     * Get table details with owner
+     */
     private Map<String, Object> getTableDetails(String owner, String tableName) {
         Map<String, Object> details = new HashMap<>();
         try {
@@ -415,6 +418,15 @@ public class SchemaBrowserRepository {
                     log.debug("Could not get column count for {}.{}: {}", owner, tableName, e.getMessage());
                 }
 
+                // FIX: Add column details to the result
+                try {
+                    List<Map<String, Object>> columns = getTableColumns(owner, tableName);
+                    details.put("columns", columns);
+                    details.put("column_count", columns.size()); // Update count with actual columns
+                } catch (Exception e) {
+                    log.debug("Could not get columns for {}.{}: {}", owner, tableName, e.getMessage());
+                }
+
                 try {
                     // Get size
                     String sizeSql;
@@ -448,6 +460,32 @@ public class SchemaBrowserRepository {
                     log.debug("Could not get comments for {}.{}: {}", owner, tableName, e.getMessage());
                     details.put("comments", "");
                 }
+
+                // Get constraints and indexes as well for completeness
+                try {
+                    List<Map<String, Object>> constraints = getTableConstraints(owner, tableName);
+                    details.put("constraints", constraints);
+                } catch (Exception e) {
+                    log.debug("Could not get constraints for {}.{}: {}", owner, tableName, e.getMessage());
+                }
+
+                try {
+                    List<Map<String, Object>> indexes = getTableIndexes(owner, tableName);
+                    details.put("indexes", indexes);
+                } catch (Exception e) {
+                    log.debug("Could not get indexes for {}.{}: {}", owner, tableName, e.getMessage());
+                }
+
+                try {
+                    List<Map<String, Object>> partitions = getTablePartitions(owner, tableName);
+                    if (!partitions.isEmpty()) {
+                        details.put("partitions", partitions);
+                        details.put("partition_count", partitions.size());
+                    }
+                } catch (Exception e) {
+                    log.debug("Could not get partitions for {}.{}: {}", owner, tableName, e.getMessage());
+                }
+
             } else {
                 details.put("error", "Table not found");
                 details.put("exists", false);
@@ -3927,7 +3965,7 @@ public class SchemaBrowserRepository {
     /**
      * Get current Oracle user
      */
-    private String getCurrentUser() {
+    public String getCurrentUser() {
         try {
             return oracleJdbcTemplate.queryForObject("SELECT USER FROM DUAL", String.class);
         } catch (Exception e) {
@@ -3951,7 +3989,7 @@ public class SchemaBrowserRepository {
     /**
      * Get database version
      */
-    private String getDatabaseVersion() {
+    public String getDatabaseVersion() {
         try {
             return oracleJdbcTemplate.queryForObject(
                     "SELECT banner FROM v$version WHERE ROWNUM = 1",
