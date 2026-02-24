@@ -3,10 +3,13 @@ package com.usg.apiAutomation.config;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.orm.jpa.EntityManagerFactoryBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.context.annotation.PropertySource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
@@ -22,17 +25,26 @@ import java.util.Map;
 public class DatabaseConfig {
 
     // ==================== POSTGRESQL DATASOURCE (PRIMARY) ====================
+
     @Primary
     @Bean(name = "postgresDataSource")
-    public DataSource postgresDataSource() {
+    @ConfigurationProperties(prefix = "spring.datasource.hikari")
+    public DataSource postgresDataSource(
+            @Value("${spring.datasource.driver-class-name}") String driverClassName,
+            @Value("${spring.datasource.url}") String url,
+            @Value("${spring.datasource.username}") String username,
+            @Value("${spring.datasource.password}") String password,
+            @Value("${spring.datasource.hikari.maximum-pool-size}") int maximumPoolSize,
+            @Value("${spring.datasource.hikari.minimum-idle}") int minimumIdle) {
+
         HikariConfig config = new HikariConfig();
 
-        config.setDriverClassName("org.postgresql.Driver");
-        config.setJdbcUrl("jdbc:postgresql://127.0.0.1:5432/api_automation");
-        config.setUsername("postgres");
-        config.setPassword("fIreF0x@$s123!!");
-        config.setMaximumPoolSize(10);
-        config.setMinimumIdle(5);
+        config.setDriverClassName(driverClassName);
+        config.setJdbcUrl(url);
+        config.setUsername(username);
+        config.setPassword(password);
+        config.setMaximumPoolSize(maximumPoolSize);
+        config.setMinimumIdle(minimumIdle);
         config.setConnectionTimeout(30000);
         config.setPoolName("PostgreSQL-Hikari-Pool");
         config.setConnectionTestQuery("SELECT 1");
@@ -51,13 +63,17 @@ public class DatabaseConfig {
     @Bean(name = "postgresEntityManagerFactory")
     public LocalContainerEntityManagerFactoryBean postgresEntityManagerFactory(
             EntityManagerFactoryBuilder builder,
-            @Qualifier("postgresDataSource") DataSource dataSource) {
+            @Qualifier("postgresDataSource") DataSource dataSource,
+            @Value("${spring.jpa.properties.hibernate.dialect:org.hibernate.dialect.PostgreSQLDialect}") String dialect,
+            @Value("${spring.jpa.hibernate.ddl-auto:update}") String ddlAuto,
+            @Value("${spring.jpa.show-sql:true}") String showSql,
+            @Value("${spring.jpa.properties.hibernate.format_sql:true}") String formatSql) {
 
         Map<String, Object> properties = new HashMap<>();
-        properties.put("hibernate.dialect", "org.hibernate.dialect.PostgreSQLDialect");
-        properties.put("hibernate.hbm2ddl.auto", "update");
-        properties.put("hibernate.show_sql", "true");
-        properties.put("hibernate.format_sql", "true");
+        properties.put("hibernate.dialect", dialect);
+        properties.put("hibernate.hbm2ddl.auto", ddlAuto);
+        properties.put("hibernate.show_sql", showSql);
+        properties.put("hibernate.format_sql", formatSql);
         properties.put("hibernate.physical_naming_strategy",
                 "org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy");
 
@@ -77,6 +93,7 @@ public class DatabaseConfig {
     }
 
     // ==================== DEFAULT BEANS FOR COMPATIBILITY ====================
+
     @Bean(name = "entityManagerFactory")
     public LocalContainerEntityManagerFactoryBean entityManagerFactory(
             @Qualifier("postgresEntityManagerFactory") LocalContainerEntityManagerFactoryBean postgresEmf) {
@@ -90,17 +107,27 @@ public class DatabaseConfig {
     }
 
     // ==================== ORACLE DATASOURCE (SECONDARY) ====================
+
     @Bean(name = "oracleDataSource")
-    public DataSource oracleDataSource() {
+    @ConfigurationProperties(prefix = "spring.datasource.oracle.hikari")
+    public DataSource oracleDataSource(
+            @Value("${spring.datasource.oracle.driver-class-name}") String driverClassName,
+            @Value("${spring.datasource.oracle.url}") String url,
+            @Value("${spring.datasource.oracle.username}") String username,
+            @Value("${spring.datasource.oracle.password}") String password,
+            @Value("${spring.datasource.oracle.hikari.maximum-pool-size}") int maximumPoolSize,
+            @Value("${spring.datasource.oracle.hikari.minimum-idle}") int minimumIdle,
+            @Value("${spring.datasource.oracle.hikari.connection-timeout}") int connectionTimeout) {
+
         HikariConfig config = new HikariConfig();
 
-        config.setDriverClassName("oracle.jdbc.OracleDriver");
-        config.setJdbcUrl("jdbc:oracle:thin:@//10.203.14.30:9534/USGD");
-        config.setUsername("THIRDPARTY_USER");
-        config.setPassword("THIRDPART3_09");
-        config.setMaximumPoolSize(10);
-        config.setMinimumIdle(5);
-        config.setConnectionTimeout(30000);
+        config.setDriverClassName(driverClassName);
+        config.setJdbcUrl(url);
+        config.setUsername(username);
+        config.setPassword(password);
+        config.setMaximumPoolSize(maximumPoolSize);
+        config.setMinimumIdle(minimumIdle);
+        config.setConnectionTimeout(connectionTimeout);
         config.setPoolName("Oracle-Hikari-Pool");
         config.setConnectionTestQuery("SELECT 1 FROM DUAL");
         config.setAutoCommit(false);
@@ -111,7 +138,6 @@ public class DatabaseConfig {
     @Bean(name = "oracleJdbcTemplate")
     public JdbcTemplate oracleJdbcTemplate(@Qualifier("oracleDataSource") DataSource dataSource) {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
-        // Oracle-specific settings if needed
         jdbcTemplate.setFetchSize(100);
         return jdbcTemplate;
     }
@@ -119,18 +145,21 @@ public class DatabaseConfig {
     @Bean(name = "oracleEntityManagerFactory")
     public LocalContainerEntityManagerFactoryBean oracleEntityManagerFactory(
             EntityManagerFactoryBuilder builder,
-            @Qualifier("oracleDataSource") DataSource dataSource) {
+            @Qualifier("oracleDataSource") DataSource dataSource,
+            @Value("${spring.jpa.oracle.properties.hibernate.dialect:org.hibernate.dialect.OracleDialect}") String dialect,
+            @Value("${spring.jpa.oracle.hibernate.ddl-auto:none}") String ddlAuto,
+            @Value("${spring.jpa.oracle.show-sql:true}") String showSql) {
 
         Map<String, Object> properties = new HashMap<>();
-        properties.put("hibernate.dialect", "org.hibernate.dialect.OracleDialect");
-        properties.put("hibernate.hbm2ddl.auto", "none");
-        properties.put("hibernate.show_sql", "true");
-        properties.put("hibernate.format_sql", "true");
-        properties.put("hibernate.jdbc.lob.non_contextual_creation", "true");
+        properties.put("hibernate.dialect", dialect);
+        properties.put("hibernate.hbm2ddl.auto", ddlAuto);
+        properties.put("hibernate.show_sql", showSql);
+        properties.put("hibernate.format_sql", true);
+        properties.put("hibernate.jdbc.lob.non_contextual_creation", true);
 
         return builder
                 .dataSource(dataSource)
-                .packages("com.usg.apiAutomation.entities.oracle")  // If you have Oracle entities
+                .packages("com.usg.apiAutomation.entities.oracle")
                 .persistenceUnit("oracle")
                 .properties(properties)
                 .build();
