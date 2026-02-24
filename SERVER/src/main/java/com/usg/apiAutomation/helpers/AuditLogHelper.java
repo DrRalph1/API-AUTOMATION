@@ -2,8 +2,8 @@ package com.usg.apiAutomation.helpers;
 
 import com.usg.apiAutomation.dtos.systemActivities.audit.AuditLogDTO;
 import com.usg.apiAutomation.dtos.systemActivities.audit.AuditLogSearchRequest;
-import com.usg.apiAutomation.entities.AuditLogEntity;
-import com.usg.apiAutomation.repositories.AuditLogRepository;
+import com.usg.apiAutomation.entities.postgres.AuditLogEntity;
+import com.usg.apiAutomation.repositories.postgres.AuditLogRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Component;

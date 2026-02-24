@@ -1,10 +1,9 @@
 package com.usg.apiAutomation.services;
 
 import com.usg.apiAutomation.dtos.collections.*;
-import com.usg.apiAutomation.entities.collections.*;
-import com.usg.apiAutomation.entities.collections.RequestEntity;
-import com.usg.apiAutomation.helpers.CollectionMapper;
-import com.usg.apiAutomation.repositories.collections.*;
+import com.usg.apiAutomation.entities.postgres.collections.*;
+import com.usg.apiAutomation.entities.postgres.collections.RequestEntity;
+import com.usg.apiAutomation.repositories.postgres.collections.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,13 +18,6 @@ import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;

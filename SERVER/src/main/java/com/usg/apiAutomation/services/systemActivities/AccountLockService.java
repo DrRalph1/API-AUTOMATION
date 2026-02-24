@@ -1,7 +1,7 @@
 package com.usg.apiAutomation.services.systemActivities;
 
-import com.usg.apiAutomation.entities.UserEntity;
-import com.usg.apiAutomation.repositories.AppUserRepository;
+import com.usg.apiAutomation.entities.postgres.UserEntity;
+import com.usg.apiAutomation.repositories.postgres.AppUserRepository;
 import jakarta.mail.MessagingException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;

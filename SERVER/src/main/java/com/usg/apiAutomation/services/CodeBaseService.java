@@ -1,8 +1,8 @@
 package com.usg.apiAutomation.services;
 
 import com.usg.apiAutomation.dtos.codeBase.*;
-import com.usg.apiAutomation.entities.codeBase.*;
-import com.usg.apiAutomation.repositories.codeBase.*;
+import com.usg.apiAutomation.entities.postgres.codeBase.*;
+import com.usg.apiAutomation.repositories.postgres.codeBase.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import com.usg.apiAutomation.utils.ModelMapperUtil;
 import org.springframework.beans.factory.annotation.Autowired;

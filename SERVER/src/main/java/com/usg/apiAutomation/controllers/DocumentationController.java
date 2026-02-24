@@ -1,9 +1,9 @@
 package com.usg.apiAutomation.controllers;
 
 import com.usg.apiAutomation.dtos.documentation.*;
-import com.usg.apiAutomation.entities.documentation.FolderEntity;
+import com.usg.apiAutomation.entities.postgres.documentation.FolderEntity;
 import com.usg.apiAutomation.helpers.JwtHelper;
-import com.usg.apiAutomation.repositories.documentation.FolderRepository;
+import com.usg.apiAutomation.repositories.postgres.documentation.FolderRepository;
 import com.usg.apiAutomation.services.DocumentationService;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import io.swagger.v3.oas.annotations.Operation;

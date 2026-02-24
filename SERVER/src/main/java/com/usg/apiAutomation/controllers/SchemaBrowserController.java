@@ -42,6 +42,7 @@ public class SchemaBrowserController {
     @Operation(summary = "Get schema browser connections",
             description = "Retrieves all database connections available for schema browsing",
             parameters = {
+            
                     @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
             })
     @ApiResponses(value = {

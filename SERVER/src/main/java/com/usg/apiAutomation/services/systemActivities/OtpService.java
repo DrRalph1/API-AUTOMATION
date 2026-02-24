@@ -1,8 +1,8 @@
 package com.usg.apiAutomation.services.systemActivities;
 
-import com.usg.apiAutomation.entities.UserOtpEntity;
-import com.usg.apiAutomation.repositories.AppUserRepository;
-import com.usg.apiAutomation.repositories.OtpRepository;
+import com.usg.apiAutomation.entities.postgres.UserOtpEntity;
+import com.usg.apiAutomation.repositories.postgres.AppUserRepository;
+import com.usg.apiAutomation.repositories.postgres.OtpRepository;
 import com.usg.apiAutomation.helpers.DateTimeHelper;
 import jakarta.mail.MessagingException;
 import org.springframework.beans.factory.annotation.Autowired;

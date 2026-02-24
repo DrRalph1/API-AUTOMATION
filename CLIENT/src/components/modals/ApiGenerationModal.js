@@ -1628,13 +1628,17 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                <Globe className="h-6 w-6" style={{ color: themeColors.info }} />}
               <div>
                 <h2 className="text-xl font-bold" style={{ color: themeColors.text }}>
-                  Generate API from {selectedObject?.type || 'Object'}: {selectedObject?.name || ''}
+                  Generate API {selectedObject?.name ? ' from ' + selectedObject?.type || 'Object: ' + selectedObject?.name || '' : 'Form'}
                 </h2>
-                <p className="text-sm" style={{ color: themeColors.textSecondary }}>
+                {selectedObject?.name && (
+                  <>
+                  <p className="text-sm" style={{ color: themeColors.textSecondary }}>
                   {selectedObject?.owner}.{selectedObject?.name} • {selectedObject?.type} • 
                   {selectedObject?.columns ? ` ${selectedObject.columns.length} columns` : ''}
                   {selectedObject?.parameters ? ` ${selectedObject.parameters.length} parameters` : ''}
                 </p>
+                  </>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2">

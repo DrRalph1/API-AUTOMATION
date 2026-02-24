@@ -128,6 +128,7 @@ import {
   getComprehensiveDashboard,
   handleDashboardResponse
 } from "../controllers/DashboardController.js";
+import ApiGenerationModal from '@/components/modals/ApiGenerationModal.js';
 
 const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setActiveTab, authToken }) => {
   // Loading states
@@ -137,6 +138,28 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     search: false
   });
   
+
+  // Add this state near other state declarations (around line where other modals are declared)
+  const [showApiModal, setShowApiModal] = useState(false);
+  const [selectedForApiGeneration, setSelectedForApiGeneration] = useState(null);
+
+  // Replace the handleApiGeneration function (around line where other handlers are)
+  const handleApiGeneration = useCallback(() => {
+    setSelectedForApiGeneration(null); // No specific object selected from dashboard
+    setShowApiModal(true);
+  }, []);
+
+  // If you want to generate API from a specific connection/API, you can add:
+  const handleGenerateApiFromConnection = useCallback((connection) => {
+    setSelectedForApiGeneration({
+      name: connection.name,
+      type: 'CONNECTION',
+      id: connection.id
+    });
+    setShowApiModal(true);
+  }, []);
+
+
   // Pagination for API endpoints
   const [apiPage, setApiPage] = useState(1);
   const [apisPerPage, setApisPerPage] = useState(6);
@@ -212,6 +235,27 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     }
     return 14;
   };
+
+  // Add this with other handlers
+const handleGenerateAPIFromModal = useCallback(async (objectType, objectName, apiType, options) => {
+  try {
+    // You can implement the actual API generation logic here
+    // This might call a controller function similar to the SchemaBrowser
+    console.log('Generating API from dashboard:', { objectType, objectName, apiType, options });
+    
+    // After successful generation, you might want to show a success message
+    // and optionally navigate to the API collections
+    setShowApiModal(false);
+    
+    // Optional: Navigate to API collections after generation
+    // setActiveTab('api-collections');
+    
+    return { success: true };
+  } catch (error) {
+    console.error('API generation failed:', error);
+    throw error;
+  }
+}, [authToken]);
 
   // Color scheme - EXACT MATCH from Login component
   const colors = isDark ? {
@@ -533,11 +577,6 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
     setActiveTab('api-collections');
   };
 
-  // Generate API should navigate to Schema Browser
-  const handleApiGeneration = () => {
-    closeAllModals();
-    handleNavigateToSchemaBrowser();
-  };
 
   // Export data should navigate to Documentation
   const handleExportData = () => {
@@ -600,7 +639,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
   };
 
   const handleViewConnectionDetails = (connection) => {
-    openModal('connection', connection);
+    closeAllModals();
+    setActiveTab('api-collections');
   };
 
   const handleSchemaItemClick = (itemType, count) => {
@@ -1064,9 +1104,9 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             </div>
             <div className="text-right hidden sm:block">
               <div className="text-xs" style={{ color: colors.textSecondary }}>View All</div>
-              <div className="text-sm font-semibold" style={{ color: colors.text }}>
+              {/* <div className="text-sm font-semibold" style={{ color: colors.text }}>
                 Code Base
-              </div>
+              </div> */}
             </div>
           </div>
         </div>
@@ -1317,20 +1357,20 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
         </div>
         
         <div className="pt-4 border-t" style={{ borderColor: colors.border }}>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-row gap-2">
             <button 
-              onClick={handleNavigateToApiBuilder}
-              className="px-3 py-2 rounded text-sm font-medium transition-colors hover-lift"
+              onClick={handleCollectionsClick}
+              className="flex-1 px-3 py-2 rounded text-sm font-medium transition-colors hover-lift"
               style={{ 
                 backgroundColor: colors.primaryDark,
                 color: 'white'
               }}
             >
-              Edit API
+              Preview API
             </button>
             <button 
               onClick={closeModal}
-              className="px-3 py-2 rounded text-sm font-medium transition-colors hover-lift"
+              className="flex-1 px-3 py-2 rounded text-sm font-medium transition-colors hover-lift"
               style={{ 
                 backgroundColor: colors.hover,
                 color: colors.text
@@ -2327,7 +2367,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
 
         <RightSidebar />
 
-        <div className="flex-1 overflow-auto p-2 sm:p-3 md:p-4 h-[calc(100vh-4rem)] relative z-10">
+        <div className="flex-1 overflow-auto p-2 sm:p-3 md:p-4 h-full relative z-10 mb-5">
           <div className="max-w-9xl mx-auto px-1 sm:px-2 md:pl-5 md:pr-5">
             <div className="hidden md:flex items-center justify-between mb-4 md:mb-6">
               <div>
@@ -2422,6 +2462,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
             {hasData ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-6">
                 <div className="flex flex-col gap-3 sm:gap-4 md:gap-6">
+                  {<CodeGenerationStatsCard />}
                   {dashboardData.connections?.length > 0 && (
                     <div className="border rounded-xl" style={{ 
                       borderColor: colors.border,
@@ -2456,8 +2497,6 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                       </div>
                     </div>
                   )}
-
-                  {<CodeGenerationStatsCard />}
                 </div>
 
                 <div className="flex flex-col gap-3 sm:gap-4 md:gap-6">
@@ -2508,6 +2547,8 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                     <ApiPagination />
                   </div>
                 </div>
+
+                 <br /><br />
               </div>
             ) : (
               renderEmptyState()
@@ -2559,6 +2600,19 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
       </div>
       
       <div className="md:hidden h-16"></div>
+
+       {/* Add this with the other modal rendering */}
+        {showApiModal && (
+          <ApiGenerationModal
+            isOpen={showApiModal}
+            onClose={() => setShowApiModal(false)}
+            selectedObject={selectedForApiGeneration}
+            colors={colors}
+            theme={theme}
+            onGenerateAPI={handleGenerateAPIFromModal} // You'll need to define this
+            authToken={authToken}
+          />
+        )}
     </div>
   );
 };

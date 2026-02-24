@@ -2,10 +2,10 @@ package com.usg.apiAutomation.controllers.systemActivities;
 
 import com.usg.apiAutomation.dtos.systemActivities.user.OtpVerificationRequestDTO;
 import com.usg.apiAutomation.dtos.systemActivities.user.UserDTO;
-import com.usg.apiAutomation.entities.UserEntity;
+import com.usg.apiAutomation.entities.postgres.UserEntity;
 import com.usg.apiAutomation.helpers.JwtHelper;
 import com.usg.apiAutomation.helpers.AuditLogHelper;
-import com.usg.apiAutomation.repositories.AppUserRepository;
+import com.usg.apiAutomation.repositories.postgres.AppUserRepository;
 import com.usg.apiAutomation.services.systemActivities.OtpService;
 import com.usg.apiAutomation.utils.JwtUtil;
 import com.usg.apiAutomation.utils.LoggerUtil;

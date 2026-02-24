@@ -1,8 +1,8 @@
 package com.usg.apiAutomation.services;
 
 import com.usg.apiAutomation.dtos.documentation.*;
-import com.usg.apiAutomation.entities.documentation.*;
-import com.usg.apiAutomation.repositories.documentation.*;
+import com.usg.apiAutomation.entities.postgres.documentation.*;
+import com.usg.apiAutomation.repositories.postgres.documentation.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -32,7 +32,7 @@ public class DocumentationService {
     private final LoggerUtil loggerUtil;
     private final ObjectMapper objectMapper;
 
-    @PersistenceContext
+    @PersistenceContext(unitName = "postgres")
     private EntityManager entityManager;
 
     // Repositories

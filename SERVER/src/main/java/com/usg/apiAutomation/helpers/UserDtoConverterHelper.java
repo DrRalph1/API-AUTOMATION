@@ -4,10 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.userManagement.ActivityLogDTO;
 import com.usg.apiAutomation.dtos.userManagement.DeviceInfoDTO;
 import com.usg.apiAutomation.dtos.userManagement.UserDTO;
-import com.usg.apiAutomation.entities.*;
-import com.usg.apiAutomation.entities.userManagement.UserActivityEntity;
-import com.usg.apiAutomation.entities.userManagement.UserDeviceEntity;
-import com.usg.apiAutomation.entities.userManagement.UserTagEntity;
+import com.usg.apiAutomation.entities.postgres.UserEntity;
+import com.usg.apiAutomation.entities.postgres.UserRoleEntity;
+import com.usg.apiAutomation.entities.postgres.userManagement.UserActivityEntity;
+import com.usg.apiAutomation.entities.postgres.userManagement.UserDeviceEntity;
+import com.usg.apiAutomation.entities.postgres.userManagement.UserTagEntity;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 

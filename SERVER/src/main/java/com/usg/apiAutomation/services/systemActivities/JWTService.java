@@ -1,7 +1,7 @@
 package com.usg.apiAutomation.services.systemActivities;
 
 import com.usg.apiAutomation.dtos.systemActivities.user.UserDTO;
-import com.usg.apiAutomation.repositories.AppUserRepository;
+import com.usg.apiAutomation.repositories.postgres.AppUserRepository;
 import com.usg.apiAutomation.utils.JwtUtil;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import jakarta.servlet.http.HttpServletRequest;

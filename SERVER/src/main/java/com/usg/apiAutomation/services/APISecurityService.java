@@ -2,8 +2,8 @@ package com.usg.apiAutomation.services;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiSecurity.*;
-import com.usg.apiAutomation.entities.apiSecurity.*;
-import com.usg.apiAutomation.repositories.apiSecurity.*;
+import com.usg.apiAutomation.entities.postgres.apiSecurity.*;
+import com.usg.apiAutomation.repositories.postgres.apiSecurity.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

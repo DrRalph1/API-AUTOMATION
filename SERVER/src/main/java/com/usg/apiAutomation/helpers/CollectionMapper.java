@@ -1,12 +1,10 @@
 package com.usg.apiAutomation.helpers;
 
 import com.usg.apiAutomation.dtos.collections.*;
-import com.usg.apiAutomation.entities.*;
-import com.usg.apiAutomation.entities.collections.*;
+import com.usg.apiAutomation.entities.postgres.collections.*;
 import org.springframework.stereotype.Component;
 
 import java.time.format.DateTimeFormatter;
-import java.util.List;
 import java.util.stream.Collectors;
 
 @Component

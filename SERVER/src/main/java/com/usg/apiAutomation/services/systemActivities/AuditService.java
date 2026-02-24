@@ -2,8 +2,8 @@ package com.usg.apiAutomation.services.systemActivities;
 
 import com.usg.apiAutomation.dtos.systemActivities.audit.AuditLogDTO;
 import com.usg.apiAutomation.dtos.systemActivities.audit.AuditLogSearchRequest;
-import com.usg.apiAutomation.entities.AuditLogEntity;
-import com.usg.apiAutomation.repositories.AuditLogRepository;
+import com.usg.apiAutomation.entities.postgres.AuditLogEntity;
+import com.usg.apiAutomation.repositories.postgres.AuditLogRepository;
 import com.usg.apiAutomation.helpers.AuditLogHelper;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;

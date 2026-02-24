@@ -550,7 +550,7 @@ const MobileBottomNav = React.memo(({
 
       <button 
         onClick={() => setShowApiModal(true)}
-        className="rounded hover:bg-opacity-50 bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 transition-colors touch-target flex flex-col items-center justify-center w-14 h-8 p-1"
+        className="w-full px-3 py-2 rounded text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 rounded hover:opacity-90 font-medium transition-colors flex items-center gap-2 hover-lift cursor-pointer"
         // style={{ backgroundColor: 'transparent' }}
         aria-label="Generate API"
         disabled={loading}
@@ -2540,7 +2540,7 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
             </div>
             <button
               onClick={() => setShowApiModal(true)}
-              className="p-2 rounded bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 hover:bg-opacity-50 transition-colors touch-target"
+              className="w-full px-3 py-2 rounded text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 rounded hover:opacity-90 font-medium transition-colors flex items-center gap-2 hover-lift cursor-pointer"
               style={{ color: "white" }}
               aria-label="Generate New API"
             >
@@ -2727,11 +2727,11 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                           {getObjectIcon(activeObject.type)}
                           <div className="min-w-0">
                             <span className="text-sm sm:text-base font-semibold truncate block" style={{ color: colors.text }}>
-                              {activeObject.name}
+                              {activeObject.name} <span className="text-xs truncate" style={{ color: colors.textSecondary }}>[ {activeObject.owner} ]</span>
                             </span>
-                            <span className="text-xs truncate block" style={{ color: colors.textSecondary }}>
+                            {/* <span className="text-xs truncate block" style={{ color: colors.textSecondary }}>
                               {activeObject.owner}
-                            </span>
+                            </span> */}
                           </div>
                           <span className="text-xs px-2 py-0.5 rounded shrink-0" style={{ 
                             backgroundColor: activeObject.status === 'VALID' ? `${colors.success}20` : `${colors.error}20`,
@@ -2756,7 +2756,7 @@ const SchemaBrowser = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
                       <div className="flex items-center gap-2 mt-2 sm:mt-0 self-end">
                         <button 
                           onClick={() => setShowApiModal(true)} 
-                          className="px-3 py-1 text-xs sm:text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 rounded hover:opacity-90 transition-colors flex items-center gap-1 sm:gap-2 hover-lift touch-target"
+                          className="w-full px-3 py-2 rounded text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 rounded hover:opacity-90 font-medium transition-colors flex items-center gap-2 hover-lift cursor-pointer"
                           style={{ 
                             // backgroundColor: colors.primaryDark, 
                             color: "white" 
