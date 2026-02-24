@@ -22,6 +22,9 @@ public class SchemaBrowserRepository {
 
     private static final Logger log = LoggerFactory.getLogger(SchemaBrowserRepository.class);
 
+    // ==================== EXISTING TABLE METHODS ====================
+    // (All existing table methods remain unchanged)
+
     /**
      * Get all tables from the current Oracle schema with enhanced diagnostics
      * Using actual Oracle system tables: USER_TABLES and USER_OBJECTS
@@ -69,6 +72,35 @@ public class SchemaBrowserRepository {
         } catch (Exception e) {
             log.error("Error in getAllTables: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to retrieve tables: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get the current schema name
+     */
+    public String getCurrentSchema() {
+        try {
+            // Try to get current schema first (this gives the actual schema being used)
+            String schema = oracleJdbcTemplate.queryForObject(
+                    "SELECT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') FROM DUAL",
+                    String.class
+            );
+            log.info("Current schema: {}", schema);
+            return schema;
+        } catch (Exception e) {
+            log.warn("Failed to get CURRENT_SCHEMA, falling back to USER: {}", e.getMessage());
+            try {
+                // Fallback to USER
+                String user = oracleJdbcTemplate.queryForObject(
+                        "SELECT USER FROM DUAL",
+                        String.class
+                );
+                log.info("Current user (fallback): {}", user);
+                return user;
+            } catch (Exception ex) {
+                log.error("Failed to get current user/schema: {}", ex.getMessage());
+                return "UNKNOWN";
+            }
         }
     }
 
@@ -510,6 +542,8 @@ public class SchemaBrowserRepository {
         }
     }
 
+    // ==================== NEW METHODS FOR OTHER OBJECT TYPES ====================
+
     /**
      * Get all views in the current schema
      */
@@ -531,6 +565,1018 @@ public class SchemaBrowserRepository {
         } catch (Exception e) {
             log.error("Error in getAllViews: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to retrieve views: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get all views from a specific schema
+     */
+    public List<Map<String, Object>> getViewsBySchema(String schemaName) {
+        try {
+            log.info("Getting views for schema: {}", schemaName);
+
+            String sql = "SELECT " +
+                    "    v.owner, " +
+                    "    v.view_name, " +
+                    "    v.text_length, " +
+                    "    v.text, " +
+                    "    v.read_only, " +
+                    "    o.created, " +
+                    "    o.last_ddl_time, " +
+                    "    o.status " +
+                    "FROM all_views v " +
+                    "JOIN all_objects o ON v.owner = o.owner AND v.view_name = o.object_name AND o.object_type = 'VIEW' " +
+                    "WHERE UPPER(v.owner) = UPPER(?) " +
+                    "ORDER BY v.view_name";
+
+            log.debug("Executing query for views in schema: {}", schemaName);
+            List<Map<String, Object>> results = oracleJdbcTemplate.queryForList(sql, schemaName);
+            log.info("Found {} views in schema {}", results.size(), schemaName);
+
+            return results;
+
+        } catch (Exception e) {
+            log.error("Error in getViewsBySchema for {}: {}", schemaName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve views for schema " + schemaName + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get view details including columns
+     */
+    public Map<String, Object> getViewDetails(String viewName) {
+        try {
+            log.info("Getting details for view: {}", viewName);
+
+            // Find view location
+            Map<String, Object> viewLocation = findObjectLocation(viewName, "VIEW");
+            if (viewLocation.isEmpty()) {
+                log.warn("View {} not found", viewName);
+                Map<String, Object> emptyResult = new HashMap<>();
+                emptyResult.put("view_name", viewName);
+                emptyResult.put("message", "View not found");
+                return emptyResult;
+            }
+
+            String owner = (String) viewLocation.get("owner");
+
+            // Get view definition
+            String viewSql;
+            List<Map<String, Object>> columns;
+
+            if (owner.equals(getCurrentUser())) {
+                viewSql = "SELECT view_name, text, read_only, created, last_ddl_time " +
+                        "FROM user_views v " +
+                        "JOIN user_objects o ON v.view_name = o.object_name AND o.object_type = 'VIEW' " +
+                        "WHERE UPPER(v.view_name) = UPPER(?)";
+
+                columns = getViewColumns(viewName, owner);
+            } else {
+                viewSql = "SELECT v.owner, v.view_name, v.text, v.read_only, " +
+                        "o.created, o.last_ddl_time, o.status " +
+                        "FROM all_views v " +
+                        "JOIN all_objects o ON v.owner = o.owner AND v.view_name = o.object_name AND o.object_type = 'VIEW' " +
+                        "WHERE UPPER(v.view_name) = UPPER(?) AND UPPER(v.owner) = UPPER(?)";
+
+                columns = getViewColumns(viewName, owner);
+            }
+
+            Map<String, Object> viewInfo = owner.equals(getCurrentUser())
+                    ? oracleJdbcTemplate.queryForMap(viewSql, viewName)
+                    : oracleJdbcTemplate.queryForMap(viewSql, viewName, owner);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("viewInfo", viewInfo);
+            result.put("columns", columns);
+            result.put("columnCount", columns.size());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error in getViewDetails for {}: {}", viewName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve details for view " + viewName + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get columns for a view
+     */
+    public List<Map<String, Object>> getViewColumns(String viewName, String owner) {
+        try {
+            String sql;
+            if (owner != null && !owner.equals(getCurrentUser())) {
+                sql = "SELECT " +
+                        "    column_id, " +
+                        "    column_name, " +
+                        "    data_type, " +
+                        "    data_length, " +
+                        "    data_precision, " +
+                        "    data_scale, " +
+                        "    nullable " +
+                        "FROM all_tab_columns " +
+                        "WHERE UPPER(table_name) = UPPER(?) AND UPPER(owner) = UPPER(?) " +
+                        "ORDER BY column_id";
+
+                return oracleJdbcTemplate.queryForList(sql, viewName, owner);
+            } else {
+                sql = "SELECT " +
+                        "    column_id, " +
+                        "    column_name, " +
+                        "    data_type, " +
+                        "    data_length, " +
+                        "    data_precision, " +
+                        "    data_scale, " +
+                        "    nullable " +
+                        "FROM user_tab_columns " +
+                        "WHERE UPPER(table_name) = UPPER(?) " +
+                        "ORDER BY column_id";
+
+                return oracleJdbcTemplate.queryForList(sql, viewName);
+            }
+        } catch (Exception e) {
+            log.error("Error getting view columns: {}", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Get all procedures in the current schema
+     */
+    public List<Map<String, Object>> getAllProcedures() {
+        try {
+            String sql = "SELECT " +
+                    "    object_name as procedure_name, " +
+                    "    object_type, " +
+                    "    created, " +
+                    "    last_ddl_time, " +
+                    "    status, " +
+                    "    (SELECT COUNT(*) FROM user_arguments WHERE object_name = o.object_name AND package_name IS NULL) as parameter_count " +
+                    "FROM user_objects o " +
+                    "WHERE object_type = 'PROCEDURE' " +
+                    "ORDER BY object_name";
+
+            log.debug("Executing query for all procedures");
+            return oracleJdbcTemplate.queryForList(sql);
+
+        } catch (Exception e) {
+            log.error("Error in getAllProcedures: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve procedures: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get all procedures from a specific schema
+     */
+    public List<Map<String, Object>> getProceduresBySchema(String schemaName) {
+        try {
+            log.info("Getting procedures for schema: {}", schemaName);
+
+            String sql = "SELECT " +
+                    "    o.owner, " +
+                    "    o.object_name as procedure_name, " +
+                    "    o.object_type, " +
+                    "    o.created, " +
+                    "    o.last_ddl_time, " +
+                    "    o.status, " +
+                    "    (SELECT COUNT(*) FROM all_arguments WHERE owner = o.owner AND object_name = o.object_name AND package_name IS NULL) as parameter_count " +
+                    "FROM all_objects o " +
+                    "WHERE o.object_type = 'PROCEDURE' AND UPPER(o.owner) = UPPER(?) " +
+                    "ORDER BY o.object_name";
+
+            log.debug("Executing query for procedures in schema: {}", schemaName);
+            List<Map<String, Object>> results = oracleJdbcTemplate.queryForList(sql, schemaName);
+            log.info("Found {} procedures in schema {}", results.size(), schemaName);
+
+            return results;
+
+        } catch (Exception e) {
+            log.error("Error in getProceduresBySchema for {}: {}", schemaName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve procedures for schema " + schemaName + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get procedure details including parameters
+     */
+    public Map<String, Object> getProcedureDetails(String procedureName) {
+        try {
+            log.info("Getting details for procedure: {}", procedureName);
+
+            // Find procedure location
+            Map<String, Object> procLocation = findObjectLocation(procedureName, "PROCEDURE");
+            if (procLocation.isEmpty()) {
+                log.warn("Procedure {} not found", procedureName);
+                Map<String, Object> emptyResult = new HashMap<>();
+                emptyResult.put("procedure_name", procedureName);
+                emptyResult.put("message", "Procedure not found");
+                return emptyResult;
+            }
+
+            String owner = (String) procLocation.get("owner");
+
+            // Get procedure info
+            String procSql;
+            List<Map<String, Object>> parameters;
+
+            if (owner.equals(getCurrentUser())) {
+                procSql = "SELECT " +
+                        "    object_name as procedure_name, " +
+                        "    created, " +
+                        "    last_ddl_time, " +
+                        "    status, " +
+                        "    'PROCEDURE' as object_type " +
+                        "FROM user_objects " +
+                        "WHERE object_name = UPPER(?) AND object_type = 'PROCEDURE'";
+
+                parameters = getProcedureParameters(procedureName, owner);
+            } else {
+                procSql = "SELECT " +
+                        "    owner, " +
+                        "    object_name as procedure_name, " +
+                        "    created, " +
+                        "    last_ddl_time, " +
+                        "    status, " +
+                        "    object_type " +
+                        "FROM all_objects " +
+                        "WHERE object_name = UPPER(?) AND owner = UPPER(?) AND object_type = 'PROCEDURE'";
+
+                parameters = getProcedureParameters(procedureName, owner);
+            }
+
+            Map<String, Object> procInfo = owner.equals(getCurrentUser())
+                    ? oracleJdbcTemplate.queryForMap(procSql, procedureName)
+                    : oracleJdbcTemplate.queryForMap(procSql, procedureName, owner);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("procedureInfo", procInfo);
+            result.put("parameters", parameters);
+            result.put("parameterCount", parameters.size());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error in getProcedureDetails for {}: {}", procedureName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve details for procedure " + procedureName + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get procedure parameters
+     */
+    public List<Map<String, Object>> getProcedureParameters(String procedureName, String owner) {
+        try {
+            String sql;
+            if (owner != null && !owner.equals(getCurrentUser())) {
+                sql = "SELECT " +
+                        "    argument_name, " +
+                        "    position, " +
+                        "    sequence, " +
+                        "    data_type, " +
+                        "    in_out, " +
+                        "    data_length, " +
+                        "    data_precision, " +
+                        "    data_scale, " +
+                        "    defaulted " +
+                        "FROM all_arguments " +
+                        "WHERE UPPER(object_name) = UPPER(?) AND UPPER(owner) = UPPER(?) AND package_name IS NULL " +
+                        "ORDER BY position, sequence";
+
+                return oracleJdbcTemplate.queryForList(sql, procedureName, owner);
+            } else {
+                sql = "SELECT " +
+                        "    argument_name, " +
+                        "    position, " +
+                        "    sequence, " +
+                        "    data_type, " +
+                        "    in_out, " +
+                        "    data_length, " +
+                        "    data_precision, " +
+                        "    data_scale, " +
+                        "    defaulted " +
+                        "FROM user_arguments " +
+                        "WHERE UPPER(object_name) = UPPER(?) AND package_name IS NULL " +
+                        "ORDER BY position, sequence";
+
+                return oracleJdbcTemplate.queryForList(sql, procedureName);
+            }
+        } catch (Exception e) {
+            log.error("Error getting procedure parameters: {}", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Get all functions in the current schema
+     */
+    public List<Map<String, Object>> getAllFunctions() {
+        try {
+            String sql = "SELECT " +
+                    "    object_name as function_name, " +
+                    "    object_type, " +
+                    "    created, " +
+                    "    last_ddl_time, " +
+                    "    status, " +
+                    "    (SELECT COUNT(*) FROM user_arguments WHERE object_name = o.object_name AND package_name IS NULL) as parameter_count " +
+                    "FROM user_objects o " +
+                    "WHERE object_type = 'FUNCTION' " +
+                    "ORDER BY object_name";
+
+            log.debug("Executing query for all functions");
+            return oracleJdbcTemplate.queryForList(sql);
+
+        } catch (Exception e) {
+            log.error("Error in getAllFunctions: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve functions: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get all functions from a specific schema
+     */
+    public List<Map<String, Object>> getFunctionsBySchema(String schemaName) {
+        try {
+            log.info("Getting functions for schema: {}", schemaName);
+
+            String sql = "SELECT " +
+                    "    o.owner, " +
+                    "    o.object_name as function_name, " +
+                    "    o.object_type, " +
+                    "    o.created, " +
+                    "    o.last_ddl_time, " +
+                    "    o.status, " +
+                    "    (SELECT COUNT(*) FROM all_arguments WHERE owner = o.owner AND object_name = o.object_name AND package_name IS NULL) as parameter_count " +
+                    "FROM all_objects o " +
+                    "WHERE o.object_type = 'FUNCTION' AND UPPER(o.owner) = UPPER(?) " +
+                    "ORDER BY o.object_name";
+
+            log.debug("Executing query for functions in schema: {}", schemaName);
+            List<Map<String, Object>> results = oracleJdbcTemplate.queryForList(sql, schemaName);
+            log.info("Found {} functions in schema {}", results.size(), schemaName);
+
+            return results;
+
+        } catch (Exception e) {
+            log.error("Error in getFunctionsBySchema for {}: {}", schemaName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve functions for schema " + schemaName + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get function details including parameters and return type
+     */
+    public Map<String, Object> getFunctionDetails(String functionName) {
+        try {
+            log.info("Getting details for function: {}", functionName);
+
+            // Find function location
+            Map<String, Object> funcLocation = findObjectLocation(functionName, "FUNCTION");
+            if (funcLocation.isEmpty()) {
+                log.warn("Function {} not found", functionName);
+                Map<String, Object> emptyResult = new HashMap<>();
+                emptyResult.put("function_name", functionName);
+                emptyResult.put("message", "Function not found");
+                return emptyResult;
+            }
+
+            String owner = (String) funcLocation.get("owner");
+
+            // Get function info
+            String funcSql;
+            List<Map<String, Object>> parameters;
+            Map<String, Object> returnType = new HashMap<>();
+
+            if (owner.equals(getCurrentUser())) {
+                funcSql = "SELECT " +
+                        "    object_name as function_name, " +
+                        "    created, " +
+                        "    last_ddl_time, " +
+                        "    status, " +
+                        "    'FUNCTION' as object_type " +
+                        "FROM user_objects " +
+                        "WHERE object_name = UPPER(?) AND object_type = 'FUNCTION'";
+
+                parameters = getFunctionParameters(functionName, owner);
+                returnType = getFunctionReturnType(functionName, owner);
+            } else {
+                funcSql = "SELECT " +
+                        "    owner, " +
+                        "    object_name as function_name, " +
+                        "    created, " +
+                        "    last_ddl_time, " +
+                        "    status, " +
+                        "    object_type " +
+                        "FROM all_objects " +
+                        "WHERE object_name = UPPER(?) AND owner = UPPER(?) AND object_type = 'FUNCTION'";
+
+                parameters = getFunctionParameters(functionName, owner);
+                returnType = getFunctionReturnType(functionName, owner);
+            }
+
+            Map<String, Object> funcInfo = owner.equals(getCurrentUser())
+                    ? oracleJdbcTemplate.queryForMap(funcSql, functionName)
+                    : oracleJdbcTemplate.queryForMap(funcSql, functionName, owner);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("functionInfo", funcInfo);
+            result.put("parameters", parameters);
+            result.put("returnType", returnType);
+            result.put("parameterCount", parameters.size());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error in getFunctionDetails for {}: {}", functionName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve details for function " + functionName + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get function parameters
+     */
+    public List<Map<String, Object>> getFunctionParameters(String functionName, String owner) {
+        try {
+            String sql;
+            if (owner != null && !owner.equals(getCurrentUser())) {
+                sql = "SELECT " +
+                        "    argument_name, " +
+                        "    position, " +
+                        "    sequence, " +
+                        "    data_type, " +
+                        "    in_out, " +
+                        "    data_length, " +
+                        "    data_precision, " +
+                        "    data_scale, " +
+                        "    defaulted " +
+                        "FROM all_arguments " +
+                        "WHERE UPPER(object_name) = UPPER(?) AND UPPER(owner) = UPPER(?) AND package_name IS NULL " +
+                        "AND argument_name IS NOT NULL " +
+                        "ORDER BY position, sequence";
+
+                return oracleJdbcTemplate.queryForList(sql, functionName, owner);
+            } else {
+                sql = "SELECT " +
+                        "    argument_name, " +
+                        "    position, " +
+                        "    sequence, " +
+                        "    data_type, " +
+                        "    in_out, " +
+                        "    data_length, " +
+                        "    data_precision, " +
+                        "    data_scale, " +
+                        "    defaulted " +
+                        "FROM user_arguments " +
+                        "WHERE UPPER(object_name) = UPPER(?) AND package_name IS NULL " +
+                        "AND argument_name IS NOT NULL " +
+                        "ORDER BY position, sequence";
+
+                return oracleJdbcTemplate.queryForList(sql, functionName);
+            }
+        } catch (Exception e) {
+            log.error("Error getting function parameters: {}", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Get function return type
+     */
+    public Map<String, Object> getFunctionReturnType(String functionName, String owner) {
+        try {
+            String sql;
+            if (owner != null && !owner.equals(getCurrentUser())) {
+                sql = "SELECT " +
+                        "    data_type, " +
+                        "    data_length, " +
+                        "    data_precision, " +
+                        "    data_scale, " +
+                        "    char_length " +
+                        "FROM all_arguments " +
+                        "WHERE UPPER(object_name) = UPPER(?) AND UPPER(owner) = UPPER(?) " +
+                        "AND package_name IS NULL AND argument_name IS NULL " +
+                        "AND ROWNUM = 1";
+
+                return oracleJdbcTemplate.queryForMap(sql, functionName, owner);
+            } else {
+                sql = "SELECT " +
+                        "    data_type, " +
+                        "    data_length, " +
+                        "    data_precision, " +
+                        "    data_scale, " +
+                        "    char_length " +
+                        "FROM user_arguments " +
+                        "WHERE UPPER(object_name) = UPPER(?) AND package_name IS NULL " +
+                        "AND argument_name IS NULL AND ROWNUM = 1";
+
+                return oracleJdbcTemplate.queryForMap(sql, functionName);
+            }
+        } catch (Exception e) {
+            log.debug("No return type found for function {}: {}", functionName, e.getMessage());
+            Map<String, Object> empty = new HashMap<>();
+            empty.put("data_type", "VOID");
+            return empty;
+        }
+    }
+
+    /**
+     * Get all packages in the current schema
+     */
+    public List<Map<String, Object>> getAllPackages() {
+        try {
+            String sql = "SELECT " +
+                    "    object_name as package_name, " +
+                    "    object_type, " +
+                    "    created, " +
+                    "    last_ddl_time, " +
+                    "    status " +
+                    "FROM user_objects " +
+                    "WHERE object_type IN ('PACKAGE', 'PACKAGE BODY') " +
+                    "ORDER BY object_name, object_type";
+
+            log.debug("Executing query for all packages");
+            return oracleJdbcTemplate.queryForList(sql);
+
+        } catch (Exception e) {
+            log.error("Error in getAllPackages: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve packages: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get all packages from a specific schema
+     */
+    public List<Map<String, Object>> getPackagesBySchema(String schemaName) {
+        try {
+            log.info("Getting packages for schema: {}", schemaName);
+
+            String sql = "SELECT " +
+                    "    o.owner, " +
+                    "    o.object_name as package_name, " +
+                    "    o.object_type, " +
+                    "    o.created, " +
+                    "    o.last_ddl_time, " +
+                    "    o.status " +
+                    "FROM all_objects o " +
+                    "WHERE o.object_type IN ('PACKAGE', 'PACKAGE BODY') AND UPPER(o.owner) = UPPER(?) " +
+                    "ORDER BY o.object_name, o.object_type";
+
+            log.debug("Executing query for packages in schema: {}", schemaName);
+            List<Map<String, Object>> results = oracleJdbcTemplate.queryForList(sql, schemaName);
+            log.info("Found {} packages in schema {}", results.size(), schemaName);
+
+            return results;
+
+        } catch (Exception e) {
+            log.error("Error in getPackagesBySchema for {}: {}", schemaName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve packages for schema " + schemaName + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get package details including specification and body info
+     */
+    public Map<String, Object> getPackageDetails(String packageName) {
+        try {
+            log.info("Getting details for package: {}", packageName);
+
+            // Find package location
+            Map<String, Object> pkgLocation = findObjectLocation(packageName, "PACKAGE");
+            if (pkgLocation.isEmpty()) {
+                // Try PACKAGE BODY
+                pkgLocation = findObjectLocation(packageName, "PACKAGE BODY");
+                if (pkgLocation.isEmpty()) {
+                    log.warn("Package {} not found", packageName);
+                    Map<String, Object> emptyResult = new HashMap<>();
+                    emptyResult.put("package_name", packageName);
+                    emptyResult.put("message", "Package not found");
+                    return emptyResult;
+                }
+            }
+
+            String owner = (String) pkgLocation.get("owner");
+
+            // Get package spec info
+            Map<String, Object> packageSpec = getPackageSpec(packageName, owner);
+            Map<String, Object> packageBody = getPackageBody(packageName, owner);
+            List<Map<String, Object>> procedures = getPackageProcedures(packageName, owner);
+            List<Map<String, Object>> functions = getPackageFunctions(packageName, owner);
+            List<Map<String, Object>> variables = getPackageVariables(packageName, owner);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("packageSpec", packageSpec);
+            result.put("packageBody", packageBody);
+            result.put("procedures", procedures);
+            result.put("functions", functions);
+            result.put("variables", variables);
+            result.put("procedureCount", procedures.size());
+            result.put("functionCount", functions.size());
+            result.put("variableCount", variables.size());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error in getPackageDetails for {}: {}", packageName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve details for package " + packageName + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get package specification
+     */
+    private Map<String, Object> getPackageSpec(String packageName, String owner) {
+        try {
+            String sql;
+            if (owner != null && !owner.equals(getCurrentUser())) {
+                sql = "SELECT owner, object_name, created, last_ddl_time, status " +
+                        "FROM all_objects " +
+                        "WHERE object_name = UPPER(?) AND owner = UPPER(?) AND object_type = 'PACKAGE'";
+                return oracleJdbcTemplate.queryForMap(sql, packageName, owner);
+            } else {
+                sql = "SELECT object_name, created, last_ddl_time, status " +
+                        "FROM user_objects " +
+                        "WHERE object_name = UPPER(?) AND object_type = 'PACKAGE'";
+                return oracleJdbcTemplate.queryForMap(sql, packageName);
+            }
+        } catch (Exception e) {
+            log.debug("No package spec found for {}: {}", packageName, e.getMessage());
+            return new HashMap<>();
+        }
+    }
+
+    /**
+     * Get package body
+     */
+    private Map<String, Object> getPackageBody(String packageName, String owner) {
+        try {
+            String sql;
+            if (owner != null && !owner.equals(getCurrentUser())) {
+                sql = "SELECT owner, object_name, created, last_ddl_time, status " +
+                        "FROM all_objects " +
+                        "WHERE object_name = UPPER(?) AND owner = UPPER(?) AND object_type = 'PACKAGE BODY'";
+                return oracleJdbcTemplate.queryForMap(sql, packageName, owner);
+            } else {
+                sql = "SELECT object_name, created, last_ddl_time, status " +
+                        "FROM user_objects " +
+                        "WHERE object_name = UPPER(?) AND object_type = 'PACKAGE BODY'";
+                return oracleJdbcTemplate.queryForMap(sql, packageName);
+            }
+        } catch (Exception e) {
+            log.debug("No package body found for {}: {}", packageName, e.getMessage());
+            return new HashMap<>();
+        }
+    }
+
+    /**
+     * Get package procedures
+     */
+    public List<Map<String, Object>> getPackageProcedures(String packageName, String owner) {
+        try {
+            String sql;
+            if (owner != null && !owner.equals(getCurrentUser())) {
+                sql = "SELECT DISTINCT " +
+                        "    a.object_name as procedure_name, " +
+                        "    a.procedure_name as subprogram_name, " +
+                        "    a.overload, " +
+                        "    a.argument_name, " +
+                        "    a.position, " +
+                        "    a.sequence, " +
+                        "    a.data_type, " +
+                        "    a.in_out, " +
+                        "    a.data_length, " +
+                        "    a.data_precision, " +
+                        "    a.data_scale " +
+                        "FROM all_arguments a " +
+                        "WHERE UPPER(a.package_name) = UPPER(?) AND UPPER(a.owner) = UPPER(?) " +
+                        "AND a.object_name = a.package_name " +
+                        "AND a.argument_name IS NOT NULL " +
+                        "ORDER BY a.procedure_name, a.position";
+            } else {
+                sql = "SELECT DISTINCT " +
+                        "    a.object_name as procedure_name, " +
+                        "    a.procedure_name as subprogram_name, " +
+                        "    a.overload, " +
+                        "    a.argument_name, " +
+                        "    a.position, " +
+                        "    a.sequence, " +
+                        "    a.data_type, " +
+                        "    a.in_out, " +
+                        "    a.data_length, " +
+                        "    a.data_precision, " +
+                        "    a.data_scale " +
+                        "FROM user_arguments a " +
+                        "WHERE UPPER(a.package_name) = UPPER(?) " +
+                        "AND a.object_name = a.package_name " +
+                        "AND a.argument_name IS NOT NULL " +
+                        "ORDER BY a.procedure_name, a.position";
+            }
+
+            return oracleJdbcTemplate.queryForList(sql, packageName, owner);
+
+        } catch (Exception e) {
+            log.error("Error getting package procedures: {}", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Get package functions
+     */
+    public List<Map<String, Object>> getPackageFunctions(String packageName, String owner) {
+        try {
+            String sql;
+            if (owner != null && !owner.equals(getCurrentUser())) {
+                sql = "SELECT DISTINCT " +
+                        "    a.object_name as function_name, " +
+                        "    a.procedure_name as subprogram_name, " +
+                        "    a.overload, " +
+                        "    a.argument_name, " +
+                        "    a.position, " +
+                        "    a.sequence, " +
+                        "    a.data_type, " +
+                        "    a.in_out, " +
+                        "    a.data_length, " +
+                        "    a.data_precision, " +
+                        "    a.data_scale, " +
+                        "    (SELECT data_type FROM all_arguments b " +
+                        "     WHERE b.owner = a.owner AND b.package_name = a.package_name " +
+                        "     AND b.object_name = a.object_name AND b.procedure_name = a.procedure_name " +
+                        "     AND b.overload = a.overload AND b.argument_name IS NULL AND ROWNUM = 1) as return_type " +
+                        "FROM all_arguments a " +
+                        "WHERE UPPER(a.package_name) = UPPER(?) AND UPPER(a.owner) = UPPER(?) " +
+                        "AND a.object_name = a.package_name " +
+                        "AND a.argument_name IS NOT NULL " +
+                        "AND EXISTS (SELECT 1 FROM all_arguments c " +
+                        "            WHERE c.owner = a.owner AND c.package_name = a.package_name " +
+                        "            AND c.object_name = a.object_name AND c.procedure_name = a.procedure_name " +
+                        "            AND c.argument_name IS NULL) " +
+                        "ORDER BY a.procedure_name, a.position";
+            } else {
+                sql = "SELECT DISTINCT " +
+                        "    a.object_name as function_name, " +
+                        "    a.procedure_name as subprogram_name, " +
+                        "    a.overload, " +
+                        "    a.argument_name, " +
+                        "    a.position, " +
+                        "    a.sequence, " +
+                        "    a.data_type, " +
+                        "    a.in_out, " +
+                        "    a.data_length, " +
+                        "    a.data_precision, " +
+                        "    a.data_scale, " +
+                        "    (SELECT data_type FROM user_arguments b " +
+                        "     WHERE b.package_name = a.package_name " +
+                        "     AND b.object_name = a.object_name AND b.procedure_name = a.procedure_name " +
+                        "     AND b.overload = a.overload AND b.argument_name IS NULL AND ROWNUM = 1) as return_type " +
+                        "FROM user_arguments a " +
+                        "WHERE UPPER(a.package_name) = UPPER(?) " +
+                        "AND a.object_name = a.package_name " +
+                        "AND a.argument_name IS NOT NULL " +
+                        "AND EXISTS (SELECT 1 FROM user_arguments c " +
+                        "            WHERE c.package_name = a.package_name " +
+                        "            AND c.object_name = a.object_name AND c.procedure_name = a.procedure_name " +
+                        "            AND c.argument_name IS NULL) " +
+                        "ORDER BY a.procedure_name, a.position";
+            }
+
+            return oracleJdbcTemplate.queryForList(sql, packageName, owner);
+
+        } catch (Exception e) {
+            log.error("Error getting package functions: {}", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Get package variables (this is limited as Oracle doesn't expose package variables easily)
+     */
+    public List<Map<String, Object>> getPackageVariables(String packageName, String owner) {
+        // This is a simplified version - getting actual package variables is complex
+        // and often requires parsing the package source
+        return new ArrayList<>();
+    }
+
+    /**
+     * Get all triggers in the current schema
+     */
+    public List<Map<String, Object>> getAllTriggers() {
+        try {
+            String sql = "SELECT " +
+                    "    trigger_name, " +
+                    "    trigger_type, " +
+                    "    triggering_event, " +
+                    "    table_name, " +
+                    "    status, " +
+                    "    description, " +
+                    "    trigger_body, " +
+                    "    created, " +
+                    "    last_ddl_time " +
+                    "FROM user_triggers t " +
+                    "JOIN user_objects o ON t.trigger_name = o.object_name AND o.object_type = 'TRIGGER' " +
+                    "ORDER BY trigger_name";
+
+            log.debug("Executing query for all triggers");
+            return oracleJdbcTemplate.queryForList(sql);
+
+        } catch (Exception e) {
+            log.error("Error in getAllTriggers: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve triggers: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get all triggers from a specific schema
+     */
+    public List<Map<String, Object>> getTriggersBySchema(String schemaName) {
+        try {
+            log.info("Getting triggers for schema: {}", schemaName);
+
+            String sql = "SELECT " +
+                    "    t.owner, " +
+                    "    t.trigger_name, " +
+                    "    t.trigger_type, " +
+                    "    t.triggering_event, " +
+                    "    t.table_owner, " +
+                    "    t.table_name, " +
+                    "    t.status, " +
+                    "    t.description, " +
+                    "    o.created, " +
+                    "    o.last_ddl_time " +
+                    "FROM all_triggers t " +
+                    "JOIN all_objects o ON t.owner = o.owner AND t.trigger_name = o.object_name AND o.object_type = 'TRIGGER' " +
+                    "WHERE UPPER(t.owner) = UPPER(?) " +
+                    "ORDER BY t.trigger_name";
+
+            log.debug("Executing query for triggers in schema: {}", schemaName);
+            List<Map<String, Object>> results = oracleJdbcTemplate.queryForList(sql, schemaName);
+            log.info("Found {} triggers in schema {}", results.size(), schemaName);
+
+            return results;
+
+        } catch (Exception e) {
+            log.error("Error in getTriggersBySchema for {}: {}", schemaName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve triggers for schema " + schemaName + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get trigger details
+     */
+    public Map<String, Object> getTriggerDetails(String triggerName) {
+        try {
+            log.info("Getting details for trigger: {}", triggerName);
+
+            // Find trigger location
+            Map<String, Object> triggerLocation = findObjectLocation(triggerName, "TRIGGER");
+            if (triggerLocation.isEmpty()) {
+                log.warn("Trigger {} not found", triggerName);
+                Map<String, Object> emptyResult = new HashMap<>();
+                emptyResult.put("trigger_name", triggerName);
+                emptyResult.put("message", "Trigger not found");
+                return emptyResult;
+            }
+
+            String owner = (String) triggerLocation.get("owner");
+
+            String sql;
+            if (owner.equals(getCurrentUser())) {
+                sql = "SELECT " +
+                        "    trigger_name, " +
+                        "    trigger_type, " +
+                        "    triggering_event, " +
+                        "    table_name, " +
+                        "    referencing_names, " +
+                        "    when_clause, " +
+                        "    status, " +
+                        "    description, " +
+                        "    trigger_body, " +
+                        "    created, " +
+                        "    last_ddl_time " +
+                        "FROM user_triggers t " +
+                        "JOIN user_objects o ON t.trigger_name = o.object_name AND o.object_type = 'TRIGGER' " +
+                        "WHERE UPPER(t.trigger_name) = UPPER(?)";
+
+                return oracleJdbcTemplate.queryForMap(sql, triggerName);
+            } else {
+                sql = "SELECT " +
+                        "    t.owner, " +
+                        "    t.trigger_name, " +
+                        "    t.trigger_type, " +
+                        "    t.triggering_event, " +
+                        "    t.table_owner, " +
+                        "    t.table_name, " +
+                        "    t.referencing_names, " +
+                        "    t.when_clause, " +
+                        "    t.status, " +
+                        "    t.description, " +
+                        "    t.trigger_body, " +
+                        "    o.created, " +
+                        "    o.last_ddl_time " +
+                        "FROM all_triggers t " +
+                        "JOIN all_objects o ON t.owner = o.owner AND t.trigger_name = o.object_name AND o.object_type = 'TRIGGER' " +
+                        "WHERE UPPER(t.trigger_name) = UPPER(?) AND UPPER(t.owner) = UPPER(?)";
+
+                return oracleJdbcTemplate.queryForMap(sql, triggerName, owner);
+            }
+
+        } catch (Exception e) {
+            log.error("Error in getTriggerDetails for {}: {}", triggerName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve details for trigger " + triggerName + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get all synonyms in the current schema
+     */
+    public List<Map<String, Object>> getAllSynonyms() {
+        try {
+            String sql = "SELECT " +
+                    "    synonym_name, " +
+                    "    table_owner, " +
+                    "    table_name, " +
+                    "    db_link " +
+                    "FROM user_synonyms " +
+                    "ORDER BY synonym_name";
+
+            log.debug("Executing query for all synonyms");
+            return oracleJdbcTemplate.queryForList(sql);
+
+        } catch (Exception e) {
+            log.error("Error in getAllSynonyms: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve synonyms: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get all synonyms from a specific schema
+     */
+    public List<Map<String, Object>> getSynonymsBySchema(String schemaName) {
+        try {
+            log.info("Getting synonyms for schema: {}", schemaName);
+
+            String sql = "SELECT " +
+                    "    owner, " +
+                    "    synonym_name, " +
+                    "    table_owner, " +
+                    "    table_name, " +
+                    "    db_link " +
+                    "FROM all_synonyms " +
+                    "WHERE UPPER(owner) = UPPER(?) " +
+                    "ORDER BY synonym_name";
+
+            log.debug("Executing query for synonyms in schema: {}", schemaName);
+            List<Map<String, Object>> results = oracleJdbcTemplate.queryForList(sql, schemaName);
+            log.info("Found {} synonyms in schema {}", results.size(), schemaName);
+
+            return results;
+
+        } catch (Exception e) {
+            log.error("Error in getSynonymsBySchema for {}: {}", schemaName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve synonyms for schema " + schemaName + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get synonym details
+     */
+    public Map<String, Object> getSynonymDetails(String synonymName) {
+        try {
+            log.info("Getting details for synonym: {}", synonymName);
+
+            Map<String, Object> synonymLocation = findObjectLocation(synonymName, "SYNONYM");
+            if (synonymLocation.isEmpty()) {
+                log.warn("Synonym {} not found", synonymName);
+                Map<String, Object> emptyResult = new HashMap<>();
+                emptyResult.put("synonym_name", synonymName);
+                emptyResult.put("message", "Synonym not found");
+                return emptyResult;
+            }
+
+            String owner = (String) synonymLocation.get("owner");
+
+            String sql;
+            if (owner.equals(getCurrentUser())) {
+                sql = "SELECT " +
+                        "    synonym_name, " +
+                        "    table_owner, " +
+                        "    table_name, " +
+                        "    db_link " +
+                        "FROM user_synonyms " +
+                        "WHERE UPPER(synonym_name) = UPPER(?)";
+            } else {
+                sql = "SELECT " +
+                        "    owner, " +
+                        "    synonym_name, " +
+                        "    table_owner, " +
+                        "    table_name, " +
+                        "    db_link " +
+                        "FROM all_synonyms " +
+                        "WHERE UPPER(synonym_name) = UPPER(?) AND UPPER(owner) = UPPER(?)";
+            }
+
+            return oracleJdbcTemplate.queryForMap(sql, synonymName, owner);
+
+        } catch (Exception e) {
+            log.error("Error in getSynonymDetails for {}: {}", synonymName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve details for synonym " + synonymName + ": " + e.getMessage(), e);
         }
     }
 
@@ -561,24 +1607,406 @@ public class SchemaBrowserRepository {
     }
 
     /**
-     * Get all synonyms in the current schema
+     * Get all sequences from a specific schema
      */
-    public List<Map<String, Object>> getAllSynonyms() {
+    public List<Map<String, Object>> getSequencesBySchema(String schemaName) {
+        try {
+            log.info("Getting sequences for schema: {}", schemaName);
+
+            String sql = "SELECT " +
+                    "    sequence_owner as owner, " +
+                    "    sequence_name, " +
+                    "    min_value, " +
+                    "    max_value, " +
+                    "    increment_by, " +
+                    "    cycle_flag, " +
+                    "    order_flag, " +
+                    "    cache_size, " +
+                    "    last_number " +
+                    "FROM all_sequences " +
+                    "WHERE UPPER(sequence_owner) = UPPER(?) " +
+                    "ORDER BY sequence_name";
+
+            log.debug("Executing query for sequences in schema: {}", schemaName);
+            List<Map<String, Object>> results = oracleJdbcTemplate.queryForList(sql, schemaName);
+            log.info("Found {} sequences in schema {}", results.size(), schemaName);
+
+            return results;
+
+        } catch (Exception e) {
+            log.error("Error in getSequencesBySchema for {}: {}", schemaName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve sequences for schema " + schemaName + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get sequence details
+     */
+    public Map<String, Object> getSequenceDetails(String sequenceName) {
+        try {
+            log.info("Getting details for sequence: {}", sequenceName);
+
+            Map<String, Object> seqLocation = findObjectLocation(sequenceName, "SEQUENCE");
+            if (seqLocation.isEmpty()) {
+                log.warn("Sequence {} not found", sequenceName);
+                Map<String, Object> emptyResult = new HashMap<>();
+                emptyResult.put("sequence_name", sequenceName);
+                emptyResult.put("message", "Sequence not found");
+                return emptyResult;
+            }
+
+            String owner = (String) seqLocation.get("owner");
+
+            String sql;
+            if (owner.equals(getCurrentUser())) {
+                sql = "SELECT " +
+                        "    sequence_name, " +
+                        "    min_value, " +
+                        "    max_value, " +
+                        "    increment_by, " +
+                        "    cycle_flag, " +
+                        "    order_flag, " +
+                        "    cache_size, " +
+                        "    last_number " +
+                        "FROM user_sequences " +
+                        "WHERE UPPER(sequence_name) = UPPER(?)";
+            } else {
+                sql = "SELECT " +
+                        "    sequence_owner as owner, " +
+                        "    sequence_name, " +
+                        "    min_value, " +
+                        "    max_value, " +
+                        "    increment_by, " +
+                        "    cycle_flag, " +
+                        "    order_flag, " +
+                        "    cache_size, " +
+                        "    last_number " +
+                        "FROM all_sequences " +
+                        "WHERE UPPER(sequence_name) = UPPER(?) AND UPPER(sequence_owner) = UPPER(?)";
+            }
+
+            return oracleJdbcTemplate.queryForMap(sql, sequenceName, owner);
+
+        } catch (Exception e) {
+            log.error("Error in getSequenceDetails for {}: {}", sequenceName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve details for sequence " + sequenceName + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get all types in the current schema
+     */
+    public List<Map<String, Object>> getAllTypes() {
         try {
             String sql = "SELECT " +
-                    "    synonym_name, " +
-                    "    table_owner, " +
-                    "    table_name, " +
-                    "    db_link " +
-                    "FROM user_synonyms " +
-                    "ORDER BY synonym_name";
+                    "    type_name, " +
+                    "    typecode, " +
+                    "    attributes, " +
+                    "    methods, " +
+                    "    created, " +
+                    "    last_ddl_time, " +
+                    "    status " +
+                    "FROM user_types t " +
+                    "JOIN user_objects o ON t.type_name = o.object_name AND o.object_type LIKE '%TYPE' " +
+                    "ORDER BY type_name";
 
-            log.debug("Executing query for all synonyms");
+            log.debug("Executing query for all types");
             return oracleJdbcTemplate.queryForList(sql);
 
         } catch (Exception e) {
-            log.error("Error in getAllSynonyms: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to retrieve synonyms: " + e.getMessage(), e);
+            log.error("Error in getAllTypes: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve types: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get all types from a specific schema
+     */
+    public List<Map<String, Object>> getTypesBySchema(String schemaName) {
+        try {
+            log.info("Getting types for schema: {}", schemaName);
+
+            String sql = "SELECT " +
+                    "    t.owner, " +
+                    "    t.type_name, " +
+                    "    t.typecode, " +
+                    "    t.attributes, " +
+                    "    t.methods, " +
+                    "    o.created, " +
+                    "    o.last_ddl_time, " +
+                    "    o.status " +
+                    "FROM all_types t " +
+                    "JOIN all_objects o ON t.owner = o.owner AND t.type_name = o.object_name AND o.object_type LIKE '%TYPE' " +
+                    "WHERE UPPER(t.owner) = UPPER(?) " +
+                    "ORDER BY t.type_name";
+
+            log.debug("Executing query for types in schema: {}", schemaName);
+            List<Map<String, Object>> results = oracleJdbcTemplate.queryForList(sql, schemaName);
+            log.info("Found {} types in schema {}", results.size(), schemaName);
+
+            return results;
+
+        } catch (Exception e) {
+            log.error("Error in getTypesBySchema for {}: {}", schemaName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve types for schema " + schemaName + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get type details including attributes and methods
+     */
+    public Map<String, Object> getTypeDetails(String typeName) {
+        try {
+            log.info("Getting details for type: {}", typeName);
+
+            Map<String, Object> typeLocation = findObjectLocation(typeName, "TYPE");
+            if (typeLocation.isEmpty()) {
+                // Try TYPE BODY
+                typeLocation = findObjectLocation(typeName, "TYPE BODY");
+                if (typeLocation.isEmpty()) {
+                    log.warn("Type {} not found", typeName);
+                    Map<String, Object> emptyResult = new HashMap<>();
+                    emptyResult.put("type_name", typeName);
+                    emptyResult.put("message", "Type not found");
+                    return emptyResult;
+                }
+            }
+
+            String owner = (String) typeLocation.get("owner");
+
+            Map<String, Object> typeInfo;
+            List<Map<String, Object>> attributes = new ArrayList<>();
+            List<Map<String, Object>> methods = new ArrayList<>();
+
+            if (owner.equals(getCurrentUser())) {
+                String typeSql = "SELECT " +
+                        "    type_name, " +
+                        "    typecode, " +
+                        "    attributes, " +
+                        "    methods, " +
+                        "    created, " +
+                        "    last_ddl_time, " +
+                        "    status " +
+                        "FROM user_types t " +
+                        "JOIN user_objects o ON t.type_name = o.object_name AND o.object_type LIKE '%TYPE' " +
+                        "WHERE UPPER(t.type_name) = UPPER(?)";
+
+                typeInfo = oracleJdbcTemplate.queryForMap(typeSql, typeName);
+
+                // Get type attributes
+                String attrSql = "SELECT " +
+                        "    attr_name, " +
+                        "    attr_type_name, " +
+                        "    length, " +
+                        "    precision, " +
+                        "    scale " +
+                        "FROM user_type_attrs " +
+                        "WHERE UPPER(type_name) = UPPER(?) " +
+                        "ORDER BY attr_no";
+
+                attributes = oracleJdbcTemplate.queryForList(attrSql, typeName);
+
+                // Get type methods
+                String methodSql = "SELECT " +
+                        "    method_name, " +
+                        "    method_no, " +
+                        "    method_type, " +
+                        "    parameters, " +
+                        "    results " +
+                        "FROM user_type_methods " +
+                        "WHERE UPPER(type_name) = UPPER(?) " +
+                        "ORDER BY method_no";
+
+                methods = oracleJdbcTemplate.queryForList(methodSql, typeName);
+
+            } else {
+                String typeSql = "SELECT " +
+                        "    t.owner, " +
+                        "    t.type_name, " +
+                        "    t.typecode, " +
+                        "    t.attributes, " +
+                        "    t.methods, " +
+                        "    o.created, " +
+                        "    o.last_ddl_time, " +
+                        "    o.status " +
+                        "FROM all_types t " +
+                        "JOIN all_objects o ON t.owner = o.owner AND t.type_name = o.object_name AND o.object_type LIKE '%TYPE' " +
+                        "WHERE UPPER(t.type_name) = UPPER(?) AND UPPER(t.owner) = UPPER(?)";
+
+                typeInfo = oracleJdbcTemplate.queryForMap(typeSql, typeName, owner);
+
+                // For other schemas, we might have limited access to type details
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("typeInfo", typeInfo);
+            result.put("attributes", attributes);
+            result.put("methods", methods);
+            result.put("attributeCount", attributes.size());
+            result.put("methodCount", methods.size());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error in getTypeDetails for {}: {}", typeName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve details for type " + typeName + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get all database links
+     */
+    public List<Map<String, Object>> getAllDbLinks() {
+        try {
+            String sql = "SELECT " +
+                    "    db_link, " +
+                    "    username, " +
+                    "    host, " +
+                    "    created " +
+                    "FROM user_db_links " +
+                    "ORDER BY db_link";
+
+            log.debug("Executing query for all database links");
+            return oracleJdbcTemplate.queryForList(sql);
+
+        } catch (Exception e) {
+            log.error("Error in getAllDbLinks: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve database links: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get all database links from a specific schema
+     */
+    public List<Map<String, Object>> getDbLinksBySchema(String schemaName) {
+        try {
+            log.info("Getting database links for schema: {}", schemaName);
+
+            String sql = "SELECT " +
+                    "    owner, " +
+                    "    db_link, " +
+                    "    username, " +
+                    "    host, " +
+                    "    created " +
+                    "FROM all_db_links " +
+                    "WHERE UPPER(owner) = UPPER(?) " +
+                    "ORDER BY db_link";
+
+            log.debug("Executing query for database links in schema: {}", schemaName);
+            List<Map<String, Object>> results = oracleJdbcTemplate.queryForList(sql, schemaName);
+            log.info("Found {} database links in schema {}", results.size(), schemaName);
+
+            return results;
+
+        } catch (Exception e) {
+            log.error("Error in getDbLinksBySchema for {}: {}", schemaName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve database links for schema " + schemaName + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Search for any object by name pattern
+     */
+    public List<Map<String, Object>> searchObjects(String searchPattern) {
+        try {
+            log.info("Searching for objects with pattern: {}", searchPattern);
+
+            String sql = "SELECT " +
+                    "    owner, " +
+                    "    object_name, " +
+                    "    object_type, " +
+                    "    created, " +
+                    "    last_ddl_time, " +
+                    "    status " +
+                    "FROM all_objects " +
+                    "WHERE UPPER(object_name) LIKE UPPER(?) " +
+                    "ORDER BY object_type, object_name";
+
+            log.debug("Executing object search with pattern: {}", searchPattern);
+            List<Map<String, Object>> results = oracleJdbcTemplate.queryForList(sql, "%" + searchPattern + "%");
+            log.info("Search returned {} objects", results.size());
+
+            return results;
+
+        } catch (Exception e) {
+            log.error("Error in searchObjects for pattern {}: {}", searchPattern, e.getMessage(), e);
+            throw new RuntimeException("Failed to search objects with pattern " + searchPattern + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get object count by type
+     */
+    public List<Map<String, Object>> getObjectCountByType() {
+        try {
+            String sql = "SELECT " +
+                    "    object_type, " +
+                    "    COUNT(*) as object_count, " +
+                    "    SUM(CASE WHEN status = 'VALID' THEN 1 ELSE 0 END) as valid_count, " +
+                    "    SUM(CASE WHEN status = 'INVALID' THEN 1 ELSE 0 END) as invalid_count " +
+                    "FROM user_objects " +
+                    "GROUP BY object_type " +
+                    "ORDER BY object_type";
+
+            log.debug("Executing query for object count by type");
+            return oracleJdbcTemplate.queryForList(sql);
+
+        } catch (Exception e) {
+            log.error("Error in getObjectCountByType: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve object count by type: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get all objects in the current schema
+     */
+    public List<Map<String, Object>> getAllObjects() {
+        try {
+            String sql = "SELECT " +
+                    "    object_name, " +
+                    "    object_type, " +
+                    "    created, " +
+                    "    last_ddl_time, " +
+                    "    status " +
+                    "FROM user_objects " +
+                    "ORDER BY object_type, object_name";
+
+            log.debug("Executing query for all objects");
+            return oracleJdbcTemplate.queryForList(sql);
+
+        } catch (Exception e) {
+            log.error("Error in getAllObjects: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve objects: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get all objects from a specific schema
+     */
+    public List<Map<String, Object>> getObjectsBySchema(String schemaName) {
+        try {
+            log.info("Getting objects for schema: {}", schemaName);
+
+            String sql = "SELECT " +
+                    "    owner, " +
+                    "    object_name, " +
+                    "    object_type, " +
+                    "    created, " +
+                    "    last_ddl_time, " +
+                    "    status " +
+                    "FROM all_objects " +
+                    "WHERE UPPER(owner) = UPPER(?) " +
+                    "ORDER BY object_type, object_name";
+
+            log.debug("Executing query for objects in schema: {}", schemaName);
+            List<Map<String, Object>> results = oracleJdbcTemplate.queryForList(sql, schemaName);
+            log.info("Found {} objects in schema {}", results.size(), schemaName);
+
+            return results;
+
+        } catch (Exception e) {
+            log.error("Error in getObjectsBySchema for {}: {}", schemaName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve objects for schema " + schemaName + ": " + e.getMessage(), e);
         }
     }
 
@@ -599,75 +2027,78 @@ public class SchemaBrowserRepository {
     }
 
     /**
-     * Get table DDL (if user has access to DBMS_METADATA)
+     * Get object DDL (if user has access to DBMS_METADATA)
      */
-    public String getTableDDL(String tableName) {
+    public String getObjectDDL(String objectName, String objectType) {
         try {
-            Map<String, Object> tableLocation = findTableLocation(tableName);
-            String owner = (String) tableLocation.get("owner");
+            Map<String, Object> objectLocation = findObjectLocation(objectName, objectType);
+            String owner = (String) objectLocation.get("owner");
 
             if (owner == null) {
-                log.warn("Table {} not found", tableName);
+                log.warn("Object {} of type {} not found", objectName, objectType);
                 return null;
             }
 
-            String sql = "SELECT DBMS_METADATA.GET_DDL('TABLE', ?, ?) FROM DUAL";
-            return oracleJdbcTemplate.queryForObject(sql, String.class, tableName.toUpperCase(), owner.toUpperCase());
+            String sql = "SELECT DBMS_METADATA.GET_DDL(?, ?, ?) FROM DUAL";
+            return oracleJdbcTemplate.queryForObject(sql, String.class, objectType.toUpperCase(), objectName.toUpperCase(), owner.toUpperCase());
 
         } catch (Exception e) {
-            log.warn("Could not get DDL for table {}: {}", tableName, e.getMessage());
+            log.warn("Could not get DDL for object {}: {}", objectName, e.getMessage());
             return null;
         }
     }
 
     /**
-     * Get table size information
+     * Get object size information
      */
-    public Map<String, Object> getTableSize(String tableName) {
+    public Map<String, Object> getObjectSize(String objectName, String objectType) {
         try {
-            Map<String, Object> tableLocation = findTableLocation(tableName);
-            String owner = (String) tableLocation.get("owner");
+            Map<String, Object> objectLocation = findObjectLocation(objectName, objectType);
+            String owner = (String) objectLocation.get("owner");
+
+            if (owner == null) {
+                log.warn("Object {} not found", objectName);
+                return new HashMap<>();
+            }
 
             String sql;
-            if (owner != null && !owner.equals(getCurrentUser())) {
+            if (owner.equals(getCurrentUser())) {
                 sql = "SELECT " +
-                        "    t.table_name, " +
-                        "    t.owner, " +
-                        "    t.num_rows, " +
-                        "    t.avg_row_len, " +
-                        "    t.blocks, " +
-                        "    (t.blocks * 8192) as estimated_bytes, " +
-                        "    s.bytes as segment_bytes " +
-                        "FROM all_tables t " +
-                        "LEFT JOIN all_segments s ON t.owner = s.owner AND t.table_name = s.segment_name AND s.segment_type = 'TABLE' " +
-                        "WHERE UPPER(t.table_name) = UPPER(?) AND UPPER(t.owner) = UPPER(?)";
+                        "    segment_name, " +
+                        "    segment_type, " +
+                        "    tablespace_name, " +
+                        "    bytes, " +
+                        "    blocks, " +
+                        "    extents " +
+                        "FROM user_segments " +
+                        "WHERE UPPER(segment_name) = UPPER(?) AND segment_type LIKE ? || '%'";
 
-                return oracleJdbcTemplate.queryForMap(sql, tableName, owner);
+                return oracleJdbcTemplate.queryForMap(sql, objectName, objectType);
             } else {
                 sql = "SELECT " +
-                        "    t.table_name, " +
-                        "    t.num_rows, " +
-                        "    t.avg_row_len, " +
-                        "    t.blocks, " +
-                        "    (t.blocks * 8192) as estimated_bytes, " +
-                        "    s.bytes as segment_bytes " +
-                        "FROM user_tables t " +
-                        "LEFT JOIN user_segments s ON t.table_name = s.segment_name AND s.segment_type = 'TABLE' " +
-                        "WHERE UPPER(t.table_name) = UPPER(?)";
+                        "    owner, " +
+                        "    segment_name, " +
+                        "    segment_type, " +
+                        "    tablespace_name, " +
+                        "    bytes, " +
+                        "    blocks, " +
+                        "    extents " +
+                        "FROM all_segments " +
+                        "WHERE UPPER(segment_name) = UPPER(?) AND UPPER(owner) = UPPER(?) AND segment_type LIKE ? || '%'";
 
-                return oracleJdbcTemplate.queryForMap(sql, tableName);
+                return oracleJdbcTemplate.queryForMap(sql, objectName, owner, objectType);
             }
 
         } catch (Exception e) {
-            log.error("Error in getTableSize for {}: {}", tableName, e.getMessage(), e);
-            throw new RuntimeException("Failed to retrieve size for table " + tableName + ": " + e.getMessage(), e);
+            log.error("Error in getObjectSize for {}: {}", objectName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve size for object " + objectName + ": " + e.getMessage(), e);
         }
     }
 
     // ==================== DIAGNOSTIC METHODS ====================
 
     /**
-     * Comprehensive diagnostic method to check database connection and tables
+     * Comprehensive diagnostic method to check database connection and objects
      */
     public Map<String, Object> diagnoseDatabase() {
         Map<String, Object> diagnostics = new HashMap<>();
@@ -676,7 +2107,9 @@ public class SchemaBrowserRepository {
         try {
             // Test basic connection
             String currentUser = getCurrentUser();
+            String currentSchema = getCurrentSchema();
             diagnostics.put("currentUser", currentUser);
+            diagnostics.put("currentSchema", currentSchema);
             diagnostics.put("connectionStatus", "SUCCESS");
 
             // Check user tables
@@ -686,6 +2119,9 @@ public class SchemaBrowserRepository {
             if (userTableCount == 0) {
                 issues.add("User " + currentUser + " has no tables in their schema");
             }
+
+            // Check object counts
+            diagnostics.put("objectCounts", getObjectCountByType());
 
             // Check accessible tables
             List<Map<String, Object>> accessibleTables = getAccessibleTablesSample();
@@ -791,6 +2227,21 @@ public class SchemaBrowserRepository {
             return oracleJdbcTemplate.queryForMap(sql, tableName);
         } catch (Exception e) {
             log.debug("Table {} not found in all_tables", tableName);
+            return result;
+        }
+    }
+
+    /**
+     * Find object location by name and type
+     */
+    private Map<String, Object> findObjectLocation(String objectName, String objectType) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            String sql = "SELECT owner, object_name FROM all_objects " +
+                    "WHERE UPPER(object_name) = UPPER(?) AND object_type = ? AND ROWNUM = 1";
+            return oracleJdbcTemplate.queryForMap(sql, objectName, objectType);
+        } catch (Exception e) {
+            log.debug("Object {} of type {} not found", objectName, objectType);
             return result;
         }
     }
