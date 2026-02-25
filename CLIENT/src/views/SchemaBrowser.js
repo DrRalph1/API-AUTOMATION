@@ -202,6 +202,7 @@ const ObjectTreeSection = React.memo(({
   title, 
   type, 
   objects, 
+  synonymCount = 0, // New prop for synonym count
   isLoading,
   isExpanded, 
   onToggle,
@@ -272,6 +273,9 @@ const ObjectTreeSection = React.memo(({
     return obj.id || `${obj.owner || 'unknown'}_${obj.name}`;
   }, []);
   
+  // Calculate total count including synonyms
+  const totalCount = objects.length + synonymCount;
+  
   return (
     <div className="mb-1">
       <button
@@ -294,7 +298,7 @@ const ObjectTreeSection = React.memo(({
           backgroundColor: colors.border,
           color: colors.textSecondary
         }}>
-          {objects.length}
+          {totalCount}
         </span>
       </button>
       
@@ -419,7 +423,7 @@ const SynonymSubsection = React.memo(({
 
 SynonymSubsection.displayName = 'SynonymSubsection';
 
-// Left Sidebar Component - UPDATED with synonyms under parent categories
+// Left Sidebar Component - UPDATED with synonyms under parent categories and counts
 const LeftSidebar = React.memo(({ 
   isLeftSidebarVisible, 
   setIsLeftSidebarVisible,
@@ -560,6 +564,7 @@ const LeftSidebar = React.memo(({
               title="Tables"
               type="tables"
               objects={schemaObjects.tables || []}
+              synonymCount={groupedSynonyms.tables.length}
               isLoading={loadingStates.tables}
               isExpanded={objectTree.tables}
               onToggle={handleToggleSection}
@@ -591,6 +596,7 @@ const LeftSidebar = React.memo(({
               title="Views"
               type="views"
               objects={schemaObjects.views || []}
+              synonymCount={groupedSynonyms.views.length}
               isLoading={loadingStates.views}
               isExpanded={objectTree.views}
               onToggle={handleToggleSection}
@@ -622,6 +628,7 @@ const LeftSidebar = React.memo(({
               title="Procedures"
               type="procedures"
               objects={schemaObjects.procedures || []}
+              synonymCount={groupedSynonyms.procedures.length}
               isLoading={loadingStates.procedures}
               isExpanded={objectTree.procedures}
               onToggle={handleToggleSection}
@@ -653,6 +660,7 @@ const LeftSidebar = React.memo(({
               title="Functions"
               type="functions"
               objects={schemaObjects.functions || []}
+              synonymCount={groupedSynonyms.functions.length}
               isLoading={loadingStates.functions}
               isExpanded={objectTree.functions}
               onToggle={handleToggleSection}
@@ -684,6 +692,7 @@ const LeftSidebar = React.memo(({
               title="Packages"
               type="packages"
               objects={schemaObjects.packages || []}
+              synonymCount={groupedSynonyms.packages.length}
               isLoading={loadingStates.packages}
               isExpanded={objectTree.packages}
               onToggle={handleToggleSection}
@@ -715,6 +724,7 @@ const LeftSidebar = React.memo(({
               title="Sequences"
               type="sequences"
               objects={schemaObjects.sequences || []}
+              synonymCount={groupedSynonyms.sequences.length}
               isLoading={loadingStates.sequences}
               isExpanded={objectTree.sequences}
               onToggle={handleToggleSection}
@@ -746,6 +756,7 @@ const LeftSidebar = React.memo(({
               title="Types"
               type="types"
               objects={schemaObjects.types || []}
+              synonymCount={groupedSynonyms.types.length}
               isLoading={loadingStates.types}
               isExpanded={objectTree.types}
               onToggle={handleToggleSection}
@@ -777,6 +788,7 @@ const LeftSidebar = React.memo(({
               title="Triggers"
               type="triggers"
               objects={schemaObjects.triggers || []}
+              synonymCount={groupedSynonyms.triggers.length}
               isLoading={loadingStates.triggers}
               isExpanded={objectTree.triggers}
               onToggle={handleToggleSection}
@@ -809,6 +821,7 @@ const LeftSidebar = React.memo(({
                 title="Other Synonyms"
                 type="synonyms"
                 objects={groupedSynonyms.other}
+                synonymCount={0} // No nested synonyms for other synonyms
                 isLoading={loadingStates.synonyms}
                 isExpanded={objectTree.synonyms}
                 onToggle={handleToggleSection}
