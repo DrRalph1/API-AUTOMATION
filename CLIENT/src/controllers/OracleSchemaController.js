@@ -2397,8 +2397,125 @@ export const extractObjectDetails = (response) => {
     return response?.data || {};
 };
 
+
+// Add this function to your controller
+const transformTableDataResponse = (response, tableName, params) => {
+    const data = response.data || {};
+    
+    // Handle different response structures
+    let rows = [];
+    let columns = [];
+    let totalRows = 0;
+    let totalPages = 1;
+    let page = params?.page || 0;
+    let pageSize = params?.pageSize || 50;
+    
+    // If data.data exists (your API structure)
+    if (data.data) {
+        rows = data.data.rows || [];
+        columns = data.data.columns || [];
+        totalRows = data.data.totalRows || 0;
+        totalPages = data.data.totalPages || 1;
+        page = data.data.page || page;
+        pageSize = data.data.pageSize || pageSize;
+    } 
+    // If data itself has rows
+    else if (data.rows) {
+        rows = data.rows || [];
+        columns = data.columns || [];
+        totalRows = data.totalRows || rows.length;
+        totalPages = data.totalPages || 1;
+        page = data.page || page;
+        pageSize = data.pageSize || pageSize;
+    }
+    // If data is an array
+    else if (Array.isArray(data)) {
+        rows = data;
+        if (data.length > 0) {
+            columns = Object.keys(data[0]).map(key => ({ name: key }));
+        }
+        totalRows = data.length;
+        totalPages = 1;
+    }
+    
+    const transformedData = {
+        tableName: tableName,
+        columns: columns,
+        rows: rows,
+        totalRows: totalRows,
+        totalPages: totalPages,
+        pageSize: pageSize,
+        page: page,
+        hasNext: page < totalPages - 1,
+        hasPrev: page > 0
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+
+// In OracleSchemaController.js
 export const extractTableData = (response) => {
-    return response?.data || { rows: [], columns: [] };
+  console.log('extractTableData input:', JSON.stringify(response, null, 2).substring(0, 500));
+  
+  // Your API returns { data: { data: { columns, rows, ... } } }
+  if (response?.data?.data) {
+    // Structure: { data: { data: { columns: [], rows: [], ... } } }
+    const tableData = response.data.data;
+    console.log('Found data.data structure with rows:', tableData.rows?.length);
+    
+    return {
+      columns: tableData.columns || [],
+      rows: tableData.rows || [],
+      totalRows: tableData.totalRows || tableData.rows?.length || 0,
+      totalPages: tableData.totalPages || 1,
+      pageSize: tableData.pageSize || 50,
+      page: tableData.page || 0
+    };
+  } 
+  // If response.data is directly the table data
+  else if (response?.data?.columns && response?.data?.rows) {
+    // Structure: { data: { columns: [], rows: [], ... } }
+    console.log('Found data.columns/rows structure with rows:', response.data.rows.length);
+    
+    return {
+      columns: response.data.columns || [],
+      rows: response.data.rows || [],
+      totalRows: response.data.totalRows || response.data.rows.length,
+      totalPages: response.data.totalPages || 1,
+      pageSize: response.data.pageSize || 50,
+      page: response.data.page || 0
+    };
+  }
+  // If response itself is the table data
+  else if (response?.columns && response?.rows) {
+    // Structure: { columns: [], rows: [], ... }
+    console.log('Found columns/rows structure with rows:', response.rows.length);
+    
+    return {
+      columns: response.columns || [],
+      rows: response.rows || [],
+      totalRows: response.totalRows || response.rows.length,
+      totalPages: response.totalPages || 1,
+      pageSize: response.pageSize || 50,
+      page: response.page || 0
+    };
+  }
+  
+  console.log('No recognized structure found, returning empty data');
+  
+  // Default empty response
+  return {
+    columns: [],
+    rows: [],
+    totalRows: 0,
+    totalPages: 1,
+    pageSize: 50,
+    page: 0
+  };
 };
 
 export const extractDDL = (response) => {

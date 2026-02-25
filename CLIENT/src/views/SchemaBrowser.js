@@ -1476,32 +1476,42 @@ const getFirstSchemaObject = useCallback(() => {
   }, []);
 
   // Load table data
-  const loadTableData = useCallback(async (tableName) => {
-    if (!authToken || !tableName) return;
+const loadTableData = useCallback(async (tableName) => {
+  if (!authToken || !tableName) return;
+  
+  setTableDataLoading(true);
+  setTableData(null);
+  
+  try {
+    const params = {
+      tableName,
+      page: dataView.page - 1,
+      pageSize: dataView.pageSize,
+      sortColumn: dataView.sortColumn || undefined,
+      sortDirection: dataView.sortDirection
+    };
     
-    setTableDataLoading(true);
-    setTableData(null);
+    console.log('Loading table data for:', tableName, params);
     
-    try {
-      const params = {
-        tableName,
-        page: dataView.page - 1,
-        pageSize: dataView.pageSize,
-        sortColumn: dataView.sortColumn || undefined,
-        sortDirection: dataView.sortDirection
-      };
-      
-      const response = await getTableData(authToken, params);
-      const processed = handleSchemaBrowserResponse(response);
-      const tableDataResult = extractTableData(processed);
-      setTableData(tableDataResult);
-    } catch (err) {
-      Logger.error('SchemaBrowser', 'loadTableData', `Error loading data for ${tableName}`, err);
-      setError(`Failed to load table data: ${err.message}`);
-    } finally {
-      setTableDataLoading(false);
-    }
-  }, [authToken, dataView]);
+    const response = await getTableData(authToken, params);
+    console.log('Raw response:', response);
+    
+    const processed = handleSchemaBrowserResponse(response);
+    console.log('Processed response:', processed);
+    
+    // Use extractTableData
+    const tableDataResult = extractTableData({ data: processed });
+    console.log('Extracted table data:', tableDataResult);
+    
+    setTableData(tableDataResult);
+    
+  } catch (err) {
+    Logger.error('SchemaBrowser', 'loadTableData', `Error loading data for ${tableName}`, err);
+    setError(`Failed to load table data: ${err.message}`);
+  } finally {
+    setTableDataLoading(false);
+  }
+}, [authToken, dataView]);
 
   // Handle context menu
   const handleContextMenu = useCallback((e, object, type) => {
@@ -1783,167 +1793,178 @@ useEffect(() => {
   };
 
   // Render Data Tab
-  const renderDataTab = () => {
-    const data = tableData?.rows || [];
-    const columns = tableData?.columns || objectDetails?.columns || activeObject?.columns || [];
-    const totalRows = tableData?.totalRows || 0;
-    const totalPages = tableData?.totalPages || 1;
-    
-    return (
-      <div className="flex-1 flex flex-col h-full">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 border-b shrink-0" style={{ borderColor: colors.border }}>
-          <div className="flex items-center gap-2">
-            <button 
-              className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2"
-              style={{ backgroundColor: colors.primaryDark, color: colors.white }}
-              onClick={async () => {
-                if (activeObject) {
-                  const tableName = activeObject.type === 'SYNONYM' && objectDetails?.TARGET_NAME 
-                    ? objectDetails.TARGET_NAME 
-                    : activeObject.name;
-                  await loadTableData(tableName);
-                }
-              }}
-              disabled={tableDataLoading || !activeObject}
-            >
-              {tableDataLoading ? (
-                <Loader size={12} className="animate-spin" />
-              ) : (
-                <Play size={12} />
-              )}
-              <span>Execute</span>
-            </button>
-            <select 
-              className="px-2 py-1 border rounded text-sm"
-              style={{ backgroundColor: colors.bg, borderColor: colors.border, color: colors.text }}
-              value={dataView.pageSize}
-              onChange={(e) => handlePageSizeChange(parseInt(e.target.value))}
-              disabled={tableDataLoading}
-            >
-              <option value="25">25 rows</option>
-              <option value="50">50 rows</option>
-              <option value="100">100 rows</option>
-              <option value="250">250 rows</option>
-              <option value="500">500 rows</option>
-            </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs" style={{ color: colors.textSecondary }}>
-              {totalRows > 0 ? (
-                <>Page {dataView.page} of {totalPages} | Total: {totalRows.toLocaleString()} rows</>
-              ) : (
-                'No data'
-              )}
-            </span>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-2">
-                <button 
-                  className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
-                  style={{ backgroundColor: colors.hover }}
-                  onClick={() => handlePageChange(dataView.page - 1)}
-                  disabled={tableDataLoading || dataView.page <= 1}
-                >
-                  <ChevronLeft size={14} />
-                </button>
-                <button 
-                  className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
-                  style={{ backgroundColor: colors.hover }}
-                  onClick={() => handlePageChange(dataView.page + 1)}
-                  disabled={tableDataLoading || dataView.page >= totalPages}
-                >
-                  <ChevronRight size={14} />
-                </button>
-              </div>
+const renderDataTab = () => {
+  const data = tableData?.rows || [];
+  
+  // If columns array is empty but we have data, extract column names from the first row
+ let columns = tableData?.columns || [];
+if (columns.length === 0 && data.length > 0) {
+  columns = Object.keys(data[0]).map(key => ({ name: key }));
+}
+  
+  // Fallback to objectDetails or activeObject columns if still empty
+  if (columns.length === 0) {
+    columns = objectDetails?.columns || activeObject?.columns || [];
+  }
+  
+  const totalRows = tableData?.totalRows || 0;
+  const totalPages = tableData?.totalPages || 1;
+  
+  return (
+    <div className="flex-1 flex flex-col h-full">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 border-b shrink-0" style={{ borderColor: colors.border }}>
+        <div className="flex items-center gap-2">
+          <button 
+            className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2"
+            style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+            onClick={async () => {
+              if (activeObject) {
+                const tableName = activeObject.type === 'SYNONYM' && objectDetails?.TARGET_NAME 
+                  ? objectDetails.TARGET_NAME 
+                  : activeObject.name;
+                await loadTableData(tableName);
+              }
+            }}
+            disabled={tableDataLoading || !activeObject}
+          >
+            {tableDataLoading ? (
+              <Loader size={12} className="animate-spin" />
+            ) : (
+              <Play size={12} />
             )}
-          </div>
+            <span>Execute</span>
+          </button>
+          <select 
+            className="px-2 py-1 border rounded text-sm"
+            style={{ backgroundColor: colors.bg, borderColor: colors.border, color: colors.text }}
+            value={dataView.pageSize}
+            onChange={(e) => handlePageSizeChange(parseInt(e.target.value))}
+            disabled={tableDataLoading}
+          >
+            <option value="25">25 rows</option>
+            <option value="50">50 rows</option>
+            <option value="100">100 rows</option>
+            <option value="250">250 rows</option>
+            <option value="500">500 rows</option>
+          </select>
         </div>
-
-        <div className="flex-1 overflow-auto relative">
-          {tableDataLoading ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <Loader className="animate-spin mx-auto mb-4" size={40} style={{ color: colors.primary }} />
-                <div className="text-sm font-medium" style={{ color: colors.text }}>Loading table data...</div>
-                <div className="text-xs mt-2" style={{ color: colors.textSecondary }}>Please wait while we fetch the rows</div>
-              </div>
-            </div>
-          ) : data.length === 0 ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <div className="flex justify-center mb-4">
-                  <TableIcon size={64} style={{ color: colors.textSecondary, opacity: 0.5 }} />
-                </div>
-                <div className="text-lg font-medium" style={{ color: colors.text }}>No data available</div>
-                <div className="text-sm mt-2" style={{ color: colors.textSecondary }}>
-                  Click the Execute button to load data
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="border rounded overflow-auto h-full" style={{ borderColor: colors.gridBorder }}>
-              <table className="w-full">
-                <thead style={{ backgroundColor: colors.tableHeader, position: 'sticky', top: 0, zIndex: 10 }}>
-                  <tr>
-                    {columns.map(col => (
-                      <th 
-                        key={col.name || col.COLUMN_NAME} 
-                        className="text-left p-2 text-xs font-medium cursor-pointer hover:bg-opacity-50"
-                        onClick={() => handleSortChange(
-                          col.name || col.COLUMN_NAME, 
-                          dataView.sortColumn === (col.name || col.COLUMN_NAME) && dataView.sortDirection === 'ASC' ? 'DESC' : 'ASC'
-                        )}
-                        style={{ color: colors.textSecondary }}
-                      >
-                        <div className="flex items-center gap-1">
-                          <span className="truncate">{col.name || col.COLUMN_NAME}</span>
-                          {dataView.sortColumn === (col.name || col.COLUMN_NAME) && (
-                            dataView.sortDirection === 'ASC' ? 
-                              <ChevronUp size={10} /> : 
-                              <ChevronDown size={10} />
-                          )}
-                        </div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.map((row, rowIndex) => (
-                    <tr 
-                      key={rowIndex} 
-                      className="hover:bg-opacity-50 transition-colors"
-                      style={{ 
-                        backgroundColor: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                      }}
-                    >
-                      {columns.map(col => {
-                        const columnName = col.name || col.COLUMN_NAME;
-                        const value = row[columnName];
-                        return (
-                          <td key={columnName} className="p-2 text-xs border-b" style={{ 
-                            borderColor: colors.gridBorder,
-                            color: colors.text,
-                            maxWidth: '200px'
-                          }}>
-                            <div className="truncate" title={value?.toString()}>
-                              {value !== null && value !== undefined ? (
-                                typeof value === 'object' ? JSON.stringify(value) : value.toString()
-                              ) : (
-                                <span style={{ color: colors.textTertiary }}>NULL</span>
-                              )}
-                            </div>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <div className="flex items-center gap-2">
+          <span className="text-xs" style={{ color: colors.textSecondary }}>
+            {totalRows > 0 ? (
+              <>Page {dataView.page} of {totalPages} | Total: {totalRows.toLocaleString()} rows</>
+            ) : (
+              'No data'
+            )}
+          </span>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <button 
+                className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
+                style={{ backgroundColor: colors.hover }}
+                onClick={() => handlePageChange(dataView.page - 1)}
+                disabled={tableDataLoading || dataView.page <= 1}
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <button 
+                className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
+                style={{ backgroundColor: colors.hover }}
+                onClick={() => handlePageChange(dataView.page + 1)}
+                disabled={tableDataLoading || dataView.page >= totalPages}
+              >
+                <ChevronRight size={14} />
+              </button>
             </div>
           )}
         </div>
       </div>
-    );
-  };
+
+      <div className="flex-1 overflow-auto relative">
+        {tableDataLoading ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center">
+              <Loader className="animate-spin mx-auto mb-4" size={40} style={{ color: colors.primary }} />
+              <div className="text-sm font-medium" style={{ color: colors.text }}>Loading table data...</div>
+              <div className="text-xs mt-2" style={{ color: colors.textSecondary }}>Please wait while we fetch the rows</div>
+            </div>
+          </div>
+        ) : data.length === 0 ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center">
+              <div className="flex justify-center mb-4">
+                <TableIcon size={64} style={{ color: colors.textSecondary, opacity: 0.5 }} />
+              </div>
+              <div className="text-lg font-medium" style={{ color: colors.text }}>No data available</div>
+              <div className="text-sm mt-2" style={{ color: colors.textSecondary }}>
+                Click the Execute button to load data
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="border rounded overflow-auto h-full" style={{ borderColor: colors.gridBorder }}>
+            <table className="w-full">
+              <thead style={{ backgroundColor: colors.tableHeader, position: 'sticky', top: 0, zIndex: 10 }}>
+                <tr>
+                  {columns.map(col => (
+                    <th 
+                      key={col.name || col.COLUMN_NAME} 
+                      className="text-left p-2 text-xs font-medium cursor-pointer hover:bg-opacity-50"
+                      onClick={() => handleSortChange(
+                        col.name || col.COLUMN_NAME, 
+                        dataView.sortColumn === (col.name || col.COLUMN_NAME) && dataView.sortDirection === 'ASC' ? 'DESC' : 'ASC'
+                      )}
+                      style={{ color: colors.textSecondary }}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span className="truncate">{col.name || col.COLUMN_NAME}</span>
+                        {dataView.sortColumn === (col.name || col.COLUMN_NAME) && (
+                          dataView.sortDirection === 'ASC' ? 
+                            <ChevronUp size={10} /> : 
+                            <ChevronDown size={10} />
+                        )}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((row, rowIndex) => (
+                  <tr 
+                    key={rowIndex} 
+                    className="hover:bg-opacity-50 transition-colors"
+                    style={{ 
+                      backgroundColor: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                    }}
+                  >
+                    {columns.map(col => {
+                      const columnName = col.name || col.COLUMN_NAME;
+                      const value = row[columnName];
+                      return (
+                        <td key={columnName} className="p-2 text-xs border-b" style={{ 
+                          borderColor: colors.gridBorder,
+                          color: colors.text,
+                          maxWidth: '200px'
+                        }}>
+                          <div className="truncate" title={value?.toString()}>
+                            {value !== null && value !== undefined ? (
+                              typeof value === 'object' ? JSON.stringify(value) : value.toString()
+                            ) : (
+                              <span style={{ color: colors.textTertiary }}>NULL</span>
+                            )}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
   // Render Parameters Tab
   const renderParametersTab = () => {

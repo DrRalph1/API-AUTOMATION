@@ -43,7 +43,7 @@ function ApiPreviewModal({
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4" style={{ zIndex: 1002 }}>
       <div className="rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" style={{ 
-        backgroundColor: themeColors.modalBg,
+        backgroundColor: themeColors.bg,
         border: `1px solid ${themeColors.modalBorder}`
       }}>
         {/* Header */}
@@ -56,10 +56,10 @@ function ApiPreviewModal({
               <Eye className="h-6 w-6" style={{ color: themeColors.warning }} />
             </div>
             <div>
-              <h2 className="text-xl font-bold" style={{ color: themeColors.text }}>
+              <h2 className="text-lg font-bold" style={{ color: themeColors.text }}>
                 API Generation Preview
               </h2>
-              <p className="text-sm" style={{ color: themeColors.textSecondary }}>
+              <p className="text-xs" style={{ color: themeColors.textSecondary }}>
                 Review your API configuration before generation
               </p>
             </div>
@@ -87,7 +87,7 @@ function ApiPreviewModal({
                     <Zap className="h-5 w-5" />
                     {apiData.apiName}
                   </h3>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="grid grid-cols-2 gap-4 text-xs">
                     <div>
                       <span style={{ color: themeColors.textSecondary }}>API Code:</span>
                       <span className="ml-2 font-medium font-mono" style={{ color: themeColors.text }}>
@@ -122,14 +122,14 @@ function ApiPreviewModal({
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium" style={{ 
+                  <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium" style={{ 
                     backgroundColor: themeColors.info + '20',
                     color: themeColors.info
                   }}>
                     <Globe className="h-4 w-4 mr-1" />
                     API Endpoint
                   </div>
-                  <div className="mt-2 font-mono text-sm" style={{ color: themeColors.text }}>
+                  <div className="mt-2 font-mono text-xs" style={{ color: themeColors.text }}>
                     {apiData.httpMethod} {apiData.basePath}{apiData.endpointPath}
                   </div>
                 </div>
@@ -146,7 +146,7 @@ function ApiPreviewModal({
                 borderColor: themeColors.border,
                 backgroundColor: themeColors.card
               }}>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
                   <div>
                     <span style={{ color: themeColors.textSecondary }}>Schema:</span>
                     <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
@@ -188,7 +188,7 @@ function ApiPreviewModal({
                 {apiData.parameters && apiData.parameters.length > 0 ? (
                   <div className="space-y-2">
                     {apiData.parameters.slice(0, 3).map((param, index) => (
-                      <div key={index} className="flex items-center justify-between text-sm">
+                      <div key={index} className="flex items-center justify-between text-xs">
                         <div>
                           <span className="font-medium" style={{ color: themeColors.text }}>
                             {param.key}
@@ -207,14 +207,14 @@ function ApiPreviewModal({
                     ))}
                     {apiData.parameters.length > 3 && (
                       <div className="text-center pt-2">
-                        <span className="text-sm" style={{ color: themeColors.textSecondary }}>
+                        <span className="text-xs" style={{ color: themeColors.textSecondary }}>
                           + {apiData.parameters.length - 3} more parameters
                         </span>
                       </div>
                     )}
                   </div>
                 ) : (
-                  <p className="text-sm" style={{ color: themeColors.textSecondary }}>
+                  <p className="text-xs" style={{ color: themeColors.textSecondary }}>
                     No parameters defined
                   </p>
                 )}
@@ -232,7 +232,7 @@ function ApiPreviewModal({
                 backgroundColor: themeColors.card
               }}>
                 {apiData.responseMappings && apiData.responseMappings.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="grid grid-cols-2 gap-4 text-xs">
                     {apiData.responseMappings.slice(0, 6).map((mapping, index) => (
                       <div key={index}>
                         <div className="font-medium" style={{ color: themeColors.text }}>
@@ -245,14 +245,14 @@ function ApiPreviewModal({
                     ))}
                     {apiData.responseMappings.length > 6 && (
                       <div className="col-span-2 text-center pt-2">
-                        <span className="text-sm" style={{ color: themeColors.textSecondary }}>
+                        <span className="text-xs" style={{ color: themeColors.textSecondary }}>
                           + {apiData.responseMappings.length - 6} more fields
                         </span>
                       </div>
                     )}
                   </div>
                 ) : (
-                  <p className="text-sm" style={{ color: themeColors.textSecondary }}>
+                  <p className="text-xs" style={{ color: themeColors.textSecondary }}>
                     No response mappings defined
                   </p>
                 )}
@@ -275,7 +275,7 @@ function ApiPreviewModal({
                       <Code className="h-4 w-4" style={{ color: themeColors.info }} />
                     </div>
                     <div>
-                      <h5 className="font-medium text-sm" style={{ color: themeColors.text }}>PL/SQL Package</h5>
+                      <h5 className="font-medium text-xs" style={{ color: themeColors.text }}>PL/SQL Package</h5>
                       <p className="text-xs" style={{ color: themeColors.textSecondary }}>Oracle Database</p>
                     </div>
                   </div>
@@ -290,7 +290,7 @@ function ApiPreviewModal({
                       <FileJson className="h-4 w-4" style={{ color: themeColors.success }} />
                     </div>
                     <div>
-                      <h5 className="font-medium text-sm" style={{ color: themeColors.text }}>OpenAPI Spec</h5>
+                      <h5 className="font-medium text-xs" style={{ color: themeColors.text }}>OpenAPI Spec</h5>
                       <p className="text-xs" style={{ color: themeColors.textSecondary }}>API Documentation</p>
                     </div>
                   </div>
@@ -305,7 +305,7 @@ function ApiPreviewModal({
                       <Database className="h-4 w-4" style={{ color: themeColors.warning }} />
                     </div>
                     <div>
-                      <h5 className="font-medium text-sm" style={{ color: themeColors.text }}>Postman Collection</h5>
+                      <h5 className="font-medium text-xs" style={{ color: themeColors.text }}>Postman Collection</h5>
                       <p className="text-xs" style={{ color: themeColors.textSecondary }}>API Testing</p>
                     </div>
                   </div>
@@ -316,11 +316,11 @@ function ApiPreviewModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4" style={{ 
+        <div className="px-6 py-4 border-t flex items-center justify-between" style={{ 
           borderColor: themeColors.border,
           backgroundColor: themeColors.card
         }}>
-          <div className="text-sm" style={{ color: themeColors.textSecondary }}>
+          <div className="text-xs" style={{ color: themeColors.textSecondary }}>
             Review all details carefully before generating the API
           </div>
           <div className="flex items-center gap-3">
@@ -370,7 +370,7 @@ function ApiLoadingModal({
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50" style={{ zIndex: 1003 }}>
       <div className="rounded-xl shadow-2xl w-full max-w-md p-6" style={{ 
-        backgroundColor: themeColors.modalBg,
+        backgroundColor: themeColors.bg,
         border: `1px solid ${themeColors.modalBorder}`
       }}>
         <div className="text-center space-y-4">
@@ -378,23 +378,23 @@ function ApiLoadingModal({
             <Loader className="h-12 w-12 animate-spin" style={{ color: themeColors.info }} />
           </div>
           <div>
-            <h3 className="text-xl font-bold mb-2" style={{ color: themeColors.text }}>
+            <h3 className="text-lg font-bold mb-2" style={{ color: themeColors.text }}>
               Generating Your API
             </h3>
-            <p className="text-sm" style={{ color: themeColors.textSecondary }}>
+            <p className="text-xs" style={{ color: themeColors.textSecondary }}>
               Creating PL/SQL package, OpenAPI specification, and Postman collection...
             </p>
           </div>
           <div className="pt-4 space-y-3">
-            <div className="flex items-center gap-3 text-sm" style={{ color: themeColors.textSecondary }}>
+            <div className="flex items-center gap-3 text-xs" style={{ color: themeColors.textSecondary }}>
               <Loader className="h-4 w-4 animate-spin" style={{ color: themeColors.info }} />
               <span>Creating PL/SQL package...</span>
             </div>
-            <div className="flex items-center gap-3 text-sm" style={{ color: themeColors.textSecondary }}>
+            <div className="flex items-center gap-3 text-xs" style={{ color: themeColors.textSecondary }}>
               <Loader className="h-4 w-4 animate-spin" style={{ color: themeColors.info }} />
               <span>Generating OpenAPI specification...</span>
             </div>
-            <div className="flex items-center gap-3 text-sm" style={{ color: themeColors.textSecondary }}>
+            <div className="flex items-center gap-3 text-xs" style={{ color: themeColors.textSecondary }}>
               <Loader className="h-4 w-4 animate-spin" style={{ color: themeColors.info }} />
               <span>Building Postman collection...</span>
             </div>
@@ -455,7 +455,7 @@ function ApiConfirmationModal({
     return (
       <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50" style={{ zIndex: 1001 }}>
         <div className="rounded-xl shadow-2xl w-full max-w-md p-6" style={{ 
-          backgroundColor: themeColors.modalBg,
+          backgroundColor: themeColors.bg,
           border: `1px solid ${themeColors.modalBorder}`
         }}>
           <div className="text-center space-y-4">
@@ -463,23 +463,23 @@ function ApiConfirmationModal({
               <Loader className="h-12 w-12 animate-spin" style={{ color: themeColors.success }} />
             </div>
             <div>
-              <h3 className="text-xl font-bold mb-2" style={{ color: themeColors.text }}>
+              <h3 className="text-lg font-bold mb-2" style={{ color: themeColors.text }}>
                 Finalizing API Generation
               </h3>
-              <p className="text-sm" style={{ color: themeColors.textSecondary }}>
+              <p className="text-xs" style={{ color: themeColors.textSecondary }}>
                 Completing the API setup and deploying to the registry...
               </p>
             </div>
             <div className="pt-4 space-y-3">
-              <div className="flex items-center gap-3 text-sm" style={{ color: themeColors.textSecondary }}>
+              <div className="flex items-center gap-3 text-xs" style={{ color: themeColors.textSecondary }}>
                 <Loader className="h-4 w-4 animate-spin" style={{ color: themeColors.success }} />
                 <span>Validating API configuration...</span>
               </div>
-              <div className="flex items-center gap-3 text-sm" style={{ color: themeColors.textSecondary }}>
+              <div className="flex items-center gap-3 text-xs" style={{ color: themeColors.textSecondary }}>
                 <Loader className="h-4 w-4 animate-spin" style={{ color: themeColors.success }} />
                 <span>Registering in API registry...</span>
               </div>
-              <div className="flex items-center gap-3 text-sm" style={{ color: themeColors.textSecondary }}>
+              <div className="flex items-center gap-3 text-xs" style={{ color: themeColors.textSecondary }}>
                 <Loader className="h-4 w-4 animate-spin" style={{ color: themeColors.success }} />
                 <span>Setting up monitoring...</span>
               </div>
@@ -516,7 +516,7 @@ function ApiConfirmationModal({
     return (
       <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4" style={{ zIndex: 1001 }}>
         <div className="rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" style={{ 
-          backgroundColor: themeColors.modalBg,
+          backgroundColor: themeColors.bg,
           border: `1px solid ${themeColors.modalBorder}`
         }}>
           {/* Header */}
@@ -529,10 +529,10 @@ function ApiConfirmationModal({
                 <CheckCircle className="h-6 w-6" style={{ color: themeColors.success }} />
               </div>
               <div>
-                <h2 className="text-xl font-bold" style={{ color: themeColors.text }}>
+                <h2 className="text-lg font-bold" style={{ color: themeColors.text }}>
                   API Generated Successfully!
                 </h2>
-                <p className="text-sm" style={{ color: themeColors.textSecondary }}>
+                <p className="text-xs" style={{ color: themeColors.textSecondary }}>
                   Your API has been created and is ready to use
                 </p>
               </div>
@@ -560,7 +560,7 @@ function ApiConfirmationModal({
                       <Sparkles className="h-5 w-5" />
                       {apiData.apiName}
                     </h3>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="grid grid-cols-2 gap-4 text-xs">
                       <div>
                         <span style={{ color: themeColors.textSecondary }}>API Code:</span>
                         <span className="ml-2 font-medium font-mono" style={{ color: themeColors.text }}>
@@ -595,14 +595,14 @@ function ApiConfirmationModal({
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium" style={{ 
+                    <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium" style={{ 
                       backgroundColor: themeColors.info + '20',
                       color: themeColors.info
                     }}>
                       <Globe className="h-4 w-4 mr-1" />
                       API Endpoint
                     </div>
-                    <div className="mt-2 font-mono text-sm" style={{ color: themeColors.text }}>
+                    <div className="mt-2 font-mono text-xs" style={{ color: themeColors.text }}>
                       {apiData.httpMethod} {apiData.basePath}{apiData.endpointPath}
                     </div>
                   </div>
@@ -706,7 +706,7 @@ function ApiConfirmationModal({
                       </div>
                       <div>
                         <h5 className="font-medium" style={{ color: themeColors.text }}>Execute PL/SQL Package</h5>
-                        <p className="text-sm" style={{ color: themeColors.textSecondary }}>
+                        <p className="text-xs" style={{ color: themeColors.textSecondary }}>
                           Run the generated SQL script in your Oracle Database
                         </p>
                       </div>
@@ -723,7 +723,7 @@ function ApiConfirmationModal({
                       </div>
                       <div>
                         <h5 className="font-medium" style={{ color: themeColors.text }}>Configure API Gateway</h5>
-                        <p className="text-sm" style={{ color: themeColors.textSecondary }}>
+                        <p className="text-xs" style={{ color: themeColors.textSecondary }}>
                           Deploy the OpenAPI spec to your API Gateway
                         </p>
                       </div>
@@ -740,7 +740,7 @@ function ApiConfirmationModal({
                       </div>
                       <div>
                         <h5 className="font-medium" style={{ color: themeColors.text }}>Test with Postman</h5>
-                        <p className="text-sm" style={{ color: themeColors.textSecondary }}>
+                        <p className="text-xs" style={{ color: themeColors.textSecondary }}>
                           Import and test the API using the generated Postman collection
                         </p>
                       </div>
@@ -752,7 +752,7 @@ function ApiConfirmationModal({
           </div>
 
           {/* Footer */}
-          <div className="px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4" style={{ 
+          <div className="px-6 py-4 border-t flex items-center justify-between" style={{ 
             borderColor: themeColors.border,
             backgroundColor: themeColors.card
           }}>
@@ -1627,12 +1627,12 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                selectedObject?.type === 'TRIGGER' ? <Zap className="h-6 w-6" style={{ color: themeColors.error }} /> :
                <Globe className="h-6 w-6" style={{ color: themeColors.info }} />}
               <div>
-                <h2 className="text-xl font-bold" style={{ color: themeColors.text }}>
+                <h2 className="text-lg font-bold" style={{ color: themeColors.text }}>
                   Generate API {selectedObject?.name ? ' from ' + selectedObject?.type || 'Object: ' + selectedObject?.name || '' : 'Form'}
                 </h2>
                 {selectedObject?.name && (
                   <>
-                  <p className="text-sm" style={{ color: themeColors.textSecondary }}>
+                  <p className="text-xs" style={{ color: themeColors.textSecondary }}>
                   {selectedObject?.owner}.{selectedObject?.name} • {selectedObject?.type} • 
                   {selectedObject?.columns ? ` ${selectedObject.columns.length} columns` : ''}
                   {selectedObject?.parameters ? ` ${selectedObject.parameters.length} parameters` : ''}
@@ -1659,14 +1659,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
           }}>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                   API Name *
                 </label>
                 <input
                   type="text"
                   value={apiDetails.apiName}
                   onChange={(e) => handleApiDetailChange('apiName', e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                   style={{ 
                     backgroundColor: themeColors.card,
                     borderColor: themeColors.border,
@@ -1677,14 +1677,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                   API Code *
                 </label>
                 <input
                   type="text"
                   value={apiDetails.apiCode}
                   onChange={(e) => handleApiDetailChange('apiCode', e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                   style={{ 
                     backgroundColor: themeColors.card,
                     borderColor: themeColors.border,
@@ -1695,13 +1695,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                   HTTP Method
                 </label>
                 <select
                   value={apiDetails.httpMethod}
                   onChange={(e) => handleApiDetailChange('httpMethod', e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                   style={{ 
                     backgroundColor: themeColors.card,
                     borderColor: themeColors.border,
@@ -1717,13 +1717,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                   Status
                 </label>
                 <select
                   value={apiDetails.status}
                   onChange={(e) => handleApiDetailChange('status', e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                   style={{ 
                     backgroundColor: themeColors.card,
                     borderColor: themeColors.border,
@@ -1738,14 +1738,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                   Base Path
                 </label>
                 <input
                   type="text"
                   value={apiDetails.basePath}
                   onChange={(e) => handleApiDetailChange('basePath', e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                   style={{ 
                     backgroundColor: themeColors.card,
                     borderColor: themeColors.border,
@@ -1756,14 +1756,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                   Endpoint Path *
                 </label>
                 <input
                   type="text"
                   value={apiDetails.endpointPath}
                   onChange={(e) => handleApiDetailChange('endpointPath', e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                   style={{ 
                     backgroundColor: themeColors.card,
                     borderColor: themeColors.border,
@@ -1774,14 +1774,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                   Version
                 </label>
                 <input
                   type="text"
                   value={apiDetails.version}
                   onChange={(e) => handleApiDetailChange('version', e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                   style={{ 
                     backgroundColor: themeColors.card,
                     borderColor: themeColors.border,
@@ -1792,14 +1792,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                   Owner
                 </label>
                 <input
                   type="text"
                   value={apiDetails.owner}
                   onChange={(e) => handleApiDetailChange('owner', e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                   style={{ 
                     backgroundColor: themeColors.card,
                     borderColor: themeColors.border,
@@ -1811,13 +1811,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
               </div>
 
               <div className="space-y-2 md:col-span-2 lg:col-span-4">
-                <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                   Description
                 </label>
                 <textarea
                   value={apiDetails.description}
                   onChange={(e) => handleApiDetailChange('description', e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                   style={{ 
                     backgroundColor: themeColors.card,
                     borderColor: themeColors.border,
@@ -1840,7 +1840,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`px-3 py-2 flex items-center gap-2 border-b-2 text-sm font-medium transition-colors whitespace-nowrap hover-lift ${
+                  className={`px-3 py-2 flex items-center gap-2 border-b-2 text-xs font-medium transition-colors whitespace-nowrap hover-lift ${
                     activeTab === tab.id
                       ? '' : 'hover:bg-opacity-50'
                   }`}
@@ -1869,13 +1869,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Category
                         </label>
                         <select
                           value={apiDetails.category}
                           onChange={(e) => handleApiDetailChange('category', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -1891,14 +1891,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Tags
                         </label>
                         <input
                           type="text"
                           value={apiDetails.tags.join(', ')}
                           onChange={(e) => handleApiDetailChange('tags', e.target.value.split(',').map(tag => tag.trim()))}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -1917,7 +1917,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                         <Globe className="h-4 w-4" />
                         API Endpoint Preview
                       </h4>
-                      <div className="font-mono text-sm p-3 rounded border" style={{ 
+                      <div className="font-mono text-xs p-3 rounded border" style={{ 
                         backgroundColor: themeColors.card,
                         borderColor: themeColors.border
                       }}>
@@ -1925,11 +1925,11 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                           {apiDetails.httpMethod} {apiDetails.basePath}{apiDetails.endpointPath}
                         </div>
                         {parameters.filter(p => p.parameterType === 'path').length > 0 && (
-                          <div className="mt-2 text-sm" style={{ color: themeColors.textSecondary }}>
+                          <div className="mt-2 text-xs" style={{ color: themeColors.textSecondary }}>
                             Path Parameters: {parameters.filter(p => p.parameterType === 'path').map(p => `{${p.key}}`).join('/')}
                           </div>
                         )}
-                        <div className="mt-2 text-sm" style={{ color: themeColors.textSecondary }}>
+                        <div className="mt-2 text-xs" style={{ color: themeColors.textSecondary }}>
                           Source: {schemaConfig.schemaName}.{schemaConfig.objectName} ({schemaConfig.objectType})
                         </div>
                       </div>
@@ -1953,7 +1953,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       <Database className="h-4 w-4" />
                       Selected Object Information
                     </h4>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="grid grid-cols-2 gap-4 text-xs">
                       <div>
                         <span style={{ color: themeColors.textSecondary }}>Object:</span>
                         <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
@@ -1987,12 +1987,12 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                     {/* ADDED BACK: Show parameters from selected object */}
                     {selectedObject?.parameters && selectedObject.parameters.length > 0 && (
                       <div className="mt-4">
-                        <h5 className="text-sm font-medium mb-2" style={{ color: themeColors.text }}>
+                        <h5 className="text-xs font-medium mb-2" style={{ color: themeColors.text }}>
                           Object Parameters:
                         </h5>
                         <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
                           {selectedObject.parameters.map((param, index) => (
-                            <div key={index} className="flex items-center justify-between text-sm p-2 rounded" 
+                            <div key={index} className="flex items-center justify-between text-xs p-2 rounded" 
                               style={{ backgroundColor: themeColors.hover }}>
                               <div>
                                 <span className="font-medium" style={{ color: themeColors.text }}>
@@ -2026,12 +2026,12 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                     {/* ADDED BACK: Show columns from selected object */}
                     {selectedObject?.columns && selectedObject.columns.length > 0 && (
                       <div className="mt-4">
-                        <h5 className="text-sm font-medium mb-2" style={{ color: themeColors.text }}>
+                        <h5 className="text-xs font-medium mb-2" style={{ color: themeColors.text }}>
                           Object Columns (Auto-generated as parameters):
                         </h5>
                         <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
                           {selectedObject.columns.slice(0, 8).map((col, index) => (
-                            <div key={index} className="flex items-center justify-between text-sm p-2 rounded" 
+                            <div key={index} className="flex items-center justify-between text-xs p-2 rounded" 
                               style={{ backgroundColor: themeColors.hover }}>
                               <div>
                                 <span className="font-medium" style={{ color: themeColors.text }}>
@@ -2061,7 +2061,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                           ))}
                           {selectedObject.columns.length > 8 && (
                             <div className="text-center pt-2">
-                              <span className="text-sm" style={{ color: themeColors.textSecondary }}>
+                              <span className="text-xs" style={{ color: themeColors.textSecondary }}>
                                 + {selectedObject.columns.length - 8} more columns
                               </span>
                             </div>
@@ -2077,14 +2077,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Schema Name *
                         </label>
                         <input
                           type="text"
                           value={schemaConfig.schemaName}
                           onChange={(e) => handleSchemaConfigChange('schemaName', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -2095,13 +2095,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Object Type
                         </label>
                         <select
                           value={schemaConfig.objectType}
                           onChange={(e) => handleSchemaConfigChange('objectType', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -2118,14 +2118,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Object Name *
                         </label>
                         <input
                           type="text"
                           value={schemaConfig.objectName}
                           onChange={(e) => handleSchemaConfigChange('objectName', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -2136,13 +2136,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Operation
                         </label>
                         <select
                           value={schemaConfig.operation}
                           onChange={(e) => handleSchemaConfigChange('operation', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -2160,14 +2160,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Primary Key Column
                         </label>
                         <input
                           type="text"
                           value={schemaConfig.primaryKeyColumn}
                           onChange={(e) => handleSchemaConfigChange('primaryKeyColumn', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -2178,14 +2178,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Sequence Name (for INSERT)
                         </label>
                         <input
                           type="text"
                           value={schemaConfig.sequenceName}
                           onChange={(e) => handleSchemaConfigChange('sequenceName', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -2197,7 +2197,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                             Enable Pagination
                           </label>
                           <div className="flex items-center">
@@ -2211,19 +2211,19 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                                 backgroundColor: themeColors.card
                               }}
                             />
-                            <span className="ml-2 text-sm" style={{ color: themeColors.textSecondary }}>Yes</span>
+                            <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>Yes</span>
                           </div>
                         </div>
 
                         <div className="space-y-2">
-                          <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                             Page Size
                           </label>
                           <input
                             type="number"
                             value={schemaConfig.pageSize}
                             onChange={(e) => handleSchemaConfigChange('pageSize', parseInt(e.target.value))}
-                            className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
@@ -2235,7 +2235,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                         </div>
 
                         <div className="space-y-2">
-                          <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                             Enable Sorting
                           </label>
                           <div className="flex items-center">
@@ -2249,19 +2249,19 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                                 backgroundColor: themeColors.card
                               }}
                             />
-                            <span className="ml-2 text-sm" style={{ color: themeColors.textSecondary }}>Yes</span>
+                            <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>Yes</span>
                           </div>
                         </div>
 
                         <div className="space-y-2">
-                          <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                             Default Sort Column
                           </label>
                           <input
                             type="text"
                             value={schemaConfig.defaultSortColumn}
                             onChange={(e) => handleSchemaConfigChange('defaultSortColumn', e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
@@ -2273,13 +2273,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Default Sort Direction
                         </label>
                         <select
                           value={schemaConfig.defaultSortDirection}
                           onChange={(e) => handleSchemaConfigChange('defaultSortDirection', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -2302,19 +2302,19 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                     <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
                       API Parameters ({parameters.length})
                       {selectedObject?.columns && (
-                        <span className="text-sm font-normal ml-2" style={{ color: themeColors.textSecondary }}>
+                        <span className="text-xs font-normal ml-2" style={{ color: themeColors.textSecondary }}>
                           (Auto-generated from {selectedObject.columns.length} columns)
                         </span>
                       )}
                       {selectedObject?.parameters && (
-                        <span className="text-sm font-normal ml-2" style={{ color: themeColors.textSecondary }}>
+                        <span className="text-xs font-normal ml-2" style={{ color: themeColors.textSecondary }}>
                           (Auto-generated from {selectedObject.parameters.length} parameters)
                         </span>
                       )}
                     </h3>
                     <button
                       onClick={handleAddParameter}
-                      className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-sm transition-colors hover-lift"
+                      className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs transition-colors hover-lift"
                       style={{ backgroundColor: themeColors.info, color: themeColors.white }}
                     >
                       <Plus className="h-4 w-4" />
@@ -2381,7 +2381,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                                   type="text"
                                   value={param.key}
                                   onChange={(e) => handleParameterChange(param.id, 'key', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
                                   style={{ 
                                     backgroundColor: themeColors.modalBg,
                                     borderColor: themeColors.border,
@@ -2395,7 +2395,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                                   type="text"
                                   value={param.dbColumn}
                                   onChange={(e) => handleParameterChange(param.id, 'dbColumn', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
                                   style={{ 
                                     backgroundColor: themeColors.modalBg,
                                     borderColor: themeColors.border,
@@ -2408,7 +2408,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                                 <select
                                   value={param.oracleType}
                                   onChange={(e) => handleParameterChange(param.id, 'oracleType', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
                                   style={{ 
                                     backgroundColor: themeColors.modalBg,
                                     borderColor: themeColors.border,
@@ -2424,7 +2424,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                                 <select
                                   value={param.apiType}
                                   onChange={(e) => handleParameterChange(param.id, 'apiType', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
                                   style={{ 
                                     backgroundColor: themeColors.modalBg,
                                     borderColor: themeColors.border,
@@ -2440,7 +2440,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                                 <select
                                   value={param.parameterType}
                                   onChange={(e) => handleParameterChange(param.id, 'parameterType', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
                                   style={{ 
                                     backgroundColor: themeColors.modalBg,
                                     borderColor: themeColors.border,
@@ -2486,13 +2486,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </h4>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="space-y-2">
-                          <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                             Default Value Pattern
                           </label>
                           <input
                             type="text"
                             placeholder="SYSDATE, USER, etc."
-                            className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
@@ -2501,13 +2501,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                           />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                             Validation Regex
                           </label>
                           <input
                             type="text"
                             placeholder="^[A-Za-z0-9_]+$"
-                            className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
@@ -2516,14 +2516,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                           />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                             Min/Max Values
                           </label>
                           <div className="flex gap-2">
                             <input
                               type="number"
                               placeholder="Min"
-                              className="flex-1 px-3 py-2 border rounded-lg text-sm hover-lift"
+                              className="flex-1 px-3 py-2 border rounded-lg text-xs hover-lift"
                               style={{ 
                                 backgroundColor: themeColors.card,
                                 borderColor: themeColors.border,
@@ -2533,7 +2533,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             <input
                               type="number"
                               placeholder="Max"
-                              className="flex-1 px-3 py-2 border rounded-lg text-sm hover-lift"
+                              className="flex-1 px-3 py-2 border rounded-lg text-xs hover-lift"
                               style={{ 
                                 backgroundColor: themeColors.card,
                                 borderColor: themeColors.border,
@@ -2555,14 +2555,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                     <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
                       Response Field Mapping ({responseMappings.length})
                       {selectedObject?.columns && (
-                        <span className="text-sm font-normal ml-2" style={{ color: themeColors.textSecondary }}>
+                        <span className="text-xs font-normal ml-2" style={{ color: themeColors.textSecondary }}>
                           (Auto-generated from {selectedObject.columns.length} columns)
                         </span>
                       )}
                     </h3>
                     <button
                       onClick={handleAddResponseMapping}
-                      className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-sm transition-colors hover-lift"
+                      className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs transition-colors hover-lift"
                       style={{ backgroundColor: themeColors.info, color: themeColors.white }}
                     >
                       <Plus className="h-4 w-4" />
@@ -2607,7 +2607,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                                   type="text"
                                   value={mapping.apiField}
                                   onChange={(e) => handleResponseMappingChange(mapping.id, 'apiField', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
                                   style={{ 
                                     backgroundColor: themeColors.modalBg,
                                     borderColor: themeColors.border,
@@ -2621,7 +2621,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                                   type="text"
                                   value={mapping.dbColumn}
                                   onChange={(e) => handleResponseMappingChange(mapping.id, 'dbColumn', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
                                   style={{ 
                                     backgroundColor: themeColors.modalBg,
                                     borderColor: themeColors.border,
@@ -2634,7 +2634,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                                 <select
                                   value={mapping.oracleType}
                                   onChange={(e) => handleResponseMappingChange(mapping.id, 'oracleType', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
                                   style={{ 
                                     backgroundColor: themeColors.modalBg,
                                     borderColor: themeColors.border,
@@ -2650,7 +2650,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                                 <select
                                   value={mapping.apiType}
                                   onChange={(e) => handleResponseMappingChange(mapping.id, 'apiType', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
                                   style={{ 
                                     backgroundColor: themeColors.modalBg,
                                     borderColor: themeColors.border,
@@ -2697,13 +2697,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-4">
                           <div className="space-y-2">
-                            <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                               Response Format
                             </label>
                             <select
                               value={responseBody.contentType}
                               onChange={(e) => handleResponseBodyChange('contentType', e.target.value)}
-                              className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                               style={{ 
                                 backgroundColor: themeColors.card,
                                 borderColor: themeColors.border,
@@ -2716,7 +2716,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             </select>
                           </div>
                           <div className="space-y-2">
-                            <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                               Include Metadata
                             </label>
                             <div className="flex items-center">
@@ -2727,7 +2727,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                                 className="h-4 w-4 rounded"
                                 style={{ accentColor: themeColors.info }}
                               />
-                              <span className="ml-2 text-sm" style={{ color: themeColors.textSecondary }}>
+                              <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
                                 Include timestamp, version, request ID
                               </span>
                             </div>
@@ -2735,13 +2735,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                         </div>
                         <div className="space-y-4">
                           <div className="space-y-2">
-                            <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                               Compression
                             </label>
                             <select
                               value={responseBody.compression}
                               onChange={(e) => handleResponseBodyChange('compression', e.target.value)}
-                              className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                               style={{ 
                                 backgroundColor: themeColors.card,
                                 borderColor: themeColors.border,
@@ -2754,7 +2754,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             </select>
                           </div>
                           <div className="space-y-2">
-                            <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                               Pretty Print
                             </label>
                             <div className="flex items-center">
@@ -2764,7 +2764,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                                 className="h-4 w-4 rounded"
                                 style={{ accentColor: themeColors.info }}
                               />
-                              <span className="ml-2 text-sm" style={{ color: themeColors.textSecondary }}>
+                              <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
                                 Format JSON for readability
                               </span>
                             </div>
@@ -2786,13 +2786,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Authentication Type
                         </label>
                         <select
                           value={authConfig.authType}
                           onChange={(e) => handleAuthConfigChange('authType', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -2810,14 +2810,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
                       {authConfig.authType === 'API_KEY' && (
                         <div className="space-y-2">
-                          <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                             API Key Header
                           </label>
                           <input
                             type="text"
                             value={authConfig.apiKeyHeader}
                             onChange={(e) => handleAuthConfigChange('apiKeyHeader', e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
@@ -2830,14 +2830,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
                       {authConfig.authType === 'JWT' && (
                         <div className="space-y-2">
-                          <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                             JWT Issuer
                           </label>
                           <input
                             type="text"
                             value={authConfig.jwtIssuer}
                             onChange={(e) => handleAuthConfigChange('jwtIssuer', e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
@@ -2850,14 +2850,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
                       {authConfig.authType === 'ORACLE_ROLES' && (
                         <div className="space-y-2">
-                          <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                             Required Roles
                           </label>
                           <input
                             type="text"
                             value={authConfig.requiredRoles.join(', ')}
                             onChange={(e) => handleAuthConfigChange('requiredRoles', e.target.value.split(',').map(role => role.trim()))}
-                            className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
@@ -2871,14 +2871,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Custom Auth Function
                         </label>
                         <input
                           type="text"
                           value={authConfig.customAuthFunction}
                           onChange={(e) => handleAuthConfigChange('customAuthFunction', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -2897,7 +2897,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             className="h-4 w-4 rounded"
                             style={{ accentColor: themeColors.info }}
                           />
-                          <span className="ml-2 text-sm" style={{ color: themeColors.text }}>
+                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
                             Validate Session
                           </span>
                         </div>
@@ -2909,7 +2909,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             className="h-4 w-4 rounded"
                             style={{ accentColor: themeColors.info }}
                           />
-                          <span className="ml-2 text-sm" style={{ color: themeColors.text }}>
+                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
                             Check Object Privileges
                           </span>
                         </div>
@@ -2917,14 +2917,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
                       {authConfig.authType === 'OAUTH2' && (
                         <div className="space-y-2">
-                          <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                             OAuth Scopes
                           </label>
                           <input
                             type="text"
                             value={authConfig.oauthScopes.join(', ')}
                             onChange={(e) => handleAuthConfigChange('oauthScopes', e.target.value.split(',').map(scope => scope.trim()))}
-                            className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
@@ -2945,7 +2945,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </h4>
                       <button
                         onClick={handleAddHeader}
-                        className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-sm transition-colors hover-lift"
+                        className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs transition-colors hover-lift"
                         style={{ backgroundColor: themeColors.info, color: themeColors.white }}
                       >
                         <Plus className="h-4 w-4" />
@@ -2978,7 +2978,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                                   type="text"
                                   value={header.key}
                                   onChange={(e) => handleHeaderChange(header.id, 'key', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
                                   style={{ 
                                     backgroundColor: themeColors.modalBg,
                                     borderColor: themeColors.border,
@@ -2992,7 +2992,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                                   type="text"
                                   value={header.value}
                                   onChange={(e) => handleHeaderChange(header.id, 'value', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
                                   style={{ 
                                     backgroundColor: themeColors.modalBg,
                                     borderColor: themeColors.border,
@@ -3015,7 +3015,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                                   type="text"
                                   value={header.description}
                                   onChange={(e) => handleHeaderChange(header.id, 'description', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-sm hover-lift"
+                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
                                   style={{ 
                                     backgroundColor: themeColors.modalBg,
                                     borderColor: themeColors.border,
@@ -3053,13 +3053,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Request Schema Type
                         </label>
                         <select
                           value={requestBody.schemaType}
                           onChange={(e) => handleRequestBodyChange('schemaType', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -3074,14 +3074,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Max Request Size (bytes)
                         </label>
                         <input
                           type="number"
                           value={requestBody.maxSize}
                           onChange={(e) => handleRequestBodyChange('maxSize', parseInt(e.target.value))}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -3093,7 +3093,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Validate Schema
                         </label>
                         <div className="flex items-center">
@@ -3104,7 +3104,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             className="h-4 w-4 rounded"
                             style={{ accentColor: themeColors.info }}
                           />
-                          <span className="ml-2 text-sm" style={{ color: themeColors.textSecondary }}>
+                          <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
                             Validate request body against schema
                           </span>
                         </div>
@@ -3113,14 +3113,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Allowed Media Types
                         </label>
                         <input
                           type="text"
                           value={requestBody.allowedMediaTypes.join(', ')}
                           onChange={(e) => handleRequestBodyChange('allowedMediaTypes', e.target.value.split(',').map(type => type.trim()))}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -3131,14 +3131,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Required Fields
                         </label>
                         <input
                           type="text"
                           value={requestBody.requiredFields.join(', ')}
                           onChange={(e) => handleRequestBodyChange('requiredFields', e.target.value.split(',').map(field => field.trim()))}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -3160,7 +3160,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       backgroundColor: themeColors.card
                     }}>
                       <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: themeColors.border }}>
-                        <span className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <span className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Sample JSON
                         </span>
                         <button
@@ -3193,7 +3193,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       <textarea
                         value={requestBody.sample}
                         onChange={(e) => handleRequestBodyChange('sample', e.target.value)}
-                        className="w-full h-48 px-4 py-3 text-sm font-mono resize-none focus:outline-none"
+                        className="w-full h-48 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
                         style={{ 
                           backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
                           color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
@@ -3214,7 +3214,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Success Schema
                         </label>
                         <div className="border rounded-lg" style={{ 
@@ -3224,7 +3224,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                           <textarea
                             value={responseBody.successSchema}
                             onChange={(e) => handleResponseBodyChange('successSchema', e.target.value)}
-                            className="w-full h-40 px-4 py-3 text-sm font-mono resize-none focus:outline-none"
+                            className="w-full h-40 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
                             style={{ 
                               backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
                               color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
@@ -3234,14 +3234,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Include Metadata Fields
                         </label>
                         <input
                           type="text"
                           value={responseBody.metadataFields.join(', ')}
                           onChange={(e) => handleResponseBodyChange('metadataFields', e.target.value.split(',').map(field => field.trim()))}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -3254,7 +3254,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Error Schema
                         </label>
                         <div className="border rounded-lg" style={{ 
@@ -3264,7 +3264,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                           <textarea
                             value={responseBody.errorSchema}
                             onChange={(e) => handleResponseBodyChange('errorSchema', e.target.value)}
-                            className="w-full h-40 px-4 py-3 text-sm font-mono resize-none focus:outline-none"
+                            className="w-full h-40 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
                             style={{ 
                               backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
                               color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
@@ -3274,13 +3274,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Compression
                         </label>
                         <select
                           value={responseBody.compression}
                           onChange={(e) => handleResponseBodyChange('compression', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -3344,13 +3344,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Test Environment
                         </label>
                         <select
                           value={tests.testEnvironment}
                           onChange={(e) => handleTestsChange('testEnvironment', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -3365,14 +3365,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Performance Threshold (ms)
                         </label>
                         <input
                           type="number"
                           value={tests.performanceThreshold}
                           onChange={(e) => handleTestsChange('performanceThreshold', parseInt(e.target.value))}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -3385,14 +3385,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                             Test Users
                           </label>
                           <input
                             type="number"
                             value={tests.testUsers}
                             onChange={(e) => handleTestsChange('testUsers', parseInt(e.target.value))}
-                            className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
@@ -3403,14 +3403,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                           />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                             Test Iterations
                           </label>
                           <input
                             type="number"
                             value={tests.testIterations}
                             onChange={(e) => handleTestsChange('testIterations', parseInt(e.target.value))}
-                            className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
@@ -3425,7 +3425,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Unit Tests
                         </label>
                         <div className="border rounded-lg" style={{ 
@@ -3435,7 +3435,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                           <textarea
                             value={tests.unitTests}
                             onChange={(e) => handleTestsChange('unitTests', e.target.value)}
-                            className="w-full h-40 px-4 py-3 text-sm font-mono resize-none focus:outline-none"
+                            className="w-full h-40 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
                             style={{ 
                               backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
                               color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
@@ -3459,7 +3459,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       <textarea
                         value={tests.testData}
                         onChange={(e) => handleTestsChange('testData', e.target.value)}
-                        className="w-full h-48 px-4 py-3 text-sm font-mono resize-none focus:outline-none"
+                        className="w-full h-48 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
                         style={{ 
                           backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
                           color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
@@ -3490,14 +3490,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Timeout (ms)
                         </label>
                         <input
                           type="number"
                           value={settings.timeout}
                           onChange={(e) => handleSettingsChange('timeout', parseInt(e.target.value))}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -3509,14 +3509,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Max Records
                         </label>
                         <input
                           type="number"
                           value={settings.maxRecords}
                           onChange={(e) => handleSettingsChange('maxRecords', parseInt(e.target.value))}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -3528,13 +3528,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Log Level
                         </label>
                         <select
                           value={settings.logLevel}
                           onChange={(e) => handleSettingsChange('logLevel', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -3557,7 +3557,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             className="h-4 w-4 rounded"
                             style={{ accentColor: themeColors.info }}
                           />
-                          <span className="ml-2 text-sm" style={{ color: themeColors.text }}>
+                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
                             Enable Logging
                           </span>
                         </div>
@@ -3569,7 +3569,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             className="h-4 w-4 rounded"
                             style={{ accentColor: themeColors.info }}
                           />
-                          <span className="ml-2 text-sm" style={{ color: themeColors.text }}>
+                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
                             Enable Audit Trail
                           </span>
                         </div>
@@ -3581,7 +3581,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             className="h-4 w-4 rounded"
                             style={{ accentColor: themeColors.info }}
                           />
-                          <span className="ml-2 text-sm" style={{ color: themeColors.text }}>
+                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
                             Enable Monitoring
                           </span>
                         </div>
@@ -3590,7 +3590,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Rate Limit (requests)
                         </label>
                         <div className="flex items-center gap-4">
@@ -3598,7 +3598,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             type="number"
                             value={settings.rateLimit}
                             onChange={(e) => handleSettingsChange('rateLimit', parseInt(e.target.value))}
-                            className="flex-1 px-3 py-2 border rounded-lg text-sm hover-lift"
+                            className="flex-1 px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
@@ -3610,7 +3610,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                           <select
                             value={settings.rateLimitPeriod}
                             onChange={(e) => handleSettingsChange('rateLimitPeriod', e.target.value)}
-                            className="flex-1 px-3 py-2 border rounded-lg text-sm hover-lift"
+                            className="flex-1 px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
@@ -3626,14 +3626,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Cache TTL (seconds)
                         </label>
                         <input
                           type="number"
                           value={settings.cacheTtl}
                           onChange={(e) => handleSettingsChange('cacheTtl', parseInt(e.target.value))}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -3645,14 +3645,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           CORS Origins
                         </label>
                         <input
                           type="text"
                           value={settings.corsOrigins.join(', ')}
                           onChange={(e) => handleSettingsChange('corsOrigins', e.target.value.split(',').map(origin => origin.trim()))}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -3671,7 +3671,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             className="h-4 w-4 rounded"
                             style={{ accentColor: themeColors.info }}
                           />
-                          <span className="ml-2 text-sm" style={{ color: themeColors.text }}>
+                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
                             Enable Rate Limiting
                           </span>
                         </div>
@@ -3683,7 +3683,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             className="h-4 w-4 rounded"
                             style={{ accentColor: themeColors.info }}
                           />
-                          <span className="ml-2 text-sm" style={{ color: themeColors.text }}>
+                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
                             Enable Caching
                           </span>
                         </div>
@@ -3695,7 +3695,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             className="h-4 w-4 rounded"
                             style={{ accentColor: themeColors.info }}
                           />
-                          <span className="ml-2 text-sm" style={{ color: themeColors.text }}>
+                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
                             Enable CORS
                           </span>
                         </div>
@@ -3721,7 +3721,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                           style={{ accentColor: themeColors.info }}
                         />
                         <div>
-                          <div className="font-medium text-sm" style={{ color: themeColors.text }}>OpenAPI Spec</div>
+                          <div className="font-medium text-xs" style={{ color: themeColors.text }}>OpenAPI Spec</div>
                           <div className="text-xs" style={{ color: themeColors.textSecondary }}>Generate Swagger documentation</div>
                         </div>
                       </div>
@@ -3737,7 +3737,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                           style={{ accentColor: themeColors.info }}
                         />
                         <div>
-                          <div className="font-medium text-sm" style={{ color: themeColors.text }}>Postman Collection</div>
+                          <div className="font-medium text-xs" style={{ color: themeColors.text }}>Postman Collection</div>
                           <div className="text-xs" style={{ color: themeColors.textSecondary }}>Generate Postman tests</div>
                         </div>
                       </div>
@@ -3753,7 +3753,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                           style={{ accentColor: themeColors.info }}
                         />
                         <div>
-                          <div className="font-medium text-sm" style={{ color: themeColors.text }}>Client SDK</div>
+                          <div className="font-medium text-xs" style={{ color: themeColors.text }}>Client SDK</div>
                           <div className="text-xs" style={{ color: themeColors.textSecondary }}>Generate client libraries</div>
                         </div>
                       </div>
@@ -3767,14 +3767,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium" style={{ color: themeColors.text }}>
+                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                           Alert Email
                         </label>
                         <input
                           type="email"
                           value={settings.alertEmail}
                           onChange={(e) => handleSettingsChange('alertEmail', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                           style={{ 
                             backgroundColor: themeColors.card,
                             borderColor: themeColors.border,
@@ -3792,7 +3792,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             className="h-4 w-4 rounded"
                             style={{ accentColor: themeColors.info }}
                           />
-                          <span className="ml-2 text-sm" style={{ color: themeColors.text }}>
+                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
                             Enable Email Alerts
                           </span>
                         </div>
@@ -3804,7 +3804,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             className="h-4 w-4 rounded"
                             style={{ accentColor: themeColors.info }}
                           />
-                          <span className="ml-2 text-sm" style={{ color: themeColors.text }}>
+                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
                             Enable Distributed Tracing
                           </span>
                         </div>
@@ -3820,7 +3820,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
                       Generated Code Preview
-                      <span className="text-sm font-normal ml-2" style={{ color: themeColors.textSecondary }}>
+                      <span className="text-xs font-normal ml-2" style={{ color: themeColors.textSecondary }}>
                         (Based on {selectedObject?.name || 'selected object'})
                       </span>
                     </h3>
@@ -3828,7 +3828,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       <select
                         value={previewMode}
                         onChange={(e) => setPreviewMode(e.target.value)}
-                        className="px-3 py-1.5 border rounded-lg text-sm hover-lift"
+                        className="px-3 py-1.5 border rounded-lg text-xs hover-lift"
                         style={{ 
                           backgroundColor: themeColors.card,
                           borderColor: themeColors.border,
@@ -3864,7 +3864,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                     backgroundColor: themeColors.card
                   }}>
                     <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: themeColors.border }}>
-                      <span className="text-sm font-medium" style={{ color: themeColors.text }}>
+                      <span className="text-xs font-medium" style={{ color: themeColors.text }}>
                         {previewMode === 'plsql' ? 'PL/SQL Package' : 
                          previewMode === 'openapi' ? 'OpenAPI Specification' :
                          previewMode === 'postman' ? 'Postman Collection' : 'Configuration'}
@@ -3876,7 +3876,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                         {previewMode === 'plsql' ? '.sql' : '.json'}
                       </span>
                     </div>
-                    <pre className="w-full h-[400px] px-4 py-3 overflow-auto text-sm" style={{ 
+                    <pre className="w-full h-[400px] px-4 py-3 overflow-auto text-xs" style={{ 
                       backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
                       color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
                     }}>
@@ -3889,11 +3889,11 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
           </div>
 
           {/* Footer */}
-          <div className="px-6 py-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4" style={{ 
+          <div className="px-6 py-4 border-t flex items-center justify-between" style={{ 
             borderColor: themeColors.border,
             backgroundColor: themeColors.card
           }}>
-            <div className="text-sm" style={{ color: themeColors.textSecondary }}>
+            <div className="text-xs" style={{ color: themeColors.textSecondary }}>
               Endpoint: <span className="font-mono font-medium" style={{ color: themeColors.text }}>
                 {apiDetails.httpMethod} {apiDetails.basePath}{apiDetails.endpointPath}
               </span>
