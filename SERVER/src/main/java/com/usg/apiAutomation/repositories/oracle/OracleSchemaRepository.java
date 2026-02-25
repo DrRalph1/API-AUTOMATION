@@ -340,9 +340,6 @@ public class OracleSchemaRepository {
     /**
      * Get table details with owner
      */
-    /**
-     * Get table details with owner
-     */
     private Map<String, Object> getTableDetails(String owner, String tableName) {
         Map<String, Object> details = new HashMap<>();
         try {
@@ -418,11 +415,11 @@ public class OracleSchemaRepository {
                     log.debug("Could not get column count for {}.{}: {}", owner, tableName, e.getMessage());
                 }
 
-                // FIX: Add column details to the result
+                // Add column details to the result
                 try {
                     List<Map<String, Object>> columns = getTableColumns(owner, tableName);
                     details.put("columns", columns);
-                    details.put("column_count", columns.size()); // Update count with actual columns
+                    details.put("column_count", columns.size());
                 } catch (Exception e) {
                     log.debug("Could not get columns for {}.{}: {}", owner, tableName, e.getMessage());
                 }
@@ -461,7 +458,7 @@ public class OracleSchemaRepository {
                     details.put("comments", "");
                 }
 
-                // Get constraints and indexes as well for completeness
+                // Get constraints and indexes
                 try {
                     List<Map<String, Object>> constraints = getTableConstraints(owner, tableName);
                     details.put("constraints", constraints);
@@ -1918,6 +1915,988 @@ public class OracleSchemaRepository {
         } catch (Exception e) {
             log.debug("No partitions found for {}.{}", owner, tableName);
             return new ArrayList<>();
+        }
+    }
+
+    // ==================== ENHANCED DDL METHODS ====================
+
+    /**
+     * Get object DDL for frontend with enhanced multiple fallback methods
+     */
+    public Map<String, Object> getObjectDDLForFrontend(String objectName, String objectType) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("objectName", objectName);
+        result.put("objectType", objectType);
+
+        long startTime = System.currentTimeMillis();
+
+        try {
+            // Try multiple methods in sequence until we get DDL
+            String ddl = null;
+            String methodUsed = null;
+
+            // Method 1: Try with DBMS_METADATA (standard)
+            ddl = getObjectDDLWithMetadata(objectName, objectType);
+            if (ddl != null && !ddl.isEmpty()) {
+                methodUsed = "DBMS_METADATA";
+            }
+
+            // Method 2: Try with DBMS_METADATA and explicit transform
+            if (ddl == null) {
+                ddl = getObjectDDLWithTransform(objectName, objectType);
+                if (ddl != null && !ddl.isEmpty()) {
+                    methodUsed = "DBMS_METADATA with TRANSFORM";
+                }
+            }
+
+            // Method 3: Try to get from USER_SOURCE for procedures/functions/packages
+            if (ddl == null && isSourceBasedObject(objectType)) {
+                ddl = getDDLFromSource(objectName, objectType);
+                if (ddl != null && !ddl.isEmpty()) {
+                    methodUsed = "USER_SOURCE";
+                }
+            }
+
+            // Method 4: Try with ALL_SOURCE if not in current schema
+            if (ddl == null) {
+                ddl = getDDLFromAllSource(objectName, objectType);
+                if (ddl != null && !ddl.isEmpty()) {
+                    methodUsed = "ALL_SOURCE";
+                }
+            }
+
+            // Method 5: Try with DBMS_METADATA using different owner resolution
+            if (ddl == null) {
+                ddl = getObjectDDLWithOwnerResolution(objectName, objectType);
+                if (ddl != null && !ddl.isEmpty()) {
+                    methodUsed = "DBMS_METADATA with owner resolution";
+                }
+            }
+
+            // Method 6: For procedures, try to get from DBA_SOURCE if available
+            if (ddl == null) {
+                ddl = getDDLFromDBASource(objectName, objectType);
+                if (ddl != null && !ddl.isEmpty()) {
+                    methodUsed = "DBA_SOURCE";
+                }
+            }
+
+            // Method 7: Last resort - try to generate from data dictionary
+            if (ddl == null) {
+                if (objectType.equalsIgnoreCase("PROCEDURE")) {
+                    ddl = generateProcedureDDL(objectName);
+                } else if (objectType.equalsIgnoreCase("FUNCTION")) {
+                    ddl = generateFunctionDDL(objectName);
+                } else if (objectType.equalsIgnoreCase("TABLE")) {
+                    ddl = generateTableDDL(objectName);
+                } else if (objectType.equalsIgnoreCase("VIEW")) {
+                    ddl = generateViewDDL(objectName);
+                }
+
+                if (ddl != null && !ddl.isEmpty()) {
+                    methodUsed = "GENERATED";
+                }
+            }
+
+            long executionTime = System.currentTimeMillis() - startTime;
+            result.put("executionTimeMs", executionTime);
+
+            if (ddl != null && !ddl.isEmpty()) {
+                result.put("ddl", ddl);
+                result.put("status", "SUCCESS");
+                result.put("method", methodUsed);
+                result.put("message", "DDL retrieved successfully using " + methodUsed);
+            } else {
+                // Provide detailed diagnostic information
+                result.put("ddl", generateDetailedErrorMessage(objectName, objectType));
+                result.put("status", "NOT_AVAILABLE");
+                result.put("message", "Could not retrieve DDL after trying multiple methods");
+
+                // Add diagnostic info
+                result.put("diagnostics", getObjectDiagnostics(objectName, objectType));
+            }
+
+        } catch (Exception e) {
+            log.error("Error in getObjectDDLForFrontend for {} {}: {}",
+                    objectType, objectName, e.getMessage(), e);
+
+            result.put("ddl", "-- Error retrieving DDL: " + e.getMessage() + "\n" +
+                    "-- Please check logs for more details");
+            result.put("status", "ERROR");
+            result.put("error", e.getMessage());
+            result.put("stacktrace", e.toString());
+        }
+
+        return result;
+    }
+
+    /**
+     * Check if object type can be retrieved from source views
+     */
+    private boolean isSourceBasedObject(String objectType) {
+        if (objectType == null) return false;
+        String upperType = objectType.toUpperCase();
+        return upperType.equals("PROCEDURE") ||
+                upperType.equals("FUNCTION") ||
+                upperType.equals("PACKAGE") ||
+                upperType.equals("PACKAGE BODY") ||
+                upperType.equals("TYPE") ||
+                upperType.equals("TYPE BODY") ||
+                upperType.equals("TRIGGER") ||
+                upperType.equals("JAVA SOURCE");
+    }
+
+    /**
+     * Method 1: Standard DBMS_METADATA approach
+     */
+    private String getObjectDDLWithMetadata(String objectName, String objectType) {
+        try {
+            log.info("Attempting to get DDL for {} {} using DBMS_METADATA", objectType, objectName);
+
+            String metadataType = convertToMetadataObjectType(objectType);
+            String currentUser = getCurrentUser();
+
+            // First try with current user as owner
+            String sql = "SELECT DBMS_METADATA.GET_DDL(?, ?, ?) FROM DUAL";
+
+            try {
+                return oracleJdbcTemplate.queryForObject(
+                        sql,
+                        String.class,
+                        metadataType,
+                        objectName.toUpperCase(),
+                        currentUser
+                );
+            } catch (Exception e) {
+                log.debug("DBMS_METADATA failed with current user: {}", e.getMessage());
+
+                // Try to find the actual owner
+                Map<String, Object> objectLocation = findObjectLocation(objectName, objectType);
+                String owner = (String) objectLocation.get("owner");
+
+                if (owner != null && !owner.equals(currentUser)) {
+                    return oracleJdbcTemplate.queryForObject(
+                            sql,
+                            String.class,
+                            metadataType,
+                            objectName.toUpperCase(),
+                            owner
+                    );
+                }
+                return null;
+            }
+        } catch (Exception e) {
+            log.debug("getObjectDDLWithMetadata failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Method 2: DBMS_METADATA with TRANSFORM parameter
+     */
+    private String getObjectDDLWithTransform(String objectName, String objectType) {
+        try {
+            log.info("Attempting to get DDL for {} {} with TRANSFORM", objectType, objectName);
+
+            String metadataType = convertToMetadataObjectType(objectType);
+            String currentUser = getCurrentUser();
+
+            String sql = "SELECT DBMS_METADATA.GET_DDL(?, ?, ?, " +
+                    "DBMS_METADATA.SESSION_TRANSFORM('SQLTERMINATOR', TRUE) || " +
+                    "DBMS_METADATA.SESSION_TRANSFORM('PRETTY', TRUE)) FROM DUAL";
+
+            try {
+                return oracleJdbcTemplate.queryForObject(
+                        sql,
+                        String.class,
+                        metadataType,
+                        objectName.toUpperCase(),
+                        currentUser
+                );
+            } catch (Exception e) {
+                Map<String, Object> objectLocation = findObjectLocation(objectName, objectType);
+                String owner = (String) objectLocation.get("owner");
+
+                if (owner != null && !owner.equals(currentUser)) {
+                    return oracleJdbcTemplate.queryForObject(
+                            sql,
+                            String.class,
+                            metadataType,
+                            objectName.toUpperCase(),
+                            owner
+                    );
+                }
+                return null;
+            }
+        } catch (Exception e) {
+            log.debug("getObjectDDLWithTransform failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Method 3: Get DDL from USER_SOURCE
+     */
+    private String getDDLFromSource(String objectName, String objectType) {
+        try {
+            log.info("Attempting to get DDL for {} {} from USER_SOURCE", objectType, objectName);
+
+            String sourceType = objectType.toUpperCase();
+            if (sourceType.equals("PACKAGE BODY")) {
+                sourceType = "PACKAGE BODY";
+            } else if (sourceType.equals("TYPE BODY")) {
+                sourceType = "TYPE BODY";
+            }
+
+            String sql = "SELECT text FROM user_source " +
+                    "WHERE UPPER(name) = UPPER(?) AND UPPER(type) = UPPER(?) " +
+                    "ORDER BY line";
+
+            List<String> sourceLines = oracleJdbcTemplate.queryForList(
+                    sql,
+                    String.class,
+                    objectName,
+                    sourceType
+            );
+
+            if (!sourceLines.isEmpty()) {
+                StringBuilder ddl = new StringBuilder();
+
+                // Add CREATE OR REPLACE if not present
+                String firstLine = sourceLines.get(0).toUpperCase();
+                if (!firstLine.contains("CREATE OR REPLACE") &&
+                        !firstLine.contains("CREATE") &&
+                        !firstLine.contains("FUNCTION") &&
+                        !firstLine.contains("PROCEDURE") &&
+                        !firstLine.contains("PACKAGE") &&
+                        !firstLine.contains("TYPE")) {
+
+                    ddl.append("CREATE OR REPLACE ");
+                }
+
+                for (String line : sourceLines) {
+                    ddl.append(line);
+                }
+
+                // Add trailing slash for procedures/functions
+                String ddlStr = ddl.toString();
+                if (objectType.equalsIgnoreCase("PROCEDURE") ||
+                        objectType.equalsIgnoreCase("FUNCTION") ||
+                        objectType.equalsIgnoreCase("PACKAGE") ||
+                        objectType.equalsIgnoreCase("PACKAGE BODY")) {
+                    if (!ddlStr.trim().endsWith("/")) {
+                        ddlStr = ddlStr + "\n/";
+                    }
+                }
+
+                return ddlStr;
+            }
+
+            return null;
+        } catch (Exception e) {
+            log.debug("getDDLFromSource failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Method 4: Get DDL from ALL_SOURCE
+     */
+    private String getDDLFromAllSource(String objectName, String objectType) {
+        try {
+            log.info("Attempting to get DDL for {} {} from ALL_SOURCE", objectType, objectName);
+
+            Map<String, Object> objectLocation = findObjectLocation(objectName, objectType);
+            String owner = (String) objectLocation.get("owner");
+
+            if (owner == null) {
+                return null;
+            }
+
+            String sourceType = objectType.toUpperCase();
+            if (sourceType.equals("PACKAGE BODY")) {
+                sourceType = "PACKAGE BODY";
+            }
+
+            String sql = "SELECT text FROM all_source " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(name) = UPPER(?) " +
+                    "AND UPPER(type) = UPPER(?) ORDER BY line";
+
+            List<String> sourceLines = oracleJdbcTemplate.queryForList(
+                    sql,
+                    String.class,
+                    owner,
+                    objectName,
+                    sourceType
+            );
+
+            if (!sourceLines.isEmpty()) {
+                return String.join("", sourceLines);
+            }
+
+            return null;
+        } catch (Exception e) {
+            log.debug("getDDLFromAllSource failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Method 5: DBMS_METADATA with explicit owner resolution
+     */
+    private String getObjectDDLWithOwnerResolution(String objectName, String objectType) {
+        try {
+            log.info("Attempting to get DDL for {} {} with owner resolution", objectType, objectName);
+
+            // First find the object owner
+            String findOwnerSql = "SELECT owner FROM all_objects " +
+                    "WHERE UPPER(object_name) = UPPER(?) " +
+                    "AND UPPER(object_type) = UPPER(?) AND ROWNUM = 1";
+
+            String owner;
+            try {
+                owner = oracleJdbcTemplate.queryForObject(
+                        findOwnerSql,
+                        String.class,
+                        objectName,
+                        objectType
+                );
+            } catch (EmptyResultDataAccessException e) {
+                // Try without object type filter
+                String findAnySql = "SELECT owner FROM all_objects " +
+                        "WHERE UPPER(object_name) = UPPER(?) AND ROWNUM = 1";
+                owner = oracleJdbcTemplate.queryForObject(
+                        findAnySql,
+                        String.class,
+                        objectName
+                );
+            }
+
+            if (owner == null) {
+                return null;
+            }
+
+            String metadataType = convertToMetadataObjectType(objectType);
+
+            // Try with fully qualified name
+            String sql = "SELECT DBMS_METADATA.GET_DDL(?, ?) FROM DUAL";
+
+            try {
+                return oracleJdbcTemplate.queryForObject(
+                        sql,
+                        String.class,
+                        metadataType,
+                        owner + "." + objectName.toUpperCase()
+                );
+            } catch (Exception e) {
+                // Try with separate owner parameter
+                String sql2 = "SELECT DBMS_METADATA.GET_DDL(?, ?, ?) FROM DUAL";
+                return oracleJdbcTemplate.queryForObject(
+                        sql2,
+                        String.class,
+                        metadataType,
+                        objectName.toUpperCase(),
+                        owner
+                );
+            }
+
+        } catch (Exception e) {
+            log.debug("getObjectDDLWithOwnerResolution failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Method 6: Try DBA_SOURCE if available (requires higher privileges)
+     */
+    private String getDDLFromDBASource(String objectName, String objectType) {
+        try {
+            log.info("Attempting to get DDL for {} {} from DBA_SOURCE", objectType, objectName);
+
+            // Check if user has access to DBA_SOURCE
+            String checkSql = "SELECT COUNT(*) FROM all_tables WHERE table_name = 'DBA_SOURCE'";
+            Integer count = oracleJdbcTemplate.queryForObject(checkSql, Integer.class);
+
+            if (count == 0) {
+                return null;
+            }
+
+            String sourceType = objectType.toUpperCase();
+            if (sourceType.equals("PACKAGE BODY")) {
+                sourceType = "PACKAGE BODY";
+            }
+
+            String sql = "SELECT text FROM dba_source " +
+                    "WHERE UPPER(name) = UPPER(?) AND UPPER(type) = UPPER(?) " +
+                    "ORDER BY line";
+
+            List<String> sourceLines = oracleJdbcTemplate.queryForList(
+                    sql,
+                    String.class,
+                    objectName,
+                    sourceType
+            );
+
+            if (!sourceLines.isEmpty()) {
+                return String.join("", sourceLines);
+            }
+
+            return null;
+        } catch (Exception e) {
+            log.debug("getDDLFromDBASource failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Method 7: Generate procedure DDL from data dictionary
+     */
+    private String generateProcedureDDL(String procedureName) {
+        try {
+            log.info("Attempting to generate DDL for procedure {}", procedureName);
+
+            Map<String, Object> objectLocation = findObjectLocation(procedureName, "PROCEDURE");
+            String owner = (String) objectLocation.get("owner");
+
+            if (owner == null) {
+                owner = getCurrentUser();
+            }
+
+            StringBuilder ddl = new StringBuilder();
+            ddl.append("CREATE OR REPLACE PROCEDURE ");
+            if (!owner.equalsIgnoreCase(getCurrentUser())) {
+                ddl.append(owner).append(".");
+            }
+            ddl.append(procedureName).append("\n");
+
+            // Get parameters
+            String paramSql;
+            if (owner.equalsIgnoreCase(getCurrentUser())) {
+                paramSql = "SELECT " +
+                        "    argument_name, " +
+                        "    data_type, " +
+                        "    in_out, " +
+                        "    data_length, " +
+                        "    data_precision, " +
+                        "    data_scale " +
+                        "FROM user_arguments " +
+                        "WHERE UPPER(object_name) = UPPER(?) AND package_name IS NULL " +
+                        "AND argument_name IS NOT NULL " +
+                        "ORDER BY position";
+            } else {
+                paramSql = "SELECT " +
+                        "    argument_name, " +
+                        "    data_type, " +
+                        "    in_out, " +
+                        "    data_length, " +
+                        "    data_precision, " +
+                        "    data_scale " +
+                        "FROM all_arguments " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                        "AND package_name IS NULL AND argument_name IS NOT NULL " +
+                        "ORDER BY position";
+            }
+
+            List<Map<String, Object>> params;
+            if (owner.equalsIgnoreCase(getCurrentUser())) {
+                params = oracleJdbcTemplate.queryForList(paramSql, procedureName);
+            } else {
+                params = oracleJdbcTemplate.queryForList(paramSql, owner, procedureName);
+            }
+
+            if (!params.isEmpty()) {
+                ddl.append("(\n");
+                for (int i = 0; i < params.size(); i++) {
+                    Map<String, Object> param = params.get(i);
+                    ddl.append("    ");
+
+                    String argumentName = (String) param.get("argument_name");
+                    String dataType = (String) param.get("data_type");
+                    String inOut = (String) param.get("in_out");
+
+                    if (inOut != null) {
+                        if ("IN".equals(inOut)) {
+                            ddl.append(argumentName).append(" ");
+                        } else if ("OUT".equals(inOut)) {
+                            ddl.append(argumentName).append(" OUT ");
+                        } else if ("IN/OUT".equals(inOut)) {
+                            ddl.append(argumentName).append(" IN OUT ");
+                        }
+                    } else {
+                        ddl.append(argumentName).append(" ");
+                    }
+
+                    ddl.append(dataType);
+
+                    // Add length/precision if applicable
+                    Number dataLength = (Number) param.get("data_length");
+                    Number dataPrecision = (Number) param.get("data_precision");
+                    Number dataScale = (Number) param.get("data_scale");
+
+                    if (dataLength != null && dataLength.intValue() > 0 &&
+                            ("VARCHAR2".equalsIgnoreCase(dataType) || "CHAR".equalsIgnoreCase(dataType) ||
+                                    "VARCHAR".equalsIgnoreCase(dataType) || "NVARCHAR2".equalsIgnoreCase(dataType))) {
+                        ddl.append("(").append(dataLength).append(")");
+                    } else if (dataPrecision != null) {
+                        ddl.append("(").append(dataPrecision);
+                        if (dataScale != null && dataScale.intValue() > 0) {
+                            ddl.append(",").append(dataScale);
+                        }
+                        ddl.append(")");
+                    }
+
+                    if (i < params.size() - 1) {
+                        ddl.append(",");
+                    }
+                    ddl.append("\n");
+                }
+                ddl.append(")\n");
+            }
+
+            ddl.append("IS\n");
+            ddl.append("BEGIN\n");
+            ddl.append("    -- Procedure logic here\n");
+            ddl.append("    NULL;\n");
+            ddl.append("END ").append(procedureName).append(";\n/");
+
+            return ddl.toString();
+
+        } catch (Exception e) {
+            log.debug("generateProcedureDDL failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Generate function DDL from data dictionary
+     */
+    private String generateFunctionDDL(String functionName) {
+        try {
+            log.info("Attempting to generate DDL for function {}", functionName);
+
+            Map<String, Object> objectLocation = findObjectLocation(functionName, "FUNCTION");
+            String owner = (String) objectLocation.get("owner");
+
+            if (owner == null) {
+                owner = getCurrentUser();
+            }
+
+            StringBuilder ddl = new StringBuilder();
+            ddl.append("CREATE OR REPLACE FUNCTION ");
+            if (!owner.equalsIgnoreCase(getCurrentUser())) {
+                ddl.append(owner).append(".");
+            }
+            ddl.append(functionName).append("\n");
+
+            // Get parameters and return type
+            String paramSql;
+            if (owner.equalsIgnoreCase(getCurrentUser())) {
+                paramSql = "SELECT " +
+                        "    argument_name, " +
+                        "    data_type, " +
+                        "    in_out, " +
+                        "    data_length, " +
+                        "    data_precision, " +
+                        "    data_scale, " +
+                        "    position " +
+                        "FROM user_arguments " +
+                        "WHERE UPPER(object_name) = UPPER(?) AND package_name IS NULL " +
+                        "ORDER BY position, sequence";
+            } else {
+                paramSql = "SELECT " +
+                        "    argument_name, " +
+                        "    data_type, " +
+                        "    in_out, " +
+                        "    data_length, " +
+                        "    data_precision, " +
+                        "    data_scale, " +
+                        "    position " +
+                        "FROM all_arguments " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                        "AND package_name IS NULL " +
+                        "ORDER BY position, sequence";
+            }
+
+            List<Map<String, Object>> allArgs;
+            if (owner.equalsIgnoreCase(getCurrentUser())) {
+                allArgs = oracleJdbcTemplate.queryForList(paramSql, functionName);
+            } else {
+                allArgs = oracleJdbcTemplate.queryForList(paramSql, owner, functionName);
+            }
+
+            // Separate return type (position = 0) from parameters
+            Map<String, Object> returnType = null;
+            List<Map<String, Object>> params = new ArrayList<>();
+
+            for (Map<String, Object> arg : allArgs) {
+                Number position = (Number) arg.get("position");
+                if (position != null && position.intValue() == 0) {
+                    returnType = arg;
+                } else {
+                    params.add(arg);
+                }
+            }
+
+            if (!params.isEmpty()) {
+                ddl.append("(\n");
+                for (int i = 0; i < params.size(); i++) {
+                    Map<String, Object> param = params.get(i);
+                    ddl.append("    ");
+
+                    String argumentName = (String) param.get("argument_name");
+                    String dataType = (String) param.get("data_type");
+                    String inOut = (String) param.get("in_out");
+
+                    if (inOut != null && !"IN".equals(inOut)) {
+                        if ("OUT".equals(inOut)) {
+                            ddl.append(argumentName).append(" OUT ");
+                        } else if ("IN/OUT".equals(inOut)) {
+                            ddl.append(argumentName).append(" IN OUT ");
+                        }
+                    } else {
+                        ddl.append(argumentName).append(" ");
+                    }
+
+                    ddl.append(dataType);
+
+                    // Add length/precision if applicable
+                    Number dataLength = (Number) param.get("data_length");
+                    Number dataPrecision = (Number) param.get("data_precision");
+                    Number dataScale = (Number) param.get("data_scale");
+
+                    if (dataLength != null && dataLength.intValue() > 0 &&
+                            ("VARCHAR2".equalsIgnoreCase(dataType) || "CHAR".equalsIgnoreCase(dataType) ||
+                                    "VARCHAR".equalsIgnoreCase(dataType) || "NVARCHAR2".equalsIgnoreCase(dataType))) {
+                        ddl.append("(").append(dataLength).append(")");
+                    } else if (dataPrecision != null) {
+                        ddl.append("(").append(dataPrecision);
+                        if (dataScale != null && dataScale.intValue() > 0) {
+                            ddl.append(",").append(dataScale);
+                        }
+                        ddl.append(")");
+                    }
+
+                    if (i < params.size() - 1) {
+                        ddl.append(",");
+                    }
+                    ddl.append("\n");
+                }
+                ddl.append(")\n");
+            }
+
+            if (returnType != null) {
+                ddl.append("RETURN ").append(returnType.get("data_type"));
+
+                Number dataLength = (Number) returnType.get("data_length");
+                Number dataPrecision = (Number) returnType.get("data_precision");
+                Number dataScale = (Number) returnType.get("data_scale");
+                String dataType = (String) returnType.get("data_type");
+
+                if (dataLength != null && dataLength.intValue() > 0 &&
+                        ("VARCHAR2".equalsIgnoreCase(dataType) || "CHAR".equalsIgnoreCase(dataType) ||
+                                "VARCHAR".equalsIgnoreCase(dataType) || "NVARCHAR2".equalsIgnoreCase(dataType))) {
+                    ddl.append("(").append(dataLength).append(")");
+                } else if (dataPrecision != null) {
+                    ddl.append("(").append(dataPrecision);
+                    if (dataScale != null && dataScale.intValue() > 0) {
+                        ddl.append(",").append(dataScale);
+                    }
+                    ddl.append(")");
+                }
+                ddl.append("\n");
+            }
+
+            ddl.append("IS\n");
+            ddl.append("BEGIN\n");
+            ddl.append("    -- Function logic here\n");
+            ddl.append("    RETURN NULL;\n");
+            ddl.append("END ").append(functionName).append(";\n/");
+
+            return ddl.toString();
+
+        } catch (Exception e) {
+            log.debug("generateFunctionDDL failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Generate table DDL from data dictionary
+     */
+    private String generateTableDDL(String tableName) {
+        try {
+            log.info("Attempting to generate DDL for table {}", tableName);
+
+            Map<String, Object> objectLocation = findObjectLocation(tableName, "TABLE");
+            String owner = (String) objectLocation.get("owner");
+
+            if (owner == null) {
+                owner = getCurrentUser();
+            }
+
+            StringBuilder ddl = new StringBuilder();
+            ddl.append("CREATE TABLE ");
+            if (!owner.equalsIgnoreCase(getCurrentUser())) {
+                ddl.append(owner).append(".");
+            }
+            ddl.append(tableName).append(" (\n");
+
+            List<Map<String, Object>> columns = getTableColumns(owner, tableName);
+
+            for (int i = 0; i < columns.size(); i++) {
+                Map<String, Object> col = columns.get(i);
+                ddl.append("    ").append(col.get("column_name"))
+                        .append(" ").append(col.get("data_type"));
+
+                Number dataLength = (Number) col.get("data_length");
+                Number dataPrecision = (Number) col.get("data_precision");
+                Number dataScale = (Number) col.get("data_scale");
+                String dataType = (String) col.get("data_type");
+
+                if (dataLength != null && dataLength.intValue() > 0 &&
+                        ("VARCHAR2".equalsIgnoreCase(dataType) || "CHAR".equalsIgnoreCase(dataType) ||
+                                "VARCHAR".equalsIgnoreCase(dataType) || "NVARCHAR2".equalsIgnoreCase(dataType))) {
+                    ddl.append("(").append(dataLength).append(")");
+                } else if (dataPrecision != null) {
+                    ddl.append("(").append(dataPrecision);
+                    if (dataScale != null && dataScale.intValue() > 0) {
+                        ddl.append(",").append(dataScale);
+                    }
+                    ddl.append(")");
+                }
+
+                if ("N".equals(col.get("nullable"))) {
+                    ddl.append(" NOT NULL");
+                }
+
+                Object defaultValue = col.get("data_default");
+                if (defaultValue != null && !defaultValue.toString().isEmpty()) {
+                    ddl.append(" DEFAULT ").append(defaultValue);
+                }
+
+                if (i < columns.size() - 1) {
+                    ddl.append(",");
+                }
+                ddl.append("\n");
+            }
+
+            // Add primary key constraint if exists
+            List<Map<String, Object>> constraints = getTableConstraints(owner, tableName);
+            for (Map<String, Object> constraint : constraints) {
+                if ("P".equals(constraint.get("constraint_type"))) {
+                    ddl.append("    CONSTRAINT ").append(constraint.get("constraint_name"))
+                            .append(" PRIMARY KEY (").append(constraint.get("columns")).append(")\n");
+                    break;
+                }
+            }
+
+            ddl.append(");");
+            return ddl.toString();
+
+        } catch (Exception e) {
+            log.debug("generateTableDDL failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Generate view DDL from data dictionary
+     */
+    private String generateViewDDL(String viewName) {
+        try {
+            log.info("Attempting to generate DDL for view {}", viewName);
+
+            Map<String, Object> objectLocation = findObjectLocation(viewName, "VIEW");
+            String owner = (String) objectLocation.get("owner");
+
+            if (owner == null) {
+                owner = getCurrentUser();
+            }
+
+            String viewText;
+            if (owner.equalsIgnoreCase(getCurrentUser())) {
+                String sql = "SELECT text FROM user_views WHERE UPPER(view_name) = UPPER(?)";
+                viewText = oracleJdbcTemplate.queryForObject(sql, String.class, viewName);
+            } else {
+                String sql = "SELECT text FROM all_views WHERE UPPER(owner) = UPPER(?) AND UPPER(view_name) = UPPER(?)";
+                viewText = oracleJdbcTemplate.queryForObject(sql, String.class, owner, viewName);
+            }
+
+            if (viewText != null && !viewText.isEmpty()) {
+                StringBuilder ddl = new StringBuilder();
+                ddl.append("CREATE OR REPLACE VIEW ");
+                if (!owner.equalsIgnoreCase(getCurrentUser())) {
+                    ddl.append(owner).append(".");
+                }
+                ddl.append(viewName).append(" AS\n");
+                ddl.append(viewText);
+                return ddl.toString();
+            }
+
+            return null;
+
+        } catch (Exception e) {
+            log.debug("generateViewDDL failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get object diagnostics to help debug DDL retrieval issues
+     */
+    private Map<String, Object> getObjectDiagnostics(String objectName, String objectType) {
+        Map<String, Object> diagnostics = new HashMap<>();
+
+        try {
+            // Check if object exists
+            String checkSql = "SELECT owner, status, created, last_ddl_time " +
+                    "FROM all_objects WHERE UPPER(object_name) = UPPER(?) " +
+                    "AND UPPER(object_type) = UPPER(?)";
+
+            try {
+                Map<String, Object> objectInfo = oracleJdbcTemplate.queryForMap(
+                        checkSql, objectName, objectType);
+                diagnostics.put("exists", true);
+                diagnostics.put("owner", objectInfo.get("owner"));
+                diagnostics.put("status", objectInfo.get("status"));
+                diagnostics.put("created", objectInfo.get("created"));
+                diagnostics.put("lastModified", objectInfo.get("last_ddl_time"));
+            } catch (EmptyResultDataAccessException e) {
+                diagnostics.put("exists", false);
+                diagnostics.put("message", "Object not found in all_objects");
+            }
+
+            // Check current user
+            diagnostics.put("currentUser", getCurrentUser());
+            diagnostics.put("currentSchema", getCurrentSchema());
+
+            // Check privileges
+            checkPrivileges(diagnostics);
+
+            // Check if object is in source views
+            checkSourceAvailability(diagnostics, objectName, objectType);
+
+        } catch (Exception e) {
+            diagnostics.put("error", e.getMessage());
+        }
+
+        return diagnostics;
+    }
+
+    /**
+     * Check if user has necessary privileges
+     */
+    private void checkPrivileges(Map<String, Object> diagnostics) {
+        try {
+            // Check SELECT_CATALOG_ROLE
+            String roleSql = "SELECT COUNT(*) FROM session_roles WHERE role = 'SELECT_CATALOG_ROLE'";
+            Integer hasRole = oracleJdbcTemplate.queryForObject(roleSql, Integer.class);
+            diagnostics.put("hasSelectCatalogRole", hasRole > 0);
+
+            // Check EXECUTE on DBMS_METADATA
+            String execSql = "SELECT COUNT(*) FROM all_tab_privs " +
+                    "WHERE table_name = 'DBMS_METADATA' AND privilege = 'EXECUTE' " +
+                    "AND grantee IN (USER, 'PUBLIC')";
+            Integer hasExec = oracleJdbcTemplate.queryForObject(execSql, Integer.class);
+            diagnostics.put("hasExecuteOnDbmsMetadata", hasExec > 0);
+
+        } catch (Exception e) {
+            diagnostics.put("privilegeCheckError", e.getMessage());
+        }
+    }
+
+    /**
+     * Check if object is available in source views
+     */
+    private void checkSourceAvailability(Map<String, Object> diagnostics,
+                                         String objectName, String objectType) {
+        try {
+            String sourceType = objectType.toUpperCase();
+            if (sourceType.equals("PACKAGE BODY")) {
+                sourceType = "PACKAGE BODY";
+            }
+
+            // Check USER_SOURCE
+            String userSourceSql = "SELECT COUNT(*) FROM user_source " +
+                    "WHERE UPPER(name) = UPPER(?) AND UPPER(type) = UPPER(?)";
+            Integer userSourceCount = oracleJdbcTemplate.queryForObject(
+                    userSourceSql, Integer.class, objectName, sourceType);
+            diagnostics.put("inUserSource", userSourceCount > 0);
+
+            // Check ALL_SOURCE
+            String allSourceSql = "SELECT COUNT(*) FROM all_source " +
+                    "WHERE UPPER(name) = UPPER(?) AND UPPER(type) = UPPER(?)";
+            Integer allSourceCount = oracleJdbcTemplate.queryForObject(
+                    allSourceSql, Integer.class, objectName, sourceType);
+            diagnostics.put("inAllSource", allSourceCount > 0);
+
+        } catch (Exception e) {
+            diagnostics.put("sourceCheckError", e.getMessage());
+        }
+    }
+
+    /**
+     * Generate detailed error message
+     */
+    private String generateDetailedErrorMessage(String objectName, String objectType) {
+        StringBuilder msg = new StringBuilder();
+        msg.append("-- DDL not available for ").append(objectType).append(" ").append(objectName).append("\n");
+        msg.append("-- \n");
+        msg.append("-- Possible reasons and solutions:\n");
+        msg.append("-- \n");
+        msg.append("-- 1. INSUFFICIENT PRIVILEGES:\n");
+        msg.append("--    Run as DBA: GRANT SELECT_CATALOG_ROLE TO ").append(getCurrentUser()).append(";\n");
+        msg.append("--    Run as DBA: GRANT EXECUTE ON DBMS_METADATA TO ").append(getCurrentUser()).append(";\n");
+        msg.append("-- \n");
+        msg.append("-- 2. OBJECT IN DIFFERENT SCHEMA:\n");
+        msg.append("--    Try specifying the owner: OWNER.").append(objectName).append("\n");
+        msg.append("-- \n");
+        msg.append("-- 3. OBJECT TYPE NOT SUPPORTED:\n");
+        msg.append("--    Some object types may not have DDL available\n");
+        msg.append("-- \n");
+        msg.append("-- 4. DATABASE VERSION COMPATIBILITY:\n");
+        msg.append("--    DBMS_METADATA may behave differently in different Oracle versions\n");
+        msg.append("-- \n");
+        msg.append("-- 5. TEMPORARY OR GENERATED OBJECT:\n");
+        msg.append("--    Temporary or generated objects may not have stored DDL\n");
+
+        return msg.toString();
+    }
+
+    /**
+     * Convert object type to DBMS_METADATA format
+     */
+    private String convertToMetadataObjectType(String objectType) {
+        if (objectType == null) return null;
+
+        String upperType = objectType.toUpperCase();
+
+        switch (upperType) {
+            case "PACKAGE BODY":
+                return "PACKAGE_BODY";
+            case "TYPE BODY":
+                return "TYPE_BODY";
+            case "MATERIALIZED VIEW":
+                return "MATERIALIZED_VIEW";
+            case "DATABASE LINK":
+                return "DB_LINK";
+            case "JAVA CLASS":
+            case "JAVA SOURCE":
+            case "JAVA RESOURCE":
+                return "JAVA";
+            case "PROCEDURE":
+            case "FUNCTION":
+            case "PACKAGE":
+            case "TABLE":
+            case "VIEW":
+            case "TRIGGER":
+            case "INDEX":
+            case "SEQUENCE":
+            case "SYNONYM":
+            case "TYPE":
+                return upperType;
+            default:
+                return upperType.replace(' ', '_');
         }
     }
 
@@ -3811,30 +4790,7 @@ public class OracleSchemaRepository {
         }
     }
 
-    /**
-     * Get object DDL for frontend
-     */
-    public Map<String, Object> getObjectDDLForFrontend(String objectName, String objectType) {
-        try {
-            String ddl = getObjectDDL(objectName, objectType);
 
-            Map<String, Object> result = new HashMap<>();
-            result.put("ddl", ddl != null ? ddl : "-- DDL not available for " + objectType + " " + objectName);
-            result.put("objectName", objectName);
-            result.put("objectType", objectType);
-
-            return result;
-
-        } catch (Exception e) {
-            log.error("Error in getObjectDDLForFrontend: {}", e.getMessage(), e);
-
-            Map<String, Object> result = new HashMap<>();
-            result.put("ddl", "-- Error retrieving DDL: " + e.getMessage());
-            result.put("objectName", objectName);
-            result.put("objectType", objectType);
-            return result;
-        }
-    }
 
     /**
      * Get object size

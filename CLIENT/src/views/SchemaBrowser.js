@@ -165,7 +165,7 @@ const FilterInput = React.memo(({
                 opacity: loading ? 0.6 : 1
               }}
             >
-              <option value="ALL">All Owners</option>
+              <option value="ALL">All Schema's</option>
               {owners.map(owner => (
                 <option key={owner} value={owner}>{owner}</option>
               ))}
@@ -202,7 +202,7 @@ const ObjectTreeSection = React.memo(({
   title, 
   type, 
   objects, 
-  synonymCount = 0, // New prop for synonym count
+  synonymCount = 0,
   isLoading,
   isExpanded, 
   onToggle,
@@ -273,7 +273,6 @@ const ObjectTreeSection = React.memo(({
     return obj.id || `${obj.owner || 'unknown'}_${obj.name}`;
   }, []);
   
-  // Calculate total count including synonyms
   const totalCount = objects.length + synonymCount;
   
   return (
@@ -361,7 +360,6 @@ const SynonymSubsection = React.memo(({
 }) => {
   if (!synonyms || synonyms.length === 0) return null;
 
-  // Filter synonyms based on filter query and selected owner
   const filteredSynonyms = useMemo(() => {
     if (!filterQuery && selectedOwner === 'ALL') return synonyms;
     
@@ -392,7 +390,7 @@ const SynonymSubsection = React.memo(({
           {filteredSynonyms.length}
         </span>
       </div>
-      <div className="space-y-0.5">
+      <div className="space-y-0.7">
         {filteredSynonyms.map(synonym => (
           <button
             key={getObjectId(synonym)}
@@ -453,7 +451,6 @@ const LeftSidebar = React.memo(({
     setIsLeftSidebarVisible(false);
   }, [setIsLeftSidebarVisible]);
 
-  // Group synonyms by target type
   const groupedSynonyms = useMemo(() => {
     const groups = {
       tables: [],
@@ -507,19 +504,16 @@ const LeftSidebar = React.memo(({
 
       {/* Schema Browser Header */}
       <div className="p-3 border-b" style={{ borderColor: colors.border }}>
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-0">
           <div className="flex items-center gap-2 flex-1 text-left">
             <Database size={16} style={{ color: colors.primary }} />
             <span className="text-sm font-medium truncate" style={{ color: colors.text }}>
-              Schema Browser
+               {owners.map(owner => (
+                owner
+              ))}
             </span>
           </div>
           <div className="flex gap-1">
-            {schemaInfo && (
-              <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: colors.hover, color: colors.textSecondary }}>
-                {schemaInfo.currentUser || schemaInfo.currentSchema}
-              </span>
-            )}
             <button 
               className="rounded hover:bg-opacity-50 transition-colors flex items-center justify-center w-8 h-8"
               style={{ backgroundColor: colors.hover }}
@@ -559,14 +553,15 @@ const LeftSidebar = React.memo(({
           </div>
         ) : (
           <>
-            {/* Tables Section with Synonyms */}
+          
+            {/* Procedures Section with Synonyms */}
             <ObjectTreeSection
-              title="Tables"
-              type="tables"
-              objects={schemaObjects.tables || []}
-              synonymCount={groupedSynonyms.tables.length}
-              isLoading={loadingStates.tables}
-              isExpanded={objectTree.tables}
+              title="Procedures"
+              type="procedures"
+              objects={schemaObjects.procedures || []}
+              synonymCount={groupedSynonyms.procedures.length}
+              isLoading={loadingStates.procedures}
+              isExpanded={objectTree.procedures}
               onToggle={handleToggleSection}
               onLoadSection={handleLoadSection}
               onSelectObject={handleObjectSelect}
@@ -576,11 +571,11 @@ const LeftSidebar = React.memo(({
               colors={colors}
               getObjectIcon={getObjectIcon}
               handleContextMenu={handleContextMenu}
-              isLoaded={loadedSections.tables}
+              isLoaded={loadedSections.procedures}
             >
               <SynonymSubsection
-                synonyms={groupedSynonyms.tables}
-                targetType="table"
+                synonyms={groupedSynonyms.procedures}
+                targetType="procedure"
                 onSelectObject={handleObjectSelect}
                 activeObjectId={activeObject?.id}
                 filterQuery={filterQuery}
@@ -623,37 +618,6 @@ const LeftSidebar = React.memo(({
               />
             </ObjectTreeSection>
 
-            {/* Procedures Section with Synonyms */}
-            <ObjectTreeSection
-              title="Procedures"
-              type="procedures"
-              objects={schemaObjects.procedures || []}
-              synonymCount={groupedSynonyms.procedures.length}
-              isLoading={loadingStates.procedures}
-              isExpanded={objectTree.procedures}
-              onToggle={handleToggleSection}
-              onLoadSection={handleLoadSection}
-              onSelectObject={handleObjectSelect}
-              activeObjectId={activeObject?.id}
-              filterQuery={filterQuery}
-              selectedOwner={selectedOwner}
-              colors={colors}
-              getObjectIcon={getObjectIcon}
-              handleContextMenu={handleContextMenu}
-              isLoaded={loadedSections.procedures}
-            >
-              <SynonymSubsection
-                synonyms={groupedSynonyms.procedures}
-                targetType="procedure"
-                onSelectObject={handleObjectSelect}
-                activeObjectId={activeObject?.id}
-                filterQuery={filterQuery}
-                selectedOwner={selectedOwner}
-                colors={colors}
-                getObjectIcon={getObjectIcon}
-                handleContextMenu={handleContextMenu}
-              />
-            </ObjectTreeSection>
 
             {/* Functions Section with Synonyms */}
             <ObjectTreeSection
@@ -709,6 +673,38 @@ const LeftSidebar = React.memo(({
               <SynonymSubsection
                 synonyms={groupedSynonyms.packages}
                 targetType="package"
+                onSelectObject={handleObjectSelect}
+                activeObjectId={activeObject?.id}
+                filterQuery={filterQuery}
+                selectedOwner={selectedOwner}
+                colors={colors}
+                getObjectIcon={getObjectIcon}
+                handleContextMenu={handleContextMenu}
+              />
+            </ObjectTreeSection>
+
+            {/* Tables Section with Synonyms */}
+            <ObjectTreeSection
+              title="Tables"
+              type="tables"
+              objects={schemaObjects.tables || []}
+              synonymCount={groupedSynonyms.tables.length}
+              isLoading={loadingStates.tables}
+              isExpanded={objectTree.tables}
+              onToggle={handleToggleSection}
+              onLoadSection={handleLoadSection}
+              onSelectObject={handleObjectSelect}
+              activeObjectId={activeObject?.id}
+              filterQuery={filterQuery}
+              selectedOwner={selectedOwner}
+              colors={colors}
+              getObjectIcon={getObjectIcon}
+              handleContextMenu={handleContextMenu}
+              isLoaded={loadedSections.tables}
+            >
+              <SynonymSubsection
+                synonyms={groupedSynonyms.tables}
+                targetType="table"
                 onSelectObject={handleObjectSelect}
                 activeObjectId={activeObject?.id}
                 filterQuery={filterQuery}
@@ -821,7 +817,7 @@ const LeftSidebar = React.memo(({
                 title="Other Synonyms"
                 type="synonyms"
                 objects={groupedSynonyms.other}
-                synonymCount={0} // No nested synonyms for other synonyms
+                synonymCount={0}
                 isLoading={loadingStates.synonyms}
                 isExpanded={objectTree.synonyms}
                 onToggle={handleToggleSection}
@@ -1027,7 +1023,10 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   const [schemaInfo, setSchemaInfo] = useState(null);
   const [hasAutoSelected, setHasAutoSelected] = useState(false);
   const [initialized, setInitialized] = useState(false);
-  
+
+  const [ddlLoading, setDdlLoading] = useState(false);
+
+
   // New state for tracking loaded sections
   const [loadedSections, setLoadedSections] = useState({
     procedures: false,
@@ -1067,17 +1066,17 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
     triggers: false
   });
   
-  // Object tree expanded state
+  // Object tree expanded state - UPDATED: Only Tables is expanded by default
   const [objectTree, setObjectTree] = useState({
-    procedures: true,
-    views: true,
-    functions: true,
-    tables: true,
-    packages: true,
-    sequences: true,
-    synonyms: true,
-    types: true,
-    triggers: true
+    procedures: true, // Only procedures is expanded by default
+    views: false,
+    functions: false,
+    tables: false,
+    packages: false,
+    sequences: false,
+    synonyms: false,
+    types: false,
+    triggers: false
   });
   
   const [activeObject, setActiveObject] = useState(null);
@@ -1188,11 +1187,6 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
             data = processed.data || [];
           }
           
-          // For synonyms, try to get target types
-          if (type === 'synonyms' && data.length > 0) {
-            // We'll get target types when objects are selected
-          }
-          
           objectCache.set(cacheKey, { data, timestamp: Date.now() });
           
           setSchemaObjects(prev => ({ ...prev, [type]: data }));
@@ -1292,33 +1286,34 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
 
   // Get first schema object for auto-select
   const getFirstSchemaObject = useCallback(() => {
-    const objectTypes = [
-      { type: 'TABLE', key: 'tables' },
-      { type: 'VIEW', key: 'views' },
-      { type: 'PROCEDURE', key: 'procedures' },
-      { type: 'FUNCTION', key: 'functions' },
-      { type: 'PACKAGE', key: 'packages' },
-      { type: 'SEQUENCE', key: 'sequences' },
-      { type: 'SYNONYM', key: 'synonyms' },
-      { type: 'TYPE', key: 'types' },
-      { type: 'TRIGGER', key: 'triggers' }
-    ];
-    
-    for (const objType of objectTypes) {
-      const objects = schemaObjects[objType.key] || [];
-      if (objects.length > 0) {
-        const obj = objects[0];
-        return { 
-          object: {
-            ...obj,
-            id: obj.id || `${obj.owner || 'unknown'}_${obj.name}`
-          }, 
-          type: objType.type 
-        };
-      }
+  // Prioritize procedures first
+  const objectTypes = [
+    { type: 'PROCEDURE', key: 'procedures' },
+    { type: 'TABLE', key: 'tables' },
+    { type: 'VIEW', key: 'views' },
+    { type: 'FUNCTION', key: 'functions' },
+    { type: 'PACKAGE', key: 'packages' },
+    { type: 'SEQUENCE', key: 'sequences' },
+    { type: 'SYNONYM', key: 'synonyms' },
+    { type: 'TYPE', key: 'types' },
+    { type: 'TRIGGER', key: 'triggers' }
+  ];
+  
+  for (const objType of objectTypes) {
+    const objects = schemaObjects[objType.key] || [];
+    if (objects.length > 0) {
+      const obj = objects[0];
+      return { 
+        object: {
+          ...obj,
+          id: obj.id || `${obj.owner || 'unknown'}_${obj.name}`
+        }, 
+        type: objType.type 
+      };
     }
-    return null;
-  }, [schemaObjects]);
+  }
+  return null;
+}, [schemaObjects]);
 
   // Handle load section
   const handleLoadSection = useCallback((type) => {
@@ -1462,15 +1457,18 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
 
   // Auto-select first object
   useEffect(() => {
-    const hasObjects = Object.values(schemaObjects).some(arr => arr.length > 0);
-    if (hasObjects && !activeObject && !hasAutoSelected && initialLoadComplete) {
-      const firstObjectData = getFirstSchemaObject();
-      if (firstObjectData) {
-        setHasAutoSelected(true);
+  const hasObjects = Object.values(schemaObjects).some(arr => arr.length > 0);
+  if (hasObjects && !activeObject && !hasAutoSelected && initialLoadComplete) {
+    const firstObjectData = getFirstSchemaObject();
+    if (firstObjectData) {
+      setHasAutoSelected(true);
+      // Use setTimeout to ensure this runs after state updates
+      setTimeout(() => {
         handleObjectSelect(firstObjectData.object, firstObjectData.type);
-      }
+      }, 100);
     }
-  }, [schemaObjects, activeObject, hasAutoSelected, initialLoadComplete, getFirstSchemaObject]);
+  }
+}, [schemaObjects, activeObject, hasAutoSelected, initialLoadComplete, getFirstSchemaObject, handleObjectSelect]);
 
   // Update table data when dataView changes
   useEffect(() => {
@@ -1782,37 +1780,7 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
     );
   };
 
-  // Render DDL Tab
-  const renderDDLTab = () => {
-    const ddl = objectDDL || 
-                objectDetails?.targetDetails?.text || 
-                objectDetails?.text || 
-                objectDetails?.ddl ||
-                activeObject?.text || 
-                activeObject?.spec || 
-                activeObject?.body || 
-                '';
-    
-    return (
-      <div className="flex-1 overflow-auto">
-        <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
-          <pre className="text-xs font-mono whitespace-pre-wrap overflow-auto" style={{ color: colors.text }}>
-            {ddl || '-- No DDL available for this object'}
-          </pre>
-          <div className="mt-2 flex justify-end">
-            <button 
-              className="px-3 py-1 text-xs rounded hover:bg-opacity-50"
-              style={{ backgroundColor: colors.hover, color: colors.text }}
-              onClick={() => handleCopyToClipboard(ddl, 'DDL')}
-            >
-              <Copy size={12} className="inline mr-1" />
-              Copy
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
+
 
   // Render Constraints Tab
   const renderConstraintsTab = () => {
@@ -2058,71 +2026,38 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
             )}
           </div>
         </div>
-      );
-    }
-
-    // For non-synonym objects, show regular properties
-    const properties = [
-      { label: 'Name', value: details.name || details.OBJECT_NAME || details.objectName || details.SYNONYM_NAME || '-' },
-      { label: 'Owner', value: details.owner || details.OWNER || '-' },
-      { label: 'Type', value: details.type || details.OBJECT_TYPE || details.objectType || details.TARGET_TYPE || '-' },
-      { label: 'Status', value: details.status || details.STATUS || details.TARGET_STATUS || 'VALID' },
-      { label: 'Created', value: details.created || details.CREATED || details.TARGET_CREATED ? formatDateForDisplay(details.created || details.CREATED || details.TARGET_CREATED) : '-' },
-      { label: 'Last Modified', value: details.last_ddl_time || details.LAST_DDL_TIME || details.TARGET_MODIFIED ? formatDateForDisplay(details.last_ddl_time || details.LAST_DDL_TIME || details.TARGET_MODIFIED) : '-' },
-      ...(details.num_rows || details.NUM_ROWS ? [{ label: 'Row Count', value: (details.num_rows || details.NUM_ROWS).toLocaleString() }] : []),
-      ...(details.bytes || details.BYTES ? [{ label: 'Size', value: formatBytes(details.bytes || details.BYTES) }] : []),
-      ...(details.comments || details.COMMENTS ? [{ label: 'Comment', value: details.comments || details.COMMENTS }] : [])
-    ];
-
-    return (
-      <div className="flex-1 overflow-auto">
-        <div className="border rounded p-4" style={{ borderColor: colors.border }}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {properties.map((prop, i) => (
-              <div key={i} className="space-y-1">
-                <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
-                <div className="text-sm truncate" style={{ color: colors.text }}>{prop.value || '-'}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
     );
   };
 
-  // Render Definition Tab (for views/triggers)
-  const renderDefinitionTab = () => {
-    return renderDDLTab();
-  };
+  // For non-synonym objects, show regular properties
+  const properties = [
+    { label: 'Name', value: details.name || details.OBJECT_NAME || details.objectName || details.SYNONYM_NAME || '-' },
+    { label: 'Owner', value: details.owner || details.OWNER || '-' },
+    { label: 'Type', value: details.type || details.OBJECT_TYPE || details.objectType || details.TARGET_TYPE || '-' },
+    { label: 'Status', value: details.status || details.STATUS || details.TARGET_STATUS || 'VALID' },
+    { label: 'Created', value: details.created || details.CREATED || details.TARGET_CREATED ? formatDateForDisplay(details.created || details.CREATED || details.TARGET_CREATED) : '-' },
+    { label: 'Last Modified', value: details.last_ddl_time || details.LAST_DDL_TIME || details.TARGET_MODIFIED ? formatDateForDisplay(details.last_ddl_time || details.LAST_DDL_TIME || details.TARGET_MODIFIED) : '-' },
+    ...(details.num_rows || details.NUM_ROWS ? [{ label: 'Row Count', value: (details.num_rows || details.NUM_ROWS).toLocaleString() }] : []),
+    ...(details.bytes || details.BYTES ? [{ label: 'Size', value: formatBytes(details.bytes || details.BYTES) }] : []),
+    ...(details.comments || details.COMMENTS ? [{ label: 'Comment', value: details.comments || details.COMMENTS }] : [])
+  ];
 
-  // Render Spec Tab (for packages)
-  const renderSpecTab = () => {
-    return renderDDLTab();
-  };
-
-  // Render Body Tab (for packages)
-  const renderBodyTab = () => {
-    const body = objectDetails?.body || objectDetails?.targetDetails?.body || '';
-    return (
-      <div className="flex-1 overflow-auto">
-        <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
-          <pre className="text-xs font-mono whitespace-pre-wrap overflow-auto" style={{ color: colors.text }}>
-            {body || 'No package body available'}
-          </pre>
-          <div className="mt-2 flex justify-end">
-            <button 
-              className="px-3 py-1 text-xs rounded hover:bg-opacity-50"
-              style={{ backgroundColor: colors.hover, color: colors.text }}
-              onClick={() => handleCopyToClipboard(body, 'body')}
-            >
-              <Copy size={12} className="inline mr-1" />
-              Copy
-            </button>
-          </div>
+  return (
+    <div className="flex-1 overflow-auto">
+      <div className="border rounded p-4" style={{ borderColor: colors.border }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {properties.map((prop, i) => (
+            <div key={i} className="space-y-1">
+              <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
+              <div className="text-sm truncate" style={{ color: colors.text }}>{prop.value || '-'}</div>
+            </div>
+          ))}
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
+
 
   // Render Attributes Tab (for types)
   const renderAttributesTab = () => {
@@ -2235,142 +2170,298 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
 
   // Handle Object Select - Always show Properties tab first
   const handleObjectSelect = useCallback(async (object, type) => {
-    if (!authToken || !object) {
-      console.error('Cannot select object: missing authToken or object', { authToken: !!authToken, object });
-      return;
-    }
+  if (!authToken || !object) {
+    console.error('Cannot select object: missing authToken or object', { authToken: !!authToken, object });
+    return;
+  }
 
-    Logger.info('SchemaBrowser', 'handleObjectSelect', `Selecting ${object.name} (${type})`);
+  Logger.info('SchemaBrowser', 'handleObjectSelect', `Selecting ${object.name} (${type})`);
+  
+  const objectId = object.id || `${object.owner || 'unknown'}_${object.name}`;
+  
+  setLoading(true);
+  setTableDataLoading(false);
+  setObjectDetails(null);
+  setObjectDDL('');
+  setTableData(null);
+  setDdlLoading(false); // Reset DDL loading state
+  
+  // IMPORTANT: Set active tab to properties BEFORE setting the active object
+  setActiveTab('properties');
+  
+  const enrichedObject = {
+    ...object,
+    id: objectId,
+    type: type
+  };
+  
+  setActiveObject(enrichedObject);
+  setSelectedForApiGeneration(enrichedObject);
+  
+  const tabId = `${type}_${objectId}`;
+  const existingTab = tabs.find(t => t.id === tabId);
+  
+  if (existingTab) {
+    setTabs(tabs.map(t => ({ ...t, isActive: t.id === tabId })));
+  } else {
+    setTabs(prev => [...prev.slice(-4), {
+      id: tabId,
+      name: object.name,
+      type,
+      objectId: objectId,
+      isActive: true
+    }].map(t => ({ ...t, isActive: t.id === tabId })));
+  }
+
+  try {
+    // Load object details
+    Logger.debug('SchemaBrowser', 'handleObjectSelect', `Loading details for ${object.name}`);
+    const response = await getObjectDetails(authToken, { objectType: type, objectName: object.name });
     
-    const objectId = object.id || `${object.owner || 'unknown'}_${object.name}`;
+    const processedResponse = handleSchemaBrowserResponse(response);
+    const responseData = processedResponse.data || processedResponse;
     
-    setLoading(true);
-    setTableDataLoading(false);
-    setObjectDetails(null);
-    setObjectDDL('');
-    setTableData(null);
-    
-    // ALWAYS set active tab to properties first
-    setActiveTab('properties');
-    
-    const enrichedObject = {
-      ...object,
-      id: objectId,
-      type: type
+    const enrichedResponseData = {
+      ...responseData,
+      name: responseData.name || object.name,
+      type: responseData.type || type
     };
     
-    setActiveObject(enrichedObject);
-    setSelectedForApiGeneration(enrichedObject);
+    setObjectDetails(enrichedResponseData);
     
-    const tabId = `${type}_${objectId}`;
-    const existingTab = tabs.find(t => t.id === tabId);
+    // Determine what type of object we're dealing with
+    const upperType = type.toUpperCase();
+    let effectiveType = upperType;
+    let targetType = null;
+    let targetName = object.name;
+    let targetOwner = null;
     
-    if (existingTab) {
-      setTabs(tabs.map(t => ({ ...t, isActive: t.id === tabId })));
-    } else {
-      setTabs(prev => [...prev.slice(-4), {
-        id: tabId,
-        name: object.name,
-        type,
-        objectId: objectId,
-        isActive: true
-      }].map(t => ({ ...t, isActive: t.id === tabId })));
+    if (upperType === 'SYNONYM' && responseData?.targetDetails) {
+      targetType = responseData.targetDetails.OBJECT_TYPE || responseData.targetDetails.objectType;
+      targetName = responseData.TARGET_NAME || object.name;
+      targetOwner = responseData.TARGET_OWNER || responseData.targetDetails.OWNER;
+      
+      if (targetType) {
+        effectiveType = targetType;
+      }
     }
-
-    try {
-      // Load object details
-      Logger.debug('SchemaBrowser', 'handleObjectSelect', `Loading details for ${object.name}`);
-      const response = await getObjectDetails(authToken, { objectType: type, objectName: object.name });
-      
-      const processedResponse = handleSchemaBrowserResponse(response);
-      const responseData = processedResponse.data || processedResponse;
-      
-      const enrichedResponseData = {
-        ...responseData,
-        name: responseData.name || object.name,
-        type: responseData.type || type
-      };
-      
-      setObjectDetails(enrichedResponseData);
-      
-      // Determine what type of object we're dealing with
-      const upperType = type.toUpperCase();
-      let effectiveType = upperType;
-      let targetType = null;
-      let targetName = object.name;
-      let targetOwner = null;
-      
-      if (upperType === 'SYNONYM' && responseData?.targetDetails) {
-        targetType = responseData.targetDetails.OBJECT_TYPE || responseData.targetDetails.objectType;
-        targetName = responseData.TARGET_NAME || object.name;
-        targetOwner = responseData.TARGET_OWNER || responseData.targetDetails.OWNER;
-        
-        if (targetType) {
-          effectiveType = targetType;
-        }
+    
+    // Load table data in background if it's a table
+    if (effectiveType === 'TABLE') {
+      if (upperType === 'SYNONYM' && targetType === 'TABLE') {
+        loadTableData(targetName).catch(err => console.error('Background table load error:', err));
+      } else {
+        loadTableData(object.name).catch(err => console.error('Background table load error:', err));
       }
-      
-      // Load table data in background if it's a table
-      if (effectiveType === 'TABLE') {
-        if (upperType === 'SYNONYM' && targetType === 'TABLE') {
-          loadTableData(targetName).catch(err => console.error('Background table load error:', err));
-        } else {
-          loadTableData(object.name).catch(err => console.error('Background table load error:', err));
-        }
-      }
-      
-      // Load DDL in background for appropriate types
-      const ddlTypes = ['TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'PACKAGE', 'TRIGGER', 'SEQUENCE'];
-      if (ddlTypes.includes(effectiveType)) {
-        (async () => {
-          try {
-            const ddlResponse = await getObjectDDL(authToken, { 
-              objectType: effectiveType.toLowerCase(), 
-              objectName: targetName 
-            });
+    }
+    
+    // Load DDL in background for appropriate types
+    const ddlTypes = ['TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'PACKAGE', 'TRIGGER', 'SEQUENCE'];
+    if (ddlTypes.includes(effectiveType)) {
+      (async () => {
+        try {
+          setDdlLoading(true); // Set DDL loading to true
+          const ddlResponse = await getObjectDDL(authToken, { 
+            objectType: effectiveType.toLowerCase(), 
+            objectName: targetName 
+          });
+          
+          if (ddlResponse && ddlResponse.data) {
+            const ddlData = ddlResponse.data;
+            let ddlText = '';
             
-            if (ddlResponse && ddlResponse.data) {
-              const ddlData = ddlResponse.data;
-              let ddlText = '';
-              
-              if (typeof ddlData === 'string') {
-                ddlText = ddlData;
-              } else if (ddlData.ddl) {
-                ddlText = ddlData.ddl;
-              } else if (ddlData.text) {
-                ddlText = ddlData.text;
-              } else if (ddlData.sql) {
-                ddlText = ddlData.sql;
-              } else {
-                ddlText = JSON.stringify(ddlData, null, 2);
-              }
-              
-              if (ddlText && ddlText !== '{}') {
-                setObjectDDL(ddlText);
-              } else {
-                setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName}`);
-              }
+            if (typeof ddlData === 'string') {
+              ddlText = ddlData;
+            } else if (ddlData.ddl) {
+              ddlText = ddlData.ddl;
+            } else if (ddlData.text) {
+              ddlText = ddlData.text;
+            } else if (ddlData.sql) {
+              ddlText = ddlData.sql;
+            } else {
+              ddlText = JSON.stringify(ddlData, null, 2);
+            }
+            
+            if (ddlText && ddlText !== '{}') {
+              setObjectDDL(ddlText);
             } else {
               setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName}`);
             }
-          } catch (ddlError) {
-            console.error('Background DDL fetch error:', ddlError);
-            setObjectDDL(`-- Error loading DDL for ${effectiveType} ${targetName}\n-- ${ddlError.message}`);
+          } else {
+            setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName}`);
           }
-        })();
-      }
-      
-    } catch (err) {
-      Logger.error('SchemaBrowser', 'handleObjectSelect', `Error loading details for ${object.name}`, err);
-      setError(`Failed to load object details: ${err.message}`);
-    } finally {
-      setLoading(false);
+        } catch (ddlError) {
+          console.error('Background DDL fetch error:', ddlError);
+          setObjectDDL(`-- Error loading DDL for ${effectiveType} ${targetName}\n-- ${ddlError.message}`);
+        } finally {
+          setDdlLoading(false); // Set DDL loading to false when done
+        }
+      })();
     }
+    
+  } catch (err) {
+    Logger.error('SchemaBrowser', 'handleObjectSelect', `Error loading details for ${object.name}`, err);
+    setError(`Failed to load object details: ${err.message}`);
+  } finally {
+    setLoading(false);
+  }
 
-    if (window.innerWidth < 768) {
-      setIsLeftSidebarVisible(false);
+  if (window.innerWidth < 768) {
+    setIsLeftSidebarVisible(false);
+  }
+}, [authToken, tabs, loadTableData]);
+
+// Update the renderDDLTab function to show loader when ddlLoading is true
+const renderDDLTab = () => {
+  const ddl = objectDDL || 
+              objectDetails?.targetDetails?.text || 
+              objectDetails?.text || 
+              objectDetails?.ddl ||
+              activeObject?.text || 
+              activeObject?.spec || 
+              activeObject?.body || 
+              '';
+  
+  return (
+    <div className="flex-1 overflow-auto">
+      <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
+        {ddlLoading ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <Loader className="animate-spin mb-4" size={32} style={{ color: colors.primary }} />
+            <div className="text-sm font-medium" style={{ color: colors.text }}>Loading DDL...</div>
+            <div className="text-xs mt-2" style={{ color: colors.textSecondary }}>
+              Fetching DDL for {activeObject?.name}
+            </div>
+          </div>
+        ) : (
+          <>
+            <pre className="text-xs font-mono whitespace-pre-wrap overflow-auto max-h-[calc(100vh-300px)]" style={{ color: colors.text }}>
+              {ddl || '-- No DDL available for this object'}
+            </pre>
+            <div className="mt-2 flex justify-end">
+              <button 
+                className="px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+                onClick={() => handleCopyToClipboard(ddl, 'DDL')}
+                disabled={ddlLoading || !ddl}
+              >
+                <Copy size={12} className="inline mr-1" />
+                Copy
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Also update the renderDefinitionTab, renderSpecTab, and renderBodyTab functions
+// to use the same DDL loading state
+
+const renderDefinitionTab = () => {
+  return renderDDLTab();
+};
+
+const renderSpecTab = () => {
+  return renderDDLTab();
+};
+
+const renderBodyTab = () => {
+  const body = objectDetails?.body || objectDetails?.targetDetails?.body || '';
+  
+  return (
+    <div className="flex-1 overflow-auto">
+      <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
+        {ddlLoading ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <Loader className="animate-spin mb-4" size={32} style={{ color: colors.primary }} />
+            <div className="text-sm font-medium" style={{ color: colors.text }}>Loading Package Body...</div>
+            <div className="text-xs mt-2" style={{ color: colors.textSecondary }}>
+              Fetching body for {activeObject?.name}
+            </div>
+          </div>
+        ) : (
+          <>
+            <pre className="text-xs font-mono whitespace-pre-wrap overflow-auto max-h-[calc(100vh-300px)]" style={{ color: colors.text }}>
+              {body || 'No package body available'}
+            </pre>
+            <div className="mt-2 flex justify-end">
+              <button 
+                className="px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+                onClick={() => handleCopyToClipboard(body, 'body')}
+                disabled={ddlLoading || !body}
+              >
+                <Copy size={12} className="inline mr-1" />
+                Copy
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Add a useEffect to track when the DDL tab is clicked
+useEffect(() => {
+  if (activeTab === 'ddl' || activeTab === 'definition' || activeTab === 'spec' || activeTab === 'body') {
+    // If we're on a DDL-related tab and DDL is still loading or empty, show loader
+    const ddlTypes = ['TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'PACKAGE', 'TRIGGER', 'SEQUENCE'];
+    const effectiveType = activeObject?.type?.toUpperCase();
+    
+    if (activeObject && ddlTypes.includes(effectiveType) && !objectDDL && !ddlLoading) {
+      // Trigger DDL load if not already loaded
+      const targetName = activeObject.type === 'SYNONYM' && objectDetails?.TARGET_NAME 
+        ? objectDetails.TARGET_NAME 
+        : activeObject.name;
+      
+      const loadDDL = async () => {
+        try {
+          setDdlLoading(true);
+          const ddlResponse = await getObjectDDL(authToken, { 
+            objectType: effectiveType.toLowerCase(), 
+            objectName: targetName 
+          });
+          
+          if (ddlResponse && ddlResponse.data) {
+            const ddlData = ddlResponse.data;
+            let ddlText = '';
+            
+            if (typeof ddlData === 'string') {
+              ddlText = ddlData;
+            } else if (ddlData.ddl) {
+              ddlText = ddlData.ddl;
+            } else if (ddlData.text) {
+              ddlText = ddlData.text;
+            } else if (ddlData.sql) {
+              ddlText = ddlData.sql;
+            } else {
+              ddlText = JSON.stringify(ddlData, null, 2);
+            }
+            
+            if (ddlText && ddlText !== '{}') {
+              setObjectDDL(ddlText);
+            } else {
+              setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName}`);
+            }
+          } else {
+            setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName}`);
+          }
+        } catch (ddlError) {
+          console.error('DDL fetch error:', ddlError);
+          setObjectDDL(`-- Error loading DDL for ${effectiveType} ${targetName}\n-- ${ddlError.message}`);
+        } finally {
+          setDdlLoading(false);
+        }
+      };
+      
+      loadDDL();
     }
-  }, [authToken, tabs, loadTableData]);
+  }
+}, [activeTab, activeObject, objectDDL, ddlLoading, objectDetails, authToken]);
+
 
   // Render tab content based on active tab
   const renderTabContent = () => {
@@ -2417,24 +2508,21 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
     const isMobile = window.innerWidth < 768;
     
     const menuItems = [
-      { label: 'Open', icon: <ExternalLink size={14} />, action: () => handleObjectSelect(contextObject, contextObject.type) },
-      { separator: true },
-      { label: 'Generate API', icon: <Code size={14} />, action: () => {
+      { label: 'Open', icon: <ExternalLink size={12} />, action: () => handleObjectSelect(contextObject, contextObject.type) },
+      { label: 'Generate API', icon: <Code size={12} />, action: () => {
         setSelectedForApiGeneration(contextObject);
         setShowApiModal(true);
         setShowContextMenu(false);
       }},
-      { label: 'Copy DDL', icon: <Copy size={14} />, action: () => {
+      { label: 'Copy DDL', icon: <Copy size={12} />, action: () => {
         handleCopyToClipboard(contextObject.text || '', 'DDL');
         setShowContextMenu(false);
       }},
-      { label: 'Properties', icon: <Settings size={14} />, action: () => {
+      { label: 'Properties', icon: <Settings size={12} />, action: () => {
         handleObjectSelect(contextObject, contextObject.type);
         setActiveTab('properties');
         setShowContextMenu(false);
       }},
-      { separator: true },
-      { label: 'Close', icon: <X size={14} />, action: () => setShowContextMenu(false) }
     ];
 
     return (
@@ -2452,7 +2540,7 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-3 py-2 border-b" style={{ borderColor: colors.border }}>
+        <div className="px-3 py-2 border-b space-y-2" style={{ borderColor: colors.border }}>
           <div className="text-xs font-medium truncate" style={{ color: colors.text }}>
             {contextObject.name}
           </div>
@@ -2467,7 +2555,7 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
             <button
               key={item.label}
               onClick={item.action}
-              className="w-full px-4 py-3 text-sm text-left hover:bg-opacity-50 transition-colors flex items-center gap-3"
+              className="w-full px-4 py-3 text-xs text-left hover:bg-opacity-50 transition-colors flex items-center gap-3"
               style={{ backgroundColor: 'transparent', color: colors.text }}
             >
               {item.icon}
@@ -2519,13 +2607,6 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
       }}>
         <span className="text-sm font-medium" style={{ color: colors.text }}>Schema Browser</span>
         <div className="flex items-center gap-2">
-          {/* <button 
-            onClick={toggleTheme}
-            className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
-            style={{ backgroundColor: colors.hover }}
-          >
-            {isDark ? <Sun size={14} style={{ color: colors.textSecondary }} /> : <Moon size={14} style={{ color: colors.textSecondary }} />}
-          </button> */}
           <button 
             onClick={() => setShowApiModal(true)}
             className="px-3 py-1.5 rounded text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 hover:opacity-90 font-medium"
@@ -2657,9 +2738,9 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
           )}
 
           {/* Tab Content */}
-          <div className="flex-1 overflow-auto p-3 sm:p-4" style={{ backgroundColor: colors.card }}>
+          <div className="flex-1 overflow-auto" style={{ backgroundColor: colors.card }}>
             {loading && activeObject ? (
-              <div className="flex items-center justify-center h-full min-h-[400px]">
+              <div className="h-full w-full flex items-center justify-center min-h-[400px]">
                 <div className="text-center">
                   <Loader className="animate-spin mx-auto mb-4" size={40} style={{ color: colors.primary }} />
                   <div className="text-sm font-medium" style={{ color: colors.text }}>Loading object details...</div>
