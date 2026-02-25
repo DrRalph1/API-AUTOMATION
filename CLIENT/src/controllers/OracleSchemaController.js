@@ -57,7 +57,31 @@ export const clearCachedSchemaData = (key) => {
 };
 
 // ============================================================
-// 1. TABLE ENDPOINTS - COMPLETE
+// 1. SCHEMA INFO ENDPOINTS
+// ============================================================
+
+/**
+ * Get current schema information
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getCurrentSchemaInfo = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/info`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformSchemaInfoResponse(response);
+    });
+};
+
+// ============================================================
+// 2. TABLE ENDPOINTS - COMPLETE
 // ============================================================
 
 /**
@@ -233,6 +257,49 @@ export const getRecentTables = async (authorizationHeader, days = 7) => {
 };
 
 /**
+ * Get tables for frontend (optimized format)
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getAllTablesForFrontend = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/tables`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformFrontendResponse(response);
+    });
+};
+
+/**
+ * Get table details for frontend (optimized format)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} tableName - Table name
+ * @returns {Promise} API response
+ */
+export const getTableDetailsForFrontend = async (authorizationHeader, tableName) => {
+    const requestId = generateRequestId();
+    
+    const url = `/oracle/schema/frontend/tables/${encodeURIComponent(tableName)}/details`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformFrontendResponse(response);
+    });
+};
+
+/**
  * Get table data with pagination
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} params - Parameters
@@ -269,7 +336,7 @@ export const getTableData = async (authorizationHeader, params = {}) => {
 };
 
 // ============================================================
-// 2. VIEW ENDPOINTS - COMPLETE
+// 3. VIEW ENDPOINTS - COMPLETE
 // ============================================================
 
 /**
@@ -337,8 +404,28 @@ export const getViewDetails = async (authorizationHeader, viewName) => {
     });
 };
 
+/**
+ * Get views for frontend (optimized format)
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getAllViewsForFrontend = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/views`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformFrontendResponse(response);
+    });
+};
+
 // ============================================================
-// 3. PROCEDURE ENDPOINTS - COMPLETE
+// 4. PROCEDURE ENDPOINTS - COMPLETE
 // ============================================================
 
 /**
@@ -406,8 +493,28 @@ export const getProcedureDetails = async (authorizationHeader, procedureName) =>
     });
 };
 
+/**
+ * Get procedures for frontend (optimized format)
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getAllProceduresForFrontend = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/procedures`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformFrontendResponse(response);
+    });
+};
+
 // ============================================================
-// 4. FUNCTION ENDPOINTS - COMPLETE
+// 5. FUNCTION ENDPOINTS - COMPLETE
 // ============================================================
 
 /**
@@ -475,8 +582,28 @@ export const getFunctionDetails = async (authorizationHeader, functionName) => {
     });
 };
 
+/**
+ * Get functions for frontend (optimized format)
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getAllFunctionsForFrontend = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/functions`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformFrontendResponse(response);
+    });
+};
+
 // ============================================================
-// 5. PACKAGE ENDPOINTS - COMPLETE
+// 6. PACKAGE ENDPOINTS - COMPLETE
 // ============================================================
 
 /**
@@ -544,8 +671,28 @@ export const getPackageDetails = async (authorizationHeader, packageName) => {
     });
 };
 
+/**
+ * Get packages for frontend (optimized format)
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getAllPackagesForFrontend = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/packages`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformFrontendResponse(response);
+    });
+};
+
 // ============================================================
-// 6. TRIGGER ENDPOINTS - COMPLETE
+// 7. TRIGGER ENDPOINTS - COMPLETE
 // ============================================================
 
 /**
@@ -613,8 +760,28 @@ export const getTriggerDetails = async (authorizationHeader, triggerName) => {
     });
 };
 
+/**
+ * Get triggers for frontend (optimized format)
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getAllTriggersForFrontend = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/triggers`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformFrontendResponse(response);
+    });
+};
+
 // ============================================================
-// 7. SYNONYM ENDPOINTS - COMPLETE
+// 8. SYNONYM ENDPOINTS - COMPLETE
 // ============================================================
 
 /**
@@ -682,8 +849,117 @@ export const getSynonymDetails = async (authorizationHeader, synonymName) => {
     });
 };
 
+/**
+ * Get all synonyms with details (enhanced)
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getAllSynonymsWithDetails = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/synonyms/details`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformFrontendResponse(response);
+    });
+};
+
+/**
+ * Get synonyms by target type
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} targetType - Target object type (TABLE, VIEW, PROCEDURE, etc.)
+ * @returns {Promise} API response
+ */
+export const getSynonymsByTargetType = async (authorizationHeader, targetType) => {
+    const requestId = generateRequestId();
+    
+    const url = `/oracle/schema/synonyms/byTargetType/${encodeURIComponent(targetType)}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformSynonymsResponse(response);
+    });
+};
+
+/**
+ * Resolve synonym to its target object
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} synonymName - Synonym name
+ * @returns {Promise} API response
+ */
+export const resolveSynonym = async (authorizationHeader, synonymName) => {
+    const requestId = generateRequestId();
+    
+    const url = `/oracle/schema/synonyms/${encodeURIComponent(synonymName)}/resolve`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformResolveSynonymResponse(response);
+    });
+};
+
+/**
+ * Validate synonym and check if target exists
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} synonymName - Synonym name
+ * @returns {Promise} API response
+ */
+export const validateSynonym = async (authorizationHeader, synonymName) => {
+    const requestId = generateRequestId();
+    
+    const url = `/oracle/schema/synonyms/${encodeURIComponent(synonymName)}/validate`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformValidateSynonymResponse(response);
+    });
+};
+
+/**
+ * Get synonyms for frontend (optimized format)
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getAllSynonymsForFrontend = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/synonyms`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformFrontendResponse(response);
+    });
+};
+
 // ============================================================
-// 8. SEQUENCE ENDPOINTS - COMPLETE
+// 9. SEQUENCE ENDPOINTS - COMPLETE
 // ============================================================
 
 /**
@@ -751,8 +1027,28 @@ export const getSequenceDetails = async (authorizationHeader, sequenceName) => {
     });
 };
 
+/**
+ * Get sequences for frontend (optimized format)
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getAllSequencesForFrontend = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/sequences`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformFrontendResponse(response);
+    });
+};
+
 // ============================================================
-// 9. TYPE ENDPOINTS - COMPLETE
+// 10. TYPE ENDPOINTS - COMPLETE
 // ============================================================
 
 /**
@@ -820,8 +1116,28 @@ export const getTypeDetails = async (authorizationHeader, typeName) => {
     });
 };
 
+/**
+ * Get types for frontend (optimized format)
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getAllTypesForFrontend = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/types`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformFrontendResponse(response);
+    });
+};
+
 // ============================================================
-// 10. DATABASE LINK ENDPOINTS - NEW
+// 11. DATABASE LINK ENDPOINTS
 // ============================================================
 
 /**
@@ -867,7 +1183,7 @@ export const getDbLinksBySchema = async (authorizationHeader, schemaName) => {
 };
 
 // ============================================================
-// 11. GENERAL OBJECT ENDPOINTS
+// 12. GENERAL OBJECT ENDPOINTS
 // ============================================================
 
 /**
@@ -954,64 +1270,36 @@ export const getObjectCountByType = async (authorizationHeader) => {
     });
 };
 
-// ============================================================
-// 12. DIAGNOSTICS ENDPOINTS
-// ============================================================
-
 /**
- * Run database diagnostics
+ * Get invalid objects
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
  */
-export const diagnoseDatabase = async (authorizationHeader) => {
+export const getInvalidObjects = async (authorizationHeader) => {
     const requestId = generateRequestId();
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/diagnose`, {
+        (authHeader) => apiCall(`/oracle/schema/objects/invalid`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
         })
     ).then(response => {
-        return transformDiagnosticsResponse(response);
-    });
-};
-
-// ============================================================
-// 13. FRONTEND-FRIENDLY ENDPOINTS
-// ============================================================
-
-/**
- * Get all tables for frontend (optimized format)
- * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response
- */
-export const getAllTablesForFrontend = async (authorizationHeader) => {
-    const requestId = generateRequestId();
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/tables`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformFrontendResponse(response);
+        return transformObjectsResponse(response);
     });
 };
 
 /**
- * Get table details for frontend (optimized format)
+ * Get objects by status
  * @param {string} authorizationHeader - Bearer token
- * @param {string} tableName - Table name
+ * @param {string} status - Object status (VALID, INVALID, etc.)
  * @returns {Promise} API response
  */
-export const getTableDetailsForFrontend = async (authorizationHeader, tableName) => {
+export const getObjectsByStatus = async (authorizationHeader, status) => {
     const requestId = generateRequestId();
     
-    const url = `/oracle/schema/frontend/tables/${encodeURIComponent(tableName)}/details`;
+    const url = `/oracle/schema/objects/by-status/${encodeURIComponent(status)}`;
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
@@ -1021,172 +1309,75 @@ export const getTableDetailsForFrontend = async (authorizationHeader, tableName)
             requestId: requestId
         })
     ).then(response => {
-        return transformFrontendResponse(response);
+        return transformObjectsResponse(response);
     });
 };
 
 /**
- * Get all views for frontend (optimized format)
+ * Get object details by name and type
  * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)
+ * @param {string} params.objectName - Object name
+ * @param {string} params.owner - Object owner (optional)
  * @returns {Promise} API response
  */
-export const getAllViewsForFrontend = async (authorizationHeader) => {
+export const getObjectDetails = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
+    const { objectType, objectName, owner } = params;
+    
+    const queryParams = buildQueryParams({ owner });
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/details${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/views`, {
+        (authHeader) => apiCall(url, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
         })
     ).then(response => {
-        return transformFrontendResponse(response);
+        return transformObjectDetailsResponse(response, objectType, objectName);
     });
 };
 
 /**
- * Get all procedures for frontend (optimized format)
+ * Validate object existence and accessibility
  * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectName - Object name
+ * @param {string} params.objectType - Object type
+ * @param {string} params.owner - Object owner (optional)
  * @returns {Promise} API response
  */
-export const getAllProceduresForFrontend = async (authorizationHeader) => {
+export const validateObject = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
+    const { objectName, objectType, owner } = params;
+    
+    const queryParams = buildQueryParams({
+        objectName,
+        objectType,
+        owner
+    });
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/procedures`, {
+        (authHeader) => apiCall(`/oracle/schema/objects/validate?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
         })
     ).then(response => {
-        return transformFrontendResponse(response);
+        return transformValidateObjectResponse(response);
     });
 };
 
-/**
- * Get all functions for frontend (optimized format)
- * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response
- */
-export const getAllFunctionsForFrontend = async (authorizationHeader) => {
-    const requestId = generateRequestId();
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/functions`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformFrontendResponse(response);
-    });
-};
+// ============================================================
+// 13. SEARCH ENDPOINTS - ENHANCED
+// ============================================================
 
 /**
- * Get all packages for frontend (optimized format)
- * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response
- */
-export const getAllPackagesForFrontend = async (authorizationHeader) => {
-    const requestId = generateRequestId();
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/packages`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformFrontendResponse(response);
-    });
-};
-
-/**
- * Get all sequences for frontend (optimized format)
- * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response
- */
-export const getAllSequencesForFrontend = async (authorizationHeader) => {
-    const requestId = generateRequestId();
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/sequences`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformFrontendResponse(response);
-    });
-};
-
-/**
- * Get all synonyms for frontend (optimized format)
- * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response
- */
-export const getAllSynonymsForFrontend = async (authorizationHeader) => {
-    const requestId = generateRequestId();
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/synonyms`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformFrontendResponse(response);
-    });
-};
-
-/**
- * Get all types for frontend (optimized format)
- * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response
- */
-export const getAllTypesForFrontend = async (authorizationHeader) => {
-    const requestId = generateRequestId();
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/types`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformFrontendResponse(response);
-    });
-};
-
-/**
- * Get all triggers for frontend (optimized format)
- * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response
- */
-export const getAllTriggersForFrontend = async (authorizationHeader) => {
-    const requestId = generateRequestId();
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/triggers`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformFrontendResponse(response);
-    });
-};
-
-/**
- * Advanced search for Oracle objects
+ * Advanced search for Oracle objects (frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} params - Parameters
  * @param {string} params.query - Search query
@@ -1217,6 +1408,32 @@ export const searchObjectsAdvanced = async (authorizationHeader, params = {}) =>
 };
 
 /**
+ * Comprehensive search across all objects including synonym targets
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} pattern - Search pattern
+ * @returns {Promise} API response
+ */
+export const comprehensiveSearch = async (authorizationHeader, pattern) => {
+    const requestId = generateRequestId();
+    const queryParams = buildQueryParams({ pattern });
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/comprehensive-search?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformComprehensiveSearchResponse(response);
+    });
+};
+
+// ============================================================
+// 14. DDL ENDPOINTS
+// ============================================================
+
+/**
  * Get object DDL
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} params - Parameters
@@ -1241,6 +1458,63 @@ export const getObjectDDL = async (authorizationHeader, params = {}) => {
         return transformDDLResponse(response);
     });
 };
+
+/**
+ * Get object size information
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type (TABLE, INDEX, etc.)
+ * @param {string} params.objectName - Object name
+ * @returns {Promise} API response
+ */
+export const getObjectSize = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectType, objectName } = params;
+    
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/size`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformObjectSizeResponse(response);
+    });
+};
+
+// ============================================================
+// 15. RECENT OBJECTS ENDPOINTS
+// ============================================================
+
+/**
+ * Get objects modified in the last N days
+ * @param {string} authorizationHeader - Bearer token
+ * @param {number} days - Number of days
+ * @returns {Promise} API response
+ */
+export const getRecentObjects = async (authorizationHeader, days) => {
+    const requestId = generateRequestId();
+    
+    const url = `/oracle/schema/recent/${encodeURIComponent(days)}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformObjectsResponse(response);
+    });
+};
+
+// ============================================================
+// 16. EXECUTE QUERY ENDPOINT
+// ============================================================
 
 /**
  * Execute SQL query
@@ -1273,6 +1547,30 @@ export const executeQuery = async (authorizationHeader, queryRequest = {}) => {
 };
 
 // ============================================================
+// 17. DIAGNOSTICS ENDPOINT
+// ============================================================
+
+/**
+ * Run database diagnostics
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const diagnoseDatabase = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/diagnose`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformDiagnosticsResponse(response);
+    });
+};
+
+// ============================================================
 // COMPREHENSIVE SCHEMA DATA (Enhanced)
 // ============================================================
 
@@ -1288,11 +1586,12 @@ export const getComprehensiveSchemaData = async (authorizationHeader, params = {
     const { useFrontendEndpoints = false } = params;
     
     try {
-        let tables, views, procedures, functions, packages, sequences, synonyms, types, triggers, dbLinks;
+        let schemaInfo, tables, views, procedures, functions, packages, sequences, synonyms, types, triggers, dbLinks;
         
         if (useFrontendEndpoints) {
             // Use frontend-optimized endpoints
-            [tables, views, procedures, functions, packages, sequences, synonyms, types, triggers] = await Promise.all([
+            [schemaInfo, tables, views, procedures, functions, packages, sequences, synonyms, types, triggers] = await Promise.all([
+                getCurrentSchemaInfo(authorizationHeader).catch(() => ({ data: {} })),
                 getAllTablesForFrontend(authorizationHeader).catch(() => ({ data: [] })),
                 getAllViewsForFrontend(authorizationHeader).catch(() => ({ data: [] })),
                 getAllProceduresForFrontend(authorizationHeader).catch(() => ({ data: [] })),
@@ -1303,9 +1602,12 @@ export const getComprehensiveSchemaData = async (authorizationHeader, params = {
                 getAllTypesForFrontend(authorizationHeader).catch(() => ({ data: [] })),
                 getAllTriggersForFrontend(authorizationHeader).catch(() => ({ data: [] }))
             ]);
+            
+            dbLinks = { data: [] };
         } else {
             // Use standard endpoints
-            [tables, views, procedures, functions, packages, sequences, synonyms, types, triggers, dbLinks] = await Promise.all([
+            [schemaInfo, tables, views, procedures, functions, packages, sequences, synonyms, types, triggers, dbLinks] = await Promise.all([
+                getCurrentSchemaInfo(authorizationHeader).catch(() => ({ data: {} })),
                 getAllTables(authorizationHeader).catch(() => ({ data: [] })),
                 getAllViews(authorizationHeader).catch(() => ({ data: [] })),
                 getAllProcedures(authorizationHeader).catch(() => ({ data: [] })),
@@ -1323,6 +1625,7 @@ export const getComprehensiveSchemaData = async (authorizationHeader, params = {
             responseCode: 200,
             message: "Comprehensive schema data retrieved successfully",
             data: {
+                schemaInfo: schemaInfo.data || {},
                 tables: {
                     objects: tables.data || [],
                     totalCount: (tables.data || []).length
@@ -1374,6 +1677,7 @@ export const getComprehensiveSchemaData = async (authorizationHeader, params = {
             responseCode: 500,
             message: error.message,
             data: {
+                schemaInfo: {},
                 tables: { objects: [], totalCount: 0 },
                 views: { objects: [], totalCount: 0 },
                 procedures: { objects: [], totalCount: 0 },
@@ -1422,8 +1726,40 @@ export const handleSchemaBrowserResponse = (response) => {
 };
 
 // ============================================================
+// EXISTING TRANSFORM FUNCTIONS (Keep existing ones)
+// ============================================================
+
+// [Keep all your existing transform functions from your original code]
+// transformTablesResponse, transformViewsResponse, transformProceduresResponse,
+// transformFunctionsResponse, transformPackagesResponse, transformSequencesResponse,
+// transformSynonymsResponse, transformTypesResponse, transformTriggersResponse,
+// transformTableDetailsResponse, transformTableDataResponse, transformDDLResponse,
+// transformSearchResponse, transformQueryResponse
+
+// ============================================================
 // NEW TRANSFORM FUNCTIONS
 // ============================================================
+
+/**
+ * Transform schema info response
+ */
+const transformSchemaInfoResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        currentUser: data.current_user || data.user || '',
+        schemaName: data.schema_name || data.schema || '',
+        databaseVersion: data.database_version || data.version || '',
+        defaultTablespace: data.default_tablespace || '',
+        tempTablespace: data.temp_tablespace || '',
+        created: data.created
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
 
 /**
  * Transform tables with row count response
@@ -1714,6 +2050,50 @@ const transformSynonymDetailsResponse = (response, synonymName) => {
 };
 
 /**
+ * Transform resolve synonym response
+ */
+const transformResolveSynonymResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        synonymName: data.synonym_name,
+        owner: data.owner,
+        targetOwner: data.target_owner,
+        targetName: data.target_name,
+        targetType: data.target_type,
+        dbLink: data.db_link,
+        valid: data.valid === true,
+        exists: data.exists === true
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform validate synonym response
+ */
+const transformValidateSynonymResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        synonymName: data.synonym_name,
+        owner: data.owner,
+        valid: data.valid === true,
+        targetExists: data.target_exists === true,
+        targetStatus: data.target_status,
+        message: data.message || ''
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
  * Transform sequence details response
  */
 const transformSequenceDetailsResponse = (response, sequenceName) => {
@@ -1830,6 +2210,47 @@ const transformObjectsResponse = (response) => {
 };
 
 /**
+ * Transform object details response
+ */
+const transformObjectDetailsResponse = (response, objectType, objectName) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        id: `object-${Date.now()}`,
+        name: objectName,
+        type: objectType,
+        ...data
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform validate object response
+ */
+const transformValidateObjectResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        objectName: data.object_name,
+        objectType: data.object_type,
+        owner: data.owner,
+        exists: data.exists === true,
+        status: data.status,
+        accessible: data.accessible === true,
+        message: data.message || ''
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
  * Transform object count response
  */
 const transformObjectCountResponse = (response) => {
@@ -1842,6 +2263,53 @@ const transformObjectCountResponse = (response) => {
             acc[item.object_type] = item.count;
             return acc;
         }, {})
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform object size response
+ */
+const transformObjectSizeResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        objectName: data.object_name,
+        objectType: data.object_type,
+        owner: data.owner,
+        bytes: data.bytes || 0,
+        size: formatBytes(data.bytes || 0),
+        extents: data.extents || 0,
+        blocks: data.blocks || 0
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform comprehensive search response
+ */
+const transformComprehensiveSearchResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        results: (data.results || []).map((result, index) => ({
+            id: `result-${index + 1}`,
+            name: result.object_name,
+            owner: result.owner,
+            type: result.object_type,
+            status: result.status,
+            matchedBy: result.matched_by || 'DIRECT'
+        })),
+        totalCount: data.totalCount || 0,
+        searchPattern: data.search_pattern
     };
 
     return {
@@ -1891,19 +2359,12 @@ const transformFrontendResponse = (response) => {
 };
 
 // ============================================================
-// EXISTING TRANSFORM FUNCTIONS (Keep as is)
-// ============================================================
-
-// [Keep all existing transform functions from your original code]
-// transformTablesResponse, transformViewsResponse, transformProceduresResponse,
-// transformFunctionsResponse, transformPackagesResponse, transformSequencesResponse,
-// transformSynonymsResponse, transformTypesResponse, transformTriggersResponse,
-// transformTableDetailsResponse, transformTableDataResponse, transformDDLResponse,
-// transformSearchResponse, transformQueryResponse
-
-// ============================================================
 // EXTRACT FUNCTIONS - Enhanced
 // ============================================================
+
+export const extractSchemaInfo = (response) => {
+    return response?.data || {};
+};
 
 export const extractSchemaObjects = (response, objectType) => {
     if (objectType) {
@@ -1921,7 +2382,7 @@ export const extractTableData = (response) => {
 };
 
 export const extractDDL = (response) => {
-    return response?.data || '';
+    return response?.data?.ddl || response?.data || '';
 };
 
 export const extractSearchResults = (response) => {
@@ -1934,6 +2395,7 @@ export const extractQueryResults = (response) => {
 
 export const extractComprehensiveSchemaData = (response) => {
     return response?.data || {
+        schemaInfo: {},
         tables: { objects: [], totalCount: 0 },
         views: { objects: [], totalCount: 0 },
         procedures: { objects: [], totalCount: 0 },
@@ -1957,6 +2419,18 @@ export const extractDiagnostics = (response) => {
 
 export const extractObjectCounts = (response) => {
     return response?.data?.counts || [];
+};
+
+export const extractResolvedSynonym = (response) => {
+    return response?.data || {};
+};
+
+export const extractValidatedSynonym = (response) => {
+    return response?.data || {};
+};
+
+export const extractValidatedObject = (response) => {
+    return response?.data || {};
 };
 
 // ============================================================
@@ -2029,7 +2503,7 @@ export const getObjectTypeIcon = (type) => {
         'DATABASE LINK': '🔗',
         'DB_LINK': '🔗'
     };
-    return icons[type] || '📄';
+    return icons[type?.toUpperCase()] || '📄';
 };
 
 /**
@@ -2050,7 +2524,7 @@ export const getObjectTypeColor = (type, isDark = true) => {
         'DATABASE LINK': isDark ? '#F97316' : '#EA580C',
         'DB_LINK': isDark ? '#F97316' : '#EA580C'
     };
-    return colors[type] || (isDark ? '#94A3B8' : '#6B7280');
+    return colors[type?.toUpperCase()] || (isDark ? '#94A3B8' : '#6B7280');
 };
 
 /**
