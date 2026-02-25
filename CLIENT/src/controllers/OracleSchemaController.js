@@ -1445,7 +1445,13 @@ export const getObjectDDL = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
     const { objectType, objectName } = params;
     
-    const url = `/oracle/schema/${objectType}s/${encodeURIComponent(objectName)}/ddl`;
+    // Handle special case for packages - they need a different endpoint
+    let url;
+    if (objectType.toLowerCase() === 'package') {
+        url = `/oracle/schema/packages/${encodeURIComponent(objectName)}/ddl`;
+    } else {
+        url = `/oracle/schema/${objectType}s/${encodeURIComponent(objectName)}/ddl`;
+    }
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
@@ -1456,6 +1462,20 @@ export const getObjectDDL = async (authorizationHeader, params = {}) => {
         })
     ).then(response => {
         return transformDDLResponse(response);
+    }).catch(error => {
+        console.error('Error fetching DDL:', error);
+        // Return a graceful error response
+        return {
+            responseCode: error.response?.status || 500,
+            message: error.message || 'Failed to fetch DDL',
+            data: {
+                ddl: `-- Error fetching DDL for ${objectType} ${objectName}\n-- ${error.message}`,
+                objectName,
+                objectType,
+                error: error.message
+            },
+            requestId
+        };
     });
 };
 
@@ -2556,6 +2576,52 @@ export const generateSampleQuery = (objectName, objectType) => {
             return `-- No sample query available for ${objectType}`;
     }
 };
+
+
+/**
+ * Transform DDL response
+ */
+const transformDDLResponse = (response) => {
+    const data = response.data || {};
+    
+    // Handle different response formats
+    let ddlText = '';
+    
+    if (typeof data === 'string') {
+        ddlText = data;
+    } else if (data.ddl) {
+        ddlText = data.ddl;
+    } else if (data.text) {
+        ddlText = data.text;
+    } else if (data.sql) {
+        ddlText = data.sql;
+    } else if (data.source) {
+        ddlText = data.source;
+    } else if (Array.isArray(data)) {
+        ddlText = data.join('\n');
+    } else {
+        // Try to stringify the data if it's an object
+        try {
+            ddlText = JSON.stringify(data, null, 2);
+        } catch (e) {
+            ddlText = '';
+        }
+    }
+    
+    const transformedData = {
+        ddl: ddlText,
+        objectName: data.object_name || data.name || '',
+        objectType: data.object_type || data.type || '',
+        owner: data.owner || '',
+        lines: ddlText ? ddlText.split('\n').length : 0
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
 
 /**
  * Refresh schema data

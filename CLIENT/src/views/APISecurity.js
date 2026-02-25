@@ -6,7 +6,7 @@ import {
   Network, Server, ServerCog, ServerCrash, ServerOff,
   Globe, GlobeLock, Earth, EarthLock,
   Activity, Zap, ZapOff, Battery, BatteryCharging,
-  Filter, FilterX, Funnel, FunnelX,
+  Filter, FilterX, Funnel, FunnelX, Loader,
   Cpu, HardDrive, MemoryStick, BarChart3, PieChart,
   Clock, Calendar, CalendarDays, Timer, TimerReset,
   AlertCircle, AlertTriangle, AlertOctagon, CheckCircle, XCircle, Info,
@@ -1922,67 +1922,67 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     
     if (!isLoading) return null;
     
+    // Determine loading message based on active loading state
+    const getLoadingMessage = () => {
+      if (loading.initialLoad) return 'Initializing Security Dashboard...';
+      if (loading.rateLimits) return 'Loading Rate Limit Rules...';
+      if (loading.ipWhitelist) return 'Loading IP Whitelist...';
+      if (loading.loadBalancers) return 'Loading Load Balancers...';
+      if (loading.securityEvents) return 'Loading Security Events...';
+      if (loading.summary) return 'Loading Security Summary...';
+      if (loading.report) return 'Generating Security Report...';
+      if (loading.scan) return 'Running Security Scan...';
+      if (loading.downloadingPDF) return 'Preparing PDF Download...';
+      return 'Loading Security Data...';
+    };
+
+    const getLoadingTip = () => {
+      if (loading.initialLoad) {
+        return 'Preparing security dashboard components...';
+      }
+      if (loading.rateLimits) {
+        return 'Fetching rate limit configurations...';
+      }
+      if (loading.ipWhitelist) {
+        return 'Loading whitelisted IP addresses...';
+      }
+      if (loading.loadBalancers) {
+        return 'Retrieving load balancer settings...';
+      }
+      if (loading.securityEvents) {
+        return 'Analyzing recent security events...';
+      }
+      if (loading.summary) {
+        return 'Compiling security metrics...';
+      }
+      if (loading.report) {
+        return 'Generating comprehensive security report...';
+      }
+      if (loading.scan) {
+        return 'Scanning for vulnerabilities...';
+      }
+      if (loading.downloadingPDF) {
+        return 'Creating PDF document...';
+      }
+      return 'Please wait while we load your data';
+    };
+    
     return (
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-        {/* Full-page backdrop */}
-        <div className="absolute inset-0 bg-white/95 dark:bg-gray-950/95 backdrop-blur-sm transition-colors duration-300" />
-        
-        {/* Centered Loading Content */}
-        <div className="relative flex flex-col items-center gap-6 p-8 max-w-md w-full">
-          {/* Main Spinner */}
+      <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: colors.bg }}>
+        <div className="text-center">
           <div className="relative">
-            {/* Outer ring */}
-            <div className="w-20 h-20 rounded-full border-4 border-gray-100 dark:border-gray-800 animate-pulse" />
-            
-            {/* Inner spinning ring */}
-            <div 
-              className="absolute top-0 left-0 w-20 h-20 rounded-full border-4 border-t-transparent border-l-transparent animate-spin"
-              style={{ 
-                borderColor: `${colors.primary} transparent transparent transparent`,
-                filter: 'drop-shadow(0 0 6px rgba(59, 130, 246, 0.3))'
-              }}
-            />
-            
-            {/* Center dot */}
-            <div 
-              className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
-              style={{ backgroundColor: colors.primary }}
-            />
+            <Loader className="animate-spin mx-auto mb-6" size={64} style={{ color: colors.primary }} />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Shield size={32} style={{ color: colors.primary, opacity: 0.3 }} />
+            </div>
           </div>
-          
-          {/* Loading Text */}
-          <div className="text-center space-y-2">
-            <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
-              Loading Security Data
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {loading.initialLoad ? 'Initializing security dashboard...' :
-               loading.rateLimits ? 'Loading rate limit rules...' :
-               loading.ipWhitelist ? 'Loading IP whitelist...' :
-               loading.loadBalancers ? 'Loading load balancers...' :
-               loading.securityEvents ? 'Loading security events...' :
-               loading.summary ? 'Loading security summary...' :
-               loading.report ? 'Generating security report...' :
-               loading.scan ? 'Running security scan...' :
-               loading.downloadingPDF ? 'Preparing PDF download...' :
-               'Please wait while we load your data'}
-            </p>
-          </div>
-          
-          {/* Progress Bar */}
-          <div className="w-64 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-            <div 
-              className="h-full rounded-full animate-pulse"
-              style={{ 
-                width: '70%', 
-                backgroundColor: colors.primary,
-                opacity: 0.8
-              }}
-            />
-          </div>
-          
-          {/* Optional loading tips */}
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">
+          <h3 className="text-xl font-semibold mb-2" style={{ color: colors.text }}>
+            {getLoadingMessage()}
+          </h3>
+          <p className="text-sm mb-2" style={{ color: colors.textSecondary }}>
+            {getLoadingTip()}
+          </p>
+          <p className="text-xs" style={{ color: colors.textTertiary }}>
             This won't take long
           </p>
         </div>

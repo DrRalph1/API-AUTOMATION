@@ -10,7 +10,7 @@ import {
   Database as DatabaseIcon, Folder, FolderOpen, FileText,
   Code, Cloud, ShieldCheck, CreditCard, Package, PieChart,
   Table, Grid, List, Mail, Layers, GitMerge,
-  BarChart, Terminal, Cpu as CpuIcon,
+  BarChart, Terminal, Cpu as CpuIcon, Loader,
   FileJson, BookOpen, Share2, Upload, EyeOff, Type, Palette, TrendingDown,
   Contrast, VolumeX, ZapOff, GitPullRequest, ShieldAlert,
   CalendarDays, DatabaseZap, Network as NetworkIcon, FileOutput, TestTube,
@@ -750,78 +750,48 @@ const handleGenerateAPIFromModal = useCallback(async (objectType, objectName, ap
 
   // Loading Overlay Component
   const LoadingOverlay = () => {
-    const isLoading = loading.initialLoad || loading.refresh;
-    
-    const getLoadingMessage = () => {
-      if (loading.initialLoad) return 'Initializing Dashboard...';
-      if (loading.refresh) return 'Refreshing dashboard data...';
-      return 'Please wait while we load your dashboard';
-    };
+  const isLoading = loading.initialLoad || loading.refresh;
+  
+  const getLoadingMessage = () => {
+    if (loading.initialLoad) return 'Initializing Dashboard...';
+    if (loading.refresh) return 'Refreshing dashboard data...';
+    return 'Please wait while we load your dashboard';
+  };
 
-    const getLoadingTip = () => {
-      if (loading.initialLoad) {
-        return `Loading ${dashboardData.stats.totalApis || ''} APIs and collections...`;
-      }
-      if (loading.refresh) {
-        return 'Updating metrics and recent activity...';
-      }
-      return 'This won\'t take long';
-    };
+  const getLoadingTip = () => {
+    if (loading.initialLoad) {
+      return `Loading ${dashboardData.stats.totalApis || ''} APIs and collections...`;
+    }
+    if (loading.refresh) {
+      return 'Updating metrics and recent activity...';
+    }
+    return 'This won\'t take long';
+  };
 
-    if (!isLoading) return null;
-    
-    return (
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-        <div className="absolute inset-0 bg-white/95 dark:bg-gray-950/95 backdrop-blur-sm transition-colors duration-300" />
-        
-        <div className="relative flex flex-col items-center gap-6 p-8 max-w-md w-full">
-          <div className="relative">
-            <div className="w-20 h-20 rounded-full border-4 border-gray-100 dark:border-gray-800 animate-pulse" />
-            <div 
-              className="absolute top-0 left-0 w-20 h-20 rounded-full border-4 border-t-transparent border-l-transparent animate-spin"
-              style={{ 
-                borderColor: `${colors.primary} transparent transparent transparent`,
-                filter: 'drop-shadow(0 0 6px rgba(59, 130, 246, 0.3))'
-              }}
-            />
-            <div 
-              className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
-              style={{ backgroundColor: colors.primary }}
-            />
-          </div>
-          
-          <div className="text-center space-y-2">
-            <h3 className="text-xl font-semibold" style={{ color: colors.text }}>
-              Dashboard
-            </h3>
-            <p className="text-sm" style={{ color: colors.textSecondary }}>
-              {getLoadingMessage()}
-            </p>
-          </div>
-          
-          <div className="w-64 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-            <div 
-              className="h-full rounded-full animate-pulse"
-              style={{ 
-                width: '70%', 
-                backgroundColor: colors.primary,
-                opacity: 0.8
-              }}
-            />
-          </div>
-          
-          <div className="text-center space-y-1">
-            <p className="text-xs" style={{ color: colors.textTertiary }}>
-              {getLoadingTip()}
-            </p>
-            <p className="text-xs" style={{ color: colors.textTertiary }}>
-              This won't take long
-            </p>
+  if (!isLoading) return null;
+  
+  return (
+    <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: colors.bg }}>
+      <div className="text-center">
+        <div className="relative">
+          <Loader className="animate-spin mx-auto mb-6" size={64} style={{ color: colors.primary }} />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <LayoutDashboard size={32} style={{ color: colors.primary, opacity: 0.3 }} />
           </div>
         </div>
+        <h3 className="text-xl font-semibold mb-2" style={{ color: colors.text }}>
+          {getLoadingMessage()}
+        </h3>
+        <p className="text-sm mb-2" style={{ color: colors.textSecondary }}>
+          {getLoadingTip()}
+        </p>
+        <p className="text-xs" style={{ color: colors.textTertiary }}>
+          This won't take long
+        </p>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   // Stat Card Component
   const StatCard = ({ title, value, icon: Icon, change, color, onClick }) => {

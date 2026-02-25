@@ -15,7 +15,7 @@ import {
   Clock as ClockIcon, MapPin as MapPinIcon, Building as BuildingIcon,
   Briefcase as BriefcaseIcon, Tag as TagIcon, Crown as CrownIcon,
   Award as AwardIcon, Star as StarIcon, Target as TargetIcon,
-  CheckCircle as CheckCircleIcon, XCircle as XCircleIcon,
+  CheckCircle as CheckCircleIcon, XCircle as XCircleIcon, Loader,
   AlertCircle as AlertCircleIcon, ShieldCheck as ShieldCheckIcon,
   ShieldAlert as ShieldAlertIcon, Bell as BellIcon, BellOff as BellOffIcon,
   MessageSquare as MessageSquareIcon, BarChart as BarChartIcon,
@@ -2872,91 +2872,53 @@ const EditUserModal = ({ data: user }) => {
   };
 
   // Loading Overlay
-  // Loading Overlay Component - Updated to match APISecurity/Documentation pattern
-const LoadingOverlay = () => {
-  // Check if any loading state is active
-  const isLoading = loading || 
-                   rolesLoading || 
-                   loading.initialLoad;
-  
-  // Determine loading message based on what's loading
-  const getLoadingMessage = () => {
-    if (loading.initialLoad) return 'Initializing User Management...';
-    if (loading && rolesLoading) return 'Loading users and roles...';
-    if (loading) return 'Loading users...';
-    if (rolesLoading) return 'Loading roles...';
-    return 'Please wait while we prepare your content';
-  };
+  const LoadingOverlay = () => {
+    // Check if any loading state is active
+    const isLoading = loading || 
+                    rolesLoading || 
+                    loading.initialLoad;
+    
+    // Determine loading message based on what's loading
+    const getLoadingMessage = () => {
+      if (loading.initialLoad) return 'Initializing User Management...';
+      if (loading && rolesLoading) return 'Loading users and roles...';
+      if (loading) return 'Loading users...';
+      if (rolesLoading) return 'Loading roles...';
+      return 'Please wait while we prepare your content';
+    };
 
-  // Determine loading tips based on context
-  const getLoadingTip = () => {
-    if (loading && rolesLoading) {
-      return `Loading ${stats.totalUsers || ''} users and role configurations...`;
-    }
-    if (loading) {
-      return `Loading ${stats.totalUsers || ''} users...`;
-    }
-    if (rolesLoading) {
-      return 'Loading access types and permissions...';
-    }
-    return 'This won\'t take long';
-  };
+    // Determine loading tips based on context
+    const getLoadingTip = () => {
+      if (loading && rolesLoading) {
+        return `Loading ${stats.totalUsers || ''} users and role configurations...`;
+      }
+      if (loading) {
+        return `Loading ${stats.totalUsers || ''} users...`;
+      }
+      if (rolesLoading) {
+        return 'Loading access types and permissions...';
+      }
+      return 'This won\'t take long';
+    };
 
-  if (!isLoading) return null;
-  
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-      {/* Full-page backdrop with blur - exactly matching APISecurity */}
-      <div className="absolute inset-0 bg-white/95 dark:bg-gray-950/95 backdrop-blur-sm transition-colors duration-300" />
-      
-      {/* Centered Loading Content */}
-      <div className="relative flex flex-col items-center gap-6 p-8 max-w-md w-full">
-        {/* Main Spinner - exactly matching APISecurity */}
-        <div className="relative">
-          {/* Outer ring */}
-          <div className="w-20 h-20 rounded-full border-4 border-gray-100 dark:border-gray-800 animate-pulse" />
-          
-          {/* Inner spinning ring */}
-          <div 
-            className="absolute top-0 left-0 w-20 h-20 rounded-full border-4 border-t-transparent border-l-transparent animate-spin"
-            style={{ 
-              borderColor: `${colors.primary} transparent transparent transparent`,
-              filter: 'drop-shadow(0 0 6px rgba(59, 130, 246, 0.3))'
-            }}
-          />
-          
-          {/* Center dot */}
-          <div 
-            className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
-            style={{ backgroundColor: colors.primary }}
-          />
-        </div>
-        
-        {/* Loading Text */}
-        <div className="text-center space-y-2">
-          <h3 className="text-xl font-semibold" style={{ color: colors.text }}>
+    if (!isLoading) return null;
+    
+    return (
+      <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: colors.bg }}>
+        <div className="text-center">
+          <div className="relative">
+            <Loader className="animate-spin mx-auto mb-6" size={64} style={{ color: colors.primary }} />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Users size={32} style={{ color: colors.primary, opacity: 0.3 }} />
+            </div>
+          </div>
+          <h3 className="text-xl font-semibold mb-2" style={{ color: colors.text }}>
             User Management
           </h3>
-          <p className="text-sm" style={{ color: colors.textSecondary }}>
+          <p className="text-sm mb-2" style={{ color: colors.textSecondary }}>
             {getLoadingMessage()}
           </p>
-        </div>
-        
-        {/* Progress Bar - exactly matching APISecurity */}
-        <div className="w-64 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-          <div 
-            className="h-full rounded-full animate-pulse"
-            style={{ 
-              width: '70%', 
-              backgroundColor: colors.primary,
-              opacity: 0.8
-            }}
-          />
-        </div>
-        
-        {/* Loading tips */}
-        <div className="text-center space-y-1">
-          <p className="text-xs" style={{ color: colors.textTertiary }}>
+          <p className="text-xs mb-1" style={{ color: colors.textTertiary }}>
             {getLoadingTip()}
           </p>
           <p className="text-xs" style={{ color: colors.textTertiary }}>
@@ -2964,9 +2926,8 @@ const LoadingOverlay = () => {
           </p>
         </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
   // Stat Card Component
   const StatCard = ({ title, value, icon: Icon, color, onClick, change }) => {

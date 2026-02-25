@@ -72,6 +72,22 @@ const Logger = {
 const objectCache = new Map();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+// Full page loader component
+const FullPageLoader = ({ colors }) => (
+  <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: colors.bg }}>
+    <div className="text-center">
+      <div className="relative">
+        <Loader className="animate-spin mx-auto mb-6" size={64} style={{ color: colors.primary }} />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Database size={32} style={{ color: colors.primary, opacity: 0.3 }} />
+        </div>
+      </div>
+      <h2 className="text-xl font-semibold mb-2" style={{ color: colors.text }}>Loading Schema Browser</h2>
+      <p className="text-sm" style={{ color: colors.textSecondary }}>Please wait while we connect to the database...</p>
+    </div>
+  </div>
+);
+
 // FilterInput Component
 const FilterInput = React.memo(({ 
   filterQuery, 
@@ -196,15 +212,17 @@ const ObjectTreeSection = React.memo(({
   selectedOwner,
   colors,
   getObjectIcon,
-  handleContextMenu
+  handleContextMenu,
+  isLoaded,
+  children
 }) => {
   
   useEffect(() => {
-    if (isExpanded && objects.length === 0 && !isLoading) {
+    if (isExpanded && !isLoaded && !isLoading) {
       Logger.debug('ObjectTreeSection', 'useEffect', `Loading ${title} on expand`);
       onLoadSection(type);
     }
-  }, [isExpanded, objects.length, isLoading, onLoadSection, type, title]);
+  }, [isExpanded, isLoaded, isLoading, onLoadSection, type, title]);
   
   const filteredObjects = useMemo(() => {
     if (!filterQuery && selectedOwner === 'ALL') return objects;
@@ -228,8 +246,31 @@ const ObjectTreeSection = React.memo(({
   }, [onToggle, type]);
   
   const handleObjectClick = useCallback((obj) => {
-    onSelectObject(obj, type.slice(0, -1).toUpperCase());
+    if (typeof onSelectObject === 'function') {
+      if (obj && obj.name) {
+        const objectType = type.slice(0, -1).toUpperCase();
+        onSelectObject(obj, objectType);
+      }
+    }
   }, [onSelectObject, type]);
+  
+  const handleDoubleClick = useCallback((obj) => {
+    if (typeof onSelectObject === 'function' && obj && obj.name) {
+      onSelectObject(obj, type.slice(0, -1).toUpperCase());
+    }
+  }, [onSelectObject, type]);
+  
+  const handleContextMenuWrapper = useCallback((e, obj) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (obj && obj.name && typeof handleContextMenu === 'function') {
+      handleContextMenu(e, obj, type.slice(0, -1).toUpperCase());
+    }
+  }, [handleContextMenu, type]);
+  
+  const getObjectId = useCallback((obj) => {
+    return obj.id || `${obj.owner || 'unknown'}_${obj.name}`;
+  }, []);
   
   return (
     <div className="mb-1">
@@ -266,36 +307,33 @@ const ObjectTreeSection = React.memo(({
                 Loading...
               </span>
             </div>
-          ) : filteredObjects.length === 0 ? (
-            <div className="px-2 py-3 text-center">
-              <span className="text-xs" style={{ color: colors.textTertiary }}>
-                No objects found
-              </span>
-            </div>
           ) : (
-            filteredObjects.map(obj => (
-              <button
-                key={obj.id || obj.name}
-                onDoubleClick={() => handleObjectClick(obj)}
-                onContextMenu={(e) => handleContextMenu(e, obj, type.slice(0, -1).toUpperCase())}
-                onClick={() => handleObjectClick(obj)}
-                className={`flex items-center justify-between w-full px-2 py-2 rounded-sm cursor-pointer group text-left ${
-                  activeObjectId === obj.id ? 'font-medium' : ''
-                }`}
-                style={{
-                  backgroundColor: activeObjectId === obj.id ? colors.selected : 'transparent',
-                  color: activeObjectId === obj.id ? colors.primary : colors.text
-                }}
-              >
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  {getObjectIcon(type.slice(0, -1))}
-                  <span className="text-xs sm:text-sm truncate">{obj.name}</span>
-                </div>
-                {obj.status && obj.status !== 'VALID' && (
-                  <AlertCircle size={10} style={{ color: colors.error }} />
-                )}
-              </button>
-            ))
+            <>
+              {filteredObjects.map(obj => (
+                <button
+                  key={getObjectId(obj)}
+                  onDoubleClick={() => handleDoubleClick(obj)}
+                  onContextMenu={(e) => handleContextMenuWrapper(e, obj)}
+                  onClick={() => handleObjectClick(obj)}
+                  className={`flex items-center justify-between w-full px-2 py-2 rounded-sm cursor-pointer group text-left ${
+                    activeObjectId === getObjectId(obj) ? 'font-medium' : ''
+                  }`}
+                  style={{
+                    backgroundColor: activeObjectId === getObjectId(obj) ? colors.selected : 'transparent',
+                    color: activeObjectId === getObjectId(obj) ? colors.primary : colors.text
+                  }}
+                >
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    {getObjectIcon(type.slice(0, -1))}
+                    <span className="text-xs sm:text-sm truncate">{obj.name}</span>
+                  </div>
+                  {obj.status && obj.status !== 'VALID' && (
+                    <AlertCircle size={10} style={{ color: colors.error }} />
+                  )}
+                </button>
+              ))}
+              {children}
+            </>
           )}
         </div>
       )}
@@ -305,7 +343,83 @@ const ObjectTreeSection = React.memo(({
 
 ObjectTreeSection.displayName = 'ObjectTreeSection';
 
-// Left Sidebar Component
+// Synonym Subsection Component
+const SynonymSubsection = React.memo(({ 
+  synonyms, 
+  targetType, 
+  onSelectObject, 
+  activeObjectId,
+  filterQuery,
+  selectedOwner,
+  colors,
+  getObjectIcon,
+  handleContextMenu
+}) => {
+  if (!synonyms || synonyms.length === 0) return null;
+
+  // Filter synonyms based on filter query and selected owner
+  const filteredSynonyms = useMemo(() => {
+    if (!filterQuery && selectedOwner === 'ALL') return synonyms;
+    
+    const searchLower = filterQuery.toLowerCase();
+    
+    return synonyms.filter(obj => {
+      const ownerMatch = selectedOwner === 'ALL' || obj.owner === selectedOwner;
+      if (!ownerMatch) return false;
+      if (!filterQuery) return true;
+      
+      return (
+        (obj.name && obj.name.toLowerCase().includes(searchLower)) ||
+        (obj.owner && obj.owner.toLowerCase().includes(searchLower))
+      );
+    });
+  }, [synonyms, filterQuery, selectedOwner]);
+
+  if (filteredSynonyms.length === 0) return null;
+
+  const getObjectId = (obj) => obj.id || `${obj.owner || 'unknown'}_${obj.name}`;
+
+  return (
+    <div className="ml-4 mt-1 mb-2 border-l-2 pl-2" style={{ borderColor: colors.border }}>
+      <div className="flex items-center gap-1 px-2 py-1 text-xs" style={{ color: colors.textTertiary }}>
+        <Link size={10} />
+        <span className="uppercase tracking-wider text-[10px]">Synonyms</span>
+        <span className="ml-1 text-[10px] px-1 rounded" style={{ backgroundColor: colors.border }}>
+          {filteredSynonyms.length}
+        </span>
+      </div>
+      <div className="space-y-0.5">
+        {filteredSynonyms.map(synonym => (
+          <button
+            key={getObjectId(synonym)}
+            onDoubleClick={() => onSelectObject(synonym, 'SYNONYM')}
+            onContextMenu={(e) => handleContextMenu(e, synonym, 'SYNONYM')}
+            onClick={() => onSelectObject(synonym, 'SYNONYM')}
+            className={`flex items-center justify-between w-full px-2 py-1.5 rounded-sm cursor-pointer group text-left text-xs ${
+              activeObjectId === getObjectId(synonym) ? 'font-medium' : ''
+            }`}
+            style={{
+              backgroundColor: activeObjectId === getObjectId(synonym) ? colors.selected : 'transparent',
+              color: activeObjectId === getObjectId(synonym) ? colors.primary : colors.text
+            }}
+          >
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              {getObjectIcon(targetType)}
+              <span className="truncate">{synonym.name}</span>
+            </div>
+            {synonym.status && synonym.status !== 'VALID' && (
+              <AlertCircle size={8} style={{ color: colors.error }} />
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+});
+
+SynonymSubsection.displayName = 'SynonymSubsection';
+
+// Left Sidebar Component - UPDATED with synonyms under parent categories
 const LeftSidebar = React.memo(({ 
   isLeftSidebarVisible, 
   setIsLeftSidebarVisible,
@@ -327,13 +441,56 @@ const LeftSidebar = React.memo(({
   handleContextMenu,
   loading,
   onRefreshSchema,
-  schemaInfo
+  schemaInfo,
+  loadedSections
 }) => {
   
   const handleCloseSidebar = useCallback(() => {
     setIsLeftSidebarVisible(false);
   }, [setIsLeftSidebarVisible]);
-  
+
+  // Group synonyms by target type
+  const groupedSynonyms = useMemo(() => {
+    const groups = {
+      tables: [],
+      views: [],
+      procedures: [],
+      functions: [],
+      packages: [],
+      sequences: [],
+      types: [],
+      triggers: [],
+      other: []
+    };
+
+    (schemaObjects.synonyms || []).forEach(synonym => {
+      const targetType = synonym.targetType || synonym.TARGET_TYPE || 'other';
+      const targetTypeLower = targetType.toLowerCase();
+      
+      if (targetTypeLower.includes('table')) {
+        groups.tables.push(synonym);
+      } else if (targetTypeLower.includes('view')) {
+        groups.views.push(synonym);
+      } else if (targetTypeLower.includes('procedure')) {
+        groups.procedures.push(synonym);
+      } else if (targetTypeLower.includes('function')) {
+        groups.functions.push(synonym);
+      } else if (targetTypeLower.includes('package')) {
+        groups.packages.push(synonym);
+      } else if (targetTypeLower.includes('sequence')) {
+        groups.sequences.push(synonym);
+      } else if (targetTypeLower.includes('type')) {
+        groups.types.push(synonym);
+      } else if (targetTypeLower.includes('trigger')) {
+        groups.triggers.push(synonym);
+      } else {
+        groups.other.push(synonym);
+      }
+    });
+
+    return groups;
+  }, [schemaObjects.synonyms]);
+
   return (
     <div className={`w-full md:w-64 border-r flex flex-col absolute md:relative inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out ${
       isLeftSidebarVisible ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
@@ -398,54 +555,7 @@ const LeftSidebar = React.memo(({
           </div>
         ) : (
           <>
-            <ObjectTreeSection
-              title="Procedures"
-              type="procedures"
-              objects={schemaObjects.procedures || []}
-              isLoading={loadingStates.procedures}
-              isExpanded={objectTree.procedures}
-              onToggle={handleToggleSection}
-              onLoadSection={handleLoadSection}
-              onSelectObject={handleObjectSelect}
-              activeObjectId={activeObject?.id}
-              filterQuery={filterQuery}
-              selectedOwner={selectedOwner}
-              colors={colors}
-              getObjectIcon={getObjectIcon}
-              handleContextMenu={handleContextMenu}
-            />
-            <ObjectTreeSection
-              title="Views"
-              type="views"
-              objects={schemaObjects.views || []}
-              isLoading={loadingStates.views}
-              isExpanded={objectTree.views}
-              onToggle={handleToggleSection}
-              onLoadSection={handleLoadSection}
-              onSelectObject={handleObjectSelect}
-              activeObjectId={activeObject?.id}
-              filterQuery={filterQuery}
-              selectedOwner={selectedOwner}
-              colors={colors}
-              getObjectIcon={getObjectIcon}
-              handleContextMenu={handleContextMenu}
-            />
-            <ObjectTreeSection
-              title="Functions"
-              type="functions"
-              objects={schemaObjects.functions || []}
-              isLoading={loadingStates.functions}
-              isExpanded={objectTree.functions}
-              onToggle={handleToggleSection}
-              onLoadSection={handleLoadSection}
-              onSelectObject={handleObjectSelect}
-              activeObjectId={activeObject?.id}
-              filterQuery={filterQuery}
-              selectedOwner={selectedOwner}
-              colors={colors}
-              getObjectIcon={getObjectIcon}
-              handleContextMenu={handleContextMenu}
-            />
+            {/* Tables Section with Synonyms */}
             <ObjectTreeSection
               title="Tables"
               type="tables"
@@ -461,7 +571,115 @@ const LeftSidebar = React.memo(({
               colors={colors}
               getObjectIcon={getObjectIcon}
               handleContextMenu={handleContextMenu}
-            />
+              isLoaded={loadedSections.tables}
+            >
+              <SynonymSubsection
+                synonyms={groupedSynonyms.tables}
+                targetType="table"
+                onSelectObject={handleObjectSelect}
+                activeObjectId={activeObject?.id}
+                filterQuery={filterQuery}
+                selectedOwner={selectedOwner}
+                colors={colors}
+                getObjectIcon={getObjectIcon}
+                handleContextMenu={handleContextMenu}
+              />
+            </ObjectTreeSection>
+
+            {/* Views Section with Synonyms */}
+            <ObjectTreeSection
+              title="Views"
+              type="views"
+              objects={schemaObjects.views || []}
+              isLoading={loadingStates.views}
+              isExpanded={objectTree.views}
+              onToggle={handleToggleSection}
+              onLoadSection={handleLoadSection}
+              onSelectObject={handleObjectSelect}
+              activeObjectId={activeObject?.id}
+              filterQuery={filterQuery}
+              selectedOwner={selectedOwner}
+              colors={colors}
+              getObjectIcon={getObjectIcon}
+              handleContextMenu={handleContextMenu}
+              isLoaded={loadedSections.views}
+            >
+              <SynonymSubsection
+                synonyms={groupedSynonyms.views}
+                targetType="view"
+                onSelectObject={handleObjectSelect}
+                activeObjectId={activeObject?.id}
+                filterQuery={filterQuery}
+                selectedOwner={selectedOwner}
+                colors={colors}
+                getObjectIcon={getObjectIcon}
+                handleContextMenu={handleContextMenu}
+              />
+            </ObjectTreeSection>
+
+            {/* Procedures Section with Synonyms */}
+            <ObjectTreeSection
+              title="Procedures"
+              type="procedures"
+              objects={schemaObjects.procedures || []}
+              isLoading={loadingStates.procedures}
+              isExpanded={objectTree.procedures}
+              onToggle={handleToggleSection}
+              onLoadSection={handleLoadSection}
+              onSelectObject={handleObjectSelect}
+              activeObjectId={activeObject?.id}
+              filterQuery={filterQuery}
+              selectedOwner={selectedOwner}
+              colors={colors}
+              getObjectIcon={getObjectIcon}
+              handleContextMenu={handleContextMenu}
+              isLoaded={loadedSections.procedures}
+            >
+              <SynonymSubsection
+                synonyms={groupedSynonyms.procedures}
+                targetType="procedure"
+                onSelectObject={handleObjectSelect}
+                activeObjectId={activeObject?.id}
+                filterQuery={filterQuery}
+                selectedOwner={selectedOwner}
+                colors={colors}
+                getObjectIcon={getObjectIcon}
+                handleContextMenu={handleContextMenu}
+              />
+            </ObjectTreeSection>
+
+            {/* Functions Section with Synonyms */}
+            <ObjectTreeSection
+              title="Functions"
+              type="functions"
+              objects={schemaObjects.functions || []}
+              isLoading={loadingStates.functions}
+              isExpanded={objectTree.functions}
+              onToggle={handleToggleSection}
+              onLoadSection={handleLoadSection}
+              onSelectObject={handleObjectSelect}
+              activeObjectId={activeObject?.id}
+              filterQuery={filterQuery}
+              selectedOwner={selectedOwner}
+              colors={colors}
+              getObjectIcon={getObjectIcon}
+              handleContextMenu={handleContextMenu}
+              isLoaded={loadedSections.functions}
+            >
+              <SynonymSubsection
+                synonyms={groupedSynonyms.functions}
+                targetType="function"
+                onSelectObject={handleObjectSelect}
+                activeObjectId={activeObject?.id}
+                filterQuery={filterQuery}
+                selectedOwner={selectedOwner}
+                colors={colors}
+                getObjectIcon={getObjectIcon}
+                handleContextMenu={handleContextMenu}
+              />
+            </ObjectTreeSection>
+
+            {/* Packages Section with Synonyms */}
             <ObjectTreeSection
               title="Packages"
               type="packages"
@@ -477,23 +695,22 @@ const LeftSidebar = React.memo(({
               colors={colors}
               getObjectIcon={getObjectIcon}
               handleContextMenu={handleContextMenu}
-            />
-            <ObjectTreeSection
-              title="Synonyms"
-              type="synonyms"
-              objects={schemaObjects.synonyms || []}
-              isLoading={loadingStates.synonyms}
-              isExpanded={objectTree.synonyms}
-              onToggle={handleToggleSection}
-              onLoadSection={handleLoadSection}
-              onSelectObject={handleObjectSelect}
-              activeObjectId={activeObject?.id}
-              filterQuery={filterQuery}
-              selectedOwner={selectedOwner}
-              colors={colors}
-              getObjectIcon={getObjectIcon}
-              handleContextMenu={handleContextMenu}
-            />
+              isLoaded={loadedSections.packages}
+            >
+              <SynonymSubsection
+                synonyms={groupedSynonyms.packages}
+                targetType="package"
+                onSelectObject={handleObjectSelect}
+                activeObjectId={activeObject?.id}
+                filterQuery={filterQuery}
+                selectedOwner={selectedOwner}
+                colors={colors}
+                getObjectIcon={getObjectIcon}
+                handleContextMenu={handleContextMenu}
+              />
+            </ObjectTreeSection>
+
+            {/* Sequences Section with Synonyms */}
             <ObjectTreeSection
               title="Sequences"
               type="sequences"
@@ -509,7 +726,22 @@ const LeftSidebar = React.memo(({
               colors={colors}
               getObjectIcon={getObjectIcon}
               handleContextMenu={handleContextMenu}
-            />
+              isLoaded={loadedSections.sequences}
+            >
+              <SynonymSubsection
+                synonyms={groupedSynonyms.sequences}
+                targetType="sequence"
+                onSelectObject={handleObjectSelect}
+                activeObjectId={activeObject?.id}
+                filterQuery={filterQuery}
+                selectedOwner={selectedOwner}
+                colors={colors}
+                getObjectIcon={getObjectIcon}
+                handleContextMenu={handleContextMenu}
+              />
+            </ObjectTreeSection>
+
+            {/* Types Section with Synonyms */}
             <ObjectTreeSection
               title="Types"
               type="types"
@@ -525,7 +757,22 @@ const LeftSidebar = React.memo(({
               colors={colors}
               getObjectIcon={getObjectIcon}
               handleContextMenu={handleContextMenu}
-            />
+              isLoaded={loadedSections.types}
+            >
+              <SynonymSubsection
+                synonyms={groupedSynonyms.types}
+                targetType="type"
+                onSelectObject={handleObjectSelect}
+                activeObjectId={activeObject?.id}
+                filterQuery={filterQuery}
+                selectedOwner={selectedOwner}
+                colors={colors}
+                getObjectIcon={getObjectIcon}
+                handleContextMenu={handleContextMenu}
+              />
+            </ObjectTreeSection>
+
+            {/* Triggers Section with Synonyms */}
             <ObjectTreeSection
               title="Triggers"
               type="triggers"
@@ -541,7 +788,41 @@ const LeftSidebar = React.memo(({
               colors={colors}
               getObjectIcon={getObjectIcon}
               handleContextMenu={handleContextMenu}
-            />
+              isLoaded={loadedSections.triggers}
+            >
+              <SynonymSubsection
+                synonyms={groupedSynonyms.triggers}
+                targetType="trigger"
+                onSelectObject={handleObjectSelect}
+                activeObjectId={activeObject?.id}
+                filterQuery={filterQuery}
+                selectedOwner={selectedOwner}
+                colors={colors}
+                getObjectIcon={getObjectIcon}
+                handleContextMenu={handleContextMenu}
+              />
+            </ObjectTreeSection>
+
+            {/* Other Synonyms (if any) */}
+            {groupedSynonyms.other.length > 0 && (
+              <ObjectTreeSection
+                title="Other Synonyms"
+                type="synonyms"
+                objects={groupedSynonyms.other}
+                isLoading={loadingStates.synonyms}
+                isExpanded={objectTree.synonyms}
+                onToggle={handleToggleSection}
+                onLoadSection={handleLoadSection}
+                onSelectObject={handleObjectSelect}
+                activeObjectId={activeObject?.id}
+                filterQuery={filterQuery}
+                selectedOwner={selectedOwner}
+                colors={colors}
+                getObjectIcon={() => getObjectIcon('synonym')}
+                handleContextMenu={handleContextMenu}
+                isLoaded={loadedSections.synonyms}
+              />
+            )}
           </>
         )}
       </div>
@@ -727,10 +1008,25 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   const [filterQuery, setFilterQuery] = useState('');
   const [selectedOwner, setSelectedOwner] = useState('ALL');
   const [owners, setOwners] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const [error, setError] = useState(null);
   const [schemaInfo, setSchemaInfo] = useState(null);
   const [hasAutoSelected, setHasAutoSelected] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+  
+  // New state for tracking loaded sections
+  const [loadedSections, setLoadedSections] = useState({
+    procedures: false,
+    views: false,
+    functions: false,
+    tables: false,
+    packages: false,
+    sequences: false,
+    synonyms: false,
+    types: false,
+    triggers: false
+  });
   
   // Schema objects state
   const [schemaObjects, setSchemaObjects] = useState({
@@ -760,19 +1056,19 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   
   // Object tree expanded state
   const [objectTree, setObjectTree] = useState({
-    procedures: false,
-    views: false,
-    functions: false,
-    tables: false,
-    packages: false,
-    sequences: false,
-    synonyms: false,
-    types: false,
-    triggers: false
+    procedures: true,
+    views: true,
+    functions: true,
+    tables: true,
+    packages: true,
+    sequences: true,
+    synonyms: true,
+    types: true,
+    triggers: true
   });
   
   const [activeObject, setActiveObject] = useState(null);
-  const [activeTab, setActiveTab] = useState('columns');
+  const [activeTab, setActiveTab] = useState('properties');
   const [tabs, setTabs] = useState([]);
   const [tableData, setTableData] = useState(null);
   const [objectDDL, setObjectDDL] = useState('');
@@ -812,7 +1108,7 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
     }
   }, [colors]);
 
-  // Load schema info only (1 API call on page load)
+  // Load schema info
   const loadSchemaInfo = useCallback(async () => {
     if (!authToken) {
       setError('Authentication required');
@@ -820,7 +1116,6 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
     }
 
     Logger.info('SchemaBrowser', 'loadSchemaInfo', 'Loading schema info');
-    setLoading(true);
     setError(null);
 
     try {
@@ -838,25 +1133,84 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
     } catch (err) {
       Logger.error('SchemaBrowser', 'loadSchemaInfo', 'Error', err);
       setError(`Failed to connect: ${err.message}`);
-    } finally {
-      setLoading(false);
     }
   }, [authToken]);
 
-  // Load object type on demand (lazy loading)
+  // Load all object counts in parallel
+  const loadAllObjectCounts = useCallback(async () => {
+    if (!authToken) return;
+    
+    Logger.info('SchemaBrowser', 'loadAllObjectCounts', 'Loading all object counts');
+    
+    const loadPromises = [
+      { type: 'procedures', func: getAllProceduresForFrontend },
+      { type: 'views', func: getAllViewsForFrontend },
+      { type: 'functions', func: getAllFunctionsForFrontend },
+      { type: 'tables', func: getAllTablesForFrontend },
+      { type: 'packages', func: getAllPackagesForFrontend },
+      { type: 'sequences', func: getAllSequencesForFrontend },
+      { type: 'synonyms', func: getAllSynonymsForFrontend },
+      { type: 'types', func: getAllTypesForFrontend },
+      { type: 'triggers', func: getAllTriggersForFrontend }
+    ];
+
+    await Promise.all(loadPromises.map(async ({ type, func }) => {
+      try {
+        const cacheKey = `${type}_${authToken.substring(0, 10)}`;
+        const cached = objectCache.get(cacheKey);
+        
+        if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+          setSchemaObjects(prev => ({ ...prev, [type]: cached.data }));
+          setLoadedSections(prev => ({ ...prev, [type]: true }));
+          Logger.debug('SchemaBrowser', 'loadAllObjectCounts', `Loaded ${type} from cache (${cached.data.length} items)`);
+        } else {
+          Logger.debug('SchemaBrowser', 'loadAllObjectCounts', `Loading ${type} counts from API`);
+          const response = await func(authToken);
+          
+          let data = [];
+          if (response && response.data) {
+            data = response.data;
+          } else {
+            const processed = handleSchemaBrowserResponse(response);
+            data = processed.data || [];
+          }
+          
+          // For synonyms, try to get target types
+          if (type === 'synonyms' && data.length > 0) {
+            // We'll get target types when objects are selected
+          }
+          
+          objectCache.set(cacheKey, { data, timestamp: Date.now() });
+          
+          setSchemaObjects(prev => ({ ...prev, [type]: data }));
+          setLoadedSections(prev => ({ ...prev, [type]: true }));
+          
+          const newOwners = new Set(owners);
+          data.forEach(obj => {
+            if (obj.owner) newOwners.add(obj.owner);
+          });
+          setOwners(Array.from(newOwners).sort());
+          
+          Logger.info('SchemaBrowser', 'loadAllObjectCounts', `Loaded ${data.length} ${type}`);
+        }
+      } catch (err) {
+        Logger.error('SchemaBrowser', 'loadAllObjectCounts', `Error loading ${type}`, err);
+        setSchemaObjects(prev => ({ ...prev, [type]: [] }));
+        setLoadedSections(prev => ({ ...prev, [type]: true }));
+      }
+    }));
+  }, [authToken, owners]);
+
+  // Load object type on demand
   const loadObjectType = useCallback(async (type) => {
     if (!authToken) return;
     if (loadingStates[type]) return;
-    
-    const cacheKey = `${type}_${authToken.substring(0, 10)}`;
-    const cached = objectCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      Logger.debug('SchemaBrowser', 'loadObjectType', `Loading ${type} from cache (${cached.data.length} items)`);
-      setSchemaObjects(prev => ({ ...prev, [type]: cached.data }));
+    if (loadedSections[type]) {
+      Logger.debug('SchemaBrowser', 'loadObjectType', `${type} already loaded`);
       return;
     }
     
-    Logger.info('SchemaBrowser', 'loadObjectType', `Loading ${type} from API`);
+    Logger.info('SchemaBrowser', 'loadObjectType', `Loading ${type} details from API`);
     
     setLoadingStates(prev => ({ ...prev, [type]: true }));
     
@@ -904,9 +1258,11 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
       
       Logger.info('SchemaBrowser', 'loadObjectType', `Loaded ${data.length} ${type}`);
       
+      const cacheKey = `${type}_${authToken.substring(0, 10)}`;
       objectCache.set(cacheKey, { data, timestamp: Date.now() });
       
       setSchemaObjects(prev => ({ ...prev, [type]: data }));
+      setLoadedSections(prev => ({ ...prev, [type]: true }));
       
       const newOwners = new Set(owners);
       data.forEach(obj => {
@@ -919,7 +1275,7 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
     } finally {
       setLoadingStates(prev => ({ ...prev, [type]: false }));
     }
-  }, [authToken, loadingStates, owners]);
+  }, [authToken, loadingStates, loadedSections, owners]);
 
   // Get first schema object for auto-select
   const getFirstSchemaObject = useCallback(() => {
@@ -938,7 +1294,14 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
     for (const objType of objectTypes) {
       const objects = schemaObjects[objType.key] || [];
       if (objects.length > 0) {
-        return { object: objects[0], type: objType.type };
+        const obj = objects[0];
+        return { 
+          object: {
+            ...obj,
+            id: obj.id || `${obj.owner || 'unknown'}_${obj.name}`
+          }, 
+          type: objType.type 
+        };
       }
     }
     return null;
@@ -959,6 +1322,8 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
     if (!authToken || !tableName) return;
     
     setTableDataLoading(true);
+    setTableData(null);
+    
     try {
       const params = {
         tableName,
@@ -970,9 +1335,11 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
       
       const response = await getTableData(authToken, params);
       const processed = handleSchemaBrowserResponse(response);
-      setTableData(extractTableData(processed));
+      const tableDataResult = extractTableData(processed);
+      setTableData(tableDataResult);
     } catch (err) {
       Logger.error('SchemaBrowser', 'loadTableData', `Error loading data for ${tableName}`, err);
+      setError(`Failed to load table data: ${err.message}`);
     } finally {
       setTableDataLoading(false);
     }
@@ -1005,7 +1372,23 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   // Handle refresh
   const handleRefresh = useCallback(async () => {
     objectCache.clear();
+    setLoading(true);
+    setInitialLoadComplete(false);
+    setInitialized(false);
+    setHasAutoSelected(false);
+    
     await loadSchemaInfo();
+    setLoadedSections({
+      procedures: false,
+      views: false,
+      functions: false,
+      tables: false,
+      packages: false,
+      sequences: false,
+      synonyms: false,
+      types: false,
+      triggers: false
+    });
     setSchemaObjects({
       tables: [],
       views: [],
@@ -1017,18 +1400,11 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
       types: [],
       triggers: []
     });
-    setObjectTree({
-      tables: true,
-      views: false,
-      procedures: false,
-      functions: false,
-      packages: true,
-      sequences: false,
-      synonyms: false,
-      types: false,
-      triggers: false
-    });
-  }, [loadSchemaInfo]);
+    await loadAllObjectCounts();
+    setInitialized(true);
+    setLoading(false);
+    setInitialLoadComplete(true);
+  }, [loadSchemaInfo, loadAllObjectCounts]);
 
   // Handle copy to clipboard
   const handleCopyToClipboard = useCallback(async (text, label = 'content') => {
@@ -1057,27 +1433,41 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
 
   // Initialize
   useEffect(() => {
-    loadSchemaInfo();
-  }, [loadSchemaInfo]);
+    if (!initialized && authToken) {
+      const initializeSchema = async () => {
+        setLoading(true);
+        await loadSchemaInfo();
+        await loadAllObjectCounts();
+        setInitialized(true);
+        setLoading(false);
+        setInitialLoadComplete(true);
+      };
+      
+      initializeSchema();
+    }
+  }, [authToken, initialized, loadSchemaInfo, loadAllObjectCounts]);
 
   // Auto-select first object
   useEffect(() => {
     const hasObjects = Object.values(schemaObjects).some(arr => arr.length > 0);
-    if (hasObjects && !activeObject && !hasAutoSelected) {
+    if (hasObjects && !activeObject && !hasAutoSelected && initialLoadComplete) {
       const firstObjectData = getFirstSchemaObject();
       if (firstObjectData) {
         setHasAutoSelected(true);
         handleObjectSelect(firstObjectData.object, firstObjectData.type);
       }
     }
-  }, [schemaObjects, activeObject, hasAutoSelected, getFirstSchemaObject]);
+  }, [schemaObjects, activeObject, hasAutoSelected, initialLoadComplete, getFirstSchemaObject]);
 
   // Update table data when dataView changes
   useEffect(() => {
-    if (activeObject?.type === 'TABLE' && activeObject?.name) {
-      loadTableData(activeObject.name);
+    if (activeObject?.type === 'TABLE' || (activeObject?.type === 'SYNONYM' && objectDetails?.TARGET_TYPE === 'TABLE')) {
+      const tableName = activeObject.type === 'SYNONYM' && objectDetails?.TARGET_NAME 
+        ? objectDetails.TARGET_NAME 
+        : activeObject.name;
+      loadTableData(tableName);
     }
-  }, [dataView.page, dataView.pageSize, dataView.sortColumn, dataView.sortDirection, activeObject, loadTableData]);
+  }, [dataView.page, dataView.pageSize, dataView.sortColumn, dataView.sortDirection]);
 
   // Close context menu on outside click
   useEffect(() => {
@@ -1152,68 +1542,108 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   const renderDataTab = () => {
     const data = tableData?.rows || [];
     const columns = tableData?.columns || objectDetails?.columns || activeObject?.columns || [];
+    const totalRows = tableData?.totalRows || 0;
+    const totalPages = tableData?.totalPages || 1;
     
     return (
-      <div className="flex-1 flex flex-col">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 border-b" style={{ borderColor: colors.border }}>
+      <div className="flex-1 flex flex-col h-full">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 border-b shrink-0" style={{ borderColor: colors.border }}>
           <div className="flex items-center gap-2">
             <button 
               className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2"
               style={{ backgroundColor: colors.primaryDark, color: colors.white }}
-              onClick={() => activeObject && loadTableData(activeObject.name)}
-              disabled={tableDataLoading}
+              onClick={async () => {
+                if (activeObject) {
+                  const tableName = activeObject.type === 'SYNONYM' && objectDetails?.TARGET_NAME 
+                    ? objectDetails.TARGET_NAME 
+                    : activeObject.name;
+                  await loadTableData(tableName);
+                }
+              }}
+              disabled={tableDataLoading || !activeObject}
             >
-              {tableDataLoading ? <RefreshCw size={12} className="animate-spin" /> : <Play size={12} />}
+              {tableDataLoading ? (
+                <Loader size={12} className="animate-spin" />
+              ) : (
+                <Play size={12} />
+              )}
               <span>Execute</span>
             </button>
             <select 
               className="px-2 py-1 border rounded text-sm"
-              style={{ backgroundColor: colors.card, borderColor: colors.border, color: colors.text }}
+              style={{ backgroundColor: colors.bg, borderColor: colors.border, color: colors.text }}
               value={dataView.pageSize}
               onChange={(e) => handlePageSizeChange(parseInt(e.target.value))}
+              disabled={tableDataLoading}
             >
               <option value="25">25 rows</option>
               <option value="50">50 rows</option>
               <option value="100">100 rows</option>
+              <option value="250">250 rows</option>
+              <option value="500">500 rows</option>
             </select>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs" style={{ color: colors.textSecondary }}>
-              Page {tableData?.page || 1} of {tableData?.totalPages || 1}
+              {totalRows > 0 ? (
+                <>Page {dataView.page} of {totalPages} | Total: {totalRows.toLocaleString()} rows</>
+              ) : (
+                'No data'
+              )}
             </span>
-            <button 
-              className="p-1 rounded hover:bg-opacity-50"
-              style={{ backgroundColor: colors.hover }}
-              onClick={() => handlePageChange(dataView.page - 1)}
-              disabled={!tableData || dataView.page <= 1}
-            >
-              <ChevronLeft size={14} />
-            </button>
-            <button 
-              className="p-1 rounded hover:bg-opacity-50"
-              style={{ backgroundColor: colors.hover }}
-              onClick={() => handlePageChange(dataView.page + 1)}
-              disabled={!tableData || dataView.page >= (tableData?.totalPages || 1)}
-            >
-              <ChevronRight size={14} />
-            </button>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button 
+                  className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
+                  style={{ backgroundColor: colors.hover }}
+                  onClick={() => handlePageChange(dataView.page - 1)}
+                  disabled={tableDataLoading || dataView.page <= 1}
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <button 
+                  className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
+                  style={{ backgroundColor: colors.hover }}
+                  onClick={() => handlePageChange(dataView.page + 1)}
+                  disabled={tableDataLoading || dataView.page >= totalPages}
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto relative">
           {tableDataLoading ? (
-            <div className="flex justify-center p-8">
-              <Loader className="animate-spin" size={24} style={{ color: colors.textSecondary }} />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center">
+                <Loader className="animate-spin mx-auto mb-4" size={40} style={{ color: colors.primary }} />
+                <div className="text-sm font-medium" style={{ color: colors.text }}>Loading table data...</div>
+                <div className="text-xs mt-2" style={{ color: colors.textSecondary }}>Please wait while we fetch the rows</div>
+              </div>
+            </div>
+          ) : data.length === 0 ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center">
+                <div className="flex justify-center mb-4">
+                  <TableIcon size={64} style={{ color: colors.textSecondary, opacity: 0.5 }} />
+                </div>
+                <div className="text-lg font-medium" style={{ color: colors.text }}>No data available</div>
+                <div className="text-sm mt-2" style={{ color: colors.textSecondary }}>
+                  Click the Execute button to load data
+                </div>
+              </div>
             </div>
           ) : (
-            <div className="border rounded overflow-auto" style={{ borderColor: colors.gridBorder }}>
+            <div className="border rounded overflow-auto h-full" style={{ borderColor: colors.gridBorder }}>
               <table className="w-full">
-                <thead style={{ backgroundColor: colors.tableHeader }}>
+                <thead style={{ backgroundColor: colors.tableHeader, position: 'sticky', top: 0, zIndex: 10 }}>
                   <tr>
                     {columns.map(col => (
                       <th 
                         key={col.name || col.COLUMN_NAME} 
-                        className="text-left p-2 text-xs cursor-pointer hover:bg-opacity-50"
+                        className="text-left p-2 text-xs font-medium cursor-pointer hover:bg-opacity-50"
                         onClick={() => handleSortChange(
                           col.name || col.COLUMN_NAME, 
                           dataView.sortColumn === (col.name || col.COLUMN_NAME) && dataView.sortDirection === 'ASC' ? 'DESC' : 'ASC'
@@ -1221,9 +1651,11 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
                         style={{ color: colors.textSecondary }}
                       >
                         <div className="flex items-center gap-1">
-                          {col.name || col.COLUMN_NAME}
+                          <span className="truncate">{col.name || col.COLUMN_NAME}</span>
                           {dataView.sortColumn === (col.name || col.COLUMN_NAME) && (
-                            dataView.sortDirection === 'ASC' ? <ChevronUp size={10} /> : <ChevronDown size={10} />
+                            dataView.sortDirection === 'ASC' ? 
+                              <ChevronUp size={10} /> : 
+                              <ChevronDown size={10} />
                           )}
                         </div>
                       </th>
@@ -1231,17 +1663,33 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((row, i) => (
-                    <tr key={i} style={{ 
-                      backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                      borderBottom: `1px solid ${colors.gridBorder}`
-                    }}>
-                      {columns.map(col => (
-                        <td key={col.name || col.COLUMN_NAME} className="p-2 text-xs" style={{ color: colors.text }}>
-                          {row[col.name || col.COLUMN_NAME]?.toString() || 
-                           (row[col.name || col.COLUMN_NAME] === null ? <span style={{ color: colors.textTertiary }}>NULL</span> : '-')}
-                        </td>
-                      ))}
+                  {data.map((row, rowIndex) => (
+                    <tr 
+                      key={rowIndex} 
+                      className="hover:bg-opacity-50 transition-colors"
+                      style={{ 
+                        backgroundColor: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                      }}
+                    >
+                      {columns.map(col => {
+                        const columnName = col.name || col.COLUMN_NAME;
+                        const value = row[columnName];
+                        return (
+                          <td key={columnName} className="p-2 text-xs border-b" style={{ 
+                            borderColor: colors.gridBorder,
+                            color: colors.text,
+                            maxWidth: '200px'
+                          }}>
+                            <div className="truncate" title={value?.toString()}>
+                              {value !== null && value !== undefined ? (
+                                typeof value === 'object' ? JSON.stringify(value) : value.toString()
+                              ) : (
+                                <span style={{ color: colors.textTertiary }}>NULL</span>
+                              )}
+                            </div>
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}
                 </tbody>
@@ -1255,8 +1703,6 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
 
   // Render Parameters Tab
   const renderParametersTab = () => {
-    // For synonyms, parameters are in targetDetails.parameters
-    // For direct procedures/functions, parameters might be in objectDetails.parameters
     const parameters = objectDetails?.targetDetails?.parameters || 
                        objectDetails?.parameters || 
                        objectDetails?.arguments ||
@@ -1325,7 +1771,6 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
 
   // Render DDL Tab
   const renderDDLTab = () => {
-    // For synonyms that point to other objects, show target DDL
     const ddl = objectDDL || 
                 objectDetails?.targetDetails?.text || 
                 objectDetails?.text || 
@@ -1339,7 +1784,7 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
       <div className="flex-1 overflow-auto">
         <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
           <pre className="text-xs font-mono whitespace-pre-wrap overflow-auto" style={{ color: colors.text }}>
-            {ddl || 'No DDL available'}
+            {ddl || '-- No DDL available for this object'}
           </pre>
           <div className="mt-2 flex justify-end">
             <button 
@@ -1424,216 +1869,213 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
     );
   };
 
-  // Render Properties Tab - UPDATED to show all data
-const renderPropertiesTab = () => {
-  const details = objectDetails || activeObject || {};
-  const targetDetails = details.targetDetails;
-  
-  console.log('Properties Tab - details:', details);
-  console.log('Properties Tab - targetDetails:', targetDetails);
-  
-  // For synonyms, show both synonym properties and target properties
-  if (details.objectType === 'SYNONYM' && targetDetails) {
-    return (
-      <div className="flex-1 overflow-auto">
-        <div className="border rounded p-4 space-y-4" style={{ borderColor: colors.border }}>
-          {/* Synonym Properties */}
-          <div>
-            <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Synonym Properties</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <div className="text-xs" style={{ color: colors.textSecondary }}>Synonym Name</div>
-                <div className="text-sm truncate" style={{ color: colors.text }}>{details.SYNONYM_NAME || details.name || '-'}</div>
-              </div>
-              <div className="space-y-1">
-                <div className="text-xs" style={{ color: colors.textSecondary }}>Owner</div>
-                <div className="text-sm truncate" style={{ color: colors.text }}>{details.owner || '-'}</div>
-              </div>
-              <div className="space-y-1">
-                <div className="text-xs" style={{ color: colors.textSecondary }}>Target Owner</div>
-                <div className="text-sm truncate" style={{ color: colors.text }}>{details.TARGET_OWNER || targetDetails?.OWNER || '-'}</div>
-              </div>
-              <div className="space-y-1">
-                <div className="text-xs" style={{ color: colors.textSecondary }}>Target Name</div>
-                <div className="text-sm truncate" style={{ color: colors.text }}>{details.TARGET_NAME || targetDetails?.OBJECT_NAME || targetDetails?.objectName || '-'}</div>
-              </div>
-              <div className="space-y-1">
-                <div className="text-xs" style={{ color: colors.textSecondary }}>Target Type</div>
-                <div className="text-sm truncate" style={{ color: colors.text }}>{details.TARGET_TYPE || targetDetails?.OBJECT_TYPE || targetDetails?.objectType || '-'}</div>
-              </div>
-              <div className="space-y-1">
-                <div className="text-xs" style={{ color: colors.textSecondary }}>Target Status</div>
-                <div className="text-sm truncate">
-                  <span className={`px-2 py-0.5 rounded text-xs ${
-                    (details.TARGET_STATUS || targetDetails?.STATUS) === 'VALID' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
-                  }`}>
-                    {details.TARGET_STATUS || targetDetails?.STATUS || '-'}
-                  </span>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <div className="text-xs" style={{ color: colors.textSecondary }}>Target Created</div>
-                <div className="text-sm truncate" style={{ color: colors.text }}>
-                  {details.TARGET_CREATED ? formatDateForDisplay(details.TARGET_CREATED) : 
-                   targetDetails?.CREATED ? formatDateForDisplay(targetDetails.CREATED) : '-'}
-                </div>
-              </div>
-              <div className="space-y-1">
-                <div className="text-xs" style={{ color: colors.textSecondary }}>Target Modified</div>
-                <div className="text-sm truncate" style={{ color: colors.text }}>
-                  {details.TARGET_MODIFIED ? formatDateForDisplay(details.TARGET_MODIFIED) : 
-                   targetDetails?.LAST_DDL_TIME ? formatDateForDisplay(targetDetails.LAST_DDL_TIME) : '-'}
-                </div>
-              </div>
-              <div className="space-y-1">
-                <div className="text-xs" style={{ color: colors.textSecondary }}>DB Link</div>
-                <div className="text-sm truncate" style={{ color: colors.text }}>{details.DB_LINK || '-'}</div>
-              </div>
-              {details.TARGET_TEMPORARY && (
-                <div className="space-y-1">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Target Temporary</div>
-                  <div className="text-sm truncate" style={{ color: colors.text }}>{details.TARGET_TEMPORARY}</div>
-                </div>
-              )}
-              {details.TARGET_GENERATED && (
-                <div className="space-y-1">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Target Generated</div>
-                  <div className="text-sm truncate" style={{ color: colors.text }}>{details.TARGET_GENERATED}</div>
-                </div>
-              )}
-              {details.TARGET_SECONDARY && (
-                <div className="space-y-1">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Target Secondary</div>
-                  <div className="text-sm truncate" style={{ color: colors.text }}>{details.TARGET_SECONDARY}</div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Target Object Properties */}
-          {targetDetails && (
-            <div className="border-t pt-4" style={{ borderColor: colors.border }}>
-              <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Target Object Properties</h3>
+  // Render Properties Tab
+  const renderPropertiesTab = () => {
+    const details = objectDetails || activeObject || {};
+    const targetDetails = details.targetDetails;
+    
+    // For synonyms, show both synonym properties and target properties
+    if (details.objectType === 'SYNONYM' && targetDetails) {
+      return (
+        <div className="flex-1 overflow-auto">
+          <div className="border rounded p-4 space-y-4" style={{ borderColor: colors.border }}>
+            {/* Synonym Properties */}
+            <div>
+              <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Synonym Properties</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Object Name</div>
-                  <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.OBJECT_NAME || targetDetails.objectName || targetDetails.TABLE_NAME || '-'}</div>
+                  <div className="text-xs" style={{ color: colors.textSecondary }}>Synonym Name</div>
+                  <div className="text-sm truncate" style={{ color: colors.text }}>{details.SYNONYM_NAME || details.name || '-'}</div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-xs" style={{ color: colors.textSecondary }}>Owner</div>
-                  <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.OWNER || targetDetails.owner || '-'}</div>
+                  <div className="text-sm truncate" style={{ color: colors.text }}>{details.owner || '-'}</div>
                 </div>
                 <div className="space-y-1">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Object Type</div>
-                  <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.OBJECT_TYPE || targetDetails.objectType || '-'}</div>
+                  <div className="text-xs" style={{ color: colors.textSecondary }}>Target Owner</div>
+                  <div className="text-sm truncate" style={{ color: colors.text }}>{details.TARGET_OWNER || targetDetails?.OWNER || '-'}</div>
                 </div>
                 <div className="space-y-1">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Status</div>
+                  <div className="text-xs" style={{ color: colors.textSecondary }}>Target Name</div>
+                  <div className="text-sm truncate" style={{ color: colors.text }}>{details.TARGET_NAME || targetDetails?.OBJECT_NAME || targetDetails?.objectName || '-'}</div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-xs" style={{ color: colors.textSecondary }}>Target Type</div>
+                  <div className="text-sm truncate" style={{ color: colors.text }}>{details.TARGET_TYPE || targetDetails?.OBJECT_TYPE || targetDetails?.objectType || '-'}</div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-xs" style={{ color: colors.textSecondary }}>Target Status</div>
                   <div className="text-sm truncate">
                     <span className={`px-2 py-0.5 rounded text-xs ${
-                      (targetDetails.STATUS || targetDetails.OBJECT_STATUS || targetDetails.TABLE_STATUS) === 'VALID' ? 
-                      'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                      (details.TARGET_STATUS || targetDetails?.STATUS) === 'VALID' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
                     }`}>
-                      {targetDetails.STATUS || targetDetails.OBJECT_STATUS || targetDetails.TABLE_STATUS || '-'}
+                      {details.TARGET_STATUS || targetDetails?.STATUS || '-'}
                     </span>
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Created</div>
+                  <div className="text-xs" style={{ color: colors.textSecondary }}>Target Created</div>
                   <div className="text-sm truncate" style={{ color: colors.text }}>
-                    {targetDetails.CREATED ? formatDateForDisplay(targetDetails.CREATED) : '-'}
+                    {details.TARGET_CREATED ? formatDateForDisplay(details.TARGET_CREATED) : 
+                     targetDetails?.CREATED ? formatDateForDisplay(targetDetails.CREATED) : '-'}
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Last Modified</div>
+                  <div className="text-xs" style={{ color: colors.textSecondary }}>Target Modified</div>
                   <div className="text-sm truncate" style={{ color: colors.text }}>
-                    {targetDetails.LAST_DDL_TIME ? formatDateForDisplay(targetDetails.LAST_DDL_TIME) : '-'}
+                    {details.TARGET_MODIFIED ? formatDateForDisplay(details.TARGET_MODIFIED) : 
+                     targetDetails?.LAST_DDL_TIME ? formatDateForDisplay(targetDetails.LAST_DDL_TIME) : '-'}
                   </div>
                 </div>
-                {targetDetails.parameterCount && (
+                <div className="space-y-1">
+                  <div className="text-xs" style={{ color: colors.textSecondary }}>DB Link</div>
+                  <div className="text-sm truncate" style={{ color: colors.text }}>{details.DB_LINK || '-'}</div>
+                </div>
+                {details.TARGET_TEMPORARY && (
                   <div className="space-y-1">
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>Parameter Count</div>
-                    <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.parameterCount}</div>
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>Target Temporary</div>
+                    <div className="text-sm truncate" style={{ color: colors.text }}>{details.TARGET_TEMPORARY}</div>
                   </div>
                 )}
-                {targetDetails.column_count && (
+                {details.TARGET_GENERATED && (
                   <div className="space-y-1">
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>Column Count</div>
-                    <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.column_count}</div>
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>Target Generated</div>
+                    <div className="text-sm truncate" style={{ color: colors.text }}>{details.TARGET_GENERATED}</div>
                   </div>
                 )}
-                {targetDetails.NUM_ROWS !== undefined && (
+                {details.TARGET_SECONDARY && (
                   <div className="space-y-1">
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>Row Count</div>
-                    <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.NUM_ROWS.toLocaleString()}</div>
-                  </div>
-                )}
-                {targetDetails.TABLESPACE_NAME && (
-                  <div className="space-y-1">
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>Tablespace</div>
-                    <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.TABLESPACE_NAME}</div>
-                  </div>
-                )}
-                {targetDetails.TEMPORARY && (
-                  <div className="space-y-1">
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>Temporary</div>
-                    <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.TEMPORARY}</div>
-                  </div>
-                )}
-                {targetDetails.GENERATED && (
-                  <div className="space-y-1">
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>Generated</div>
-                    <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.GENERATED}</div>
-                  </div>
-                )}
-                {targetDetails.SECONDARY && (
-                  <div className="space-y-1">
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>Secondary</div>
-                    <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.SECONDARY}</div>
-                  </div>
-                )}
-                {targetDetails.comments && (
-                  <div className="space-y-1 col-span-2">
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>Comments</div>
-                    <div className="text-sm" style={{ color: colors.text }}>{targetDetails.comments}</div>
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>Target Secondary</div>
+                    <div className="text-sm truncate" style={{ color: colors.text }}>{details.TARGET_SECONDARY}</div>
                   </div>
                 )}
               </div>
             </div>
-          )}
+
+            {/* Target Object Properties */}
+            {targetDetails && (
+              <div className="border-t pt-4" style={{ borderColor: colors.border }}>
+                <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Target Object Properties</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>Object Name</div>
+                    <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.OBJECT_NAME || targetDetails.objectName || targetDetails.TABLE_NAME || '-'}</div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>Owner</div>
+                    <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.OWNER || targetDetails.owner || '-'}</div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>Object Type</div>
+                    <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.OBJECT_TYPE || targetDetails.objectType || '-'}</div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>Status</div>
+                    <div className="text-sm truncate">
+                      <span className={`px-2 py-0.5 rounded text-xs ${
+                        (targetDetails.STATUS || targetDetails.OBJECT_STATUS || targetDetails.TABLE_STATUS) === 'VALID' ? 
+                        'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                      }`}>
+                        {targetDetails.STATUS || targetDetails.OBJECT_STATUS || targetDetails.TABLE_STATUS || '-'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>Created</div>
+                    <div className="text-sm truncate" style={{ color: colors.text }}>
+                      {targetDetails.CREATED ? formatDateForDisplay(targetDetails.CREATED) : '-'}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>Last Modified</div>
+                    <div className="text-sm truncate" style={{ color: colors.text }}>
+                      {targetDetails.LAST_DDL_TIME ? formatDateForDisplay(targetDetails.LAST_DDL_TIME) : '-'}
+                    </div>
+                  </div>
+                  {targetDetails.parameterCount && (
+                    <div className="space-y-1">
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>Parameter Count</div>
+                      <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.parameterCount}</div>
+                    </div>
+                  )}
+                  {targetDetails.column_count && (
+                    <div className="space-y-1">
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>Column Count</div>
+                      <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.column_count}</div>
+                    </div>
+                  )}
+                  {targetDetails.NUM_ROWS !== undefined && (
+                    <div className="space-y-1">
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>Row Count</div>
+                      <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.NUM_ROWS.toLocaleString()}</div>
+                    </div>
+                  )}
+                  {targetDetails.TABLESPACE_NAME && (
+                    <div className="space-y-1">
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>Tablespace</div>
+                      <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.TABLESPACE_NAME}</div>
+                    </div>
+                  )}
+                  {targetDetails.TEMPORARY && (
+                    <div className="space-y-1">
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>Temporary</div>
+                      <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.TEMPORARY}</div>
+                    </div>
+                  )}
+                  {targetDetails.GENERATED && (
+                    <div className="space-y-1">
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>Generated</div>
+                      <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.GENERATED}</div>
+                    </div>
+                  )}
+                  {targetDetails.SECONDARY && (
+                    <div className="space-y-1">
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>Secondary</div>
+                      <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.SECONDARY}</div>
+                    </div>
+                  )}
+                  {targetDetails.comments && (
+                    <div className="space-y-1 col-span-2">
+                      <div className="text-xs" style={{ color: colors.textSecondary }}>Comments</div>
+                      <div className="text-sm" style={{ color: colors.text }}>{targetDetails.comments}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // For non-synonym objects, show regular properties
+    const properties = [
+      { label: 'Name', value: details.name || details.OBJECT_NAME || details.objectName || details.SYNONYM_NAME || '-' },
+      { label: 'Owner', value: details.owner || details.OWNER || '-' },
+      { label: 'Type', value: details.type || details.OBJECT_TYPE || details.objectType || details.TARGET_TYPE || '-' },
+      { label: 'Status', value: details.status || details.STATUS || details.TARGET_STATUS || 'VALID' },
+      { label: 'Created', value: details.created || details.CREATED || details.TARGET_CREATED ? formatDateForDisplay(details.created || details.CREATED || details.TARGET_CREATED) : '-' },
+      { label: 'Last Modified', value: details.last_ddl_time || details.LAST_DDL_TIME || details.TARGET_MODIFIED ? formatDateForDisplay(details.last_ddl_time || details.LAST_DDL_TIME || details.TARGET_MODIFIED) : '-' },
+      ...(details.num_rows || details.NUM_ROWS ? [{ label: 'Row Count', value: (details.num_rows || details.NUM_ROWS).toLocaleString() }] : []),
+      ...(details.bytes || details.BYTES ? [{ label: 'Size', value: formatBytes(details.bytes || details.BYTES) }] : []),
+      ...(details.comments || details.COMMENTS ? [{ label: 'Comment', value: details.comments || details.COMMENTS }] : [])
+    ];
+
+    return (
+      <div className="flex-1 overflow-auto">
+        <div className="border rounded p-4" style={{ borderColor: colors.border }}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {properties.map((prop, i) => (
+              <div key={i} className="space-y-1">
+                <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
+                <div className="text-sm truncate" style={{ color: colors.text }}>{prop.value || '-'}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
-  }
-
-  // For non-synonym objects, show regular properties
-  const properties = [
-    { label: 'Name', value: details.name || details.OBJECT_NAME || details.objectName || details.SYNONYM_NAME || '-' },
-    { label: 'Owner', value: details.owner || details.OWNER || '-' },
-    { label: 'Type', value: details.type || details.OBJECT_TYPE || details.objectType || details.TARGET_TYPE || '-' },
-    { label: 'Status', value: details.status || details.STATUS || details.TARGET_STATUS || 'VALID' },
-    { label: 'Created', value: details.created || details.CREATED || details.TARGET_CREATED ? formatDateForDisplay(details.created || details.CREATED || details.TARGET_CREATED) : '-' },
-    { label: 'Last Modified', value: details.last_ddl_time || details.LAST_DDL_TIME || details.TARGET_MODIFIED ? formatDateForDisplay(details.last_ddl_time || details.LAST_DDL_TIME || details.TARGET_MODIFIED) : '-' },
-    ...(details.num_rows || details.NUM_ROWS ? [{ label: 'Row Count', value: (details.num_rows || details.NUM_ROWS).toLocaleString() }] : []),
-    ...(details.bytes || details.BYTES ? [{ label: 'Size', value: formatBytes(details.bytes || details.BYTES) }] : []),
-    ...(details.comments || details.COMMENTS ? [{ label: 'Comment', value: details.comments || details.COMMENTS }] : [])
-  ];
-
-  return (
-    <div className="flex-1 overflow-auto">
-      <div className="border rounded p-4" style={{ borderColor: colors.border }}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {properties.map((prop, i) => (
-            <div key={i} className="space-y-1">
-              <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
-              <div className="text-sm truncate" style={{ color: colors.text }}>{prop.value || '-'}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
+  };
 
   // Render Definition Tab (for views/triggers)
   const renderDefinitionTab = () => {
@@ -1722,7 +2164,7 @@ const renderPropertiesTab = () => {
     );
   };
 
-  // Get Tabs for Object Type - UPDATED to handle synonyms correctly
+  // Get Tabs for Object Type
   const getTabsForObject = useCallback((type, objectDetails) => {
     const objectType = type?.toUpperCase();
     
@@ -1768,7 +2210,7 @@ const renderPropertiesTab = () => {
       case 'SEQUENCE':
         return ['DDL', 'Properties'];
       case 'SYNONYM':
-        return ['Properties']; // Default for synonyms without target details
+        return ['Properties'];
       case 'TYPE':
         return ['Attributes', 'Properties'];
       case 'TRIGGER':
@@ -1778,153 +2220,144 @@ const renderPropertiesTab = () => {
     }
   }, []);
 
+  // Handle Object Select - Always show Properties tab first
+  const handleObjectSelect = useCallback(async (object, type) => {
+    if (!authToken || !object) {
+      console.error('Cannot select object: missing authToken or object', { authToken: !!authToken, object });
+      return;
+    }
 
-  // Add this helper function near the top of your component, after the imports
-const extractDetailsFromResponse = (response) => {
-  if (!response) return {};
-  
-  // If response has a data property, use that
-  if (response.data) {
-    return response.data;
-  }
-  
-  // If response is already the data object
-  return response;
-};
+    Logger.info('SchemaBrowser', 'handleObjectSelect', `Selecting ${object.name} (${type})`);
+    
+    const objectId = object.id || `${object.owner || 'unknown'}_${object.name}`;
+    
+    setLoading(true);
+    setTableDataLoading(false);
+    setObjectDetails(null);
+    setObjectDDL('');
+    setTableData(null);
+    
+    // ALWAYS set active tab to properties first
+    setActiveTab('properties');
+    
+    const enrichedObject = {
+      ...object,
+      id: objectId,
+      type: type
+    };
+    
+    setActiveObject(enrichedObject);
+    setSelectedForApiGeneration(enrichedObject);
+    
+    const tabId = `${type}_${objectId}`;
+    const existingTab = tabs.find(t => t.id === tabId);
+    
+    if (existingTab) {
+      setTabs(tabs.map(t => ({ ...t, isActive: t.id === tabId })));
+    } else {
+      setTabs(prev => [...prev.slice(-4), {
+        id: tabId,
+        name: object.name,
+        type,
+        objectId: objectId,
+        isActive: true
+      }].map(t => ({ ...t, isActive: t.id === tabId })));
+    }
 
- // Handle Object Select - UPDATED with better error handling
-const handleObjectSelect = useCallback(async (object, type) => {
-  if (!authToken || !object) return;
-
-  Logger.info('SchemaBrowser', 'handleObjectSelect', `Selecting ${object.name} (${type})`);
-  setActiveObject(object);
-  setSelectedForApiGeneration(object);
-  
-  const tabId = `${type}_${object.id || object.name}`;
-  const existingTab = tabs.find(t => t.id === tabId);
-  
-  if (existingTab) {
-    setTabs(tabs.map(t => ({ ...t, isActive: t.id === tabId })));
-  } else {
-    setTabs(prev => [...prev.slice(-4), {
-      id: tabId,
-      name: object.name,
-      type,
-      objectId: object.id || object.name,
-      isActive: true
-    }].map(t => ({ ...t, isActive: t.id === tabId })));
-  }
-
-  try {
-    // Load object details
-    Logger.debug('SchemaBrowser', 'handleObjectSelect', `Loading details for ${object.name}`);
-    const response = await getObjectDetails(authToken, { objectType: type, objectName: object.name });
-    
-    // Log the raw response to see what we're getting
-    console.log('Raw API Response:', response);
-    
-    // Handle the response properly
-    const processedResponse = handleSchemaBrowserResponse(response);
-    console.log('Processed Response:', processedResponse);
-    
-    // The data might be in processedResponse.data or directly in processedResponse
-    const responseData = processedResponse.data || processedResponse;
-    console.log('Response Data:', responseData);
-    
-    // Set the object details directly from the response data
-    setObjectDetails(responseData);
-    
-    // Determine what type of object we're dealing with
-    const upperType = type.toUpperCase();
-    let effectiveType = upperType;
-    let targetType = null;
-    let targetName = object.name;
-    let targetOwner = null;
-    
-    // If it's a synonym with target details, check what it points to
-    if (upperType === 'SYNONYM' && responseData?.targetDetails) {
-      targetType = responseData.targetDetails.OBJECT_TYPE || responseData.targetDetails.objectType;
-      targetName = responseData.TARGET_NAME || object.name;
-      targetOwner = responseData.TARGET_OWNER || responseData.targetDetails.OWNER;
+    try {
+      // Load object details
+      Logger.debug('SchemaBrowser', 'handleObjectSelect', `Loading details for ${object.name}`);
+      const response = await getObjectDetails(authToken, { objectType: type, objectName: object.name });
       
-      if (targetType) {
-        effectiveType = targetType;
-        console.log(`Synonym points to ${targetType}: ${targetOwner}.${targetName}`);
+      const processedResponse = handleSchemaBrowserResponse(response);
+      const responseData = processedResponse.data || processedResponse;
+      
+      const enrichedResponseData = {
+        ...responseData,
+        name: responseData.name || object.name,
+        type: responseData.type || type
+      };
+      
+      setObjectDetails(enrichedResponseData);
+      
+      // Determine what type of object we're dealing with
+      const upperType = type.toUpperCase();
+      let effectiveType = upperType;
+      let targetType = null;
+      let targetName = object.name;
+      let targetOwner = null;
+      
+      if (upperType === 'SYNONYM' && responseData?.targetDetails) {
+        targetType = responseData.targetDetails.OBJECT_TYPE || responseData.targetDetails.objectType;
+        targetName = responseData.TARGET_NAME || object.name;
+        targetOwner = responseData.TARGET_OWNER || responseData.targetDetails.OWNER;
+        
+        if (targetType) {
+          effectiveType = targetType;
+        }
       }
-    }
-    
-    // Set default tab based on effective type
-    switch(effectiveType) {
-      case 'TABLE':
-        setActiveTab('columns');
+      
+      // Load table data in background if it's a table
+      if (effectiveType === 'TABLE') {
         if (upperType === 'SYNONYM' && targetType === 'TABLE') {
-          // For synonyms pointing to tables, load table data using target name
-          await loadTableData(targetName);
+          loadTableData(targetName).catch(err => console.error('Background table load error:', err));
         } else {
-          await loadTableData(object.name);
+          loadTableData(object.name).catch(err => console.error('Background table load error:', err));
         }
-        break;
-      case 'VIEW':
-        setActiveTab('definition');
-        break;
-      case 'PROCEDURE':
-      case 'FUNCTION':
-        setActiveTab('parameters');
-        break;
-      case 'PACKAGE':
-        setActiveTab('spec');
-        break;
-      case 'TRIGGER':
-        setActiveTab('definition');
-        break;
-      default:
-        setActiveTab('properties');
-    }
-    
-    // Load DDL for appropriate types - with error handling
-    const ddlTypes = ['TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'PACKAGE', 'TRIGGER', 'SEQUENCE'];
-    if (ddlTypes.includes(effectiveType)) {
-      try {
-        console.log(`Fetching DDL for ${effectiveType}: ${targetName}`);
-        const ddlResponse = await getObjectDDL(authToken, { 
-          objectType: effectiveType.toLowerCase(), 
-          objectName: targetName 
-        });
-        console.log('DDL Response:', ddlResponse);
-        
-        const processedDDL = handleSchemaBrowserResponse(ddlResponse);
-        console.log('Processed DDL:', processedDDL);
-        
-        const ddlData = processedDDL.data || processedDDL;
-        // Extract DDL text - might be in different formats
-        let ddlText = '';
-        if (typeof ddlData === 'string') {
-          ddlText = ddlData;
-        } else if (ddlData?.ddl) {
-          ddlText = ddlData.ddl;
-        } else if (ddlData?.text) {
-          ddlText = ddlData.text;
-        } else if (ddlData?.sql) {
-          ddlText = ddlData.sql;
-        } else {
-          ddlText = JSON.stringify(ddlData, null, 2);
-        }
-        setObjectDDL(ddlText);
-      } catch (ddlError) {
-        console.error('Error fetching DDL:', ddlError);
-        setObjectDDL('-- DDL not available for this object');
       }
+      
+      // Load DDL in background for appropriate types
+      const ddlTypes = ['TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'PACKAGE', 'TRIGGER', 'SEQUENCE'];
+      if (ddlTypes.includes(effectiveType)) {
+        (async () => {
+          try {
+            const ddlResponse = await getObjectDDL(authToken, { 
+              objectType: effectiveType.toLowerCase(), 
+              objectName: targetName 
+            });
+            
+            if (ddlResponse && ddlResponse.data) {
+              const ddlData = ddlResponse.data;
+              let ddlText = '';
+              
+              if (typeof ddlData === 'string') {
+                ddlText = ddlData;
+              } else if (ddlData.ddl) {
+                ddlText = ddlData.ddl;
+              } else if (ddlData.text) {
+                ddlText = ddlData.text;
+              } else if (ddlData.sql) {
+                ddlText = ddlData.sql;
+              } else {
+                ddlText = JSON.stringify(ddlData, null, 2);
+              }
+              
+              if (ddlText && ddlText !== '{}') {
+                setObjectDDL(ddlText);
+              } else {
+                setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName}`);
+              }
+            } else {
+              setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName}`);
+            }
+          } catch (ddlError) {
+            console.error('Background DDL fetch error:', ddlError);
+            setObjectDDL(`-- Error loading DDL for ${effectiveType} ${targetName}\n-- ${ddlError.message}`);
+          }
+        })();
+      }
+      
+    } catch (err) {
+      Logger.error('SchemaBrowser', 'handleObjectSelect', `Error loading details for ${object.name}`, err);
+      setError(`Failed to load object details: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
-    
-  } catch (err) {
-    Logger.error('SchemaBrowser', 'handleObjectSelect', `Error loading details for ${object.name}`, err);
-    console.error('Error details:', err);
-  }
 
-  if (window.innerWidth < 768) {
-    setIsLeftSidebarVisible(false);
-  }
-}, [authToken, tabs, loadTableData]);
+    if (window.innerWidth < 768) {
+      setIsLeftSidebarVisible(false);
+    }
+  }, [authToken, tabs, loadTableData]);
 
   // Render tab content based on active tab
   const renderTabContent = () => {
@@ -1995,7 +2428,7 @@ const handleObjectSelect = useCallback(async (object, type) => {
       <div 
         className="fixed z-50 rounded shadow-lg border py-1"
         style={{ 
-          backgroundColor: colors.dropdownBg,
+          backgroundColor: colors.bg,
           borderColor: colors.dropdownBorder,
           top: isMobile ? '50%' : contextMenuPosition.y,
           left: isMobile ? '50%' : Math.min(contextMenuPosition.x, window.innerWidth - 200),
@@ -2033,6 +2466,11 @@ const handleObjectSelect = useCallback(async (object, type) => {
     );
   };
 
+  // Show full page loader until initial load is complete
+  if (!initialLoadComplete) {
+    return <FullPageLoader colors={colors} />;
+  }
+
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ 
       backgroundColor: colors.bg,
@@ -2068,19 +2506,19 @@ const handleObjectSelect = useCallback(async (object, type) => {
       }}>
         <span className="text-sm font-medium" style={{ color: colors.text }}>Schema Browser</span>
         <div className="flex items-center gap-2">
-          <button 
+          {/* <button 
             onClick={toggleTheme}
             className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
             style={{ backgroundColor: colors.hover }}
           >
             {isDark ? <Sun size={14} style={{ color: colors.textSecondary }} /> : <Moon size={14} style={{ color: colors.textSecondary }} />}
-          </button>
+          </button> */}
           <button 
             onClick={() => setShowApiModal(true)}
             className="px-3 py-1.5 rounded text-sm bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 hover:opacity-90 font-medium"
             style={{ color: 'white' }}
           >
-            Generate API
+            Generate New API
           </button>
         </div>
       </div>
@@ -2118,6 +2556,7 @@ const handleObjectSelect = useCallback(async (object, type) => {
           loading={loading}
           onRefreshSchema={handleRefresh}
           schemaInfo={schemaInfo}
+          loadedSections={loadedSections}
         />
 
         {/* Main Area */}
@@ -2159,7 +2598,7 @@ const handleObjectSelect = useCallback(async (object, type) => {
           )}
 
           {/* Object Header */}
-          {activeObject && (
+          {activeObject && !loading && (
             <div className="p-3 border-b" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
               <div className="flex items-center gap-2 flex-wrap">
                 {getObjectIcon(activeObject.type)}
@@ -2179,8 +2618,8 @@ const handleObjectSelect = useCallback(async (object, type) => {
             </div>
           )}
 
-          {/* Detail Tabs - Now correctly passing objectDetails */}
-          {activeObject && (
+          {/* Detail Tabs */}
+          {activeObject && !loading && (
             <div className="flex items-center border-b overflow-x-auto" style={{ 
               backgroundColor: colors.card,
               borderColor: colors.border
@@ -2206,7 +2645,19 @@ const handleObjectSelect = useCallback(async (object, type) => {
 
           {/* Tab Content */}
           <div className="flex-1 overflow-auto p-3 sm:p-4" style={{ backgroundColor: colors.card }}>
-            {renderTabContent()}
+            {loading && activeObject ? (
+              <div className="flex items-center justify-center h-full min-h-[400px]">
+                <div className="text-center">
+                  <Loader className="animate-spin mx-auto mb-4" size={40} style={{ color: colors.primary }} />
+                  <div className="text-sm font-medium" style={{ color: colors.text }}>Loading object details...</div>
+                  <div className="text-xs mt-2" style={{ color: colors.textSecondary }}>
+                    Fetching data for {activeObject.name}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              renderTabContent()
+            )}
           </div>
         </div>
       </div>
