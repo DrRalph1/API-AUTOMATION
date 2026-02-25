@@ -1148,65 +1148,121 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
     }
   }, [authToken]);
 
-  // Load all object counts in parallel
-  const loadAllObjectCounts = useCallback(async () => {
-    if (!authToken) return;
+  // Load all object counts - FIXED
+const loadAllObjectCounts = useCallback(async () => {
+  if (!authToken) return;
+  
+  Logger.info('SchemaBrowser', 'loadAllObjectCounts', 'Loading all object counts');
+  
+  // Track owners locally to avoid stale closure
+  let updatedOwners = new Set(owners);
+  
+  // First load procedures explicitly and wait for them
+  Logger.info('SchemaBrowser', 'loadAllObjectCounts', 'Loading procedures first...');
+  try {
+    const cacheKey = `procedures_${authToken.substring(0, 10)}`;
+    const cached = objectCache.get(cacheKey);
     
-    Logger.info('SchemaBrowser', 'loadAllObjectCounts', 'Loading all object counts');
-    
-    const loadPromises = [
-      { type: 'procedures', func: getAllProceduresForFrontend },
-      { type: 'views', func: getAllViewsForFrontend },
-      { type: 'functions', func: getAllFunctionsForFrontend },
-      { type: 'tables', func: getAllTablesForFrontend },
-      { type: 'packages', func: getAllPackagesForFrontend },
-      { type: 'sequences', func: getAllSequencesForFrontend },
-      { type: 'synonyms', func: getAllSynonymsForFrontend },
-      { type: 'types', func: getAllTypesForFrontend },
-      { type: 'triggers', func: getAllTriggersForFrontend }
-    ];
-
-    await Promise.all(loadPromises.map(async ({ type, func }) => {
-      try {
-        const cacheKey = `${type}_${authToken.substring(0, 10)}`;
-        const cached = objectCache.get(cacheKey);
-        
-        if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-          setSchemaObjects(prev => ({ ...prev, [type]: cached.data }));
-          setLoadedSections(prev => ({ ...prev, [type]: true }));
-          Logger.debug('SchemaBrowser', 'loadAllObjectCounts', `Loaded ${type} from cache (${cached.data.length} items)`);
-        } else {
-          Logger.debug('SchemaBrowser', 'loadAllObjectCounts', `Loading ${type} counts from API`);
-          const response = await func(authToken);
-          
-          let data = [];
-          if (response && response.data) {
-            data = response.data;
-          } else {
-            const processed = handleSchemaBrowserResponse(response);
-            data = processed.data || [];
-          }
-          
-          objectCache.set(cacheKey, { data, timestamp: Date.now() });
-          
-          setSchemaObjects(prev => ({ ...prev, [type]: data }));
-          setLoadedSections(prev => ({ ...prev, [type]: true }));
-          
-          const newOwners = new Set(owners);
-          data.forEach(obj => {
-            if (obj.owner) newOwners.add(obj.owner);
-          });
-          setOwners(Array.from(newOwners).sort());
-          
-          Logger.info('SchemaBrowser', 'loadAllObjectCounts', `Loaded ${data.length} ${type}`);
-        }
-      } catch (err) {
-        Logger.error('SchemaBrowser', 'loadAllObjectCounts', `Error loading ${type}`, err);
-        setSchemaObjects(prev => ({ ...prev, [type]: [] }));
-        setLoadedSections(prev => ({ ...prev, [type]: true }));
+    let proceduresData = [];
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      proceduresData = cached.data;
+      Logger.info('SchemaBrowser', 'loadAllObjectCounts', `Loaded procedures from cache (${proceduresData.length})`);
+    } else {
+      const response = await getAllProceduresForFrontend(authToken);
+      let data = [];
+      if (response && response.data) {
+        data = response.data;
+      } else {
+        const processed = handleSchemaBrowserResponse(response);
+        data = processed.data || [];
       }
-    }));
-  }, [authToken, owners]);
+      objectCache.set(cacheKey, { data, timestamp: Date.now() });
+      proceduresData = data;
+      Logger.info('SchemaBrowser', 'loadAllObjectCounts', `Loaded procedures from API (${proceduresData.length})`);
+    }
+    
+    // Update procedures state immediately
+    setSchemaObjects(prev => ({ ...prev, procedures: proceduresData }));
+    setLoadedSections(prev => ({ ...prev, procedures: true }));
+    
+    // Update owners
+    proceduresData.forEach(obj => {
+      if (obj.owner) updatedOwners.add(obj.owner);
+    });
+    
+  } catch (err) {
+    Logger.error('SchemaBrowser', 'loadAllObjectCounts', 'Error loading procedures', err);
+    setSchemaObjects(prev => ({ ...prev, procedures: [] }));
+    setLoadedSections(prev => ({ ...prev, procedures: true }));
+  }
+  
+  // Now load all other object types in parallel
+  const loadPromises = [
+    { type: 'views', func: getAllViewsForFrontend },
+    { type: 'functions', func: getAllFunctionsForFrontend },
+    { type: 'tables', func: getAllTablesForFrontend },
+    { type: 'packages', func: getAllPackagesForFrontend },
+    { type: 'sequences', func: getAllSequencesForFrontend },
+    { type: 'synonyms', func: getAllSynonymsForFrontend },
+    { type: 'types', func: getAllTypesForFrontend },
+    { type: 'triggers', func: getAllTriggersForFrontend }
+  ];
+
+  await Promise.all(loadPromises.map(async ({ type, func }) => {
+    try {
+      const cacheKey = `${type}_${authToken.substring(0, 10)}`;
+      const cached = objectCache.get(cacheKey);
+      
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+        setSchemaObjects(prev => ({ ...prev, [type]: cached.data }));
+        setLoadedSections(prev => ({ ...prev, [type]: true }));
+        Logger.debug('SchemaBrowser', 'loadAllObjectCounts', `Loaded ${type} from cache (${cached.data.length} items)`);
+        
+        // Update owners
+        cached.data.forEach(obj => {
+          if (obj.owner) updatedOwners.add(obj.owner);
+        });
+      } else {
+        Logger.debug('SchemaBrowser', 'loadAllObjectCounts', `Loading ${type} from API`);
+        const response = await func(authToken);
+        
+        let data = [];
+        if (response && response.data) {
+          data = response.data;
+        } else {
+          const processed = handleSchemaBrowserResponse(response);
+          data = processed.data || [];
+        }
+        
+        objectCache.set(cacheKey, { data, timestamp: Date.now() });
+        
+        setSchemaObjects(prev => ({ ...prev, [type]: data }));
+        setLoadedSections(prev => ({ ...prev, [type]: true }));
+        
+        // Update owners
+        data.forEach(obj => {
+          if (obj.owner) updatedOwners.add(obj.owner);
+        });
+        
+        Logger.info('SchemaBrowser', 'loadAllObjectCounts', `Loaded ${data.length} ${type}`);
+      }
+    } catch (err) {
+      Logger.error('SchemaBrowser', 'loadAllObjectCounts', `Error loading ${type}`, err);
+      setSchemaObjects(prev => ({ ...prev, [type]: [] }));
+      setLoadedSections(prev => ({ ...prev, [type]: true }));
+    }
+  }));
+  
+  // Update owners once at the end
+  setOwners(Array.from(updatedOwners).sort());
+  
+  // After all loads complete, log the final state
+  Logger.info('SchemaBrowser', 'loadAllObjectCounts', 'Final object counts:', {
+    procedures: schemaObjects.procedures?.length || 0,
+    packages: schemaObjects.packages?.length || 0,
+    tables: schemaObjects.tables?.length || 0
+  });
+}, [authToken]); // Remove owners dependency to avoid stale closure
 
   // Load object type on demand
   const loadObjectType = useCallback(async (type) => {
@@ -1284,34 +1340,128 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
     }
   }, [authToken, loadingStates, loadedSections, owners]);
 
-  // Get first schema object for auto-select
-  const getFirstSchemaObject = useCallback(() => {
-  // Prioritize procedures first
-  const objectTypes = [
-    { type: 'PROCEDURE', key: 'procedures' },
-    { type: 'TABLE', key: 'tables' },
-    { type: 'VIEW', key: 'views' },
-    { type: 'FUNCTION', key: 'functions' },
-    { type: 'PACKAGE', key: 'packages' },
-    { type: 'SEQUENCE', key: 'sequences' },
-    { type: 'SYNONYM', key: 'synonyms' },
-    { type: 'TYPE', key: 'types' },
-    { type: 'TRIGGER', key: 'triggers' }
-  ];
+  // Get first schema object for auto-select - FIXED to prioritize procedures
+const getFirstSchemaObject = useCallback(() => {
+  // Log available objects for debugging
+  Logger.debug('SchemaBrowser', 'getFirstSchemaObject', 'Available objects:', {
+    proceduresCount: schemaObjects.procedures?.length || 0,
+    tablesCount: schemaObjects.tables?.length || 0,
+    packagesCount: schemaObjects.packages?.length || 0
+  });
   
-  for (const objType of objectTypes) {
-    const objects = schemaObjects[objType.key] || [];
-    if (objects.length > 0) {
-      const obj = objects[0];
-      return { 
-        object: {
-          ...obj,
-          id: obj.id || `${obj.owner || 'unknown'}_${obj.name}`
-        }, 
-        type: objType.type 
-      };
-    }
+  // Explicitly check procedures first
+  if (schemaObjects.procedures && schemaObjects.procedures.length > 0) {
+    const procedure = schemaObjects.procedures[0];
+    Logger.info('SchemaBrowser', 'getFirstSchemaObject', `Found first procedure: ${procedure.name}`);
+    return { 
+      object: {
+        ...procedure,
+        id: procedure.id || `${procedure.owner || 'unknown'}_${procedure.name}`
+      }, 
+      type: 'PROCEDURE' 
+    };
   }
+  
+  // If no procedures, try tables
+  if (schemaObjects.tables && schemaObjects.tables.length > 0) {
+    const table = schemaObjects.tables[0];
+    Logger.info('SchemaBrowser', 'getFirstSchemaObject', `No procedures found, using first table: ${table.name}`);
+    return { 
+      object: {
+        ...table,
+        id: table.id || `${table.owner || 'unknown'}_${table.name}`
+      }, 
+      type: 'TABLE' 
+    };
+  }
+  
+  // If no tables, try views
+  if (schemaObjects.views && schemaObjects.views.length > 0) {
+    const view = schemaObjects.views[0];
+    Logger.info('SchemaBrowser', 'getFirstSchemaObject', `No tables found, using first view: ${view.name}`);
+    return { 
+      object: {
+        ...view,
+        id: view.id || `${view.owner || 'unknown'}_${view.name}`
+      }, 
+      type: 'VIEW' 
+    };
+  }
+  
+  // If no views, try functions
+  if (schemaObjects.functions && schemaObjects.functions.length > 0) {
+    const func = schemaObjects.functions[0];
+    Logger.info('SchemaBrowser', 'getFirstSchemaObject', `No views found, using first function: ${func.name}`);
+    return { 
+      object: {
+        ...func,
+        id: func.id || `${func.owner || 'unknown'}_${func.name}`
+      }, 
+      type: 'FUNCTION' 
+    };
+  }
+  
+  // If no functions, try packages
+  if (schemaObjects.packages && schemaObjects.packages.length > 0) {
+    const pkg = schemaObjects.packages[0];
+    Logger.info('SchemaBrowser', 'getFirstSchemaObject', `No functions found, using first package: ${pkg.name}`);
+    return { 
+      object: {
+        ...pkg,
+        id: pkg.id || `${pkg.owner || 'unknown'}_${pkg.name}`
+      }, 
+      type: 'PACKAGE' 
+    };
+  }
+  
+  // If no packages, try sequences
+  if (schemaObjects.sequences && schemaObjects.sequences.length > 0) {
+    const seq = schemaObjects.sequences[0];
+    return { 
+      object: {
+        ...seq,
+        id: seq.id || `${seq.owner || 'unknown'}_${seq.name}`
+      }, 
+      type: 'SEQUENCE' 
+    };
+  }
+  
+  // If no sequences, try synonyms
+  if (schemaObjects.synonyms && schemaObjects.synonyms.length > 0) {
+    const syn = schemaObjects.synonyms[0];
+    return { 
+      object: {
+        ...syn,
+        id: syn.id || `${syn.owner || 'unknown'}_${syn.name}`
+      }, 
+      type: 'SYNONYM' 
+    };
+  }
+  
+  // If no synonyms, try types
+  if (schemaObjects.types && schemaObjects.types.length > 0) {
+    const type = schemaObjects.types[0];
+    return { 
+      object: {
+        ...type,
+        id: type.id || `${type.owner || 'unknown'}_${type.name}`
+      }, 
+      type: 'TYPE' 
+    };
+  }
+  
+  // If no types, try triggers
+  if (schemaObjects.triggers && schemaObjects.triggers.length > 0) {
+    const trigger = schemaObjects.triggers[0];
+    return { 
+      object: {
+        ...trigger,
+        id: trigger.id || `${trigger.owner || 'unknown'}_${trigger.name}`
+      }, 
+      type: 'TRIGGER' 
+    };
+  }
+  
   return null;
 }, [schemaObjects]);
 
@@ -1439,36 +1589,119 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
     setDataView(prev => ({ ...prev, sortColumn: column, sortDirection: direction, page: 1 }));
   }, []);
 
-  // Initialize
-  useEffect(() => {
-    if (!initialized && authToken) {
-      const initializeSchema = async () => {
-        setLoading(true);
-        await loadSchemaInfo();
-        await loadAllObjectCounts();
-        setInitialized(true);
-        setLoading(false);
-        setInitialLoadComplete(true);
+  // Initialize - MODIFIED to wait for procedures
+useEffect(() => {
+  if (!initialized && authToken) {
+    const initializeSchema = async () => {
+      setLoading(true);
+      await loadSchemaInfo();
+      
+      // Load all objects (procedures are prioritized inside loadAllObjectCounts)
+      await loadAllObjectCounts();
+      
+      // Double-check that procedures are loaded
+      const currentProcedures = schemaObjects.procedures || [];
+      Logger.info('SchemaBrowser', 'initialize', `Initialization complete. Procedures: ${currentProcedures.length}`);
+      
+      setInitialized(true);
+      setLoading(false);
+      setInitialLoadComplete(true);
+      
+      // If procedures are already loaded, trigger selection immediately
+      if (currentProcedures.length > 0 && !activeObject && !hasAutoSelected) {
+        const firstProcedure = currentProcedures[0];
+        const procedureWithId = {
+          ...firstProcedure,
+          id: firstProcedure.id || `${firstProcedure.owner || 'unknown'}_${firstProcedure.name}`
+        };
+        
+        setHasAutoSelected(true);
+        setTimeout(() => {
+          handleObjectSelect(procedureWithId, 'PROCEDURE');
+        }, 100);
+      }
+    };
+    
+    initializeSchema();
+  }
+}, [authToken, initialized, loadSchemaInfo, loadAllObjectCounts, schemaObjects.procedures, activeObject, hasAutoSelected, handleObjectSelect]);
+
+ // Auto-select first procedure - CHECKING BOTH PROCEDURES AND SYNONYMS
+useEffect(() => {
+  console.log('=== AUTO-SELECT DEBUG (with synonyms) ===');
+  console.log('activeObject:', activeObject?.name);
+  console.log('hasAutoSelected:', hasAutoSelected);
+  console.log('initialLoadComplete:', initialLoadComplete);
+  console.log('procedures count:', schemaObjects.procedures?.length);
+  console.log('synonyms count:', schemaObjects.synonyms?.length);
+  
+  // If we already have an active object or already auto-selected, stop
+  if (activeObject || hasAutoSelected) {
+    console.log('Already have active object or already auto-selected, skipping');
+    return;
+  }
+  
+  // If initial load not complete, wait
+  if (!initialLoadComplete) {
+    console.log('Initial load not complete, waiting...');
+    return;
+  }
+  
+  // First, check for actual procedures
+  if (schemaObjects.procedures && schemaObjects.procedures.length > 0) {
+    const firstProcedure = schemaObjects.procedures[0];
+    console.log('✅ Found actual procedure:', firstProcedure.name);
+    
+    const procedureWithId = {
+      ...firstProcedure,
+      id: firstProcedure.id || `${firstProcedure.owner || 'unknown'}_${firstProcedure.name}`
+    };
+    
+    setHasAutoSelected(true);
+    setTimeout(() => {
+      console.log('Calling handleObjectSelect with actual procedure:', firstProcedure.name);
+      handleObjectSelect(procedureWithId, 'PROCEDURE');
+    }, 100);
+    return;
+  }
+  
+  // If no actual procedures, check synonyms for ones targeting procedures
+  if (schemaObjects.synonyms && schemaObjects.synonyms.length > 0) {
+    // Find synonyms that target procedures
+    const procedureSynonyms = schemaObjects.synonyms.filter(syn => {
+      const targetType = syn.targetType || syn.TARGET_TYPE || '';
+      return targetType.toUpperCase().includes('PROCEDURE');
+    });
+    
+    console.log('Procedure synonyms found:', procedureSynonyms.length);
+    
+    if (procedureSynonyms.length > 0) {
+      const firstSynonym = procedureSynonyms[0];
+      console.log('✅ Found synonym targeting procedure:', firstSynonym.name);
+      
+      const synonymWithId = {
+        ...firstSynonym,
+        id: firstSynonym.id || `${firstSynonym.owner || 'unknown'}_${firstSynonym.name}`
       };
       
-      initializeSchema();
-    }
-  }, [authToken, initialized, loadSchemaInfo, loadAllObjectCounts]);
-
-  // Auto-select first object
-  useEffect(() => {
-  const hasObjects = Object.values(schemaObjects).some(arr => arr.length > 0);
-  if (hasObjects && !activeObject && !hasAutoSelected && initialLoadComplete) {
-    const firstObjectData = getFirstSchemaObject();
-    if (firstObjectData) {
       setHasAutoSelected(true);
-      // Use setTimeout to ensure this runs after state updates
       setTimeout(() => {
-        handleObjectSelect(firstObjectData.object, firstObjectData.type);
+        console.log('Calling handleObjectSelect with synonym:', firstSynonym.name);
+        handleObjectSelect(synonymWithId, 'SYNONYM');
       }, 100);
+      return;
     }
   }
-}, [schemaObjects, activeObject, hasAutoSelected, initialLoadComplete, getFirstSchemaObject, handleObjectSelect]);
+  
+  console.log('❌ No procedures or procedure synonyms found');
+  console.log('Available objects:', {
+    procedures: schemaObjects.procedures?.length,
+    synonyms: schemaObjects.synonyms?.length,
+    packages: schemaObjects.packages?.length,
+    tables: schemaObjects.tables?.length
+  });
+  
+}, [activeObject, hasAutoSelected, initialLoadComplete, schemaObjects, handleObjectSelect]);
 
   // Update table data when dataView changes
   useEffect(() => {
@@ -2461,6 +2694,27 @@ useEffect(() => {
     }
   }
 }, [activeTab, activeObject, objectDDL, ddlLoading, objectDetails, authToken]);
+
+
+// DIRECT PROCEDURE SELECTOR - Added after your other useEffects
+useEffect(() => {
+  // This runs whenever schemaObjects.procedures changes
+  const procedures = schemaObjects.procedures || [];
+  
+  if (procedures.length > 0 && !activeObject && !hasAutoSelected && initialLoadComplete) {
+    Logger.info('SchemaBrowser', 'direct-procedure-selector', `Procedures loaded: ${procedures.length}, selecting first one`);
+    
+    const firstProcedure = procedures[0];
+    const procedureWithId = {
+      ...firstProcedure,
+      id: firstProcedure.id || `${firstProcedure.owner || 'unknown'}_${firstProcedure.name}`
+    };
+    
+    setHasAutoSelected(true);
+    // Immediate selection without timeout
+    handleObjectSelect(procedureWithId, 'PROCEDURE');
+  }
+}, [schemaObjects.procedures, activeObject, hasAutoSelected, initialLoadComplete, handleObjectSelect]);
 
 
   // Render tab content based on active tab
