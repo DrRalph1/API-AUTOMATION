@@ -43,6 +43,7 @@ import {
   isSupportedForAPIGeneration,
   generateSampleQuery
 } from "../controllers/OracleSchemaController.js";
+import { bg } from 'date-fns/locale/bg';
 
 // Enhanced Logger - Disabled in production
 const Logger = {
@@ -1793,7 +1794,7 @@ useEffect(() => {
   };
 
   // Render Data Tab
-const renderDataTab = () => {
+  const renderDataTab = () => {
   const data = tableData?.rows || [];
   
   // If columns array is empty but we have data, extract column names from the first row
@@ -1810,8 +1811,50 @@ if (columns.length === 0 && data.length > 0) {
   const totalRows = tableData?.totalRows || 0;
   const totalPages = tableData?.totalPages || 1;
   
+  // Function to download data as CSV
+  const downloadData = () => {
+    if (data.length === 0) return;
+    
+    // Prepare headers
+    const headers = ['#', ...columns.map(col => col.name || col.COLUMN_NAME)];
+    
+    // Prepare rows with counter
+    const csvRows = [
+      headers.join(','),
+      ...data.map((row, index) => {
+        const rowValues = [
+          index + 1 + (dataView.page - 1) * dataView.pageSize,
+          ...columns.map(col => {
+            const columnName = col.name || col.COLUMN_NAME;
+            const value = row[columnName];
+            
+            // Handle different value types for CSV
+            if (value === null || value === undefined) return '';
+            if (typeof value === 'object') return `"${JSON.stringify(value).replace(/"/g, '""')}"`;
+            if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+              return `"${value.replace(/"/g, '""')}"`;
+            }
+            return value;
+          })
+        ];
+        return rowValues.join(',');
+      })
+    ].join('\n');
+    
+    // Create download link
+    const blob = new Blob([csvRows], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${activeObject?.name || 'table'}_data.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+  
   return (
-    <div className="flex-1 flex flex-col h-full">
+    <div className="flex-1 flex flex-col h-full" style={{ minHeight: 0 }}> {/* Important for nested flexbox scrolling */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 border-b shrink-0" style={{ borderColor: colors.border }}>
         <div className="flex items-center gap-2">
           <button 
@@ -1847,6 +1890,16 @@ if (columns.length === 0 && data.length > 0) {
             <option value="250">250 rows</option>
             <option value="500">500 rows</option>
           </select>
+          {data.length > 0 && (
+            <button
+              className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2"
+              style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}`, color: colors.text }}
+              onClick={downloadData}
+            >
+              <Download size={12} />
+              <span>Download CSV</span>
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs" style={{ color: colors.textSecondary }}>
@@ -1879,7 +1932,7 @@ if (columns.length === 0 && data.length > 0) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto relative">
+      <div className="flex-1 relative" style={{ minHeight: 0, overflow: 'hidden' }}> {/* Important for nested flexbox scrolling */}
         {tableDataLoading ? (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center">
@@ -1901,10 +1954,40 @@ if (columns.length === 0 && data.length > 0) {
             </div>
           </div>
         ) : (
-          <div className="border rounded overflow-auto h-full" style={{ borderColor: colors.gridBorder }}>
-            <table className="w-full">
-              <thead style={{ backgroundColor: colors.tableHeader, position: 'sticky', top: 0, zIndex: 10 }}>
+          <div 
+            className="absolute inset-0 border rounded" 
+            style={{ 
+              borderColor: colors.gridBorder,
+              overflow: 'auto' // This enables both vertical and horizontal scrolling
+            }}
+          >
+            <table style={{ borderCollapse: 'collapse', minWidth: '100%', width: 'max-content' }}>
+              <thead style={{ 
+                backgroundColor: colors.tableHeader, 
+                position: 'sticky', 
+                top: 0, 
+                zIndex: 10 
+              }}>
                 <tr>
+                  {/* Counter column header */}
+                  <th 
+                    className="text-left p-2 text-xs font-medium"
+                    style={{ 
+                      color: colors.textSecondary, 
+                      background: colors.bg,
+                      position: 'sticky',
+                      left: 0,
+                      zIndex: 20,
+                      minWidth: '60px',
+                      borderRight: `1px solid ${colors.gridBorder}`,
+                      borderBottom: `1px solid ${colors.gridBorder}`,
+                      padding: '8px'
+                    }}
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>#</span>
+                    </div>
+                  </th>
                   {columns.map(col => (
                     <th 
                       key={col.name || col.COLUMN_NAME} 
@@ -1913,10 +1996,17 @@ if (columns.length === 0 && data.length > 0) {
                         col.name || col.COLUMN_NAME, 
                         dataView.sortColumn === (col.name || col.COLUMN_NAME) && dataView.sortDirection === 'ASC' ? 'DESC' : 'ASC'
                       )}
-                      style={{ color: colors.textSecondary }}
+                      style={{ 
+                        color: colors.textSecondary, 
+                        background: colors.bg,
+                        minWidth: '150px',
+                        borderBottom: `1px solid ${colors.gridBorder}`,
+                        padding: '8px',
+                        whiteSpace: 'nowrap'
+                      }}
                     >
                       <div className="flex items-center gap-1">
-                        <span className="truncate">{col.name || col.COLUMN_NAME}</span>
+                        <span>{col.name || col.COLUMN_NAME}</span>
                         {dataView.sortColumn === (col.name || col.COLUMN_NAME) && (
                           dataView.sortDirection === 'ASC' ? 
                             <ChevronUp size={10} /> : 
@@ -1931,27 +2021,49 @@ if (columns.length === 0 && data.length > 0) {
                 {data.map((row, rowIndex) => (
                   <tr 
                     key={rowIndex} 
-                    className="hover:bg-opacity-50 transition-colors"
                     style={{ 
                       backgroundColor: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
                     }}
                   >
+                    {/* Counter column data */}
+                    <td 
+                      className="p-2 text-xs border-b"
+                      style={{ 
+                        borderColor: colors.gridBorder,
+                        color: colors.text,
+                        background: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                        position: 'sticky',
+                        left: 0,
+                        zIndex: 5,
+                        minWidth: '60px',
+                        borderRight: `1px solid ${colors.gridBorder}`,
+                        padding: '8px',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {rowIndex + 1 + (dataView.page - 1) * dataView.pageSize}
+                    </td>
                     {columns.map(col => {
                       const columnName = col.name || col.COLUMN_NAME;
                       const value = row[columnName];
                       return (
-                        <td key={columnName} className="p-2 text-xs border-b" style={{ 
-                          borderColor: colors.gridBorder,
-                          color: colors.text,
-                          maxWidth: '200px'
-                        }}>
-                          <div className="truncate" title={value?.toString()}>
-                            {value !== null && value !== undefined ? (
-                              typeof value === 'object' ? JSON.stringify(value) : value.toString()
-                            ) : (
-                              <span style={{ color: colors.textTertiary }}>NULL</span>
-                            )}
-                          </div>
+                        <td 
+                          key={columnName} 
+                          className="p-2 text-xs border-b" 
+                          style={{ 
+                            borderColor: colors.gridBorder,
+                            color: colors.text,
+                            minWidth: '150px',
+                            padding: '8px',
+                            whiteSpace: 'nowrap'
+                          }}
+                          title={value?.toString()}
+                        >
+                          {value !== null && value !== undefined ? (
+                            typeof value === 'object' ? JSON.stringify(value) : value.toString()
+                          ) : (
+                            <span style={{ color: colors.textTertiary }}>NULL</span>
+                          )}
                         </td>
                       );
                     })}
@@ -3053,6 +3165,7 @@ useEffect(() => {
           selectedObject={selectedForApiGeneration || activeObject}
           colors={colors}
           theme={theme}
+          authToken={authToken}  // ← ADD THIS LINE
         />
       )}
     </div>

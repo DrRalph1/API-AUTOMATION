@@ -12,6 +12,12 @@ import {
   Server, Cloud, CloudOff, FileCode, BookOpen, FileKey, GitBranch
 } from 'lucide-react';
 
+// Import the controller functions
+import {
+  getObjectDetails,
+  handleSchemaBrowserResponse
+} from "../../controllers/OracleSchemaController.js";
+
 // New component for the preview modal
 function ApiPreviewModal({ 
   isOpen, 
@@ -36,6 +42,7 @@ function ApiPreviewModal({
     success: theme === 'dark' ? 'rgb(16 185 129)' : '#10b981',
     warning: theme === 'dark' ? 'rgb(245 158 11)' : '#f59e0b',
     info: theme === 'dark' ? 'rgb(59 130 246)' : '#3b82f6',
+    white: '#ffffff'
   };
 
   if (!isOpen || !apiData) return null;
@@ -172,6 +179,12 @@ function ApiPreviewModal({
                     </span>
                   </div>
                 </div>
+                {apiData.sourceObject?.isSynonym && (
+                  <div className="mt-2 text-xs" style={{ color: themeColors.warning }}>
+                    <Link className="h-3 w-3 inline mr-1" />
+                    This is a synonym pointing to {apiData.sourceObject.targetType}: {apiData.sourceObject.targetOwner}.{apiData.sourceObject.targetName}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -363,6 +376,7 @@ function ApiLoadingModal({
     modalBg: theme === 'dark' ? '#010e23' : '#ffffff',
     modalBorder: theme === 'dark' ? 'rgb(61 73 92)' : '#e2e8f0',
     info: theme === 'dark' ? 'rgb(59 130 246)' : '#3b82f6',
+    white: '#ffffff'
   };
 
   if (!isOpen) return null;
@@ -431,6 +445,7 @@ function ApiConfirmationModal({
     success: theme === 'dark' ? 'rgb(16 185 129)' : '#10b981',
     warning: theme === 'dark' ? 'rgb(245 158 11)' : '#f59e0b',
     info: theme === 'dark' ? 'rgb(59 130 246)' : '#3b82f6',
+    white: '#ffffff'
   };
 
   // Show loader for 2 seconds, then show success
@@ -821,9 +836,11 @@ export default function ApiGenerationModal({
   onSave,
   selectedObject = null,
   colors = {},
-  theme = 'dark'
+  theme = 'dark',
+  authToken = null
 }) {
   const [activeTab, setActiveTab] = useState('definition');
+  const [loading, setLoading] = useState(false);
   const [apiDetails, setApiDetails] = useState({
     apiName: '',
     apiCode: '',
@@ -855,144 +872,346 @@ export default function ApiGenerationModal({
 
   const [parameters, setParameters] = useState([]);
   const [responseMappings, setResponseMappings] = useState([]);
+  const [sourceObjectInfo, setSourceObjectInfo] = useState({
+    isSynonym: false,
+    targetType: null,
+    targetName: null,
+    targetOwner: null
+  });
+
+  // Function to fetch object details for synonyms
+  const fetchObjectDetails = async (object, type) => {
+    if (!authToken || !object) {
+      console.log('❌ Cannot fetch object details: missing authToken or object');
+      return null;
+    }
+    
+    console.log('🔍 Fetching details for:', { object, type });
+    
+    try {
+      const response = await getObjectDetails(authToken, { 
+        objectType: type, 
+        objectName: object.name 
+      });
+      
+      console.log('📦 Raw object details response:', response);
+      
+      const processedResponse = handleSchemaBrowserResponse(response);
+      const responseData = processedResponse.data || processedResponse;
+      
+      console.log('📦 Processed object details:', responseData);
+      
+      // If it's a synonym, extract target information
+      if (type === 'SYNONYM' || type?.toUpperCase() === 'SYNONYM') {
+        const targetType = responseData.TARGET_TYPE || responseData.targetType;
+        const targetName = responseData.TARGET_NAME || responseData.targetName;
+        const targetOwner = responseData.TARGET_OWNER || responseData.targetOwner;
+        
+        console.log('🎯 Synonym points to:', { targetType, targetName, targetOwner });
+        
+        setSourceObjectInfo({
+          isSynonym: true,
+          targetType,
+          targetName,
+          targetOwner
+        });
+        
+        // The target details are already in the response
+        if (responseData.targetDetails) {
+          console.log('📦 Target details found:', responseData.targetDetails);
+          return responseData;
+        }
+      }
+      
+      return responseData;
+    } catch (error) {
+      console.error('❌ Error fetching object details:', error);
+      return null;
+    }
+  };
 
   // Initialize parameters and mappings based on selected object
   useEffect(() => {
-    if (selectedObject) {
-      console.log('Initializing modal with selected object:', {
+    const initializeFromObject = async () => {
+      if (!selectedObject) {
+        console.log('ℹ️ ApiGenerationModal - No selected object provided, showing empty form');
+        return;
+      }
+
+      setLoading(true);
+      console.log('🔍 ApiGenerationModal - Initializing with selected object:', {
         name: selectedObject.name,
         type: selectedObject.type,
         owner: selectedObject.owner,
-        columns: selectedObject.columns?.length,
-        parameters: selectedObject.parameters?.length
+        hasParameters: !!(selectedObject.parameters || selectedObject.PARAMETERS || selectedObject.arguments || selectedObject.ARGUMENTS)
       });
 
-      // Set API details based on selected object
-      const baseName = selectedObject.name.toLowerCase();
-      const endpointPath = `/${baseName.replace(/_/g, '-').toLowerCase()}`;
-      
-      // Determine HTTP method based on object type
-      let httpMethod = 'GET';
-      let operation = 'SELECT';
-      
-      if (selectedObject.type === 'TABLE' || selectedObject.type === 'VIEW') {
-        httpMethod = 'GET';
-        operation = 'SELECT';
-      } else if (selectedObject.type === 'PROCEDURE' || selectedObject.type === 'FUNCTION' || selectedObject.type === 'PACKAGE') {
-        httpMethod = 'POST';
-        operation = 'EXECUTE';
-      }
-
-      setApiDetails(prev => ({
-        ...prev,
-        apiName: `${selectedObject.name} API`,
-        apiCode: `${selectedObject.type.slice(0, 3)}_${selectedObject.name}`,
-        description: selectedObject.comment || `API for ${selectedObject.name} ${selectedObject.type.toLowerCase()}`,
-        endpointPath: endpointPath,
-        owner: selectedObject.owner || 'HR',
-        httpMethod: httpMethod
-      }));
-
-      // Set schema config
-      setSchemaConfig(prev => ({
-        ...prev,
-        schemaName: selectedObject.owner || 'HR',
-        objectType: selectedObject.type || 'TABLE',
-        objectName: selectedObject.name || '',
-        operation: operation,
-        primaryKeyColumn: selectedObject.columns?.find(col => col.key === 'PK')?.name || ''
-      }));
-
-      // Clear existing parameters and mappings
-      const newParameters = [];
-      const newMappings = [];
-
-      // Auto-generate parameters from columns if it's a table or view
-      if (selectedObject.columns && selectedObject.columns.length > 0) {
-        console.log('Generating parameters from columns:', selectedObject.columns);
+      try {
+        // Fetch detailed object information (especially important for synonyms)
+        let detailedObject = selectedObject;
+        let objectType = selectedObject.type;
+        let objectName = selectedObject.name;
+        let objectOwner = selectedObject.owner;
         
-        selectedObject.columns.forEach((col, index) => {
-          const isPrimaryKey = col.key === 'PK';
-          const parameterType = isPrimaryKey ? 'path' : 'query';
+        // If we have authToken, try to fetch more details
+        if (authToken) {
+          const fetchedDetails = await fetchObjectDetails(selectedObject, selectedObject.type);
+          if (fetchedDetails) {
+            detailedObject = fetchedDetails;
+          }
+        }
+        
+        // For synonyms, use the targetDetails if available
+        let effectiveObject = detailedObject;
+        let effectiveType = objectType;
+        let effectiveName = objectName;
+        let effectiveOwner = objectOwner;
+        
+        if (detailedObject?.targetDetails) {
+          // This is a synonym with target details
+          effectiveObject = detailedObject.targetDetails;
+          effectiveType = detailedObject.targetDetails.OBJECT_TYPE || objectType;
+          effectiveName = detailedObject.targetDetails.OBJECT_NAME || objectName;
+          effectiveOwner = detailedObject.targetDetails.OWNER || objectOwner;
           
-          newParameters.push({
-            id: `param-${Date.now()}-${index}`,
-            key: col.name.toLowerCase(),
-            dbColumn: col.name,
-            oracleType: col.type.includes('VARCHAR') ? 'VARCHAR2' : 
-                      col.type.includes('NUMBER') ? 'NUMBER' :
-                      col.type.includes('DATE') ? 'DATE' : 'VARCHAR2',
-            apiType: col.type.includes('NUMBER') ? 'integer' : 'string',
-            parameterType: parameterType,
-            required: isPrimaryKey || col.nullable === 'N',
-            description: col.comment || `From ${selectedObject.name}.${col.name}`,
-            example: col.name === 'EMPLOYEE_ID' ? '100' : 
-                    col.name.includes('DATE') ? '2024-01-01' :
-                    col.name.includes('NAME') ? 'John' : '',
-            validationPattern: '',
-            defaultValue: col.defaultValue || ''
-          });
-
-          // Add response mapping
-          newMappings.push({
-            id: `mapping-${Date.now()}-${index}`,
-            apiField: col.name.toLowerCase(),
-            dbColumn: col.name,
-            oracleType: col.type.includes('VARCHAR') ? 'VARCHAR2' : 
-                      col.type.includes('NUMBER') ? 'NUMBER' :
-                      col.type.includes('DATE') ? 'DATE' : 'VARCHAR2',
-            apiType: col.type.includes('NUMBER') ? 'integer' : 'string',
-            format: col.type.includes('DATE') ? 'date-time' : '',
-            nullable: col.nullable === 'Y',
-            isPrimaryKey: isPrimaryKey,
-            includeInResponse: true
-          });
-        });
-      } else if (selectedObject.parameters && selectedObject.parameters.length > 0) {
-        // For procedures/functions, extract parameters
-        console.log('Generating parameters from procedure/function:', selectedObject.parameters);
-        
-        selectedObject.parameters.forEach((param, index) => {
-          newParameters.push({
-            id: `proc-param-${Date.now()}-${index}`,
-            key: param.name.replace('p_', '').toLowerCase(),
-            dbParameter: param.name,
-            oracleType: param.datatype,
-            apiType: param.datatype.includes('NUMBER') ? 'integer' : 'string',
-            parameterType: 'query',
-            required: param.type === 'IN',
-            description: param.name,
-            example: '',
-            validationPattern: '',
-            defaultValue: param.defaultValue || ''
-          });
-        });
-
-        // If there's a return type for functions
-        if (selectedObject.returnType) {
-          newMappings.push({
-            id: `mapping-${Date.now()}-return`,
-            apiField: 'result',
-            dbColumn: 'RETURN_VALUE',
-            oracleType: selectedObject.returnType,
-            apiType: selectedObject.returnType.includes('NUMBER') ? 'integer' : 'string',
-            format: '',
-            nullable: false,
-            isPrimaryKey: false,
-            includeInResponse: true
+          console.log('🎯 Using target object:', {
+            type: effectiveType,
+            name: effectiveName,
+            owner: effectiveOwner,
+            hasParameters: !!(effectiveObject.parameters || effectiveObject.arguments || effectiveObject.PARAMETERS || effectiveObject.ARGUMENTS)
           });
         }
-      } else {
-        // For other object types (packages, triggers, etc.)
-        console.log('No columns or parameters found for object type:', selectedObject.type);
-      }
 
-      setParameters(newParameters);
-      setResponseMappings(newMappings);
-    } else {
-      console.log('No selected object provided to modal');
+        // Determine operation and HTTP method
+        let operation = 'SELECT';
+        let httpMethod = 'GET';
+        
+        const normalizedType = (effectiveType || '').toUpperCase();
+        
+        if (normalizedType === 'PROCEDURE' || normalizedType === 'FUNCTION') {
+          operation = 'EXECUTE';
+          httpMethod = 'POST';
+        } else if (normalizedType === 'PACKAGE') {
+          operation = 'EXECUTE';
+          httpMethod = 'POST';
+        } else if (normalizedType === 'VIEW') {
+          operation = 'SELECT';
+          httpMethod = 'GET';
+        } else if (normalizedType === 'TABLE') {
+          operation = 'SELECT';
+          httpMethod = 'GET';
+        } else if (normalizedType === 'SEQUENCE') {
+          operation = 'SELECT';
+          httpMethod = 'GET';
+        } else if (normalizedType === 'TRIGGER') {
+          operation = 'EXECUTE';
+          httpMethod = 'POST';
+        }
+
+        // Set API details
+        const baseName = effectiveName?.toLowerCase() || '';
+        const endpointPath = baseName ? `/${baseName.replace(/_/g, '-').toLowerCase()}` : '';
+        
+        setApiDetails(prev => ({
+          ...prev,
+          apiName: effectiveName ? `${effectiveName} API` : 'New API',
+          apiCode: normalizedType ? `${normalizedType.slice(0, 3)}_${effectiveName || 'API'}` : 'API',
+          description: selectedObject.comment || detailedObject?.COMMENTS || (effectiveName ? `API for ${effectiveName}` : ''),
+          endpointPath: endpointPath,
+          owner: effectiveOwner || 'HR',
+          httpMethod: httpMethod
+        }));
+
+        setSchemaConfig(prev => ({
+          ...prev,
+          schemaName: effectiveOwner || 'HR',
+          objectType: effectiveType || 'TABLE',
+          objectName: effectiveName || '',
+          operation: operation,
+          primaryKeyColumn: ''
+        }));
+
+        // Generate parameters and response mappings
+        const newParameters = [];
+        const newMappings = [];
+
+        // Look for parameters in various locations
+        console.log('🔍 Looking for parameters in effectiveObject:', effectiveObject);
+        
+        // Check for parameters (procedures/functions)
+        let parametersArray = null;
+        
+        if (effectiveObject.parameters && Array.isArray(effectiveObject.parameters)) {
+          parametersArray = effectiveObject.parameters;
+          console.log('📋 Found parameters in effectiveObject.parameters');
+        } else if (effectiveObject.PARAMETERS && Array.isArray(effectiveObject.PARAMETERS)) {
+          parametersArray = effectiveObject.PARAMETERS;
+          console.log('📋 Found parameters in effectiveObject.PARAMETERS');
+        } else if (effectiveObject.arguments && Array.isArray(effectiveObject.arguments)) {
+          parametersArray = effectiveObject.arguments;
+          console.log('📋 Found parameters in effectiveObject.arguments');
+        } else if (effectiveObject.ARGUMENTS && Array.isArray(effectiveObject.ARGUMENTS)) {
+          parametersArray = effectiveObject.ARGUMENTS;
+          console.log('📋 Found parameters in effectiveObject.ARGUMENTS');
+        }
+
+        if (parametersArray && parametersArray.length > 0) {
+          console.log('⚙️ Generating parameters from procedure/function:', parametersArray.length);
+          console.log('📋 Parameters array:', parametersArray);
+          
+          parametersArray.forEach((param, index) => {
+            // Handle different parameter naming conventions
+            const paramName = param.ARGUMENT_NAME || param.argument_name || param.name || param.NAME || `param_${index + 1}`;
+            const paramType = param.DATA_TYPE || param.data_type || param.type || param.TYPE || 'VARCHAR2';
+            const paramMode = param.IN_OUT || param.in_out || param.mode || param.MODE || 'IN';
+            
+            console.log(`📌 Parameter ${index + 1}:`, { paramName, paramType, paramMode });
+            
+            // Generate a clean key name
+            let cleanKey = paramName;
+            if (typeof paramName === 'string') {
+              cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
+            } else {
+              cleanKey = `param_${index + 1}`;
+            }
+            
+            newParameters.push({
+              id: `proc-param-${Date.now()}-${index}`,
+              key: cleanKey,
+              dbParameter: paramName,
+              oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
+                         paramType.includes('NUMBER') ? 'NUMBER' :
+                         paramType.includes('DATE') ? 'DATE' : 
+                         paramType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
+              apiType: paramType.includes('NUMBER') ? 'integer' : 
+                      paramType.includes('DATE') ? 'string' : 'string',
+              parameterType: paramMode === 'IN' ? 'query' : 'body',
+              required: paramMode === 'IN' || paramMode === 'IN OUT',
+              description: `${paramName} (${paramMode})`,
+              example: paramType.includes('NUMBER') ? '1' : 
+                      paramType.includes('DATE') ? '2024-01-01' : '',
+              validationPattern: '',
+              defaultValue: param.DATA_DEFAULT || param.defaultValue || ''
+            });
+
+            // Add to response mappings for OUT parameters
+            if (paramMode === 'OUT' || paramMode === 'IN OUT') {
+              newMappings.push({
+                id: `mapping-${Date.now()}-out-${index}`,
+                apiField: cleanKey,
+                dbColumn: paramName,
+                oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
+                           paramType.includes('NUMBER') ? 'NUMBER' :
+                           paramType.includes('DATE') ? 'DATE' : 'VARCHAR2',
+                apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
+                format: paramType.includes('DATE') ? 'date-time' : '',
+                nullable: true,
+                isPrimaryKey: false,
+                includeInResponse: true
+              });
+            }
+          });
+          
+          // If there's a return type for functions, add it to mappings
+          const returnType = effectiveObject.RETURN_TYPE || effectiveObject.return_type || effectiveObject.returnType;
+          if (returnType && normalizedType === 'FUNCTION') {
+            newMappings.push({
+              id: `mapping-${Date.now()}-return`,
+              apiField: 'result',
+              dbColumn: 'RETURN_VALUE',
+              oracleType: returnType.includes('VARCHAR') ? 'VARCHAR2' : 
+                         returnType.includes('NUMBER') ? 'NUMBER' :
+                         returnType.includes('DATE') ? 'DATE' : 'VARCHAR2',
+              apiType: returnType.includes('NUMBER') ? 'integer' : 'string',
+              format: '',
+              nullable: false,
+              isPrimaryKey: false,
+              includeInResponse: true
+            });
+          }
+        }
+        // Check for columns (tables/views)
+        else {
+          let columnsArray = null;
+          
+          if (effectiveObject.columns && Array.isArray(effectiveObject.columns)) {
+            columnsArray = effectiveObject.columns;
+          } else if (effectiveObject.COLUMNS && Array.isArray(effectiveObject.COLUMNS)) {
+            columnsArray = effectiveObject.COLUMNS;
+          }
+
+          if (columnsArray && columnsArray.length > 0) {
+            console.log('📊 Generating parameters from columns:', columnsArray.length);
+            
+            columnsArray.forEach((col, index) => {
+              const colName = col.name || col.COLUMN_NAME || col.column_name;
+              const colType = col.type || col.DATA_TYPE || col.data_type || 'VARCHAR2';
+              const colNullable = col.nullable || col.NULLABLE || 'Y';
+              const isPrimaryKey = col.key === 'PK' || col.CONSTRAINT_TYPE === 'P' || col.isPrimaryKey;
+              
+              if (colName) {
+                // Clean up column name for API key
+                const cleanKey = typeof colName === 'string' ? colName.toLowerCase() : `column_${index + 1}`;
+                
+                newParameters.push({
+                  id: `param-${Date.now()}-${index}`,
+                  key: cleanKey,
+                  dbColumn: colName,
+                  oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
+                            colType.includes('NUMBER') ? 'NUMBER' :
+                            colType.includes('DATE') ? 'DATE' : 
+                            colType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
+                  apiType: colType.includes('NUMBER') ? 'integer' : 
+                          colType.includes('DATE') ? 'string' : 'string',
+                  parameterType: isPrimaryKey ? 'path' : 'query',
+                  required: isPrimaryKey || colNullable === 'N',
+                  description: col.comment || col.COMMENTS || `From ${effectiveName}.${colName}`,
+                  example: colName.includes('ID') ? '1' : 
+                          colName.includes('DATE') ? '2024-01-01' :
+                          colName.includes('NAME') ? 'Sample' : '',
+                  validationPattern: '',
+                  defaultValue: col.DATA_DEFAULT || col.defaultValue || ''
+                });
+
+                newMappings.push({
+                  id: `mapping-${Date.now()}-${index}`,
+                  apiField: cleanKey,
+                  dbColumn: colName,
+                  oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
+                            colType.includes('NUMBER') ? 'NUMBER' :
+                            colType.includes('DATE') ? 'DATE' : 'VARCHAR2',
+                  apiType: colType.includes('NUMBER') ? 'integer' : 'string',
+                  format: colType.includes('DATE') ? 'date-time' : '',
+                  nullable: colNullable === 'Y',
+                  isPrimaryKey: isPrimaryKey,
+                  includeInResponse: true
+                });
+              }
+            });
+          } else {
+            console.log('⚠️ No parameters or columns found for object type:', effectiveType);
+          }
+        }
+
+        setParameters(newParameters);
+        setResponseMappings(newMappings);
+        
+        console.log('✅ ApiGenerationModal - Initialization complete:', {
+          parametersCount: newParameters.length,
+          mappingsCount: newMappings.length
+        });
+
+      } catch (error) {
+        console.error('❌ Error initializing modal:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (isOpen) {
+      initializeFromObject();
     }
-  }, [selectedObject]);
+  }, [selectedObject, isOpen, authToken]);
 
   const [authConfig, setAuthConfig] = useState({
     authType: 'ORACLE_ROLES',
@@ -1498,10 +1717,11 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
             nullable: m.nullable
           })),
           authConfig,
-          settings
+          settings,
+          sourceObjectInfo
         }, null, 2));
     }
-  }, [previewMode, apiDetails, schemaConfig, parameters, responseMappings, authConfig, settings]);
+  }, [previewMode, apiDetails, schemaConfig, parameters, responseMappings, authConfig, settings, sourceObjectInfo]);
 
   // Handle save - show preview first
   const handleSave = () => {
@@ -1528,7 +1748,11 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
         type: selectedObject?.type,
         owner: selectedObject?.owner,
         columns: selectedObject?.columns?.length,
-        parameters: selectedObject?.parameters?.length
+        parameters: selectedObject?.parameters?.length,
+        isSynonym: sourceObjectInfo.isSynonym,
+        targetType: sourceObjectInfo.targetType,
+        targetName: sourceObjectInfo.targetName,
+        targetOwner: sourceObjectInfo.targetOwner
       }
     };
     
@@ -1604,6 +1828,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
     success: theme === 'dark' ? 'rgb(16 185 129)' : '#10b981',
     warning: theme === 'dark' ? 'rgb(245 158 11)' : '#f59e0b',
     info: theme === 'dark' ? 'rgb(59 130 246)' : '#3b82f6',
+    white: '#ffffff'
   };
 
   return (
@@ -1625,6 +1850,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                selectedObject?.type === 'FUNCTION' ? <Code className="h-6 w-6" style={{ color: themeColors.warning }} /> :
                selectedObject?.type === 'PACKAGE' ? <Package className="h-6 w-6" style={{ color: themeColors.textSecondary }} /> :
                selectedObject?.type === 'TRIGGER' ? <Zap className="h-6 w-6" style={{ color: themeColors.error }} /> :
+               selectedObject?.type === 'SYNONYM' ? <Link className="h-6 w-6" style={{ color: themeColors.info }} /> :
                <Globe className="h-6 w-6" style={{ color: themeColors.info }} />}
               <div>
                 <h2 className="text-lg font-bold" style={{ color: themeColors.text }}>
@@ -1632,11 +1858,20 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                 </h2>
                 {selectedObject?.name && (
                   <>
-                  <p className="text-xs" style={{ color: themeColors.textSecondary }}>
-                  {selectedObject?.owner}.{selectedObject?.name} • {selectedObject?.type} • 
-                  {selectedObject?.columns ? ` ${selectedObject.columns.length} columns` : ''}
-                  {selectedObject?.parameters ? ` ${selectedObject.parameters.length} parameters` : ''}
-                </p>
+                    <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                      {selectedObject?.owner}.{selectedObject?.name} • {selectedObject?.type} • 
+                      {sourceObjectInfo.isSynonym && (
+                        <span className="ml-1 text-yellow-500">
+                          (points to {sourceObjectInfo.targetType}: {sourceObjectInfo.targetOwner}.{sourceObjectInfo.targetName})
+                        </span>
+                      )}
+                    </p>
+                    {loading && (
+                      <p className="text-xs mt-1 flex items-center gap-1" style={{ color: themeColors.info }}>
+                        <Loader className="h-3 w-3 animate-spin" />
+                        Fetching object details...
+                      </p>
+                    )}
                   </>
                 )}
               </div>
@@ -1646,6 +1881,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                 onClick={onClose}
                 className="p-2 rounded-lg transition-colors hover-lift"
                 style={{ backgroundColor: themeColors.hover, color: themeColors.textSecondary }}
+                disabled={loading}
               >
                 <X className="h-5 w-5" />
               </button>
@@ -1673,6 +1909,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                     color: themeColors.text
                   }}
                   placeholder="Users API"
+                  disabled={loading}
                 />
               </div>
 
@@ -1691,6 +1928,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                     color: themeColors.text
                   }}
                   placeholder="GET_USERS"
+                  disabled={loading}
                 />
               </div>
 
@@ -1703,10 +1941,11 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                   onChange={(e) => handleApiDetailChange('httpMethod', e.target.value)}
                   className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                   style={{ 
-                    backgroundColor: themeColors.card,
+                    backgroundColor: themeColors.bg,
                     borderColor: themeColors.border,
                     color: themeColors.text
                   }}
+                  disabled={loading}
                 >
                   <option value="GET">GET</option>
                   <option value="POST">POST</option>
@@ -1725,10 +1964,11 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                   onChange={(e) => handleApiDetailChange('status', e.target.value)}
                   className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                   style={{ 
-                    backgroundColor: themeColors.card,
+                    backgroundColor: themeColors.bg,
                     borderColor: themeColors.border,
                     color: themeColors.text
                   }}
+                  disabled={loading}
                 >
                   <option value="DRAFT">Draft</option>
                   <option value="ACTIVE">Active</option>
@@ -1752,6 +1992,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                     color: themeColors.text
                   }}
                   placeholder="/api/v1"
+                  disabled={loading}
                 />
               </div>
 
@@ -1770,6 +2011,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                     color: themeColors.text
                   }}
                   placeholder="/users"
+                  disabled={loading}
                 />
               </div>
 
@@ -1788,6 +2030,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                     color: themeColors.text
                   }}
                   placeholder="1.0.0"
+                  disabled={loading}
                 />
               </div>
 
@@ -1825,6 +2068,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                   }}
                   rows="2"
                   placeholder="API description..."
+                  disabled={loading}
                 />
               </div>
             </div>
@@ -1849,6 +2093,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                     color: activeTab === tab.id ? themeColors.info : themeColors.textSecondary,
                     backgroundColor: 'transparent'
                   }}
+                  disabled={loading}
                 >
                   {tab.icon}
                   {tab.label}
@@ -1859,1612 +2104,1656 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
           {/* Tab Content */}
           <div className="flex-1 overflow-y-auto">
-            <div className="p-4 md:p-6">
-              {/* Definition Tab */}
-              {activeTab === 'definition' && (
-                <div className="space-y-6">
-                  <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                    API Definition
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Category
-                        </label>
-                        <select
-                          value={apiDetails.category}
-                          onChange={(e) => handleApiDetailChange('category', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                        >
-                          <option value="general">General</option>
-                          <option value="data">Data Access</option>
-                          <option value="oracle">Administrative</option>
-                          <option value="report">Reporting</option>
-                          <option value="integration">Integration</option>
-                        </select>
+            {loading ? (
+              <div className="h-full flex items-center justify-center p-8">
+                <div className="text-center">
+                  <Loader className="h-12 w-12 animate-spin mx-auto mb-4" style={{ color: themeColors.info }} />
+                  <p className="text-sm" style={{ color: themeColors.text }}>Fetching object details...</p>
+                  <p className="text-xs mt-2" style={{ color: themeColors.textSecondary }}>
+                    {sourceObjectInfo.isSynonym ? 
+                      `Resolving synonym to ${sourceObjectInfo.targetType}...` : 
+                      'Loading parameters and mappings...'}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 md:p-6">
+                {/* Definition Tab */}
+                {activeTab === 'definition' && (
+                  <div className="space-y-6">
+                    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+                      API Definition
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Category
+                          </label>
+                          <select
+                            value={apiDetails.category}
+                            onChange={(e) => handleApiDetailChange('category', e.target.value)}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.bg,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                          >
+                            <option value="general">General</option>
+                            <option value="data">Data Access</option>
+                            <option value="oracle">Administrative</option>
+                            <option value="report">Reporting</option>
+                            <option value="integration">Integration</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Tags
+                          </label>
+                          <input
+                            type="text"
+                            value={apiDetails.tags.join(', ')}
+                            onChange={(e) => handleApiDetailChange('tags', e.target.value.split(',').map(tag => tag.trim()))}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.card,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                            placeholder="users, data, public"
+                          />
+                        </div>
                       </div>
 
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Tags
-                        </label>
-                        <input
-                          type="text"
-                          value={apiDetails.tags.join(', ')}
-                          onChange={(e) => handleApiDetailChange('tags', e.target.value.split(',').map(tag => tag.trim()))}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                          placeholder="users, data, public"
-                        />
+                      <div className="p-4 rounded-lg border" style={{ 
+                        borderColor: themeColors.info + '40',
+                        backgroundColor: themeColors.info + '10'
+                      }}>
+                        <h4 className="font-medium mb-2 flex items-center gap-2" style={{ color: themeColors.info }}>
+                          <Globe className="h-4 w-4" />
+                          API Endpoint Preview
+                        </h4>
+                        <div className="font-mono text-xs p-3 rounded border" style={{ 
+                          backgroundColor: themeColors.card,
+                          borderColor: themeColors.border
+                        }}>
+                          <div style={{ color: themeColors.textSecondary }}>
+                            {apiDetails.httpMethod} {apiDetails.basePath}{apiDetails.endpointPath}
+                          </div>
+                          {parameters.filter(p => p.parameterType === 'path').length > 0 && (
+                            <div className="mt-2 text-xs" style={{ color: themeColors.textSecondary }}>
+                              Path Parameters: {parameters.filter(p => p.parameterType === 'path').map(p => `{${p.key}}`).join('/')}
+                            </div>
+                          )}
+                          <div className="mt-2 text-xs" style={{ color: themeColors.textSecondary }}>
+                            Source: {schemaConfig.schemaName}.{schemaConfig.objectName} ({schemaConfig.objectType})
+                          </div>
+                          {sourceObjectInfo.isSynonym && (
+                            <div className="mt-1 text-xs" style={{ color: themeColors.warning }}>
+                              <Link className="h-3 w-3 inline mr-1" />
+                              Synonym → {sourceObjectInfo.targetType}: {sourceObjectInfo.targetOwner}.{sourceObjectInfo.targetName}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
+                  </div>
+                )}
 
-                    <div className="p-4 rounded-lg border" style={{ 
+                {/* Schema Tab */}
+                {activeTab === 'schema' && (
+                  <div className="space-y-6">
+                    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+                      Oracle Schema Configuration
+                    </h3>
+
+                    <div className="mb-4 p-4 rounded-lg border" style={{ 
                       borderColor: themeColors.info + '40',
                       backgroundColor: themeColors.info + '10'
                     }}>
                       <h4 className="font-medium mb-2 flex items-center gap-2" style={{ color: themeColors.info }}>
-                        <Globe className="h-4 w-4" />
-                        API Endpoint Preview
+                        <Database className="h-4 w-4" />
+                        Selected Object Information
                       </h4>
-                      <div className="font-mono text-xs p-3 rounded border" style={{ 
-                        backgroundColor: themeColors.card,
-                        borderColor: themeColors.border
-                      }}>
-                        <div style={{ color: themeColors.textSecondary }}>
-                          {apiDetails.httpMethod} {apiDetails.basePath}{apiDetails.endpointPath}
+                      <div className="grid grid-cols-2 gap-4 text-xs">
+                        <div>
+                          <span style={{ color: themeColors.textSecondary }}>Object:</span>
+                          <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                            {selectedObject?.owner}.{selectedObject?.name}
+                          </span>
                         </div>
-                        {parameters.filter(p => p.parameterType === 'path').length > 0 && (
-                          <div className="mt-2 text-xs" style={{ color: themeColors.textSecondary }}>
-                            Path Parameters: {parameters.filter(p => p.parameterType === 'path').map(p => `{${p.key}}`).join('/')}
+                        <div>
+                          <span style={{ color: themeColors.textSecondary }}>Type:</span>
+                          <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                            {selectedObject?.type}
+                          </span>
+                        </div>
+                        {selectedObject?.columns && (
+                          <div>
+                            <span style={{ color: themeColors.textSecondary }}>Columns:</span>
+                            <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                              {selectedObject.columns.length}
+                            </span>
                           </div>
                         )}
-                        <div className="mt-2 text-xs" style={{ color: themeColors.textSecondary }}>
-                          Source: {schemaConfig.schemaName}.{schemaConfig.objectName} ({schemaConfig.objectType})
-                        </div>
+                        {selectedObject?.parameters && (
+                          <div>
+                            <span style={{ color: themeColors.textSecondary }}>Parameters:</span>
+                            <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                              {selectedObject.parameters.length}
+                            </span>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  </div>
-                </div>
-              )}
 
-              {/* Schema Tab */}
-              {activeTab === 'schema' && (
-                <div className="space-y-6">
-                  <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                    Oracle Schema Configuration
-                  </h3>
-
-                  <div className="mb-4 p-4 rounded-lg border" style={{ 
-                    borderColor: themeColors.info + '40',
-                    backgroundColor: themeColors.info + '10'
-                  }}>
-                    <h4 className="font-medium mb-2 flex items-center gap-2" style={{ color: themeColors.info }}>
-                      <Database className="h-4 w-4" />
-                      Selected Object Information
-                    </h4>
-                    <div className="grid grid-cols-2 gap-4 text-xs">
-                      <div>
-                        <span style={{ color: themeColors.textSecondary }}>Object:</span>
-                        <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                          {selectedObject?.owner}.{selectedObject?.name}
-                        </span>
-                      </div>
-                      <div>
-                        <span style={{ color: themeColors.textSecondary }}>Type:</span>
-                        <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                          {selectedObject?.type}
-                        </span>
-                      </div>
-                      {selectedObject?.columns && (
-                        <div>
-                          <span style={{ color: themeColors.textSecondary }}>Columns:</span>
-                          <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                            {selectedObject.columns.length}
-                          </span>
-                        </div>
-                      )}
-                      {selectedObject?.parameters && (
-                        <div>
-                          <span style={{ color: themeColors.textSecondary }}>Parameters:</span>
-                          <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                            {selectedObject.parameters.length}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* ADDED BACK: Show parameters from selected object */}
-                    {selectedObject?.parameters && selectedObject.parameters.length > 0 && (
-                      <div className="mt-4">
-                        <h5 className="text-xs font-medium mb-2" style={{ color: themeColors.text }}>
-                          Object Parameters:
-                        </h5>
-                        <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
-                          {selectedObject.parameters.map((param, index) => (
-                            <div key={index} className="flex items-center justify-between text-xs p-2 rounded" 
-                              style={{ backgroundColor: themeColors.hover }}>
-                              <div>
-                                <span className="font-medium" style={{ color: themeColors.text }}>
-                                  {param.name}
-                                </span>
-                                <span className="ml-2 text-xs px-2 py-0.5 rounded" style={{ 
-                                  backgroundColor: param.type === 'IN' ? themeColors.info + '20' : 
-                                                param.type === 'OUT' ? themeColors.success + '20' : 
-                                                themeColors.warning + '20',
-                                  color: param.type === 'IN' ? themeColors.info : 
-                                        param.type === 'OUT' ? themeColors.success : 
-                                        themeColors.warning
-                                }}>
-                                  {param.type}
-                                </span>
-                              </div>
-                              <div style={{ color: themeColors.textSecondary }}>
-                                {param.datatype}
-                                {param.defaultValue && (
-                                  <span className="ml-2 text-xs">
-                                    (Default: {param.defaultValue})
+                      {/* Show parameters from selected object */}
+                      {selectedObject?.parameters && selectedObject.parameters.length > 0 && (
+                        <div className="mt-4">
+                          <h5 className="text-xs font-medium mb-2" style={{ color: themeColors.text }}>
+                            Object Parameters:
+                          </h5>
+                          <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
+                            {selectedObject.parameters.map((param, index) => (
+                              <div key={index} className="flex items-center justify-between text-xs p-2 rounded" 
+                                style={{ backgroundColor: themeColors.hover }}>
+                                <div>
+                                  <span className="font-medium" style={{ color: themeColors.text }}>
+                                    {param.name || param.ARGUMENT_NAME}
                                   </span>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* ADDED BACK: Show columns from selected object */}
-                    {selectedObject?.columns && selectedObject.columns.length > 0 && (
-                      <div className="mt-4">
-                        <h5 className="text-xs font-medium mb-2" style={{ color: themeColors.text }}>
-                          Object Columns (Auto-generated as parameters):
-                        </h5>
-                        <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
-                          {selectedObject.columns.slice(0, 8).map((col, index) => (
-                            <div key={index} className="flex items-center justify-between text-xs p-2 rounded" 
-                              style={{ backgroundColor: themeColors.hover }}>
-                              <div>
-                                <span className="font-medium" style={{ color: themeColors.text }}>
-                                  {col.name}
-                                </span>
-                                {col.key === 'PK' && (
                                   <span className="ml-2 text-xs px-2 py-0.5 rounded" style={{ 
-                                    backgroundColor: themeColors.success + '20',
-                                    color: themeColors.success
+                                    backgroundColor: (param.mode || param.IN_OUT || param.in_out) === 'IN' ? themeColors.info + '20' : 
+                                                  (param.mode || param.IN_OUT || param.in_out) === 'OUT' ? themeColors.success + '20' : 
+                                                  themeColors.warning + '20',
+                                    color: (param.mode || param.IN_OUT || param.in_out) === 'IN' ? themeColors.info : 
+                                          (param.mode || param.IN_OUT || param.in_out) === 'OUT' ? themeColors.success : 
+                                          themeColors.warning
                                   }}>
-                                    PK
+                                    {param.mode || param.IN_OUT || param.in_out || 'IN'}
                                   </span>
-                                )}
+                                </div>
+                                <div style={{ color: themeColors.textSecondary }}>
+                                  {param.type || param.DATA_TYPE}
+                                  {(param.defaultValue || param.DATA_DEFAULT) && (
+                                    <span className="ml-2 text-xs">
+                                      (Default: {param.defaultValue || param.DATA_DEFAULT})
+                                    </span>
+                                  )}
+                                </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <span style={{ color: themeColors.textSecondary }}>
-                                  {col.type}
-                                </span>
-                                <span className="text-xs px-2 py-0.5 rounded" style={{ 
-                                  backgroundColor: col.nullable === 'Y' ? themeColors.warning + '20' : themeColors.error + '20',
-                                  color: col.nullable === 'Y' ? themeColors.warning : themeColors.error
-                                }}>
-                                  {col.nullable === 'Y' ? 'NULL' : 'NOT NULL'}
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Show columns from selected object */}
+                      {selectedObject?.columns && selectedObject.columns.length > 0 && (
+                        <div className="mt-4">
+                          <h5 className="text-xs font-medium mb-2" style={{ color: themeColors.text }}>
+                            Object Columns (Auto-generated as parameters):
+                          </h5>
+                          <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
+                            {selectedObject.columns.slice(0, 8).map((col, index) => (
+                              <div key={index} className="flex items-center justify-between text-xs p-2 rounded" 
+                                style={{ backgroundColor: themeColors.hover }}>
+                                <div>
+                                  <span className="font-medium" style={{ color: themeColors.text }}>
+                                    {col.name || col.COLUMN_NAME}
+                                  </span>
+                                  {((col.key === 'PK') || (col.CONSTRAINT_TYPE === 'P')) && (
+                                    <span className="ml-2 text-xs px-2 py-0.5 rounded" style={{ 
+                                      backgroundColor: themeColors.success + '20',
+                                      color: themeColors.success
+                                    }}>
+                                      PK
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span style={{ color: themeColors.textSecondary }}>
+                                    {col.type || col.DATA_TYPE}
+                                  </span>
+                                  <span className="text-xs px-2 py-0.5 rounded" style={{ 
+                                    backgroundColor: (col.nullable === 'Y' || col.nullable === true || col.NULLABLE === 'Y') ? themeColors.warning + '20' : themeColors.error + '20',
+                                    color: (col.nullable === 'Y' || col.nullable === true || col.NULLABLE === 'Y') ? themeColors.warning : themeColors.error
+                                  }}>
+                                    {(col.nullable === 'Y' || col.nullable === true || col.NULLABLE === 'Y') ? 'NULL' : 'NOT NULL'}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                            {selectedObject.columns.length > 8 && (
+                              <div className="text-center pt-2">
+                                <span className="text-xs" style={{ color: themeColors.textSecondary }}>
+                                  + {selectedObject.columns.length - 8} more columns
                                 </span>
                               </div>
-                            </div>
-                          ))}
-                          {selectedObject.columns.length > 8 && (
-                            <div className="text-center pt-2">
-                              <span className="text-xs" style={{ color: themeColors.textSecondary }}>
-                                + {selectedObject.columns.length - 8} more columns
-                              </span>
-                            </div>
-                          )}
+                            )}
+                          </div>
+                          <p className="text-xs mt-2" style={{ color: themeColors.textSecondary }}>
+                            These columns will be auto-generated as API parameters and response fields.
+                          </p>
                         </div>
-                        <p className="text-xs mt-2" style={{ color: themeColors.textSecondary }}>
-                          These columns will be auto-generated as API parameters and response fields.
-                        </p>
-                      </div>
-                    )}
-                  </div>
+                      )}
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Schema Name *
-                        </label>
-                        <input
-                          type="text"
-                          value={schemaConfig.schemaName}
-                          onChange={(e) => handleSchemaConfigChange('schemaName', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                          placeholder="HR"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Object Type
-                        </label>
-                        <select
-                          value={schemaConfig.objectType}
-                          onChange={(e) => handleSchemaConfigChange('objectType', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                        >
-                          <option value="TABLE">Table</option>
-                          <option value="VIEW">View</option>
-                          <option value="PROCEDURE">Procedure</option>
-                          <option value="FUNCTION">Function</option>
-                          <option value="PACKAGE">Package</option>
-                          <option value="TRIGGER">Trigger</option>
-                        </select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Object Name *
-                        </label>
-                        <input
-                          type="text"
-                          value={schemaConfig.objectName}
-                          onChange={(e) => handleSchemaConfigChange('objectName', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                          placeholder="EMPLOYEES"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Operation
-                        </label>
-                        <select
-                          value={schemaConfig.operation}
-                          onChange={(e) => handleSchemaConfigChange('operation', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                        >
-                          <option value="SELECT">SELECT (Read)</option>
-                          <option value="INSERT">INSERT (Create)</option>
-                          <option value="UPDATE">UPDATE (Update)</option>
-                          <option value="DELETE">DELETE (Delete)</option>
-                          <option value="EXECUTE">EXECUTE (Procedure/Function)</option>
-                        </select>
-                      </div>
+                      {sourceObjectInfo.isSynonym && (
+                        <div className="mt-4 p-3 rounded" style={{ backgroundColor: themeColors.warning + '20' }}>
+                          <p className="text-xs flex items-center gap-2" style={{ color: themeColors.warning }}>
+                            <Link className="h-4 w-4" />
+                            This is a synonym pointing to {sourceObjectInfo.targetType}: {sourceObjectInfo.targetOwner}.{sourceObjectInfo.targetName}
+                          </p>
+                          <p className="text-xs mt-1" style={{ color: themeColors.textSecondary }}>
+                            Parameters and response fields are generated from the target object.
+                          </p>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Primary Key Column
-                        </label>
-                        <input
-                          type="text"
-                          value={schemaConfig.primaryKeyColumn}
-                          onChange={(e) => handleSchemaConfigChange('primaryKeyColumn', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                          placeholder="ID"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Sequence Name (for INSERT)
-                        </label>
-                        <input
-                          type="text"
-                          value={schemaConfig.sequenceName}
-                          onChange={(e) => handleSchemaConfigChange('sequenceName', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                          placeholder="SEQ_TABLE_NAME"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-4">
                         <div className="space-y-2">
                           <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Enable Pagination
-                          </label>
-                          <div className="flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={schemaConfig.enablePagination}
-                              onChange={(e) => handleSchemaConfigChange('enablePagination', e.target.checked)}
-                              className="h-4 w-4 rounded"
-                              style={{ 
-                                accentColor: themeColors.info,
-                                backgroundColor: themeColors.card
-                              }}
-                            />
-                            <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>Yes</span>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Page Size
-                          </label>
-                          <input
-                            type="number"
-                            value={schemaConfig.pageSize}
-                            onChange={(e) => handleSchemaConfigChange('pageSize', parseInt(e.target.value))}
-                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.card,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                            min="1"
-                            max="1000"
-                          />
-                        </div>
-
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Enable Sorting
-                          </label>
-                          <div className="flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={schemaConfig.enableSorting}
-                              onChange={(e) => handleSchemaConfigChange('enableSorting', e.target.checked)}
-                              className="h-4 w-4 rounded"
-                              style={{ 
-                                accentColor: themeColors.info,
-                                backgroundColor: themeColors.card
-                              }}
-                            />
-                            <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>Yes</span>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Default Sort Column
+                            Schema Name *
                           </label>
                           <input
                             type="text"
-                            value={schemaConfig.defaultSortColumn}
-                            onChange={(e) => handleSchemaConfigChange('defaultSortColumn', e.target.value)}
+                            value={schemaConfig.schemaName}
+                            onChange={(e) => handleSchemaConfigChange('schemaName', e.target.value)}
                             className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
                               color: themeColors.text
                             }}
-                            placeholder="CREATED_DATE"
+                            placeholder="HR"
                           />
                         </div>
-                      </div>
 
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Default Sort Direction
-                        </label>
-                        <select
-                          value={schemaConfig.defaultSortDirection}
-                          onChange={(e) => handleSchemaConfigChange('defaultSortDirection', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                        >
-                          <option value="ASC">Ascending (ASC)</option>
-                          <option value="DESC">Descending (DESC)</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Parameters Tab - Show auto-generated parameters */}
-              {activeTab === 'parameters' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                      API Parameters ({parameters.length})
-                      {selectedObject?.columns && (
-                        <span className="text-xs font-normal ml-2" style={{ color: themeColors.textSecondary }}>
-                          (Auto-generated from {selectedObject.columns.length} columns)
-                        </span>
-                      )}
-                      {selectedObject?.parameters && (
-                        <span className="text-xs font-normal ml-2" style={{ color: themeColors.textSecondary }}>
-                          (Auto-generated from {selectedObject.parameters.length} parameters)
-                        </span>
-                      )}
-                    </h3>
-                    <button
-                      onClick={handleAddParameter}
-                      className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs transition-colors hover-lift"
-                      style={{ backgroundColor: themeColors.info, color: themeColors.white }}
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add Parameter
-                    </button>
-                  </div>
-
-                  {parameters.length === 0 ? (
-                    <div className="text-center py-8 border rounded-lg" style={{ 
-                      borderColor: themeColors.border,
-                      backgroundColor: themeColors.card
-                    }}>
-                      <Code className="h-12 w-12 mx-auto mb-3" style={{ color: themeColors.textSecondary }} />
-                      <p style={{ color: themeColors.textSecondary }}>
-                        No parameters defined. Add parameters or they will be auto-generated from the selected object.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto border rounded-lg" style={{ 
-                      borderColor: themeColors.border,
-                      backgroundColor: themeColors.card
-                    }}>
-                      <table className="w-full min-w-[1000px]">
-                        <thead>
-                          <tr style={{ backgroundColor: themeColors.hover }}>
-                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
-                              borderColor: themeColors.border,
-                              color: themeColors.textSecondary
-                            }}>Parameter</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
-                              borderColor: themeColors.border,
-                              color: themeColors.textSecondary
-                            }}>DB Column</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
-                              borderColor: themeColors.border,
-                              color: themeColors.textSecondary
-                            }}>Oracle Type</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
-                              borderColor: themeColors.border,
-                              color: themeColors.textSecondary
-                            }}>API Type</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
-                              borderColor: themeColors.border,
-                              color: themeColors.textSecondary
-                            }}>Parameter Type</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
-                              borderColor: themeColors.border,
-                              color: themeColors.textSecondary
-                            }}>Required</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
-                              borderColor: themeColors.border,
-                              color: themeColors.textSecondary
-                            }}>Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {parameters.map((param, index) => (
-                            <tr key={param.id} style={{ 
-                              backgroundColor: index % 2 === 0 ? themeColors.card : themeColors.hover,
-                              borderBottom: `1px solid ${themeColors.border}`
-                            }}>
-                              <td className="px-3 py-2">
-                                <input
-                                  type="text"
-                                  value={param.key}
-                                  onChange={(e) => handleParameterChange(param.id, 'key', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
-                                  style={{ 
-                                    backgroundColor: themeColors.modalBg,
-                                    borderColor: themeColors.border,
-                                    color: themeColors.text
-                                  }}
-                                  placeholder="parameter_key"
-                                />
-                              </td>
-                              <td className="px-3 py-2">
-                                <input
-                                  type="text"
-                                  value={param.dbColumn}
-                                  onChange={(e) => handleParameterChange(param.id, 'dbColumn', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
-                                  style={{ 
-                                    backgroundColor: themeColors.modalBg,
-                                    borderColor: themeColors.border,
-                                    color: themeColors.text
-                                  }}
-                                  placeholder="DB_COLUMN"
-                                />
-                              </td>
-                              <td className="px-3 py-2">
-                                <select
-                                  value={param.oracleType}
-                                  onChange={(e) => handleParameterChange(param.id, 'oracleType', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
-                                  style={{ 
-                                    backgroundColor: themeColors.modalBg,
-                                    borderColor: themeColors.border,
-                                    color: themeColors.text
-                                  }}
-                                >
-                                  {oracleDataTypes.map(type => (
-                                    <option key={type} value={type}>{type}</option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td className="px-3 py-2">
-                                <select
-                                  value={param.apiType}
-                                  onChange={(e) => handleParameterChange(param.id, 'apiType', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
-                                  style={{ 
-                                    backgroundColor: themeColors.modalBg,
-                                    borderColor: themeColors.border,
-                                    color: themeColors.text
-                                  }}
-                                >
-                                  {apiDataTypes.map(type => (
-                                    <option key={type} value={type}>{type}</option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td className="px-3 py-2">
-                                <select
-                                  value={param.parameterType}
-                                  onChange={(e) => handleParameterChange(param.id, 'parameterType', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
-                                  style={{ 
-                                    backgroundColor: themeColors.modalBg,
-                                    borderColor: themeColors.border,
-                                    color: themeColors.text
-                                  }}
-                                >
-                                  {parameterTypes.map(type => (
-                                    <option key={type.value} value={type.value}>{type.label}</option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                <input
-                                  type="checkbox"
-                                  checked={param.required}
-                                  onChange={(e) => handleParameterChange(param.id, 'required', e.target.checked)}
-                                  className="h-4 w-4 rounded"
-                                  style={{ accentColor: themeColors.info }}
-                                />
-                              </td>
-                              <td className="px-3 py-2">
-                                <button
-                                  onClick={() => handleRemoveParameter(param.id)}
-                                  className="p-1.5 rounded transition-colors hover-lift"
-                                  style={{ backgroundColor: themeColors.error + '20', color: themeColors.error }}
-                                  title="Delete parameter"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-
-                  {/* Additional Parameter Details */}
-                  {parameters.length > 0 && (
-                    <div className="mt-6 space-y-4">
-                      <h4 className="font-semibold" style={{ color: themeColors.text }}>
-                        Parameter Details
-                      </h4>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="space-y-2">
                           <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Default Value Pattern
+                            Object Type
+                          </label>
+                          <select
+                            value={schemaConfig.objectType}
+                            onChange={(e) => handleSchemaConfigChange('objectType', e.target.value)}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.bg,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                          >
+                            <option value="TABLE">Table</option>
+                            <option value="VIEW">View</option>
+                            <option value="PROCEDURE">Procedure</option>
+                            <option value="FUNCTION">Function</option>
+                            <option value="PACKAGE">Package</option>
+                            <option value="TRIGGER">Trigger</option>
+                            <option value="SEQUENCE">Sequence</option>
+                            <option value="TYPE">Type</option>
+                            <option value="SYNONYM">Synonym</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Object Name *
                           </label>
                           <input
                             type="text"
-                            placeholder="SYSDATE, USER, etc."
+                            value={schemaConfig.objectName}
+                            onChange={(e) => handleSchemaConfigChange('objectName', e.target.value)}
                             className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
                               color: themeColors.text
                             }}
+                            placeholder="EMPLOYEES"
                           />
                         </div>
+
                         <div className="space-y-2">
                           <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Validation Regex
+                            Operation
+                          </label>
+                          <select
+                            value={schemaConfig.operation}
+                            onChange={(e) => handleSchemaConfigChange('operation', e.target.value)}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.bg,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                          >
+                            <option value="SELECT">SELECT (Read)</option>
+                            <option value="INSERT">INSERT (Create)</option>
+                            <option value="UPDATE">UPDATE (Update)</option>
+                            <option value="DELETE">DELETE (Delete)</option>
+                            <option value="EXECUTE">EXECUTE (Procedure/Function)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Primary Key Column
                           </label>
                           <input
                             type="text"
-                            placeholder="^[A-Za-z0-9_]+$"
+                            value={schemaConfig.primaryKeyColumn}
+                            onChange={(e) => handleSchemaConfigChange('primaryKeyColumn', e.target.value)}
                             className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
                               color: themeColors.text
                             }}
+                            placeholder="ID"
                           />
                         </div>
+
                         <div className="space-y-2">
                           <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Min/Max Values
+                            Sequence Name (for INSERT)
                           </label>
-                          <div className="flex gap-2">
-                            <input
-                              type="number"
-                              placeholder="Min"
-                              className="flex-1 px-3 py-2 border rounded-lg text-xs hover-lift"
-                              style={{ 
-                                backgroundColor: themeColors.card,
-                                borderColor: themeColors.border,
-                                color: themeColors.text
-                              }}
-                            />
-                            <input
-                              type="number"
-                              placeholder="Max"
-                              className="flex-1 px-3 py-2 border rounded-lg text-xs hover-lift"
-                              style={{ 
-                                backgroundColor: themeColors.card,
-                                borderColor: themeColors.border,
-                                color: themeColors.text
-                              }}
-                            />
-                          </div>
+                          <input
+                            type="text"
+                            value={schemaConfig.sequenceName}
+                            onChange={(e) => handleSchemaConfigChange('sequenceName', e.target.value)}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.card,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                            placeholder="SEQ_TABLE_NAME"
+                          />
                         </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
 
-              {/* Mapping Tab */}
-              {activeTab === 'mapping' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                      Response Field Mapping ({responseMappings.length})
-                      {selectedObject?.columns && (
-                        <span className="text-xs font-normal ml-2" style={{ color: themeColors.textSecondary }}>
-                          (Auto-generated from {selectedObject.columns.length} columns)
-                        </span>
-                      )}
-                    </h3>
-                    <button
-                      onClick={handleAddResponseMapping}
-                      className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs transition-colors hover-lift"
-                      style={{ backgroundColor: themeColors.info, color: themeColors.white }}
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add Mapping
-                    </button>
-                  </div>
-
-                  {responseMappings.length === 0 ? (
-                    <div className="text-center py-8 border rounded-lg" style={{ 
-                      borderColor: themeColors.border,
-                      backgroundColor: themeColors.card
-                    }}>
-                      <Map className="h-12 w-12 mx-auto mb-3" style={{ color: themeColors.textSecondary }} />
-                      <p style={{ color: themeColors.textSecondary }}>
-                        No response mappings defined. They will be auto-generated from the selected object's columns.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto border rounded-lg" style={{ 
-                      borderColor: themeColors.border,
-                      backgroundColor: themeColors.card
-                    }}>
-                      <table className="w-full min-w-[800px]">
-                        <thead>
-                          <tr style={{ backgroundColor: themeColors.hover }}>
-                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>API Field</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>DB Column</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Oracle Type</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>API Type</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Nullable</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {responseMappings.map((mapping, index) => (
-                            <tr key={mapping.id} style={{ 
-                              backgroundColor: index % 2 === 0 ? themeColors.card : themeColors.hover,
-                              borderBottom: `1px solid ${themeColors.border}`
-                            }}>
-                              <td className="px-3 py-2">
-                                <input
-                                  type="text"
-                                  value={mapping.apiField}
-                                  onChange={(e) => handleResponseMappingChange(mapping.id, 'apiField', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
-                                  style={{ 
-                                    backgroundColor: themeColors.modalBg,
-                                    borderColor: themeColors.border,
-                                    color: themeColors.text
-                                  }}
-                                  placeholder="fieldName"
-                                />
-                              </td>
-                              <td className="px-3 py-2">
-                                <input
-                                  type="text"
-                                  value={mapping.dbColumn}
-                                  onChange={(e) => handleResponseMappingChange(mapping.id, 'dbColumn', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
-                                  style={{ 
-                                    backgroundColor: themeColors.modalBg,
-                                    borderColor: themeColors.border,
-                                    color: themeColors.text
-                                  }}
-                                  placeholder="DB_COLUMN"
-                                />
-                              </td>
-                              <td className="px-3 py-2">
-                                <select
-                                  value={mapping.oracleType}
-                                  onChange={(e) => handleResponseMappingChange(mapping.id, 'oracleType', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
-                                  style={{ 
-                                    backgroundColor: themeColors.modalBg,
-                                    borderColor: themeColors.border,
-                                    color: themeColors.text
-                                  }}
-                                >
-                                  {oracleDataTypes.map(type => (
-                                    <option key={type} value={type}>{type}</option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td className="px-3 py-2">
-                                <select
-                                  value={mapping.apiType}
-                                  onChange={(e) => handleResponseMappingChange(mapping.id, 'apiType', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
-                                  style={{ 
-                                    backgroundColor: themeColors.modalBg,
-                                    borderColor: themeColors.border,
-                                    color: themeColors.text
-                                  }}
-                                >
-                                  {apiDataTypes.map(type => (
-                                    <option key={type} value={type}>{type}</option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                <input
-                                  type="checkbox"
-                                  checked={mapping.nullable}
-                                  onChange={(e) => handleResponseMappingChange(mapping.id, 'nullable', e.target.checked)}
-                                  className="h-4 w-4 rounded"
-                                  style={{ accentColor: themeColors.info }}
-                                />
-                              </td>
-                              <td className="px-3 py-2">
-                                <button
-                                  onClick={() => handleRemoveResponseMapping(mapping.id)}
-                                  className="p-1.5 rounded transition-colors hover-lift"
-                                  style={{ backgroundColor: themeColors.error + '20', color: themeColors.error }}
-                                  title="Delete mapping"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-
-                  {/* Additional Mapping Options */}
-                  {responseMappings.length > 0 && (
-                    <div className="mt-6 space-y-4">
-                      <h4 className="font-semibold" style={{ color: themeColors.text }}>
-                        Response Configuration
-                      </h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
                             <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                              Response Format
+                              Enable Pagination
                             </label>
-                            <select
-                              value={responseBody.contentType}
-                              onChange={(e) => handleResponseBodyChange('contentType', e.target.value)}
+                            <div className="flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={schemaConfig.enablePagination}
+                                onChange={(e) => handleSchemaConfigChange('enablePagination', e.target.checked)}
+                                className="h-4 w-4 rounded"
+                                style={{ 
+                                  accentColor: themeColors.info,
+                                  backgroundColor: themeColors.card
+                                }}
+                              />
+                              <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>Yes</span>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                              Page Size
+                            </label>
+                            <input
+                              type="number"
+                              value={schemaConfig.pageSize}
+                              onChange={(e) => handleSchemaConfigChange('pageSize', parseInt(e.target.value))}
                               className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                               style={{ 
                                 backgroundColor: themeColors.card,
                                 borderColor: themeColors.border,
                                 color: themeColors.text
                               }}
-                            >
-                              <option value="application/json">JSON</option>
-                              <option value="application/xml">XML</option>
-                              <option value="text/csv">CSV</option>
-                            </select>
+                              min="1"
+                              max="1000"
+                            />
                           </div>
+
                           <div className="space-y-2">
                             <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                              Include Metadata
+                              Enable Sorting
                             </label>
                             <div className="flex items-center">
                               <input
                                 type="checkbox"
-                                checked={responseBody.includeMetadata}
-                                onChange={(e) => handleResponseBodyChange('includeMetadata', e.target.checked)}
+                                checked={schemaConfig.enableSorting}
+                                onChange={(e) => handleSchemaConfigChange('enableSorting', e.target.checked)}
                                 className="h-4 w-4 rounded"
-                                style={{ accentColor: themeColors.info }}
+                                style={{ 
+                                  accentColor: themeColors.info,
+                                  backgroundColor: themeColors.card
+                                }}
                               />
-                              <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
-                                Include timestamp, version, request ID
-                              </span>
+                              <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>Yes</span>
                             </div>
                           </div>
-                        </div>
-                        <div className="space-y-4">
+
                           <div className="space-y-2">
                             <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                              Compression
+                              Default Sort Column
                             </label>
-                            <select
-                              value={responseBody.compression}
-                              onChange={(e) => handleResponseBodyChange('compression', e.target.value)}
+                            <input
+                              type="text"
+                              value={schemaConfig.defaultSortColumn}
+                              onChange={(e) => handleSchemaConfigChange('defaultSortColumn', e.target.value)}
                               className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                               style={{ 
                                 backgroundColor: themeColors.card,
                                 borderColor: themeColors.border,
                                 color: themeColors.text
                               }}
-                            >
-                              <option value="none">None</option>
-                              <option value="gzip">Gzip</option>
-                              <option value="deflate">Deflate</option>
-                            </select>
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                              Pretty Print
-                            </label>
-                            <div className="flex items-center">
-                              <input
-                                type="checkbox"
-                                defaultChecked
-                                className="h-4 w-4 rounded"
-                                style={{ accentColor: themeColors.info }}
-                              />
-                              <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
-                                Format JSON for readability
-                              </span>
-                            </div>
+                              placeholder="CREATED_DATE"
+                            />
                           </div>
                         </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
 
-              {/* Authentication Tab */}
-              {activeTab === 'auth' && (
-                <div className="space-y-6">
-                  <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                    Authentication & Authorization
-                  </h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Authentication Type
-                        </label>
-                        <select
-                          value={authConfig.authType}
-                          onChange={(e) => handleAuthConfigChange('authType', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                        >
-                          <option value="NONE">None (Public)</option>
-                          <option value="ORACLE_ROLES">Oracle Database Roles</option>
-                          <option value="API_KEY">API Key</option>
-                          <option value="JWT">JWT Token</option>
-                          <option value="OAUTH2">OAuth 2.0</option>
-                          <option value="BASIC">Basic Auth</option>
-                        </select>
-                      </div>
-
-                      {authConfig.authType === 'API_KEY' && (
                         <div className="space-y-2">
                           <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            API Key Header
+                            Default Sort Direction
                           </label>
-                          <input
-                            type="text"
-                            value={authConfig.apiKeyHeader}
-                            onChange={(e) => handleAuthConfigChange('apiKeyHeader', e.target.value)}
+                          <select
+                            value={schemaConfig.defaultSortDirection}
+                            onChange={(e) => handleSchemaConfigChange('defaultSortDirection', e.target.value)}
                             className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
-                              backgroundColor: themeColors.card,
+                              backgroundColor: themeColors.bg,
                               borderColor: themeColors.border,
                               color: themeColors.text
                             }}
-                            placeholder="X-API-Key"
-                          />
-                        </div>
-                      )}
-
-                      {authConfig.authType === 'JWT' && (
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            JWT Issuer
-                          </label>
-                          <input
-                            type="text"
-                            value={authConfig.jwtIssuer}
-                            onChange={(e) => handleAuthConfigChange('jwtIssuer', e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.card,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                            placeholder="api.example.com"
-                          />
-                        </div>
-                      )}
-
-                      {authConfig.authType === 'ORACLE_ROLES' && (
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Required Roles
-                          </label>
-                          <input
-                            type="text"
-                            value={authConfig.requiredRoles.join(', ')}
-                            onChange={(e) => handleAuthConfigChange('requiredRoles', e.target.value.split(',').map(role => role.trim()))}
-                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.card,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                            placeholder="HR_APP_USER, HR_APP_ADMIN"
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Custom Auth Function
-                        </label>
-                        <input
-                          type="text"
-                          value={authConfig.customAuthFunction}
-                          onChange={(e) => handleAuthConfigChange('customAuthFunction', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                          placeholder="HR.AUTH_VALIDATE_USER"
-                        />
-                      </div>
-
-                      <div className="space-y-3">
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={authConfig.validateSession}
-                            onChange={(e) => handleAuthConfigChange('validateSession', e.target.checked)}
-                            className="h-4 w-4 rounded"
-                            style={{ accentColor: themeColors.info }}
-                          />
-                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
-                            Validate Session
-                          </span>
-                        </div>
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={authConfig.checkObjectPrivileges}
-                            onChange={(e) => handleAuthConfigChange('checkObjectPrivileges', e.target.checked)}
-                            className="h-4 w-4 rounded"
-                            style={{ accentColor: themeColors.info }}
-                          />
-                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
-                            Check Object Privileges
-                          </span>
+                          >
+                            <option value="ASC">Ascending (ASC)</option>
+                            <option value="DESC">Descending (DESC)</option>
+                          </select>
                         </div>
                       </div>
-
-                      {authConfig.authType === 'OAUTH2' && (
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            OAuth Scopes
-                          </label>
-                          <input
-                            type="text"
-                            value={authConfig.oauthScopes.join(', ')}
-                            onChange={(e) => handleAuthConfigChange('oauthScopes', e.target.value.split(',').map(scope => scope.trim()))}
-                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.card,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                            placeholder="read, write, admin"
-                          />
-                        </div>
-                      )}
                     </div>
                   </div>
+                )}
 
-                  {/* Headers Configuration */}
+                {/* Parameters Tab - Show auto-generated parameters */}
+                {activeTab === 'parameters' && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <h4 className="font-semibold" style={{ color: themeColors.text }}>
-                        HTTP Headers ({headers.length})
-                      </h4>
+                      <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+                        API Parameters ({parameters.length})
+                        {selectedObject?.columns && (
+                          <span className="text-xs font-normal ml-2" style={{ color: themeColors.textSecondary }}>
+                            (Auto-generated from {selectedObject.columns.length} columns)
+                          </span>
+                        )}
+                        {selectedObject?.parameters && (
+                          <span className="text-xs font-normal ml-2" style={{ color: themeColors.textSecondary }}>
+                            (Auto-generated from {selectedObject.parameters.length} parameters)
+                          </span>
+                        )}
+                        {sourceObjectInfo.isSynonym && (
+                          <span className="text-xs font-normal ml-2" style={{ color: themeColors.warning }}>
+                            (Resolved from target {sourceObjectInfo.targetType})
+                          </span>
+                        )}
+                      </h3>
                       <button
-                        onClick={handleAddHeader}
+                        onClick={handleAddParameter}
                         className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs transition-colors hover-lift"
                         style={{ backgroundColor: themeColors.info, color: themeColors.white }}
                       >
                         <Plus className="h-4 w-4" />
-                        Add Header
+                        Add Parameter
                       </button>
                     </div>
 
-                    <div className="overflow-x-auto border rounded-lg" style={{ 
-                      borderColor: themeColors.border,
-                      backgroundColor: themeColors.card
-                    }}>
-                      <table className="w-full min-w-[800px]">
-                        <thead>
-                          <tr style={{ backgroundColor: themeColors.hover }}>
-                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Header</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Value</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Required</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Description</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {headers.map((header, index) => (
-                            <tr key={header.id} style={{ 
-                              backgroundColor: index % 2 === 0 ? themeColors.card : themeColors.hover,
-                              borderBottom: `1px solid ${themeColors.border}`
-                            }}>
-                              <td className="px-3 py-2">
-                                <input
-                                  type="text"
-                                  value={header.key}
-                                  onChange={(e) => handleHeaderChange(header.id, 'key', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
-                                  style={{ 
-                                    backgroundColor: themeColors.modalBg,
-                                    borderColor: themeColors.border,
-                                    color: themeColors.text
-                                  }}
-                                  placeholder="Header-Name"
-                                />
-                              </td>
-                              <td className="px-3 py-2">
-                                <input
-                                  type="text"
-                                  value={header.value}
-                                  onChange={(e) => handleHeaderChange(header.id, 'value', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
-                                  style={{ 
-                                    backgroundColor: themeColors.modalBg,
-                                    borderColor: themeColors.border,
-                                    color: themeColors.text
-                                  }}
-                                  placeholder="header value"
-                                />
-                              </td>
-                              <td className="px-3 py-2 text-center">
+                    {parameters.length === 0 ? (
+                      <div className="text-center py-8 border rounded-lg" style={{ 
+                        borderColor: themeColors.border,
+                        backgroundColor: themeColors.card
+                      }}>
+                        <Code className="h-12 w-12 mx-auto mb-3" style={{ color: themeColors.textSecondary }} />
+                        <p style={{ color: themeColors.textSecondary }}>
+                          No parameters defined. Add parameters or they will be auto-generated from the selected object.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto border rounded-lg" style={{ 
+                        borderColor: themeColors.border,
+                        backgroundColor: themeColors.card
+                      }}>
+                        <table className="w-full min-w-[1000px]">
+                          <thead>
+                            <tr style={{ backgroundColor: themeColors.hover }}>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
+                                borderColor: themeColors.border,
+                                color: themeColors.textSecondary
+                              }}>Parameter</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
+                                borderColor: themeColors.border,
+                                color: themeColors.textSecondary
+                              }}>DB Column</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
+                                borderColor: themeColors.border,
+                                color: themeColors.textSecondary
+                              }}>Oracle Type</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
+                                borderColor: themeColors.border,
+                                color: themeColors.textSecondary
+                              }}>API Type</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
+                                borderColor: themeColors.border,
+                                color: themeColors.textSecondary
+                              }}>Parameter Type</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
+                                borderColor: themeColors.border,
+                                color: themeColors.textSecondary
+                              }}>Required</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
+                                borderColor: themeColors.border,
+                                color: themeColors.textSecondary
+                              }}>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {parameters.map((param, index) => (
+                              <tr key={param.id} style={{ 
+                                backgroundColor: index % 2 === 0 ? themeColors.card : themeColors.hover,
+                                borderBottom: `1px solid ${themeColors.border}`
+                              }}>
+                                <td className="px-3 py-2">
+                                  <input
+                                    type="text"
+                                    value={param.key}
+                                    onChange={(e) => handleParameterChange(param.id, 'key', e.target.value)}
+                                    className="w-full px-2 py-1 border rounded text-xs hover-lift"
+                                    style={{ 
+                                      backgroundColor: themeColors.card,
+                                      borderColor: themeColors.border,
+                                      color: themeColors.text
+                                    }}
+                                    placeholder="parameter_key"
+                                  />
+                                </td>
+                                <td className="px-3 py-2">
+                                  <input
+                                    type="text"
+                                    value={param.dbColumn || param.dbParameter || ''}
+                                    onChange={(e) => handleParameterChange(param.id, 'dbColumn', e.target.value)}
+                                    className="w-full px-2 py-1 border rounded text-xs hover-lift"
+                                    style={{ 
+                                      backgroundColor: themeColors.card,
+                                      borderColor: themeColors.border,
+                                      color: themeColors.text
+                                    }}
+                                    placeholder="DB_COLUMN"
+                                  />
+                                </td>
+                                <td className="px-3 py-2">
+                                  <select
+                                    value={param.oracleType}
+                                    onChange={(e) => handleParameterChange(param.id, 'oracleType', e.target.value)}
+                                    className="w-full px-2 py-1 border rounded text-xs hover-lift"
+                                    style={{ 
+                                      backgroundColor: themeColors.bg,
+                                      borderColor: themeColors.border,
+                                      color: themeColors.text
+                                    }}
+                                  >
+                                    {oracleDataTypes.map(type => (
+                                      <option key={type} value={type}>{type}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <select
+                                    value={param.apiType}
+                                    onChange={(e) => handleParameterChange(param.id, 'apiType', e.target.value)}
+                                    className="w-full px-2 py-1 border rounded text-xs hover-lift"
+                                    style={{ 
+                                      backgroundColor: themeColors.bg,
+                                      borderColor: themeColors.border,
+                                      color: themeColors.text
+                                    }}
+                                  >
+                                    {apiDataTypes.map(type => (
+                                      <option key={type} value={type}>{type}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <select
+                                    value={param.parameterType}
+                                    onChange={(e) => handleParameterChange(param.id, 'parameterType', e.target.value)}
+                                    className="w-full px-2 py-1 border rounded text-xs hover-lift"
+                                    style={{ 
+                                      backgroundColor: themeColors.bg,
+                                      borderColor: themeColors.border,
+                                      color: themeColors.text
+                                    }}
+                                  >
+                                    {parameterTypes.map(type => (
+                                      <option key={type.value} value={type.value}>{type.label}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={param.required}
+                                    onChange={(e) => handleParameterChange(param.id, 'required', e.target.checked)}
+                                    className="h-4 w-4 rounded"
+                                    style={{ accentColor: themeColors.info }}
+                                  />
+                                </td>
+                                <td className="px-3 py-2">
+                                  <button
+                                    onClick={() => handleRemoveParameter(param.id)}
+                                    className="p-1.5 rounded transition-colors hover-lift"
+                                    style={{ backgroundColor: themeColors.error + '20', color: themeColors.error }}
+                                    title="Delete parameter"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Additional Parameter Details */}
+                    {parameters.length > 0 && (
+                      <div className="mt-6 space-y-4">
+                        <h4 className="font-semibold" style={{ color: themeColors.text }}>
+                          Parameter Details
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                              Default Value Pattern
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="SYSDATE, USER, etc."
+                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                              style={{ 
+                                backgroundColor: themeColors.card,
+                                borderColor: themeColors.border,
+                                color: themeColors.text
+                              }}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                              Validation Regex
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="^[A-Za-z0-9_]+$"
+                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                              style={{ 
+                                backgroundColor: themeColors.card,
+                                borderColor: themeColors.border,
+                                color: themeColors.text
+                              }}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                              Min/Max Values
+                            </label>
+                            <div className="flex gap-2">
+                              <input
+                                type="number"
+                                placeholder="Min"
+                                className="flex-1 px-3 py-2 border rounded-lg text-xs hover-lift"
+                                style={{ 
+                                  backgroundColor: themeColors.card,
+                                  borderColor: themeColors.border,
+                                  color: themeColors.text
+                                }}
+                              />
+                              <input
+                                type="number"
+                                placeholder="Max"
+                                className="flex-1 px-3 py-2 border rounded-lg text-xs hover-lift"
+                                style={{ 
+                                  backgroundColor: themeColors.card,
+                                  borderColor: themeColors.border,
+                                  color: themeColors.text
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Mapping Tab */}
+                {activeTab === 'mapping' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+                        Response Field Mapping ({responseMappings.length})
+                        {selectedObject?.columns && (
+                          <span className="text-xs font-normal ml-2" style={{ color: themeColors.textSecondary }}>
+                            (Auto-generated from {selectedObject.columns.length} columns)
+                          </span>
+                        )}
+                        {sourceObjectInfo.isSynonym && (
+                          <span className="text-xs font-normal ml-2" style={{ color: themeColors.warning }}>
+                            (Resolved from target {sourceObjectInfo.targetType})
+                          </span>
+                        )}
+                      </h3>
+                      <button
+                        onClick={handleAddResponseMapping}
+                        className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs transition-colors hover-lift"
+                        style={{ backgroundColor: themeColors.info, color: themeColors.white }}
+                      >
+                        <Plus className="h-4 w-4" />
+                        Add Mapping
+                      </button>
+                    </div>
+
+                    {responseMappings.length === 0 ? (
+                      <div className="text-center py-8 border rounded-lg" style={{ 
+                        borderColor: themeColors.border,
+                        backgroundColor: themeColors.card
+                      }}>
+                        <Map className="h-12 w-12 mx-auto mb-3" style={{ color: themeColors.textSecondary }} />
+                        <p style={{ color: themeColors.textSecondary }}>
+                          No response mappings defined. They will be auto-generated from the selected object's columns.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto border rounded-lg" style={{ 
+                        borderColor: themeColors.border,
+                        backgroundColor: themeColors.card
+                      }}>
+                        <table className="w-full min-w-[800px]">
+                          <thead>
+                            <tr style={{ backgroundColor: themeColors.hover }}>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>API Field</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>DB Column</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Oracle Type</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>API Type</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Nullable</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {responseMappings.map((mapping, index) => (
+                              <tr key={mapping.id} style={{ 
+                                backgroundColor: index % 2 === 0 ? themeColors.card : themeColors.hover,
+                                borderBottom: `1px solid ${themeColors.border}`
+                              }}>
+                                <td className="px-3 py-2">
+                                  <input
+                                    type="text"
+                                    value={mapping.apiField}
+                                    onChange={(e) => handleResponseMappingChange(mapping.id, 'apiField', e.target.value)}
+                                    className="w-full px-2 py-1 border rounded text-xs hover-lift"
+                                    style={{ 
+                                      backgroundColor: themeColors.card,
+                                      borderColor: themeColors.border,
+                                      color: themeColors.text
+                                    }}
+                                    placeholder="fieldName"
+                                  />
+                                </td>
+                                <td className="px-3 py-2">
+                                  <input
+                                    type="text"
+                                    value={mapping.dbColumn}
+                                    onChange={(e) => handleResponseMappingChange(mapping.id, 'dbColumn', e.target.value)}
+                                    className="w-full px-2 py-1 border rounded text-xs hover-lift"
+                                    style={{ 
+                                      backgroundColor: themeColors.card,
+                                      borderColor: themeColors.border,
+                                      color: themeColors.text
+                                    }}
+                                    placeholder="DB_COLUMN"
+                                  />
+                                </td>
+                                <td className="px-3 py-2">
+                                  <select
+                                    value={mapping.oracleType}
+                                    onChange={(e) => handleResponseMappingChange(mapping.id, 'oracleType', e.target.value)}
+                                    className="w-full px-2 py-1 border rounded text-xs hover-lift"
+                                    style={{ 
+                                      backgroundColor: themeColors.bg,
+                                      borderColor: themeColors.border,
+                                      color: themeColors.text
+                                    }}
+                                  >
+                                    {oracleDataTypes.map(type => (
+                                      <option key={type} value={type}>{type}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <select
+                                    value={mapping.apiType}
+                                    onChange={(e) => handleResponseMappingChange(mapping.id, 'apiType', e.target.value)}
+                                    className="w-full px-2 py-1 border rounded text-xs hover-lift"
+                                    style={{ 
+                                      backgroundColor: themeColors.bg,
+                                      borderColor: themeColors.border,
+                                      color: themeColors.text
+                                    }}
+                                  >
+                                    {apiDataTypes.map(type => (
+                                      <option key={type} value={type}>{type}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={mapping.nullable}
+                                    onChange={(e) => handleResponseMappingChange(mapping.id, 'nullable', e.target.checked)}
+                                    className="h-4 w-4 rounded"
+                                    style={{ accentColor: themeColors.info }}
+                                  />
+                                </td>
+                                <td className="px-3 py-2">
+                                  <button
+                                    onClick={() => handleRemoveResponseMapping(mapping.id)}
+                                    className="p-1.5 rounded transition-colors hover-lift"
+                                    style={{ backgroundColor: themeColors.error + '20', color: themeColors.error }}
+                                    title="Delete mapping"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Additional Mapping Options */}
+                    {responseMappings.length > 0 && (
+                      <div className="mt-6 space-y-4">
+                        <h4 className="font-semibold" style={{ color: themeColors.text }}>
+                          Response Configuration
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                                Response Format
+                              </label>
+                              <select
+                                value={responseBody.contentType}
+                                onChange={(e) => handleResponseBodyChange('contentType', e.target.value)}
+                                className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                                style={{ 
+                                  backgroundColor: themeColors.bg,
+                                  borderColor: themeColors.border,
+                                  color: themeColors.text
+                                }}
+                              >
+                                <option value="application/json">JSON</option>
+                                <option value="application/xml">XML</option>
+                                <option value="text/csv">CSV</option>
+                              </select>
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                                Include Metadata
+                              </label>
+                              <div className="flex items-center">
                                 <input
                                   type="checkbox"
-                                  checked={header.required}
-                                  onChange={(e) => handleHeaderChange(header.id, 'required', e.target.checked)}
+                                  checked={responseBody.includeMetadata}
+                                  onChange={(e) => handleResponseBodyChange('includeMetadata', e.target.checked)}
                                   className="h-4 w-4 rounded"
                                   style={{ accentColor: themeColors.info }}
                                 />
-                              </td>
-                              <td className="px-3 py-2">
+                                <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
+                                  Include timestamp, version, request ID
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="space-y-4">
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                                Compression
+                              </label>
+                              <select
+                                value={responseBody.compression}
+                                onChange={(e) => handleResponseBodyChange('compression', e.target.value)}
+                                className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                                style={{ 
+                                  backgroundColor: themeColors.bg,
+                                  borderColor: themeColors.border,
+                                  color: themeColors.text
+                                }}
+                              >
+                                <option value="none">None</option>
+                                <option value="gzip">Gzip</option>
+                                <option value="deflate">Deflate</option>
+                              </select>
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                                Pretty Print
+                              </label>
+                              <div className="flex items-center">
                                 <input
-                                  type="text"
-                                  value={header.description}
-                                  onChange={(e) => handleHeaderChange(header.id, 'description', e.target.value)}
-                                  className="w-full px-2 py-1 border rounded text-xs hover-lift"
-                                  style={{ 
-                                    backgroundColor: themeColors.modalBg,
-                                    borderColor: themeColors.border,
-                                    color: themeColors.text
-                                  }}
-                                  placeholder="Header description"
+                                  type="checkbox"
+                                  defaultChecked
+                                  className="h-4 w-4 rounded"
+                                  style={{ accentColor: themeColors.info }}
                                 />
-                              </td>
-                              <td className="px-3 py-2">
-                                <button
-                                  onClick={() => handleRemoveHeader(header.id)}
-                                  className="p-1.5 rounded transition-colors hover-lift"
-                                  style={{ backgroundColor: themeColors.error + '20', color: themeColors.error }}
-                                  title="Delete header"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Request Tab */}
-              {activeTab === 'request' && (
-                <div className="space-y-6">
-                  <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                    Request Configuration
-                  </h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Request Schema Type
-                        </label>
-                        <select
-                          value={requestBody.schemaType}
-                          onChange={(e) => handleRequestBodyChange('schemaType', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                        >
-                          <option value="JSON">JSON</option>
-                          <option value="XML">XML</option>
-                          <option value="FORM_DATA">Form Data</option>
-                          <option value="URL_ENCODED">URL Encoded</option>
-                        </select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Max Request Size (bytes)
-                        </label>
-                        <input
-                          type="number"
-                          value={requestBody.maxSize}
-                          onChange={(e) => handleRequestBodyChange('maxSize', parseInt(e.target.value))}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                          min="1024"
-                          max="10485760"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Validate Schema
-                        </label>
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={requestBody.validateSchema}
-                            onChange={(e) => handleRequestBodyChange('validateSchema', e.target.checked)}
-                            className="h-4 w-4 rounded"
-                            style={{ accentColor: themeColors.info }}
-                          />
-                          <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
-                            Validate request body against schema
-                          </span>
+                                <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
+                                  Format JSON for readability
+                                </span>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Allowed Media Types
-                        </label>
-                        <input
-                          type="text"
-                          value={requestBody.allowedMediaTypes.join(', ')}
-                          onChange={(e) => handleRequestBodyChange('allowedMediaTypes', e.target.value.split(',').map(type => type.trim()))}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                          placeholder="application/json, application/xml"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Required Fields
-                        </label>
-                        <input
-                          type="text"
-                          value={requestBody.requiredFields.join(', ')}
-                          onChange={(e) => handleRequestBodyChange('requiredFields', e.target.value.split(',').map(field => field.trim()))}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                          placeholder="id, name, email"
-                        />
-                      </div>
-                    </div>
+                    )}
                   </div>
+                )}
 
-                  {/* Request Body Sample */}
-                  <div className="space-y-4">
-                    <h4 className="font-semibold" style={{ color: themeColors.text }}>
-                      Request Body Sample
-                    </h4>
-                    <div className="border rounded-lg" style={{ 
-                      borderColor: themeColors.border,
-                      backgroundColor: themeColors.card
-                    }}>
-                      <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: themeColors.border }}>
-                        <span className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Sample JSON
-                        </span>
+                {/* Authentication Tab */}
+                {activeTab === 'auth' && (
+                  <div className="space-y-6">
+                    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+                      Authentication & Authorization
+                    </h3>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Authentication Type
+                          </label>
+                          <select
+                            value={authConfig.authType}
+                            onChange={(e) => handleAuthConfigChange('authType', e.target.value)}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.bg,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                          >
+                            <option value="NONE">None (Public)</option>
+                            <option value="ORACLE_ROLES">Oracle Database Roles</option>
+                            <option value="API_KEY">API Key</option>
+                            <option value="JWT">JWT Token</option>
+                            <option value="OAUTH2">OAuth 2.0</option>
+                            <option value="BASIC">Basic Auth</option>
+                          </select>
+                        </div>
+
+                        {authConfig.authType === 'API_KEY' && (
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                              API Key Header
+                            </label>
+                            <input
+                              type="text"
+                              value={authConfig.apiKeyHeader}
+                              onChange={(e) => handleAuthConfigChange('apiKeyHeader', e.target.value)}
+                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                              style={{ 
+                                backgroundColor: themeColors.card,
+                                borderColor: themeColors.border,
+                                color: themeColors.text
+                              }}
+                              placeholder="X-API-Key"
+                            />
+                          </div>
+                        )}
+
+                        {authConfig.authType === 'JWT' && (
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                              JWT Issuer
+                            </label>
+                            <input
+                              type="text"
+                              value={authConfig.jwtIssuer}
+                              onChange={(e) => handleAuthConfigChange('jwtIssuer', e.target.value)}
+                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                              style={{ 
+                                backgroundColor: themeColors.card,
+                                borderColor: themeColors.border,
+                                color: themeColors.text
+                              }}
+                              placeholder="api.example.com"
+                            />
+                          </div>
+                        )}
+
+                        {authConfig.authType === 'ORACLE_ROLES' && (
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                              Required Roles
+                            </label>
+                            <input
+                              type="text"
+                              value={authConfig.requiredRoles.join(', ')}
+                              onChange={(e) => handleAuthConfigChange('requiredRoles', e.target.value.split(',').map(role => role.trim()))}
+                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                              style={{ 
+                                backgroundColor: themeColors.card,
+                                borderColor: themeColors.border,
+                                color: themeColors.text
+                              }}
+                              placeholder="HR_APP_USER, HR_APP_ADMIN"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Custom Auth Function
+                          </label>
+                          <input
+                            type="text"
+                            value={authConfig.customAuthFunction}
+                            onChange={(e) => handleAuthConfigChange('customAuthFunction', e.target.value)}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.card,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                            placeholder="HR.AUTH_VALIDATE_USER"
+                          />
+                        </div>
+
+                        <div className="space-y-3">
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={authConfig.validateSession}
+                              onChange={(e) => handleAuthConfigChange('validateSession', e.target.checked)}
+                              className="h-4 w-4 rounded"
+                              style={{ accentColor: themeColors.info }}
+                            />
+                            <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                              Validate Session
+                            </span>
+                          </div>
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={authConfig.checkObjectPrivileges}
+                              onChange={(e) => handleAuthConfigChange('checkObjectPrivileges', e.target.checked)}
+                              className="h-4 w-4 rounded"
+                              style={{ accentColor: themeColors.info }}
+                            />
+                            <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                              Check Object Privileges
+                            </span>
+                          </div>
+                        </div>
+
+                        {authConfig.authType === 'OAUTH2' && (
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                              OAuth Scopes
+                            </label>
+                            <input
+                              type="text"
+                              value={authConfig.oauthScopes.join(', ')}
+                              onChange={(e) => handleAuthConfigChange('oauthScopes', e.target.value.split(',').map(scope => scope.trim()))}
+                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                              style={{ 
+                                backgroundColor: themeColors.card,
+                                borderColor: themeColors.border,
+                                color: themeColors.text
+                              }}
+                              placeholder="read, write, admin"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Headers Configuration */}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-semibold" style={{ color: themeColors.text }}>
+                          HTTP Headers ({headers.length})
+                        </h4>
                         <button
-                          onClick={() => {
-                            const sample = {
-                              operation: schemaConfig.operation.toLowerCase(),
-                              parameters: parameters.reduce((acc, param) => {
-                                if (param.example) {
-                                  acc[param.key] = param.example;
-                                }
-                                return acc;
-                              }, {}),
-                              metadata: {
-                                requestId: "req_12345",
-                                timestamp: new Date().toISOString()
-                              }
-                            };
-                            handleRequestBodyChange('sample', JSON.stringify(sample, null, 2));
-                          }}
-                          className="px-3 py-1 text-xs rounded border transition-colors hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.hover,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
+                          onClick={handleAddHeader}
+                          className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs transition-colors hover-lift"
+                          style={{ backgroundColor: themeColors.info, color: themeColors.white }}
                         >
-                          Generate Sample
+                          <Plus className="h-4 w-4" />
+                          Add Header
                         </button>
                       </div>
-                      <textarea
-                        value={requestBody.sample}
-                        onChange={(e) => handleRequestBodyChange('sample', e.target.value)}
-                        className="w-full h-48 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
-                        style={{ 
-                          backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
-                          color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
 
-              {/* Response Tab */}
-              {activeTab === 'response' && (
-                <div className="space-y-6">
-                  <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                    Response Configuration
-                  </h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Success Schema
-                        </label>
-                        <div className="border rounded-lg" style={{ 
-                          borderColor: themeColors.border,
-                          backgroundColor: themeColors.card
-                        }}>
-                          <textarea
-                            value={responseBody.successSchema}
-                            onChange={(e) => handleResponseBodyChange('successSchema', e.target.value)}
-                            className="w-full h-40 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
-                            style={{ 
-                              backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
-                              color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Include Metadata Fields
-                        </label>
-                        <input
-                          type="text"
-                          value={responseBody.metadataFields.join(', ')}
-                          onChange={(e) => handleResponseBodyChange('metadataFields', e.target.value.split(',').map(field => field.trim()))}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                          placeholder="timestamp, apiVersion, requestId"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Error Schema
-                        </label>
-                        <div className="border rounded-lg" style={{ 
-                          borderColor: themeColors.border,
-                          backgroundColor: themeColors.card
-                        }}>
-                          <textarea
-                            value={responseBody.errorSchema}
-                            onChange={(e) => handleResponseBodyChange('errorSchema', e.target.value)}
-                            className="w-full h-40 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
-                            style={{ 
-                              backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
-                              color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Compression
-                        </label>
-                        <select
-                          value={responseBody.compression}
-                          onChange={(e) => handleResponseBodyChange('compression', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                        >
-                          <option value="none">None</option>
-                          <option value="gzip">Gzip</option>
-                          <option value="deflate">Deflate</option>
-                        </select>
+                      <div className="overflow-x-auto border rounded-lg" style={{ 
+                        borderColor: themeColors.border,
+                        backgroundColor: themeColors.card
+                      }}>
+                        <table className="w-full min-w-[800px]">
+                          <thead>
+                            <tr style={{ backgroundColor: themeColors.hover }}>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Header</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Value</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Required</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Description</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {headers.map((header, index) => (
+                              <tr key={header.id} style={{ 
+                                backgroundColor: index % 2 === 0 ? themeColors.card : themeColors.hover,
+                                borderBottom: `1px solid ${themeColors.border}`
+                              }}>
+                                <td className="px-3 py-2">
+                                  <input
+                                    type="text"
+                                    value={header.key}
+                                    onChange={(e) => handleHeaderChange(header.id, 'key', e.target.value)}
+                                    className="w-full px-2 py-1 border rounded text-xs hover-lift"
+                                    style={{ 
+                                      backgroundColor: themeColors.card,
+                                      borderColor: themeColors.border,
+                                      color: themeColors.text
+                                    }}
+                                    placeholder="Header-Name"
+                                  />
+                                </td>
+                                <td className="px-3 py-2">
+                                  <input
+                                    type="text"
+                                    value={header.value}
+                                    onChange={(e) => handleHeaderChange(header.id, 'value', e.target.value)}
+                                    className="w-full px-2 py-1 border rounded text-xs hover-lift"
+                                    style={{ 
+                                      backgroundColor: themeColors.card,
+                                      borderColor: themeColors.border,
+                                      color: themeColors.text
+                                    }}
+                                    placeholder="header value"
+                                  />
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={header.required}
+                                    onChange={(e) => handleHeaderChange(header.id, 'required', e.target.checked)}
+                                    className="h-4 w-4 rounded"
+                                    style={{ accentColor: themeColors.info }}
+                                  />
+                                </td>
+                                <td className="px-3 py-2">
+                                  <input
+                                    type="text"
+                                    value={header.description}
+                                    onChange={(e) => handleHeaderChange(header.id, 'description', e.target.value)}
+                                    className="w-full px-2 py-1 border rounded text-xs hover-lift"
+                                    style={{ 
+                                      backgroundColor: themeColors.card,
+                                      borderColor: themeColors.border,
+                                      color: themeColors.text
+                                    }}
+                                    placeholder="Header description"
+                                  />
+                                </td>
+                                <td className="px-3 py-2">
+                                  <button
+                                    onClick={() => handleRemoveHeader(header.id)}
+                                    className="p-1.5 rounded transition-colors hover-lift"
+                                    style={{ backgroundColor: themeColors.error + '20', color: themeColors.error }}
+                                    title="Delete header"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   </div>
+                )}
 
-                  {/* HTTP Status Codes */}
-                  <div className="space-y-4">
-                    <h4 className="font-semibold" style={{ color: themeColors.text }}>
-                      HTTP Status Codes
-                    </h4>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="p-3 rounded-lg border text-center" style={{ 
-                        borderColor: themeColors.success + '40',
-                        backgroundColor: themeColors.success + '10'
-                      }}>
-                        <div className="text-lg font-bold" style={{ color: themeColors.success }}>200</div>
-                        <div className="text-xs" style={{ color: themeColors.textSecondary }}>Success</div>
-                      </div>
-                      <div className="p-3 rounded-lg border text-center" style={{ 
-                        borderColor: themeColors.error + '40',
-                        backgroundColor: themeColors.error + '10'
-                      }}>
-                        <div className="text-lg font-bold" style={{ color: themeColors.error }}>400</div>
-                        <div className="text-xs" style={{ color: themeColors.textSecondary }}>Bad Request</div>
-                      </div>
-                      <div className="p-3 rounded-lg border text-center" style={{ 
-                        borderColor: themeColors.error + '40',
-                        backgroundColor: themeColors.error + '10'
-                      }}>
-                        <div className="text-lg font-bold" style={{ color: themeColors.error }}>401</div>
-                        <div className="text-xs" style={{ color: themeColors.textSecondary }}>Unauthorized</div>
-                      </div>
-                      <div className="p-3 rounded-lg border text-center" style={{ 
-                        borderColor: themeColors.error + '40',
-                        backgroundColor: themeColors.error + '10'
-                      }}>
-                        <div className="text-lg font-bold" style={{ color: themeColors.error }}>500</div>
-                        <div className="text-xs" style={{ color: themeColors.textSecondary }}>Server Error</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Tests Tab */}
-              {activeTab === 'tests' && (
-                <div className="space-y-6">
-                  <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                    Test Configuration
-                  </h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Test Environment
-                        </label>
-                        <select
-                          value={tests.testEnvironment}
-                          onChange={(e) => handleTestsChange('testEnvironment', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                        >
-                          <option value="development">Development</option>
-                          <option value="staging">Staging</option>
-                          <option value="production">Production</option>
-                          <option value="custom">Custom</option>
-                        </select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Performance Threshold (ms)
-                        </label>
-                        <input
-                          type="number"
-                          value={tests.performanceThreshold}
-                          onChange={(e) => handleTestsChange('performanceThreshold', parseInt(e.target.value))}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                          min="100"
-                          max="10000"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
+                {/* Request Tab */}
+                {activeTab === 'request' && (
+                  <div className="space-y-6">
+                    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+                      Request Configuration
+                    </h3>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-4">
                         <div className="space-y-2">
                           <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Test Users
+                            Request Schema Type
+                          </label>
+                          <select
+                            value={requestBody.schemaType}
+                            onChange={(e) => handleRequestBodyChange('schemaType', e.target.value)}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.bg,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                          >
+                            <option value="JSON">JSON</option>
+                            <option value="XML">XML</option>
+                            <option value="FORM_DATA">Form Data</option>
+                            <option value="URL_ENCODED">URL Encoded</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Max Request Size (bytes)
                           </label>
                           <input
                             type="number"
-                            value={tests.testUsers}
-                            onChange={(e) => handleTestsChange('testUsers', parseInt(e.target.value))}
+                            value={requestBody.maxSize}
+                            onChange={(e) => handleRequestBodyChange('maxSize', parseInt(e.target.value))}
                             className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
                               color: themeColors.text
                             }}
-                            min="1"
-                            max="1000"
+                            min="1024"
+                            max="10485760"
                           />
                         </div>
+
                         <div className="space-y-2">
                           <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Test Iterations
+                            Validate Schema
+                          </label>
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={requestBody.validateSchema}
+                              onChange={(e) => handleRequestBodyChange('validateSchema', e.target.checked)}
+                              className="h-4 w-4 rounded"
+                              style={{ accentColor: themeColors.info }}
+                            />
+                            <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
+                              Validate request body against schema
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Allowed Media Types
                           </label>
                           <input
-                            type="number"
-                            value={tests.testIterations}
-                            onChange={(e) => handleTestsChange('testIterations', parseInt(e.target.value))}
+                            type="text"
+                            value={requestBody.allowedMediaTypes.join(', ')}
+                            onChange={(e) => handleRequestBodyChange('allowedMediaTypes', e.target.value.split(',').map(type => type.trim()))}
                             className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
                               color: themeColors.text
                             }}
-                            min="1"
+                            placeholder="application/json, application/xml"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Required Fields
+                          </label>
+                          <input
+                            type="text"
+                            value={requestBody.requiredFields.join(', ')}
+                            onChange={(e) => handleRequestBodyChange('requiredFields', e.target.value.split(',').map(field => field.trim()))}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.card,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                            placeholder="id, name, email"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Request Body Sample */}
+                    <div className="space-y-4">
+                      <h4 className="font-semibold" style={{ color: themeColors.text }}>
+                        Request Body Sample
+                      </h4>
+                      <div className="border rounded-lg" style={{ 
+                        borderColor: themeColors.border,
+                        backgroundColor: themeColors.card
+                      }}>
+                        <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: themeColors.border }}>
+                          <span className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Sample JSON
+                          </span>
+                          <button
+                            onClick={() => {
+                              const sample = {
+                                operation: schemaConfig.operation.toLowerCase(),
+                                parameters: parameters.reduce((acc, param) => {
+                                  if (param.example) {
+                                    acc[param.key] = param.example;
+                                  }
+                                  return acc;
+                                }, {}),
+                                metadata: {
+                                  requestId: "req_12345",
+                                  timestamp: new Date().toISOString()
+                                }
+                              };
+                              handleRequestBodyChange('sample', JSON.stringify(sample, null, 2));
+                            }}
+                            className="px-3 py-1 text-xs rounded border transition-colors hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.hover,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                          >
+                            Generate Sample
+                          </button>
+                        </div>
+                        <textarea
+                          value={requestBody.sample}
+                          onChange={(e) => handleRequestBodyChange('sample', e.target.value)}
+                          className="w-full h-48 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
+                          style={{ 
+                            backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
+                            color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Response Tab */}
+                {activeTab === 'response' && (
+                  <div className="space-y-6">
+                    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+                      Response Configuration
+                    </h3>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Success Schema
+                          </label>
+                          <div className="border rounded-lg" style={{ 
+                            borderColor: themeColors.border,
+                            backgroundColor: themeColors.card
+                          }}>
+                            <textarea
+                              value={responseBody.successSchema}
+                              onChange={(e) => handleResponseBodyChange('successSchema', e.target.value)}
+                              className="w-full h-40 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
+                              style={{ 
+                                backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
+                                color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Include Metadata Fields
+                          </label>
+                          <input
+                            type="text"
+                            value={responseBody.metadataFields.join(', ')}
+                            onChange={(e) => handleResponseBodyChange('metadataFields', e.target.value.split(',').map(field => field.trim()))}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.card,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                            placeholder="timestamp, apiVersion, requestId"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Error Schema
+                          </label>
+                          <div className="border rounded-lg" style={{ 
+                            borderColor: themeColors.border,
+                            backgroundColor: themeColors.card
+                          }}>
+                            <textarea
+                              value={responseBody.errorSchema}
+                              onChange={(e) => handleResponseBodyChange('errorSchema', e.target.value)}
+                              className="w-full h-40 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
+                              style={{ 
+                                backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
+                                color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Compression
+                          </label>
+                          <select
+                            value={responseBody.compression}
+                            onChange={(e) => handleResponseBodyChange('compression', e.target.value)}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.bg,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                          >
+                            <option value="none">None</option>
+                            <option value="gzip">Gzip</option>
+                            <option value="deflate">Deflate</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* HTTP Status Codes */}
+                    <div className="space-y-4">
+                      <h4 className="font-semibold" style={{ color: themeColors.text }}>
+                        HTTP Status Codes
+                      </h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="p-3 rounded-lg border text-center" style={{ 
+                          borderColor: themeColors.success + '40',
+                          backgroundColor: themeColors.success + '10'
+                        }}>
+                          <div className="text-lg font-bold" style={{ color: themeColors.success }}>200</div>
+                          <div className="text-xs" style={{ color: themeColors.textSecondary }}>Success</div>
+                        </div>
+                        <div className="p-3 rounded-lg border text-center" style={{ 
+                          borderColor: themeColors.error + '40',
+                          backgroundColor: themeColors.error + '10'
+                        }}>
+                          <div className="text-lg font-bold" style={{ color: themeColors.error }}>400</div>
+                          <div className="text-xs" style={{ color: themeColors.textSecondary }}>Bad Request</div>
+                        </div>
+                        <div className="p-3 rounded-lg border text-center" style={{ 
+                          borderColor: themeColors.error + '40',
+                          backgroundColor: themeColors.error + '10'
+                        }}>
+                          <div className="text-lg font-bold" style={{ color: themeColors.error }}>401</div>
+                          <div className="text-xs" style={{ color: themeColors.textSecondary }}>Unauthorized</div>
+                        </div>
+                        <div className="p-3 rounded-lg border text-center" style={{ 
+                          borderColor: themeColors.error + '40',
+                          backgroundColor: themeColors.error + '10'
+                        }}>
+                          <div className="text-lg font-bold" style={{ color: themeColors.error }}>500</div>
+                          <div className="text-xs" style={{ color: themeColors.textSecondary }}>Server Error</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tests Tab */}
+                {activeTab === 'tests' && (
+                  <div className="space-y-6">
+                    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+                      Test Configuration
+                    </h3>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Test Environment
+                          </label>
+                          <select
+                            value={tests.testEnvironment}
+                            onChange={(e) => handleTestsChange('testEnvironment', e.target.value)}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.bg,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                          >
+                            <option value="development">Development</option>
+                            <option value="staging">Staging</option>
+                            <option value="production">Production</option>
+                            <option value="custom">Custom</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Performance Threshold (ms)
+                          </label>
+                          <input
+                            type="number"
+                            value={tests.performanceThreshold}
+                            onChange={(e) => handleTestsChange('performanceThreshold', parseInt(e.target.value))}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.card,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                            min="100"
                             max="10000"
                           />
                         </div>
-                      </div>
-                    </div>
 
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Unit Tests
-                        </label>
-                        <div className="border rounded-lg" style={{ 
-                          borderColor: themeColors.border,
-                          backgroundColor: themeColors.card
-                        }}>
-                          <textarea
-                            value={tests.unitTests}
-                            onChange={(e) => handleTestsChange('unitTests', e.target.value)}
-                            className="w-full h-40 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
-                            style={{ 
-                              backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
-                              color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
-                            }}
-                            placeholder="-- PL/SQL unit tests will be generated here"
-                          />
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                              Test Users
+                            </label>
+                            <input
+                              type="number"
+                              value={tests.testUsers}
+                              onChange={(e) => handleTestsChange('testUsers', parseInt(e.target.value))}
+                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                              style={{ 
+                                backgroundColor: themeColors.card,
+                                borderColor: themeColors.border,
+                                color: themeColors.text
+                              }}
+                              min="1"
+                              max="1000"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                              Test Iterations
+                            </label>
+                            <input
+                              type="number"
+                              value={tests.testIterations}
+                              onChange={(e) => handleTestsChange('testIterations', parseInt(e.target.value))}
+                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                              style={{ 
+                                backgroundColor: themeColors.card,
+                                borderColor: themeColors.border,
+                                color: themeColors.text
+                              }}
+                              min="1"
+                              max="10000"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Unit Tests
+                          </label>
+                          <div className="border rounded-lg" style={{ 
+                            borderColor: themeColors.border,
+                            backgroundColor: themeColors.card
+                          }}>
+                            <textarea
+                              value={tests.unitTests}
+                              onChange={(e) => handleTestsChange('unitTests', e.target.value)}
+                              className="w-full h-40 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
+                              style={{ 
+                                backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
+                                color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
+                              }}
+                              placeholder="-- PL/SQL unit tests will be generated here"
+                            />
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Test Data */}
-                  <div className="space-y-4">
-                    <h4 className="font-semibold" style={{ color: themeColors.text }}>
-                      Test Data
-                    </h4>
-                    <div className="border rounded-lg" style={{ 
-                      borderColor: themeColors.border,
-                      backgroundColor: themeColors.card
-                    }}>
-                      <textarea
-                        value={tests.testData}
-                        onChange={(e) => handleTestsChange('testData', e.target.value)}
-                        className="w-full h-48 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
-                        style={{ 
-                          backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
-                          color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
-                        }}
-                        placeholder={`// Test data for ${schemaConfig.objectName}
+                    {/* Test Data */}
+                    <div className="space-y-4">
+                      <h4 className="font-semibold" style={{ color: themeColors.text }}>
+                        Test Data
+                      </h4>
+                      <div className="border rounded-lg" style={{ 
+                        borderColor: themeColors.border,
+                        backgroundColor: themeColors.card
+                      }}>
+                        <textarea
+                          value={tests.testData}
+                          onChange={(e) => handleTestsChange('testData', e.target.value)}
+                          className="w-full h-48 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
+                          style={{ 
+                            backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
+                            color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
+                          }}
+                          placeholder={`// Test data for ${schemaConfig.objectName}
 {
   "testCases": [
     {
@@ -3474,131 +3763,49 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
     }
   ]
 }`}
-                      />
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Settings Tab */}
-              {activeTab === 'settings' && (
-                <div className="space-y-6">
-                  <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                    API Settings
-                  </h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Timeout (ms)
-                        </label>
-                        <input
-                          type="number"
-                          value={settings.timeout}
-                          onChange={(e) => handleSettingsChange('timeout', parseInt(e.target.value))}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                          min="1000"
-                          max="60000"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Max Records
-                        </label>
-                        <input
-                          type="number"
-                          value={settings.maxRecords}
-                          onChange={(e) => handleSettingsChange('maxRecords', parseInt(e.target.value))}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                          min="1"
-                          max="10000"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Log Level
-                        </label>
-                        <select
-                          value={settings.logLevel}
-                          onChange={(e) => handleSettingsChange('logLevel', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                        >
-                          <option value="DEBUG">DEBUG</option>
-                          <option value="INFO">INFO</option>
-                          <option value="WARN">WARN</option>
-                          <option value="ERROR">ERROR</option>
-                        </select>
-                      </div>
-
-                      <div className="space-y-3">
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={settings.enableLogging}
-                            onChange={(e) => handleSettingsChange('enableLogging', e.target.checked)}
-                            className="h-4 w-4 rounded"
-                            style={{ accentColor: themeColors.info }}
-                          />
-                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
-                            Enable Logging
-                          </span>
-                        </div>
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={settings.enableAudit}
-                            onChange={(e) => handleSettingsChange('enableAudit', e.target.checked)}
-                            className="h-4 w-4 rounded"
-                            style={{ accentColor: themeColors.info }}
-                          />
-                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
-                            Enable Audit Trail
-                          </span>
-                        </div>
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={settings.enableMonitoring}
-                            onChange={(e) => handleSettingsChange('enableMonitoring', e.target.checked)}
-                            className="h-4 w-4 rounded"
-                            style={{ accentColor: themeColors.info }}
-                          />
-                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
-                            Enable Monitoring
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Rate Limit (requests)
-                        </label>
-                        <div className="flex items-center gap-4">
+                {/* Settings Tab */}
+                {activeTab === 'settings' && (
+                  <div className="space-y-6">
+                    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+                      API Settings
+                    </h3>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Timeout (ms)
+                          </label>
                           <input
                             type="number"
-                            value={settings.rateLimit}
-                            onChange={(e) => handleSettingsChange('rateLimit', parseInt(e.target.value))}
-                            className="flex-1 px-3 py-2 border rounded-lg text-xs hover-lift"
+                            value={settings.timeout}
+                            onChange={(e) => handleSettingsChange('timeout', parseInt(e.target.value))}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.card,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                            min="1000"
+                            max="60000"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Max Records
+                          </label>
+                          <input
+                            type="number"
+                            value={settings.maxRecords}
+                            onChange={(e) => handleSettingsChange('maxRecords', parseInt(e.target.value))}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
@@ -3607,285 +3814,368 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             min="1"
                             max="10000"
                           />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Log Level
+                          </label>
                           <select
-                            value={settings.rateLimitPeriod}
-                            onChange={(e) => handleSettingsChange('rateLimitPeriod', e.target.value)}
-                            className="flex-1 px-3 py-2 border rounded-lg text-xs hover-lift"
+                            value={settings.logLevel}
+                            onChange={(e) => handleSettingsChange('logLevel', e.target.value)}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.bg,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                          >
+                            <option value="DEBUG">DEBUG</option>
+                            <option value="INFO">INFO</option>
+                            <option value="WARN">WARN</option>
+                            <option value="ERROR">ERROR</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={settings.enableLogging}
+                              onChange={(e) => handleSettingsChange('enableLogging', e.target.checked)}
+                              className="h-4 w-4 rounded"
+                              style={{ accentColor: themeColors.info }}
+                            />
+                            <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                              Enable Logging
+                            </span>
+                          </div>
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={settings.enableAudit}
+                              onChange={(e) => handleSettingsChange('enableAudit', e.target.checked)}
+                              className="h-4 w-4 rounded"
+                              style={{ accentColor: themeColors.info }}
+                            />
+                            <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                              Enable Audit Trail
+                            </span>
+                          </div>
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={settings.enableMonitoring}
+                              onChange={(e) => handleSettingsChange('enableMonitoring', e.target.checked)}
+                              className="h-4 w-4 rounded"
+                              style={{ accentColor: themeColors.info }}
+                            />
+                            <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                              Enable Monitoring
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Rate Limit (requests)
+                          </label>
+                          <div className="flex items-center gap-4">
+                            <input
+                              type="number"
+                              value={settings.rateLimit}
+                              onChange={(e) => handleSettingsChange('rateLimit', parseInt(e.target.value))}
+                              className="flex-1 px-3 py-2 border rounded-lg text-xs hover-lift"
+                              style={{ 
+                                backgroundColor: themeColors.card,
+                                borderColor: themeColors.border,
+                                color: themeColors.text
+                              }}
+                              min="1"
+                              max="10000"
+                            />
+                            <select
+                              value={settings.rateLimitPeriod}
+                              onChange={(e) => handleSettingsChange('rateLimitPeriod', e.target.value)}
+                              className="flex-1 px-3 py-2 border rounded-lg text-xs hover-lift"
+                              style={{ 
+                                backgroundColor: themeColors.bg,
+                                borderColor: themeColors.border,
+                                color: themeColors.text
+                              }}
+                            >
+                              <option value="second">per second</option>
+                              <option value="minute">per minute</option>
+                              <option value="hour">per hour</option>
+                              <option value="day">per day</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Cache TTL (seconds)
+                          </label>
+                          <input
+                            type="number"
+                            value={settings.cacheTtl}
+                            onChange={(e) => handleSettingsChange('cacheTtl', parseInt(e.target.value))}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                             style={{ 
                               backgroundColor: themeColors.card,
                               borderColor: themeColors.border,
                               color: themeColors.text
                             }}
-                          >
-                            <option value="second">per second</option>
-                            <option value="minute">per minute</option>
-                            <option value="hour">per hour</option>
-                            <option value="day">per day</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Cache TTL (seconds)
-                        </label>
-                        <input
-                          type="number"
-                          value={settings.cacheTtl}
-                          onChange={(e) => handleSettingsChange('cacheTtl', parseInt(e.target.value))}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                          min="0"
-                          max="86400"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          CORS Origins
-                        </label>
-                        <input
-                          type="text"
-                          value={settings.corsOrigins.join(', ')}
-                          onChange={(e) => handleSettingsChange('corsOrigins', e.target.value.split(',').map(origin => origin.trim()))}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                          placeholder="https://example.com, https://api.example.com"
-                        />
-                      </div>
-
-                      <div className="space-y-3">
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={settings.enableRateLimiting}
-                            onChange={(e) => handleSettingsChange('enableRateLimiting', e.target.checked)}
-                            className="h-4 w-4 rounded"
-                            style={{ accentColor: themeColors.info }}
+                            min="0"
+                            max="86400"
                           />
-                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
-                            Enable Rate Limiting
-                          </span>
                         </div>
-                        <div className="flex items-center">
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            CORS Origins
+                          </label>
                           <input
-                            type="checkbox"
-                            checked={settings.enableCaching}
-                            onChange={(e) => handleSettingsChange('enableCaching', e.target.checked)}
-                            className="h-4 w-4 rounded"
-                            style={{ accentColor: themeColors.info }}
+                            type="text"
+                            value={settings.corsOrigins.join(', ')}
+                            onChange={(e) => handleSettingsChange('corsOrigins', e.target.value.split(',').map(origin => origin.trim()))}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.card,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                            placeholder="https://example.com, https://api.example.com"
                           />
-                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
-                            Enable Caching
-                          </span>
                         </div>
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={settings.corsEnabled}
-                            onChange={(e) => handleSettingsChange('corsEnabled', e.target.checked)}
-                            className="h-4 w-4 rounded"
-                            style={{ accentColor: themeColors.info }}
-                          />
-                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
-                            Enable CORS
-                          </span>
+
+                        <div className="space-y-3">
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={settings.enableRateLimiting}
+                              onChange={(e) => handleSettingsChange('enableRateLimiting', e.target.checked)}
+                              className="h-4 w-4 rounded"
+                              style={{ accentColor: themeColors.info }}
+                            />
+                            <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                              Enable Rate Limiting
+                            </span>
+                          </div>
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={settings.enableCaching}
+                              onChange={(e) => handleSettingsChange('enableCaching', e.target.checked)}
+                              className="h-4 w-4 rounded"
+                              style={{ accentColor: themeColors.info }}
+                            />
+                            <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                              Enable Caching
+                            </span>
+                          </div>
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={settings.corsEnabled}
+                              onChange={(e) => handleSettingsChange('corsEnabled', e.target.checked)}
+                              className="h-4 w-4 rounded"
+                              style={{ accentColor: themeColors.info }}
+                            />
+                            <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                              Enable CORS
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Generation Options */}
-                  <div className="space-y-4">
-                    <h4 className="font-semibold" style={{ color: themeColors.text }}>
-                      Generation Options
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="p-3 rounded-lg border flex items-center" style={{ 
-                        borderColor: themeColors.border,
-                        backgroundColor: themeColors.card
-                      }}>
-                        <input
-                          type="checkbox"
-                          checked={settings.generateSwagger}
-                          onChange={(e) => handleSettingsChange('generateSwagger', e.target.checked)}
-                          className="h-4 w-4 rounded mr-3"
-                          style={{ accentColor: themeColors.info }}
-                        />
-                        <div>
-                          <div className="font-medium text-xs" style={{ color: themeColors.text }}>OpenAPI Spec</div>
-                          <div className="text-xs" style={{ color: themeColors.textSecondary }}>Generate Swagger documentation</div>
-                        </div>
-                      </div>
-                      <div className="p-3 rounded-lg border flex items-center" style={{ 
-                        borderColor: themeColors.border,
-                        backgroundColor: themeColors.card
-                      }}>
-                        <input
-                          type="checkbox"
-                          checked={settings.generatePostman}
-                          onChange={(e) => handleSettingsChange('generatePostman', e.target.checked)}
-                          className="h-4 w-4 rounded mr-3"
-                          style={{ accentColor: themeColors.info }}
-                        />
-                        <div>
-                          <div className="font-medium text-xs" style={{ color: themeColors.text }}>Postman Collection</div>
-                          <div className="text-xs" style={{ color: themeColors.textSecondary }}>Generate Postman tests</div>
-                        </div>
-                      </div>
-                      <div className="p-3 rounded-lg border flex items-center" style={{ 
-                        borderColor: themeColors.border,
-                        backgroundColor: themeColors.card
-                      }}>
-                        <input
-                          type="checkbox"
-                          checked={settings.generateClientSDK}
-                          onChange={(e) => handleSettingsChange('generateClientSDK', e.target.checked)}
-                          className="h-4 w-4 rounded mr-3"
-                          style={{ accentColor: themeColors.info }}
-                        />
-                        <div>
-                          <div className="font-medium text-xs" style={{ color: themeColors.text }}>Client SDK</div>
-                          <div className="text-xs" style={{ color: themeColors.textSecondary }}>Generate client libraries</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Alerts Configuration */}
-                  <div className="space-y-4">
-                    <h4 className="font-semibold" style={{ color: themeColors.text }}>
-                      Alert Configuration
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                          Alert Email
-                        </label>
-                        <input
-                          type="email"
-                          value={settings.alertEmail}
-                          onChange={(e) => handleSettingsChange('alertEmail', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                          style={{ 
-                            backgroundColor: themeColors.card,
-                            borderColor: themeColors.border,
-                            color: themeColors.text
-                          }}
-                          placeholder="admin@example.com"
-                        />
-                      </div>
-                      <div className="space-y-3 pt-6">
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={settings.enableAlerts}
-                            onChange={(e) => handleSettingsChange('enableAlerts', e.target.checked)}
-                            className="h-4 w-4 rounded"
-                            style={{ accentColor: themeColors.info }}
-                          />
-                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
-                            Enable Email Alerts
-                          </span>
-                        </div>
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={settings.enableTracing}
-                            onChange={(e) => handleSettingsChange('enableTracing', e.target.checked)}
-                            className="h-4 w-4 rounded"
-                            style={{ accentColor: themeColors.info }}
-                          />
-                          <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
-                            Enable Distributed Tracing
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Preview Tab */}
-              {activeTab === 'preview' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                      Generated Code Preview
-                      <span className="text-xs font-normal ml-2" style={{ color: themeColors.textSecondary }}>
-                        (Based on {selectedObject?.name || 'selected object'})
-                      </span>
-                    </h3>
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={previewMode}
-                        onChange={(e) => setPreviewMode(e.target.value)}
-                        className="px-3 py-1.5 border rounded-lg text-xs hover-lift"
-                        style={{ 
-                          backgroundColor: themeColors.card,
+                    {/* Generation Options */}
+                    <div className="space-y-4">
+                      <h4 className="font-semibold" style={{ color: themeColors.text }}>
+                        Generation Options
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="p-3 rounded-lg border flex items-center" style={{ 
                           borderColor: themeColors.border,
-                          color: themeColors.text
-                        }}
-                      >
-                        <option value="json">Configuration JSON</option>
-                        <option value="plsql">PL/SQL Package</option>
-                        <option value="openapi">OpenAPI Spec</option>
-                        <option value="postman">Postman Collection</option>
-                      </select>
-                      <button
-                        onClick={copyGeneratedCode}
-                        className="px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors hover-lift"
-                        style={{ backgroundColor: themeColors.hover, color: themeColors.text }}
-                      >
-                        <Copy className="h-4 w-4" />
-                        Copy
-                      </button>
-                      <button
-                        onClick={downloadGeneratedCode}
-                        className="px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors hover-lift"
-                        style={{ backgroundColor: themeColors.info, color: themeColors.white }}
-                      >
-                        <Download className="h-4 w-4" />
-                        Download
-                      </button>
+                          backgroundColor: themeColors.card
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={settings.generateSwagger}
+                            onChange={(e) => handleSettingsChange('generateSwagger', e.target.checked)}
+                            className="h-4 w-4 rounded mr-3"
+                            style={{ accentColor: themeColors.info }}
+                          />
+                          <div>
+                            <div className="font-medium text-xs" style={{ color: themeColors.text }}>OpenAPI Spec</div>
+                            <div className="text-xs" style={{ color: themeColors.textSecondary }}>Generate Swagger documentation</div>
+                          </div>
+                        </div>
+                        <div className="p-3 rounded-lg border flex items-center" style={{ 
+                          borderColor: themeColors.border,
+                          backgroundColor: themeColors.card
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={settings.generatePostman}
+                            onChange={(e) => handleSettingsChange('generatePostman', e.target.checked)}
+                            className="h-4 w-4 rounded mr-3"
+                            style={{ accentColor: themeColors.info }}
+                          />
+                          <div>
+                            <div className="font-medium text-xs" style={{ color: themeColors.text }}>Postman Collection</div>
+                            <div className="text-xs" style={{ color: themeColors.textSecondary }}>Generate Postman tests</div>
+                          </div>
+                        </div>
+                        <div className="p-3 rounded-lg border flex items-center" style={{ 
+                          borderColor: themeColors.border,
+                          backgroundColor: themeColors.card
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={settings.generateClientSDK}
+                            onChange={(e) => handleSettingsChange('generateClientSDK', e.target.checked)}
+                            className="h-4 w-4 rounded mr-3"
+                            style={{ accentColor: themeColors.info }}
+                          />
+                          <div>
+                            <div className="font-medium text-xs" style={{ color: themeColors.text }}>Client SDK</div>
+                            <div className="text-xs" style={{ color: themeColors.textSecondary }}>Generate client libraries</div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="border rounded-lg" style={{ 
-                    borderColor: themeColors.border,
-                    backgroundColor: themeColors.card
-                  }}>
-                    <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: themeColors.border }}>
-                      <span className="text-xs font-medium" style={{ color: themeColors.text }}>
-                        {previewMode === 'plsql' ? 'PL/SQL Package' : 
-                         previewMode === 'openapi' ? 'OpenAPI Specification' :
-                         previewMode === 'postman' ? 'Postman Collection' : 'Configuration'}
-                        <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
-                          (Source: {schemaConfig.schemaName}.{schemaConfig.objectName})
-                        </span>
-                      </span>
-                      <span className="text-xs font-mono" style={{ color: themeColors.textSecondary }}>
-                        {previewMode === 'plsql' ? '.sql' : '.json'}
-                      </span>
+                    {/* Alerts Configuration */}
+                    <div className="space-y-4">
+                      <h4 className="font-semibold" style={{ color: themeColors.text }}>
+                        Alert Configuration
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Alert Email
+                          </label>
+                          <input
+                            type="email"
+                            value={settings.alertEmail}
+                            onChange={(e) => handleSettingsChange('alertEmail', e.target.value)}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.card,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                            placeholder="admin@example.com"
+                          />
+                        </div>
+                        <div className="space-y-3 pt-6">
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={settings.enableAlerts}
+                              onChange={(e) => handleSettingsChange('enableAlerts', e.target.checked)}
+                              className="h-4 w-4 rounded"
+                              style={{ accentColor: themeColors.info }}
+                            />
+                            <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                              Enable Email Alerts
+                            </span>
+                          </div>
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={settings.enableTracing}
+                              onChange={(e) => handleSettingsChange('enableTracing', e.target.checked)}
+                              className="h-4 w-4 rounded"
+                              style={{ accentColor: themeColors.info }}
+                            />
+                            <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                              Enable Distributed Tracing
+                            </span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <pre className="w-full h-[400px] px-4 py-3 overflow-auto text-xs" style={{ 
-                      backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
-                      color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
-                    }}>
-                      {generatedCode}
-                    </pre>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+
+                {/* Preview Tab */}
+                {activeTab === 'preview' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+                        Generated Code Preview
+                        <span className="text-xs font-normal ml-2" style={{ color: themeColors.textSecondary }}>
+                          (Based on {selectedObject?.name || 'selected object'})
+                        </span>
+                      </h3>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={previewMode}
+                          onChange={(e) => setPreviewMode(e.target.value)}
+                          className="px-3 py-1.5 border rounded-lg text-xs hover-lift"
+                          style={{ 
+                            backgroundColor: themeColors.bg,
+                            borderColor: themeColors.border,
+                            color: themeColors.text
+                          }}
+                        >
+                          <option value="json">Configuration JSON</option>
+                          <option value="plsql">PL/SQL Package</option>
+                          <option value="openapi">OpenAPI Spec</option>
+                          <option value="postman">Postman Collection</option>
+                        </select>
+                        <button
+                          onClick={copyGeneratedCode}
+                          className="px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors hover-lift"
+                          style={{ backgroundColor: themeColors.hover, color: themeColors.text }}
+                        >
+                          <Copy className="h-4 w-4" />
+                          Copy
+                        </button>
+                        <button
+                          onClick={downloadGeneratedCode}
+                          className="px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors hover-lift"
+                          style={{ backgroundColor: themeColors.info, color: themeColors.white }}
+                        >
+                          <Download className="h-4 w-4" />
+                          Download
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="border rounded-lg" style={{ 
+                      borderColor: themeColors.border,
+                      backgroundColor: themeColors.card
+                    }}>
+                      <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: themeColors.border }}>
+                        <span className="text-xs font-medium" style={{ color: themeColors.text }}>
+                          {previewMode === 'plsql' ? 'PL/SQL Package' : 
+                           previewMode === 'openapi' ? 'OpenAPI Specification' :
+                           previewMode === 'postman' ? 'Postman Collection' : 'Configuration'}
+                          <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
+                            (Source: {schemaConfig.schemaName}.{schemaConfig.objectName})
+                          </span>
+                        </span>
+                        <span className="text-xs font-mono" style={{ color: themeColors.textSecondary }}>
+                          {previewMode === 'plsql' ? '.sql' : '.json'}
+                        </span>
+                      </div>
+                      <pre className="w-full h-[400px] px-4 py-3 overflow-auto text-xs" style={{ 
+                        backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
+                        color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
+                      }}>
+                        {generatedCode}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Footer */}
@@ -3901,6 +4191,12 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
               <span className="text-xs" style={{ color: themeColors.textSecondary }}>
                 Source: {schemaConfig.schemaName}.{schemaConfig.objectName} ({schemaConfig.objectType})
               </span>
+              {sourceObjectInfo.isSynonym && (
+                <span className="text-xs block mt-1" style={{ color: themeColors.warning }}>
+                  <Link className="h-3 w-3 inline mr-1" />
+                  Synonym → {sourceObjectInfo.targetType}: {sourceObjectInfo.targetOwner}.{sourceObjectInfo.targetName}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-3">
               <button
@@ -3911,6 +4207,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                   borderColor: themeColors.border,
                   color: themeColors.text
                 }}
+                disabled={loading}
               >
                 Cancel
               </button>
@@ -3918,9 +4215,19 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                 onClick={handleSave}
                 className="px-4 py-2 rounded-lg flex items-center gap-2 transition-colors hover-lift"
                 style={{ backgroundColor: themeColors.success, color: themeColors.white }}
+                disabled={loading}
               >
-                <Save className="h-4 w-4" />
-                Generate & Save API
+                {loading ? (
+                  <>
+                    <Loader className="h-4 w-4 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4" />
+                    Generate & Save API
+                  </>
+                )}
               </button>
             </div>
           </div>
