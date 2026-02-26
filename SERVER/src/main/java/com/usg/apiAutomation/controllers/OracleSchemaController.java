@@ -16,7 +16,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -32,8 +31,462 @@ public class OracleSchemaController {
     private final LoggerUtil loggerUtil;
     private final JwtHelper jwtHelper;
 
+
     // ============================================================
-    // 1. SCHEMA INFO ENDPOINTS
+    // 1. PAGINATED OBJECT DETAILS ENDPOINT
+    // ============================================================
+
+    @GetMapping("/objects/{objectType}/{objectName}/details/paginated")
+    @Operation(summary = "Get paginated object details",
+            description = "Retrieves detailed information about a specific Oracle object with pagination support",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "objectType", description = "Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "objectName", description = "Object name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "Object owner (optional)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "page", description = "Page number (1-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of items per page",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "includeCounts", description = "Include total counts without fetching all data",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getObjectDetailsPaginated(
+            @PathVariable String objectType,
+            @PathVariable String objectName,
+            @RequestParam(required = false) String owner,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int pageSize,
+            @RequestParam(defaultValue = "false") boolean includeCounts,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting Oracle object details");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting Oracle object details");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting paginated details for Oracle " + objectType + ": " + objectName +
+                    ", page: " + page + ", pageSize: " + pageSize + ", includeCounts: " + includeCounts);
+
+            Map<String, Object> result = oracleSchemaService.getObjectDetailsPaginated(
+                    requestId, req, performedBy, objectName, objectType, owner, page, pageSize, includeCounts);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting details for Oracle " + objectType + " " + objectName + ": " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting object details: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    // ============================================================
+    // 2. ADVANCED TABLE DATA ENDPOINT
+    // ============================================================
+
+    @GetMapping("/tables/{tableName}/data/advanced")
+    @Operation(summary = "Get table data with advanced pagination",
+            description = "Retrieves paginated data from a specific Oracle table with sorting and filtering",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "tableName", description = "Table name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "page", description = "Page number (1-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of rows per page",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "sortColumn", description = "Column to sort by",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "sortDirection", description = "Sort direction (ASC/DESC)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "filter", description = "Filter condition (e.g., column=value)",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getTableDataAdvanced(
+            @PathVariable String tableName,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "50") int pageSize,
+            @RequestParam(required = false) String sortColumn,
+            @RequestParam(defaultValue = "ASC") String sortDirection,
+            @RequestParam(required = false) String filter,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting Oracle table data");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting advanced data for Oracle table: " + tableName +
+                    ", page: " + page + ", pageSize: " + pageSize + ", filter: " + filter);
+
+            Map<String, Object> result = oracleSchemaService.getTableDataAdvanced(
+                    requestId, req, performedBy, tableName, page, pageSize, sortColumn, sortDirection, filter);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting data for Oracle table " + tableName + ": " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting table data: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    // ============================================================
+    // 3. PAGINATED PROCEDURE PARAMETERS ENDPOINT
+    // ============================================================
+
+    @GetMapping("/procedures/{procedureName}/parameters")
+    @Operation(summary = "Get procedure parameters with pagination",
+            description = "Retrieves paginated parameters for a specific Oracle procedure",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "procedureName", description = "Procedure name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "Procedure owner (optional)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "page", description = "Page number (1-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of parameters per page",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getProcedureParametersPaginated(
+            @PathVariable String procedureName,
+            @RequestParam(required = false) String owner,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int pageSize,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting procedure parameters");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting paginated parameters for procedure: " + procedureName);
+
+            Map<String, Object> result = oracleSchemaService.getProcedureParametersPaginated(
+                    requestId, req, performedBy, procedureName, owner, page, pageSize);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting parameters for procedure " + procedureName + ": " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting procedure parameters: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    // ============================================================
+    // 4. PAGINATED FUNCTION PARAMETERS ENDPOINT
+    // ============================================================
+
+    @GetMapping("/functions/{functionName}/parameters")
+    @Operation(summary = "Get function parameters with pagination",
+            description = "Retrieves paginated parameters for a specific Oracle function",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "functionName", description = "Function name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "Function owner (optional)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "page", description = "Page number (1-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of parameters per page",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getFunctionParametersPaginated(
+            @PathVariable String functionName,
+            @RequestParam(required = false) String owner,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int pageSize,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting function parameters");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting paginated parameters for function: " + functionName);
+
+            Map<String, Object> result = oracleSchemaService.getFunctionParametersPaginated(
+                    requestId, req, performedBy, functionName, owner, page, pageSize);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting parameters for function " + functionName + ": " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting function parameters: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    // ============================================================
+    // 5. PAGINATED PACKAGE ITEMS ENDPOINT
+    // ============================================================
+
+    @GetMapping("/packages/{packageName}/items")
+    @Operation(summary = "Get package items with pagination",
+            description = "Retrieves paginated procedures, functions, and variables from a package",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "packageName", description = "Package name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "Package owner (optional)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "itemType", description = "Item type (PROCEDURE, FUNCTION, VARIABLE, ALL)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "page", description = "Page number (1-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of items per page",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getPackageItemsPaginated(
+            @PathVariable String packageName,
+            @RequestParam(required = false) String owner,
+            @RequestParam(defaultValue = "ALL") String itemType,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int pageSize,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting package items");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting paginated items for package: " + packageName + ", type: " + itemType);
+
+            Map<String, Object> result = oracleSchemaService.getPackageItemsPaginated(
+                    requestId, req, performedBy, packageName, owner, itemType, page, pageSize);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting items for package " + packageName + ": " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting package items: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    // ============================================================
+    // 6. PAGINATED TABLE COLUMNS ENDPOINT
+    // ============================================================
+
+    @GetMapping("/tables/{tableName}/columns")
+    @Operation(summary = "Get table columns with pagination",
+            description = "Retrieves paginated columns for a specific Oracle table",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "tableName", description = "Table name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "Table owner (optional)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "page", description = "Page number (1-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of columns per page",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getTableColumnsPaginated(
+            @PathVariable String tableName,
+            @RequestParam(required = false) String owner,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int pageSize,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting table columns");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting paginated columns for table: " + tableName);
+
+            Map<String, Object> result = oracleSchemaService.getTableColumnsPaginated(
+                    requestId, req, performedBy, tableName, owner, page, pageSize);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting columns for table " + tableName + ": " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting table columns: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    // ============================================================
+    // 7. PAGINATED SEARCH ENDPOINT
+    // ============================================================
+
+    @GetMapping("/search/paginated")
+    @Operation(summary = "Paginated search",
+            description = "Searches for Oracle objects with pagination support",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "query", description = "Search query",
+                            required = true, in = ParameterIn.QUERY),
+                    @Parameter(name = "type", description = "Search type (ALL, TABLE, VIEW, PROCEDURE, etc.)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "page", description = "Page number (1-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of results per page",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> searchObjectsPaginated(
+            @RequestParam String query,
+            @RequestParam(required = false) String type,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int pageSize,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "searching Oracle objects");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for searching Oracle objects");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Paginated search with query: " + query + ", type: " + type +
+                    ", page: " + page + ", pageSize: " + pageSize);
+
+            Map<String, Object> result = oracleSchemaService.searchObjectsPaginated(
+                    requestId, req, performedBy, query, type, page, pageSize);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error searching Oracle objects: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while searching Oracle objects: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    // ============================================================
+    // 8. GET TOTAL COUNTS ONLY ENDPOINT
+    // ============================================================
+
+    @GetMapping("/objects/{objectType}/{objectName}/counts")
+    @Operation(summary = "Get object counts only",
+            description = "Retrieves only the counts for an object (columns, parameters, etc.) without fetching all data",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "objectType", description = "Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE)",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "objectName", description = "Object name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "Object owner (optional)",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getObjectCountsOnly(
+            @PathVariable String objectType,
+            @PathVariable String objectName,
+            @RequestParam(required = false) String owner,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting object counts");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting object counts");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting counts only for " + objectType + ": " + objectName);
+
+            Map<String, Object> result = oracleSchemaService.getObjectCountsOnly(
+                    requestId, req, performedBy, objectName, objectType, owner);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting counts for " + objectType + " " + objectName + ": " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting object counts: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    // ============================================================
+    // 9. SCHEMA INFO ENDPOINT
     // ============================================================
 
     @GetMapping("/info")
@@ -69,12 +522,13 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting schema info: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 
     // ============================================================
-    // 2. TABLE ENDPOINTS - EXISTING METHODS + FRONTEND FORMAT
+    // 10. TABLE ENDPOINTS - FRONTEND FORMAT
     // ============================================================
 
     @GetMapping("/tables")
@@ -84,11 +538,6 @@ public class OracleSchemaController {
                     @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
                             required = true, in = ParameterIn.HEADER)
             })
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Tables retrieved successfully"),
-            @ApiResponse(responseCode = "401", description = "Authorization required"),
-            @ApiResponse(responseCode = "500", description = "Internal server error")
-    })
     public ResponseEntity<?> getAllTables(HttpServletRequest req) {
         String requestId = UUID.randomUUID().toString();
 
@@ -104,18 +553,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting all Oracle tables for user: " + performedBy);
 
-            Map<String, Object> tables = oracleSchemaService.getAllTables(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle tables retrieved successfully");
-            response.put("data", tables);
-            response.put("requestId", requestId);
-
-            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
-                    ", Oracle tables retrieved successfully, count: " + tables.get("totalCount"));
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getAllTables(requestId, req, performedBy);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -125,6 +564,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle tables: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -153,15 +593,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting Oracle tables for schema: " + schemaName);
 
-            Map<String, Object> tables = oracleSchemaService.getTablesBySchema(requestId, req, performedBy, schemaName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle tables retrieved successfully for schema: " + schemaName);
-            response.put("data", tables);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getTablesBySchema(requestId, req, performedBy, schemaName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -171,6 +604,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle tables: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -199,15 +633,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting details for Oracle table: " + tableName);
 
-            Map<String, Object> details = oracleSchemaService.getTableDetails(requestId, req, performedBy, tableName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle table details retrieved successfully for: " + tableName);
-            response.put("data", details);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getTableDetails(requestId, req, performedBy, tableName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -217,6 +644,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting table details: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -245,15 +673,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Searching Oracle tables with pattern: " + pattern);
 
-            Map<String, Object> searchResults = oracleSchemaService.searchTables(requestId, req, performedBy, pattern);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle tables searched successfully");
-            response.put("data", searchResults);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.searchTables(requestId, req, performedBy, pattern);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -263,6 +684,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while searching Oracle tables: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -291,15 +713,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting statistics for Oracle table: " + tableName);
 
-            Map<String, Object> statistics = oracleSchemaService.getTableStatistics(requestId, req, performedBy, tableName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle table statistics retrieved successfully for: " + tableName);
-            response.put("data", statistics);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getTableStatistics(requestId, req, performedBy, tableName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -309,6 +724,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting table statistics: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -333,15 +749,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting Oracle tables with row count for user: " + performedBy);
 
-            Map<String, Object> tables = oracleSchemaService.getTablesWithRowCount(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle tables with row count retrieved successfully");
-            response.put("data", tables);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getTablesWithRowCount(requestId, req, performedBy);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -351,6 +760,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting tables with row count: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -375,15 +785,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting Oracle tablespace statistics for user: " + performedBy);
 
-            Map<String, Object> stats = oracleSchemaService.getTableCountByTablespace(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle tablespace statistics retrieved successfully");
-            response.put("data", stats);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getTableCountByTablespace(requestId, req, performedBy);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -393,6 +796,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting tablespace statistics: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -421,15 +825,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting recent Oracle tables from last " + days + " days");
 
-            Map<String, Object> tables = oracleSchemaService.getRecentTables(requestId, req, performedBy, days);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Recent Oracle tables retrieved successfully");
-            response.put("data", tables);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getRecentTables(requestId, req, performedBy, days);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -439,6 +836,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting recent tables: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -476,6 +874,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle tables for frontend: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -515,6 +914,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting table details for frontend: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -527,7 +927,7 @@ public class OracleSchemaController {
                             required = true, in = ParameterIn.HEADER),
                     @Parameter(name = "tableName", description = "Table name",
                             required = true, in = ParameterIn.PATH),
-                    @Parameter(name = "page", description = "Page number (0-based)",
+                    @Parameter(name = "page", description = "Page number (1-based)",
                             required = false, in = ParameterIn.QUERY),
                     @Parameter(name = "pageSize", description = "Number of rows per page",
                             required = false, in = ParameterIn.QUERY),
@@ -538,7 +938,7 @@ public class OracleSchemaController {
             })
     public ResponseEntity<?> getTableData(
             @PathVariable String tableName,
-            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "50") int pageSize,
             @RequestParam(required = false) String sortColumn,
             @RequestParam(defaultValue = "ASC") String sortDirection,
@@ -555,8 +955,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting data for Oracle table: " + tableName + ", page: " + page + ", pageSize: " + pageSize);
 
-            Map<String, Object> result = oracleSchemaService.getTableData(requestId, req, performedBy,
-                    tableName, page, pageSize, sortColumn, sortDirection);
+            Map<String, Object> result = oracleSchemaService.getTableData(
+                    requestId, req, performedBy, tableName, page, pageSize, sortColumn, sortDirection);
             return ResponseEntity.ok(result);
 
         } catch (Exception e) {
@@ -567,12 +967,13 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting table data: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 
     // ============================================================
-    // 3. VIEW ENDPOINTS - EXISTING METHODS + FRONTEND FORMAT
+    // 11. VIEW ENDPOINTS - FRONTEND FORMAT
     // ============================================================
 
     @GetMapping("/views")
@@ -597,18 +998,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting all Oracle views for user: " + performedBy);
 
-            Map<String, Object> views = oracleSchemaService.getAllViews(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle views retrieved successfully");
-            response.put("data", views);
-            response.put("requestId", requestId);
-
-            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
-                    ", Oracle views retrieved successfully, count: " + views.get("totalCount"));
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getAllViews(requestId, req, performedBy);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -618,6 +1009,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle views: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -646,15 +1038,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting Oracle views for schema: " + schemaName);
 
-            Map<String, Object> views = oracleSchemaService.getViewsBySchema(requestId, req, performedBy, schemaName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle views retrieved successfully for schema: " + schemaName);
-            response.put("data", views);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getViewsBySchema(requestId, req, performedBy, schemaName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -664,6 +1049,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle views: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -692,15 +1078,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting details for Oracle view: " + viewName);
 
-            Map<String, Object> details = oracleSchemaService.getViewDetails(requestId, req, performedBy, viewName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle view details retrieved successfully for: " + viewName);
-            response.put("data", details);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getViewDetails(requestId, req, performedBy, viewName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -710,6 +1089,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting view details: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -747,12 +1127,13 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle views for frontend: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 
     // ============================================================
-    // 4. PROCEDURE ENDPOINTS - EXISTING METHODS + FRONTEND FORMAT
+    // 12. PROCEDURE ENDPOINTS - FRONTEND FORMAT
     // ============================================================
 
     @GetMapping("/procedures")
@@ -777,18 +1158,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting all Oracle procedures for user: " + performedBy);
 
-            Map<String, Object> procedures = oracleSchemaService.getAllProcedures(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle procedures retrieved successfully");
-            response.put("data", procedures);
-            response.put("requestId", requestId);
-
-            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
-                    ", Oracle procedures retrieved successfully, count: " + procedures.get("totalCount"));
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getAllProcedures(requestId, req, performedBy);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -798,6 +1169,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle procedures: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -826,15 +1198,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting Oracle procedures for schema: " + schemaName);
 
-            Map<String, Object> procedures = oracleSchemaService.getProceduresBySchema(requestId, req, performedBy, schemaName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle procedures retrieved successfully for schema: " + schemaName);
-            response.put("data", procedures);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getProceduresBySchema(requestId, req, performedBy, schemaName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -844,6 +1209,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle procedures: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -872,15 +1238,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting details for Oracle procedure: " + procedureName);
 
-            Map<String, Object> details = oracleSchemaService.getProcedureDetails(requestId, req, performedBy, procedureName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle procedure details retrieved successfully for: " + procedureName);
-            response.put("data", details);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getProcedureDetails(requestId, req, performedBy, procedureName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -890,6 +1249,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting procedure details: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -927,12 +1287,13 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle procedures for frontend: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 
     // ============================================================
-    // 5. FUNCTION ENDPOINTS - EXISTING METHODS + FRONTEND FORMAT
+    // 13. FUNCTION ENDPOINTS - FRONTEND FORMAT
     // ============================================================
 
     @GetMapping("/functions")
@@ -957,18 +1318,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting all Oracle functions for user: " + performedBy);
 
-            Map<String, Object> functions = oracleSchemaService.getAllFunctions(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle functions retrieved successfully");
-            response.put("data", functions);
-            response.put("requestId", requestId);
-
-            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
-                    ", Oracle functions retrieved successfully, count: " + functions.get("totalCount"));
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getAllFunctions(requestId, req, performedBy);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -978,6 +1329,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle functions: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1006,15 +1358,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting Oracle functions for schema: " + schemaName);
 
-            Map<String, Object> functions = oracleSchemaService.getFunctionsBySchema(requestId, req, performedBy, schemaName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle functions retrieved successfully for schema: " + schemaName);
-            response.put("data", functions);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getFunctionsBySchema(requestId, req, performedBy, schemaName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -1024,6 +1369,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle functions: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1052,15 +1398,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting details for Oracle function: " + functionName);
 
-            Map<String, Object> details = oracleSchemaService.getFunctionDetails(requestId, req, performedBy, functionName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle function details retrieved successfully for: " + functionName);
-            response.put("data", details);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getFunctionDetails(requestId, req, performedBy, functionName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -1070,6 +1409,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting function details: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1107,12 +1447,13 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle functions for frontend: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 
     // ============================================================
-    // 6. PACKAGE ENDPOINTS - EXISTING METHODS + FRONTEND FORMAT
+    // 14. PACKAGE ENDPOINTS - FRONTEND FORMAT
     // ============================================================
 
     @GetMapping("/packages")
@@ -1137,18 +1478,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting all Oracle packages for user: " + performedBy);
 
-            Map<String, Object> packages = oracleSchemaService.getAllPackages(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle packages retrieved successfully");
-            response.put("data", packages);
-            response.put("requestId", requestId);
-
-            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
-                    ", Oracle packages retrieved successfully, count: " + packages.get("totalCount"));
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getAllPackages(requestId, req, performedBy);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -1158,6 +1489,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle packages: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1186,15 +1518,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting Oracle packages for schema: " + schemaName);
 
-            Map<String, Object> packages = oracleSchemaService.getPackagesBySchema(requestId, req, performedBy, schemaName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle packages retrieved successfully for schema: " + schemaName);
-            response.put("data", packages);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getPackagesBySchema(requestId, req, performedBy, schemaName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -1204,6 +1529,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle packages: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1232,15 +1558,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting details for Oracle package: " + packageName);
 
-            Map<String, Object> details = oracleSchemaService.getPackageDetails(requestId, req, performedBy, packageName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle package details retrieved successfully for: " + packageName);
-            response.put("data", details);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getPackageDetails(requestId, req, performedBy, packageName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -1250,6 +1569,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting package details: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1287,12 +1607,13 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle packages for frontend: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 
     // ============================================================
-    // 7. SEQUENCE ENDPOINTS - EXISTING METHODS + FRONTEND FORMAT
+    // 15. SEQUENCE ENDPOINTS - FRONTEND FORMAT
     // ============================================================
 
     @GetMapping("/sequences")
@@ -1317,18 +1638,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting all Oracle sequences for user: " + performedBy);
 
-            Map<String, Object> sequences = oracleSchemaService.getAllSequences(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle sequences retrieved successfully");
-            response.put("data", sequences);
-            response.put("requestId", requestId);
-
-            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
-                    ", Oracle sequences retrieved successfully, count: " + sequences.get("totalCount"));
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getAllSequences(requestId, req, performedBy);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -1338,6 +1649,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle sequences: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1366,15 +1678,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting Oracle sequences for schema: " + schemaName);
 
-            Map<String, Object> sequences = oracleSchemaService.getSequencesBySchema(requestId, req, performedBy, schemaName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle sequences retrieved successfully for schema: " + schemaName);
-            response.put("data", sequences);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getSequencesBySchema(requestId, req, performedBy, schemaName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -1384,6 +1689,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle sequences: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1412,15 +1718,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting details for Oracle sequence: " + sequenceName);
 
-            Map<String, Object> details = oracleSchemaService.getSequenceDetails(requestId, req, performedBy, sequenceName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle sequence details retrieved successfully for: " + sequenceName);
-            response.put("data", details);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getSequenceDetails(requestId, req, performedBy, sequenceName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -1430,6 +1729,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting sequence details: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1467,12 +1767,13 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle sequences for frontend: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 
     // ============================================================
-    // 8. SYNONYM ENDPOINTS - EXISTING METHODS + ENHANCED + FRONTEND
+    // 16. SYNONYM ENDPOINTS - ENHANCED + FRONTEND
     // ============================================================
 
     @GetMapping("/synonyms")
@@ -1497,18 +1798,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting all Oracle synonyms for user: " + performedBy);
 
-            Map<String, Object> synonyms = oracleSchemaService.getAllSynonyms(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle synonyms retrieved successfully");
-            response.put("data", synonyms);
-            response.put("requestId", requestId);
-
-            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
-                    ", Oracle synonyms retrieved successfully, count: " + synonyms.get("totalCount"));
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getAllSynonyms(requestId, req, performedBy);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -1518,6 +1809,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle synonyms: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1546,15 +1838,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting Oracle synonyms for schema: " + schemaName);
 
-            Map<String, Object> synonyms = oracleSchemaService.getSynonymsBySchema(requestId, req, performedBy, schemaName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle synonyms retrieved successfully for schema: " + schemaName);
-            response.put("data", synonyms);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getSynonymsBySchema(requestId, req, performedBy, schemaName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -1564,6 +1849,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle synonyms: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1592,15 +1878,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting details for Oracle synonym: " + synonymName);
 
-            Map<String, Object> details = oracleSchemaService.getSynonymDetailsEnhanced(requestId, req, performedBy, synonymName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle synonym details retrieved successfully for: " + synonymName);
-            response.put("data", details);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getSynonymDetailsEnhanced(requestId, req, performedBy, synonymName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -1610,6 +1889,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting synonym details: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1647,6 +1927,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting synonyms with details: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1686,6 +1967,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting synonyms by target type: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1725,6 +2007,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while resolving synonym: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1764,6 +2047,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while validating synonym: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1801,12 +2085,13 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle synonyms for frontend: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 
     // ============================================================
-    // 9. TYPE ENDPOINTS - EXISTING METHODS + FRONTEND FORMAT
+    // 17. TYPE ENDPOINTS - FRONTEND FORMAT
     // ============================================================
 
     @GetMapping("/types")
@@ -1831,18 +2116,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting all Oracle types for user: " + performedBy);
 
-            Map<String, Object> types = oracleSchemaService.getAllTypes(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle types retrieved successfully");
-            response.put("data", types);
-            response.put("requestId", requestId);
-
-            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
-                    ", Oracle types retrieved successfully, count: " + types.get("totalCount"));
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getAllTypes(requestId, req, performedBy);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -1852,6 +2127,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle types: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1880,15 +2156,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting Oracle types for schema: " + schemaName);
 
-            Map<String, Object> types = oracleSchemaService.getTypesBySchema(requestId, req, performedBy, schemaName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle types retrieved successfully for schema: " + schemaName);
-            response.put("data", types);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getTypesBySchema(requestId, req, performedBy, schemaName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -1898,6 +2167,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle types: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1926,15 +2196,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting details for Oracle type: " + typeName);
 
-            Map<String, Object> details = oracleSchemaService.getTypeDetails(requestId, req, performedBy, typeName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle type details retrieved successfully for: " + typeName);
-            response.put("data", details);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getTypeDetails(requestId, req, performedBy, typeName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -1944,6 +2207,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting type details: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -1981,12 +2245,13 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle types for frontend: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 
     // ============================================================
-    // 10. TRIGGER ENDPOINTS - EXISTING METHODS + FRONTEND FORMAT
+    // 18. TRIGGER ENDPOINTS - FRONTEND FORMAT
     // ============================================================
 
     @GetMapping("/triggers")
@@ -2011,18 +2276,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting all Oracle triggers for user: " + performedBy);
 
-            Map<String, Object> triggers = oracleSchemaService.getAllTriggers(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle triggers retrieved successfully");
-            response.put("data", triggers);
-            response.put("requestId", requestId);
-
-            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
-                    ", Oracle triggers retrieved successfully, count: " + triggers.get("totalCount"));
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getAllTriggers(requestId, req, performedBy);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -2032,6 +2287,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle triggers: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -2060,15 +2316,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting Oracle triggers for schema: " + schemaName);
 
-            Map<String, Object> triggers = oracleSchemaService.getTriggersBySchema(requestId, req, performedBy, schemaName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle triggers retrieved successfully for schema: " + schemaName);
-            response.put("data", triggers);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getTriggersBySchema(requestId, req, performedBy, schemaName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -2078,6 +2327,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle triggers: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -2106,15 +2356,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting details for Oracle trigger: " + triggerName);
 
-            Map<String, Object> details = oracleSchemaService.getTriggerDetails(requestId, req, performedBy, triggerName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle trigger details retrieved successfully for: " + triggerName);
-            response.put("data", details);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getTriggerDetails(requestId, req, performedBy, triggerName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -2124,6 +2367,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting trigger details: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -2161,12 +2405,13 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle triggers for frontend: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 
     // ============================================================
-    // 11. DATABASE LINK ENDPOINTS - EXISTING METHODS
+    // 19. DATABASE LINK ENDPOINTS
     // ============================================================
 
     @GetMapping("/db-links")
@@ -2191,18 +2436,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting all Oracle database links for user: " + performedBy);
 
-            Map<String, Object> dbLinks = oracleSchemaService.getAllDbLinks(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle database links retrieved successfully");
-            response.put("data", dbLinks);
-            response.put("requestId", requestId);
-
-            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
-                    ", Oracle database links retrieved successfully, count: " + dbLinks.get("totalCount"));
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getAllDbLinks(requestId, req, performedBy);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -2212,6 +2447,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle database links: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -2240,15 +2476,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting Oracle database links for schema: " + schemaName);
 
-            Map<String, Object> dbLinks = oracleSchemaService.getDbLinksBySchema(requestId, req, performedBy, schemaName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle database links retrieved successfully for schema: " + schemaName);
-            response.put("data", dbLinks);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getDbLinksBySchema(requestId, req, performedBy, schemaName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -2258,12 +2487,13 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle database links: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 
     // ============================================================
-    // 12. GENERAL OBJECT ENDPOINTS - EXISTING METHODS
+    // 20. GENERAL OBJECT ENDPOINTS
     // ============================================================
 
     @GetMapping("/objects")
@@ -2288,18 +2518,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting all Oracle objects for user: " + performedBy);
 
-            Map<String, Object> objects = oracleSchemaService.getAllObjects(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle objects retrieved successfully");
-            response.put("data", objects);
-            response.put("requestId", requestId);
-
-            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
-                    ", Oracle objects retrieved successfully, count: " + objects.get("totalCount"));
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getAllObjects(requestId, req, performedBy);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -2309,6 +2529,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle objects: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -2337,15 +2558,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting Oracle objects for schema: " + schemaName);
 
-            Map<String, Object> objects = oracleSchemaService.getObjectsBySchema(requestId, req, performedBy, schemaName);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle objects retrieved successfully for schema: " + schemaName);
-            response.put("data", objects);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getObjectsBySchema(requestId, req, performedBy, schemaName);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -2355,6 +2569,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting Oracle objects: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -2385,18 +2600,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Searching Oracle objects with pattern: " + pattern);
 
-            Map<String, Object> searchResults = oracleSchemaService.searchObjects(requestId, req, performedBy, pattern);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle objects searched successfully");
-            response.put("data", searchResults);
-            response.put("requestId", requestId);
-
-            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
-                    ", Oracle objects search completed, found: " + searchResults.get("totalCount"));
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.searchObjects(requestId, req, performedBy, pattern);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -2406,6 +2611,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while searching Oracle objects: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -2432,18 +2638,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting Oracle object count by type for user: " + performedBy);
 
-            Map<String, Object> objectCounts = oracleSchemaService.getObjectCountByType(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle object count by type retrieved successfully");
-            response.put("data", objectCounts);
-            response.put("requestId", requestId);
-
-            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
-                    ", Oracle object count by type retrieved successfully");
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getObjectCountByType(requestId, req, performedBy);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -2453,6 +2649,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting object count by type: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -2479,15 +2676,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting invalid Oracle objects for user: " + performedBy);
 
-            Map<String, Object> invalidObjects = oracleSchemaService.getInvalidObjects(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Invalid Oracle objects retrieved successfully");
-            response.put("data", invalidObjects);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getInvalidObjects(requestId, req, performedBy);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -2497,6 +2687,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting invalid objects: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -2527,15 +2718,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Getting Oracle objects with status: " + status);
 
-            Map<String, Object> objects = oracleSchemaService.getObjectsByStatus(requestId, req, performedBy, status);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle objects with status " + status + " retrieved successfully");
-            response.put("data", objects);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.getObjectsByStatus(requestId, req, performedBy, status);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -2545,9 +2729,14 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting objects by status: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
+
+    // ============================================================
+    // 21. OBJECT DETAILS AND VALIDATION ENDPOINTS
+    // ============================================================
 
     @GetMapping("/objects/{objectType}/{objectName}/details")
     @Operation(summary = "Get object details",
@@ -2593,6 +2782,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting object details: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -2641,12 +2831,13 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while validating object: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 
     // ============================================================
-    // 13. SEARCH ENDPOINTS - ENHANCED
+    // 22. SEARCH ENDPOINTS - ENHANCED
     // ============================================================
 
     @GetMapping("/search")
@@ -2693,6 +2884,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while searching Oracle objects: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -2734,12 +2926,13 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred during comprehensive search: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 
     // ============================================================
-    // 14. DDL ENDPOINTS
+    // 23. DDL ENDPOINTS
     // ============================================================
 
     @GetMapping("/{objectType}s/{objectName}/ddl")
@@ -2783,6 +2976,7 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting object DDL: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
@@ -2828,12 +3022,13 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting object size: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 
     // ============================================================
-    // 15. RECENT OBJECTS ENDPOINTS
+    // 24. RECENT OBJECTS ENDPOINTS
     // ============================================================
 
     @GetMapping("/recent/{days}")
@@ -2873,12 +3068,13 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while getting recent objects: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 
     // ============================================================
-    // 16. EXECUTE QUERY ENDPOINT
+    // 25. EXECUTE QUERY ENDPOINT
     // ============================================================
 
     @PostMapping("/execute")
@@ -2904,12 +3100,12 @@ public class OracleSchemaController {
             String performedBy = jwtHelper.extractPerformedBy(req);
             String query = (String) queryRequest.get("query");
             int timeoutSeconds = queryRequest.get("timeoutSeconds") != null ?
-                    (int) queryRequest.get("timeoutSeconds") : 30;
+                    ((Number) queryRequest.get("timeoutSeconds")).intValue() : 30;
             boolean readOnly = queryRequest.get("readOnly") != null ?
-                    (boolean) queryRequest.get("readOnly") : true;
+                    (Boolean) queryRequest.get("readOnly") : true;
 
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
-                    ", Executing query for user: " + performedBy);
+                    ", Executing query for user: " + performedBy + ", readOnly: " + readOnly);
 
             Map<String, Object> result = oracleSchemaService.executeQuery(
                     requestId, req, performedBy, query, timeoutSeconds, readOnly);
@@ -2923,12 +3119,13 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while executing query: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 
     // ============================================================
-    // 17. DIAGNOSTICS ENDPOINT
+    // 26. DIAGNOSTICS ENDPOINT
     // ============================================================
 
     @GetMapping("/diagnose")
@@ -2953,18 +3150,8 @@ public class OracleSchemaController {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
                     ", Running Oracle database diagnostics for user: " + performedBy);
 
-            Map<String, Object> diagnostics = oracleSchemaService.diagnoseDatabase(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Oracle database diagnostics completed");
-            response.put("data", diagnostics);
-            response.put("requestId", requestId);
-
-            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
-                    ", Oracle database diagnostics completed with status: " + diagnostics.get("diagnosticStatus"));
-
-            return ResponseEntity.ok(response);
+            Map<String, Object> result = oracleSchemaService.diagnoseDatabase(requestId, req, performedBy);
+            return ResponseEntity.ok(result);
 
         } catch (Exception e) {
             loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
@@ -2974,7 +3161,490 @@ public class OracleSchemaController {
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while diagnosing Oracle database: " + e.getMessage());
             errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
+
+
+
+    // ============================================================
+// PAGINATED ENDPOINTS FOR FRONTEND
+// ============================================================
+
+    @GetMapping("/frontend/tables/paginated")
+    @Operation(summary = "Get paginated tables",
+            description = "Retrieves tables with pagination support",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "page", description = "Page number (1-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of items per page",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getTablesPaginated(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "50") int pageSize,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting paginated tables");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting paginated tables, page: " + page + ", pageSize: " + pageSize);
+
+            Map<String, Object> result = oracleSchemaService.getTablesPaginated(
+                    requestId, req, performedBy, page, pageSize);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting paginated tables: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting paginated tables: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/views/paginated")
+    @Operation(summary = "Get paginated views",
+            description = "Retrieves views with pagination support",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "page", description = "Page number (1-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of items per page",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getViewsPaginated(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "50") int pageSize,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting paginated views");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting paginated views, page: " + page + ", pageSize: " + pageSize);
+
+            Map<String, Object> result = oracleSchemaService.getViewsPaginated(
+                    requestId, req, performedBy, page, pageSize);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting paginated views: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting paginated views: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/procedures/paginated")
+    @Operation(summary = "Get paginated procedures",
+            description = "Retrieves procedures with pagination support",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "page", description = "Page number (1-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of items per page",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getProceduresPaginated(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "50") int pageSize,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting paginated procedures");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting paginated procedures, page: " + page + ", pageSize: " + pageSize);
+
+            Map<String, Object> result = oracleSchemaService.getProceduresPaginated(
+                    requestId, req, performedBy, page, pageSize);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting paginated procedures: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting paginated procedures: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/functions/paginated")
+    @Operation(summary = "Get paginated functions",
+            description = "Retrieves functions with pagination support",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "page", description = "Page number (1-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of items per page",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getFunctionsPaginated(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "50") int pageSize,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting paginated functions");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting paginated functions, page: " + page + ", pageSize: " + pageSize);
+
+            Map<String, Object> result = oracleSchemaService.getFunctionsPaginated(
+                    requestId, req, performedBy, page, pageSize);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting paginated functions: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting paginated functions: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/packages/paginated")
+    @Operation(summary = "Get paginated packages",
+            description = "Retrieves packages with pagination support",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "page", description = "Page number (1-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of items per page",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getPackagesPaginated(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "50") int pageSize,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting paginated packages");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting paginated packages, page: " + page + ", pageSize: " + pageSize);
+
+            Map<String, Object> result = oracleSchemaService.getPackagesPaginated(
+                    requestId, req, performedBy, page, pageSize);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting paginated packages: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting paginated packages: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/synonyms/paginated")
+    @Operation(summary = "Get paginated synonyms",
+            description = "Retrieves synonyms with pagination support - optimized for large datasets",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "page", description = "Page number (1-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of items per page",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getSynonymsPaginated(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "50") int pageSize,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting paginated synonyms");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting paginated synonyms, page: " + page + ", pageSize: " + pageSize);
+
+            Map<String, Object> result = oracleSchemaService.getSynonymsPaginated(
+                    requestId, req, performedBy, page, pageSize);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting paginated synonyms: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting paginated synonyms: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/sequences/paginated")
+    @Operation(summary = "Get paginated sequences",
+            description = "Retrieves sequences with pagination support",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "page", description = "Page number (1-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of items per page",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getSequencesPaginated(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "50") int pageSize,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting paginated sequences");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting paginated sequences, page: " + page + ", pageSize: " + pageSize);
+
+            Map<String, Object> result = oracleSchemaService.getSequencesPaginated(
+                    requestId, req, performedBy, page, pageSize);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting paginated sequences: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting paginated sequences: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/types/paginated")
+    @Operation(summary = "Get paginated types",
+            description = "Retrieves types with pagination support",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "page", description = "Page number (1-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of items per page",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getTypesPaginated(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "50") int pageSize,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting paginated types");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting paginated types, page: " + page + ", pageSize: " + pageSize);
+
+            Map<String, Object> result = oracleSchemaService.getTypesPaginated(
+                    requestId, req, performedBy, page, pageSize);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting paginated types: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting paginated types: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/triggers/paginated")
+    @Operation(summary = "Get paginated triggers",
+            description = "Retrieves triggers with pagination support",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "page", description = "Page number (1-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of items per page",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getTriggersPaginated(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "50") int pageSize,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting paginated triggers");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting paginated triggers, page: " + page + ", pageSize: " + pageSize);
+
+            Map<String, Object> result = oracleSchemaService.getTriggersPaginated(
+                    requestId, req, performedBy, page, pageSize);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting paginated triggers: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting paginated triggers: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/counts")
+    @Operation(summary = "Get all object counts",
+            description = "Retrieves total counts for all object types - very fast",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER)
+            })
+    public ResponseEntity<?> getAllObjectCounts(HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting object counts");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting all object counts");
+
+            Map<String, Object> result = oracleSchemaService.getAllObjectCounts(
+                    requestId, req, performedBy);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting object counts: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting object counts: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/frontend/synonyms/{synonymName}/resolve")
+    @Operation(summary = "Resolve synonym target",
+            description = "Resolves a single synonym's target type (lazy loading)",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "synonymName", description = "Synonym name",
+                            required = true, in = ParameterIn.PATH)
+            })
+    public ResponseEntity<?> resolveSynonymTarget(
+            @PathVariable String synonymName,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "resolving synonym target");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Resolving synonym target: " + synonymName);
+
+            Map<String, Object> result = oracleSchemaService.resolveSynonymTarget(
+                    requestId, req, performedBy, synonymName);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error resolving synonym target: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while resolving synonym: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+
 }

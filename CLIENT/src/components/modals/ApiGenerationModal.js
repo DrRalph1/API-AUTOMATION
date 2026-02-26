@@ -3066,271 +3066,1599 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                 )}
 
                 {/* Authentication Tab */}
-                {activeTab === 'auth' && (
-                  <div className="space-y-6">
-                    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                      Authentication & Authorization
-                    </h3>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Authentication Type
-                          </label>
-                          <select
-                            value={authConfig.authType}
-                            onChange={(e) => handleAuthConfigChange('authType', e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.bg,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                          >
-                            <option value="NONE">None (Public)</option>
-                            <option value="ORACLE_ROLES">Oracle Database Roles</option>
-                            <option value="API_KEY">API Key</option>
-                            <option value="JWT">JWT Token</option>
-                            <option value="OAUTH2">OAuth 2.0</option>
-                            <option value="BASIC">Basic Auth</option>
-                          </select>
-                        </div>
+{activeTab === 'auth' && (
+  <div className="space-y-6">
+    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+      Authentication & Authorization
+    </h3>
+    
+    {/* Auth Type Selection with Description */}
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      {[
+        { 
+          id: 'NONE', 
+          label: 'Public (No Auth)', 
+          icon: <Globe className="h-5 w-5" />,
+          desc: 'Open access - suitable for public data only',
+          warning: 'Use with caution - no authentication required'
+        },
+        { 
+          id: 'API_KEY', 
+          label: 'API Key', 
+          icon: <Key className="h-5 w-5" />,
+          desc: 'Simple key-based authentication for service-to-service',
+          warning: 'Basic security - rotate keys regularly'
+        },
+        { 
+          id: 'BASIC', 
+          label: 'Basic Auth', 
+          icon: <Lock className="h-5 w-5" />,
+          desc: 'Username/password with Base64 encoding',
+          warning: 'Use only with HTTPS - credentials sent in plaintext'
+        },
+        { 
+          id: 'JWT', 
+          label: 'JWT Bearer Token', 
+          icon: <Shield className="h-5 w-5" />,
+          desc: 'Stateless authentication with signed tokens',
+          warning: 'Implement proper token validation and expiration'
+        },
+        { 
+          id: 'OAUTH2', 
+          label: 'OAuth 2.0', 
+          icon: <Users className="h-5 w-5" />,
+          desc: 'Industry standard for delegated authorization',
+          warning: 'Complex setup - requires OAuth provider'
+        },
+        { 
+          id: 'ORACLE_ROLES', 
+          label: 'Oracle Database Roles', 
+          icon: <Database className="h-5 w-5" />,
+          desc: 'Leverage existing Oracle database security',
+          warning: 'Direct database authentication - use with caution'
+        },
+        { 
+          id: 'MUTUAL_TLS', 
+          label: 'Mutual TLS (mTLS)', 
+          icon: <ShieldCheck className="h-5 w-5" />,
+          desc: 'Certificate-based mutual authentication',
+          warning: 'Requires certificate management infrastructure'
+        },
+        { 
+          id: 'SAML', 
+          label: 'SAML 2.0', 
+          icon: <Users className="h-5 w-5" />,
+          desc: 'Enterprise SSO with SAML assertions',
+          warning: 'Complex setup - requires IdP configuration'
+        },
+        { 
+          id: 'LDAP', 
+          label: 'LDAP / Active Directory', 
+          icon: <Server className="h-5 w-5" />,
+          desc: 'Integration with corporate directory services',
+          warning: 'Requires LDAP server configuration'
+        },
+        { 
+          id: 'CUSTOM', 
+          label: 'Custom Auth Function', 
+          icon: <Code className="h-5 w-5" />,
+          desc: 'Implement your own authentication logic',
+          warning: 'Full flexibility - security is your responsibility'
+        }
+      ].map((type) => (
+        <button
+          key={type.id}
+          onClick={() => handleAuthConfigChange('authType', type.id)}
+          className={`p-4 rounded-lg border-2 transition-all hover-lift ${
+            authConfig.authType === type.id 
+              ? 'border-blue-500 bg-blue-500/10' 
+              : 'border-transparent hover:border-gray-600'
+          }`}
+          style={{ 
+            backgroundColor: authConfig.authType === type.id ? themeColors.info + '20' : themeColors.card,
+            borderColor: authConfig.authType === type.id ? themeColors.info : themeColors.border
+          }}
+        >
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-lg" style={{ 
+              backgroundColor: authConfig.authType === type.id ? themeColors.info + '30' : themeColors.hover 
+            }}>
+              <div style={{ color: authConfig.authType === type.id ? themeColors.info : themeColors.textSecondary }}>
+                {type.icon}
+              </div>
+            </div>
+            <div className="flex-1 text-left">
+              <h4 className="font-medium text-sm" style={{ color: themeColors.text }}>
+                {type.label}
+              </h4>
+              <p className="text-xs mt-1" style={{ color: themeColors.textSecondary }}>
+                {type.desc}
+              </p>
+              <p className="text-xs mt-2 p-1 rounded" style={{ 
+                backgroundColor: themeColors.warning + '20',
+                color: themeColors.warning
+              }}>
+                ⚠️ {type.warning}
+              </p>
+            </div>
+          </div>
+        </button>
+      ))}
+    </div>
 
-                        {authConfig.authType === 'API_KEY' && (
-                          <div className="space-y-2">
-                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                              API Key Header
-                            </label>
-                            <input
-                              type="text"
-                              value={authConfig.apiKeyHeader}
-                              onChange={(e) => handleAuthConfigChange('apiKeyHeader', e.target.value)}
-                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                              style={{ 
-                                backgroundColor: themeColors.card,
-                                borderColor: themeColors.border,
-                                color: themeColors.text
-                              }}
-                              placeholder="X-API-Key"
-                            />
-                          </div>
-                        )}
+    {/* Conditional Configuration Based on Auth Type */}
+    <div className="space-y-6 mt-6">
+      {/* API Key Configuration */}
+      {authConfig.authType === 'API_KEY' && (
+        <div className="p-4 rounded-lg border" style={{ 
+          borderColor: themeColors.info + '40',
+          backgroundColor: themeColors.info + '10'
+        }}>
+          <h4 className="font-medium mb-4 flex items-center gap-2" style={{ color: themeColors.info }}>
+            <Key className="h-5 w-5" />
+            API Key Configuration
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Header Name *
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.apiKeyHeader}
+                  onChange={(e) => handleAuthConfigChange('apiKeyHeader', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="X-API-Key"
+                />
+                <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                  HTTP header that will contain the API key
+                </p>
+              </div>
 
-                        {authConfig.authType === 'JWT' && (
-                          <div className="space-y-2">
-                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                              JWT Issuer
-                            </label>
-                            <input
-                              type="text"
-                              value={authConfig.jwtIssuer}
-                              onChange={(e) => handleAuthConfigChange('jwtIssuer', e.target.value)}
-                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                              style={{ 
-                                backgroundColor: themeColors.card,
-                                borderColor: themeColors.border,
-                                color: themeColors.text
-                              }}
-                              placeholder="api.example.com"
-                            />
-                          </div>
-                        )}
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Key Location
+                </label>
+                <select
+                  value={authConfig.apiKeyLocation || 'header'}
+                  onChange={(e) => handleAuthConfigChange('apiKeyLocation', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.bg,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                >
+                  <option value="header">Header</option>
+                  <option value="query">Query Parameter</option>
+                  <option value="cookie">Cookie</option>
+                </select>
+              </div>
 
-                        {authConfig.authType === 'ORACLE_ROLES' && (
-                          <div className="space-y-2">
-                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                              Required Roles
-                            </label>
-                            <input
-                              type="text"
-                              value={authConfig.requiredRoles.join(', ')}
-                              onChange={(e) => handleAuthConfigChange('requiredRoles', e.target.value.split(',').map(role => role.trim()))}
-                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                              style={{ 
-                                backgroundColor: themeColors.card,
-                                borderColor: themeColors.border,
-                                color: themeColors.text
-                              }}
-                              placeholder="HR_APP_USER, HR_APP_ADMIN"
-                            />
-                          </div>
-                        )}
-                      </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Key Prefix
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.apiKeyPrefix || 'Bearer'}
+                  onChange={(e) => handleAuthConfigChange('apiKeyPrefix', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="Bearer"
+                />
+                <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                  Optional prefix (e.g., "Bearer " for Authorization header)
+                </p>
+              </div>
+            </div>
 
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Custom Auth Function
-                          </label>
-                          <input
-                            type="text"
-                            value={authConfig.customAuthFunction}
-                            onChange={(e) => handleAuthConfigChange('customAuthFunction', e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.card,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                            placeholder="HR.AUTH_VALIDATE_USER"
-                          />
-                        </div>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Key Validation Method
+                </label>
+                <select
+                  value={authConfig.apiKeyValidation || 'database'}
+                  onChange={(e) => handleAuthConfigChange('apiKeyValidation', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.bg,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                >
+                  <option value="database">Database Lookup</option>
+                  <option value="redis">Redis Cache</option>
+                  <option value="jwt">JWT Validation</option>
+                  <option value="custom">Custom Function</option>
+                </select>
+              </div>
 
-                        <div className="space-y-3">
-                          <div className="flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={authConfig.validateSession}
-                              onChange={(e) => handleAuthConfigChange('validateSession', e.target.checked)}
-                              className="h-4 w-4 rounded"
-                              style={{ accentColor: themeColors.info }}
-                            />
-                            <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
-                              Validate Session
-                            </span>
-                          </div>
-                          <div className="flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={authConfig.checkObjectPrivileges}
-                              onChange={(e) => handleAuthConfigChange('checkObjectPrivileges', e.target.checked)}
-                              className="h-4 w-4 rounded"
-                              style={{ accentColor: themeColors.info }}
-                            />
-                            <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
-                              Check Object Privileges
-                            </span>
-                          </div>
-                        </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Key Table/Function
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.apiKeyTable || 'API_KEYS'}
+                  onChange={(e) => handleAuthConfigChange('apiKeyTable', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="HR.API_KEYS"
+                />
+              </div>
 
-                        {authConfig.authType === 'OAUTH2' && (
-                          <div className="space-y-2">
-                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                              OAuth Scopes
-                            </label>
-                            <input
-                              type="text"
-                              value={authConfig.oauthScopes.join(', ')}
-                              onChange={(e) => handleAuthConfigChange('oauthScopes', e.target.value.split(',').map(scope => scope.trim()))}
-                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                              style={{ 
-                                backgroundColor: themeColors.card,
-                                borderColor: themeColors.border,
-                                color: themeColors.text
-                              }}
-                              placeholder="read, write, admin"
-                            />
-                          </div>
-                        )}
-                      </div>
+              <div className="space-y-3">
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={authConfig.apiKeyRotate || true}
+                    onChange={(e) => handleAuthConfigChange('apiKeyRotate', e.target.checked)}
+                    className="h-4 w-4 rounded"
+                    style={{ accentColor: themeColors.info }}
+                  />
+                  <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                    Auto-rotate keys every 90 days
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={authConfig.apiKeyIpRestriction || false}
+                    onChange={(e) => handleAuthConfigChange('apiKeyIpRestriction', e.target.checked)}
+                    className="h-4 w-4 rounded"
+                    style={{ accentColor: themeColors.info }}
+                  />
+                  <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                    Restrict by IP address
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={authConfig.apiKeyRateLimit || true}
+                    onChange={(e) => handleAuthConfigChange('apiKeyRateLimit', e.target.checked)}
+                    className="h-4 w-4 rounded"
+                    style={{ accentColor: themeColors.info }}
+                  />
+                  <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                    Apply rate limiting per key
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* JWT Configuration */}
+      {authConfig.authType === 'JWT' && (
+        <div className="p-4 rounded-lg border" style={{ 
+          borderColor: themeColors.info + '40',
+          backgroundColor: themeColors.info + '10'
+        }}>
+          <h4 className="font-medium mb-4 flex items-center gap-2" style={{ color: themeColors.info }}>
+            <Shield className="h-5 w-5" />
+            JWT Bearer Token Configuration
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  JWT Issuer (iss) *
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.jwtIssuer}
+                  onChange={(e) => handleAuthConfigChange('jwtIssuer', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="https://auth.example.com"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Audience (aud) *
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.jwtAudience || 'api.example.com'}
+                  onChange={(e) => handleAuthConfigChange('jwtAudience', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="api.example.com"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Signing Algorithm
+                </label>
+                <select
+                  value={authConfig.jwtAlgorithm || 'RS256'}
+                  onChange={(e) => handleAuthConfigChange('jwtAlgorithm', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.bg,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                >
+                  <option value="HS256">HS256 (Symmetric)</option>
+                  <option value="RS256">RS256 (Asymmetric)</option>
+                  <option value="ES256">ES256 (ECDSA)</option>
+                  <option value="PS256">PS256 (RSA-PSS)</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  JWKS URI (for RSA/ECDSA)
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.jwksUri || 'https://auth.example.com/.well-known/jwks.json'}
+                  onChange={(e) => handleAuthConfigChange('jwksUri', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="https://auth.example.com/.well-known/jwks.json"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Token Expiration (seconds)
+                </label>
+                <input
+                  type="number"
+                  value={authConfig.jwtExpiration || 3600}
+                  onChange={(e) => handleAuthConfigChange('jwtExpiration', parseInt(e.target.value))}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  min="60"
+                  max="86400"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Clock Skew (seconds)
+                </label>
+                <input
+                  type="number"
+                  value={authConfig.jwtClockSkew || 30}
+                  onChange={(e) => handleAuthConfigChange('jwtClockSkew', parseInt(e.target.value))}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  min="0"
+                  max="300"
+                />
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={authConfig.jwtValidateIssuer || true}
+                    onChange={(e) => handleAuthConfigChange('jwtValidateIssuer', e.target.checked)}
+                    className="h-4 w-4 rounded"
+                    style={{ accentColor: themeColors.info }}
+                  />
+                  <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                    Validate Issuer (iss)
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={authConfig.jwtValidateAudience || true}
+                    onChange={(e) => handleAuthConfigChange('jwtValidateAudience', e.target.checked)}
+                    className="h-4 w-4 rounded"
+                    style={{ accentColor: themeColors.info }}
+                  />
+                  <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                    Validate Audience (aud)
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={authConfig.jwtValidateLifetime || true}
+                    onChange={(e) => handleAuthConfigChange('jwtValidateLifetime', e.target.checked)}
+                    className="h-4 w-4 rounded"
+                    style={{ accentColor: themeColors.info }}
+                  />
+                  <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                    Validate Expiration (exp)
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={authConfig.jwtRefreshEnabled || false}
+                    onChange={(e) => handleAuthConfigChange('jwtRefreshEnabled', e.target.checked)}
+                    className="h-4 w-4 rounded"
+                    style={{ accentColor: themeColors.info }}
+                  />
+                  <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                    Enable Token Refresh
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Custom Claims Validation
+                </label>
+                <textarea
+                  value={authConfig.jwtCustomClaims || '{\n  "role": ["admin", "user"],\n  "department": "HR"\n}'}
+                  onChange={(e) => handleAuthConfigChange('jwtCustomClaims', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs font-mono hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  rows="3"
+                  placeholder="JSON object with custom claim validation rules"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* OAuth 2.0 Configuration */}
+      {authConfig.authType === 'OAUTH2' && (
+        <div className="p-4 rounded-lg border" style={{ 
+          borderColor: themeColors.info + '40',
+          backgroundColor: themeColors.info + '10'
+        }}>
+          <h4 className="font-medium mb-4 flex items-center gap-2" style={{ color: themeColors.info }}>
+            <Users className="h-5 w-5" />
+            OAuth 2.0 Configuration
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Authorization Server *
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.oauthAuthServer || 'https://auth.example.com'}
+                  onChange={(e) => handleAuthConfigChange('oauthAuthServer', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="https://auth.example.com"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Token Endpoint
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.oauthTokenEndpoint || '/oauth/token'}
+                  onChange={(e) => handleAuthConfigChange('oauthTokenEndpoint', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="/oauth/token"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Authorization Endpoint
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.oauthAuthEndpoint || '/oauth/authorize'}
+                  onChange={(e) => handleAuthConfigChange('oauthAuthEndpoint', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="/oauth/authorize"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Client ID *
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.oauthClientId}
+                  onChange={(e) => handleAuthConfigChange('oauthClientId', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="your-client-id"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Client Secret
+                </label>
+                <input
+                  type="password"
+                  value={authConfig.oauthClientSecret}
+                  onChange={(e) => handleAuthConfigChange('oauthClientSecret', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="••••••••••••••••"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Grant Type
+                </label>
+                <select
+                  value={authConfig.oauthGrantType || 'client_credentials'}
+                  onChange={(e) => handleAuthConfigChange('oauthGrantType', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.bg,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                >
+                  <option value="client_credentials">Client Credentials</option>
+                  <option value="authorization_code">Authorization Code</option>
+                  <option value="password">Resource Owner Password</option>
+                  <option value="refresh_token">Refresh Token</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Required Scopes
+                </label>
+                <div className="space-y-2">
+                  {['read', 'write', 'admin', 'profile', 'email'].map(scope => (
+                    <div key={scope} className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={authConfig.oauthScopes?.includes(scope)}
+                        onChange={(e) => {
+                          const currentScopes = authConfig.oauthScopes || [];
+                          const newScopes = e.target.checked 
+                            ? [...currentScopes, scope]
+                            : currentScopes.filter(s => s !== scope);
+                          handleAuthConfigChange('oauthScopes', newScopes);
+                        }}
+                        className="h-4 w-4 rounded"
+                        style={{ accentColor: themeColors.info }}
+                      />
+                      <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                        {scope}
+                      </span>
                     </div>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  placeholder="Custom scopes (comma-separated)"
+                  className="w-full mt-2 px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const customScopes = e.target.value.split(',').map(s => s.trim());
+                      handleAuthConfigChange('oauthScopes', [...(authConfig.oauthScopes || []), ...customScopes]);
+                      e.target.value = '';
+                    }
+                  }}
+                />
+              </div>
 
-                    {/* Headers Configuration */}
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-semibold" style={{ color: themeColors.text }}>
-                          HTTP Headers ({headers.length})
-                        </h4>
-                        <button
-                          onClick={handleAddHeader}
-                          className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs transition-colors hover-lift"
-                          style={{ backgroundColor: themeColors.info, color: themeColors.white }}
-                        >
-                          <Plus className="h-4 w-4" />
-                          Add Header
-                        </button>
-                      </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Redirect URIs (for Authorization Code)
+                </label>
+                <textarea
+                  value={authConfig.oauthRedirectUris || 'https://app.example.com/callback\nhttps://app.example.com/oauth2/callback'}
+                  onChange={(e) => handleAuthConfigChange('oauthRedirectUris', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  rows="2"
+                  placeholder="One URI per line"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
-                      <div className="overflow-x-auto border rounded-lg" style={{ 
-                        borderColor: themeColors.border,
-                        backgroundColor: themeColors.card
-                      }}>
-                        <table className="w-full min-w-[800px]">
-                          <thead>
-                            <tr style={{ backgroundColor: themeColors.hover }}>
-                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Header</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Value</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Required</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Description</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {headers.map((header, index) => (
-                              <tr key={header.id} style={{ 
-                                backgroundColor: index % 2 === 0 ? themeColors.card : themeColors.hover,
-                                borderBottom: `1px solid ${themeColors.border}`
-                              }}>
-                                <td className="px-3 py-2">
-                                  <input
-                                    type="text"
-                                    value={header.key}
-                                    onChange={(e) => handleHeaderChange(header.id, 'key', e.target.value)}
-                                    className="w-full px-2 py-1 border rounded text-xs hover-lift"
-                                    style={{ 
-                                      backgroundColor: themeColors.card,
-                                      borderColor: themeColors.border,
-                                      color: themeColors.text
-                                    }}
-                                    placeholder="Header-Name"
-                                  />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <input
-                                    type="text"
-                                    value={header.value}
-                                    onChange={(e) => handleHeaderChange(header.id, 'value', e.target.value)}
-                                    className="w-full px-2 py-1 border rounded text-xs hover-lift"
-                                    style={{ 
-                                      backgroundColor: themeColors.card,
-                                      borderColor: themeColors.border,
-                                      color: themeColors.text
-                                    }}
-                                    placeholder="header value"
-                                  />
-                                </td>
-                                <td className="px-3 py-2 text-center">
-                                  <input
-                                    type="checkbox"
-                                    checked={header.required}
-                                    onChange={(e) => handleHeaderChange(header.id, 'required', e.target.checked)}
-                                    className="h-4 w-4 rounded"
-                                    style={{ accentColor: themeColors.info }}
-                                  />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <input
-                                    type="text"
-                                    value={header.description}
-                                    onChange={(e) => handleHeaderChange(header.id, 'description', e.target.value)}
-                                    className="w-full px-2 py-1 border rounded text-xs hover-lift"
-                                    style={{ 
-                                      backgroundColor: themeColors.card,
-                                      borderColor: themeColors.border,
-                                      color: themeColors.text
-                                    }}
-                                    placeholder="Header description"
-                                  />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <button
-                                    onClick={() => handleRemoveHeader(header.id)}
-                                    className="p-1.5 rounded transition-colors hover-lift"
-                                    style={{ backgroundColor: themeColors.error + '20', color: themeColors.error }}
-                                    title="Delete header"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+      {/* Oracle Database Roles Configuration */}
+      {authConfig.authType === 'ORACLE_ROLES' && (
+        <div className="p-4 rounded-lg border" style={{ 
+          borderColor: themeColors.info + '40',
+          backgroundColor: themeColors.info + '10'
+        }}>
+          <h4 className="font-medium mb-4 flex items-center gap-2" style={{ color: themeColors.info }}>
+            <Database className="h-5 w-5" />
+            Oracle Database Roles Configuration
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Connection Type
+                </label>
+                <select
+                  value={authConfig.oracleConnectionType || 'proxy'}
+                  onChange={(e) => handleAuthConfigChange('oracleConnectionType', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.bg,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                >
+                  <option value="proxy">Proxy User (Connection Pool)</option>
+                  <option value="direct">Direct Connection</option>
+                  <option value="ldap">LDAP Authentication</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Database User Pool
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.oracleUserPool || 'APP_USER_POOL'}
+                  onChange={(e) => handleAuthConfigChange('oracleUserPool', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="APP_USER_POOL"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Required Roles
+                </label>
+                <div className="space-y-2">
+                  {['HR_APP_USER', 'HR_APP_ADMIN', 'HR_READONLY', 'FINANCE_USER', 'EMPLOYEE_VIEW'].map(role => (
+                    <div key={role} className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={authConfig.requiredRoles?.includes(role)}
+                        onChange={(e) => {
+                          const currentRoles = authConfig.requiredRoles || [];
+                          const newRoles = e.target.checked 
+                            ? [...currentRoles, role]
+                            : currentRoles.filter(r => r !== role);
+                          handleAuthConfigChange('requiredRoles', newRoles);
+                        }}
+                        className="h-4 w-4 rounded"
+                        style={{ accentColor: themeColors.info }}
+                      />
+                      <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                        {role}
+                      </span>
                     </div>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  placeholder="Custom roles (comma-separated)"
+                  className="w-full mt-2 px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const customRoles = e.target.value.split(',').map(r => r.trim());
+                      handleAuthConfigChange('requiredRoles', [...(authConfig.requiredRoles || []), ...customRoles]);
+                      e.target.value = '';
+                    }
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Privilege Check Function
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.customAuthFunction || 'HR.CHECK_PRIVILEGES'}
+                  onChange={(e) => handleAuthConfigChange('customAuthFunction', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="HR.CHECK_PRIVILEGES"
+                />
+                <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                  PL/SQL function that validates user privileges
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={authConfig.validateSession}
+                    onChange={(e) => handleAuthConfigChange('validateSession', e.target.checked)}
+                    className="h-4 w-4 rounded"
+                    style={{ accentColor: themeColors.info }}
+                  />
+                  <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                    Validate Database Session
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={authConfig.checkObjectPrivileges}
+                    onChange={(e) => handleAuthConfigChange('checkObjectPrivileges', e.target.checked)}
+                    className="h-4 w-4 rounded"
+                    style={{ accentColor: themeColors.info }}
+                  />
+                  <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                    Check Object Privileges (SELECT/INSERT/etc)
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={authConfig.oracleAudit || true}
+                    onChange={(e) => handleAuthConfigChange('oracleAudit', e.target.checked)}
+                    className="h-4 w-4 rounded"
+                    style={{ accentColor: themeColors.info }}
+                  />
+                  <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                    Enable Fine-Grained Auditing (FGA)
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={authConfig.oracleVpd || false}
+                    onChange={(e) => handleAuthConfigChange('oracleVpd', e.target.checked)}
+                    className="h-4 w-4 rounded"
+                    style={{ accentColor: themeColors.info }}
+                  />
+                  <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                    Apply VPD (Virtual Private Database) Policies
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mutual TLS Configuration */}
+      {authConfig.authType === 'MUTUAL_TLS' && (
+        <div className="p-4 rounded-lg border" style={{ 
+          borderColor: themeColors.info + '40',
+          backgroundColor: themeColors.info + '10'
+        }}>
+          <h4 className="font-medium mb-4 flex items-center gap-2" style={{ color: themeColors.info }}>
+            <ShieldCheck className="h-5 w-5" />
+            Mutual TLS (mTLS) Configuration
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  CA Certificate Bundle
+                </label>
+                <select
+                  value={authConfig.mtlsCaBundle || 'internal'}
+                  onChange={(e) => handleAuthConfigChange('mtlsCaBundle', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.bg,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                >
+                  <option value="internal">Internal CA</option>
+                  <option value="public">Public CA</option>
+                  <option value="custom">Custom CA</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Certificate Validation
+                </label>
+                <div className="space-y-2">
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={authConfig.mtlsValidateChain || true}
+                      onChange={(e) => handleAuthConfigChange('mtlsValidateChain', e.target.checked)}
+                      className="h-4 w-4 rounded"
+                      style={{ accentColor: themeColors.info }}
+                    />
+                    <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                      Validate Certificate Chain
+                    </span>
                   </div>
-                )}
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={authConfig.mtlsValidateExpiry || true}
+                      onChange={(e) => handleAuthConfigChange('mtlsValidateExpiry', e.target.checked)}
+                      className="h-4 w-4 rounded"
+                      style={{ accentColor: themeColors.info }}
+                    />
+                    <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                      Check Expiration Dates
+                    </span>
+                  </div>
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={authConfig.mtlsValidateRevocation || true}
+                      onChange={(e) => handleAuthConfigChange('mtlsValidateRevocation', e.target.checked)}
+                      className="h-4 w-4 rounded"
+                      style={{ accentColor: themeColors.info }}
+                    />
+                    <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                      Check CRL/OCSP for Revocation
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Certificate Mapping
+                </label>
+                <select
+                  value={authConfig.mtlsMapping || 'cn'}
+                  onChange={(e) => handleAuthConfigChange('mtlsMapping', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.bg,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                >
+                  <option value="cn">Map to Common Name (CN)</option>
+                  <option value="san">Map to Subject Alternative Name (SAN)</option>
+                  <option value="dn">Map to Distinguished Name (DN)</option>
+                  <option value="custom">Custom Attribute</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Allowed Certificate OUs
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.mtlsAllowedOUs || 'Engineering, DevOps, Security'}
+                  onChange={(e) => handleAuthConfigChange('mtlsAllowedOUs', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="Comma-separated Organizational Units"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SAML 2.0 Configuration */}
+      {authConfig.authType === 'SAML' && (
+        <div className="p-4 rounded-lg border" style={{ 
+          borderColor: themeColors.info + '40',
+          backgroundColor: themeColors.info + '10'
+        }}>
+          <h4 className="font-medium mb-4 flex items-center gap-2" style={{ color: themeColors.info }}>
+            <Users className="h-5 w-5" />
+            SAML 2.0 Configuration
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Identity Provider (IdP) Metadata URL
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.samlIdpMetadata || 'https://idp.example.com/metadata.xml'}
+                  onChange={(e) => handleAuthConfigChange('samlIdpMetadata', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="https://idp.example.com/metadata.xml"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Entity ID (Issuer)
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.samlEntityId || 'https://api.example.com/saml'}
+                  onChange={(e) => handleAuthConfigChange('samlEntityId', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="https://api.example.com/saml"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Assertion Consumer Service (ACS) URL
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.samlAcsUrl || 'https://api.example.com/saml/acs'}
+                  onChange={(e) => handleAuthConfigChange('samlAcsUrl', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="https://api.example.com/saml/acs"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Attribute Mapping
+                </label>
+                <textarea
+                  value={authConfig.samlAttributeMapping || '{\n  "email": "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",\n  "name": "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name",\n  "role": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"\n}'}
+                  onChange={(e) => handleAuthConfigChange('samlAttributeMapping', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs font-mono hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  rows="4"
+                />
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={authConfig.samlWantAssertionsSigned || true}
+                    onChange={(e) => handleAuthConfigChange('samlWantAssertionsSigned', e.target.checked)}
+                    className="h-4 w-4 rounded"
+                    style={{ accentColor: themeColors.info }}
+                  />
+                  <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                    Require Signed Assertions
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={authConfig.samlWantAuthnRequestsSigned || true}
+                    onChange={(e) => handleAuthConfigChange('samlWantAuthnRequestsSigned', e.target.checked)}
+                    className="h-4 w-4 rounded"
+                    style={{ accentColor: themeColors.info }}
+                  />
+                  <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                    Sign AuthnRequests
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LDAP/Active Directory Configuration */}
+      {authConfig.authType === 'LDAP' && (
+        <div className="p-4 rounded-lg border" style={{ 
+          borderColor: themeColors.info + '40',
+          backgroundColor: themeColors.info + '10'
+        }}>
+          <h4 className="font-medium mb-4 flex items-center gap-2" style={{ color: themeColors.info }}>
+            <Server className="h-5 w-5" />
+            LDAP / Active Directory Configuration
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  LDAP Server URL
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.ldapUrl || 'ldaps://ldap.example.com:636'}
+                  onChange={(e) => handleAuthConfigChange('ldapUrl', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="ldaps://ldap.example.com:636"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Base DN
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.ldapBaseDn || 'dc=example,dc=com'}
+                  onChange={(e) => handleAuthConfigChange('ldapBaseDn', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="dc=example,dc=com"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  User Search Filter
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.ldapUserFilter || '(&(objectClass=user)(sAMAccountName={username}))'}
+                  onChange={(e) => handleAuthConfigChange('ldapUserFilter', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="(&(objectClass=user)(sAMAccountName={username}))"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Group Search Filter
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.ldapGroupFilter || '(&(objectClass=group)(member={user}))'}
+                  onChange={(e) => handleAuthConfigChange('ldapGroupFilter', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="(&(objectClass=group)(member={user}))"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Required Groups
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.ldapRequiredGroups || 'CN=API-Users,OU=Groups,DC=example,DC=com'}
+                  onChange={(e) => handleAuthConfigChange('ldapRequiredGroups', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="Comma-separated DNs"
+                />
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={authConfig.ldapUseSsl || true}
+                    onChange={(e) => handleAuthConfigChange('ldapUseSsl', e.target.checked)}
+                    className="h-4 w-4 rounded"
+                    style={{ accentColor: themeColors.info }}
+                  />
+                  <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                    Use SSL/TLS
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={authConfig.ldapFollowReferrals || false}
+                    onChange={(e) => handleAuthConfigChange('ldapFollowReferrals', e.target.checked)}
+                    className="h-4 w-4 rounded"
+                    style={{ accentColor: themeColors.info }}
+                  />
+                  <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                    Follow Referrals
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Auth Function Configuration */}
+      {authConfig.authType === 'CUSTOM' && (
+        <div className="p-4 rounded-lg border" style={{ 
+          borderColor: themeColors.info + '40',
+          backgroundColor: themeColors.info + '10'
+        }}>
+          <h4 className="font-medium mb-4 flex items-center gap-2" style={{ color: themeColors.info }}>
+            <Code className="h-5 w-5" />
+            Custom Authentication Function
+          </h4>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                PL/SQL Function Name *
+              </label>
+              <input
+                type="text"
+                value={authConfig.customAuthFunction}
+                onChange={(e) => handleAuthConfigChange('customAuthFunction', e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                style={{ 
+                  backgroundColor: themeColors.card,
+                  borderColor: themeColors.border,
+                  color: themeColors.text
+                }}
+                placeholder="HR.AUTHENTICATE_API_USER"
+              />
+              <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                Function should accept (p_token VARCHAR2, p_ip VARCHAR2) and return BOOLEAN or user_id
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                Sample Function Signature
+              </label>
+              <pre className="p-3 rounded text-xs font-mono overflow-x-auto" style={{ 
+                backgroundColor: themeColors.hover,
+                color: themeColors.text,
+                border: `1px solid ${themeColors.border}`
+              }}>
+{`CREATE OR REPLACE FUNCTION HR.AUTHENTICATE_API_USER (
+  p_token VARCHAR2,
+  p_ip_address VARCHAR2 DEFAULT NULL,
+  p_user_agent VARCHAR2 DEFAULT NULL
+) RETURN NUMBER
+IS
+  l_user_id NUMBER;
+BEGIN
+  -- Your custom authentication logic here
+  SELECT user_id INTO l_user_id
+  FROM api_tokens
+  WHERE token = p_token
+    AND expiry > SYSTIMESTAMP
+    AND (ip_restriction IS NULL OR ip_restriction = p_ip_address);
+    
+  RETURN l_user_id;
+EXCEPTION
+  WHEN NO_DATA_FOUND THEN
+    RETURN NULL;
+END AUTHENTICATE_API_USER;`}
+              </pre>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                Parameters to Pass
+              </label>
+              <div className="space-y-2">
+                {['Authorization Token', 'Client IP', 'User Agent', 'Request Path', 'HTTP Method'].map(param => (
+                  <div key={param} className="flex items-center">
+                    <input
+                      type="checkbox"
+                      defaultChecked={['Authorization Token', 'Client IP'].includes(param)}
+                      className="h-4 w-4 rounded"
+                      style={{ accentColor: themeColors.info }}
+                    />
+                    <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                      {param}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                Cache Duration (seconds)
+              </label>
+              <input
+                type="number"
+                value={authConfig.customAuthCache || 300}
+                onChange={(e) => handleAuthConfigChange('customAuthCache', parseInt(e.target.value))}
+                className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                style={{ 
+                  backgroundColor: themeColors.card,
+                  borderColor: themeColors.border,
+                  color: themeColors.text
+                }}
+                min="0"
+                max="86400"
+              />
+              <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                Cache authentication results (0 = no caching)
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Basic Auth Configuration */}
+      {authConfig.authType === 'BASIC' && (
+        <div className="p-4 rounded-lg border" style={{ 
+          borderColor: themeColors.warning + '40',
+          backgroundColor: themeColors.warning + '10'
+        }}>
+          <h4 className="font-medium mb-4 flex items-center gap-2" style={{ color: themeColors.warning }}>
+            <Lock className="h-5 w-5" />
+            Basic Authentication Configuration
+          </h4>
+          <div className="space-y-4">
+            <div className="p-3 rounded" style={{ backgroundColor: themeColors.warning + '20' }}>
+              <p className="text-xs flex items-center gap-2" style={{ color: themeColors.warning }}>
+                <AlertCircle className="h-4 w-4" />
+                Basic Authentication sends credentials in plaintext. Always use HTTPS.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  User Validation Method
+                </label>
+                <select
+                  value={authConfig.basicValidation || 'database'}
+                  onChange={(e) => handleAuthConfigChange('basicValidation', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.bg,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                >
+                  <option value="database">Database Users</option>
+                  <option value="ldap">LDAP/Active Directory</option>
+                  <option value="oracle">Oracle Database Users</option>
+                  <option value="custom">Custom Function</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Realm Name
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.basicRealm || 'API Access'}
+                  onChange={(e) => handleAuthConfigChange('basicRealm', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  placeholder="API Access"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                Password Validation Function
+              </label>
+              <input
+                type="text"
+                value={authConfig.basicPasswordFunction || 'HR.VALIDATE_PASSWORD'}
+                onChange={(e) => handleAuthConfigChange('basicPasswordFunction', e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                style={{ 
+                  backgroundColor: themeColors.card,
+                  borderColor: themeColors.border,
+                  color: themeColors.text
+                }}
+                placeholder="HR.VALIDATE_PASSWORD"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Public (No Auth) Configuration */}
+      {authConfig.authType === 'NONE' && (
+        <div className="p-4 rounded-lg border" style={{ 
+          borderColor: themeColors.warning + '40',
+          backgroundColor: themeColors.warning + '10'
+        }}>
+          <div className="flex items-start gap-3">
+            <Globe className="h-5 w-5" style={{ color: themeColors.warning }} />
+            <div>
+              <h4 className="font-medium" style={{ color: themeColors.warning }}>
+                Public API - No Authentication
+              </h4>
+              <p className="text-xs mt-1" style={{ color: themeColors.textSecondary }}>
+                This API will be publicly accessible without any authentication. 
+                Only use for non-sensitive data and implement rate limiting.
+              </p>
+              <div className="mt-3 p-2 rounded" style={{ backgroundColor: themeColors.card }}>
+                <p className="text-xs flex items-center gap-2" style={{ color: themeColors.text }}>
+                  <AlertCircle className="h-4 w-4" style={{ color: themeColors.warning }} />
+                  Recommended: Enable rate limiting and CORS restrictions
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Common Security Settings (shown for all auth types except NONE) */}
+      {authConfig.authType !== 'NONE' && (
+        <div className="p-4 rounded-lg border mt-6" style={{ 
+          borderColor: themeColors.border,
+          backgroundColor: themeColors.card
+        }}>
+          <h4 className="font-medium mb-4 flex items-center gap-2" style={{ color: themeColors.text }}>
+            <Shield className="h-5 w-5" />
+            Additional Security Settings
+          </h4>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  IP Whitelist
+                </label>
+                <textarea
+                  value={authConfig.ipWhitelist || ''}
+                  onChange={(e) => handleAuthConfigChange('ipWhitelist', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.card,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                  rows="2"
+                  placeholder="192.168.1.0/24&#10;10.0.0.1"
+                />
+                <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                  One CIDR or IP per line (leave empty to allow all)
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Rate Limiting
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="number"
+                    placeholder="Requests"
+                    value={authConfig.rateLimitRequests || 100}
+                    onChange={(e) => handleAuthConfigChange('rateLimitRequests', parseInt(e.target.value))}
+                    className="px-3 py-2 border rounded-lg text-xs hover-lift"
+                    style={{ 
+                      backgroundColor: themeColors.card,
+                      borderColor: themeColors.border,
+                      color: themeColors.text
+                    }}
+                    min="1"
+                  />
+                  <select
+                    value={authConfig.rateLimitPeriod || 'minute'}
+                    onChange={(e) => handleAuthConfigChange('rateLimitPeriod', e.target.value)}
+                    className="px-3 py-2 border rounded-lg text-xs hover-lift"
+                    style={{ 
+                      backgroundColor: themeColors.bg,
+                      borderColor: themeColors.border,
+                      color: themeColors.text
+                    }}
+                  >
+                    <option value="second">per second</option>
+                    <option value="minute">per minute</option>
+                    <option value="hour">per hour</option>
+                    <option value="day">per day</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  CORS Configuration
+                </label>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    placeholder="Allowed Origins"
+                    value={authConfig.corsOrigins?.join(', ') || '*'}
+                    onChange={(e) => handleAuthConfigChange('corsOrigins', e.target.value.split(',').map(o => o.trim()))}
+                    className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                    style={{ 
+                      backgroundColor: themeColors.card,
+                      borderColor: themeColors.border,
+                      color: themeColors.text
+                    }}
+                  />
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={authConfig.corsCredentials || false}
+                      onChange={(e) => handleAuthConfigChange('corsCredentials', e.target.checked)}
+                      className="h-4 w-4 rounded"
+                      style={{ accentColor: themeColors.info }}
+                    />
+                    <span className="ml-2 text-xs" style={{ color: themeColors.text }}>
+                      Allow Credentials
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                  Audit Level
+                </label>
+                <select
+                  value={authConfig.auditLevel || 'standard'}
+                  onChange={(e) => handleAuthConfigChange('auditLevel', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  style={{ 
+                    backgroundColor: themeColors.bg,
+                    borderColor: themeColors.border,
+                    color: themeColors.text
+                  }}
+                >
+                  <option value="none">None</option>
+                  <option value="errors">Only Errors</option>
+                  <option value="standard">Standard (Auth attempts)</option>
+                  <option value="detailed">Detailed (All requests)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 p-3 rounded" style={{ backgroundColor: themeColors.hover }}>
+            <h5 className="text-xs font-medium mb-2" style={{ color: themeColors.text }}>
+              Security Headers
+            </h5>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {[
+                { key: 'X-Frame-Options', value: 'DENY' },
+                { key: 'X-Content-Type-Options', value: 'nosniff' },
+                { key: 'X-XSS-Protection', value: '1; mode=block' },
+                { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
+                { key: 'Content-Security-Policy', value: "default-src 'none'" },
+                { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' }
+              ].map(header => (
+                <div key={header.key} className="flex items-center">
+                  <input
+                    type="checkbox"
+                    defaultChecked
+                    className="h-3 w-3 rounded"
+                    style={{ accentColor: themeColors.info }}
+                  />
+                  <span className="ml-1 text-xs" style={{ color: themeColors.textSecondary }}>
+                    {header.key}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  </div>
+)}
 
                 {/* Request Tab */}
                 {activeTab === 'request' && (

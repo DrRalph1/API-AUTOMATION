@@ -20,6 +20,394 @@ public class OracleSchemaService {
     private final OracleSchemaRepository oracleSchemeRepository;
     private final LoggerUtil loggerUtil;
 
+
+
+
+    // ============================================================
+    // 1. PAGINATED OBJECT DETAILS SERVICE METHOD
+    // ============================================================
+
+    public Map<String, Object> getObjectDetailsPaginated(String requestId, HttpServletRequest req,
+                                                         String performedBy, String objectName,
+                                                         String objectType, String owner,
+                                                         int page, int pageSize, boolean includeCounts) {
+        log.info("RequestEntity ID: {}, Getting paginated details for {}: {}, owner: {}, page: {}, pageSize: {}, includeCounts: {}",
+                requestId, objectType, objectName, owner, page, pageSize, includeCounts);
+
+        try {
+            Map<String, Object> objectDetails = oracleSchemeRepository.getObjectDetailsPaginated(
+                    objectName, objectType, owner, page, pageSize, includeCounts);
+
+            // Add pagination metadata
+            Map<String, Object> pagination = new HashMap<>();
+            pagination.put("page", page);
+            pagination.put("pageSize", pageSize);
+            pagination.put("totalItems", objectDetails.get("totalCount"));
+            pagination.put("totalPages", calculateTotalPages(
+                    getLongValue(objectDetails.get("totalCount")), pageSize));
+
+            objectDetails.put("pagination", pagination);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", objectDetails);
+            result.put("responseCode", 200);
+            result.put("message", "Object details retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved paginated details for {}: {}, total items: {}",
+                    requestId, objectType, objectName, objectDetails.get("totalCount"));
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting paginated details for {} {}: {}",
+                    requestId, objectType, objectName, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    // ============================================================
+    // 2. ADVANCED TABLE DATA SERVICE METHOD
+    // ============================================================
+
+    public Map<String, Object> getTableDataAdvanced(String requestId, HttpServletRequest req,
+                                                    String performedBy, String tableName,
+                                                    int page, int pageSize, String sortColumn,
+                                                    String sortDirection, String filter) {
+        log.info("RequestEntity ID: {}, Getting advanced table data for: {}, page: {}, pageSize: {}, filter: {}",
+                requestId, tableName, page, pageSize, filter);
+
+        try {
+            Map<String, Object> tableData = oracleSchemeRepository.getTableDataAdvanced(
+                    tableName, page, pageSize, sortColumn, sortDirection, filter);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", tableData);
+            result.put("responseCode", 200);
+            result.put("message", "Table data retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} rows for table: {}",
+                    requestId, ((List<?>) tableData.get("rows")).size(), tableName);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting advanced table data for {}: {}",
+                    requestId, tableName, e.getMessage());
+
+            Map<String, Object> errorData = new HashMap<>();
+            errorData.put("rows", new ArrayList<>());
+            errorData.put("columns", new ArrayList<>());
+            errorData.put("page", page);
+            errorData.put("pageSize", pageSize);
+            errorData.put("totalRows", 0);
+            errorData.put("totalPages", 0);
+
+            Map<String, Object> errorResult = new HashMap<>();
+            errorResult.put("data", errorData);
+            errorResult.put("responseCode", 500);
+            errorResult.put("message", e.getMessage());
+            errorResult.put("requestId", requestId);
+            errorResult.put("timestamp", java.time.Instant.now().toString());
+
+            return errorResult;
+        }
+    }
+
+    // ============================================================
+    // 3. PAGINATED PROCEDURE PARAMETERS SERVICE METHOD
+    // ============================================================
+
+    public Map<String, Object> getProcedureParametersPaginated(String requestId, HttpServletRequest req,
+                                                               String performedBy, String procedureName,
+                                                               String owner, int page, int pageSize) {
+        log.info("RequestEntity ID: {}, Getting paginated parameters for procedure: {}, page: {}, pageSize: {}",
+                requestId, procedureName, page, pageSize);
+
+        try {
+            Map<String, Object> parameters = oracleSchemeRepository.getProcedureParametersPaginated(
+                    procedureName, owner, page, pageSize);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", parameters);
+            result.put("responseCode", 200);
+            result.put("message", "Procedure parameters retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} parameters for procedure: {}",
+                    requestId, ((List<?>) parameters.get("parameters")).size(), procedureName);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting parameters for procedure {}: {}",
+                    requestId, procedureName, e.getMessage());
+
+            Map<String, Object> errorData = new HashMap<>();
+            errorData.put("parameters", new ArrayList<>());
+            errorData.put("totalCount", 0);
+            errorData.put("page", page);
+            errorData.put("pageSize", pageSize);
+
+            Map<String, Object> errorResult = new HashMap<>();
+            errorResult.put("data", errorData);
+            errorResult.put("responseCode", 500);
+            errorResult.put("message", e.getMessage());
+            errorResult.put("requestId", requestId);
+            errorResult.put("timestamp", java.time.Instant.now().toString());
+
+            return errorResult;
+        }
+    }
+
+    // ============================================================
+    // 4. PAGINATED FUNCTION PARAMETERS SERVICE METHOD
+    // ============================================================
+
+    public Map<String, Object> getFunctionParametersPaginated(String requestId, HttpServletRequest req,
+                                                              String performedBy, String functionName,
+                                                              String owner, int page, int pageSize) {
+        log.info("RequestEntity ID: {}, Getting paginated parameters for function: {}, page: {}, pageSize: {}",
+                requestId, functionName, page, pageSize);
+
+        try {
+            Map<String, Object> parameters = oracleSchemeRepository.getFunctionParametersPaginated(
+                    functionName, owner, page, pageSize);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", parameters);
+            result.put("responseCode", 200);
+            result.put("message", "Function parameters retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} parameters for function: {}",
+                    requestId, ((List<?>) parameters.get("parameters")).size(), functionName);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting parameters for function {}: {}",
+                    requestId, functionName, e.getMessage());
+
+            Map<String, Object> errorData = new HashMap<>();
+            errorData.put("parameters", new ArrayList<>());
+            errorData.put("totalCount", 0);
+            errorData.put("page", page);
+            errorData.put("pageSize", pageSize);
+
+            Map<String, Object> errorResult = new HashMap<>();
+            errorResult.put("data", errorData);
+            errorResult.put("responseCode", 500);
+            errorResult.put("message", e.getMessage());
+            errorResult.put("requestId", requestId);
+            errorResult.put("timestamp", java.time.Instant.now().toString());
+
+            return errorResult;
+        }
+    }
+
+    // ============================================================
+    // 5. PAGINATED PACKAGE ITEMS SERVICE METHOD
+    // ============================================================
+
+    public Map<String, Object> getPackageItemsPaginated(String requestId, HttpServletRequest req,
+                                                        String performedBy, String packageName,
+                                                        String owner, String itemType,
+                                                        int page, int pageSize) {
+        log.info("RequestEntity ID: {}, Getting paginated items for package: {}, type: {}, page: {}, pageSize: {}",
+                requestId, packageName, itemType, page, pageSize);
+
+        try {
+            Map<String, Object> items = oracleSchemeRepository.getPackageItemsPaginated(
+                    packageName, owner, itemType, page, pageSize);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", items);
+            result.put("responseCode", 200);
+            result.put("message", "Package items retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} items for package: {}",
+                    requestId, ((List<?>) items.get("items")).size(), packageName);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting items for package {}: {}",
+                    requestId, packageName, e.getMessage());
+
+            Map<String, Object> errorData = new HashMap<>();
+            errorData.put("items", new ArrayList<>());
+            errorData.put("totalCount", 0);
+            errorData.put("page", page);
+            errorData.put("pageSize", pageSize);
+
+            Map<String, Object> errorResult = new HashMap<>();
+            errorResult.put("data", errorData);
+            errorResult.put("responseCode", 500);
+            errorResult.put("message", e.getMessage());
+            errorResult.put("requestId", requestId);
+            errorResult.put("timestamp", java.time.Instant.now().toString());
+
+            return errorResult;
+        }
+    }
+
+    // ============================================================
+    // 6. PAGINATED TABLE COLUMNS SERVICE METHOD
+    // ============================================================
+
+    public Map<String, Object> getTableColumnsPaginated(String requestId, HttpServletRequest req,
+                                                        String performedBy, String tableName,
+                                                        String owner, int page, int pageSize) {
+        log.info("RequestEntity ID: {}, Getting paginated columns for table: {}, page: {}, pageSize: {}",
+                requestId, tableName, page, pageSize);
+
+        try {
+            Map<String, Object> columns = oracleSchemeRepository.getTableColumnsPaginated(
+                    tableName, owner, page, pageSize);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", columns);
+            result.put("responseCode", 200);
+            result.put("message", "Table columns retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} columns for table: {}",
+                    requestId, ((List<?>) columns.get("columns")).size(), tableName);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting columns for table {}: {}",
+                    requestId, tableName, e.getMessage());
+
+            Map<String, Object> errorData = new HashMap<>();
+            errorData.put("columns", new ArrayList<>());
+            errorData.put("totalCount", 0);
+            errorData.put("page", page);
+            errorData.put("pageSize", pageSize);
+
+            Map<String, Object> errorResult = new HashMap<>();
+            errorResult.put("data", errorData);
+            errorResult.put("responseCode", 500);
+            errorResult.put("message", e.getMessage());
+            errorResult.put("requestId", requestId);
+            errorResult.put("timestamp", java.time.Instant.now().toString());
+
+            return errorResult;
+        }
+    }
+
+    // ============================================================
+    // 7. PAGINATED SEARCH SERVICE METHOD
+    // ============================================================
+
+    public Map<String, Object> searchObjectsPaginated(String requestId, HttpServletRequest req,
+                                                      String performedBy, String searchQuery,
+                                                      String searchType, int page, int pageSize) {
+        log.info("RequestEntity ID: {}, Paginated search with query: {}, type: {}, page: {}, pageSize: {}",
+                requestId, searchQuery, searchType, page, pageSize);
+
+        try {
+            Map<String, Object> searchResults = oracleSchemeRepository.searchObjectsPaginated(
+                    searchQuery, searchType, page, pageSize);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", searchResults);
+            result.put("responseCode", 200);
+            result.put("message", "Search completed successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Found {} objects matching query: {}",
+                    requestId, searchResults.get("totalCount"), searchQuery);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error searching objects: {}", requestId, e.getMessage());
+
+            Map<String, Object> errorData = new HashMap<>();
+            errorData.put("results", new ArrayList<>());
+            errorData.put("totalCount", 0);
+            errorData.put("page", page);
+            errorData.put("pageSize", pageSize);
+
+            Map<String, Object> errorResult = new HashMap<>();
+            errorResult.put("data", errorData);
+            errorResult.put("responseCode", 500);
+            errorResult.put("message", e.getMessage());
+            errorResult.put("requestId", requestId);
+            errorResult.put("timestamp", java.time.Instant.now().toString());
+
+            return errorResult;
+        }
+    }
+
+    // ============================================================
+    // 8. GET TOTAL COUNTS ONLY SERVICE METHOD
+    // ============================================================
+
+    public Map<String, Object> getObjectCountsOnly(String requestId, HttpServletRequest req,
+                                                   String performedBy, String objectName,
+                                                   String objectType, String owner) {
+        log.info("RequestEntity ID: {}, Getting counts only for {}: {}, owner: {}",
+                requestId, objectType, objectName, owner);
+
+        try {
+            Map<String, Object> counts = oracleSchemeRepository.getObjectCountsOnly(
+                    objectName, objectType, owner);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", counts);
+            result.put("responseCode", 200);
+            result.put("message", "Object counts retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved counts for {}: {} - total columns: {}, total parameters: {}",
+                    requestId, objectType, objectName, counts.get("totalColumns"), counts.get("totalParameters"));
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting counts for {} {}: {}",
+                    requestId, objectType, objectName, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    // ============================================================
+    // 9. HELPER METHODS
+    // ============================================================
+
+    private int calculateTotalPages(long totalItems, int pageSize) {
+        if (totalItems <= 0) return 0;
+        return (int) Math.ceil((double) totalItems / pageSize);
+    }
+
+    private long getLongValue(Object obj) {
+        if (obj == null) return 0;
+        if (obj instanceof Number) return ((Number) obj).longValue();
+        try {
+            return Long.parseLong(obj.toString());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+
+
     // ==================== ENHANCED SYNONYM METHODS ====================
 
     /**
@@ -2114,6 +2502,366 @@ public class OracleSchemaService {
             return createErrorResponse(requestId, e.getMessage());
         }
     }
+
+
+
+    // ============================================================
+// PAGINATED SERVICE METHODS
+// ============================================================
+
+    /**
+     * Get paginated tables for frontend
+     */
+    public Map<String, Object> getTablesPaginated(String requestId, HttpServletRequest req,
+                                                  String performedBy, int page, int pageSize) {
+        log.info("RequestEntity ID: {}, Getting paginated tables, page: {}, pageSize: {}",
+                requestId, page, pageSize);
+
+        try {
+            Map<String, Object> paginatedData = oracleSchemeRepository.getTablesPaginated(page, pageSize);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", paginatedData.get("items"));
+            result.put("pagination", Map.of(
+                    "page", page,
+                    "pageSize", pageSize,
+                    "totalCount", paginatedData.get("totalCount"),
+                    "totalPages", paginatedData.get("totalPages")
+            ));
+            result.put("totalCount", paginatedData.get("totalCount"));
+            result.put("responseCode", 200);
+            result.put("message", "Tables retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting paginated tables: {}", requestId, e.getMessage());
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Get paginated views for frontend
+     */
+    public Map<String, Object> getViewsPaginated(String requestId, HttpServletRequest req,
+                                                 String performedBy, int page, int pageSize) {
+        log.info("RequestEntity ID: {}, Getting paginated views, page: {}, pageSize: {}",
+                requestId, page, pageSize);
+
+        try {
+            Map<String, Object> paginatedData = oracleSchemeRepository.getViewsPaginated(page, pageSize);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", paginatedData.get("items"));
+            result.put("pagination", Map.of(
+                    "page", page,
+                    "pageSize", pageSize,
+                    "totalCount", paginatedData.get("totalCount"),
+                    "totalPages", paginatedData.get("totalPages")
+            ));
+            result.put("totalCount", paginatedData.get("totalCount"));
+            result.put("responseCode", 200);
+            result.put("message", "Views retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting paginated views: {}", requestId, e.getMessage());
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Get paginated procedures for frontend
+     */
+    public Map<String, Object> getProceduresPaginated(String requestId, HttpServletRequest req,
+                                                      String performedBy, int page, int pageSize) {
+        log.info("RequestEntity ID: {}, Getting paginated procedures, page: {}, pageSize: {}",
+                requestId, page, pageSize);
+
+        try {
+            Map<String, Object> paginatedData = oracleSchemeRepository.getProceduresPaginated(page, pageSize);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", paginatedData.get("items"));
+            result.put("pagination", Map.of(
+                    "page", page,
+                    "pageSize", pageSize,
+                    "totalCount", paginatedData.get("totalCount"),
+                    "totalPages", paginatedData.get("totalPages")
+            ));
+            result.put("totalCount", paginatedData.get("totalCount"));
+            result.put("responseCode", 200);
+            result.put("message", "Procedures retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting paginated procedures: {}", requestId, e.getMessage());
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Get paginated functions for frontend
+     */
+    public Map<String, Object> getFunctionsPaginated(String requestId, HttpServletRequest req,
+                                                     String performedBy, int page, int pageSize) {
+        log.info("RequestEntity ID: {}, Getting paginated functions, page: {}, pageSize: {}",
+                requestId, page, pageSize);
+
+        try {
+            Map<String, Object> paginatedData = oracleSchemeRepository.getFunctionsPaginated(page, pageSize);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", paginatedData.get("items"));
+            result.put("pagination", Map.of(
+                    "page", page,
+                    "pageSize", pageSize,
+                    "totalCount", paginatedData.get("totalCount"),
+                    "totalPages", paginatedData.get("totalPages")
+            ));
+            result.put("totalCount", paginatedData.get("totalCount"));
+            result.put("responseCode", 200);
+            result.put("message", "Functions retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting paginated functions: {}", requestId, e.getMessage());
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Get paginated packages for frontend
+     */
+    public Map<String, Object> getPackagesPaginated(String requestId, HttpServletRequest req,
+                                                    String performedBy, int page, int pageSize) {
+        log.info("RequestEntity ID: {}, Getting paginated packages, page: {}, pageSize: {}",
+                requestId, page, pageSize);
+
+        try {
+            Map<String, Object> paginatedData = oracleSchemeRepository.getPackagesPaginated(page, pageSize);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", paginatedData.get("items"));
+            result.put("pagination", Map.of(
+                    "page", page,
+                    "pageSize", pageSize,
+                    "totalCount", paginatedData.get("totalCount"),
+                    "totalPages", paginatedData.get("totalPages")
+            ));
+            result.put("totalCount", paginatedData.get("totalCount"));
+            result.put("responseCode", 200);
+            result.put("message", "Packages retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting paginated packages: {}", requestId, e.getMessage());
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Get paginated synonyms for frontend (CRITICAL OPTIMIZATION)
+     */
+    public Map<String, Object> getSynonymsPaginated(String requestId, HttpServletRequest req,
+                                                    String performedBy, int page, int pageSize) {
+        log.info("RequestEntity ID: {}, Getting paginated synonyms, page: {}, pageSize: {}",
+                requestId, page, pageSize);
+
+        try {
+            Map<String, Object> paginatedData = oracleSchemeRepository.getSynonymsPaginated(page, pageSize);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", paginatedData.get("items"));
+            result.put("pagination", Map.of(
+                    "page", page,
+                    "pageSize", pageSize,
+                    "totalCount", paginatedData.get("totalCount"),
+                    "totalPages", paginatedData.get("totalPages")
+            ));
+            result.put("totalCount", paginatedData.get("totalCount"));
+            result.put("responseCode", 200);
+            result.put("message", "Synonyms retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} synonyms (page {}/{})",
+                    requestId, ((List<?>) paginatedData.get("items")).size(),
+                    page, paginatedData.get("totalPages"));
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting paginated synonyms: {}", requestId, e.getMessage());
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Get paginated sequences for frontend
+     */
+    public Map<String, Object> getSequencesPaginated(String requestId, HttpServletRequest req,
+                                                     String performedBy, int page, int pageSize) {
+        log.info("RequestEntity ID: {}, Getting paginated sequences, page: {}, pageSize: {}",
+                requestId, page, pageSize);
+
+        try {
+            Map<String, Object> paginatedData = oracleSchemeRepository.getSequencesPaginated(page, pageSize);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", paginatedData.get("items"));
+            result.put("pagination", Map.of(
+                    "page", page,
+                    "pageSize", pageSize,
+                    "totalCount", paginatedData.get("totalCount"),
+                    "totalPages", paginatedData.get("totalPages")
+            ));
+            result.put("totalCount", paginatedData.get("totalCount"));
+            result.put("responseCode", 200);
+            result.put("message", "Sequences retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting paginated sequences: {}", requestId, e.getMessage());
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Get paginated types for frontend
+     */
+    public Map<String, Object> getTypesPaginated(String requestId, HttpServletRequest req,
+                                                 String performedBy, int page, int pageSize) {
+        log.info("RequestEntity ID: {}, Getting paginated types, page: {}, pageSize: {}",
+                requestId, page, pageSize);
+
+        try {
+            Map<String, Object> paginatedData = oracleSchemeRepository.getTypesPaginated(page, pageSize);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", paginatedData.get("items"));
+            result.put("pagination", Map.of(
+                    "page", page,
+                    "pageSize", pageSize,
+                    "totalCount", paginatedData.get("totalCount"),
+                    "totalPages", paginatedData.get("totalPages")
+            ));
+            result.put("totalCount", paginatedData.get("totalCount"));
+            result.put("responseCode", 200);
+            result.put("message", "Types retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting paginated types: {}", requestId, e.getMessage());
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Get paginated triggers for frontend
+     */
+    public Map<String, Object> getTriggersPaginated(String requestId, HttpServletRequest req,
+                                                    String performedBy, int page, int pageSize) {
+        log.info("RequestEntity ID: {}, Getting paginated triggers, page: {}, pageSize: {}",
+                requestId, page, pageSize);
+
+        try {
+            Map<String, Object> paginatedData = oracleSchemeRepository.getTriggersPaginated(page, pageSize);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", paginatedData.get("items"));
+            result.put("pagination", Map.of(
+                    "page", page,
+                    "pageSize", pageSize,
+                    "totalCount", paginatedData.get("totalCount"),
+                    "totalPages", paginatedData.get("totalPages")
+            ));
+            result.put("totalCount", paginatedData.get("totalCount"));
+            result.put("responseCode", 200);
+            result.put("message", "Triggers retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting paginated triggers: {}", requestId, e.getMessage());
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Get only object counts (very fast)
+     */
+    public Map<String, Object> getAllObjectCounts(String requestId, HttpServletRequest req, String performedBy) {
+        log.info("RequestEntity ID: {}, Getting all object counts", requestId);
+
+        try {
+            Map<String, Object> counts = oracleSchemeRepository.getAllObjectCounts();
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", counts);
+            result.put("responseCode", 200);
+            result.put("message", "Object counts retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved counts: {}", requestId, counts);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting object counts: {}", requestId, e.getMessage());
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Resolve a single synonym's target (lazy loading)
+     */
+    public Map<String, Object> resolveSynonymTarget(String requestId, HttpServletRequest req,
+                                                    String performedBy, String synonymName) {
+        log.info("RequestEntity ID: {}, Resolving synonym target: {}", requestId, synonymName);
+
+        try {
+            Map<String, Object> resolved = oracleSchemeRepository.resolveSynonymTarget(synonymName);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", resolved);
+            result.put("responseCode", 200);
+            result.put("message", "Synonym resolved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error resolving synonym: {}", requestId, e.getMessage());
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+
 
     // ==================== HELPER METHODS ====================
 

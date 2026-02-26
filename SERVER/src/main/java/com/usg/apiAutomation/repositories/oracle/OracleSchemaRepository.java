@@ -23,6 +23,716 @@ public class OracleSchemaRepository {
 
     private static final Logger log = LoggerFactory.getLogger(OracleSchemaRepository.class);
 
+    // ============================================================
+    // 1. PAGINATED OBJECT DETAILS REPOSITORY METHOD
+    // ============================================================
+
+    public Map<String, Object> getObjectDetailsPaginated(String objectName, String objectType,
+                                                         String owner, int page, int pageSize,
+                                                         boolean includeCounts) {
+        Map<String, Object> result = new HashMap<>();
+
+        try {
+            if (owner == null || owner.isEmpty()) {
+                owner = getCurrentUser();
+            }
+
+            String upperType = objectType.toUpperCase();
+            int offset = (page - 1) * pageSize;
+
+            // First, get basic object info
+            String basicInfoSql = "SELECT " +
+                    "    owner, " +
+                    "    object_name, " +
+                    "    object_type, " +
+                    "    status, " +
+                    "    created, " +
+                    "    last_ddl_time, " +
+                    "    temporary, " +
+                    "    generated, " +
+                    "    secondary " +
+                    "FROM all_objects " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) AND object_type = ?";
+
+            Map<String, Object> basicInfo;
+            try {
+                basicInfo = oracleJdbcTemplate.queryForMap(basicInfoSql, owner, objectName, objectType);
+                result.putAll(basicInfo);
+            } catch (EmptyResultDataAccessException e) {
+                // Try without object type
+                String altSql = "SELECT owner, object_name, object_type, status, created, last_ddl_time " +
+                        "FROM all_objects WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?)";
+                basicInfo = oracleJdbcTemplate.queryForMap(altSql, owner, objectName);
+                result.putAll(basicInfo);
+            }
+
+            // Get total counts if requested or if we need them for pagination
+            long totalColumns = 0;
+            long totalParameters = 0;
+
+            if (includeCounts) {
+                // Get column count for tables/views
+                if ("TABLE".equals(upperType) || "VIEW".equals(upperType)) {
+                    String countSql = "SELECT COUNT(*) FROM all_tab_columns " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?)";
+                    totalColumns = oracleJdbcTemplate.queryForObject(countSql, Long.class, owner, objectName);
+                }
+
+                // Get parameter count for procedures/functions/packages
+                if ("PROCEDURE".equals(upperType) || "FUNCTION".equals(upperType) || "PACKAGE".equals(upperType)) {
+                    String paramCountSql = "SELECT COUNT(*) FROM all_arguments " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                            "AND argument_name IS NOT NULL";
+                    totalParameters = oracleJdbcTemplate.queryForObject(paramCountSql, Long.class, owner, objectName);
+                }
+
+                result.put("totalColumns", totalColumns);
+                result.put("totalParameters", totalParameters);
+                result.put("totalCount", Math.max(totalColumns, totalParameters));
+
+                // If we only need counts, return early
+                if (includeCounts && pageSize == 0) {
+                    return result;
+                }
+            }
+
+            // Get paginated data based on object type
+            switch (upperType) {
+                case "TABLE":
+                case "VIEW":
+                    List<Map<String, Object>> columns = getTableColumnsPaginatedInternal(owner, objectName, offset, pageSize);
+                    result.put("columns", columns);
+                    if (!includeCounts) {
+                        String countSql = "SELECT COUNT(*) FROM all_tab_columns " +
+                                "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?)";
+                        totalColumns = oracleJdbcTemplate.queryForObject(countSql, Long.class, owner, objectName);
+                        result.put("totalColumns", totalColumns);
+                        result.put("totalCount", totalColumns);
+                    }
+                    break;
+
+                case "PROCEDURE":
+                case "FUNCTION":
+                case "PACKAGE":
+                    List<Map<String, Object>> params = getArgumentsPaginatedInternal(owner, objectName, offset, pageSize);
+                    result.put("parameters", params);
+                    if (!includeCounts) {
+                        String paramCountSql = "SELECT COUNT(*) FROM all_arguments " +
+                                "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                                "AND argument_name IS NOT NULL";
+                        totalParameters = oracleJdbcTemplate.queryForObject(paramCountSql, Long.class, owner, objectName);
+                        result.put("totalParameters", totalParameters);
+                        result.put("totalCount", totalParameters);
+                    }
+                    break;
+
+                default:
+                    result.put("message", "Pagination not supported for object type: " + objectType);
+            }
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error in getObjectDetailsPaginated for {}.{}: {}", owner, objectName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve paginated object details: " + e.getMessage(), e);
+        }
+    }
+
+    // ============================================================
+    // 2. ADVANCED TABLE DATA REPOSITORY METHOD
+    // ============================================================
+
+    public Map<String, Object> getTableDataAdvanced(String tableName, int page, int pageSize,
+                                                    String sortColumn, String sortDirection,
+                                                    String filter) {
+        try {
+            log.info("Getting advanced data for table: {}, page: {}, pageSize: {}", tableName, page, pageSize);
+
+            // Validate table name to prevent SQL injection
+            if (!isValidIdentifier(tableName)) {
+                throw new IllegalArgumentException("Invalid table name: " + tableName);
+            }
+
+            // Get total count
+            String countSql = "SELECT COUNT(*) FROM " + tableName;
+            if (filter != null && !filter.isEmpty()) {
+                countSql += " WHERE " + sanitizeFilter(filter);
+            }
+            int totalRows = oracleJdbcTemplate.queryForObject(countSql, Integer.class);
+
+            // Get column information
+            String colSql = "SELECT column_name, data_type, nullable FROM all_tab_columns " +
+                    "WHERE table_name = UPPER(?) ORDER BY column_id";
+            List<Map<String, Object>> allColumns = oracleJdbcTemplate.queryForList(colSql, tableName);
+
+            // Build ORDER BY clause
+            String orderBy = "";
+            if (sortColumn != null && !sortColumn.isEmpty() && isValidIdentifier(sortColumn)) {
+                String dir = "ASC".equalsIgnoreCase(sortDirection) ? "ASC" : "DESC";
+                orderBy = " ORDER BY \"" + sortColumn + "\" " + dir;
+            }
+
+            // Build WHERE clause
+            String whereClause = "";
+            if (filter != null && !filter.isEmpty()) {
+                whereClause = " WHERE " + sanitizeFilter(filter);
+            }
+
+            // Calculate offset
+            int offset = (page - 1) * pageSize;
+
+            // Get paginated data
+            String dataSql = "SELECT * FROM " + tableName + whereClause + orderBy +
+                    " OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+            List<Map<String, Object>> rows = oracleJdbcTemplate.queryForList(dataSql, offset, pageSize);
+
+            // Format rows for JSON response
+            List<Map<String, Object>> formattedRows = new ArrayList<>();
+            for (Map<String, Object> row : rows) {
+                Map<String, Object> formattedRow = new HashMap<>();
+                for (Map.Entry<String, Object> entry : row.entrySet()) {
+                    formattedRow.put(entry.getKey().toLowerCase(), entry.getValue());
+                }
+                formattedRows.add(formattedRow);
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("rows", formattedRows);
+            result.put("columns", allColumns);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalRows", totalRows);
+            result.put("totalPages", (int) Math.ceil((double) totalRows / pageSize));
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error in getTableDataAdvanced for {}: {}", tableName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve advanced table data: " + e.getMessage(), e);
+        }
+    }
+
+    // ============================================================
+    // 3. PAGINATED PROCEDURE PARAMETERS REPOSITORY METHOD
+    // ============================================================
+
+    public Map<String, Object> getProcedureParametersPaginated(String procedureName, String owner,
+                                                               int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+
+        try {
+            if (owner == null || owner.isEmpty()) {
+                owner = getCurrentUser();
+            }
+
+            int offset = (page - 1) * pageSize;
+
+            // Get total count
+            String countSql = "SELECT COUNT(*) FROM all_arguments " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                    "AND package_name IS NULL AND argument_name IS NOT NULL";
+
+            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class, owner, procedureName);
+
+            // Get paginated parameters
+            String paramSql = "SELECT " +
+                    "    argument_name, " +
+                    "    position, " +
+                    "    sequence, " +
+                    "    data_type, " +
+                    "    in_out, " +
+                    "    data_length, " +
+                    "    data_precision, " +
+                    "    data_scale, " +
+                    "    defaulted " +
+                    "FROM all_arguments " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                    "AND package_name IS NULL AND argument_name IS NOT NULL " +
+                    "ORDER BY position, sequence " +
+                    "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+            List<Map<String, Object>> parameters = oracleJdbcTemplate.queryForList(
+                    paramSql, owner, procedureName, offset, pageSize);
+
+            result.put("parameters", parameters);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error in getProcedureParametersPaginated for {}.{}: {}", owner, procedureName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve procedure parameters: " + e.getMessage(), e);
+        }
+    }
+
+    // ============================================================
+    // 4. PAGINATED FUNCTION PARAMETERS REPOSITORY METHOD
+    // ============================================================
+
+    public Map<String, Object> getFunctionParametersPaginated(String functionName, String owner,
+                                                              int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+
+        try {
+            if (owner == null || owner.isEmpty()) {
+                owner = getCurrentUser();
+            }
+
+            int offset = (page - 1) * pageSize;
+
+            // Get total count including return type
+            String countSql = "SELECT COUNT(*) FROM all_arguments " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                    "AND package_name IS NULL";
+
+            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class, owner, functionName);
+
+            // Get paginated parameters
+            String paramSql = "SELECT " +
+                    "    argument_name, " +
+                    "    position, " +
+                    "    sequence, " +
+                    "    data_type, " +
+                    "    in_out, " +
+                    "    data_length, " +
+                    "    data_precision, " +
+                    "    data_scale, " +
+                    "    defaulted " +
+                    "FROM all_arguments " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                    "AND package_name IS NULL " +
+                    "ORDER BY position, sequence " +
+                    "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+            List<Map<String, Object>> allArgs = oracleJdbcTemplate.queryForList(
+                    paramSql, owner, functionName, offset, pageSize);
+
+            // Separate return type (position = 0) from parameters
+            List<Map<String, Object>> parameters = new ArrayList<>();
+            Map<String, Object> returnType = null;
+
+            for (Map<String, Object> arg : allArgs) {
+                Number position = (Number) arg.get("position");
+                if (position != null && position.intValue() == 0) {
+                    returnType = arg;
+                } else {
+                    parameters.add(arg);
+                }
+            }
+
+            result.put("parameters", parameters);
+            result.put("returnType", returnType);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error in getFunctionParametersPaginated for {}.{}: {}", owner, functionName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve function parameters: " + e.getMessage(), e);
+        }
+    }
+
+    // ============================================================
+    // 5. PAGINATED PACKAGE ITEMS REPOSITORY METHOD
+    // ============================================================
+
+    public Map<String, Object> getPackageItemsPaginated(String packageName, String owner,
+                                                        String itemType, int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+
+        try {
+            if (owner == null || owner.isEmpty()) {
+                owner = getCurrentUser();
+            }
+
+            int offset = (page - 1) * pageSize;
+            String upperItemType = itemType.toUpperCase();
+
+            // Build query based on item type
+            String countSql;
+            String dataSql;
+
+            if ("PROCEDURE".equals(upperItemType)) {
+                countSql = "SELECT COUNT(DISTINCT procedure_name) FROM all_arguments " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(package_name) = UPPER(?) " +
+                        "AND procedure_name IS NOT NULL " +
+                        "AND NOT EXISTS (SELECT 1 FROM all_arguments a2 " +
+                        "                WHERE a2.owner = all_arguments.owner " +
+                        "                AND a2.package_name = all_arguments.package_name " +
+                        "                AND a2.procedure_name = all_arguments.procedure_name " +
+                        "                AND a2.argument_name IS NULL)";
+
+                dataSql = "SELECT DISTINCT procedure_name, " +
+                        "(SELECT COUNT(*) FROM all_arguments a2 " +
+                        " WHERE a2.owner = a.owner AND a2.package_name = a.package_name " +
+                        " AND a2.procedure_name = a.procedure_name " +
+                        " AND a2.argument_name IS NOT NULL) as parameter_count " +
+                        "FROM all_arguments a " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(package_name) = UPPER(?) " +
+                        "AND procedure_name IS NOT NULL " +
+                        "AND NOT EXISTS (SELECT 1 FROM all_arguments a2 " +
+                        "                WHERE a2.owner = a.owner " +
+                        "                AND a2.package_name = a.package_name " +
+                        "                AND a2.procedure_name = a.procedure_name " +
+                        "                AND a2.argument_name IS NULL) " +
+                        "ORDER BY procedure_name " +
+                        "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+            } else if ("FUNCTION".equals(upperItemType)) {
+                countSql = "SELECT COUNT(DISTINCT procedure_name) FROM all_arguments " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(package_name) = UPPER(?) " +
+                        "AND procedure_name IS NOT NULL " +
+                        "AND EXISTS (SELECT 1 FROM all_arguments a2 " +
+                        "            WHERE a2.owner = all_arguments.owner " +
+                        "            AND a2.package_name = all_arguments.package_name " +
+                        "            AND a2.procedure_name = all_arguments.procedure_name " +
+                        "            AND a2.argument_name IS NULL)";
+
+                dataSql = "SELECT DISTINCT procedure_name, " +
+                        "(SELECT COUNT(*) FROM all_arguments a2 " +
+                        " WHERE a2.owner = a.owner AND a2.package_name = a.package_name " +
+                        " AND a2.procedure_name = a.procedure_name " +
+                        " AND a2.argument_name IS NOT NULL) as parameter_count, " +
+                        "(SELECT data_type FROM all_arguments a2 " +
+                        " WHERE a2.owner = a.owner AND a2.package_name = a.package_name " +
+                        " AND a2.procedure_name = a.procedure_name " +
+                        " AND a2.argument_name IS NULL AND ROWNUM = 1) as return_type " +
+                        "FROM all_arguments a " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(package_name) = UPPER(?) " +
+                        "AND procedure_name IS NOT NULL " +
+                        "AND EXISTS (SELECT 1 FROM all_arguments a2 " +
+                        "            WHERE a2.owner = a.owner " +
+                        "            AND a2.package_name = a.package_name " +
+                        "            AND a2.procedure_name = a.procedure_name " +
+                        "            AND a2.argument_name IS NULL) " +
+                        "ORDER BY procedure_name " +
+                        "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+            } else {
+                // ALL types
+                countSql = "SELECT COUNT(DISTINCT procedure_name) FROM all_arguments " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(package_name) = UPPER(?) " +
+                        "AND procedure_name IS NOT NULL";
+
+                dataSql = "SELECT DISTINCT procedure_name, " +
+                        "(SELECT COUNT(*) FROM all_arguments a2 " +
+                        " WHERE a2.owner = a.owner AND a2.package_name = a.package_name " +
+                        " AND a2.procedure_name = a.procedure_name " +
+                        " AND a2.argument_name IS NOT NULL) as parameter_count, " +
+                        "CASE WHEN EXISTS (SELECT 1 FROM all_arguments a2 " +
+                        "                  WHERE a2.owner = a.owner " +
+                        "                  AND a2.package_name = a.package_name " +
+                        "                  AND a2.procedure_name = a.procedure_name " +
+                        "                  AND a2.argument_name IS NULL) " +
+                        "     THEN 'FUNCTION' ELSE 'PROCEDURE' END as item_type " +
+                        "FROM all_arguments a " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(package_name) = UPPER(?) " +
+                        "AND procedure_name IS NOT NULL " +
+                        "ORDER BY procedure_name " +
+                        "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+            }
+
+            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class, owner, packageName);
+            List<Map<String, Object>> items = oracleJdbcTemplate.queryForList(
+                    dataSql, owner, packageName, offset, pageSize);
+
+            result.put("items", items);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error in getPackageItemsPaginated for {}.{}: {}", owner, packageName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve package items: " + e.getMessage(), e);
+        }
+    }
+
+    // ============================================================
+    // 6. PAGINATED TABLE COLUMNS REPOSITORY METHOD
+    // ============================================================
+
+    public Map<String, Object> getTableColumnsPaginated(String tableName, String owner,
+                                                        int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+
+        try {
+            if (owner == null || owner.isEmpty()) {
+                owner = getCurrentUser();
+            }
+
+            int offset = (page - 1) * pageSize;
+
+            // Get total count
+            String countSql = "SELECT COUNT(*) FROM all_tab_columns " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?)";
+
+            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class, owner, tableName);
+
+            // Get paginated columns
+            String colSql = "SELECT " +
+                    "    column_id, " +
+                    "    column_name, " +
+                    "    data_type, " +
+                    "    data_length, " +
+                    "    data_precision, " +
+                    "    data_scale, " +
+                    "    nullable, " +
+                    "    data_default, " +
+                    "    char_length, " +
+                    "    char_used, " +
+                    "    virtual_column " +
+                    "FROM all_tab_columns " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?) " +
+                    "ORDER BY column_id " +
+                    "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+            List<Map<String, Object>> columns = oracleJdbcTemplate.queryForList(
+                    colSql, owner, tableName, offset, pageSize);
+
+            result.put("columns", columns);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error in getTableColumnsPaginated for {}.{}: {}", owner, tableName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve table columns: " + e.getMessage(), e);
+        }
+    }
+
+    // ============================================================
+    // 7. PAGINATED SEARCH REPOSITORY METHOD
+    // ============================================================
+
+    public Map<String, Object> searchObjectsPaginated(String searchPattern, String type,
+                                                      int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+
+        try {
+            String searchParam = "%" + searchPattern.toUpperCase() + "%";
+            int offset = (page - 1) * pageSize;
+
+            String countSql;
+            String dataSql;
+
+            if (type != null && !type.isEmpty() && !"ALL".equalsIgnoreCase(type)) {
+                // Search by specific type
+                countSql = "SELECT COUNT(*) FROM all_objects " +
+                        "WHERE UPPER(object_name) LIKE ? AND object_type = ?";
+
+                dataSql = "SELECT " +
+                        "    owner, " +
+                        "    object_name, " +
+                        "    object_type, " +
+                        "    status, " +
+                        "    created, " +
+                        "    last_ddl_time " +
+                        "FROM all_objects " +
+                        "WHERE UPPER(object_name) LIKE ? AND object_type = ? " +
+                        "ORDER BY object_type, object_name " +
+                        "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+                int totalCount = oracleJdbcTemplate.queryForObject(
+                        countSql, Integer.class, searchParam, type.toUpperCase());
+
+                List<Map<String, Object>> objects = oracleJdbcTemplate.queryForList(
+                        dataSql, searchParam, type.toUpperCase(), offset, pageSize);
+
+                result.put("results", objects);
+                result.put("totalCount", totalCount);
+
+            } else {
+                // Search all types
+                countSql = "SELECT COUNT(*) FROM all_objects " +
+                        "WHERE UPPER(object_name) LIKE ?";
+
+                dataSql = "SELECT " +
+                        "    owner, " +
+                        "    object_name, " +
+                        "    object_type, " +
+                        "    status, " +
+                        "    created, " +
+                        "    last_ddl_time " +
+                        "FROM all_objects " +
+                        "WHERE UPPER(object_name) LIKE ? " +
+                        "ORDER BY object_type, object_name " +
+                        "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+                int totalCount = oracleJdbcTemplate.queryForObject(
+                        countSql, Integer.class, searchParam);
+
+                List<Map<String, Object>> objects = oracleJdbcTemplate.queryForList(
+                        dataSql, searchParam, offset, pageSize);
+
+                result.put("results", objects);
+                result.put("totalCount", totalCount);
+            }
+
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double)
+                    getLongValue(result.get("totalCount")) / pageSize));
+            result.put("query", searchPattern);
+            result.put("type", type);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error in searchObjectsPaginated: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to search objects: " + e.getMessage(), e);
+        }
+    }
+
+    // ============================================================
+    // 8. GET OBJECT COUNTS ONLY REPOSITORY METHOD
+    // ============================================================
+
+    public Map<String, Object> getObjectCountsOnly(String objectName, String objectType, String owner) {
+        Map<String, Object> counts = new HashMap<>();
+
+        try {
+            if (owner == null || owner.isEmpty()) {
+                owner = getCurrentUser();
+            }
+
+            String upperType = objectType.toUpperCase();
+
+            // Check if object exists
+            String existsSql = "SELECT COUNT(*) FROM all_objects " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?)";
+
+            int exists = oracleJdbcTemplate.queryForObject(existsSql, Integer.class, owner, objectName);
+            counts.put("exists", exists > 0);
+
+            if (exists > 0) {
+                // Get column count for tables/views
+                if ("TABLE".equals(upperType) || "VIEW".equals(upperType)) {
+                    String colCountSql = "SELECT COUNT(*) FROM all_tab_columns " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?)";
+                    long totalColumns = oracleJdbcTemplate.queryForObject(
+                            colCountSql, Long.class, owner, objectName);
+                    counts.put("totalColumns", totalColumns);
+                }
+
+                // Get parameter count for procedures/functions/packages
+                if ("PROCEDURE".equals(upperType) || "FUNCTION".equals(upperType) || "PACKAGE".equals(upperType)) {
+                    String paramCountSql = "SELECT COUNT(*) FROM all_arguments " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                            "AND argument_name IS NOT NULL";
+                    long totalParameters = oracleJdbcTemplate.queryForObject(
+                            paramCountSql, Long.class, owner, objectName);
+                    counts.put("totalParameters", totalParameters);
+                }
+
+                // Get dependency count
+                String depCountSql = "SELECT COUNT(*) FROM all_dependencies " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(name) = UPPER(?)";
+                long dependencies = oracleJdbcTemplate.queryForObject(
+                        depCountSql, Long.class, owner, objectName);
+                counts.put("dependencies", dependencies);
+            }
+
+            counts.put("owner", owner);
+            counts.put("objectName", objectName);
+            counts.put("objectType", objectType);
+
+            return counts;
+
+        } catch (Exception e) {
+            log.error("Error in getObjectCountsOnly for {}.{}: {}", owner, objectName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve object counts: " + e.getMessage(), e);
+        }
+    }
+
+    // ============================================================
+    // 9. INTERNAL HELPER METHODS
+    // ============================================================
+
+    private List<Map<String, Object>> getTableColumnsPaginatedInternal(String owner, String tableName,
+                                                                       int offset, int pageSize) {
+        String sql = "SELECT " +
+                "    column_id, " +
+                "    column_name, " +
+                "    data_type, " +
+                "    data_length, " +
+                "    data_precision, " +
+                "    data_scale, " +
+                "    nullable, " +
+                "    data_default, " +
+                "    char_length, " +
+                "    char_used, " +
+                "    virtual_column " +
+                "FROM all_tab_columns " +
+                "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?) " +
+                "ORDER BY column_id " +
+                "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+        return oracleJdbcTemplate.queryForList(sql, owner, tableName, offset, pageSize);
+    }
+
+    private List<Map<String, Object>> getArgumentsPaginatedInternal(String owner, String objectName,
+                                                                    int offset, int pageSize) {
+        String sql = "SELECT " +
+                "    argument_name, " +
+                "    position, " +
+                "    sequence, " +
+                "    data_type, " +
+                "    in_out, " +
+                "    data_length, " +
+                "    data_precision, " +
+                "    data_scale, " +
+                "    defaulted " +
+                "FROM all_arguments " +
+                "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                "AND argument_name IS NOT NULL " +
+                "ORDER BY position, sequence " +
+                "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+        return oracleJdbcTemplate.queryForList(sql, owner, objectName, offset, pageSize);
+    }
+
+    private boolean isValidIdentifier(String identifier) {
+        if (identifier == null || identifier.isEmpty()) return false;
+        // Check for valid Oracle identifier (letters, numbers, _, $, #)
+        return identifier.matches("^[a-zA-Z][a-zA-Z0-9_$#]*$");
+    }
+
+    private String sanitizeFilter(String filter) {
+        if (filter == null || filter.isEmpty()) return "";
+
+        // Basic sanitization - remove dangerous characters
+        // This is a simple implementation - in production, use a proper SQL builder
+        String sanitized = filter.replaceAll(";", "")
+                .replaceAll("--", "")
+                .replaceAll("/\\*", "")
+                .replaceAll("\\*/", "")
+                .replaceAll("exec\\s", "")
+                .replaceAll("execute\\s", "")
+                .replaceAll("drop\\s", "")
+                .replaceAll("insert\\s", "")
+                .replaceAll("update\\s", "")
+                .replaceAll("delete\\s", "")
+                .replaceAll("create\\s", "")
+                .replaceAll("alter\\s", "");
+
+        return sanitized;
+    }
+
+
+
     // ==================== ENHANCED SYNONYM METHODS ====================
 
     /**
@@ -4840,6 +5550,385 @@ public class OracleSchemaRepository {
             throw new RuntimeException("Failed to retrieve size for object " + objectName + ": " + e.getMessage(), e);
         }
     }
+
+
+    // ============================================================
+// PAGINATED METHODS FOR LARGE DATASETS
+// ============================================================
+
+    /**
+     * Get paginated tables with total count only
+     */
+    public Map<String, Object> getTablesPaginated(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            // Get total count first (fast)
+            String countSql = "SELECT COUNT(*) FROM user_tables";
+            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class);
+
+            // Get paginated data
+            String dataSql = "SELECT " +
+                    "    table_name, " +
+                    "    tablespace_name, " +
+                    "    status, " +
+                    "    num_rows, " +
+                    "    avg_row_len, " +
+                    "    blocks, " +
+                    "    last_analyzed " +
+                    "FROM user_tables " +
+                    "ORDER BY table_name " +
+                    "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+            List<Map<String, Object>> tables = oracleJdbcTemplate.queryForList(dataSql, offset, pageSize);
+
+            result.put("items", tables);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+
+        } catch (Exception e) {
+            log.error("Error in getTablesPaginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+            result.put("error", e.getMessage());
+        }
+        return result;
+    }
+
+    /**
+     * Get paginated views with total count only
+     */
+    public Map<String, Object> getViewsPaginated(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            String countSql = "SELECT COUNT(*) FROM user_views";
+            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class);
+
+            String dataSql = "SELECT view_name, text_length, read_only FROM user_views ORDER BY view_name OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+            List<Map<String, Object>> views = oracleJdbcTemplate.queryForList(dataSql, offset, pageSize);
+
+            result.put("items", views);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+
+        } catch (Exception e) {
+            log.error("Error in getViewsPaginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+        }
+        return result;
+    }
+
+    /**
+     * Get paginated procedures with total count only
+     */
+    public Map<String, Object> getProceduresPaginated(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            String countSql = "SELECT COUNT(*) FROM user_objects WHERE object_type = 'PROCEDURE'";
+            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class);
+
+            String dataSql = "SELECT object_name as procedure_name, status, created, last_ddl_time " +
+                    "FROM user_objects WHERE object_type = 'PROCEDURE' " +
+                    "ORDER BY object_name OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+            List<Map<String, Object>> procedures = oracleJdbcTemplate.queryForList(dataSql, offset, pageSize);
+
+            result.put("items", procedures);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+
+        } catch (Exception e) {
+            log.error("Error in getProceduresPaginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+        }
+        return result;
+    }
+
+    /**
+     * Get paginated functions with total count only
+     */
+    public Map<String, Object> getFunctionsPaginated(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            String countSql = "SELECT COUNT(*) FROM user_objects WHERE object_type = 'FUNCTION'";
+            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class);
+
+            String dataSql = "SELECT object_name as function_name, status, created, last_ddl_time " +
+                    "FROM user_objects WHERE object_type = 'FUNCTION' " +
+                    "ORDER BY object_name OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+            List<Map<String, Object>> functions = oracleJdbcTemplate.queryForList(dataSql, offset, pageSize);
+
+            result.put("items", functions);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+
+        } catch (Exception e) {
+            log.error("Error in getFunctionsPaginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+        }
+        return result;
+    }
+
+    /**
+     * Get paginated packages with total count only
+     */
+    public Map<String, Object> getPackagesPaginated(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            String countSql = "SELECT COUNT(DISTINCT object_name) FROM user_objects WHERE object_type IN ('PACKAGE', 'PACKAGE BODY')";
+            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class);
+
+            String dataSql = "SELECT DISTINCT object_name as package_name FROM user_objects " +
+                    "WHERE object_type IN ('PACKAGE', 'PACKAGE BODY') " +
+                    "ORDER BY object_name OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+            List<Map<String, Object>> packages = oracleJdbcTemplate.queryForList(dataSql, offset, pageSize);
+
+            result.put("items", packages);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+
+        } catch (Exception e) {
+            log.error("Error in getPackagesPaginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+        }
+        return result;
+    }
+
+    /**
+     * Get paginated synonyms with total count only - CRITICAL for performance
+     */
+    public Map<String, Object> getSynonymsPaginated(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            // Fast count query
+            String countSql = "SELECT COUNT(*) FROM user_synonyms";
+            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class);
+
+            // Only fetch the page we need
+            String dataSql = "SELECT synonym_name, table_owner, table_name, db_link " +
+                    "FROM user_synonyms ORDER BY synonym_name " +
+                    "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+            List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(dataSql, offset, pageSize);
+
+            // Transform to frontend format without resolving target types (lazy loading)
+            List<Map<String, Object>> transformed = synonyms.stream().map(syn -> {
+                Map<String, Object> item = new HashMap<>();
+                item.put("id", "syn-" + System.currentTimeMillis() + "-" + syn.get("synonym_name"));
+                item.put("name", syn.get("synonym_name"));
+                item.put("owner", getCurrentUser());
+                item.put("type", "SYNONYM");
+                item.put("targetOwner", syn.get("table_owner"));
+                item.put("targetName", syn.get("table_name"));
+                item.put("dbLink", syn.get("db_link"));
+                item.put("isRemote", syn.get("db_link") != null);
+                // Don't resolve target type here - do it lazily when user expands
+                item.put("targetType", "PENDING");
+                return item;
+            }).collect(Collectors.toList());
+
+            result.put("items", transformed);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+
+        } catch (Exception e) {
+            log.error("Error in getSynonymsPaginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+        }
+        return result;
+    }
+
+    /**
+     * Get paginated sequences with total count only
+     */
+    public Map<String, Object> getSequencesPaginated(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            String countSql = "SELECT COUNT(*) FROM user_sequences";
+            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class);
+
+            String dataSql = "SELECT sequence_name, min_value, max_value, increment_by, cycle_flag, cache_size, last_number " +
+                    "FROM user_sequences ORDER BY sequence_name OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+            List<Map<String, Object>> sequences = oracleJdbcTemplate.queryForList(dataSql, offset, pageSize);
+
+            result.put("items", sequences);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+
+        } catch (Exception e) {
+            log.error("Error in getSequencesPaginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+        }
+        return result;
+    }
+
+    /**
+     * Get paginated types with total count only
+     */
+    public Map<String, Object> getTypesPaginated(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            String countSql = "SELECT COUNT(*) FROM user_types";
+            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class);
+
+            String dataSql = "SELECT type_name, typecode, attributes, methods " +
+                    "FROM user_types ORDER BY type_name OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+            List<Map<String, Object>> types = oracleJdbcTemplate.queryForList(dataSql, offset, pageSize);
+
+            result.put("items", types);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+
+        } catch (Exception e) {
+            log.error("Error in getTypesPaginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+        }
+        return result;
+    }
+
+    /**
+     * Get paginated triggers with total count only
+     */
+    public Map<String, Object> getTriggersPaginated(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            String countSql = "SELECT COUNT(*) FROM user_triggers";
+            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class);
+
+            String dataSql = "SELECT trigger_name, trigger_type, triggering_event, table_name, status " +
+                    "FROM user_triggers ORDER BY trigger_name OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+            List<Map<String, Object>> triggers = oracleJdbcTemplate.queryForList(dataSql, offset, pageSize);
+
+            result.put("items", triggers);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+
+        } catch (Exception e) {
+            log.error("Error in getTriggersPaginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+        }
+        return result;
+    }
+
+    /**
+     * Get only the total counts for all object types (very fast)
+     */
+    public Map<String, Object> getAllObjectCounts() {
+        Map<String, Object> counts = new HashMap<>();
+        try {
+            // Get all counts in a single query where possible
+            String sql = "SELECT " +
+                    "(SELECT COUNT(*) FROM user_tables) as tables, " +
+                    "(SELECT COUNT(*) FROM user_views) as views, " +
+                    "(SELECT COUNT(*) FROM user_objects WHERE object_type = 'PROCEDURE') as procedures, " +
+                    "(SELECT COUNT(*) FROM user_objects WHERE object_type = 'FUNCTION') as functions, " +
+                    "(SELECT COUNT(DISTINCT object_name) FROM user_objects WHERE object_type IN ('PACKAGE', 'PACKAGE BODY')) as packages, " +
+                    "(SELECT COUNT(*) FROM user_sequences) as sequences, " +
+                    "(SELECT COUNT(*) FROM user_synonyms) as synonyms, " +
+                    "(SELECT COUNT(*) FROM user_types) as types, " +
+                    "(SELECT COUNT(*) FROM user_triggers) as triggers " +
+                    "FROM DUAL";
+
+            Map<String, Object> result = oracleJdbcTemplate.queryForMap(sql);
+
+            counts.put("tables", result.get("tables"));
+            counts.put("views", result.get("views"));
+            counts.put("procedures", result.get("procedures"));
+            counts.put("functions", result.get("functions"));
+            counts.put("packages", result.get("packages"));
+            counts.put("sequences", result.get("sequences"));
+            counts.put("synonyms", result.get("synonyms"));
+            counts.put("types", result.get("types"));
+            counts.put("triggers", result.get("triggers"));
+            counts.put("total", result.values().stream().mapToInt(v -> ((Number) v).intValue()).sum());
+
+        } catch (Exception e) {
+            log.error("Error in getAllObjectCounts: {}", e.getMessage(), e);
+            // Initialize all counts to 0
+            counts.put("tables", 0);
+            counts.put("views", 0);
+            counts.put("procedures", 0);
+            counts.put("functions", 0);
+            counts.put("packages", 0);
+            counts.put("sequences", 0);
+            counts.put("synonyms", 0);
+            counts.put("types", 0);
+            counts.put("triggers", 0);
+            counts.put("total", 0);
+        }
+        return counts;
+    }
+
+    /**
+     * Resolve synonym target type on demand (lazy loading)
+     */
+    public Map<String, Object> resolveSynonymTarget(String synonymName) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            String sql = "SELECT s.table_owner, s.table_name, s.db_link, " +
+                    "o.object_type, o.status " +
+                    "FROM user_synonyms s " +
+                    "LEFT JOIN all_objects o ON s.table_owner = o.owner AND s.table_name = o.object_name " +
+                    "WHERE UPPER(s.synonym_name) = UPPER(?)";
+
+            Map<String, Object> target = oracleJdbcTemplate.queryForMap(sql, synonymName);
+
+            result.put("targetOwner", target.get("table_owner"));
+            result.put("targetName", target.get("table_name"));
+            result.put("targetType", target.get("object_type"));
+            result.put("targetStatus", target.get("status"));
+            result.put("dbLink", target.get("db_link"));
+            result.put("isRemote", target.get("db_link") != null);
+
+        } catch (Exception e) {
+            log.error("Error resolving synonym target {}: {}", synonymName, e.getMessage());
+            result.put("error", e.getMessage());
+        }
+        return result;
+    }
+
+
 
     // ==================== DIAGNOSTIC METHODS ====================
 
