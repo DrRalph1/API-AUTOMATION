@@ -2033,6 +2033,31 @@ export const getObjectDDL = async (authorizationHeader, params = {}) => {
 // 24. SEARCH ENDPOINTS - ENHANCED
 // ============================================================
 
+
+/**
+ * Transform search response (special handling for search results)
+ */
+const transformSearchPaginatedResponse = (response) => {
+    // Extract the data object from response
+    const responseData = response.data || {};
+    
+    // The search API returns results in a different structure
+    const transformedData = {
+        items: responseData.results || [],
+        totalCount: responseData.totalCount || 0,
+        totalPages: responseData.totalPages || 1,
+        page: responseData.page || 1,
+        pageSize: responseData.pageSize || 20,
+        hasNext: responseData.page < responseData.totalPages,
+        hasPrev: responseData.page > 1
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
 /**
  * Paginated search for Oracle objects
  * @param {string} authorizationHeader - Bearer token
@@ -2062,7 +2087,8 @@ export const searchObjectsPaginated = async (authorizationHeader, params = {}) =
             requestId: requestId
         })
     ).then(response => {
-        return transformPaginatedResponse(response);
+        // Use the search-specific transformer
+        return transformSearchPaginatedResponse(response);
     });
 };
 

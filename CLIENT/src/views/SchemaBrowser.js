@@ -1835,16 +1835,13 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
 
 // Search objects via API when filter is active
 const searchObjects = useCallback(async (searchTerm, owner) => {
-
   if (!authToken || !searchTerm || searchTerm.length < 2) {
-    // Clear filtered results if search term is too short
     setFilteredResults({});
     return;
   }
 
   const requestKey = `search_${searchTerm}_${owner}`;
   
-  // Check if already searching
   if (ongoingRequests.has(requestKey)) {
     Logger.debug('SchemaBrowser', 'searchObjects', `Already searching for "${searchTerm}", skipping`);
     return;
@@ -1859,15 +1856,16 @@ const searchObjects = useCallback(async (searchTerm, owner) => {
     const params = {
       query: searchTerm,
       page: 1,
-      pageSize: 10 // Get a reasonable number of results
+      pageSize: 100
     };
 
-    // Add owner filter if not ALL
     if (owner !== 'ALL') {
       params.owner = owner;
     }
 
     const response = await searchObjectsPaginated(authToken, params);
+    
+    console.log('Search API Response:', response);
     
     // Group results by object type
     const groupedResults = {
@@ -1882,73 +1880,110 @@ const searchObjects = useCallback(async (searchTerm, owner) => {
       triggers: []
     };
 
-    // Check if response has the structure from your example
-    if (response?.data?.results && Array.isArray(response.data.results)) {
-      // Process each result item from the API
-      response.data.results.forEach(item => {
-        const objectType = (item.object_type || item.type || '').toUpperCase();
-        
-        // Create a normalized object
-        const normalizedObj = {
-          name: item.name || item.synonym_name || item.table_name || item.index_name || item.view_name,
-          owner: item.owner,
-          type: objectType,
-          objectType: objectType,
-          status: item.status,
-          id: item.id || `${item.owner}_${item.name || item.synonym_name || item.table_name}`,
-          // Include any other relevant fields
-          targetName: item.targetName,
-          targetOwner: item.targetOwner,
-          targetType: item.targetType,
-          isSynonym: item.isSynonym || false
-        };
-        
-        // Map to our internal types
-        if (objectType.includes('PROCEDURE')) {
-          groupedResults.procedures.push(normalizedObj);
-        } else if (objectType.includes('VIEW')) {
-          groupedResults.views.push(normalizedObj);
-        } else if (objectType.includes('FUNCTION')) {
-          groupedResults.functions.push(normalizedObj);
-        } else if (objectType.includes('TABLE')) {
-          groupedResults.tables.push(normalizedObj);
-        } else if (objectType.includes('PACKAGE')) {
-          groupedResults.packages.push(normalizedObj);
-        } else if (objectType.includes('SEQUENCE')) {
-          groupedResults.sequences.push(normalizedObj);
-        } else if (objectType.includes('SYNONYM')) {
-          groupedResults.synonyms.push(normalizedObj);
-        } else if (objectType.includes('TYPE')) {
-          groupedResults.types.push(normalizedObj);
-        } else if (objectType.includes('TRIGGER')) {
-          groupedResults.triggers.push(normalizedObj);
-        }
-      });
+    // Get items from the response - handle both transformed and raw formats
+    let resultsArray = [];
+    
+    if (response?.data?.items && Array.isArray(response.data.items)) {
+      // Already transformed by the controller
+      resultsArray = response.data.items;
+    } else if (response?.data?.results && Array.isArray(response.data.results)) {
+      // Raw API format
+      resultsArray = response.data.results;
+    } else if (response?.results && Array.isArray(response.results)) {
+      resultsArray = response.results;
+    } else if (Array.isArray(response)) {
+      resultsArray = response;
+    } else if (response?.data && Array.isArray(response.data)) {
+      resultsArray = response.data;
     }
 
-    setFilteredResults(groupedResults);
+    console.log('Results array:', resultsArray);
 
-    // Add this debug log
-    console.log('Search results set:', {
-      groupedResults,
-      totalCount: Object.values(groupedResults).reduce((acc, curr) => acc + curr.length, 0),
-      procedures: groupedResults.procedures.length,
-      views: groupedResults.views.length,
-      functions: groupedResults.functions.length,
-      tables: groupedResults.tables.length,
-      packages: groupedResults.packages.length,
-      sequences: groupedResults.sequences.length,
-      synonyms: groupedResults.synonyms.length,
-      types: groupedResults.types.length,
-      triggers: groupedResults.triggers.length
+    // Process each result
+    resultsArray.forEach(item => {
+      // Determine object type - check all possible fields
+      const objectType = (
+        item.object_type || 
+        item.type || 
+        item.OBJECT_TYPE || 
+        ''
+      ).toUpperCase();
+      
+      // Determine name - check all possible fields
+      const itemName = 
+        item.name ||
+        item.synonym_name ||
+        item.table_name ||
+        item.procedure_name ||
+        item.view_name ||
+        item.function_name ||
+        item.package_name ||
+        item.sequence_name ||
+        item.type_name ||
+        item.trigger_name ||
+        item.au_g_ledger_name ||
+        item.curr_g_ledger_name ||
+        item.account_details_keynext_name;
+      
+      // Skip if no name or type
+      if (!itemName || !objectType) return;
+      
+      // Create normalized object
+      const normalizedObj = {
+        name: itemName,
+        owner: item.owner || item.OWNER,
+        type: objectType,
+        objectType: objectType,
+        status: item.status || item.STATUS || item.targetStatus || 'VALID',
+        id: item.id || `${item.owner || 'unknown'}_${itemName}`,
+        targetName: item.targetName || item.TARGET_NAME,
+        targetOwner: item.targetOwner || item.TARGET_OWNER,
+        targetType: item.targetType || item.TARGET_TYPE,
+        isSynonym: item.isSynonym === true || objectType === 'SYNONYM',
+        icon: item.icon,
+        created: item.created || item.CREATED,
+        lastModified: item.lastModified || item.last_ddl_time || item.LAST_DDL_TIME
+      };
+      
+      // Map to internal types
+      if (objectType.includes('PROCEDURE')) {
+        groupedResults.procedures.push(normalizedObj);
+      } else if (objectType.includes('VIEW')) {
+        groupedResults.views.push(normalizedObj);
+      } else if (objectType.includes('FUNCTION')) {
+        groupedResults.functions.push(normalizedObj);
+      } else if (objectType.includes('TABLE')) {
+        groupedResults.tables.push(normalizedObj);
+      } else if (objectType.includes('PACKAGE')) {
+        groupedResults.packages.push(normalizedObj);
+      } else if (objectType.includes('SEQUENCE')) {
+        groupedResults.sequences.push(normalizedObj);
+      } else if (objectType.includes('SYNONYM')) {
+        groupedResults.synonyms.push(normalizedObj);
+      } else if (objectType.includes('TYPE')) {
+        groupedResults.types.push(normalizedObj);
+      } else if (objectType.includes('TRIGGER')) {
+        groupedResults.triggers.push(normalizedObj);
+      }
     });
+
+    console.log('Grouped results:', groupedResults);
     
-    // Cache the results
-    const cacheKey = `search_${searchTerm}_${owner}`;
-    objectCache.set(cacheKey, {
-      data: groupedResults,
-      timestamp: Date.now()
-    });
+    setFilteredResults(groupedResults);
+    
+    // Auto-expand sections with results
+    setObjectTree(prev => ({
+      ...prev,
+      procedures: groupedResults.procedures.length > 0,
+      views: groupedResults.views.length > 0,
+      functions: groupedResults.functions.length > 0,
+      tables: groupedResults.tables.length > 0,
+      packages: groupedResults.packages.length > 0,
+      sequences: groupedResults.sequences.length > 0,
+      synonyms: groupedResults.synonyms.length > 0,
+      types: groupedResults.types.length > 0,
+      triggers: groupedResults.triggers.length > 0
+    }));
 
     const totalResults = Object.values(groupedResults).reduce((acc, curr) => acc + curr.length, 0);
     Logger.info('SchemaBrowser', 'searchObjects', `Found ${totalResults} results`);
@@ -1984,7 +2019,7 @@ useEffect(() => {
       // Clear results if search term is empty
       setFilteredResults({});
     }
-  }, 1000); // 1000ms debounce
+  }, 500); // 1000ms debounce
 
   return () => clearTimeout(timer);
 }, [filterQuery, selectedOwner, searchObjects]);
