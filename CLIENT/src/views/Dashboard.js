@@ -2085,14 +2085,14 @@ const handleGenerateAPIFromModal = useCallback(async (objectType, objectName, ap
           </h3>
           <div className="space-y-6 sm:space-y-6 ">
             <button 
-              onClick={handleApiGeneration}
+              onClick={handleNavigateToSchemaBrowser}
               className="w-full px-3 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2 hover-lift cursor-pointer"
               style={{ 
                 color: colors.text 
               }}
             >
               <FileCode size={14} />
-              <span className="truncate">Generate New API</span>
+              <span className="truncate">Schema Browser</span>
             </button>
             <button 
               onClick={handleNavigateToAPICollection}

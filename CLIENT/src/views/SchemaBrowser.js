@@ -13,26 +13,28 @@ import {
   ExternalLink, UploadCloud, DownloadCloud, ShieldCheck, LayoutDashboard,
   BookOpen, Zap, History, Terminal as TerminalIcon,
   ChevronsLeft, ChevronsRight, GripVertical, Circle, Dot, Type as TypeIcon,
-  FileCode, ChevronsUp, ChevronsDown, AlertTriangle, Menu, Loader
+  FileCode, ChevronsUp, ChevronsDown, AlertTriangle, Menu, Loader, Tag
 } from 'lucide-react';
 import ApiGenerationModal from '@/components/modals/ApiGenerationModal.js';
 
 // Import OracleSchemaController
 import {
   getCurrentSchemaInfo,
-  getAllTablesForFrontend,
+  getAllTablesForFrontendPaginated,
   getTableDetailsForFrontend,
   getTableData,
-  getAllViewsForFrontend,
-  getAllProceduresForFrontend,
-  getAllFunctionsForFrontend,
-  getAllPackagesForFrontend,
-  getAllTriggersForFrontend,
-  getAllSynonymsForFrontend,
-  getAllSequencesForFrontend,
-  getAllTypesForFrontend,
+  getAllViewsForFrontendPaginated,
+  getAllProceduresForFrontendPaginated,
+  getAllFunctionsForFrontendPaginated,
+  getAllPackagesForFrontendPaginated,
+  getAllTriggersForFrontendPaginated,
+  getAllSynonymsForFrontendPaginated,
+  getAllSequencesForFrontendPaginated,
+  getAllTypesForFrontendPaginated,
   getObjectDetails,
+  searchObjectsPaginated,
   getObjectDDL,
+  extractPaginatedData,
   handleSchemaBrowserResponse,
   extractObjectDetails,
   extractTableData,
@@ -43,7 +45,6 @@ import {
   isSupportedForAPIGeneration,
   generateSampleQuery
 } from "../controllers/OracleSchemaController.js";
-import { bg } from 'date-fns/locale/bg';
 
 // Enhanced Logger - Disabled in production
 const Logger = {
@@ -69,9 +70,12 @@ const Logger = {
   error: (c, m, msg, e, d) => Logger.log(Logger.levels.ERROR, c, m, msg, d, e)
 };
 
-// Simple cache
+// Simple cache with TTL
 const objectCache = new Map();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Track ongoing requests to prevent duplicates
+const ongoingRequests = new Map();
 
 // Full page loader component
 const FullPageLoader = ({ colors }) => (
@@ -89,21 +93,56 @@ const FullPageLoader = ({ colors }) => (
   </div>
 );
 
-// FilterInput Component
+// Skeleton loader for sidebar
+const SidebarSkeleton = ({ colors }) => (
+  <div className="p-3 space-y-4">
+    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => (
+      <div key={i} className="animate-pulse">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded" style={{ backgroundColor: colors.border }}></div>
+            <div className="w-20 h-4 rounded" style={{ backgroundColor: colors.border }}></div>
+          </div>
+          <div className="w-6 h-4 rounded" style={{ backgroundColor: colors.border }}></div>
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
+// FilterInput Component - Fixed version
 const FilterInput = React.memo(({ 
   filterQuery, 
   selectedOwner, 
   owners,
-  onFilterChange, 
+  onFilterChange,   // This prop name should match what's passed from parent
   onOwnerChange, 
   onClearFilters,
   colors,
   loading 
 }) => {
   const searchInputRef = useRef(null);
+  const [localFilterValue, setLocalFilterValue] = useState(filterQuery);
+  const debounceTimerRef = useRef(null);
+
+  // Update local value when prop changes
+  useEffect(() => {
+    setLocalFilterValue(filterQuery);
+  }, [filterQuery]);
 
   const handleFilterChange = useCallback((e) => {
-    onFilterChange(e.target.value);
+    const value = e.target.value;
+    setLocalFilterValue(value);
+    
+    // Clear any existing timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    
+    // Set new timer for debounced filter
+    debounceTimerRef.current = setTimeout(() => {
+      onFilterChange(value); // This calls the parent's handleFilterChange
+    }, 300); // 300ms debounce
   }, [onFilterChange]);
 
   const handleOwnerChange = useCallback((e) => {
@@ -111,15 +150,27 @@ const FilterInput = React.memo(({
   }, [onOwnerChange]);
 
   const handleClearFilter = useCallback(() => {
+    setLocalFilterValue('');
     onFilterChange('');
     setTimeout(() => searchInputRef.current?.focus(), 10);
   }, [onFilterChange]);
 
   const handleClearAllFilters = useCallback(() => {
-    onFilterChange('');
-    onOwnerChange('ALL');
+    setLocalFilterValue('');
+    onFilterChange('');  // Clear filter query
+    onOwnerChange('ALL'); // Reset owner to ALL
+    onClearFilters(); // This will trigger the parent's handleClearFilters which resets objectTree
     setTimeout(() => searchInputRef.current?.focus(), 10);
-  }, [onFilterChange, onOwnerChange]);
+  }, [onFilterChange, onOwnerChange, onClearFilters]);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
 
   return (
     <>
@@ -131,7 +182,7 @@ const FilterInput = React.memo(({
               ref={searchInputRef}
               type="text"
               placeholder={loading ? "Loading..." : "Filter objects..."}
-              value={filterQuery}
+              value={localFilterValue}
               onChange={handleFilterChange}
               disabled={loading}
               className="w-full pl-10 pr-3 py-2.5 rounded text-sm focus:outline-none"
@@ -142,7 +193,7 @@ const FilterInput = React.memo(({
                 opacity: loading ? 0.6 : 1
               }}
             />
-            {filterQuery && !loading && (
+            {localFilterValue && !loading && (
               <button 
                 onClick={handleClearFilter}
                 className="absolute right-3 top-1/2 transform -translate-y-1/2 p-0.5 rounded"
@@ -166,7 +217,7 @@ const FilterInput = React.memo(({
                 opacity: loading ? 0.6 : 1
               }}
             >
-              <option value="ALL">All Schema's</option>
+              <option value="ALL">All Schemas</option>
               {owners.map(owner => (
                 <option key={owner} value={owner}>{owner}</option>
               ))}
@@ -175,11 +226,11 @@ const FilterInput = React.memo(({
         </div>
       </div>
 
-      {(filterQuery || selectedOwner !== 'ALL') && !loading && (
+      {(localFilterValue || selectedOwner !== 'ALL') && !loading && (
         <div className="px-3 py-2 border-b" style={{ borderColor: colors.border, backgroundColor: colors.hover }}>
           <div className="flex items-center justify-between">
             <span className="text-xs" style={{ color: colors.textSecondary }}>
-              Filtering {filterQuery && `by: "${filterQuery}"`} {filterQuery && selectedOwner !== 'ALL' && ' • '} 
+              Filtering {localFilterValue && `by: "${localFilterValue}"`} {localFilterValue && selectedOwner !== 'ALL' && ' • '} 
               {selectedOwner !== 'ALL' && `Owner: ${selectedOwner}`}
             </span>
             <button 
@@ -187,7 +238,7 @@ const FilterInput = React.memo(({
               className="text-xs px-2 py-1 rounded"
               style={{ backgroundColor: colors.border, color: colors.text }}
             >
-              Clear
+              Clear All
             </button>
           </div>
         </div>
@@ -198,17 +249,19 @@ const FilterInput = React.memo(({
 
 FilterInput.displayName = 'FilterInput';
 
-// ObjectTreeSection Component
+// ObjectTreeSection Component with proper count display
+// ObjectTreeSection Component with proper count display and API search support
 const ObjectTreeSection = React.memo(({ 
   title, 
   type, 
-  objects, 
-  synonymCount = 0,
+  objects,
+  totalCount = 0, // This is the total count from database (or filtered count from API)
   isLoading,
   isExpanded, 
   onToggle,
   onSelectObject,
   onLoadSection,
+  onLoadMore,
   activeObjectId,
   filterQuery,
   selectedOwner,
@@ -216,32 +269,32 @@ const ObjectTreeSection = React.memo(({
   getObjectIcon,
   handleContextMenu,
   isLoaded,
-  children
+  currentPage = 1,
+  totalPages = 1,
+  hasActiveFilter = false,
+  isFiltering = false
 }) => {
   
   useEffect(() => {
-    if (isExpanded && !isLoaded && !isLoading) {
+    // Auto-expand when there's an active filter or when filtering is in progress
+    if ((hasActiveFilter || filterQuery) && !isExpanded && !isLoading) {
+      onToggle(type);
+    }
+  }, [hasActiveFilter, filterQuery, isExpanded, isLoading, onToggle, type]);
+  
+  useEffect(() => {
+    // Load section if expanded and not loaded (only when not filtering)
+    if (isExpanded && !isLoaded && !isLoading && !hasActiveFilter && !isFiltering) {
       Logger.debug('ObjectTreeSection', 'useEffect', `Loading ${title} on expand`);
       onLoadSection(type);
     }
-  }, [isExpanded, isLoaded, isLoading, onLoadSection, type, title]);
+  }, [isExpanded, isLoaded, isLoading, onLoadSection, type, title, hasActiveFilter, isFiltering]);
   
-  const filteredObjects = useMemo(() => {
-    if (!filterQuery && selectedOwner === 'ALL') return objects;
-    
-    const searchLower = filterQuery.toLowerCase();
-    
-    return objects.filter(obj => {
-      const ownerMatch = selectedOwner === 'ALL' || obj.owner === selectedOwner;
-      if (!ownerMatch) return false;
-      if (!filterQuery) return true;
-      
-      return (
-        (obj.name && obj.name.toLowerCase().includes(searchLower)) ||
-        (obj.owner && obj.owner.toLowerCase().includes(searchLower))
-      );
-    });
-  }, [objects, filterQuery, selectedOwner]);
+  const filteredObjects = objects || [];
+  
+  // Display count based on filter state and whether we're filtering
+  const displayCount = hasActiveFilter ? filteredObjects.length : totalCount;
+  const hasObjects = filteredObjects.length > 0;
   
   const handleToggle = useCallback(() => {
     onToggle(type);
@@ -274,7 +327,8 @@ const ObjectTreeSection = React.memo(({
     return obj.id || `${obj.owner || 'unknown'}_${obj.name}`;
   }, []);
   
-  const totalCount = objects.length + synonymCount;
+  const hasMorePages = currentPage < totalPages;
+  const showLoadMore = hasMorePages && filteredObjects.length < totalCount && !hasActiveFilter && !isFiltering;
   
   return (
     <div className="mb-1">
@@ -282,10 +336,13 @@ const ObjectTreeSection = React.memo(({
         onClick={handleToggle}
         className="flex items-center justify-between w-full px-2 py-2 hover:bg-opacity-50 transition-colors rounded-sm text-sm font-medium"
         style={{ backgroundColor: colors.hover }}
+        disabled={isFiltering}
       >
-        <div className="flex items-center gap-2">
-          {isLoading ? (
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          {isLoading && !hasActiveFilter && !isFiltering ? (
             <Loader size={14} className="animate-spin" style={{ color: colors.textSecondary }} />
+          ) : isFiltering ? (
+            <Loader size={14} className="animate-spin" style={{ color: colors.primary }} />
           ) : isExpanded ? (
             <ChevronDown size={14} style={{ color: colors.textSecondary }} />
           ) : (
@@ -293,52 +350,151 @@ const ObjectTreeSection = React.memo(({
           )}
           {getObjectIcon(type.slice(0, -1))}
           <span className="truncate text-xs sm:text-sm">{title}</span>
+          {isFiltering && (
+            <span className="text-xs ml-2" style={{ color: colors.primary }}>searching...</span>
+          )}
         </div>
-        <span className="text-xs px-1.5 py-0.5 rounded shrink-0 min-w-6 text-center" style={{ 
-          backgroundColor: colors.border,
-          color: colors.textSecondary
-        }}>
-          {totalCount}
+        <span 
+          className="text-xs px-1.5 py-0.5 rounded shrink-0 min-w-6 text-center" 
+          style={{ 
+            backgroundColor: colors.border,
+            color: displayCount > 0 ? colors.textSecondary : colors.error,
+            opacity: displayCount === 0 ? 0.7 : 1
+          }}
+          title={hasActiveFilter ? `${filteredObjects.length} of ${totalCount} total` : `Total: ${totalCount}`}
+        >
+          {displayCount}
         </span>
       </button>
       
       {isExpanded && (
         <div className="ml-6 mt-0.5 space-y-0.5">
-          {isLoading ? (
+          {isFiltering ? (
+            <div className="px-2 py-4 text-center">
+              <Loader className="animate-spin mx-auto" size={20} style={{ color: colors.primary }} />
+              <span className="text-xs mt-2 block" style={{ color: colors.textSecondary }}>
+                Searching for matching objects...
+              </span>
+            </div>
+          ) : isLoading && !hasActiveFilter && !filteredObjects.length ? (
             <div className="px-2 py-3 text-center">
               <Loader className="animate-spin mx-auto" size={14} style={{ color: colors.textSecondary }} />
               <span className="text-xs mt-2 block" style={{ color: colors.textTertiary }}>
                 Loading...
               </span>
             </div>
+          ) : !filteredObjects.length ? (
+            <div className="px-2 py-3 text-center">
+              <span className="text-xs" style={{ color: colors.textTertiary }}>
+                {hasActiveFilter ? 'No matching objects found' : 'No objects found'}
+              </span>
+            </div>
           ) : (
             <>
-              {filteredObjects.map(obj => (
+              {filteredObjects.map((obj, index) => {
+                const objectId = getObjectId(obj);
+                const isSynonym = obj.objectType === 'SYNONYM' || obj.type === 'SYNONYM';
+                const isInvalid = obj.status && obj.status !== 'VALID' && obj.status !== 'ENABLED';
+                
+                return (
+                  <button
+                    key={objectId}
+                    onDoubleClick={() => handleDoubleClick(obj)}
+                    onContextMenu={(e) => handleContextMenuWrapper(e, obj)}
+                    onClick={() => handleObjectClick(obj)}
+                    className={`flex items-center justify-between w-full px-2 py-2 rounded-sm cursor-pointer group text-left transition-colors ${
+                      activeObjectId === objectId ? 'font-medium' : 'hover:bg-opacity-50'
+                    }`}
+                    style={{
+                      backgroundColor: activeObjectId === objectId ? colors.selected : 'transparent',
+                      color: activeObjectId === objectId ? colors.primary : colors.text
+                    }}
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      {getObjectIcon(type.slice(0, -1))}
+                      <span className="text-xs sm:text-sm truncate">{obj.name}</span>
+                      {isSynonym && (
+                        <span 
+                          className="text-[10px] px-1.5 py-0.5 rounded-full ml-1 shrink-0 font-medium"
+                          style={{ 
+                            backgroundColor: colors.objectType.synonym + '20',
+                            color: colors.objectType.synonym
+                          }}
+                        >
+                          SYNONYM
+                        </span>
+                      )}
+                      {/* {obj.owner && selectedOwner === 'ALL' && !hasActiveFilter && (
+                        <span 
+                          className="text-[10px] px-1.5 py-0.5 rounded-full ml-1 shrink-0"
+                          style={{ 
+                            backgroundColor: colors.border,
+                            color: colors.textTertiary
+                          }}
+                        >
+                          {obj.owner}
+                        </span>
+                      )} */}
+                    </div>
+                    {isInvalid && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span 
+                          className="text-[10px] px-1.5 py-0.5 rounded-full"
+                          style={{ 
+                            backgroundColor: colors.error + '20',
+                            color: colors.error
+                          }}
+                        >
+                          {/* {obj.status} */}
+                        </span>
+                        <AlertCircle size={10} style={{ color: colors.error }} />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+              
+              {/* Load More Button - only show when not filtering */}
+              {showLoadMore && (
                 <button
-                  key={getObjectId(obj)}
-                  onDoubleClick={() => handleDoubleClick(obj)}
-                  onContextMenu={(e) => handleContextMenuWrapper(e, obj)}
-                  onClick={() => handleObjectClick(obj)}
-                  className={`flex items-center justify-between w-full px-2 py-2 rounded-sm cursor-pointer group text-left ${
-                    activeObjectId === getObjectId(obj) ? 'font-medium' : ''
-                  }`}
-                  style={{
-                    backgroundColor: activeObjectId === getObjectId(obj) ? colors.selected : 'transparent',
-                    color: activeObjectId === getObjectId(obj) ? colors.primary : colors.text
+                  onClick={() => onLoadMore(type)}
+                  disabled={isLoading}
+                  className="w-full px-2 py-1.5 mt-2 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center justify-center gap-1 border-t pt-2"
+                  style={{ 
+                    backgroundColor: colors.hover,
+                    color: colors.textSecondary,
+                    borderColor: colors.border
                   }}
                 >
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    {getObjectIcon(type.slice(0, -1))}
-                    <span className="text-xs sm:text-sm truncate">{obj.name}</span>
-                  </div>
-                  {obj.status && obj.status !== 'VALID' && (
-                    <AlertCircle size={10} style={{ color: colors.error }} />
+                  {isLoading ? (
+                    <>
+                      <Loader size={12} className="animate-spin" />
+                      <span>Loading more {title.toLowerCase()}...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown size={12} />
+                      <span>Load more {title.toLowerCase()} ({filteredObjects.length} of {totalCount})</span>
+                    </>
                   )}
                 </button>
-              ))}
-              {children}
+              )}
             </>
           )}
+          
+          {/* Show total count info when filtered */}
+          {hasActiveFilter && filteredObjects.length > 0 && filteredObjects.length < totalCount && (
+            <div className="px-2 py-1 mt-1 text-xs text-center italic" style={{ color: colors.textTertiary }}>
+              Showing {filteredObjects.length} of {totalCount} total {title.toLowerCase()}
+            </div>
+          )}
+          
+          {/* Show filter hint when no results */}
+          {/* {hasActiveFilter && filteredObjects.length === 0 && filterQuery && filterQuery.length >= 2 && (
+            <div className="px-2 py-2 mt-1 text-xs text-center" style={{ color: colors.textTertiary }}>
+              Try a different search term or clear filters
+            </div>
+          )} */}
         </div>
       )}
     </div>
@@ -347,82 +503,7 @@ const ObjectTreeSection = React.memo(({
 
 ObjectTreeSection.displayName = 'ObjectTreeSection';
 
-// Synonym Subsection Component
-const SynonymSubsection = React.memo(({ 
-  synonyms, 
-  targetType, 
-  onSelectObject, 
-  activeObjectId,
-  filterQuery,
-  selectedOwner,
-  colors,
-  getObjectIcon,
-  handleContextMenu
-}) => {
-  if (!synonyms || synonyms.length === 0) return null;
-
-  const filteredSynonyms = useMemo(() => {
-    if (!filterQuery && selectedOwner === 'ALL') return synonyms;
-    
-    const searchLower = filterQuery.toLowerCase();
-    
-    return synonyms.filter(obj => {
-      const ownerMatch = selectedOwner === 'ALL' || obj.owner === selectedOwner;
-      if (!ownerMatch) return false;
-      if (!filterQuery) return true;
-      
-      return (
-        (obj.name && obj.name.toLowerCase().includes(searchLower)) ||
-        (obj.owner && obj.owner.toLowerCase().includes(searchLower))
-      );
-    });
-  }, [synonyms, filterQuery, selectedOwner]);
-
-  if (filteredSynonyms.length === 0) return null;
-
-  const getObjectId = (obj) => obj.id || `${obj.owner || 'unknown'}_${obj.name}`;
-
-  return (
-    <div className="ml-4 mt-1 mb-2 border-l-2 pl-2" style={{ borderColor: colors.border }}>
-      <div className="flex items-center gap-1 px-2 py-1 text-xs" style={{ color: colors.textTertiary }}>
-        <Link size={10} />
-        <span className="uppercase tracking-wider text-[10px]">Synonyms</span>
-        <span className="ml-1 text-[10px] px-1 rounded" style={{ backgroundColor: colors.border }}>
-          {filteredSynonyms.length}
-        </span>
-      </div>
-      <div className="space-y-0.7">
-        {filteredSynonyms.map(synonym => (
-          <button
-            key={getObjectId(synonym)}
-            onDoubleClick={() => onSelectObject(synonym, 'SYNONYM')}
-            onContextMenu={(e) => handleContextMenu(e, synonym, 'SYNONYM')}
-            onClick={() => onSelectObject(synonym, 'SYNONYM')}
-            className={`flex items-center justify-between w-full px-2 py-1.5 rounded-sm cursor-pointer group text-left text-xs ${
-              activeObjectId === getObjectId(synonym) ? 'font-medium' : ''
-            }`}
-            style={{
-              backgroundColor: activeObjectId === getObjectId(synonym) ? colors.selected : 'transparent',
-              color: activeObjectId === getObjectId(synonym) ? colors.primary : colors.text
-            }}
-          >
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              {getObjectIcon(targetType)}
-              <span className="truncate">{synonym.name}</span>
-            </div>
-            {synonym.status && synonym.status !== 'VALID' && (
-              <AlertCircle size={8} style={{ color: colors.error }} />
-            )}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-});
-
-SynonymSubsection.displayName = 'SynonymSubsection';
-
-// Left Sidebar Component - UPDATED with synonyms under parent categories and counts
+// Update the LeftSidebar component props destructuring to include filteredResults and isFiltering
 const LeftSidebar = React.memo(({ 
   isLeftSidebarVisible, 
   setIsLeftSidebarVisible,
@@ -436,7 +517,9 @@ const LeftSidebar = React.memo(({
   objectTree,
   handleToggleSection,
   handleLoadSection,
+  handleLoadMore,
   schemaObjects,
+  filteredResults,  // Make sure this is included
   loadingStates,
   activeObject,
   handleObjectSelect,
@@ -445,53 +528,110 @@ const LeftSidebar = React.memo(({
   loading,
   onRefreshSchema,
   schemaInfo,
-  loadedSections
+  loadedSections,
+  pagination,
+  isInitialLoad,
+  hasActiveFilter,
+  isFiltering  // Make sure this is included
 }) => {
+  
+  // Add debug logging
+  console.log('LeftSidebar Debug:', {
+    hasActiveFilter,
+    isFiltering,
+    filteredResults,
+    filterQuery,
+    totalResults: Object.values(filteredResults || {}).reduce((acc, curr) => acc + (curr?.length || 0), 0)
+  });
   
   const handleCloseSidebar = useCallback(() => {
     setIsLeftSidebarVisible(false);
   }, [setIsLeftSidebarVisible]);
 
-  const groupedSynonyms = useMemo(() => {
-    const groups = {
-      tables: [],
-      views: [],
-      procedures: [],
-      functions: [],
-      packages: [],
-      sequences: [],
-      types: [],
-      triggers: [],
-      other: []
-    };
-
-    (schemaObjects.synonyms || []).forEach(synonym => {
-      const targetType = synonym.targetType || synonym.TARGET_TYPE || 'other';
-      const targetTypeLower = targetType.toLowerCase();
+  // Helper function to filter objects - uses API results when filtering, otherwise client-side filter
+  const filterObjects = useCallback((objects, type) => {
+    // If we have filtered results from API and filter is active, use those
+    if (hasActiveFilter && filteredResults && filteredResults[type]) {
+      return filteredResults[type] || [];
+    }
+    
+    // Otherwise, fall back to client-side filtering on already loaded objects
+    if (!filterQuery && selectedOwner === 'ALL') {
+      return objects || [];
+    }
+    
+    const searchLower = filterQuery?.toLowerCase() || '';
+    
+    return (objects || []).filter(obj => {
+      const ownerMatch = selectedOwner === 'ALL' || obj.owner === selectedOwner;
+      if (!ownerMatch) return false;
+      if (!filterQuery) return true;
       
-      if (targetTypeLower.includes('table')) {
-        groups.tables.push(synonym);
-      } else if (targetTypeLower.includes('view')) {
-        groups.views.push(synonym);
-      } else if (targetTypeLower.includes('procedure')) {
-        groups.procedures.push(synonym);
-      } else if (targetTypeLower.includes('function')) {
-        groups.functions.push(synonym);
-      } else if (targetTypeLower.includes('package')) {
-        groups.packages.push(synonym);
-      } else if (targetTypeLower.includes('sequence')) {
-        groups.sequences.push(synonym);
-      } else if (targetTypeLower.includes('type')) {
-        groups.types.push(synonym);
-      } else if (targetTypeLower.includes('trigger')) {
-        groups.triggers.push(synonym);
-      } else {
-        groups.other.push(synonym);
-      }
+      return (
+        (obj.name && obj.name.toLowerCase().includes(searchLower)) ||
+        (obj.owner && obj.owner.toLowerCase().includes(searchLower))
+      );
     });
+  }, [filterQuery, selectedOwner, hasActiveFilter, filteredResults]);
 
-    return groups;
-  }, [schemaObjects.synonyms]);
+  // Helper function to get the appropriate count for display
+  const getDisplayCount = useCallback((type, totalCount) => {
+    if (hasActiveFilter && filteredResults && filteredResults[type]) {
+      return filteredResults[type].length;
+    }
+    return totalCount;
+  }, [hasActiveFilter, filteredResults]);
+
+  // Show schema info in header
+  const renderSchemaInfo = () => {
+    if (!schemaInfo) return null;
+    
+    const currentSchema = schemaInfo.currentUser || schemaInfo.currentSchema || 'Not connected';
+    
+    return (
+      <div className="px-3 py-2 border-b text-xs" style={{ borderColor: colors.border, backgroundColor: colors.hover }}>
+        <div className="flex items-center gap-2">
+          <Server size={12} style={{ color: colors.primary }} />
+          <span className="truncate" style={{ color: colors.textSecondary }} title={currentSchema}>
+            {currentSchema}
+          </span>
+        </div>
+        {schemaInfo.databaseVersion && (
+          <div className="flex items-center gap-2 mt-1">
+            <Cpu size={12} style={{ color: colors.textTertiary }} />
+            <span className="truncate text-[10px]" style={{ color: colors.textTertiary }}>
+              {schemaInfo.databaseVersion.split(' ')[0]}
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Show skeleton during initial load
+  if (isInitialLoad && !loadedSections.procedures) {
+    return (
+      <div className={`w-full md:w-64 border-r flex flex-col absolute md:relative inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out ${
+        isLeftSidebarVisible ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+      }`} style={{ 
+        borderColor: colors.border,
+        width: '16vw',
+        minWidth: '250px',
+        maxWidth: '320px',
+        backgroundColor: colors.sidebar
+      }}>
+        <div className="p-3 border-b" style={{ borderColor: colors.border }}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Database size={16} style={{ color: colors.primary }} />
+              <span className="text-sm font-medium" style={{ color: colors.text }}>Schema Browser</span>
+            </div>
+          </div>
+        </div>
+        <SidebarSkeleton colors={colors} />
+      </div>
+    );
+  }
 
   return (
     <div className={`w-full md:w-64 border-r flex flex-col absolute md:relative inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out ${
@@ -499,40 +639,44 @@ const LeftSidebar = React.memo(({
     }`} style={{ 
       borderColor: colors.border,
       width: '16vw',
+      minWidth: '250px',
       maxWidth: '320px',
       backgroundColor: colors.sidebar
     }}>
 
       {/* Schema Browser Header */}
-      <div className="p-3 border-b" style={{ borderColor: colors.border }}>
+      <div className="p-3 border-b shrink-0" style={{ borderColor: colors.border }}>
         <div className="flex items-center justify-between mb-0">
           <div className="flex items-center gap-2 flex-1 text-left">
             <Database size={16} style={{ color: colors.primary }} />
             <span className="text-sm font-medium truncate" style={{ color: colors.text }}>
-               {owners.map(owner => (
-                owner
-              ))}
+              Schema Browser
             </span>
           </div>
-          <div className="flex gap-1">
+          <div className="flex gap-1 shrink-0">
             <button 
               className="rounded hover:bg-opacity-50 transition-colors flex items-center justify-center w-8 h-8"
               style={{ backgroundColor: colors.hover }}
               onClick={onRefreshSchema}
-              disabled={loading}
+              disabled={loading || isFiltering}
+              title="Refresh schema"
             >
-              <RefreshCw size={12} style={{ color: colors.textSecondary }} className={loading ? 'animate-spin' : ''} />
+              <RefreshCw size={12} style={{ color: colors.textSecondary }} className={loading || isFiltering ? 'animate-spin' : ''} />
             </button>
             <button 
               className="md:hidden rounded hover:bg-opacity-50 transition-colors flex items-center justify-center w-8 h-8"
               style={{ backgroundColor: colors.hover }}
               onClick={handleCloseSidebar}
+              title="Close sidebar"
             >
               <X size={12} style={{ color: colors.textSecondary }} />
             </button>
           </div>
         </div>
       </div>
+
+      {/* Schema Info */}
+      {renderSchemaInfo()}
 
       {/* Filter Input Component */}
       <FilterInput
@@ -543,297 +687,337 @@ const LeftSidebar = React.memo(({
         onOwnerChange={handleOwnerChange}
         onClearFilters={handleClearFilters}
         colors={colors}
-        loading={loading}
+        loading={loading || isFiltering}
       />
 
-      {/* Object Tree */}
-      <div className="flex-1 overflow-auto p-3">
-        {loading && Object.values(schemaObjects).every(arr => arr.length === 0) ? (
-          <div className="flex items-center justify-center h-32">
-            <RefreshCw className="animate-spin" size={16} style={{ color: colors.textSecondary }} />
+      {/* Filter Stats when active */}
+      {hasActiveFilter && !isFiltering && (
+        <div className="px-3 py-2 border-b text-xs" style={{ borderColor: colors.border, backgroundColor: colors.hover }}>
+          <div className="flex items-center justify-between">
+            <span style={{ color: colors.textSecondary }}>
+              Found: {
+                Object.values(filteredResults || {}).reduce((acc, curr) => acc + (curr?.length || 0), 0)
+              } results
+            </span>
+            <span style={{ color: colors.textTertiary }}>
+              for "{filterQuery}"
+            </span>
           </div>
-        ) : (
-          <>
-          
-            {/* Procedures Section with Synonyms */}
-            <ObjectTreeSection
-              title="Procedures"
-              type="procedures"
-              objects={schemaObjects.procedures || []}
-              synonymCount={groupedSynonyms.procedures.length}
-              isLoading={loadingStates.procedures}
-              isExpanded={objectTree.procedures}
-              onToggle={handleToggleSection}
-              onLoadSection={handleLoadSection}
-              onSelectObject={handleObjectSelect}
-              activeObjectId={activeObject?.id}
-              filterQuery={filterQuery}
-              selectedOwner={selectedOwner}
-              colors={colors}
-              getObjectIcon={getObjectIcon}
-              handleContextMenu={handleContextMenu}
-              isLoaded={loadedSections.procedures}
+        </div>
+      )}
+
+      {/* Object Tree - Scrollable Area */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 scrollbar-thin scrollbar-thumb-rounded" 
+           style={{ 
+             scrollbarWidth: 'thin',
+             scrollbarColor: `${colors.border} transparent`
+           }}>
+        <div className="space-y-1">
+          {/* Procedures Section */}
+          <ObjectTreeSection
+            title="Procedures"
+            type="procedures"
+            objects={filterObjects(schemaObjects.procedures || [], 'procedures')}
+            totalCount={getDisplayCount('procedures', schemaObjects.proceduresTotalCount || 0)}
+            isLoading={loadingStates.procedures}
+            isExpanded={objectTree.procedures}
+            onToggle={handleToggleSection}
+            onLoadSection={handleLoadSection}
+            onLoadMore={handleLoadMore}
+            activeObjectId={activeObject?.id}
+            filterQuery={filterQuery}
+            selectedOwner={selectedOwner}
+            colors={colors}
+            getObjectIcon={getObjectIcon}
+            handleContextMenu={handleContextMenu}
+            isLoaded={loadedSections.procedures}
+            currentPage={pagination.procedures.page}
+            totalPages={pagination.procedures.totalPages}
+            onSelectObject={handleObjectSelect}
+            hasActiveFilter={hasActiveFilter}
+            isFiltering={isFiltering}
+          />
+
+          {/* Views Section */}
+          <ObjectTreeSection
+            title="Views"
+            type="views"
+            objects={filterObjects(schemaObjects.views || [], 'views')}
+            totalCount={getDisplayCount('views', schemaObjects.viewsTotalCount || 0)}
+            isLoading={loadingStates.views}
+            isExpanded={objectTree.views}
+            onToggle={handleToggleSection}
+            onLoadSection={handleLoadSection}
+            onLoadMore={handleLoadMore}
+            activeObjectId={activeObject?.id}
+            filterQuery={filterQuery}
+            selectedOwner={selectedOwner}
+            colors={colors}
+            getObjectIcon={getObjectIcon}
+            handleContextMenu={handleContextMenu}
+            isLoaded={loadedSections.views}
+            currentPage={pagination.views.page}
+            totalPages={pagination.views.totalPages}
+            onSelectObject={handleObjectSelect}
+            hasActiveFilter={hasActiveFilter}
+            isFiltering={isFiltering}
+          />
+
+          {/* Functions Section */}
+          <ObjectTreeSection
+            title="Functions"
+            type="functions"
+            objects={filterObjects(schemaObjects.functions || [], 'functions')}
+            totalCount={getDisplayCount('functions', schemaObjects.functionsTotalCount || 0)}
+            isLoading={loadingStates.functions}
+            isExpanded={objectTree.functions}
+            onToggle={handleToggleSection}
+            onLoadSection={handleLoadSection}
+            onLoadMore={handleLoadMore}
+            activeObjectId={activeObject?.id}
+            filterQuery={filterQuery}
+            selectedOwner={selectedOwner}
+            colors={colors}
+            getObjectIcon={getObjectIcon}
+            handleContextMenu={handleContextMenu}
+            isLoaded={loadedSections.functions}
+            currentPage={pagination.functions.page}
+            totalPages={pagination.functions.totalPages}
+            onSelectObject={handleObjectSelect}
+            hasActiveFilter={hasActiveFilter}
+            isFiltering={isFiltering}
+          />
+
+          {/* Packages Section */}
+          <ObjectTreeSection
+            title="Packages"
+            type="packages"
+            objects={filterObjects(schemaObjects.packages || [], 'packages')}
+            totalCount={getDisplayCount('packages', schemaObjects.packagesTotalCount || 0)}
+            isLoading={loadingStates.packages}
+            isExpanded={objectTree.packages}
+            onToggle={handleToggleSection}
+            onLoadSection={handleLoadSection}
+            onLoadMore={handleLoadMore}
+            activeObjectId={activeObject?.id}
+            filterQuery={filterQuery}
+            selectedOwner={selectedOwner}
+            colors={colors}
+            getObjectIcon={getObjectIcon}
+            handleContextMenu={handleContextMenu}
+            isLoaded={loadedSections.packages}
+            currentPage={pagination.packages.page}
+            totalPages={pagination.packages.totalPages}
+            onSelectObject={handleObjectSelect}
+            hasActiveFilter={hasActiveFilter}
+            isFiltering={isFiltering}
+          />
+
+          {/* Tables Section */}
+          <ObjectTreeSection
+            title="Tables"
+            type="tables"
+            objects={filterObjects(schemaObjects.tables || [], 'tables')}
+            totalCount={getDisplayCount('tables', schemaObjects.tablesTotalCount || 0)}
+            isLoading={loadingStates.tables}
+            isExpanded={objectTree.tables}
+            onToggle={handleToggleSection}
+            onLoadSection={handleLoadSection}
+            onLoadMore={handleLoadMore}
+            activeObjectId={activeObject?.id}
+            filterQuery={filterQuery}
+            selectedOwner={selectedOwner}
+            colors={colors}
+            getObjectIcon={getObjectIcon}
+            handleContextMenu={handleContextMenu}
+            isLoaded={loadedSections.tables}
+            currentPage={pagination.tables.page}
+            totalPages={pagination.tables.totalPages}
+            onSelectObject={handleObjectSelect}
+            hasActiveFilter={hasActiveFilter}
+            isFiltering={isFiltering}
+          />
+
+          {/* Sequences Section */}
+          <ObjectTreeSection
+            title="Sequences"
+            type="sequences"
+            objects={filterObjects(schemaObjects.sequences || [], 'sequences')}
+            totalCount={getDisplayCount('sequences', schemaObjects.sequencesTotalCount || 0)}
+            isLoading={loadingStates.sequences}
+            isExpanded={objectTree.sequences}
+            onToggle={handleToggleSection}
+            onLoadSection={handleLoadSection}
+            onLoadMore={handleLoadMore}
+            activeObjectId={activeObject?.id}
+            filterQuery={filterQuery}
+            selectedOwner={selectedOwner}
+            colors={colors}
+            getObjectIcon={getObjectIcon}
+            handleContextMenu={handleContextMenu}
+            isLoaded={loadedSections.sequences}
+            currentPage={pagination.sequences.page}
+            totalPages={pagination.sequences.totalPages}
+            onSelectObject={handleObjectSelect}
+            hasActiveFilter={hasActiveFilter}
+            isFiltering={isFiltering}
+          />
+
+          {/* Synonyms Section */}
+          {/* <ObjectTreeSection
+            title="Synonyms"
+            type="synonyms"
+            objects={filterObjects(schemaObjects.synonyms || [], 'synonyms')}
+            totalCount={getDisplayCount('synonyms', schemaObjects.synonymsTotalCount || 0)}
+            isLoading={loadingStates.synonyms}
+            isExpanded={objectTree.synonyms}
+            onToggle={handleToggleSection}
+            onLoadSection={handleLoadSection}
+            onLoadMore={handleLoadMore}
+            activeObjectId={activeObject?.id}
+            filterQuery={filterQuery}
+            selectedOwner={selectedOwner}
+            colors={colors}
+            getObjectIcon={() => getObjectIcon('synonym')}
+            handleContextMenu={handleContextMenu}
+            isLoaded={loadedSections.synonyms}
+            currentPage={pagination.synonyms.page}
+            totalPages={pagination.synonyms.totalPages}
+            onSelectObject={handleObjectSelect}
+            hasActiveFilter={hasActiveFilter}
+            isFiltering={isFiltering}
+          /> */}
+
+          {/* Types Section */}
+          <ObjectTreeSection
+            title="Types"
+            type="types"
+            objects={filterObjects(schemaObjects.types || [], 'types')}
+            totalCount={getDisplayCount('types', schemaObjects.typesTotalCount || 0)}
+            isLoading={loadingStates.types}
+            isExpanded={objectTree.types}
+            onToggle={handleToggleSection}
+            onLoadSection={handleLoadSection}
+            onLoadMore={handleLoadMore}
+            activeObjectId={activeObject?.id}
+            filterQuery={filterQuery}
+            selectedOwner={selectedOwner}
+            colors={colors}
+            getObjectIcon={getObjectIcon}
+            handleContextMenu={handleContextMenu}
+            isLoaded={loadedSections.types}
+            currentPage={pagination.types.page}
+            totalPages={pagination.types.totalPages}
+            onSelectObject={handleObjectSelect}
+            hasActiveFilter={hasActiveFilter}
+            isFiltering={isFiltering}
+          />
+
+          {/* Triggers Section */}
+          <ObjectTreeSection
+            title="Triggers"
+            type="triggers"
+            objects={filterObjects(schemaObjects.triggers || [], 'triggers')}
+            totalCount={getDisplayCount('triggers', schemaObjects.triggersTotalCount || 0)}
+            isLoading={loadingStates.triggers}
+            isExpanded={objectTree.triggers}
+            onToggle={handleToggleSection}
+            onLoadSection={handleLoadSection}
+            onLoadMore={handleLoadMore}
+            activeObjectId={activeObject?.id}
+            filterQuery={filterQuery}
+            selectedOwner={selectedOwner}
+            colors={colors}
+            getObjectIcon={getObjectIcon}
+            handleContextMenu={handleContextMenu}
+            isLoaded={loadedSections.triggers}
+            currentPage={pagination.triggers.page}
+            totalPages={pagination.triggers.totalPages}
+            onSelectObject={handleObjectSelect}
+            hasActiveFilter={hasActiveFilter}
+            isFiltering={isFiltering}
+          />
+        </div>
+
+        {/* Loading More Indicator */}
+        {(loadingStates.procedures || loadingStates.views || loadingStates.functions || 
+          loadingStates.tables || loadingStates.packages || loadingStates.sequences || 
+          loadingStates.synonyms || loadingStates.types || loadingStates.triggers) && !hasActiveFilter && (
+          <div className="flex items-center justify-center gap-2 py-4 mt-2 border-t" style={{ borderColor: colors.border }}>
+            <Loader size={14} className="animate-spin" style={{ color: colors.primary }} />
+            <span className="text-xs" style={{ color: colors.textSecondary }}>Loading more objects...</span>
+          </div>
+        )}
+
+        {/* No Results Message when filtering */}
+        {hasActiveFilter && !isFiltering && 
+         Object.values(filteredResults || {}).reduce((acc, curr) => acc + (curr?.length || 0), 0) === 0 && (
+          <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
+            <Search size={32} style={{ color: colors.textTertiary, opacity: 0.5 }} />
+            <p className="text-sm mt-2 font-medium" style={{ color: colors.text }}>No matching objects found</p>
+            <p className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+              Try adjusting your search or clear filters
+            </p>
+            <button
+              onClick={handleClearFilters}
+              className="mt-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors"
+              style={{ backgroundColor: colors.hover, color: colors.text }}
             >
-              <SynonymSubsection
-                synonyms={groupedSynonyms.procedures}
-                targetType="procedure"
-                onSelectObject={handleObjectSelect}
-                activeObjectId={activeObject?.id}
-                filterQuery={filterQuery}
-                selectedOwner={selectedOwner}
-                colors={colors}
-                getObjectIcon={getObjectIcon}
-                handleContextMenu={handleContextMenu}
-              />
-            </ObjectTreeSection>
+              Clear Filters
+            </button>
+          </div>
+        )}
 
-            {/* Views Section with Synonyms */}
-            <ObjectTreeSection
-              title="Views"
-              type="views"
-              objects={schemaObjects.views || []}
-              synonymCount={groupedSynonyms.views.length}
-              isLoading={loadingStates.views}
-              isExpanded={objectTree.views}
-              onToggle={handleToggleSection}
-              onLoadSection={handleLoadSection}
-              onSelectObject={handleObjectSelect}
-              activeObjectId={activeObject?.id}
-              filterQuery={filterQuery}
-              selectedOwner={selectedOwner}
-              colors={colors}
-              getObjectIcon={getObjectIcon}
-              handleContextMenu={handleContextMenu}
-              isLoaded={loadedSections.views}
+        {/* Empty State when no objects loaded */}
+        {!hasActiveFilter && !isFiltering && 
+         !schemaObjects.procedures?.length && !schemaObjects.views?.length && 
+         !schemaObjects.functions?.length && !schemaObjects.tables?.length && 
+         !schemaObjects.packages?.length && !schemaObjects.sequences?.length && 
+         !schemaObjects.synonyms?.length && !schemaObjects.types?.length && 
+         !schemaObjects.triggers?.length && !isInitialLoad && (
+          <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
+            <Database size={32} style={{ color: colors.textTertiary, opacity: 0.5 }} />
+            <p className="text-sm mt-2" style={{ color: colors.textSecondary }}>
+              No objects found in schema
+            </p>
+            <button
+              onClick={onRefreshSchema}
+              className="mt-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-2"
+              style={{ backgroundColor: colors.hover, color: colors.text }}
+              disabled={loading}
             >
-              <SynonymSubsection
-                synonyms={groupedSynonyms.views}
-                targetType="view"
-                onSelectObject={handleObjectSelect}
-                activeObjectId={activeObject?.id}
-                filterQuery={filterQuery}
-                selectedOwner={selectedOwner}
-                colors={colors}
-                getObjectIcon={getObjectIcon}
-                handleContextMenu={handleContextMenu}
-              />
-            </ObjectTreeSection>
+              <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+          </div>
+        )}
+      </div>
 
-
-            {/* Functions Section with Synonyms */}
-            <ObjectTreeSection
-              title="Functions"
-              type="functions"
-              objects={schemaObjects.functions || []}
-              synonymCount={groupedSynonyms.functions.length}
-              isLoading={loadingStates.functions}
-              isExpanded={objectTree.functions}
-              onToggle={handleToggleSection}
-              onLoadSection={handleLoadSection}
-              onSelectObject={handleObjectSelect}
-              activeObjectId={activeObject?.id}
-              filterQuery={filterQuery}
-              selectedOwner={selectedOwner}
-              colors={colors}
-              getObjectIcon={getObjectIcon}
-              handleContextMenu={handleContextMenu}
-              isLoaded={loadedSections.functions}
-            >
-              <SynonymSubsection
-                synonyms={groupedSynonyms.functions}
-                targetType="function"
-                onSelectObject={handleObjectSelect}
-                activeObjectId={activeObject?.id}
-                filterQuery={filterQuery}
-                selectedOwner={selectedOwner}
-                colors={colors}
-                getObjectIcon={getObjectIcon}
-                handleContextMenu={handleContextMenu}
-              />
-            </ObjectTreeSection>
-
-            {/* Packages Section with Synonyms */}
-            <ObjectTreeSection
-              title="Packages"
-              type="packages"
-              objects={schemaObjects.packages || []}
-              synonymCount={groupedSynonyms.packages.length}
-              isLoading={loadingStates.packages}
-              isExpanded={objectTree.packages}
-              onToggle={handleToggleSection}
-              onLoadSection={handleLoadSection}
-              onSelectObject={handleObjectSelect}
-              activeObjectId={activeObject?.id}
-              filterQuery={filterQuery}
-              selectedOwner={selectedOwner}
-              colors={colors}
-              getObjectIcon={getObjectIcon}
-              handleContextMenu={handleContextMenu}
-              isLoaded={loadedSections.packages}
-            >
-              <SynonymSubsection
-                synonyms={groupedSynonyms.packages}
-                targetType="package"
-                onSelectObject={handleObjectSelect}
-                activeObjectId={activeObject?.id}
-                filterQuery={filterQuery}
-                selectedOwner={selectedOwner}
-                colors={colors}
-                getObjectIcon={getObjectIcon}
-                handleContextMenu={handleContextMenu}
-              />
-            </ObjectTreeSection>
-
-            {/* Tables Section with Synonyms */}
-            <ObjectTreeSection
-              title="Tables"
-              type="tables"
-              objects={schemaObjects.tables || []}
-              synonymCount={groupedSynonyms.tables.length}
-              isLoading={loadingStates.tables}
-              isExpanded={objectTree.tables}
-              onToggle={handleToggleSection}
-              onLoadSection={handleLoadSection}
-              onSelectObject={handleObjectSelect}
-              activeObjectId={activeObject?.id}
-              filterQuery={filterQuery}
-              selectedOwner={selectedOwner}
-              colors={colors}
-              getObjectIcon={getObjectIcon}
-              handleContextMenu={handleContextMenu}
-              isLoaded={loadedSections.tables}
-            >
-              <SynonymSubsection
-                synonyms={groupedSynonyms.tables}
-                targetType="table"
-                onSelectObject={handleObjectSelect}
-                activeObjectId={activeObject?.id}
-                filterQuery={filterQuery}
-                selectedOwner={selectedOwner}
-                colors={colors}
-                getObjectIcon={getObjectIcon}
-                handleContextMenu={handleContextMenu}
-              />
-            </ObjectTreeSection>
-
-            {/* Sequences Section with Synonyms */}
-            <ObjectTreeSection
-              title="Sequences"
-              type="sequences"
-              objects={schemaObjects.sequences || []}
-              synonymCount={groupedSynonyms.sequences.length}
-              isLoading={loadingStates.sequences}
-              isExpanded={objectTree.sequences}
-              onToggle={handleToggleSection}
-              onLoadSection={handleLoadSection}
-              onSelectObject={handleObjectSelect}
-              activeObjectId={activeObject?.id}
-              filterQuery={filterQuery}
-              selectedOwner={selectedOwner}
-              colors={colors}
-              getObjectIcon={getObjectIcon}
-              handleContextMenu={handleContextMenu}
-              isLoaded={loadedSections.sequences}
-            >
-              <SynonymSubsection
-                synonyms={groupedSynonyms.sequences}
-                targetType="sequence"
-                onSelectObject={handleObjectSelect}
-                activeObjectId={activeObject?.id}
-                filterQuery={filterQuery}
-                selectedOwner={selectedOwner}
-                colors={colors}
-                getObjectIcon={getObjectIcon}
-                handleContextMenu={handleContextMenu}
-              />
-            </ObjectTreeSection>
-
-            {/* Types Section with Synonyms */}
-            <ObjectTreeSection
-              title="Types"
-              type="types"
-              objects={schemaObjects.types || []}
-              synonymCount={groupedSynonyms.types.length}
-              isLoading={loadingStates.types}
-              isExpanded={objectTree.types}
-              onToggle={handleToggleSection}
-              onLoadSection={handleLoadSection}
-              onSelectObject={handleObjectSelect}
-              activeObjectId={activeObject?.id}
-              filterQuery={filterQuery}
-              selectedOwner={selectedOwner}
-              colors={colors}
-              getObjectIcon={getObjectIcon}
-              handleContextMenu={handleContextMenu}
-              isLoaded={loadedSections.types}
-            >
-              <SynonymSubsection
-                synonyms={groupedSynonyms.types}
-                targetType="type"
-                onSelectObject={handleObjectSelect}
-                activeObjectId={activeObject?.id}
-                filterQuery={filterQuery}
-                selectedOwner={selectedOwner}
-                colors={colors}
-                getObjectIcon={getObjectIcon}
-                handleContextMenu={handleContextMenu}
-              />
-            </ObjectTreeSection>
-
-            {/* Triggers Section with Synonyms */}
-            <ObjectTreeSection
-              title="Triggers"
-              type="triggers"
-              objects={schemaObjects.triggers || []}
-              synonymCount={groupedSynonyms.triggers.length}
-              isLoading={loadingStates.triggers}
-              isExpanded={objectTree.triggers}
-              onToggle={handleToggleSection}
-              onLoadSection={handleLoadSection}
-              onSelectObject={handleObjectSelect}
-              activeObjectId={activeObject?.id}
-              filterQuery={filterQuery}
-              selectedOwner={selectedOwner}
-              colors={colors}
-              getObjectIcon={getObjectIcon}
-              handleContextMenu={handleContextMenu}
-              isLoaded={loadedSections.triggers}
-            >
-              <SynonymSubsection
-                synonyms={groupedSynonyms.triggers}
-                targetType="trigger"
-                onSelectObject={handleObjectSelect}
-                activeObjectId={activeObject?.id}
-                filterQuery={filterQuery}
-                selectedOwner={selectedOwner}
-                colors={colors}
-                getObjectIcon={getObjectIcon}
-                handleContextMenu={handleContextMenu}
-              />
-            </ObjectTreeSection>
-
-            {/* Other Synonyms (if any) */}
-            {groupedSynonyms.other.length > 0 && (
-              <ObjectTreeSection
-                title="Other Synonyms"
-                type="synonyms"
-                objects={groupedSynonyms.other}
-                synonymCount={0}
-                isLoading={loadingStates.synonyms}
-                isExpanded={objectTree.synonyms}
-                onToggle={handleToggleSection}
-                onLoadSection={handleLoadSection}
-                onSelectObject={handleObjectSelect}
-                activeObjectId={activeObject?.id}
-                filterQuery={filterQuery}
-                selectedOwner={selectedOwner}
-                colors={colors}
-                getObjectIcon={() => getObjectIcon('synonym')}
-                handleContextMenu={handleContextMenu}
-                isLoaded={loadedSections.synonyms}
-              />
-            )}
-          </>
+      {/* Sidebar Footer */}
+      <div className="p-3 border-t shrink-0 text-[10px]" style={{ borderColor: colors.border, color: colors.textTertiary }}>
+        <div className="flex items-center justify-between">
+          <span>Total Objects:</span>
+          <span className="font-mono">
+            {(
+              (schemaObjects.proceduresTotalCount || 0) +
+              (schemaObjects.viewsTotalCount || 0) +
+              (schemaObjects.functionsTotalCount || 0) +
+              (schemaObjects.tablesTotalCount || 0) +
+              (schemaObjects.packagesTotalCount || 0) +
+              (schemaObjects.sequencesTotalCount || 0) +
+              (schemaObjects.synonymsTotalCount || 0) +
+              (schemaObjects.typesTotalCount || 0) +
+              (schemaObjects.triggersTotalCount || 0)
+            ).toLocaleString()}
+          </span>
+        </div>
+        {hasActiveFilter && !isFiltering && (
+          <div className="flex items-center justify-between mt-1 text-[9px]" style={{ color: colors.primary }}>
+            <span>Filtered:</span>
+            <span className="font-mono">
+              {Object.values(filteredResults || {}).reduce((acc, curr) => acc + (curr?.length || 0), 0)}
+            </span>
+          </div>
         )}
       </div>
     </div>
@@ -1024,9 +1208,31 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   const [schemaInfo, setSchemaInfo] = useState(null);
   const [hasAutoSelected, setHasAutoSelected] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  const [isLoadingObjects, setIsLoadingObjects] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   const [ddlLoading, setDdlLoading] = useState(false);
 
+  // New state to track if filter is active
+  const [hasActiveFilter, setHasActiveFilter] = useState(false);
+
+  // Pagination state for each object type
+  const [pagination, setPagination] = useState({
+    procedures: { page: 1, totalPages: 1, totalCount: 0 },
+    views: { page: 1, totalPages: 1, totalCount: 0 },
+    functions: { page: 1, totalPages: 1, totalCount: 0 },
+    tables: { page: 1, totalPages: 1, totalCount: 0 },
+    packages: { page: 1, totalPages: 1, totalCount: 0 },
+    sequences: { page: 1, totalPages: 1, totalCount: 0 },
+    synonyms: { page: 1, totalPages: 1, totalCount: 0 },
+    types: { page: 1, totalPages: 1, totalCount: 0 },
+    triggers: { page: 1, totalPages: 1, totalCount: 0 }
+  });
+
+  // Add these new state variables
+  const [filteredResults, setFilteredResults] = useState({});
+  const [isFiltering, setIsFiltering] = useState(false);
+  const [filterSearchTerm, setFilterSearchTerm] = useState('');
 
   // New state for tracking loaded sections
   const [loadedSections, setLoadedSections] = useState({
@@ -1041,17 +1247,26 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
     triggers: false
   });
   
-  // Schema objects state
+  // Schema objects state with total counts
   const [schemaObjects, setSchemaObjects] = useState({
     tables: [],
+    tablesTotalCount: 0,
     views: [],
+    viewsTotalCount: 0,
     procedures: [],
+    proceduresTotalCount: 0,
     functions: [],
+    functionsTotalCount: 0,
     packages: [],
+    packagesTotalCount: 0,
     sequences: [],
+    sequencesTotalCount: 0,
     synonyms: [],
+    synonymsTotalCount: 0,
     types: [],
-    triggers: []
+    typesTotalCount: 0,
+    triggers: [],
+    triggersTotalCount: 0
   });
   
   // Loading states for each object type
@@ -1067,9 +1282,9 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
     triggers: false
   });
   
-  // Object tree expanded state - UPDATED: Only Tables is expanded by default
+  // Object tree expanded state
   const [objectTree, setObjectTree] = useState({
-    procedures: true, // Only procedures is expanded by default
+    procedures: true, // Only procedures expanded by default
     views: false,
     functions: false,
     tables: false,
@@ -1092,14 +1307,21 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
   const [contextObject, setContextObject] = useState(null);
+
+  const [isLoadingSchemaObjects, setIsLoadingSchemaObjects] = useState(true);
   
   // Data view state
   const [dataView, setDataView] = useState({
     page: 1,
-    pageSize: 50,
+    pageSize: 10,
     sortColumn: '',
     sortDirection: 'ASC'
   });
+
+  // Update hasActiveFilter when filter changes
+  useEffect(() => {
+    setHasActiveFilter(!!filterQuery || selectedOwner !== 'ALL');
+  }, [filterQuery, selectedOwner]);
 
   // Get Object Icon
   const getObjectIcon = useCallback((type) => {
@@ -1121,7 +1343,75 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
     }
   }, [colors]);
 
-  // Load schema info
+  // Helper function to extract items from paginated response
+  const extractItemsFromResponse = (response) => {
+    if (!response) return { items: [], totalPages: 1, totalCount: 0, page: 1 };
+    
+    Logger.debug('SchemaBrowser', 'extractItemsFromResponse', 'Response structure:', {
+      hasData: !!response.data,
+      dataType: response.data ? typeof response.data : 'undefined',
+      dataIsArray: response.data ? Array.isArray(response.data) : false,
+      totalCount: response.totalCount,
+      responseKeys: Object.keys(response)
+    });
+    
+    let items = [];
+    let totalCount = response.totalCount || 0;
+    let totalPages = response.pagination?.totalPages || 1;
+    let page = response.pagination?.page || 1;
+    let pageSize = response.pagination?.pageSize || 10;
+    
+    // CASE 1: Response has data.items (transformed paginated structure)
+    if (response.data && response.data.items && Array.isArray(response.data.items)) {
+      items = response.data.items;
+      totalCount = response.data.totalCount || response.totalCount || items.length;
+      totalPages = response.data.totalPages || response.pagination?.totalPages || 1;
+      page = response.data.page || response.pagination?.page || 1;
+    }
+    
+    // CASE 2: Response has data array directly
+    else if (response.data && Array.isArray(response.data)) {
+      items = response.data;
+      totalCount = response.totalCount || items.length;
+      totalPages = response.pagination?.totalPages || 
+                  Math.ceil((response.totalCount || items.length) / (response.pagination?.pageSize || 50)) || 1;
+      page = response.pagination?.page || 1;
+    }
+    
+    // CASE 3: Response has data.paginatedItems structure
+    else if (response.data && response.data.paginatedItems && Array.isArray(response.data.paginatedItems)) {
+      items = response.data.paginatedItems;
+      totalCount = response.data.totalCount || response.totalCount || items.length;
+      totalPages = response.data.totalPages || response.pagination?.totalPages || 1;
+      page = response.data.page || response.pagination?.page || 1;
+    }
+    
+    // CASE 4: Response has an 'items' property
+    else if (response.items && Array.isArray(response.items)) {
+      items = response.items;
+      totalCount = response.totalCount || items.length;
+      totalPages = response.totalPages || 1;
+      page = response.page || 1;
+    }
+    
+    // CASE 5: Response itself is an array
+    else if (Array.isArray(response)) {
+      items = response;
+      totalCount = items.length;
+      totalPages = 1;
+      page = 1;
+    }
+    
+    return {
+      items,
+      totalCount,
+      totalPages,
+      page,
+      pageSize
+    };
+  };
+
+  // Load schema info - only once at initialization
   const loadSchemaInfo = useCallback(async () => {
     if (!authToken) {
       setError('Authentication required');
@@ -1149,327 +1439,352 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
     }
   }, [authToken]);
 
-  // Load all object counts - FIXED
-const loadAllObjectCounts = useCallback(async () => {
-  if (!authToken) return;
-  
-  Logger.info('SchemaBrowser', 'loadAllObjectCounts', 'Loading all object counts');
-  
-  // Track owners locally to avoid stale closure
-  let updatedOwners = new Set(owners);
-  
-  // First load procedures explicitly and wait for them
-  Logger.info('SchemaBrowser', 'loadAllObjectCounts', 'Loading procedures first...');
-  try {
-    const cacheKey = `procedures_${authToken.substring(0, 10)}`;
-    const cached = objectCache.get(cacheKey);
+  // Optimized function to load only procedures first (since it's expanded by default)
+  const loadInitialData = useCallback(async () => {
+    if (!authToken) return;
     
-    let proceduresData = [];
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      proceduresData = cached.data;
-      Logger.info('SchemaBrowser', 'loadAllObjectCounts', `Loaded procedures from cache (${proceduresData.length})`);
-    } else {
-      const response = await getAllProceduresForFrontend(authToken);
-      let data = [];
-      if (response && response.data) {
-        data = response.data;
-      } else {
-        const processed = handleSchemaBrowserResponse(response);
-        data = processed.data || [];
-      }
-      objectCache.set(cacheKey, { data, timestamp: Date.now() });
-      proceduresData = data;
-      Logger.info('SchemaBrowser', 'loadAllObjectCounts', `Loaded procedures from API (${proceduresData.length})`);
-    }
+    Logger.info('SchemaBrowser', 'loadInitialData', 'Loading procedures first');
     
-    // Update procedures state immediately
-    setSchemaObjects(prev => ({ ...prev, procedures: proceduresData }));
-    setLoadedSections(prev => ({ ...prev, procedures: true }));
+    // Track owners locally
+    let updatedOwners = new Set(owners);
     
-    // Update owners
-    proceduresData.forEach(obj => {
-      if (obj.owner) updatedOwners.add(obj.owner);
-    });
-    
-  } catch (err) {
-    Logger.error('SchemaBrowser', 'loadAllObjectCounts', 'Error loading procedures', err);
-    setSchemaObjects(prev => ({ ...prev, procedures: [] }));
-    setLoadedSections(prev => ({ ...prev, procedures: true }));
-  }
-  
-  // Now load all other object types in parallel
-  const loadPromises = [
-    { type: 'views', func: getAllViewsForFrontend },
-    { type: 'functions', func: getAllFunctionsForFrontend },
-    { type: 'tables', func: getAllTablesForFrontend },
-    { type: 'packages', func: getAllPackagesForFrontend },
-    { type: 'sequences', func: getAllSequencesForFrontend },
-    { type: 'synonyms', func: getAllSynonymsForFrontend },
-    { type: 'types', func: getAllTypesForFrontend },
-    { type: 'triggers', func: getAllTriggersForFrontend }
-  ];
-
-  await Promise.all(loadPromises.map(async ({ type, func }) => {
     try {
-      const cacheKey = `${type}_${authToken.substring(0, 10)}`;
+      // Check cache first
+      const cacheKey = `procedures_${authToken.substring(0, 10)}_page1`;
       const cached = objectCache.get(cacheKey);
       
       if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-        setSchemaObjects(prev => ({ ...prev, [type]: cached.data }));
-        setLoadedSections(prev => ({ ...prev, [type]: true }));
-        Logger.debug('SchemaBrowser', 'loadAllObjectCounts', `Loaded ${type} from cache (${cached.data.length} items)`);
+        Logger.debug('SchemaBrowser', 'loadInitialData', 'Loaded procedures from cache');
+        setSchemaObjects(prev => ({ 
+          ...prev, 
+          procedures: cached.data.items,
+          proceduresTotalCount: cached.data.totalCount 
+        }));
+        setPagination(prev => ({
+          ...prev,
+          procedures: {
+            page: cached.data.page,
+            totalPages: cached.data.totalPages,
+            totalCount: cached.data.totalCount
+          }
+        }));
+        setLoadedSections(prev => ({ ...prev, procedures: true }));
         
-        // Update owners
-        cached.data.forEach(obj => {
+        // Update owners from cached data
+        cached.data.items.forEach(obj => {
           if (obj.owner) updatedOwners.add(obj.owner);
         });
       } else {
-        Logger.debug('SchemaBrowser', 'loadAllObjectCounts', `Loading ${type} from API`);
-        const response = await func(authToken);
+        // Load from API
+        setLoadingStates(prev => ({ ...prev, procedures: true }));
         
-        let data = [];
-        if (response && response.data) {
-          data = response.data;
-        } else {
-          const processed = handleSchemaBrowserResponse(response);
-          data = processed.data || [];
-        }
+        const response = await getAllProceduresForFrontendPaginated(authToken, { page: 1, pageSize: 10 });
+        const { items, totalCount, totalPages } = extractItemsFromResponse(response);
         
-        objectCache.set(cacheKey, { data, timestamp: Date.now() });
+        setSchemaObjects(prev => ({ 
+          ...prev, 
+          procedures: items,
+          proceduresTotalCount: totalCount 
+        }));
+        setPagination(prev => ({
+          ...prev,
+          procedures: { page: 1, totalPages, totalCount }
+        }));
+        setLoadedSections(prev => ({ ...prev, procedures: true }));
         
-        setSchemaObjects(prev => ({ ...prev, [type]: data }));
-        setLoadedSections(prev => ({ ...prev, [type]: true }));
+        // Cache the result
+        objectCache.set(cacheKey, { 
+          data: { items, totalCount, totalPages, page: 1 }, 
+          timestamp: Date.now() 
+        });
         
         // Update owners
-        data.forEach(obj => {
+        items.forEach(obj => {
           if (obj.owner) updatedOwners.add(obj.owner);
         });
         
-        Logger.info('SchemaBrowser', 'loadAllObjectCounts', `Loaded ${data.length} ${type}`);
+        setLoadingStates(prev => ({ ...prev, procedures: false }));
       }
+      
+      // Load schema info only once
+      if (!schemaInfo) {
+        await loadSchemaInfo();
+      }
+      
+      // Update owners
+      setOwners(Array.from(updatedOwners).sort());
+      
+      // Mark initial load as complete
+      setIsInitialLoad(false);
+      setLoading(false);
+      setInitialLoadComplete(true);
+      
+      Logger.info('SchemaBrowser', 'loadInitialData', 'Initial data loaded');
+      
     } catch (err) {
-      Logger.error('SchemaBrowser', 'loadAllObjectCounts', `Error loading ${type}`, err);
-      setSchemaObjects(prev => ({ ...prev, [type]: [] }));
-      setLoadedSections(prev => ({ ...prev, [type]: true }));
+      Logger.error('SchemaBrowser', 'loadInitialData', 'Error loading initial data', err);
+      setError(`Failed to load initial data: ${err.message}`);
+      setIsInitialLoad(false);
+      setLoading(false);
     }
-  }));
-  
-  // Update owners once at the end
-  setOwners(Array.from(updatedOwners).sort());
-  
-  // After all loads complete, log the final state
-  Logger.info('SchemaBrowser', 'loadAllObjectCounts', 'Final object counts:', {
-    procedures: schemaObjects.procedures?.length || 0,
-    packages: schemaObjects.packages?.length || 0,
-    tables: schemaObjects.tables?.length || 0
-  });
-}, [authToken]); // Remove owners dependency to avoid stale closure
+  }, [authToken, owners, loadSchemaInfo, schemaInfo]);
 
-  // Load object type on demand
-  const loadObjectType = useCallback(async (type) => {
+  // Load remaining object types in background
+  const loadRemainingData = useCallback(async () => {
     if (!authToken) return;
-    if (loadingStates[type]) return;
-    if (loadedSections[type]) {
-      Logger.debug('SchemaBrowser', 'loadObjectType', `${type} already loaded`);
+    
+    Logger.info('SchemaBrowser', 'loadRemainingData', 'Loading remaining data in background');
+    
+    const remainingTypes = [
+      { type: 'synonyms', fetcher: getAllSynonymsForFrontendPaginated },
+      { type: 'views', fetcher: getAllViewsForFrontendPaginated },
+      { type: 'functions', fetcher: getAllFunctionsForFrontendPaginated },
+      { type: 'tables', fetcher: getAllTablesForFrontendPaginated },
+      { type: 'packages', fetcher: getAllPackagesForFrontendPaginated },
+      { type: 'sequences', fetcher: getAllSequencesForFrontendPaginated },
+      { type: 'types', fetcher: getAllTypesForFrontendPaginated },
+      { type: 'triggers', fetcher: getAllTriggersForFrontendPaginated }
+    ];
+    
+    // Load in parallel with lower priority
+    const loadPromises = remainingTypes.map(async ({ type, fetcher }) => {
+      // Small delay to not block UI
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      try {
+        const cacheKey = `${type}_${authToken.substring(0, 10)}_page1`;
+        const cached = objectCache.get(cacheKey);
+        
+        if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+          setSchemaObjects(prev => ({ 
+            ...prev, 
+            [type]: cached.data.items,
+            [`${type}TotalCount`]: cached.data.totalCount
+          }));
+          setPagination(prev => ({
+            ...prev,
+            [type]: {
+              page: cached.data.page,
+              totalPages: cached.data.totalPages,
+              totalCount: cached.data.totalCount
+            }
+          }));
+          setLoadedSections(prev => ({ ...prev, [type]: true }));
+          return;
+        }
+        
+        setLoadingStates(prev => ({ ...prev, [type]: true }));
+        
+        const response = await fetcher(authToken, { page: 1, pageSize: 10 });
+        const { items, totalCount, totalPages } = extractItemsFromResponse(response);
+        
+        setSchemaObjects(prev => ({ 
+          ...prev, 
+          [type]: items,
+          [`${type}TotalCount`]: totalCount 
+        }));
+        setPagination(prev => ({
+          ...prev,
+          [type]: { page: 1, totalPages, totalCount }
+        }));
+        setLoadedSections(prev => ({ ...prev, [type]: true }));
+        
+        objectCache.set(cacheKey, { 
+          data: { items, totalCount, totalPages, page: 1 }, 
+          timestamp: Date.now() 
+        });
+        
+        // Update owners
+        setOwners(prev => {
+          const newOwners = new Set(prev);
+          items.forEach(obj => {
+            if (obj.owner) newOwners.add(obj.owner);
+          });
+          return Array.from(newOwners).sort();
+        });
+        
+        setLoadingStates(prev => ({ ...prev, [type]: false }));
+        
+      } catch (err) {
+        Logger.error('SchemaBrowser', 'loadRemainingData', `Error loading ${type}`, err);
+        setLoadingStates(prev => ({ ...prev, [type]: false }));
+      }
+    });
+    
+    // Show loading state while synonyms and other objects are loading
+    setIsLoadingSchemaObjects(true);
+    
+    await Promise.all(loadPromises);
+    
+    // Hide loading state when done
+    setIsLoadingSchemaObjects(false);
+    
+    Logger.info('SchemaBrowser', 'loadRemainingData', 'All remaining data loaded');
+    
+  }, [authToken]);
+
+  // Initialize component
+  useEffect(() => {
+    let isMounted = true;
+    
+    const initialize = async () => {
+      if (!authToken || initialized) return;
+      
+      Logger.info('SchemaBrowser', 'initialize', 'Starting initialization');
+      
+      // Load initial data first (procedures)
+      await loadInitialData();
+      
+      if (isMounted) {
+        setInitialized(true);
+        
+        // Load remaining data in background
+        loadRemainingData().catch(err => {
+          Logger.error('SchemaBrowser', 'initialize', 'Error loading remaining data', err);
+        });
+      }
+    };
+    
+    initialize();
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [authToken, initialized, loadInitialData, loadRemainingData]);
+
+  // Load more objects for a specific type
+  const loadObjectType = useCallback(async (type, page = 1, pageSize = 10) => {
+    if (!authToken) return;
+    
+    // Check if already loading this type
+    const requestKey = `${type}_page_${page}`;
+    if (loadingStates[type] || ongoingRequests.has(requestKey)) {
+      Logger.debug('SchemaBrowser', 'loadObjectType', `Already loading ${type} page ${page}, skipping`);
       return;
     }
     
-    Logger.info('SchemaBrowser', 'loadObjectType', `Loading ${type} details from API`);
+    Logger.info('SchemaBrowser', 'loadObjectType', `Loading ${type} page ${page} from API`);
     
+    // Mark as loading
     setLoadingStates(prev => ({ ...prev, [type]: true }));
+    ongoingRequests.set(requestKey, true);
     
     try {
       let response;
       switch(type) {
         case 'procedures':
-          response = await getAllProceduresForFrontend(authToken);
+          response = await getAllProceduresForFrontendPaginated(authToken, { page, pageSize });
           break;
         case 'views':
-          response = await getAllViewsForFrontend(authToken);
+          response = await getAllViewsForFrontendPaginated(authToken, { page, pageSize });
           break;
         case 'functions':
-          response = await getAllFunctionsForFrontend(authToken);
+          response = await getAllFunctionsForFrontendPaginated(authToken, { page, pageSize });
           break;
         case 'tables':
-          response = await getAllTablesForFrontend(authToken);
+          response = await getAllTablesForFrontendPaginated(authToken, { page, pageSize });
           break;
         case 'packages':
-          response = await getAllPackagesForFrontend(authToken);
+          response = await getAllPackagesForFrontendPaginated(authToken, { page, pageSize });
           break;
         case 'sequences':
-          response = await getAllSequencesForFrontend(authToken);
+          response = await getAllSequencesForFrontendPaginated(authToken, { page, pageSize });
           break;
         case 'synonyms':
-          response = await getAllSynonymsForFrontend(authToken);
+          response = await getAllSynonymsForFrontendPaginated(authToken, { page, pageSize });
           break;
         case 'types':
-          response = await getAllTypesForFrontend(authToken);
+          response = await getAllTypesForFrontendPaginated(authToken, { page, pageSize });
           break;
         case 'triggers':
-          response = await getAllTriggersForFrontend(authToken);
+          response = await getAllTriggersForFrontendPaginated(authToken, { page, pageSize });
           break;
         default:
           return;
       }
       
-      let data = [];
-      if (response && response.data) {
-        data = response.data;
-      } else {
-        const processed = handleSchemaBrowserResponse(response);
-        data = processed.data || [];
-      }
+      // Extract items
+      const { items, totalCount, page: currentPage, totalPages } = extractItemsFromResponse(response);
       
-      Logger.info('SchemaBrowser', 'loadObjectType', `Loaded ${data.length} ${type}`);
+      Logger.info('SchemaBrowser', 'loadObjectType', `Loaded ${items.length} ${type} (page ${page})`);
       
-      const cacheKey = `${type}_${authToken.substring(0, 10)}`;
-      objectCache.set(cacheKey, { data, timestamp: Date.now() });
+      // Update state - append for page > 1
+      setSchemaObjects(prev => {
+        if (page === 1) {
+          return { 
+            ...prev, 
+            [type]: items,
+            [`${type}TotalCount`]: totalCount 
+          };
+        } else {
+          const existing = prev[type] || [];
+          // Avoid duplicates
+          const newItems = items.filter(newItem => 
+            !existing.some(existingItem => 
+              existingItem.name === newItem.name && existingItem.owner === newItem.owner
+            )
+          );
+          return { 
+            ...prev, 
+            [type]: [...existing, ...newItems],
+            [`${type}TotalCount`]: totalCount
+          };
+        }
+      });
       
-      setSchemaObjects(prev => ({ ...prev, [type]: data }));
+      // Update pagination
+      setPagination(prev => ({
+        ...prev,
+        [type]: {
+          page: currentPage,
+          totalPages: totalPages,
+          totalCount: totalCount
+        }
+      }));
+      
+      // Update cache
+      const cacheKey = `${type}_page${page}_${authToken.substring(0, 10)}`;
+      objectCache.set(cacheKey, { 
+        data: items, 
+        totalCount,
+        page: currentPage,
+        totalPages,
+        timestamp: Date.now() 
+      });
+      
       setLoadedSections(prev => ({ ...prev, [type]: true }));
       
-      const newOwners = new Set(owners);
-      data.forEach(obj => {
-        if (obj.owner) newOwners.add(obj.owner);
+      // Collect owners
+      setOwners(prev => {
+        const newOwners = new Set(prev);
+        items.forEach(obj => {
+          if (obj.owner) newOwners.add(obj.owner);
+        });
+        return Array.from(newOwners).sort();
       });
-      setOwners(Array.from(newOwners).sort());
       
     } catch (err) {
       Logger.error('SchemaBrowser', 'loadObjectType', `Error loading ${type}`, err);
     } finally {
       setLoadingStates(prev => ({ ...prev, [type]: false }));
+      ongoingRequests.delete(requestKey);
     }
-  }, [authToken, loadingStates, loadedSections, owners]);
-
-  // Get first schema object for auto-select - FIXED to prioritize procedures
-const getFirstSchemaObject = useCallback(() => {
-  // Log available objects for debugging
-  Logger.debug('SchemaBrowser', 'getFirstSchemaObject', 'Available objects:', {
-    proceduresCount: schemaObjects.procedures?.length || 0,
-    tablesCount: schemaObjects.tables?.length || 0,
-    packagesCount: schemaObjects.packages?.length || 0
-  });
-  
-  // Explicitly check procedures first
-  if (schemaObjects.procedures && schemaObjects.procedures.length > 0) {
-    const procedure = schemaObjects.procedures[0];
-    Logger.info('SchemaBrowser', 'getFirstSchemaObject', `Found first procedure: ${procedure.name}`);
-    return { 
-      object: {
-        ...procedure,
-        id: procedure.id || `${procedure.owner || 'unknown'}_${procedure.name}`
-      }, 
-      type: 'PROCEDURE' 
-    };
-  }
-  
-  // If no procedures, try tables
-  if (schemaObjects.tables && schemaObjects.tables.length > 0) {
-    const table = schemaObjects.tables[0];
-    Logger.info('SchemaBrowser', 'getFirstSchemaObject', `No procedures found, using first table: ${table.name}`);
-    return { 
-      object: {
-        ...table,
-        id: table.id || `${table.owner || 'unknown'}_${table.name}`
-      }, 
-      type: 'TABLE' 
-    };
-  }
-  
-  // If no tables, try views
-  if (schemaObjects.views && schemaObjects.views.length > 0) {
-    const view = schemaObjects.views[0];
-    Logger.info('SchemaBrowser', 'getFirstSchemaObject', `No tables found, using first view: ${view.name}`);
-    return { 
-      object: {
-        ...view,
-        id: view.id || `${view.owner || 'unknown'}_${view.name}`
-      }, 
-      type: 'VIEW' 
-    };
-  }
-  
-  // If no views, try functions
-  if (schemaObjects.functions && schemaObjects.functions.length > 0) {
-    const func = schemaObjects.functions[0];
-    Logger.info('SchemaBrowser', 'getFirstSchemaObject', `No views found, using first function: ${func.name}`);
-    return { 
-      object: {
-        ...func,
-        id: func.id || `${func.owner || 'unknown'}_${func.name}`
-      }, 
-      type: 'FUNCTION' 
-    };
-  }
-  
-  // If no functions, try packages
-  if (schemaObjects.packages && schemaObjects.packages.length > 0) {
-    const pkg = schemaObjects.packages[0];
-    Logger.info('SchemaBrowser', 'getFirstSchemaObject', `No functions found, using first package: ${pkg.name}`);
-    return { 
-      object: {
-        ...pkg,
-        id: pkg.id || `${pkg.owner || 'unknown'}_${pkg.name}`
-      }, 
-      type: 'PACKAGE' 
-    };
-  }
-  
-  // If no packages, try sequences
-  if (schemaObjects.sequences && schemaObjects.sequences.length > 0) {
-    const seq = schemaObjects.sequences[0];
-    return { 
-      object: {
-        ...seq,
-        id: seq.id || `${seq.owner || 'unknown'}_${seq.name}`
-      }, 
-      type: 'SEQUENCE' 
-    };
-  }
-  
-  // If no sequences, try synonyms
-  if (schemaObjects.synonyms && schemaObjects.synonyms.length > 0) {
-    const syn = schemaObjects.synonyms[0];
-    return { 
-      object: {
-        ...syn,
-        id: syn.id || `${syn.owner || 'unknown'}_${syn.name}`
-      }, 
-      type: 'SYNONYM' 
-    };
-  }
-  
-  // If no synonyms, try types
-  if (schemaObjects.types && schemaObjects.types.length > 0) {
-    const type = schemaObjects.types[0];
-    return { 
-      object: {
-        ...type,
-        id: type.id || `${type.owner || 'unknown'}_${type.name}`
-      }, 
-      type: 'TYPE' 
-    };
-  }
-  
-  // If no types, try triggers
-  if (schemaObjects.triggers && schemaObjects.triggers.length > 0) {
-    const trigger = schemaObjects.triggers[0];
-    return { 
-      object: {
-        ...trigger,
-        id: trigger.id || `${trigger.owner || 'unknown'}_${trigger.name}`
-      }, 
-      type: 'TRIGGER' 
-    };
-  }
-  
-  return null;
-}, [schemaObjects]);
+  }, [authToken, loadingStates]);
 
   // Handle load section
   const handleLoadSection = useCallback((type) => {
-    loadObjectType(type);
-  }, [loadObjectType]);
+    if (!hasActiveFilter) {
+      loadObjectType(type, 1);
+    }
+  }, [loadObjectType, hasActiveFilter]);
+
+  // Handle load more
+  const handleLoadMore = useCallback((type) => {
+    const nextPage = (pagination[type]?.page || 1) + 1;
+    if (nextPage <= (pagination[type]?.totalPages || 1) && !hasActiveFilter) {
+      loadObjectType(type, nextPage);
+    }
+  }, [pagination, loadObjectType, hasActiveFilter]);
 
   // Handle toggle section
   const handleToggleSection = useCallback((type) => {
@@ -1477,42 +1792,34 @@ const getFirstSchemaObject = useCallback(() => {
   }, []);
 
   // Load table data
-const loadTableData = useCallback(async (tableName) => {
-  if (!authToken || !tableName) return;
-  
-  setTableDataLoading(true);
-  setTableData(null);
-  
-  try {
-    const params = {
-      tableName,
-      page: dataView.page - 1,
-      pageSize: dataView.pageSize,
-      sortColumn: dataView.sortColumn || undefined,
-      sortDirection: dataView.sortDirection
-    };
+  const loadTableData = useCallback(async (tableName) => {
+    if (!authToken || !tableName) return;
     
-    console.log('Loading table data for:', tableName, params);
+    setTableDataLoading(true);
+    setTableData(null);
     
-    const response = await getTableData(authToken, params);
-    console.log('Raw response:', response);
-    
-    const processed = handleSchemaBrowserResponse(response);
-    console.log('Processed response:', processed);
-    
-    // Use extractTableData
-    const tableDataResult = extractTableData({ data: processed });
-    console.log('Extracted table data:', tableDataResult);
-    
-    setTableData(tableDataResult);
-    
-  } catch (err) {
-    Logger.error('SchemaBrowser', 'loadTableData', `Error loading data for ${tableName}`, err);
-    setError(`Failed to load table data: ${err.message}`);
-  } finally {
-    setTableDataLoading(false);
-  }
-}, [authToken, dataView]);
+    try {
+      const params = {
+        tableName,
+        page: dataView.page - 1,
+        pageSize: dataView.pageSize,
+        sortColumn: dataView.sortColumn || undefined,
+        sortDirection: dataView.sortDirection
+      };
+      
+      const response = await getTableData(authToken, params);
+      const processed = handleSchemaBrowserResponse(response);
+      const tableDataResult = extractTableData({ data: processed });
+      
+      setTableData(tableDataResult);
+      
+    } catch (err) {
+      Logger.error('SchemaBrowser', 'loadTableData', `Error loading data for ${tableName}`, err);
+      setError(`Failed to load table data: ${err.message}`);
+    } finally {
+      setTableDataLoading(false);
+    }
+  }, [authToken, dataView]);
 
   // Handle context menu
   const handleContextMenu = useCallback((e, object, type) => {
@@ -1524,29 +1831,203 @@ const loadTableData = useCallback(async (tableName) => {
     setShowContextMenu(true);
   }, []);
 
-  // Handle filter changes
-  const handleFilterChange = useCallback((value) => {
-    setFilterQuery(value);
-  }, []);
+// Search objects via API when filter is active
+const searchObjects = useCallback(async (searchTerm, owner) => {
+
+  if (!authToken || !searchTerm || searchTerm.length < 2) {
+    // Clear filtered results if search term is too short
+    setFilteredResults({});
+    return;
+  }
+
+  const requestKey = `search_${searchTerm}_${owner}`;
+  
+  // Check if already searching
+  if (ongoingRequests.has(requestKey)) {
+    Logger.debug('SchemaBrowser', 'searchObjects', `Already searching for "${searchTerm}", skipping`);
+    return;
+  }
+
+  Logger.info('SchemaBrowser', 'searchObjects', `Searching for "${searchTerm}" in ${owner === 'ALL' ? 'all schemas' : owner}`);
+
+  setIsFiltering(true);
+  ongoingRequests.set(requestKey, true);
+
+  try {
+    const params = {
+      query: searchTerm,
+      page: 1,
+      pageSize: 10 // Get a reasonable number of results
+    };
+
+    // Add owner filter if not ALL
+    if (owner !== 'ALL') {
+      params.owner = owner;
+    }
+
+    const response = await searchObjectsPaginated(authToken, params);
+    
+    // Group results by object type
+    const groupedResults = {
+      procedures: [],
+      views: [],
+      functions: [],
+      tables: [],
+      packages: [],
+      sequences: [],
+      synonyms: [],
+      types: [],
+      triggers: []
+    };
+
+    // Check if response has the structure from your example
+    if (response?.data?.results && Array.isArray(response.data.results)) {
+      // Process each result item from the API
+      response.data.results.forEach(item => {
+        const objectType = (item.object_type || item.type || '').toUpperCase();
+        
+        // Create a normalized object
+        const normalizedObj = {
+          name: item.name || item.synonym_name || item.table_name || item.index_name || item.view_name,
+          owner: item.owner,
+          type: objectType,
+          objectType: objectType,
+          status: item.status,
+          id: item.id || `${item.owner}_${item.name || item.synonym_name || item.table_name}`,
+          // Include any other relevant fields
+          targetName: item.targetName,
+          targetOwner: item.targetOwner,
+          targetType: item.targetType,
+          isSynonym: item.isSynonym || false
+        };
+        
+        // Map to our internal types
+        if (objectType.includes('PROCEDURE')) {
+          groupedResults.procedures.push(normalizedObj);
+        } else if (objectType.includes('VIEW')) {
+          groupedResults.views.push(normalizedObj);
+        } else if (objectType.includes('FUNCTION')) {
+          groupedResults.functions.push(normalizedObj);
+        } else if (objectType.includes('TABLE')) {
+          groupedResults.tables.push(normalizedObj);
+        } else if (objectType.includes('PACKAGE')) {
+          groupedResults.packages.push(normalizedObj);
+        } else if (objectType.includes('SEQUENCE')) {
+          groupedResults.sequences.push(normalizedObj);
+        } else if (objectType.includes('SYNONYM')) {
+          groupedResults.synonyms.push(normalizedObj);
+        } else if (objectType.includes('TYPE')) {
+          groupedResults.types.push(normalizedObj);
+        } else if (objectType.includes('TRIGGER')) {
+          groupedResults.triggers.push(normalizedObj);
+        }
+      });
+    }
+
+    setFilteredResults(groupedResults);
+
+    // Add this debug log
+    console.log('Search results set:', {
+      groupedResults,
+      totalCount: Object.values(groupedResults).reduce((acc, curr) => acc + curr.length, 0),
+      procedures: groupedResults.procedures.length,
+      views: groupedResults.views.length,
+      functions: groupedResults.functions.length,
+      tables: groupedResults.tables.length,
+      packages: groupedResults.packages.length,
+      sequences: groupedResults.sequences.length,
+      synonyms: groupedResults.synonyms.length,
+      types: groupedResults.types.length,
+      triggers: groupedResults.triggers.length
+    });
+    
+    // Cache the results
+    const cacheKey = `search_${searchTerm}_${owner}`;
+    objectCache.set(cacheKey, {
+      data: groupedResults,
+      timestamp: Date.now()
+    });
+
+    const totalResults = Object.values(groupedResults).reduce((acc, curr) => acc + curr.length, 0);
+    Logger.info('SchemaBrowser', 'searchObjects', `Found ${totalResults} results`);
+
+  } catch (err) {
+    Logger.error('SchemaBrowser', 'searchObjects', 'Error searching objects', err);
+    setFilteredResults({});
+  } finally {
+    setIsFiltering(false);
+    ongoingRequests.delete(requestKey);
+  }
+}, [authToken]);
+
+  // Handle filter changes - now triggers API search
+const handleFilterChange = useCallback((value) => {
+  setFilterQuery(value);
+  setFilterSearchTerm(value);
+  
+  // The actual search will be triggered by the debounced function in FilterInput
+  // We don't need to call searchObjects here directly anymore
+}, []);
+
+// But we need to call searchObjects when the debounced value changes
+// Add this useEffect to trigger search when filterQuery changes with debouncing
+useEffect(() => {
+  const timer = setTimeout(() => {
+    if (filterQuery && filterQuery.length >= 2) {
+      searchObjects(filterQuery, selectedOwner);
+    } else if (filterQuery && filterQuery.length < 2) {
+      // Clear results if search term is too short
+      setFilteredResults({});
+    } else if (!filterQuery) {
+      // Clear results if search term is empty
+      setFilteredResults({});
+    }
+  }, 1000); // 1000ms debounce
+
+  return () => clearTimeout(timer);
+}, [filterQuery, selectedOwner, searchObjects]);
 
   const handleOwnerChange = useCallback((value) => {
-    setSelectedOwner(value);
-  }, []);
+  setSelectedOwner(value);
+  
+  // Re-run search if there's an active filter
+  if (filterQuery && filterQuery.length >= 2) {
+    searchObjects(filterQuery, value);
+  }
+}, [filterQuery, searchObjects]);
 
+  // Handle clear filters
   const handleClearFilters = useCallback(() => {
     setFilterQuery('');
     setSelectedOwner('ALL');
+    setFilteredResults({});
+    setFilterSearchTerm('');
+    
+    // Collapse all sections except procedures (just like on page load)
+    setObjectTree({
+      procedures: true,  // Keep procedures expanded
+      views: false,
+      functions: false,
+      tables: false,
+      packages: false,
+      sequences: false,
+      synonyms: false,
+      types: false,
+      triggers: false
+    });
   }, []);
 
   // Handle refresh
   const handleRefresh = useCallback(async () => {
     objectCache.clear();
+    ongoingRequests.clear();
     setLoading(true);
     setInitialLoadComplete(false);
     setInitialized(false);
     setHasAutoSelected(false);
+    setIsLoadingObjects(false);
+    setIsInitialLoad(true);
     
-    await loadSchemaInfo();
     setLoadedSections({
       procedures: false,
       views: false,
@@ -1560,20 +2041,45 @@ const loadTableData = useCallback(async (tableName) => {
     });
     setSchemaObjects({
       tables: [],
+      tablesTotalCount: 0,
       views: [],
+      viewsTotalCount: 0,
       procedures: [],
+      proceduresTotalCount: 0,
       functions: [],
+      functionsTotalCount: 0,
       packages: [],
+      packagesTotalCount: 0,
       sequences: [],
+      sequencesTotalCount: 0,
       synonyms: [],
+      synonymsTotalCount: 0,
       types: [],
-      triggers: []
+      typesTotalCount: 0,
+      triggers: [],
+      triggersTotalCount: 0
     });
-    await loadAllObjectCounts();
-    setInitialized(true);
-    setLoading(false);
-    setInitialLoadComplete(true);
-  }, [loadSchemaInfo, loadAllObjectCounts]);
+    setPagination({
+      procedures: { page: 1, totalPages: 1, totalCount: 0 },
+      views: { page: 1, totalPages: 1, totalCount: 0 },
+      functions: { page: 1, totalPages: 1, totalCount: 0 },
+      tables: { page: 1, totalPages: 1, totalCount: 0 },
+      packages: { page: 1, totalPages: 1, totalCount: 0 },
+      sequences: { page: 1, totalPages: 1, totalCount: 0 },
+      synonyms: { page: 1, totalPages: 1, totalCount: 0 },
+      types: { page: 1, totalPages: 1, totalCount: 0 },
+      triggers: { page: 1, totalPages: 1, totalCount: 0 }
+    });
+    
+    // Load initial data
+    await loadInitialData();
+    
+    // Load remaining data in background
+    loadRemainingData().catch(err => {
+      Logger.error('SchemaBrowser', 'handleRefresh', 'Error loading remaining data', err);
+    });
+    
+  }, [loadInitialData, loadRemainingData]);
 
   // Handle copy to clipboard
   const handleCopyToClipboard = useCallback(async (text, label = 'content') => {
@@ -1600,95 +2106,27 @@ const loadTableData = useCallback(async (tableName) => {
     setDataView(prev => ({ ...prev, sortColumn: column, sortDirection: direction, page: 1 }));
   }, []);
 
-  // Initialize - MODIFIED to wait for procedures
-useEffect(() => {
-  if (!initialized && authToken) {
-    const initializeSchema = async () => {
-      setLoading(true);
-      await loadSchemaInfo();
-      
-      // Load all objects (procedures are prioritized inside loadAllObjectCounts)
-      await loadAllObjectCounts();
-      
-      // Double-check that procedures are loaded
-      const currentProcedures = schemaObjects.procedures || [];
-      Logger.info('SchemaBrowser', 'initialize', `Initialization complete. Procedures: ${currentProcedures.length}`);
-      
-      setInitialized(true);
-      setLoading(false);
-      setInitialLoadComplete(true);
-      
-      // If procedures are already loaded, trigger selection immediately
-      if (currentProcedures.length > 0 && !activeObject && !hasAutoSelected) {
-        const firstProcedure = currentProcedures[0];
-        const procedureWithId = {
-          ...firstProcedure,
-          id: firstProcedure.id || `${firstProcedure.owner || 'unknown'}_${firstProcedure.name}`
-        };
-        
-        setHasAutoSelected(true);
-        setTimeout(() => {
-          handleObjectSelect(procedureWithId, 'PROCEDURE');
-        }, 100);
-      }
-    };
+  // Auto-select first object - only runs once after initial load
+  useEffect(() => {
+    if (!initialLoadComplete || hasAutoSelected || activeObject) return;
     
-    initializeSchema();
-  }
-}, [authToken, initialized, loadSchemaInfo, loadAllObjectCounts, schemaObjects.procedures, activeObject, hasAutoSelected, handleObjectSelect]);
-
- // Auto-select first procedure - CHECKING BOTH PROCEDURES AND SYNONYMS
-useEffect(() => {
-  console.log('=== AUTO-SELECT DEBUG (with synonyms) ===');
-  console.log('activeObject:', activeObject?.name);
-  console.log('hasAutoSelected:', hasAutoSelected);
-  console.log('initialLoadComplete:', initialLoadComplete);
-  console.log('procedures count:', schemaObjects.procedures?.length);
-  console.log('synonyms count:', schemaObjects.synonyms?.length);
-  
-  // If we already have an active object or already auto-selected, stop
-  if (activeObject || hasAutoSelected) {
-    console.log('Already have active object or already auto-selected, skipping');
-    return;
-  }
-  
-  // If initial load not complete, wait
-  if (!initialLoadComplete) {
-    console.log('Initial load not complete, waiting...');
-    return;
-  }
-  
-  // First, check for actual procedures
-  if (schemaObjects.procedures && schemaObjects.procedures.length > 0) {
-    const firstProcedure = schemaObjects.procedures[0];
-    console.log('✅ Found actual procedure:', firstProcedure.name);
-    
-    const procedureWithId = {
-      ...firstProcedure,
-      id: firstProcedure.id || `${firstProcedure.owner || 'unknown'}_${firstProcedure.name}`
-    };
-    
-    setHasAutoSelected(true);
-    setTimeout(() => {
-      console.log('Calling handleObjectSelect with actual procedure:', firstProcedure.name);
+    // First, check for actual procedures
+    if (schemaObjects.procedures && schemaObjects.procedures.length > 0) {
+      const firstProcedure = schemaObjects.procedures[0];
+      
+      const procedureWithId = {
+        ...firstProcedure,
+        id: firstProcedure.id || `${firstProcedure.owner || 'unknown'}_${firstProcedure.name}`
+      };
+      
+      setHasAutoSelected(true);
       handleObjectSelect(procedureWithId, 'PROCEDURE');
-    }, 100);
-    return;
-  }
-  
-  // If no actual procedures, check synonyms for ones targeting procedures
-  if (schemaObjects.synonyms && schemaObjects.synonyms.length > 0) {
-    // Find synonyms that target procedures
-    const procedureSynonyms = schemaObjects.synonyms.filter(syn => {
-      const targetType = syn.targetType || syn.TARGET_TYPE || '';
-      return targetType.toUpperCase().includes('PROCEDURE');
-    });
+      return;
+    }
     
-    console.log('Procedure synonyms found:', procedureSynonyms.length);
-    
-    if (procedureSynonyms.length > 0) {
-      const firstSynonym = procedureSynonyms[0];
-      console.log('✅ Found synonym targeting procedure:', firstSynonym.name);
+    // If no actual procedures, check synonyms for ones targeting procedures
+    if (schemaObjects.synonyms && schemaObjects.synonyms.length > 0) {
+      const firstSynonym = schemaObjects.synonyms[0];
       
       const synonymWithId = {
         ...firstSynonym,
@@ -1696,23 +2134,11 @@ useEffect(() => {
       };
       
       setHasAutoSelected(true);
-      setTimeout(() => {
-        console.log('Calling handleObjectSelect with synonym:', firstSynonym.name);
-        handleObjectSelect(synonymWithId, 'SYNONYM');
-      }, 100);
+      handleObjectSelect(synonymWithId, 'SYNONYM');
       return;
     }
-  }
-  
-  console.log('❌ No procedures or procedure synonyms found');
-  console.log('Available objects:', {
-    procedures: schemaObjects.procedures?.length,
-    synonyms: schemaObjects.synonyms?.length,
-    packages: schemaObjects.packages?.length,
-    tables: schemaObjects.tables?.length
-  });
-  
-}, [activeObject, hasAutoSelected, initialLoadComplete, schemaObjects, handleObjectSelect]);
+    
+  }, [activeObject, hasAutoSelected, initialLoadComplete, schemaObjects.procedures, schemaObjects.synonyms, handleObjectSelect]);
 
   // Update table data when dataView changes
   useEffect(() => {
@@ -1722,7 +2148,7 @@ useEffect(() => {
         : activeObject.name;
       loadTableData(tableName);
     }
-  }, [dataView.page, dataView.pageSize, dataView.sortColumn, dataView.sortDirection]);
+  }, [dataView.page, dataView.pageSize, dataView.sortColumn, dataView.sortDirection, activeObject, objectDetails, loadTableData]);
 
   // Close context menu on outside click
   useEffect(() => {
@@ -1730,6 +2156,237 @@ useEffect(() => {
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
+
+  // Get Tabs for Object Type
+  const getTabsForObject = useCallback((type, objectDetails) => {
+    const objectType = type?.toUpperCase();
+    
+    // If it's a synonym, check what it points to
+    if (objectType === 'SYNONYM' && objectDetails?.targetDetails) {
+      const targetType = objectDetails.targetDetails.OBJECT_TYPE || objectDetails.targetDetails.objectType;
+      
+      // Return tabs based on the target object type
+      switch(targetType) {
+        case 'TABLE':
+          return ['Columns', 'Data', 'Constraints', 'DDL', 'Properties'];
+        case 'VIEW':
+          return ['Definition', 'Columns', 'Properties'];
+        case 'PROCEDURE':
+          return ['Parameters', 'DDL', 'Properties'];
+        case 'FUNCTION':
+          return ['Parameters', 'DDL', 'Properties'];
+        case 'PACKAGE':
+          return ['Spec', 'Body', 'Properties'];
+        case 'SEQUENCE':
+          return ['DDL', 'Properties'];
+        case 'TYPE':
+          return ['Attributes', 'Properties'];
+        case 'TRIGGER':
+          return ['Definition', 'Properties'];
+        default:
+          return ['Properties'];
+      }
+    }
+    
+    // For non-synonym objects, return tabs based on their own type
+    switch(objectType) {
+      case 'TABLE':
+        return ['Columns', 'Data', 'Constraints', 'DDL', 'Properties'];
+      case 'VIEW':
+        return ['Definition', 'Columns', 'Properties'];
+      case 'PROCEDURE':
+        return ['Parameters', 'DDL', 'Properties'];
+      case 'FUNCTION':
+        return ['Parameters', 'DDL', 'Properties'];
+      case 'PACKAGE':
+        return ['Spec', 'Body', 'Properties'];
+      case 'SEQUENCE':
+        return ['DDL', 'Properties'];
+      case 'SYNONYM':
+        return ['Properties'];
+      case 'TYPE':
+        return ['Attributes', 'Properties'];
+      case 'TRIGGER':
+        return ['Definition', 'Properties'];
+      default:
+        return ['Properties'];
+    }
+  }, []);
+
+  // Handle Object Select
+  // Handle Object Select
+const handleObjectSelect = useCallback(async (object, type) => {
+  if (!authToken || !object) {
+    console.error('Cannot select object: missing authToken or object', { authToken: !!authToken, object });
+    return;
+  }
+
+  Logger.info('SchemaBrowser', 'handleObjectSelect', `Selecting ${object.name} (${type})`);
+  
+  const objectId = object.id || `${object.owner || 'unknown'}_${object.name}`;
+  
+  setLoading(true);
+  setTableDataLoading(false);
+  setObjectDetails(null);
+  setObjectDDL('');
+  setTableData(null);
+  setDdlLoading(false);
+  
+  setActiveTab('properties');
+  
+  const enrichedObject = {
+    ...object,
+    id: objectId,
+    type: type
+  };
+  
+  setActiveObject(enrichedObject);
+  setSelectedForApiGeneration(enrichedObject);
+  
+  const tabId = `${type}_${objectId}`;
+  const existingTab = tabs.find(t => t.id === tabId);
+  
+  if (existingTab) {
+    setTabs(tabs.map(t => ({ ...t, isActive: t.id === tabId })));
+  } else {
+    setTabs(prev => [...prev.slice(-4), {
+      id: tabId,
+      name: object.name,
+      type,
+      objectId: objectId,
+      isActive: true
+    }].map(t => ({ ...t, isActive: t.id === tabId })));
+  }
+
+  try {
+    Logger.debug('SchemaBrowser', 'handleObjectSelect', `Loading details for ${object.name}`);
+    
+    // Check if this object is actually a synonym
+    const isSynonym = 
+      object.objectType === 'SYNONYM' || 
+      object.type === 'SYNONYM' ||
+      object.isSynonym === true ||
+      object.synonym_name === object.name; // Some APIs return synonym_name
+    
+    // Determine the correct object type for the API call
+    let apiObjectType;
+    let apiObjectName = object.name;
+    
+    if (isSynonym) {
+      // If it's a synonym, pass SYNONYM as the type to get synonym details
+      apiObjectType = 'SYNONYM';
+      Logger.debug('SchemaBrowser', 'handleObjectSelect', `Object is a synonym, using type: SYNONYM`);
+    } else {
+      // For non-synonym objects, pass the original type
+      apiObjectType = type;
+    }
+    
+    const response = await getObjectDetails(authToken, { 
+      objectType: apiObjectType, 
+      objectName: apiObjectName 
+    });
+    
+    const processedResponse = handleSchemaBrowserResponse(response);
+    const responseData = processedResponse.data || processedResponse;
+    
+    const enrichedResponseData = {
+      ...responseData,
+      name: responseData.name || object.name,
+      type: responseData.type || type,
+      isSynonym: isSynonym // Add this flag for reference
+    };
+    
+    setObjectDetails(enrichedResponseData);
+    
+    const upperType = type.toUpperCase();
+    let effectiveType = upperType;
+    let targetType = null;
+    let targetName = object.name;
+    let targetOwner = null;
+    
+    if (isSynonym && responseData?.targetDetails) {
+      targetType = responseData.targetDetails.OBJECT_TYPE || responseData.targetDetails.objectType;
+      targetName = responseData.TARGET_NAME || object.name;
+      targetOwner = responseData.TARGET_OWNER || responseData.targetDetails.OWNER;
+      
+      if (targetType) {
+        effectiveType = targetType;
+      }
+    }
+    
+    if (effectiveType === 'TABLE') {
+      if (isSynonym && targetType === 'TABLE') {
+        loadTableData(targetName).catch(err => console.error('Background table load error:', err));
+      } else {
+        loadTableData(object.name).catch(err => console.error('Background table load error:', err));
+      }
+    }
+    
+    const ddlTypes = ['TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'PACKAGE', 'TRIGGER', 'SEQUENCE'];
+    if (ddlTypes.includes(effectiveType)) {
+      (async () => {
+        try {
+          setDdlLoading(true);
+          
+          // For DDL, we need to pass the target object type if it's a synonym
+          let ddlObjectType = effectiveType.toLowerCase();
+          let ddlObjectName = targetName || object.name;
+          
+          // If it's a synonym, we want the DDL of the target object
+          if (isSynonym && targetType) {
+            ddlObjectType = targetType.toLowerCase();
+            ddlObjectName = targetName;
+          }
+          
+          const ddlResponse = await getObjectDDL(authToken, { 
+            objectType: ddlObjectType, 
+            objectName: ddlObjectName 
+          });
+          
+          if (ddlResponse && ddlResponse.data) {
+            const ddlData = ddlResponse.data;
+            let ddlText = '';
+            
+            if (typeof ddlData === 'string') {
+              ddlText = ddlData;
+            } else if (ddlData.ddl) {
+              ddlText = ddlData.ddl;
+            } else if (ddlData.text) {
+              ddlText = ddlData.text;
+            } else if (ddlData.sql) {
+              ddlText = ddlData.sql;
+            } else {
+              ddlText = JSON.stringify(ddlData, null, 2);
+            }
+            
+            if (ddlText && ddlText !== '{}') {
+              setObjectDDL(ddlText);
+            } else {
+              setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName || object.name}`);
+            }
+          } else {
+            setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName || object.name}`);
+          }
+        } catch (ddlError) {
+          console.error('Background DDL fetch error:', ddlError);
+          setObjectDDL(`-- Error loading DDL for ${effectiveType} ${targetName || object.name}\n-- ${ddlError.message}`);
+        } finally {
+          setDdlLoading(false);
+        }
+      })();
+    }
+    
+  } catch (err) {
+    Logger.error('SchemaBrowser', 'handleObjectSelect', `Error loading details for ${object.name}`, err);
+    setError(`Failed to load object details: ${err.message}`);
+  } finally {
+    setLoading(false);
+  }
+
+  if (window.innerWidth < 768) {
+    setIsLeftSidebarVisible(false);
+  }
+}, [authToken, tabs, loadTableData]);
 
   // Render Columns Tab
   const renderColumnsTab = () => {
@@ -1795,288 +2452,279 @@ useEffect(() => {
 
   // Render Data Tab
   const renderDataTab = () => {
-  const data = tableData?.rows || [];
-  
-  // If columns array is empty but we have data, extract column names from the first row
- let columns = tableData?.columns || [];
-if (columns.length === 0 && data.length > 0) {
-  columns = Object.keys(data[0]).map(key => ({ name: key }));
-}
-  
-  // Fallback to objectDetails or activeObject columns if still empty
-  if (columns.length === 0) {
-    columns = objectDetails?.columns || activeObject?.columns || [];
-  }
-  
-  const totalRows = tableData?.totalRows || 0;
-  const totalPages = tableData?.totalPages || 1;
-  
-  // Function to download data as CSV
-  const downloadData = () => {
-    if (data.length === 0) return;
+    const data = tableData?.rows || [];
     
-    // Prepare headers
-    const headers = ['#', ...columns.map(col => col.name || col.COLUMN_NAME)];
+    let columns = tableData?.columns || [];
+    if (columns.length === 0 && data.length > 0) {
+      columns = Object.keys(data[0]).map(key => ({ name: key }));
+    }
     
-    // Prepare rows with counter
-    const csvRows = [
-      headers.join(','),
-      ...data.map((row, index) => {
-        const rowValues = [
-          index + 1 + (dataView.page - 1) * dataView.pageSize,
-          ...columns.map(col => {
-            const columnName = col.name || col.COLUMN_NAME;
-            const value = row[columnName];
-            
-            // Handle different value types for CSV
-            if (value === null || value === undefined) return '';
-            if (typeof value === 'object') return `"${JSON.stringify(value).replace(/"/g, '""')}"`;
-            if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
-              return `"${value.replace(/"/g, '""')}"`;
-            }
-            return value;
-          })
-        ];
-        return rowValues.join(',');
-      })
-    ].join('\n');
+    if (columns.length === 0) {
+      columns = objectDetails?.columns || activeObject?.columns || [];
+    }
     
-    // Create download link
-    const blob = new Blob([csvRows], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${activeObject?.name || 'table'}_data.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-  
-  return (
-    <div className="flex-1 flex flex-col h-full" style={{ minHeight: 0 }}> {/* Important for nested flexbox scrolling */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 border-b shrink-0" style={{ borderColor: colors.border }}>
-        <div className="flex items-center gap-2">
-          <button 
-            className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2"
-            style={{ backgroundColor: colors.primaryDark, color: colors.white }}
-            onClick={async () => {
-              if (activeObject) {
-                const tableName = activeObject.type === 'SYNONYM' && objectDetails?.TARGET_NAME 
-                  ? objectDetails.TARGET_NAME 
-                  : activeObject.name;
-                await loadTableData(tableName);
+    const totalRows = tableData?.totalRows || 0;
+    const totalPages = tableData?.totalPages || 1;
+    
+    const downloadData = () => {
+      if (data.length === 0) return;
+      
+      const headers = ['#', ...columns.map(col => col.name || col.COLUMN_NAME)];
+      
+      const csvRows = [
+        headers.join(','),
+        ...data.map((row, index) => {
+          const rowValues = [
+            index + 1 + (dataView.page - 1) * dataView.pageSize,
+            ...columns.map(col => {
+              const columnName = col.name || col.COLUMN_NAME;
+              const value = row[columnName];
+              
+              if (value === null || value === undefined) return '';
+              if (typeof value === 'object') return `"${JSON.stringify(value).replace(/"/g, '""')}"`;
+              if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+                return `"${value.replace(/"/g, '""')}"`;
               }
-            }}
-            disabled={tableDataLoading || !activeObject}
-          >
-            {tableDataLoading ? (
-              <Loader size={12} className="animate-spin" />
-            ) : (
-              <Play size={12} />
-            )}
-            <span>Execute</span>
-          </button>
-          <select 
-            className="px-2 py-1 border rounded text-sm"
-            style={{ backgroundColor: colors.bg, borderColor: colors.border, color: colors.text }}
-            value={dataView.pageSize}
-            onChange={(e) => handlePageSizeChange(parseInt(e.target.value))}
-            disabled={tableDataLoading}
-          >
-            <option value="25">25 rows</option>
-            <option value="50">50 rows</option>
-            <option value="100">100 rows</option>
-            <option value="250">250 rows</option>
-            <option value="500">500 rows</option>
-          </select>
-          {data.length > 0 && (
-            <button
+              return value;
+            })
+          ];
+          return rowValues.join(',');
+        })
+      ].join('\n');
+      
+      const blob = new Blob([csvRows], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `${activeObject?.name || 'table'}_data.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    };
+    
+    return (
+      <div className="flex-1 flex flex-col h-full" style={{ minHeight: 0 }}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 border-b shrink-0" style={{ borderColor: colors.border }}>
+          <div className="flex items-center gap-2">
+            <button 
               className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2"
-              style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}`, color: colors.text }}
-              onClick={downloadData}
+              style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+              onClick={async () => {
+                if (activeObject) {
+                  const tableName = activeObject.type === 'SYNONYM' && objectDetails?.TARGET_NAME 
+                    ? objectDetails.TARGET_NAME 
+                    : activeObject.name;
+                  await loadTableData(tableName);
+                }
+              }}
+              disabled={tableDataLoading || !activeObject}
             >
-              <Download size={12} />
-              <span>Download CSV</span>
+              {tableDataLoading ? (
+                <Loader size={12} className="animate-spin" />
+              ) : (
+                <Play size={12} />
+              )}
+              <span>Execute</span>
             </button>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs" style={{ color: colors.textSecondary }}>
-            {totalRows > 0 ? (
-              <>Page {dataView.page} of {totalPages} | Total: {totalRows.toLocaleString()} rows</>
-            ) : (
-              'No data'
+            <select 
+              className="px-2 py-1 border rounded text-sm"
+              style={{ backgroundColor: colors.bg, borderColor: colors.border, color: colors.text }}
+              value={dataView.pageSize}
+              onChange={(e) => handlePageSizeChange(parseInt(e.target.value))}
+              disabled={tableDataLoading}
+            >
+              <option value="25">25 rows</option>
+              <option value="50">50 rows</option>
+              <option value="100">100 rows</option>
+              <option value="250">250 rows</option>
+              <option value="500">500 rows</option>
+            </select>
+            {data.length > 0 && (
+              <button
+                className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2"
+                style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}`, color: colors.text }}
+                onClick={downloadData}
+              >
+                <Download size={12} />
+                <span>Download CSV</span>
+              </button>
             )}
-          </span>
-          {totalPages > 1 && (
-            <div className="flex items-center gap-2">
-              <button 
-                className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
-                style={{ backgroundColor: colors.hover }}
-                onClick={() => handlePageChange(dataView.page - 1)}
-                disabled={tableDataLoading || dataView.page <= 1}
-              >
-                <ChevronLeft size={14} />
-              </button>
-              <button 
-                className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
-                style={{ backgroundColor: colors.hover }}
-                onClick={() => handlePageChange(dataView.page + 1)}
-                disabled={tableDataLoading || dataView.page >= totalPages}
-              >
-                <ChevronRight size={14} />
-              </button>
-            </div>
-          )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs" style={{ color: colors.textSecondary }}>
+              {totalRows > 0 ? (
+                <>Page {dataView.page} of {totalPages} | Total: {totalRows.toLocaleString()} rows</>
+              ) : (
+                'No data'
+              )}
+            </span>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button 
+                  className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
+                  style={{ backgroundColor: colors.hover }}
+                  onClick={() => handlePageChange(dataView.page - 1)}
+                  disabled={tableDataLoading || dataView.page <= 1}
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <button 
+                  className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
+                  style={{ backgroundColor: colors.hover }}
+                  onClick={() => handlePageChange(dataView.page + 1)}
+                  disabled={tableDataLoading || dataView.page >= totalPages}
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
 
-      <div className="flex-1 relative" style={{ minHeight: 0, overflow: 'hidden' }}> {/* Important for nested flexbox scrolling */}
-        {tableDataLoading ? (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center">
-              <Loader className="animate-spin mx-auto mb-4" size={40} style={{ color: colors.primary }} />
-              <div className="text-sm font-medium" style={{ color: colors.text }}>Loading table data...</div>
-              <div className="text-xs mt-2" style={{ color: colors.textSecondary }}>Please wait while we fetch the rows</div>
-            </div>
-          </div>
-        ) : data.length === 0 ? (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center">
-              <div className="flex justify-center mb-4">
-                <TableIcon size={64} style={{ color: colors.textSecondary, opacity: 0.5 }} />
-              </div>
-              <div className="text-lg font-medium" style={{ color: colors.text }}>No data available</div>
-              <div className="text-sm mt-2" style={{ color: colors.textSecondary }}>
-                Click the Execute button to load data
+        <div className="flex-1 relative" style={{ minHeight: 0, overflow: 'hidden' }}>
+          {tableDataLoading ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center">
+                <Loader className="animate-spin mx-auto mb-4" size={40} style={{ color: colors.primary }} />
+                <div className="text-sm font-medium" style={{ color: colors.text }}>Loading table data...</div>
+                <div className="text-xs mt-2" style={{ color: colors.textSecondary }}>Please wait while we fetch the rows</div>
               </div>
             </div>
-          </div>
-        ) : (
-          <div 
-            className="absolute inset-0 border rounded" 
-            style={{ 
-              borderColor: colors.gridBorder,
-              overflow: 'auto' // This enables both vertical and horizontal scrolling
-            }}
-          >
-            <table style={{ borderCollapse: 'collapse', minWidth: '100%', width: 'max-content' }}>
-              <thead style={{ 
-                backgroundColor: colors.tableHeader, 
-                position: 'sticky', 
-                top: 0, 
-                zIndex: 10 
-              }}>
-                <tr>
-                  {/* Counter column header */}
-                  <th 
-                    className="text-left p-2 text-xs font-medium"
-                    style={{ 
-                      color: colors.textSecondary, 
-                      background: colors.bg,
-                      position: 'sticky',
-                      left: 0,
-                      zIndex: 20,
-                      minWidth: '60px',
-                      borderRight: `1px solid ${colors.gridBorder}`,
-                      borderBottom: `1px solid ${colors.gridBorder}`,
-                      padding: '8px'
-                    }}
-                  >
-                    <div className="flex items-center gap-1">
-                      <span>#</span>
-                    </div>
-                  </th>
-                  {columns.map(col => (
+          ) : data.length === 0 ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center">
+                <div className="flex justify-center mb-4">
+                  <TableIcon size={64} style={{ color: colors.textSecondary, opacity: 0.5 }} />
+                </div>
+                <div className="text-lg font-medium" style={{ color: colors.text }}>No data available</div>
+                <div className="text-sm mt-2" style={{ color: colors.textSecondary }}>
+                  Click the Execute button to load data
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div 
+              className="absolute inset-0 border rounded" 
+              style={{ 
+                borderColor: colors.gridBorder,
+                overflow: 'auto'
+              }}
+            >
+              <table style={{ borderCollapse: 'collapse', minWidth: '100%', width: 'max-content' }}>
+                <thead style={{ 
+                  backgroundColor: colors.tableHeader, 
+                  position: 'sticky', 
+                  top: 0, 
+                  zIndex: 10 
+                }}>
+                  <tr>
                     <th 
-                      key={col.name || col.COLUMN_NAME} 
-                      className="text-left p-2 text-xs font-medium cursor-pointer hover:bg-opacity-50"
-                      onClick={() => handleSortChange(
-                        col.name || col.COLUMN_NAME, 
-                        dataView.sortColumn === (col.name || col.COLUMN_NAME) && dataView.sortDirection === 'ASC' ? 'DESC' : 'ASC'
-                      )}
+                      className="text-left p-2 text-xs font-medium"
                       style={{ 
                         color: colors.textSecondary, 
                         background: colors.bg,
-                        minWidth: '150px',
+                        position: 'sticky',
+                        left: 0,
+                        zIndex: 20,
+                        minWidth: '60px',
+                        borderRight: `1px solid ${colors.gridBorder}`,
                         borderBottom: `1px solid ${colors.gridBorder}`,
-                        padding: '8px',
-                        whiteSpace: 'nowrap'
+                        padding: '8px'
                       }}
                     >
                       <div className="flex items-center gap-1">
-                        <span>{col.name || col.COLUMN_NAME}</span>
-                        {dataView.sortColumn === (col.name || col.COLUMN_NAME) && (
-                          dataView.sortDirection === 'ASC' ? 
-                            <ChevronUp size={10} /> : 
-                            <ChevronDown size={10} />
-                        )}
+                        <span>#</span>
                       </div>
                     </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {data.map((row, rowIndex) => (
-                  <tr 
-                    key={rowIndex} 
-                    style={{ 
-                      backgroundColor: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                    }}
-                  >
-                    {/* Counter column data */}
-                    <td 
-                      className="p-2 text-xs border-b"
+                    {columns.map(col => (
+                      <th 
+                        key={col.name || col.COLUMN_NAME} 
+                        className="text-left p-2 text-xs font-medium cursor-pointer hover:bg-opacity-50"
+                        onClick={() => handleSortChange(
+                          col.name || col.COLUMN_NAME, 
+                          dataView.sortColumn === (col.name || col.COLUMN_NAME) && dataView.sortDirection === 'ASC' ? 'DESC' : 'ASC'
+                        )}
+                        style={{ 
+                          color: colors.textSecondary, 
+                          background: colors.bg,
+                          minWidth: '150px',
+                          borderBottom: `1px solid ${colors.gridBorder}`,
+                          padding: '8px',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        <div className="flex items-center gap-1">
+                          <span>{col.name || col.COLUMN_NAME}</span>
+                          {dataView.sortColumn === (col.name || col.COLUMN_NAME) && (
+                            dataView.sortDirection === 'ASC' ? 
+                              <ChevronUp size={10} /> : 
+                              <ChevronDown size={10} />
+                          )}
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.map((row, rowIndex) => (
+                    <tr 
+                      key={rowIndex} 
                       style={{ 
-                        borderColor: colors.gridBorder,
-                        color: colors.text,
-                        background: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                        position: 'sticky',
-                        left: 0,
-                        zIndex: 5,
-                        minWidth: '60px',
-                        borderRight: `1px solid ${colors.gridBorder}`,
-                        padding: '8px',
-                        whiteSpace: 'nowrap'
+                        backgroundColor: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
                       }}
                     >
-                      {rowIndex + 1 + (dataView.page - 1) * dataView.pageSize}
-                    </td>
-                    {columns.map(col => {
-                      const columnName = col.name || col.COLUMN_NAME;
-                      const value = row[columnName];
-                      return (
-                        <td 
-                          key={columnName} 
-                          className="p-2 text-xs border-b" 
-                          style={{ 
-                            borderColor: colors.gridBorder,
-                            color: colors.text,
-                            minWidth: '150px',
-                            padding: '8px',
-                            whiteSpace: 'nowrap'
-                          }}
-                          title={value?.toString()}
-                        >
-                          {value !== null && value !== undefined ? (
-                            typeof value === 'object' ? JSON.stringify(value) : value.toString()
-                          ) : (
-                            <span style={{ color: colors.textTertiary }}>NULL</span>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                      <td 
+                        className="p-2 text-xs border-b"
+                        style={{ 
+                          borderColor: colors.gridBorder,
+                          color: colors.text,
+                          background: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                          position: 'sticky',
+                          left: 0,
+                          zIndex: 5,
+                          minWidth: '60px',
+                          borderRight: `1px solid ${colors.gridBorder}`,
+                          padding: '8px',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {rowIndex + 1 + (dataView.page - 1) * dataView.pageSize}
+                      </td>
+                      {columns.map(col => {
+                        const columnName = col.name || col.COLUMN_NAME;
+                        const value = row[columnName];
+                        return (
+                          <td 
+                            key={columnName} 
+                            className="p-2 text-xs border-b" 
+                            style={{ 
+                              borderColor: colors.gridBorder,
+                              color: colors.text,
+                              minWidth: '150px',
+                              padding: '8px',
+                              whiteSpace: 'nowrap'
+                            }}
+                            title={value?.toString()}
+                          >
+                            {value !== null && value !== undefined ? (
+                              typeof value === 'object' ? JSON.stringify(value) : value.toString()
+                            ) : (
+                              <span style={{ color: colors.textTertiary }}>NULL</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
   // Render Parameters Tab
   const renderParametersTab = () => {
@@ -2146,8 +2794,6 @@ if (columns.length === 0 && data.length > 0) {
     );
   };
 
-
-
   // Render Constraints Tab
   const renderConstraintsTab = () => {
     const constraints = objectDetails?.constraints || 
@@ -2206,6 +2852,152 @@ if (columns.length === 0 && data.length > 0) {
                         {con.status || con.STATUS}
                       </span>
                     </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Render DDL Tab
+  const renderDDLTab = () => {
+    const ddl = objectDDL || 
+                objectDetails?.targetDetails?.text || 
+                objectDetails?.text || 
+                objectDetails?.ddl ||
+                activeObject?.text || 
+                activeObject?.spec || 
+                activeObject?.body || 
+                '';
+    
+    return (
+      <div className="flex-1 overflow-auto">
+        <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
+          {ddlLoading ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <Loader className="animate-spin mb-4" size={32} style={{ color: colors.primary }} />
+              <div className="text-sm font-medium" style={{ color: colors.text }}>Loading DDL...</div>
+              <div className="text-xs mt-2" style={{ color: colors.textSecondary }}>
+                Fetching DDL for {activeObject?.name}
+              </div>
+            </div>
+          ) : (
+            <>
+              <pre className="text-xs font-mono whitespace-pre-wrap overflow-auto max-h-[calc(100vh-300px)]" style={{ color: colors.text }}>
+                {ddl || '-- No DDL available for this object'}
+              </pre>
+              <div className="mt-2 flex justify-end">
+                <button 
+                  className="px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1"
+                  style={{ backgroundColor: colors.hover, color: colors.text }}
+                  onClick={() => handleCopyToClipboard(ddl, 'DDL')}
+                  disabled={ddlLoading || !ddl}
+                >
+                  <Copy size={12} className="inline mr-1" />
+                  Copy
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Render Definition Tab (same as DDL)
+  const renderDefinitionTab = () => {
+    return renderDDLTab();
+  };
+
+  // Render Spec Tab (same as DDL)
+  const renderSpecTab = () => {
+    return renderDDLTab();
+  };
+
+  // Render Body Tab
+  const renderBodyTab = () => {
+    const body = objectDetails?.body || objectDetails?.targetDetails?.body || '';
+    
+    return (
+      <div className="flex-1 overflow-auto">
+        <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
+          {ddlLoading ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <Loader className="animate-spin mb-4" size={32} style={{ color: colors.primary }} />
+              <div className="text-sm font-medium" style={{ color: colors.text }}>Loading Package Body...</div>
+              <div className="text-xs mt-2" style={{ color: colors.textSecondary }}>
+                Fetching body for {activeObject?.name}
+              </div>
+            </div>
+          ) : (
+            <>
+              <pre className="text-xs font-mono whitespace-pre-wrap overflow-auto max-h-[calc(100vh-300px)]" style={{ color: colors.text }}>
+                {body || 'No package body available'}
+              </pre>
+              <div className="mt-2 flex justify-end">
+                <button 
+                  className="px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1"
+                  style={{ backgroundColor: colors.hover, color: colors.text }}
+                  onClick={() => handleCopyToClipboard(body, 'body')}
+                  disabled={ddlLoading || !body}
+                >
+                  <Copy size={12} className="inline mr-1" />
+                  Copy
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Render Attributes Tab
+  const renderAttributesTab = () => {
+    const attributes = objectDetails?.attributes || 
+                       objectDetails?.targetDetails?.attributes || 
+                       activeObject?.attributes || 
+                       [];
+    
+    if (!attributes || attributes.length === 0) {
+      return (
+        <div className="flex-1 overflow-auto p-4">
+          <div className="text-center" style={{ color: colors.textSecondary }}>
+            No attributes found
+          </div>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="flex-1 overflow-auto">
+        <div className="border rounded" style={{ borderColor: colors.gridBorder }}>
+          <div className="p-2 border-b" style={{ borderColor: colors.gridBorder }}>
+            <div className="text-sm font-medium" style={{ color: colors.text }}>
+              Attributes ({attributes.length})
+            </div>
+          </div>
+          <div className="overflow-auto">
+            <table className="w-full">
+              <thead style={{ backgroundColor: colors.tableHeader }}>
+                <tr>
+                  <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>#</th>
+                  <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Attribute</th>
+                  <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Type</th>
+                </tr>
+              </thead>
+              <tbody>
+                {attributes.map((attr, i) => (
+                  <tr key={attr.name || attr.ATTR_NAME || i} style={{ 
+                    backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                    borderBottom: `1px solid ${colors.gridBorder}`
+                  }}>
+                    <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{attr.position || attr.POSITION || i + 1}</td>
+                    <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{attr.name || attr.ATTR_NAME}</td>
+                    <td className="p-2 text-xs" style={{ color: colors.text }}>{attr.type || attr.DATA_TYPE || attr.ATTR_TYPE_NAME}</td>
                   </tr>
                 ))}
               </tbody>
@@ -2278,24 +3070,6 @@ if (columns.length === 0 && data.length > 0) {
                   <div className="text-xs" style={{ color: colors.textSecondary }}>DB Link</div>
                   <div className="text-sm truncate" style={{ color: colors.text }}>{details.DB_LINK || '-'}</div>
                 </div>
-                {details.TARGET_TEMPORARY && (
-                  <div className="space-y-1">
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>Target Temporary</div>
-                    <div className="text-sm truncate" style={{ color: colors.text }}>{details.TARGET_TEMPORARY}</div>
-                  </div>
-                )}
-                {details.TARGET_GENERATED && (
-                  <div className="space-y-1">
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>Target Generated</div>
-                    <div className="text-sm truncate" style={{ color: colors.text }}>{details.TARGET_GENERATED}</div>
-                  </div>
-                )}
-                {details.TARGET_SECONDARY && (
-                  <div className="space-y-1">
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>Target Secondary</div>
-                    <div className="text-sm truncate" style={{ color: colors.text }}>{details.TARGET_SECONDARY}</div>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -2339,527 +3113,132 @@ if (columns.length === 0 && data.length > 0) {
                       {targetDetails.LAST_DDL_TIME ? formatDateForDisplay(targetDetails.LAST_DDL_TIME) : '-'}
                     </div>
                   </div>
-                  {targetDetails.parameterCount && (
-                    <div className="space-y-1">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Parameter Count</div>
-                      <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.parameterCount}</div>
-                    </div>
-                  )}
-                  {targetDetails.column_count && (
-                    <div className="space-y-1">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Column Count</div>
-                      <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.column_count}</div>
-                    </div>
-                  )}
-                  {targetDetails.NUM_ROWS !== undefined && (
-                    <div className="space-y-1">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Row Count</div>
-                      <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.NUM_ROWS.toLocaleString()}</div>
-                    </div>
-                  )}
-                  {targetDetails.TABLESPACE_NAME && (
-                    <div className="space-y-1">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Tablespace</div>
-                      <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.TABLESPACE_NAME}</div>
-                    </div>
-                  )}
-                  {targetDetails.TEMPORARY && (
-                    <div className="space-y-1">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Temporary</div>
-                      <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.TEMPORARY}</div>
-                    </div>
-                  )}
-                  {targetDetails.GENERATED && (
-                    <div className="space-y-1">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Generated</div>
-                      <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.GENERATED}</div>
-                    </div>
-                  )}
-                  {targetDetails.SECONDARY && (
-                    <div className="space-y-1">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Secondary</div>
-                      <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.SECONDARY}</div>
-                    </div>
-                  )}
-                  {targetDetails.comments && (
-                    <div className="space-y-1 col-span-2">
-                      <div className="text-xs" style={{ color: colors.textSecondary }}>Comments</div>
-                      <div className="text-sm" style={{ color: colors.text }}>{targetDetails.comments}</div>
-                    </div>
-                  )}
                 </div>
               </div>
             )}
           </div>
         </div>
-    );
-  };
-
-  // For non-synonym objects, show regular properties
-  const properties = [
-    { label: 'Name', value: details.name || details.OBJECT_NAME || details.objectName || details.SYNONYM_NAME || '-' },
-    { label: 'Owner', value: details.owner || details.OWNER || '-' },
-    { label: 'Type', value: details.type || details.OBJECT_TYPE || details.objectType || details.TARGET_TYPE || '-' },
-    { label: 'Status', value: details.status || details.STATUS || details.TARGET_STATUS || 'VALID' },
-    { label: 'Created', value: details.created || details.CREATED || details.TARGET_CREATED ? formatDateForDisplay(details.created || details.CREATED || details.TARGET_CREATED) : '-' },
-    { label: 'Last Modified', value: details.last_ddl_time || details.LAST_DDL_TIME || details.TARGET_MODIFIED ? formatDateForDisplay(details.last_ddl_time || details.LAST_DDL_TIME || details.TARGET_MODIFIED) : '-' },
-    ...(details.num_rows || details.NUM_ROWS ? [{ label: 'Row Count', value: (details.num_rows || details.NUM_ROWS).toLocaleString() }] : []),
-    ...(details.bytes || details.BYTES ? [{ label: 'Size', value: formatBytes(details.bytes || details.BYTES) }] : []),
-    ...(details.comments || details.COMMENTS ? [{ label: 'Comment', value: details.comments || details.COMMENTS }] : [])
-  ];
-
-  return (
-    <div className="flex-1 overflow-auto">
-      <div className="border rounded p-4" style={{ borderColor: colors.border }}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {properties.map((prop, i) => (
-            <div key={i} className="space-y-1">
-              <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
-              <div className="text-sm truncate" style={{ color: colors.text }}>{prop.value || '-'}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-
-  // Render Attributes Tab (for types)
-  const renderAttributesTab = () => {
-    const attributes = objectDetails?.attributes || 
-                       objectDetails?.targetDetails?.attributes || 
-                       activeObject?.attributes || 
-                       [];
-    
-    if (!attributes || attributes.length === 0) {
-      return (
-        <div className="flex-1 overflow-auto p-4">
-          <div className="text-center" style={{ color: colors.textSecondary }}>
-            No attributes found
-          </div>
-        </div>
       );
     }
-    
+  
+    // For non-synonym objects, show regular properties
+    const properties = [
+      { label: 'Name', value: details.name || details.OBJECT_NAME || details.objectName || details.SYNONYM_NAME || '-' },
+      { label: 'Owner', value: details.owner || details.OWNER || '-' },
+      { label: 'Type', value: details.type || details.OBJECT_TYPE || details.objectType || details.TARGET_TYPE || '-' },
+      { label: 'Status', value: details.status || details.STATUS || details.TARGET_STATUS || 'VALID' },
+      { label: 'Created', value: details.created || details.CREATED || details.TARGET_CREATED ? formatDateForDisplay(details.created || details.CREATED || details.TARGET_CREATED) : '-' },
+      { label: 'Last Modified', value: details.last_ddl_time || details.LAST_DDL_TIME || details.TARGET_MODIFIED ? formatDateForDisplay(details.last_ddl_time || details.LAST_DDL_TIME || details.TARGET_MODIFIED) : '-' },
+      ...(details.num_rows || details.NUM_ROWS ? [{ label: 'Row Count', value: (details.num_rows || details.NUM_ROWS).toLocaleString() }] : []),
+      ...(details.bytes || details.BYTES ? [{ label: 'Size', value: formatBytes(details.bytes || details.BYTES) }] : []),
+      ...(details.comments || details.COMMENTS ? [{ label: 'Comment', value: details.comments || details.COMMENTS }] : [])
+    ];
+  
     return (
       <div className="flex-1 overflow-auto">
-        <div className="border rounded" style={{ borderColor: colors.gridBorder }}>
-          <div className="p-2 border-b" style={{ borderColor: colors.gridBorder }}>
-            <div className="text-sm font-medium" style={{ color: colors.text }}>
-              Attributes ({attributes.length})
-            </div>
-          </div>
-          <div className="overflow-auto">
-            <table className="w-full">
-              <thead style={{ backgroundColor: colors.tableHeader }}>
-                <tr>
-                  <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>#</th>
-                  <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Attribute</th>
-                  <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Type</th>
-                </tr>
-              </thead>
-              <tbody>
-                {attributes.map((attr, i) => (
-                  <tr key={attr.name || attr.ATTR_NAME || i} style={{ 
-                    backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                    borderBottom: `1px solid ${colors.gridBorder}`
-                  }}>
-                    <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{attr.position || attr.POSITION || i + 1}</td>
-                    <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{attr.name || attr.ATTR_NAME}</td>
-                    <td className="p-2 text-xs" style={{ color: colors.text }}>{attr.type || attr.DATA_TYPE || attr.ATTR_TYPE_NAME}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="border rounded p-4" style={{ borderColor: colors.border }}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {properties.map((prop, i) => (
+              <div key={i} className="space-y-1">
+                <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
+                <div className="text-sm truncate" style={{ color: colors.text }}>{prop.value || '-'}</div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
     );
   };
 
-  // Get Tabs for Object Type
-  const getTabsForObject = useCallback((type, objectDetails) => {
-    const objectType = type?.toUpperCase();
-    
-    // If it's a synonym, check what it points to
-    if (objectType === 'SYNONYM' && objectDetails?.targetDetails) {
-      const targetType = objectDetails.targetDetails.OBJECT_TYPE || objectDetails.targetDetails.objectType;
+  // DDL loading effect
+  useEffect(() => {
+    if (activeTab === 'ddl' || activeTab === 'definition' || activeTab === 'spec' || activeTab === 'body') {
+      const ddlTypes = ['TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'PACKAGE', 'TRIGGER', 'SEQUENCE'];
+      const effectiveType = activeObject?.type?.toUpperCase();
       
-      // Return tabs based on the target object type
-      switch(targetType) {
-        case 'TABLE':
-          return ['Columns', 'Data', 'Constraints', 'DDL', 'Properties'];
-        case 'VIEW':
-          return ['Definition', 'Columns', 'Properties'];
-        case 'PROCEDURE':
-          return ['Parameters', 'DDL', 'Properties'];
-        case 'FUNCTION':
-          return ['Parameters', 'DDL', 'Properties'];
-        case 'PACKAGE':
-          return ['Spec', 'Body', 'Properties'];
-        case 'SEQUENCE':
-          return ['DDL', 'Properties'];
-        case 'TYPE':
-          return ['Attributes', 'Properties'];
-        case 'TRIGGER':
-          return ['Definition', 'Properties'];
-        default:
-          return ['Properties'];
-      }
-    }
-    
-    // For non-synonym objects, return tabs based on their own type
-    switch(objectType) {
-      case 'TABLE':
-        return ['Columns', 'Data', 'Constraints', 'DDL', 'Properties'];
-      case 'VIEW':
-        return ['Definition', 'Columns', 'Properties'];
-      case 'PROCEDURE':
-        return ['Parameters', 'DDL', 'Properties'];
-      case 'FUNCTION':
-        return ['Parameters', 'DDL', 'Properties'];
-      case 'PACKAGE':
-        return ['Spec', 'Body', 'Properties'];
-      case 'SEQUENCE':
-        return ['DDL', 'Properties'];
-      case 'SYNONYM':
-        return ['Properties'];
-      case 'TYPE':
-        return ['Attributes', 'Properties'];
-      case 'TRIGGER':
-        return ['Definition', 'Properties'];
-      default:
-        return ['Properties'];
-    }
-  }, []);
-
-  // Handle Object Select - Always show Properties tab first
-  const handleObjectSelect = useCallback(async (object, type) => {
-  if (!authToken || !object) {
-    console.error('Cannot select object: missing authToken or object', { authToken: !!authToken, object });
-    return;
-  }
-
-  Logger.info('SchemaBrowser', 'handleObjectSelect', `Selecting ${object.name} (${type})`);
-  
-  const objectId = object.id || `${object.owner || 'unknown'}_${object.name}`;
-  
-  setLoading(true);
-  setTableDataLoading(false);
-  setObjectDetails(null);
-  setObjectDDL('');
-  setTableData(null);
-  setDdlLoading(false); // Reset DDL loading state
-  
-  // IMPORTANT: Set active tab to properties BEFORE setting the active object
-  setActiveTab('properties');
-  
-  const enrichedObject = {
-    ...object,
-    id: objectId,
-    type: type
-  };
-  
-  setActiveObject(enrichedObject);
-  setSelectedForApiGeneration(enrichedObject);
-  
-  const tabId = `${type}_${objectId}`;
-  const existingTab = tabs.find(t => t.id === tabId);
-  
-  if (existingTab) {
-    setTabs(tabs.map(t => ({ ...t, isActive: t.id === tabId })));
-  } else {
-    setTabs(prev => [...prev.slice(-4), {
-      id: tabId,
-      name: object.name,
-      type,
-      objectId: objectId,
-      isActive: true
-    }].map(t => ({ ...t, isActive: t.id === tabId })));
-  }
-
-  try {
-    // Load object details
-    Logger.debug('SchemaBrowser', 'handleObjectSelect', `Loading details for ${object.name}`);
-    const response = await getObjectDetails(authToken, { objectType: type, objectName: object.name });
-    
-    const processedResponse = handleSchemaBrowserResponse(response);
-    const responseData = processedResponse.data || processedResponse;
-    
-    const enrichedResponseData = {
-      ...responseData,
-      name: responseData.name || object.name,
-      type: responseData.type || type
-    };
-    
-    setObjectDetails(enrichedResponseData);
-    
-    // Determine what type of object we're dealing with
-    const upperType = type.toUpperCase();
-    let effectiveType = upperType;
-    let targetType = null;
-    let targetName = object.name;
-    let targetOwner = null;
-    
-    if (upperType === 'SYNONYM' && responseData?.targetDetails) {
-      targetType = responseData.targetDetails.OBJECT_TYPE || responseData.targetDetails.objectType;
-      targetName = responseData.TARGET_NAME || object.name;
-      targetOwner = responseData.TARGET_OWNER || responseData.targetDetails.OWNER;
-      
-      if (targetType) {
-        effectiveType = targetType;
-      }
-    }
-    
-    // Load table data in background if it's a table
-    if (effectiveType === 'TABLE') {
-      if (upperType === 'SYNONYM' && targetType === 'TABLE') {
-        loadTableData(targetName).catch(err => console.error('Background table load error:', err));
-      } else {
-        loadTableData(object.name).catch(err => console.error('Background table load error:', err));
-      }
-    }
-    
-    // Load DDL in background for appropriate types
-    const ddlTypes = ['TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'PACKAGE', 'TRIGGER', 'SEQUENCE'];
-    if (ddlTypes.includes(effectiveType)) {
-      (async () => {
-        try {
-          setDdlLoading(true); // Set DDL loading to true
-          const ddlResponse = await getObjectDDL(authToken, { 
-            objectType: effectiveType.toLowerCase(), 
-            objectName: targetName 
-          });
-          
-          if (ddlResponse && ddlResponse.data) {
-            const ddlData = ddlResponse.data;
-            let ddlText = '';
+      if (activeObject && ddlTypes.includes(effectiveType) && !objectDDL && !ddlLoading) {
+        const targetName = activeObject.type === 'SYNONYM' && objectDetails?.TARGET_NAME 
+          ? objectDetails.TARGET_NAME 
+          : activeObject.name;
+        
+        const loadDDL = async () => {
+          try {
+            setDdlLoading(true);
+            const ddlResponse = await getObjectDDL(authToken, { 
+              objectType: effectiveType.toLowerCase(), 
+              objectName: targetName 
+            });
             
-            if (typeof ddlData === 'string') {
-              ddlText = ddlData;
-            } else if (ddlData.ddl) {
-              ddlText = ddlData.ddl;
-            } else if (ddlData.text) {
-              ddlText = ddlData.text;
-            } else if (ddlData.sql) {
-              ddlText = ddlData.sql;
-            } else {
-              ddlText = JSON.stringify(ddlData, null, 2);
-            }
-            
-            if (ddlText && ddlText !== '{}') {
-              setObjectDDL(ddlText);
+            if (ddlResponse && ddlResponse.data) {
+              const ddlData = ddlResponse.data;
+              let ddlText = '';
+              
+              if (typeof ddlData === 'string') {
+                ddlText = ddlData;
+              } else if (ddlData.ddl) {
+                ddlText = ddlData.ddl;
+              } else if (ddlData.text) {
+                ddlText = ddlData.text;
+              } else if (ddlData.sql) {
+                ddlText = ddlData.sql;
+              } else {
+                ddlText = JSON.stringify(ddlData, null, 2);
+              }
+              
+              if (ddlText && ddlText !== '{}') {
+                setObjectDDL(ddlText);
+              } else {
+                setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName}`);
+              }
             } else {
               setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName}`);
             }
-          } else {
-            setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName}`);
+          } catch (ddlError) {
+            console.error('DDL fetch error:', ddlError);
+            setObjectDDL(`-- Error loading DDL for ${effectiveType} ${targetName}\n-- ${ddlError.message}`);
+          } finally {
+            setDdlLoading(false);
           }
-        } catch (ddlError) {
-          console.error('Background DDL fetch error:', ddlError);
-          setObjectDDL(`-- Error loading DDL for ${effectiveType} ${targetName}\n-- ${ddlError.message}`);
-        } finally {
-          setDdlLoading(false); // Set DDL loading to false when done
-        }
-      })();
+        };
+        
+        loadDDL();
+      }
     }
-    
-  } catch (err) {
-    Logger.error('SchemaBrowser', 'handleObjectSelect', `Error loading details for ${object.name}`, err);
-    setError(`Failed to load object details: ${err.message}`);
-  } finally {
-    setLoading(false);
-  }
-
-  if (window.innerWidth < 768) {
-    setIsLeftSidebarVisible(false);
-  }
-}, [authToken, tabs, loadTableData]);
-
-// Update the renderDDLTab function to show loader when ddlLoading is true
-const renderDDLTab = () => {
-  const ddl = objectDDL || 
-              objectDetails?.targetDetails?.text || 
-              objectDetails?.text || 
-              objectDetails?.ddl ||
-              activeObject?.text || 
-              activeObject?.spec || 
-              activeObject?.body || 
-              '';
-  
-  return (
-    <div className="flex-1 overflow-auto">
-      <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
-        {ddlLoading ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <Loader className="animate-spin mb-4" size={32} style={{ color: colors.primary }} />
-            <div className="text-sm font-medium" style={{ color: colors.text }}>Loading DDL...</div>
-            <div className="text-xs mt-2" style={{ color: colors.textSecondary }}>
-              Fetching DDL for {activeObject?.name}
-            </div>
-          </div>
-        ) : (
-          <>
-            <pre className="text-xs font-mono whitespace-pre-wrap overflow-auto max-h-[calc(100vh-300px)]" style={{ color: colors.text }}>
-              {ddl || '-- No DDL available for this object'}
-            </pre>
-            <div className="mt-2 flex justify-end">
-              <button 
-                className="px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1"
-                style={{ backgroundColor: colors.hover, color: colors.text }}
-                onClick={() => handleCopyToClipboard(ddl, 'DDL')}
-                disabled={ddlLoading || !ddl}
-              >
-                <Copy size={12} className="inline mr-1" />
-                Copy
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// Also update the renderDefinitionTab, renderSpecTab, and renderBodyTab functions
-// to use the same DDL loading state
-
-const renderDefinitionTab = () => {
-  return renderDDLTab();
-};
-
-const renderSpecTab = () => {
-  return renderDDLTab();
-};
-
-const renderBodyTab = () => {
-  const body = objectDetails?.body || objectDetails?.targetDetails?.body || '';
-  
-  return (
-    <div className="flex-1 overflow-auto">
-      <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
-        {ddlLoading ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <Loader className="animate-spin mb-4" size={32} style={{ color: colors.primary }} />
-            <div className="text-sm font-medium" style={{ color: colors.text }}>Loading Package Body...</div>
-            <div className="text-xs mt-2" style={{ color: colors.textSecondary }}>
-              Fetching body for {activeObject?.name}
-            </div>
-          </div>
-        ) : (
-          <>
-            <pre className="text-xs font-mono whitespace-pre-wrap overflow-auto max-h-[calc(100vh-300px)]" style={{ color: colors.text }}>
-              {body || 'No package body available'}
-            </pre>
-            <div className="mt-2 flex justify-end">
-              <button 
-                className="px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1"
-                style={{ backgroundColor: colors.hover, color: colors.text }}
-                onClick={() => handleCopyToClipboard(body, 'body')}
-                disabled={ddlLoading || !body}
-              >
-                <Copy size={12} className="inline mr-1" />
-                Copy
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// Add a useEffect to track when the DDL tab is clicked
-useEffect(() => {
-  if (activeTab === 'ddl' || activeTab === 'definition' || activeTab === 'spec' || activeTab === 'body') {
-    // If we're on a DDL-related tab and DDL is still loading or empty, show loader
-    const ddlTypes = ['TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'PACKAGE', 'TRIGGER', 'SEQUENCE'];
-    const effectiveType = activeObject?.type?.toUpperCase();
-    
-    if (activeObject && ddlTypes.includes(effectiveType) && !objectDDL && !ddlLoading) {
-      // Trigger DDL load if not already loaded
-      const targetName = activeObject.type === 'SYNONYM' && objectDetails?.TARGET_NAME 
-        ? objectDetails.TARGET_NAME 
-        : activeObject.name;
-      
-      const loadDDL = async () => {
-        try {
-          setDdlLoading(true);
-          const ddlResponse = await getObjectDDL(authToken, { 
-            objectType: effectiveType.toLowerCase(), 
-            objectName: targetName 
-          });
-          
-          if (ddlResponse && ddlResponse.data) {
-            const ddlData = ddlResponse.data;
-            let ddlText = '';
-            
-            if (typeof ddlData === 'string') {
-              ddlText = ddlData;
-            } else if (ddlData.ddl) {
-              ddlText = ddlData.ddl;
-            } else if (ddlData.text) {
-              ddlText = ddlData.text;
-            } else if (ddlData.sql) {
-              ddlText = ddlData.sql;
-            } else {
-              ddlText = JSON.stringify(ddlData, null, 2);
-            }
-            
-            if (ddlText && ddlText !== '{}') {
-              setObjectDDL(ddlText);
-            } else {
-              setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName}`);
-            }
-          } else {
-            setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName}`);
-          }
-        } catch (ddlError) {
-          console.error('DDL fetch error:', ddlError);
-          setObjectDDL(`-- Error loading DDL for ${effectiveType} ${targetName}\n-- ${ddlError.message}`);
-        } finally {
-          setDdlLoading(false);
-        }
-      };
-      
-      loadDDL();
-    }
-  }
-}, [activeTab, activeObject, objectDDL, ddlLoading, objectDetails, authToken]);
-
-
-// DIRECT PROCEDURE SELECTOR - Added after your other useEffects
-useEffect(() => {
-  // This runs whenever schemaObjects.procedures changes
-  const procedures = schemaObjects.procedures || [];
-  
-  if (procedures.length > 0 && !activeObject && !hasAutoSelected && initialLoadComplete) {
-    Logger.info('SchemaBrowser', 'direct-procedure-selector', `Procedures loaded: ${procedures.length}, selecting first one`);
-    
-    const firstProcedure = procedures[0];
-    const procedureWithId = {
-      ...firstProcedure,
-      id: firstProcedure.id || `${firstProcedure.owner || 'unknown'}_${firstProcedure.name}`
-    };
-    
-    setHasAutoSelected(true);
-    // Immediate selection without timeout
-    handleObjectSelect(procedureWithId, 'PROCEDURE');
-  }
-}, [schemaObjects.procedures, activeObject, hasAutoSelected, initialLoadComplete, handleObjectSelect]);
-
+  }, [activeTab, activeObject, objectDDL, ddlLoading, objectDetails, authToken]);
 
   // Render tab content based on active tab
   const renderTabContent = () => {
     if (!activeObject) {
       return (
-        <div className="h-full flex flex-col items-center justify-center p-4">
-          <Database size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mb-4" />
-          <p className="text-sm text-center" style={{ color: colors.textSecondary }}>
-            Select an object from the schema browser to view details
-          </p>
-        </div>
+        <>
+        {!activeObject && (
+          <div className="h-full flex flex-col items-center justify-center p-4">
+            {isLoadingSchemaObjects ? (
+              <>
+                <div className="relative mb-6">
+                  <Loader className="animate-spin" size={48} style={{ color: colors.primary }} />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <Database size={24} style={{ color: colors.primary, opacity: 0.3 }} />
+                  </div>
+                </div>
+                <p className="text-sm font-medium text-center" style={{ color: colors.text }}>
+                  Loading schema objects...
+                </p>
+                <p className="text-xs mt-2 text-center" style={{ color: colors.textSecondary }}>
+                  Fetching synonyms and other database objects
+                </p>
+              </>
+            ) : (
+              <>
+                <Database size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mb-4" />
+                <p className="text-sm text-center" style={{ color: colors.textSecondary }}>
+                  Select an object from the schema browser to view details
+                </p>
+              </>
+            )}
+          </div>
+        )}
+        </>
       );
     }
 
@@ -3028,7 +3407,9 @@ useEffect(() => {
           objectTree={objectTree}
           handleToggleSection={handleToggleSection}
           handleLoadSection={handleLoadSection}
+          handleLoadMore={handleLoadMore}
           schemaObjects={schemaObjects}
+          filteredResults={filteredResults}  // ADD THIS LINE
           loadingStates={loadingStates}
           activeObject={activeObject}
           handleObjectSelect={handleObjectSelect}
@@ -3038,6 +3419,10 @@ useEffect(() => {
           onRefreshSchema={handleRefresh}
           schemaInfo={schemaInfo}
           loadedSections={loadedSections}
+          pagination={pagination}
+          isInitialLoad={isInitialLoad}
+          hasActiveFilter={hasActiveFilter}
+          isFiltering={isFiltering}  // ADD THIS LINE
         />
 
         {/* Main Area */}
@@ -3086,6 +3471,17 @@ useEffect(() => {
                 <span className="text-sm font-semibold" style={{ color: colors.text }}>{activeObject.name}</span>
                 {activeObject.owner && (
                   <span className="text-xs" style={{ color: colors.textSecondary }}>[{activeObject.owner}]</span>
+                )}
+                {activeObject.type === 'SYNONYM' && (
+                  <span 
+                    className="text-[10px] px-2 py-0.5 rounded-full"
+                    style={{ 
+                      backgroundColor: colors.objectType.synonym + '20',
+                      color: colors.objectType.synonym
+                    }}
+                  >
+                    SYNONYM
+                  </span>
                 )}
                 {activeObject.status && (
                   <span className="text-xs px-2 py-0.5 rounded" style={{ 
@@ -3165,7 +3561,7 @@ useEffect(() => {
           selectedObject={selectedForApiGeneration || activeObject}
           colors={colors}
           theme={theme}
-          authToken={authToken}  // ← ADD THIS LINE
+          authToken={authToken}
         />
       )}
     </div>

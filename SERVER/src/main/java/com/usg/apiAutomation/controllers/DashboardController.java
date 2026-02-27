@@ -624,7 +624,7 @@ public class DashboardController {
             @Parameter(name = "limit", description = "Number of activities to return (default: 20)", in = ParameterIn.QUERY)
     })
     public ResponseEntity<?> getDashboardUserActivities(
-            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(defaultValue = "10") int limit,
             HttpServletRequest req) {
 
         String requestId = UUID.randomUUID().toString();
@@ -706,7 +706,7 @@ public class DashboardController {
     public ResponseEntity<?> searchDashboard(
             @RequestParam String query,
             @RequestParam(required = false) String type,
-            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(defaultValue = "10") int limit,
             HttpServletRequest req) {
 
         String requestId = UUID.randomUUID().toString();

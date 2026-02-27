@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -22,6 +23,2879 @@ public class OracleSchemaRepository {
     private JdbcTemplate oracleJdbcTemplate;
 
     private static final Logger log = LoggerFactory.getLogger(OracleSchemaRepository.class);
+
+    // ============================================================
+    // 1. CURRENT SCHEMA INFO (ORIGINAL)
+    // ============================================================
+
+    public Map<String, Object> getCurrentSchemaInfo() {
+        Map<String, Object> schemaInfo = new HashMap<>();
+        try {
+            schemaInfo.put("currentUser", getCurrentUser());
+            schemaInfo.put("currentSchema", getCurrentSchema());
+            schemaInfo.put("databaseVersion", getDatabaseVersion());
+            schemaInfo.put("objectCounts", getAllObjectCounts());
+            schemaInfo.put("timestamp", new Date());
+        } catch (Exception e) {
+            log.error("Error getting current schema info: {}", e.getMessage(), e);
+            schemaInfo.put("error", e.getMessage());
+        }
+        return schemaInfo;
+    }
+
+    // ============================================================
+    // 2. ALL TABLES FOR FRONTEND (ORIGINAL) - UPDATED
+    // ============================================================
+
+    public List<Map<String, Object>> getAllTablesForFrontend() {
+        List<Map<String, Object>> result = new ArrayList<>();
+        try {
+            // Get actual tables
+            List<Map<String, Object>> tables = getAllTables();
+
+            // Transform tables to frontend format
+            for (Map<String, Object> table : tables) {
+                Map<String, Object> transformed = new HashMap<>();
+                transformed.put("id", "table-" + System.currentTimeMillis() + "-" + table.get("table_name"));
+                transformed.put("name", table.get("table_name"));
+                transformed.put("owner", getCurrentUser());
+                transformed.put("type", "TABLE");
+                transformed.put("status", table.get("status") != null ? table.get("status") : table.get("object_status"));
+                transformed.put("rowCount", table.get("num_rows"));
+                transformed.put("size", formatBytes(getLongValue(getTableSize((String) table.get("table_name")))));
+                transformed.put("comments", getTableComment((String) table.get("table_name")));
+                transformed.put("created", table.get("created"));
+                transformed.put("lastModified", table.get("last_analyzed"));
+                transformed.put("tablespace", table.get("tablespace_name"));
+                transformed.put("icon", "table");
+                transformed.put("isSynonym", false);
+                result.add(transformed);
+            }
+
+            // Get synonyms that target tables
+            String synonymSql =
+                    "SELECT " +
+                            "    s.synonym_name as name, " +
+                            "    'SYNONYM' as type, " +
+                            "    CASE " +
+                            "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                            "        ELSE o.status " +
+                            "    END as status, " +
+                            "    NULL as created, " +
+                            "    NULL as last_analyzed, " +
+                            "    NULL as num_rows, " +
+                            "    s.table_owner as target_owner, " +
+                            "    s.table_name as target_name, " +
+                            "    CASE " +
+                            "        WHEN s.db_link IS NOT NULL THEN 'REMOTE_TABLE' " +
+                            "        ELSE o.object_type " +
+                            "    END as target_type, " +
+                            "    s.db_link, " +
+                            "    (SELECT comments FROM all_tab_comments WHERE owner = s.table_owner AND table_name = s.table_name) as comments, " +
+                            "    (SELECT tablespace_name FROM all_tables WHERE owner = s.table_owner AND table_name = s.table_name) as tablespace_name " +
+                            "FROM user_synonyms s " +
+                            "LEFT JOIN all_objects o ON s.table_owner = o.owner " +
+                            "    AND s.table_name = o.object_name " +
+                            "WHERE (o.object_type = 'TABLE' OR s.db_link IS NOT NULL) " +
+                            "ORDER BY s.synonym_name";
+
+            try {
+                List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(synonymSql);
+                log.info("Found {} synonyms targeting tables", synonyms.size());
+
+                for (Map<String, Object> syn : synonyms) {
+                    Map<String, Object> transformed = new HashMap<>();
+                    transformed.put("id", "syn-table-" + System.currentTimeMillis() + "-" + syn.get("name"));
+                    transformed.put("name", syn.get("name"));
+                    transformed.put("owner", getCurrentUser());
+                    transformed.put("type", "SYNONYM");
+                    transformed.put("status", syn.get("status") != null ? syn.get("status") : "VALID");
+                    transformed.put("rowCount", 0);
+                    transformed.put("size", "0 Bytes");
+                    transformed.put("comments", syn.get("comments"));
+                    transformed.put("created", null);
+                    transformed.put("lastModified", null);
+                    transformed.put("tablespace", syn.get("tablespace_name"));
+                    transformed.put("targetOwner", syn.get("target_owner"));
+                    transformed.put("targetName", syn.get("target_name"));
+                    transformed.put("targetType", syn.get("target_type") != null ? syn.get("target_type") : "TABLE");
+                    transformed.put("dbLink", syn.get("db_link"));
+                    transformed.put("isRemote", syn.get("db_link") != null);
+                    transformed.put("isSynonym", true);
+                    transformed.put("icon", "synonym");
+                    transformed.put("targetIcon", "table");
+
+                    String targetType = (String) syn.get("target_type");
+                    if (targetType != null) {
+                        transformed.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                    } else {
+                        transformed.put("targetDisplayType", "Table");
+                    }
+
+                    if (syn.get("db_link") == null && syn.get("target_name") != null) {
+                        try {
+                            String targetSql = "SELECT status, created, last_ddl_time, num_rows " +
+                                    "FROM all_objects o " +
+                                    "LEFT JOIN all_tables t ON o.owner = t.owner AND o.object_name = t.table_name " +
+                                    "WHERE o.owner = ? AND o.object_name = ? AND o.object_type = 'TABLE'";
+                            Map<String, Object> targetInfo = oracleJdbcTemplate.queryForMap(
+                                    targetSql, syn.get("target_owner"), syn.get("target_name"));
+                            transformed.put("targetStatus", targetInfo.get("status"));
+                            transformed.put("targetCreated", targetInfo.get("created"));
+                            transformed.put("targetModified", targetInfo.get("last_ddl_time"));
+                            transformed.put("targetRowCount", targetInfo.get("num_rows"));
+                        } catch (Exception e) {
+                            transformed.put("targetStatus", "UNKNOWN");
+                        }
+                    } else if (syn.get("db_link") != null) {
+                        transformed.put("targetStatus", "REMOTE");
+                    }
+
+                    result.add(transformed);
+                }
+            } catch (Exception e) {
+                log.error("Error fetching synonyms for tables: {}", e.getMessage());
+            }
+
+            // Sort combined results by name
+            result.sort((a, b) -> {
+                String nameA = (String) a.get("name");
+                String nameB = (String) b.get("name");
+                return nameA.compareTo(nameB);
+            });
+
+            log.info("Returning {} total items (tables + synonyms)", result.size());
+
+        } catch (Exception e) {
+            log.error("Error in getAllTablesForFrontend: {}", e.getMessage(), e);
+            return new ArrayList<>();
+        }
+        return result;
+    }
+
+    // ============================================================
+    // 2a. ALL TABLES FOR FRONTEND (PAGINATED) - UPDATED
+    // ============================================================
+
+    public Map<String, Object> getAllTablesForFrontend(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            // Get count of actual tables
+            String tableCountSql = "SELECT COUNT(*) FROM user_tables";
+            int tableCount = oracleJdbcTemplate.queryForObject(tableCountSql, Integer.class);
+
+            // Get count of synonyms that target tables
+            String synonymCountSql =
+                    "SELECT COUNT(*) FROM user_synonyms s " +
+                            "WHERE EXISTS (SELECT 1 FROM all_objects " +
+                            "              WHERE owner = s.table_owner " +
+                            "                AND object_name = s.table_name " +
+                            "                AND object_type = 'TABLE') " +
+                            "   OR (s.db_link IS NOT NULL)";
+
+            int synonymCount = 0;
+            try {
+                synonymCount = oracleJdbcTemplate.queryForObject(synonymCountSql, Integer.class);
+            } catch (Exception e) {
+                log.warn("Error counting synonyms for tables: {}", e.getMessage());
+            }
+
+            int totalCount = tableCount + synonymCount;
+            log.info("Found {} tables and {} synonyms targeting tables, total: {}", tableCount, synonymCount, totalCount);
+
+            List<Map<String, Object>> allItems = new ArrayList<>();
+
+            // Get tables first
+            if (tableCount > 0 && offset < tableCount) {
+                int tableOffset = offset;
+                int tableLimit = Math.min(pageSize, tableCount - tableOffset);
+
+                if (tableLimit > 0) {
+                    String tableSql = "SELECT " +
+                            "    t.table_name as name, " +
+                            "    'TABLE' as type, " +
+                            "    t.tablespace_name, " +
+                            "    t.status, " +
+                            "    t.num_rows, " +
+                            "    t.last_analyzed, " +
+                            "    o.created, " +
+                            "    (SELECT comments FROM user_tab_comments WHERE table_name = t.table_name) as comments, " +
+                            "    (SELECT SUM(bytes) FROM user_segments WHERE segment_name = t.table_name AND segment_type = 'TABLE') as size_bytes, " +
+                            "    NULL as target_owner, " +
+                            "    NULL as target_name, " +
+                            "    NULL as target_type, " +
+                            "    NULL as db_link " +
+                            "FROM user_tables t " +
+                            "LEFT JOIN user_objects o ON t.table_name = o.object_name AND o.object_type = 'TABLE' " +
+                            "ORDER BY t.table_name " +
+                            "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+                    try {
+                        List<Map<String, Object>> tables = oracleJdbcTemplate.queryForList(tableSql, tableOffset, tableLimit);
+                        allItems.addAll(tables);
+                    } catch (Exception e) {
+                        log.error("Error fetching tables: {}", e.getMessage());
+                    }
+                }
+            }
+
+            // Get synonyms if needed
+            if (allItems.size() < pageSize && synonymCount > 0) {
+                int synOffset;
+                int synLimit;
+
+                if (offset >= tableCount) {
+                    synOffset = offset - tableCount;
+                    synLimit = pageSize;
+                } else {
+                    synOffset = 0;
+                    synLimit = pageSize - allItems.size();
+                }
+
+                if (synLimit > 0) {
+                    String synonymSql =
+                            "SELECT * FROM ( " +
+                                    "  SELECT a.*, ROWNUM rnum FROM ( " +
+                                    "    SELECT " +
+                                    "      s.synonym_name as name, " +
+                                    "      'SYNONYM' as type, " +
+                                    "      NULL as tablespace_name, " +
+                                    "      CASE " +
+                                    "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                                    "        ELSE o.status " +
+                                    "      END as status, " +
+                                    "      NULL as num_rows, " +
+                                    "      NULL as last_analyzed, " +
+                                    "      NULL as created, " +
+                                    "      (SELECT comments FROM all_tab_comments WHERE owner = s.table_owner AND table_name = s.table_name) as comments, " +
+                                    "      0 as size_bytes, " +
+                                    "      s.table_owner as target_owner, " +
+                                    "      s.table_name as target_name, " +
+                                    "      CASE " +
+                                    "        WHEN s.db_link IS NOT NULL THEN 'REMOTE_TABLE' " +
+                                    "        ELSE o.object_type " +
+                                    "      END as target_type, " +
+                                    "      s.db_link " +
+                                    "    FROM user_synonyms s " +
+                                    "    LEFT JOIN all_objects o ON s.table_owner = o.owner " +
+                                    "        AND s.table_name = o.object_name " +
+                                    "    WHERE (o.object_type = 'TABLE' OR s.db_link IS NOT NULL) " +
+                                    "    ORDER BY s.synonym_name " +
+                                    "  ) a " +
+                                    ") WHERE rnum > ? AND rnum <= ?";
+
+                    try {
+                        List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(
+                                synonymSql, synOffset, synOffset + synLimit);
+                        allItems.addAll(synonyms);
+                    } catch (Exception e) {
+                        log.error("Error fetching synonyms for tables: {}", e.getMessage());
+                    }
+                }
+            }
+
+            // Transform results
+            List<Map<String, Object>> transformed = new ArrayList<>();
+            for (Map<String, Object> item : allItems) {
+                Map<String, Object> transformedItem = new HashMap<>();
+                String type = (String) item.get("type");
+                String name = (String) item.get("name");
+
+                if ("TABLE".equals(type)) {
+                    transformedItem.put("id", "table-" + System.currentTimeMillis() + "-" + name);
+                    transformedItem.put("name", name);
+                    transformedItem.put("owner", getCurrentUser());
+                    transformedItem.put("type", "TABLE");
+                    transformedItem.put("status", item.get("status"));
+                    transformedItem.put("rowCount", item.get("num_rows"));
+                    transformedItem.put("size", formatBytes(getLongValue(item.get("size_bytes"))));
+                    transformedItem.put("comments", item.get("comments"));
+                    transformedItem.put("created", item.get("created"));
+                    transformedItem.put("lastModified", item.get("last_analyzed"));
+                    transformedItem.put("tablespace", item.get("tablespace_name"));
+                    transformedItem.put("icon", "table");
+                    transformedItem.put("isSynonym", false);
+                } else {
+                    transformedItem.put("id", "syn-table-" + System.currentTimeMillis() + "-" + name);
+                    transformedItem.put("name", name);
+                    transformedItem.put("owner", getCurrentUser());
+                    transformedItem.put("type", "SYNONYM");
+                    transformedItem.put("status", item.get("status") != null ? item.get("status") : "VALID");
+                    transformedItem.put("rowCount", 0);
+                    transformedItem.put("size", "0 Bytes");
+                    transformedItem.put("comments", item.get("comments"));
+                    transformedItem.put("created", null);
+                    transformedItem.put("lastModified", null);
+                    transformedItem.put("tablespace", item.get("tablespace_name"));
+                    transformedItem.put("targetOwner", item.get("target_owner"));
+                    transformedItem.put("targetName", item.get("target_name"));
+                    transformedItem.put("targetType", item.get("target_type") != null ? item.get("target_type") : "TABLE");
+                    transformedItem.put("dbLink", item.get("db_link"));
+                    transformedItem.put("isRemote", item.get("db_link") != null);
+                    transformedItem.put("isSynonym", true);
+                    transformedItem.put("icon", "synonym");
+                    transformedItem.put("targetIcon", "table");
+
+                    String targetType = (String) item.get("target_type");
+                    if (targetType != null) {
+                        transformedItem.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                    } else {
+                        transformedItem.put("targetDisplayType", "Table");
+                    }
+                }
+                transformed.add(transformedItem);
+            }
+
+            result.put("items", transformed);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", pageSize > 0 ? (int) Math.ceil((double) totalCount / pageSize) : 0);
+
+        } catch (Exception e) {
+            log.error("Error in getAllTablesForFrontend paginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", 0);
+            result.put("error", e.getMessage());
+        }
+        return result;
+    }
+
+    // ============================================================
+    // 3. TABLE DETAILS FOR FRONTEND (ORIGINAL) - UPDATED
+    // ============================================================
+
+    public Map<String, Object> getTableDetailsForFrontend(String tableName) {
+        try {
+            // First check if it's a synonym
+            Map<String, Object> synonymInfo = checkIfSynonymAndGetTarget(tableName, "TABLE");
+
+            if (synonymInfo != null && (boolean) synonymInfo.get("isSynonym")) {
+                Map<String, Object> result = new HashMap<>();
+                result.put("table_name", tableName);
+                result.put("name", tableName);
+                result.put("owner", getCurrentUser());
+                result.put("type", "SYNONYM");
+                result.put("isSynonym", true);
+                result.put("targetOwner", synonymInfo.get("targetOwner"));
+                result.put("targetName", synonymInfo.get("targetName"));
+                result.put("targetType", synonymInfo.get("targetType"));
+                result.put("dbLink", synonymInfo.get("dbLink"));
+                result.put("isRemote", synonymInfo.get("isRemote"));
+                result.put("icon", "synonym");
+                result.put("targetIcon", "table");
+
+                String targetType = (String) synonymInfo.get("targetType");
+                if (targetType != null) {
+                    result.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                }
+
+                if (!(boolean) synonymInfo.get("isRemote") && synonymInfo.get("targetName") != null) {
+                    try {
+                        // Get target table details
+                        Map<String, Object> targetDetails = getTableDetails((String) synonymInfo.get("targetOwner"),
+                                (String) synonymInfo.get("targetName"));
+                        result.put("targetDetails", targetDetails);
+                        result.put("targetStatus", targetDetails.get("status"));
+                    } catch (Exception e) {
+                        result.put("targetStatus", "UNKNOWN");
+                    }
+                } else {
+                    result.put("targetStatus", "REMOTE");
+                }
+
+                return result;
+            }
+
+            // It's a regular table
+            Map<String, Object> details = getTableDetails(getCurrentUser(), tableName);
+
+            List<Map<String, Object>> columns = getTableColumns(getCurrentUser(), tableName);
+            List<Map<String, Object>> constraints = getTableConstraints(getCurrentUser(), tableName);
+            List<Map<String, Object>> indexes = getTableIndexes(getCurrentUser(), tableName);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("table_name", tableName);
+            result.put("name", tableName);
+            result.put("owner", getCurrentUser());
+            result.put("type", "TABLE");
+            result.put("table_status", details.get("table_status"));
+            result.put("object_status", details.get("object_status"));
+            result.put("num_rows", details.get("num_rows"));
+            result.put("bytes", details.get("size_bytes"));
+            result.put("size", formatBytes(getLongValue(details.get("size_bytes"))));
+            result.put("comments", getTableComment(tableName));
+            result.put("columns", transformColumnsForFrontend(columns));
+            result.put("constraints", transformConstraintsForFrontend(constraints));
+            result.put("indexes", transformIndexesForFrontend(indexes));
+            result.put("created", details.get("created"));
+            result.put("lastModified", details.get("last_analyzed"));
+            result.put("tablespace_name", details.get("tablespace_name"));
+            result.put("icon", "table");
+            result.put("isSynonym", false);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error in getTableDetailsForFrontend for {}: {}", tableName, e.getMessage(), e);
+            throw new RuntimeException("Failed to retrieve details for table " + tableName + ": " + e.getMessage(), e);
+        }
+    }
+
+    // ============================================================
+    // 3a. TABLE DETAILS FOR FRONTEND (PAGINATED COLUMNS) - UPDATED
+    // ============================================================
+
+    public Map<String, Object> getTableDetailsForFrontend(String tableName, int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            // First check if it's a synonym
+            Map<String, Object> synonymInfo = checkIfSynonymAndGetTarget(tableName, "TABLE");
+
+            if (synonymInfo != null && (boolean) synonymInfo.get("isSynonym")) {
+                result.put("table_name", tableName);
+                result.put("name", tableName);
+                result.put("owner", getCurrentUser());
+                result.put("type", "SYNONYM");
+                result.put("isSynonym", true);
+                result.put("targetOwner", synonymInfo.get("targetOwner"));
+                result.put("targetName", synonymInfo.get("targetName"));
+                result.put("targetType", synonymInfo.get("targetType"));
+                result.put("dbLink", synonymInfo.get("dbLink"));
+                result.put("isRemote", synonymInfo.get("isRemote"));
+                result.put("icon", "synonym");
+                result.put("targetIcon", "table");
+
+                String targetType = (String) synonymInfo.get("targetType");
+                if (targetType != null) {
+                    result.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                }
+
+                if (!(boolean) synonymInfo.get("isRemote") && synonymInfo.get("targetName") != null) {
+                    try {
+                        // Get target table columns with pagination
+                        Map<String, Object> columnsResult = getTableColumnsPaginated(
+                                (String) synonymInfo.get("targetName"),
+                                (String) synonymInfo.get("targetOwner"),
+                                page, pageSize);
+                        result.put("columns", columnsResult.get("items"));
+                        result.put("totalColumns", columnsResult.get("totalCount"));
+                        result.put("page", page);
+                        result.put("pageSize", pageSize);
+                        result.put("totalPages", columnsResult.get("totalPages"));
+                    } catch (Exception e) {
+                        result.put("error", "Could not fetch target table columns: " + e.getMessage());
+                    }
+                }
+                return result;
+            }
+
+            // It's a regular table
+            Map<String, Object> details = getTableDetails(getCurrentUser(), tableName);
+
+            Map<String, Object> columnsResult = getTableColumnsPaginated(tableName, getCurrentUser(), page, pageSize);
+
+            List<Map<String, Object>> constraints = getTableConstraints(getCurrentUser(), tableName);
+            List<Map<String, Object>> indexes = getTableIndexes(getCurrentUser(), tableName);
+
+            result.put("table_name", tableName);
+            result.put("name", tableName);
+            result.put("owner", getCurrentUser());
+            result.put("type", "TABLE");
+            result.put("table_status", details.get("table_status"));
+            result.put("object_status", details.get("object_status"));
+            result.put("num_rows", details.get("num_rows"));
+            result.put("bytes", details.get("size_bytes"));
+            result.put("size", formatBytes(getLongValue(details.get("size_bytes"))));
+            result.put("comments", getTableComment(tableName));
+            result.put("columns", columnsResult.get("items"));
+            result.put("totalColumns", columnsResult.get("totalCount"));
+            result.put("constraints", transformConstraintsForFrontend(constraints));
+            result.put("indexes", transformIndexesForFrontend(indexes));
+            result.put("created", details.get("created"));
+            result.put("lastModified", details.get("last_analyzed"));
+            result.put("tablespace_name", details.get("tablespace_name"));
+            result.put("icon", "table");
+            result.put("isSynonym", false);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", columnsResult.get("totalPages"));
+
+        } catch (Exception e) {
+            log.error("Error in getTableDetailsForFrontend paginated for {}: {}", tableName, e.getMessage(), e);
+            result.put("error", e.getMessage());
+        }
+        return result;
+    }
+
+    // ============================================================
+    // 4. TABLE DATA (ORIGINAL)
+    // ============================================================
+
+    public Map<String, Object> getTableData(String tableName, int page, int pageSize,
+                                            String sortColumn, String sortDirection) {
+        return getTableDataWithPagination(tableName, page, pageSize, sortColumn, sortDirection);
+    }
+
+    // ============================================================
+    // 5. ALL VIEWS FOR FRONTEND (ORIGINAL) - UPDATED
+    // ============================================================
+
+    public List<Map<String, Object>> getAllViewsForFrontend() {
+        List<Map<String, Object>> result = new ArrayList<>();
+        try {
+            // Get actual views
+            String viewSql = "SELECT " +
+                    "    v.view_name as name, " +
+                    "    'VIEW' as type, " +
+                    "    v.text_length, " +
+                    "    v.read_only, " +
+                    "    o.created, " +
+                    "    o.last_ddl_time, " +
+                    "    o.status, " +
+                    "    (SELECT COUNT(*) FROM user_tab_columns WHERE table_name = v.view_name) as column_count, " +
+                    "    NULL as target_owner, " +
+                    "    NULL as target_name, " +
+                    "    NULL as target_type, " +
+                    "    NULL as db_link " +
+                    "FROM user_views v " +
+                    "JOIN user_objects o ON v.view_name = o.object_name AND o.object_type = 'VIEW' " +
+                    "ORDER BY v.view_name";
+
+            List<Map<String, Object>> views = oracleJdbcTemplate.queryForList(viewSql);
+            log.info("Found {} views", views.size());
+
+            for (Map<String, Object> view : views) {
+                Map<String, Object> transformed = new HashMap<>();
+                transformed.put("id", "view-" + System.currentTimeMillis() + "-" + view.get("name"));
+                transformed.put("name", view.get("name"));
+                transformed.put("view_name", view.get("name"));
+                transformed.put("owner", getCurrentUser());
+                transformed.put("type", "VIEW");
+                transformed.put("object_type", "VIEW");
+                transformed.put("status", view.get("status"));
+                transformed.put("columnCount", view.get("column_count"));
+                transformed.put("textLength", view.get("text_length"));
+                transformed.put("readOnly", view.get("read_only"));
+                transformed.put("created", view.get("created"));
+                transformed.put("lastModified", view.get("last_ddl_time"));
+                transformed.put("icon", "view");
+                transformed.put("isSynonym", false);
+                result.add(transformed);
+            }
+
+            // Get synonyms that target views
+            String synonymSql =
+                    "SELECT " +
+                            "    s.synonym_name as name, " +
+                            "    'SYNONYM' as type, " +
+                            "    CASE " +
+                            "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                            "        ELSE o.status " +
+                            "    END as status, " +
+                            "    NULL as text_length, " +
+                            "    NULL as read_only, " +
+                            "    NULL as created, " +
+                            "    NULL as last_ddl_time, " +
+                            "    (SELECT COUNT(*) FROM all_tab_columns WHERE owner = s.table_owner AND table_name = s.table_name) as column_count, " +
+                            "    s.table_owner as target_owner, " +
+                            "    s.table_name as target_name, " +
+                            "    CASE " +
+                            "        WHEN s.db_link IS NOT NULL THEN 'REMOTE_VIEW' " +
+                            "        ELSE o.object_type " +
+                            "    END as target_type, " +
+                            "    s.db_link " +
+                            "FROM user_synonyms s " +
+                            "LEFT JOIN all_objects o ON s.table_owner = o.owner " +
+                            "    AND s.table_name = o.object_name " +
+                            "WHERE (o.object_type = 'VIEW' OR s.db_link IS NOT NULL) " +
+                            "ORDER BY s.synonym_name";
+
+            try {
+                List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(synonymSql);
+                log.info("Found {} synonyms targeting views", synonyms.size());
+
+                for (Map<String, Object> syn : synonyms) {
+                    Map<String, Object> transformed = new HashMap<>();
+                    transformed.put("id", "syn-view-" + System.currentTimeMillis() + "-" + syn.get("name"));
+                    transformed.put("name", syn.get("name"));
+                    transformed.put("view_name", syn.get("name"));
+                    transformed.put("owner", getCurrentUser());
+                    transformed.put("type", "SYNONYM");
+                    transformed.put("object_type", "SYNONYM");
+                    transformed.put("status", syn.get("status") != null ? syn.get("status") : "VALID");
+                    transformed.put("columnCount", syn.get("column_count") != null ? syn.get("column_count") : 0);
+                    transformed.put("textLength", null);
+                    transformed.put("readOnly", null);
+                    transformed.put("created", null);
+                    transformed.put("lastModified", null);
+                    transformed.put("targetOwner", syn.get("target_owner"));
+                    transformed.put("targetName", syn.get("target_name"));
+                    transformed.put("targetType", syn.get("target_type") != null ? syn.get("target_type") : "VIEW");
+                    transformed.put("dbLink", syn.get("db_link"));
+                    transformed.put("isRemote", syn.get("db_link") != null);
+                    transformed.put("isSynonym", true);
+                    transformed.put("icon", "synonym");
+                    transformed.put("targetIcon", "view");
+
+                    String targetType = (String) syn.get("target_type");
+                    if (targetType != null) {
+                        transformed.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                    } else {
+                        transformed.put("targetDisplayType", "View");
+                    }
+
+                    if (syn.get("db_link") == null && syn.get("target_name") != null) {
+                        try {
+                            String targetSql = "SELECT status, created, last_ddl_time " +
+                                    "FROM all_objects " +
+                                    "WHERE owner = ? AND object_name = ? AND object_type = 'VIEW'";
+                            Map<String, Object> targetInfo = oracleJdbcTemplate.queryForMap(
+                                    targetSql, syn.get("target_owner"), syn.get("target_name"));
+                            transformed.put("targetStatus", targetInfo.get("status"));
+                            transformed.put("targetCreated", targetInfo.get("created"));
+                            transformed.put("targetModified", targetInfo.get("last_ddl_time"));
+                        } catch (Exception e) {
+                            transformed.put("targetStatus", "UNKNOWN");
+                        }
+                    } else if (syn.get("db_link") != null) {
+                        transformed.put("targetStatus", "REMOTE");
+                    }
+
+                    result.add(transformed);
+                }
+            } catch (Exception e) {
+                log.error("Error fetching synonyms for views: {}", e.getMessage());
+            }
+
+            result.sort((a, b) -> {
+                String nameA = (String) a.get("name");
+                String nameB = (String) b.get("name");
+                return nameA.compareTo(nameB);
+            });
+
+            log.info("Returning {} total items (views + synonyms)", result.size());
+
+        } catch (Exception e) {
+            log.error("Error in getAllViewsForFrontend: {}", e.getMessage(), e);
+            return new ArrayList<>();
+        }
+        return result;
+    }
+
+    // ============================================================
+    // 5a. ALL VIEWS FOR FRONTEND (PAGINATED) - UPDATED
+    // ============================================================
+
+    public Map<String, Object> getAllViewsForFrontend(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            String viewCountSql = "SELECT COUNT(*) FROM user_views";
+            int viewCount = oracleJdbcTemplate.queryForObject(viewCountSql, Integer.class);
+
+            String synonymCountSql =
+                    "SELECT COUNT(*) FROM user_synonyms s " +
+                            "WHERE EXISTS (SELECT 1 FROM all_objects " +
+                            "              WHERE owner = s.table_owner " +
+                            "                AND object_name = s.table_name " +
+                            "                AND object_type = 'VIEW') " +
+                            "   OR (s.db_link IS NOT NULL)";
+
+            int synonymCount = 0;
+            try {
+                synonymCount = oracleJdbcTemplate.queryForObject(synonymCountSql, Integer.class);
+            } catch (Exception e) {
+                log.warn("Error counting synonyms for views: {}", e.getMessage());
+            }
+
+            int totalCount = viewCount + synonymCount;
+            log.info("Found {} views and {} synonyms targeting views, total: {}", viewCount, synonymCount, totalCount);
+
+            List<Map<String, Object>> allItems = new ArrayList<>();
+
+            // Get views first
+            if (viewCount > 0 && offset < viewCount) {
+                int viewOffset = offset;
+                int viewLimit = Math.min(pageSize, viewCount - viewOffset);
+
+                if (viewLimit > 0) {
+                    String viewSql = "SELECT " +
+                            "    v.view_name as name, " +
+                            "    'VIEW' as type, " +
+                            "    v.text_length, " +
+                            "    v.read_only, " +
+                            "    o.created, " +
+                            "    o.last_ddl_time, " +
+                            "    o.status, " +
+                            "    (SELECT COUNT(*) FROM user_tab_columns WHERE table_name = v.view_name) as column_count, " +
+                            "    NULL as target_owner, " +
+                            "    NULL as target_name, " +
+                            "    NULL as target_type, " +
+                            "    NULL as db_link " +
+                            "FROM user_views v " +
+                            "JOIN user_objects o ON v.view_name = o.object_name AND o.object_type = 'VIEW' " +
+                            "ORDER BY v.view_name " +
+                            "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+                    try {
+                        List<Map<String, Object>> views = oracleJdbcTemplate.queryForList(viewSql, viewOffset, viewLimit);
+                        allItems.addAll(views);
+                    } catch (Exception e) {
+                        log.error("Error fetching views: {}", e.getMessage());
+                    }
+                }
+            }
+
+            // Get synonyms if needed
+            if (allItems.size() < pageSize && synonymCount > 0) {
+                int synOffset;
+                int synLimit;
+
+                if (offset >= viewCount) {
+                    synOffset = offset - viewCount;
+                    synLimit = pageSize;
+                } else {
+                    synOffset = 0;
+                    synLimit = pageSize - allItems.size();
+                }
+
+                if (synLimit > 0) {
+                    String synonymSql =
+                            "SELECT * FROM ( " +
+                                    "  SELECT a.*, ROWNUM rnum FROM ( " +
+                                    "    SELECT " +
+                                    "      s.synonym_name as name, " +
+                                    "      'SYNONYM' as type, " +
+                                    "      NULL as text_length, " +
+                                    "      NULL as read_only, " +
+                                    "      NULL as created, " +
+                                    "      NULL as last_ddl_time, " +
+                                    "      CASE " +
+                                    "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                                    "        ELSE o.status " +
+                                    "      END as status, " +
+                                    "      (SELECT COUNT(*) FROM all_tab_columns WHERE owner = s.table_owner AND table_name = s.table_name) as column_count, " +
+                                    "      s.table_owner as target_owner, " +
+                                    "      s.table_name as target_name, " +
+                                    "      CASE " +
+                                    "        WHEN s.db_link IS NOT NULL THEN 'REMOTE_VIEW' " +
+                                    "        ELSE o.object_type " +
+                                    "      END as target_type, " +
+                                    "      s.db_link " +
+                                    "    FROM user_synonyms s " +
+                                    "    LEFT JOIN all_objects o ON s.table_owner = o.owner " +
+                                    "        AND s.table_name = o.object_name " +
+                                    "    WHERE (o.object_type = 'VIEW' OR s.db_link IS NOT NULL) " +
+                                    "    ORDER BY s.synonym_name " +
+                                    "  ) a " +
+                                    ") WHERE rnum > ? AND rnum <= ?";
+
+                    try {
+                        List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(
+                                synonymSql, synOffset, synOffset + synLimit);
+                        allItems.addAll(synonyms);
+                    } catch (Exception e) {
+                        log.error("Error fetching synonyms for views: {}", e.getMessage());
+                    }
+                }
+            }
+
+            // Transform results
+            List<Map<String, Object>> transformed = new ArrayList<>();
+            for (Map<String, Object> item : allItems) {
+                Map<String, Object> transformedItem = new HashMap<>();
+                String type = (String) item.get("type");
+                String name = (String) item.get("name");
+
+                if ("VIEW".equals(type)) {
+                    transformedItem.put("id", "view-" + System.currentTimeMillis() + "-" + name);
+                    transformedItem.put("name", name);
+                    transformedItem.put("view_name", name);
+                    transformedItem.put("owner", getCurrentUser());
+                    transformedItem.put("type", "VIEW");
+                    transformedItem.put("status", item.get("status"));
+                    transformedItem.put("columnCount", item.get("column_count"));
+                    transformedItem.put("textLength", item.get("text_length"));
+                    transformedItem.put("readOnly", item.get("read_only"));
+                    transformedItem.put("created", item.get("created"));
+                    transformedItem.put("lastModified", item.get("last_ddl_time"));
+                    transformedItem.put("icon", "view");
+                    transformedItem.put("isSynonym", false);
+                } else {
+                    transformedItem.put("id", "syn-view-" + System.currentTimeMillis() + "-" + name);
+                    transformedItem.put("name", name);
+                    transformedItem.put("view_name", name);
+                    transformedItem.put("owner", getCurrentUser());
+                    transformedItem.put("type", "SYNONYM");
+                    transformedItem.put("status", item.get("status") != null ? item.get("status") : "VALID");
+                    transformedItem.put("columnCount", item.get("column_count") != null ? item.get("column_count") : 0);
+                    transformedItem.put("textLength", null);
+                    transformedItem.put("readOnly", null);
+                    transformedItem.put("created", null);
+                    transformedItem.put("lastModified", null);
+                    transformedItem.put("targetOwner", item.get("target_owner"));
+                    transformedItem.put("targetName", item.get("target_name"));
+                    transformedItem.put("targetType", item.get("target_type") != null ? item.get("target_type") : "VIEW");
+                    transformedItem.put("dbLink", item.get("db_link"));
+                    transformedItem.put("isRemote", item.get("db_link") != null);
+                    transformedItem.put("isSynonym", true);
+                    transformedItem.put("icon", "synonym");
+                    transformedItem.put("targetIcon", "view");
+
+                    String targetType = (String) item.get("target_type");
+                    if (targetType != null) {
+                        transformedItem.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                    } else {
+                        transformedItem.put("targetDisplayType", "View");
+                    }
+                }
+                transformed.add(transformedItem);
+            }
+
+            result.put("items", transformed);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", pageSize > 0 ? (int) Math.ceil((double) totalCount / pageSize) : 0);
+
+        } catch (Exception e) {
+            log.error("Error in getAllViewsForFrontend paginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", 0);
+        }
+        return result;
+    }
+
+    // ============================================================
+    // 6. ALL PROCEDURES FOR FRONTEND (ORIGINAL) - UPDATED
+    // ============================================================
+
+    public List<Map<String, Object>> getAllProceduresForFrontend() {
+        List<Map<String, Object>> result = new ArrayList<>();
+        try {
+            // Get actual procedures
+            String procedureSql = "SELECT " +
+                    "    object_name as name, " +
+                    "    'PROCEDURE' as type, " +
+                    "    status, " +
+                    "    created, " +
+                    "    last_ddl_time, " +
+                    "    (SELECT COUNT(*) FROM user_arguments " +
+                    "     WHERE object_name = o.object_name " +
+                    "       AND package_name IS NULL " +
+                    "       AND argument_name IS NOT NULL) as parameter_count, " +
+                    "    NULL as target_owner, " +
+                    "    NULL as target_name, " +
+                    "    NULL as target_type, " +
+                    "    NULL as db_link " +
+                    "FROM user_objects o " +
+                    "WHERE object_type = 'PROCEDURE' " +
+                    "ORDER BY object_name";
+
+            List<Map<String, Object>> procedures = oracleJdbcTemplate.queryForList(procedureSql);
+            log.info("Found {} procedures", procedures.size());
+
+            for (Map<String, Object> proc : procedures) {
+                Map<String, Object> transformed = new HashMap<>();
+                transformed.put("id", "procedure-" + System.currentTimeMillis() + "-" + proc.get("name"));
+                transformed.put("name", proc.get("name"));
+                transformed.put("procedure_name", proc.get("name"));
+                transformed.put("owner", getCurrentUser());
+                transformed.put("type", "PROCEDURE");
+                transformed.put("object_type", "PROCEDURE");
+                transformed.put("status", proc.get("status"));
+                transformed.put("parameterCount", proc.get("parameter_count") != null ? proc.get("parameter_count") : 0);
+                transformed.put("created", proc.get("created"));
+                transformed.put("lastModified", proc.get("last_ddl_time"));
+                transformed.put("last_ddl_time", proc.get("last_ddl_time"));
+                transformed.put("icon", "procedure");
+                transformed.put("isSynonym", false);
+                result.add(transformed);
+            }
+
+            // Get synonyms that target procedures
+            String synonymSql =
+                    "SELECT " +
+                            "    s.synonym_name as name, " +
+                            "    'SYNONYM' as type, " +
+                            "    CASE " +
+                            "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                            "        ELSE o.status " +
+                            "    END as status, " +
+                            "    NULL as created, " +
+                            "    NULL as last_ddl_time, " +
+                            "    0 as parameter_count, " +
+                            "    s.table_owner as target_owner, " +
+                            "    s.table_name as target_name, " +
+                            "    CASE " +
+                            "        WHEN s.db_link IS NOT NULL THEN 'REMOTE_PROCEDURE' " +
+                            "        ELSE o.object_type " +
+                            "    END as target_type, " +
+                            "    s.db_link " +
+                            "FROM user_synonyms s " +
+                            "LEFT JOIN all_objects o ON s.table_owner = o.owner " +
+                            "    AND s.table_name = o.object_name " +
+                            "WHERE (o.object_type = 'PROCEDURE' OR s.db_link IS NOT NULL) " +
+                            "ORDER BY s.synonym_name";
+
+            try {
+                List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(synonymSql);
+                log.info("Found {} synonyms targeting procedures", synonyms.size());
+
+                for (Map<String, Object> syn : synonyms) {
+                    Map<String, Object> transformed = new HashMap<>();
+                    transformed.put("id", "syn-proc-" + System.currentTimeMillis() + "-" + syn.get("name"));
+                    transformed.put("name", syn.get("name"));
+                    transformed.put("procedure_name", syn.get("name"));
+                    transformed.put("owner", getCurrentUser());
+                    transformed.put("type", "SYNONYM");
+                    transformed.put("object_type", "SYNONYM");
+                    transformed.put("status", syn.get("status") != null ? syn.get("status") : "VALID");
+                    transformed.put("parameterCount", 0);
+                    transformed.put("created", null);
+                    transformed.put("lastModified", null);
+                    transformed.put("last_ddl_time", null);
+                    transformed.put("targetOwner", syn.get("target_owner"));
+                    transformed.put("targetName", syn.get("target_name"));
+                    transformed.put("targetType", syn.get("target_type") != null ? syn.get("target_type") : "PROCEDURE");
+                    transformed.put("dbLink", syn.get("db_link"));
+                    transformed.put("isRemote", syn.get("db_link") != null);
+                    transformed.put("isSynonym", true);
+                    transformed.put("icon", "synonym");
+                    transformed.put("targetIcon", "procedure");
+
+                    String targetType = (String) syn.get("target_type");
+                    if (targetType != null) {
+                        transformed.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                    } else {
+                        transformed.put("targetDisplayType", "Procedure");
+                    }
+
+                    if (syn.get("db_link") == null && syn.get("target_name") != null) {
+                        try {
+                            String targetSql = "SELECT status, created, last_ddl_time " +
+                                    "FROM all_objects " +
+                                    "WHERE owner = ? AND object_name = ? AND object_type = 'PROCEDURE'";
+                            Map<String, Object> targetInfo = oracleJdbcTemplate.queryForMap(
+                                    targetSql, syn.get("target_owner"), syn.get("target_name"));
+                            transformed.put("targetStatus", targetInfo.get("status"));
+                            transformed.put("targetCreated", targetInfo.get("created"));
+                            transformed.put("targetModified", targetInfo.get("last_ddl_time"));
+                        } catch (Exception e) {
+                            transformed.put("targetStatus", "UNKNOWN");
+                        }
+                    } else if (syn.get("db_link") != null) {
+                        transformed.put("targetStatus", "REMOTE");
+                    }
+
+                    result.add(transformed);
+                }
+            } catch (Exception e) {
+                log.error("Error fetching synonyms for procedures: {}", e.getMessage());
+            }
+
+            result.sort((a, b) -> {
+                String nameA = (String) a.get("name");
+                String nameB = (String) b.get("name");
+                return nameA.compareTo(nameB);
+            });
+
+            log.info("Returning {} total items (procedures + synonyms)", result.size());
+
+        } catch (Exception e) {
+            log.error("Error in getAllProceduresForFrontend: {}", e.getMessage(), e);
+            return new ArrayList<>();
+        }
+        return result;
+    }
+
+    // ============================================================
+    // 6a. ALL PROCEDURES FOR FRONTEND (PAGINATED) - UPDATED
+    // ============================================================
+
+    public Map<String, Object> getAllProceduresForFrontend(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            String procedureCountSql = "SELECT COUNT(*) FROM user_objects WHERE object_type = 'PROCEDURE'";
+            int procedureCount = oracleJdbcTemplate.queryForObject(procedureCountSql, Integer.class);
+
+            String synonymCountSql =
+                    "SELECT COUNT(*) FROM user_synonyms s " +
+                            "WHERE EXISTS (SELECT 1 FROM all_objects " +
+                            "              WHERE owner = s.table_owner " +
+                            "                AND object_name = s.table_name " +
+                            "                AND object_type = 'PROCEDURE') " +
+                            "   OR (s.db_link IS NOT NULL)";
+
+            int synonymCount = 0;
+            try {
+                synonymCount = oracleJdbcTemplate.queryForObject(synonymCountSql, Integer.class);
+            } catch (Exception e) {
+                log.warn("Error counting synonyms for procedures: {}", e.getMessage());
+            }
+
+            int totalCount = procedureCount + synonymCount;
+            log.info("Found {} procedures and {} synonyms targeting procedures, total: {}", procedureCount, synonymCount, totalCount);
+
+            List<Map<String, Object>> allItems = new ArrayList<>();
+
+            if (procedureCount > 0 && offset < procedureCount) {
+                int procOffset = offset;
+                int procLimit = Math.min(pageSize, procedureCount - procOffset);
+
+                if (procLimit > 0) {
+                    String procedureSql = "SELECT " +
+                            "    object_name as name, " +
+                            "    'PROCEDURE' as type, " +
+                            "    status, " +
+                            "    created, " +
+                            "    last_ddl_time, " +
+                            "    (SELECT COUNT(*) FROM user_arguments " +
+                            "     WHERE object_name = o.object_name " +
+                            "       AND package_name IS NULL " +
+                            "       AND argument_name IS NOT NULL) as parameter_count, " +
+                            "    NULL as target_owner, " +
+                            "    NULL as target_name, " +
+                            "    NULL as target_type, " +
+                            "    NULL as db_link " +
+                            "FROM user_objects o " +
+                            "WHERE object_type = 'PROCEDURE' " +
+                            "ORDER BY object_name " +
+                            "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+                    try {
+                        List<Map<String, Object>> procedures = oracleJdbcTemplate.queryForList(procedureSql, procOffset, procLimit);
+                        allItems.addAll(procedures);
+                    } catch (Exception e) {
+                        log.error("Error fetching procedures: {}", e.getMessage());
+                    }
+                }
+            }
+
+            if (allItems.size() < pageSize && synonymCount > 0) {
+                int synOffset;
+                int synLimit;
+
+                if (offset >= procedureCount) {
+                    synOffset = offset - procedureCount;
+                    synLimit = pageSize;
+                } else {
+                    synOffset = 0;
+                    synLimit = pageSize - allItems.size();
+                }
+
+                if (synLimit > 0) {
+                    String synonymSql =
+                            "SELECT * FROM ( " +
+                                    "  SELECT a.*, ROWNUM rnum FROM ( " +
+                                    "    SELECT " +
+                                    "      s.synonym_name as name, " +
+                                    "      'SYNONYM' as type, " +
+                                    "      CASE " +
+                                    "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                                    "        ELSE o.status " +
+                                    "      END as status, " +
+                                    "      NULL as created, " +
+                                    "      NULL as last_ddl_time, " +
+                                    "      0 as parameter_count, " +
+                                    "      s.table_owner as target_owner, " +
+                                    "      s.table_name as target_name, " +
+                                    "      CASE " +
+                                    "        WHEN s.db_link IS NOT NULL THEN 'REMOTE_PROCEDURE' " +
+                                    "        ELSE o.object_type " +
+                                    "      END as target_type, " +
+                                    "      s.db_link " +
+                                    "    FROM user_synonyms s " +
+                                    "    LEFT JOIN all_objects o ON s.table_owner = o.owner " +
+                                    "        AND s.table_name = o.object_name " +
+                                    "    WHERE (o.object_type = 'PROCEDURE' OR s.db_link IS NOT NULL) " +
+                                    "    ORDER BY s.synonym_name " +
+                                    "  ) a " +
+                                    ") WHERE rnum > ? AND rnum <= ?";
+
+                    try {
+                        List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(
+                                synonymSql, synOffset, synOffset + synLimit);
+                        allItems.addAll(synonyms);
+                    } catch (Exception e) {
+                        log.error("Error fetching synonyms for procedures: {}", e.getMessage());
+                    }
+                }
+            }
+
+            List<Map<String, Object>> transformed = new ArrayList<>();
+            for (Map<String, Object> item : allItems) {
+                Map<String, Object> transformedItem = new HashMap<>();
+                String type = (String) item.get("type");
+                String name = (String) item.get("name");
+
+                if ("PROCEDURE".equals(type)) {
+                    transformedItem.put("id", "procedure-" + System.currentTimeMillis() + "-" + name);
+                    transformedItem.put("name", name);
+                    transformedItem.put("procedure_name", name);
+                    transformedItem.put("owner", getCurrentUser());
+                    transformedItem.put("type", "PROCEDURE");
+                    transformedItem.put("status", item.get("status"));
+                    transformedItem.put("parameterCount", item.get("parameter_count") != null ? item.get("parameter_count") : 0);
+                    transformedItem.put("created", item.get("created"));
+                    transformedItem.put("lastModified", item.get("last_ddl_time"));
+                    transformedItem.put("icon", "procedure");
+                    transformedItem.put("isSynonym", false);
+                } else {
+                    transformedItem.put("id", "syn-proc-" + System.currentTimeMillis() + "-" + name);
+                    transformedItem.put("name", name);
+                    transformedItem.put("procedure_name", name);
+                    transformedItem.put("owner", getCurrentUser());
+                    transformedItem.put("type", "SYNONYM");
+                    transformedItem.put("status", item.get("status") != null ? item.get("status") : "VALID");
+                    transformedItem.put("parameterCount", 0);
+                    transformedItem.put("created", null);
+                    transformedItem.put("lastModified", null);
+                    transformedItem.put("targetOwner", item.get("target_owner"));
+                    transformedItem.put("targetName", item.get("target_name"));
+                    transformedItem.put("targetType", item.get("target_type") != null ? item.get("target_type") : "PROCEDURE");
+                    transformedItem.put("dbLink", item.get("db_link"));
+                    transformedItem.put("isRemote", item.get("db_link") != null);
+                    transformedItem.put("isSynonym", true);
+                    transformedItem.put("icon", "synonym");
+                    transformedItem.put("targetIcon", "procedure");
+
+                    String targetType = (String) item.get("target_type");
+                    if (targetType != null) {
+                        transformedItem.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                    } else {
+                        transformedItem.put("targetDisplayType", "Procedure");
+                    }
+                }
+                transformed.add(transformedItem);
+            }
+
+            result.put("items", transformed);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", pageSize > 0 ? (int) Math.ceil((double) totalCount / pageSize) : 0);
+
+        } catch (Exception e) {
+            log.error("Error in getAllProceduresForFrontend paginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", 0);
+        }
+        return result;
+    }
+
+    // ============================================================
+    // 7. ALL FUNCTIONS FOR FRONTEND (ORIGINAL) - UPDATED
+    // ============================================================
+
+    public List<Map<String, Object>> getAllFunctionsForFrontend() {
+        List<Map<String, Object>> result = new ArrayList<>();
+        try {
+            String functionSql = "SELECT " +
+                    "    object_name as name, " +
+                    "    'FUNCTION' as type, " +
+                    "    status, " +
+                    "    created, " +
+                    "    last_ddl_time, " +
+                    "    (SELECT COUNT(*) FROM user_arguments " +
+                    "     WHERE object_name = o.object_name " +
+                    "       AND package_name IS NULL " +
+                    "       AND argument_name IS NOT NULL) as parameter_count, " +
+                    "    (SELECT data_type FROM user_arguments " +
+                    "     WHERE object_name = o.object_name " +
+                    "       AND package_name IS NULL " +
+                    "       AND argument_name IS NULL " +
+                    "       AND ROWNUM = 1) as return_type, " +
+                    "    NULL as target_owner, " +
+                    "    NULL as target_name, " +
+                    "    NULL as target_type, " +
+                    "    NULL as db_link " +
+                    "FROM user_objects o " +
+                    "WHERE object_type = 'FUNCTION' " +
+                    "ORDER BY object_name";
+
+            List<Map<String, Object>> functions = oracleJdbcTemplate.queryForList(functionSql);
+            log.info("Found {} functions", functions.size());
+
+            for (Map<String, Object> func : functions) {
+                Map<String, Object> transformed = new HashMap<>();
+                transformed.put("id", "function-" + System.currentTimeMillis() + "-" + func.get("name"));
+                transformed.put("name", func.get("name"));
+                transformed.put("function_name", func.get("name"));
+                transformed.put("owner", getCurrentUser());
+                transformed.put("type", "FUNCTION");
+                transformed.put("object_type", "FUNCTION");
+                transformed.put("status", func.get("status"));
+                transformed.put("parameterCount", func.get("parameter_count") != null ? func.get("parameter_count") : 0);
+                transformed.put("returnType", func.get("return_type"));
+                transformed.put("created", func.get("created"));
+                transformed.put("lastModified", func.get("last_ddl_time"));
+                transformed.put("icon", "function");
+                transformed.put("isSynonym", false);
+                result.add(transformed);
+            }
+
+            String synonymSql =
+                    "SELECT " +
+                            "    s.synonym_name as name, " +
+                            "    'SYNONYM' as type, " +
+                            "    CASE " +
+                            "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                            "        ELSE o.status " +
+                            "    END as status, " +
+                            "    NULL as created, " +
+                            "    NULL as last_ddl_time, " +
+                            "    0 as parameter_count, " +
+                            "    NULL as return_type, " +
+                            "    s.table_owner as target_owner, " +
+                            "    s.table_name as target_name, " +
+                            "    CASE " +
+                            "        WHEN s.db_link IS NOT NULL THEN 'REMOTE_FUNCTION' " +
+                            "        ELSE o.object_type " +
+                            "    END as target_type, " +
+                            "    s.db_link " +
+                            "FROM user_synonyms s " +
+                            "LEFT JOIN all_objects o ON s.table_owner = o.owner " +
+                            "    AND s.table_name = o.object_name " +
+                            "WHERE (o.object_type = 'FUNCTION' OR s.db_link IS NOT NULL) " +
+                            "ORDER BY s.synonym_name";
+
+            try {
+                List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(synonymSql);
+                log.info("Found {} synonyms targeting functions", synonyms.size());
+
+                for (Map<String, Object> syn : synonyms) {
+                    Map<String, Object> transformed = new HashMap<>();
+                    transformed.put("id", "syn-func-" + System.currentTimeMillis() + "-" + syn.get("name"));
+                    transformed.put("name", syn.get("name"));
+                    transformed.put("function_name", syn.get("name"));
+                    transformed.put("owner", getCurrentUser());
+                    transformed.put("type", "SYNONYM");
+                    transformed.put("object_type", "SYNONYM");
+                    transformed.put("status", syn.get("status") != null ? syn.get("status") : "VALID");
+                    transformed.put("parameterCount", 0);
+                    transformed.put("returnType", null);
+                    transformed.put("created", null);
+                    transformed.put("lastModified", null);
+                    transformed.put("targetOwner", syn.get("target_owner"));
+                    transformed.put("targetName", syn.get("target_name"));
+                    transformed.put("targetType", syn.get("target_type") != null ? syn.get("target_type") : "FUNCTION");
+                    transformed.put("dbLink", syn.get("db_link"));
+                    transformed.put("isRemote", syn.get("db_link") != null);
+                    transformed.put("isSynonym", true);
+                    transformed.put("icon", "synonym");
+                    transformed.put("targetIcon", "function");
+
+                    String targetType = (String) syn.get("target_type");
+                    if (targetType != null) {
+                        transformed.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                    } else {
+                        transformed.put("targetDisplayType", "Function");
+                    }
+
+                    if (syn.get("db_link") == null && syn.get("target_name") != null) {
+                        try {
+                            String targetSql = "SELECT status, created, last_ddl_time " +
+                                    "FROM all_objects " +
+                                    "WHERE owner = ? AND object_name = ? AND object_type = 'FUNCTION'";
+                            Map<String, Object> targetInfo = oracleJdbcTemplate.queryForMap(
+                                    targetSql, syn.get("target_owner"), syn.get("target_name"));
+                            transformed.put("targetStatus", targetInfo.get("status"));
+                            transformed.put("targetCreated", targetInfo.get("created"));
+                            transformed.put("targetModified", targetInfo.get("last_ddl_time"));
+                        } catch (Exception e) {
+                            transformed.put("targetStatus", "UNKNOWN");
+                        }
+                    } else if (syn.get("db_link") != null) {
+                        transformed.put("targetStatus", "REMOTE");
+                    }
+
+                    result.add(transformed);
+                }
+            } catch (Exception e) {
+                log.error("Error fetching synonyms for functions: {}", e.getMessage());
+            }
+
+            result.sort((a, b) -> {
+                String nameA = (String) a.get("name");
+                String nameB = (String) b.get("name");
+                return nameA.compareTo(nameB);
+            });
+
+            log.info("Returning {} total items (functions + synonyms)", result.size());
+
+        } catch (Exception e) {
+            log.error("Error in getAllFunctionsForFrontend: {}", e.getMessage(), e);
+            return new ArrayList<>();
+        }
+        return result;
+    }
+
+    // ============================================================
+    // 7a. ALL FUNCTIONS FOR FRONTEND (PAGINATED) - UPDATED
+    // ============================================================
+
+    public Map<String, Object> getAllFunctionsForFrontend(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            String functionCountSql = "SELECT COUNT(*) FROM user_objects WHERE object_type = 'FUNCTION'";
+            int functionCount = oracleJdbcTemplate.queryForObject(functionCountSql, Integer.class);
+
+            String synonymCountSql =
+                    "SELECT COUNT(*) FROM user_synonyms s " +
+                            "WHERE EXISTS (SELECT 1 FROM all_objects " +
+                            "              WHERE owner = s.table_owner " +
+                            "                AND object_name = s.table_name " +
+                            "                AND object_type = 'FUNCTION') " +
+                            "   OR (s.db_link IS NOT NULL)";
+
+            int synonymCount = 0;
+            try {
+                synonymCount = oracleJdbcTemplate.queryForObject(synonymCountSql, Integer.class);
+            } catch (Exception e) {
+                log.warn("Error counting synonyms for functions: {}", e.getMessage());
+            }
+
+            int totalCount = functionCount + synonymCount;
+            log.info("Found {} functions and {} synonyms targeting functions, total: {}", functionCount, synonymCount, totalCount);
+
+            List<Map<String, Object>> allItems = new ArrayList<>();
+
+            if (functionCount > 0 && offset < functionCount) {
+                int funcOffset = offset;
+                int funcLimit = Math.min(pageSize, functionCount - funcOffset);
+
+                if (funcLimit > 0) {
+                    String functionSql = "SELECT " +
+                            "    object_name as name, " +
+                            "    'FUNCTION' as type, " +
+                            "    status, " +
+                            "    created, " +
+                            "    last_ddl_time, " +
+                            "    (SELECT COUNT(*) FROM user_arguments " +
+                            "     WHERE object_name = o.object_name " +
+                            "       AND package_name IS NULL " +
+                            "       AND argument_name IS NOT NULL) as parameter_count, " +
+                            "    (SELECT data_type FROM user_arguments " +
+                            "     WHERE object_name = o.object_name " +
+                            "       AND package_name IS NULL " +
+                            "       AND argument_name IS NULL " +
+                            "       AND ROWNUM = 1) as return_type, " +
+                            "    NULL as target_owner, " +
+                            "    NULL as target_name, " +
+                            "    NULL as target_type, " +
+                            "    NULL as db_link " +
+                            "FROM user_objects o " +
+                            "WHERE object_type = 'FUNCTION' " +
+                            "ORDER BY object_name " +
+                            "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+                    try {
+                        List<Map<String, Object>> functions = oracleJdbcTemplate.queryForList(functionSql, funcOffset, funcLimit);
+                        allItems.addAll(functions);
+                    } catch (Exception e) {
+                        log.error("Error fetching functions: {}", e.getMessage());
+                    }
+                }
+            }
+
+            if (allItems.size() < pageSize && synonymCount > 0) {
+                int synOffset;
+                int synLimit;
+
+                if (offset >= functionCount) {
+                    synOffset = offset - functionCount;
+                    synLimit = pageSize;
+                } else {
+                    synOffset = 0;
+                    synLimit = pageSize - allItems.size();
+                }
+
+                if (synLimit > 0) {
+                    String synonymSql =
+                            "SELECT * FROM ( " +
+                                    "  SELECT a.*, ROWNUM rnum FROM ( " +
+                                    "    SELECT " +
+                                    "      s.synonym_name as name, " +
+                                    "      'SYNONYM' as type, " +
+                                    "      CASE " +
+                                    "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                                    "        ELSE o.status " +
+                                    "      END as status, " +
+                                    "      NULL as created, " +
+                                    "      NULL as last_ddl_time, " +
+                                    "      0 as parameter_count, " +
+                                    "      NULL as return_type, " +
+                                    "      s.table_owner as target_owner, " +
+                                    "      s.table_name as target_name, " +
+                                    "      CASE " +
+                                    "        WHEN s.db_link IS NOT NULL THEN 'REMOTE_FUNCTION' " +
+                                    "        ELSE o.object_type " +
+                                    "      END as target_type, " +
+                                    "      s.db_link " +
+                                    "    FROM user_synonyms s " +
+                                    "    LEFT JOIN all_objects o ON s.table_owner = o.owner " +
+                                    "        AND s.table_name = o.object_name " +
+                                    "    WHERE (o.object_type = 'FUNCTION' OR s.db_link IS NOT NULL) " +
+                                    "    ORDER BY s.synonym_name " +
+                                    "  ) a " +
+                                    ") WHERE rnum > ? AND rnum <= ?";
+
+                    try {
+                        List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(
+                                synonymSql, synOffset, synOffset + synLimit);
+                        allItems.addAll(synonyms);
+                    } catch (Exception e) {
+                        log.error("Error fetching synonyms for functions: {}", e.getMessage());
+                    }
+                }
+            }
+
+            List<Map<String, Object>> transformed = new ArrayList<>();
+            for (Map<String, Object> item : allItems) {
+                Map<String, Object> transformedItem = new HashMap<>();
+                String type = (String) item.get("type");
+                String name = (String) item.get("name");
+
+                if ("FUNCTION".equals(type)) {
+                    transformedItem.put("id", "function-" + System.currentTimeMillis() + "-" + name);
+                    transformedItem.put("name", name);
+                    transformedItem.put("function_name", name);
+                    transformedItem.put("owner", getCurrentUser());
+                    transformedItem.put("type", "FUNCTION");
+                    transformedItem.put("status", item.get("status"));
+                    transformedItem.put("parameterCount", item.get("parameter_count") != null ? item.get("parameter_count") : 0);
+                    transformedItem.put("returnType", item.get("return_type"));
+                    transformedItem.put("created", item.get("created"));
+                    transformedItem.put("lastModified", item.get("last_ddl_time"));
+                    transformedItem.put("icon", "function");
+                    transformedItem.put("isSynonym", false);
+                } else {
+                    transformedItem.put("id", "syn-func-" + System.currentTimeMillis() + "-" + name);
+                    transformedItem.put("name", name);
+                    transformedItem.put("function_name", name);
+                    transformedItem.put("owner", getCurrentUser());
+                    transformedItem.put("type", "SYNONYM");
+                    transformedItem.put("status", item.get("status") != null ? item.get("status") : "VALID");
+                    transformedItem.put("parameterCount", 0);
+                    transformedItem.put("returnType", null);
+                    transformedItem.put("created", null);
+                    transformedItem.put("lastModified", null);
+                    transformedItem.put("targetOwner", item.get("target_owner"));
+                    transformedItem.put("targetName", item.get("target_name"));
+                    transformedItem.put("targetType", item.get("target_type") != null ? item.get("target_type") : "FUNCTION");
+                    transformedItem.put("dbLink", item.get("db_link"));
+                    transformedItem.put("isRemote", item.get("db_link") != null);
+                    transformedItem.put("isSynonym", true);
+                    transformedItem.put("icon", "synonym");
+                    transformedItem.put("targetIcon", "function");
+
+                    String targetType = (String) item.get("target_type");
+                    if (targetType != null) {
+                        transformedItem.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                    } else {
+                        transformedItem.put("targetDisplayType", "Function");
+                    }
+                }
+                transformed.add(transformedItem);
+            }
+
+            result.put("items", transformed);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", pageSize > 0 ? (int) Math.ceil((double) totalCount / pageSize) : 0);
+
+        } catch (Exception e) {
+            log.error("Error in getAllFunctionsForFrontend paginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", 0);
+        }
+        return result;
+    }
+
+    // ============================================================
+    // 8. ALL PACKAGES FOR FRONTEND (ORIGINAL) - UPDATED
+    // ============================================================
+
+    public List<Map<String, Object>> getAllPackagesForFrontend() {
+        List<Map<String, Object>> result = new ArrayList<>();
+        try {
+            String distinctSql = "SELECT DISTINCT object_name as package_name FROM user_objects " +
+                    "WHERE object_type IN ('PACKAGE', 'PACKAGE BODY') ORDER BY object_name";
+
+            List<Map<String, Object>> packageNames = oracleJdbcTemplate.queryForList(distinctSql);
+
+            for (Map<String, Object> pkg : packageNames) {
+                String pkgName = (String) pkg.get("package_name");
+                Map<String, Object> transformed = new HashMap<>();
+                transformed.put("id", "package-" + System.currentTimeMillis() + "-" + pkgName);
+                transformed.put("name", pkgName);
+                transformed.put("owner", getCurrentUser());
+                transformed.put("type", "PACKAGE");
+                transformed.put("isSynonym", false);
+
+                String specStatus = getPackageSpecStatus(pkgName);
+                String bodyStatus = getPackageBodyStatus(pkgName);
+
+                String status = "VALID";
+                if ("INVALID".equals(specStatus) || "INVALID".equals(bodyStatus)) {
+                    status = "INVALID";
+                }
+
+                transformed.put("status", status);
+                transformed.put("specStatus", specStatus);
+                transformed.put("bodyStatus", bodyStatus);
+                transformed.put("created", getPackageCreated(pkgName));
+                transformed.put("lastModified", getPackageLastModified(pkgName));
+                transformed.put("icon", "package");
+                result.add(transformed);
+            }
+
+            // Get synonyms that target packages
+            String synonymSql =
+                    "SELECT " +
+                            "    s.synonym_name as name, " +
+                            "    'SYNONYM' as type, " +
+                            "    CASE " +
+                            "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                            "        ELSE o.status " +
+                            "    END as status, " +
+                            "    NULL as created, " +
+                            "    NULL as last_ddl_time, " +
+                            "    s.table_owner as target_owner, " +
+                            "    s.table_name as target_name, " +
+                            "    CASE " +
+                            "        WHEN s.db_link IS NOT NULL THEN 'REMOTE_PACKAGE' " +
+                            "        ELSE o.object_type " +
+                            "    END as target_type, " +
+                            "    s.db_link " +
+                            "FROM user_synonyms s " +
+                            "LEFT JOIN all_objects o ON s.table_owner = o.owner " +
+                            "    AND s.table_name = o.object_name " +
+                            "WHERE (o.object_type = 'PACKAGE' OR s.db_link IS NOT NULL) " +
+                            "ORDER BY s.synonym_name";
+
+            try {
+                List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(synonymSql);
+                log.info("Found {} synonyms targeting packages", synonyms.size());
+
+                for (Map<String, Object> syn : synonyms) {
+                    Map<String, Object> transformed = new HashMap<>();
+                    transformed.put("id", "syn-pkg-" + System.currentTimeMillis() + "-" + syn.get("name"));
+                    transformed.put("name", syn.get("name"));
+                    transformed.put("owner", getCurrentUser());
+                    transformed.put("type", "SYNONYM");
+                    transformed.put("status", syn.get("status") != null ? syn.get("status") : "VALID");
+                    transformed.put("created", null);
+                    transformed.put("lastModified", null);
+                    transformed.put("targetOwner", syn.get("target_owner"));
+                    transformed.put("targetName", syn.get("target_name"));
+                    transformed.put("targetType", syn.get("target_type") != null ? syn.get("target_type") : "PACKAGE");
+                    transformed.put("dbLink", syn.get("db_link"));
+                    transformed.put("isRemote", syn.get("db_link") != null);
+                    transformed.put("isSynonym", true);
+                    transformed.put("icon", "synonym");
+                    transformed.put("targetIcon", "package");
+
+                    String targetType = (String) syn.get("target_type");
+                    if (targetType != null) {
+                        transformed.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                    } else {
+                        transformed.put("targetDisplayType", "Package");
+                    }
+
+                    if (syn.get("db_link") == null && syn.get("target_name") != null) {
+                        try {
+                            String targetSql = "SELECT status, created, last_ddl_time " +
+                                    "FROM all_objects " +
+                                    "WHERE owner = ? AND object_name = ? AND object_type = 'PACKAGE'";
+                            Map<String, Object> targetInfo = oracleJdbcTemplate.queryForMap(
+                                    targetSql, syn.get("target_owner"), syn.get("target_name"));
+                            transformed.put("targetStatus", targetInfo.get("status"));
+                            transformed.put("targetCreated", targetInfo.get("created"));
+                            transformed.put("targetModified", targetInfo.get("last_ddl_time"));
+                        } catch (Exception e) {
+                            transformed.put("targetStatus", "UNKNOWN");
+                        }
+                    } else if (syn.get("db_link") != null) {
+                        transformed.put("targetStatus", "REMOTE");
+                    }
+
+                    result.add(transformed);
+                }
+            } catch (Exception e) {
+                log.error("Error fetching synonyms for packages: {}", e.getMessage());
+            }
+
+            result.sort((a, b) -> {
+                String nameA = (String) a.get("name");
+                String nameB = (String) b.get("name");
+                return nameA.compareTo(nameB);
+            });
+
+            log.info("Returning {} total items (packages + synonyms)", result.size());
+
+        } catch (Exception e) {
+            log.error("Error in getAllPackagesForFrontend: {}", e.getMessage(), e);
+            return new ArrayList<>();
+        }
+        return result;
+    }
+
+    // ============================================================
+    // 8a. ALL PACKAGES FOR FRONTEND (PAGINATED) - UPDATED
+    // ============================================================
+
+    public Map<String, Object> getAllPackagesForFrontend(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            String packageCountSql = "SELECT COUNT(DISTINCT object_name) FROM user_objects WHERE object_type IN ('PACKAGE', 'PACKAGE BODY')";
+            int packageCount = oracleJdbcTemplate.queryForObject(packageCountSql, Integer.class);
+
+            String synonymCountSql =
+                    "SELECT COUNT(*) FROM user_synonyms s " +
+                            "WHERE EXISTS (SELECT 1 FROM all_objects " +
+                            "              WHERE owner = s.table_owner " +
+                            "                AND object_name = s.table_name " +
+                            "                AND object_type = 'PACKAGE') " +
+                            "   OR (s.db_link IS NOT NULL)";
+
+            int synonymCount = 0;
+            try {
+                synonymCount = oracleJdbcTemplate.queryForObject(synonymCountSql, Integer.class);
+            } catch (Exception e) {
+                log.warn("Error counting synonyms for packages: {}", e.getMessage());
+            }
+
+            int totalCount = packageCount + synonymCount;
+            log.info("Found {} packages and {} synonyms targeting packages, total: {}", packageCount, synonymCount, totalCount);
+
+            List<Map<String, Object>> allItems = new ArrayList<>();
+
+            if (packageCount > 0 && offset < packageCount) {
+                int pkgOffset = offset;
+                int pkgLimit = Math.min(pageSize, packageCount - pkgOffset);
+
+                if (pkgLimit > 0) {
+                    String packageSql = "SELECT DISTINCT object_name as name, 'PACKAGE' as type " +
+                            "FROM user_objects " +
+                            "WHERE object_type IN ('PACKAGE', 'PACKAGE BODY') " +
+                            "ORDER BY object_name " +
+                            "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+                    try {
+                        List<Map<String, Object>> packages = oracleJdbcTemplate.queryForList(packageSql, pkgOffset, pkgLimit);
+                        for (Map<String, Object> pkg : packages) {
+                            String pkgName = (String) pkg.get("name");
+                            String specStatus = getPackageSpecStatus(pkgName);
+                            String bodyStatus = getPackageBodyStatus(pkgName);
+                            String status = "VALID";
+                            if ("INVALID".equals(specStatus) || "INVALID".equals(bodyStatus)) {
+                                status = "INVALID";
+                            }
+                            pkg.put("status", status);
+                            pkg.put("specStatus", specStatus);
+                            pkg.put("bodyStatus", bodyStatus);
+                            pkg.put("created", getPackageCreated(pkgName));
+                            pkg.put("lastModified", getPackageLastModified(pkgName));
+                        }
+                        allItems.addAll(packages);
+                    } catch (Exception e) {
+                        log.error("Error fetching packages: {}", e.getMessage());
+                    }
+                }
+            }
+
+            if (allItems.size() < pageSize && synonymCount > 0) {
+                int synOffset;
+                int synLimit;
+
+                if (offset >= packageCount) {
+                    synOffset = offset - packageCount;
+                    synLimit = pageSize;
+                } else {
+                    synOffset = 0;
+                    synLimit = pageSize - allItems.size();
+                }
+
+                if (synLimit > 0) {
+                    String synonymSql =
+                            "SELECT * FROM ( " +
+                                    "  SELECT a.*, ROWNUM rnum FROM ( " +
+                                    "    SELECT " +
+                                    "      s.synonym_name as name, " +
+                                    "      'SYNONYM' as type, " +
+                                    "      CASE " +
+                                    "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                                    "        ELSE o.status " +
+                                    "      END as status, " +
+                                    "      NULL as specStatus, " +
+                                    "      NULL as bodyStatus, " +
+                                    "      NULL as created, " +
+                                    "      NULL as lastModified, " +
+                                    "      s.table_owner as target_owner, " +
+                                    "      s.table_name as target_name, " +
+                                    "      CASE " +
+                                    "        WHEN s.db_link IS NOT NULL THEN 'REMOTE_PACKAGE' " +
+                                    "        ELSE o.object_type " +
+                                    "      END as target_type, " +
+                                    "      s.db_link " +
+                                    "    FROM user_synonyms s " +
+                                    "    LEFT JOIN all_objects o ON s.table_owner = o.owner " +
+                                    "        AND s.table_name = o.object_name " +
+                                    "    WHERE (o.object_type = 'PACKAGE' OR s.db_link IS NOT NULL) " +
+                                    "    ORDER BY s.synonym_name " +
+                                    "  ) a " +
+                                    ") WHERE rnum > ? AND rnum <= ?";
+
+                    try {
+                        List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(
+                                synonymSql, synOffset, synOffset + synLimit);
+                        allItems.addAll(synonyms);
+                    } catch (Exception e) {
+                        log.error("Error fetching synonyms for packages: {}", e.getMessage());
+                    }
+                }
+            }
+
+            List<Map<String, Object>> transformed = new ArrayList<>();
+            for (Map<String, Object> item : allItems) {
+                Map<String, Object> transformedItem = new HashMap<>();
+                String type = (String) item.get("type");
+                String name = (String) item.get("name");
+
+                if ("PACKAGE".equals(type)) {
+                    transformedItem.put("id", "package-" + System.currentTimeMillis() + "-" + name);
+                    transformedItem.put("name", name);
+                    transformedItem.put("owner", getCurrentUser());
+                    transformedItem.put("type", "PACKAGE");
+                    transformedItem.put("status", item.get("status"));
+                    transformedItem.put("specStatus", item.get("specStatus"));
+                    transformedItem.put("bodyStatus", item.get("bodyStatus"));
+                    transformedItem.put("created", item.get("created"));
+                    transformedItem.put("lastModified", item.get("lastModified"));
+                    transformedItem.put("icon", "package");
+                    transformedItem.put("isSynonym", false);
+                } else {
+                    transformedItem.put("id", "syn-pkg-" + System.currentTimeMillis() + "-" + name);
+                    transformedItem.put("name", name);
+                    transformedItem.put("owner", getCurrentUser());
+                    transformedItem.put("type", "SYNONYM");
+                    transformedItem.put("status", item.get("status") != null ? item.get("status") : "VALID");
+                    transformedItem.put("specStatus", null);
+                    transformedItem.put("bodyStatus", null);
+                    transformedItem.put("created", null);
+                    transformedItem.put("lastModified", null);
+                    transformedItem.put("targetOwner", item.get("target_owner"));
+                    transformedItem.put("targetName", item.get("target_name"));
+                    transformedItem.put("targetType", item.get("target_type") != null ? item.get("target_type") : "PACKAGE");
+                    transformedItem.put("dbLink", item.get("db_link"));
+                    transformedItem.put("isRemote", item.get("db_link") != null);
+                    transformedItem.put("isSynonym", true);
+                    transformedItem.put("icon", "synonym");
+                    transformedItem.put("targetIcon", "package");
+
+                    String targetType = (String) item.get("target_type");
+                    if (targetType != null) {
+                        transformedItem.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                    } else {
+                        transformedItem.put("targetDisplayType", "Package");
+                    }
+                }
+                transformed.add(transformedItem);
+            }
+
+            result.put("items", transformed);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", pageSize > 0 ? (int) Math.ceil((double) totalCount / pageSize) : 0);
+
+        } catch (Exception e) {
+            log.error("Error in getAllPackagesForFrontend paginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", 0);
+        }
+        return result;
+    }
+
+    // ============================================================
+    // 9. ALL TRIGGERS FOR FRONTEND (ORIGINAL) - UPDATED
+    // ============================================================
+
+    public List<Map<String, Object>> getAllTriggersForFrontend() {
+        List<Map<String, Object>> result = new ArrayList<>();
+        try {
+            String triggerSql = "SELECT " +
+                    "    t.trigger_name as name, " +
+                    "    'TRIGGER' as type, " +
+                    "    t.trigger_type, " +
+                    "    t.triggering_event, " +
+                    "    t.table_name, " +
+                    "    t.status as trigger_status, " +
+                    "    t.description, " +
+                    "    o.created, " +
+                    "    o.last_ddl_time, " +
+                    "    o.status as object_status, " +
+                    "    NULL as target_owner, " +
+                    "    NULL as target_name, " +
+                    "    NULL as target_type, " +
+                    "    NULL as db_link " +
+                    "FROM user_triggers t " +
+                    "JOIN user_objects o ON t.trigger_name = o.object_name AND o.object_type = 'TRIGGER' " +
+                    "ORDER BY t.trigger_name";
+
+            List<Map<String, Object>> triggers = oracleJdbcTemplate.queryForList(triggerSql);
+            log.info("Found {} triggers", triggers.size());
+
+            for (Map<String, Object> trigger : triggers) {
+                Map<String, Object> transformed = new HashMap<>();
+                transformed.put("id", "trigger-" + System.currentTimeMillis() + "-" + trigger.get("name"));
+                transformed.put("name", trigger.get("name"));
+                transformed.put("owner", getCurrentUser());
+                transformed.put("type", "TRIGGER");
+                transformed.put("status", trigger.get("trigger_status"));
+                transformed.put("objectStatus", trigger.get("object_status"));
+                transformed.put("triggerType", trigger.get("trigger_type"));
+                transformed.put("triggeringEvent", trigger.get("triggering_event"));
+                transformed.put("tableName", trigger.get("table_name"));
+                transformed.put("description", trigger.get("description"));
+                transformed.put("created", trigger.get("created"));
+                transformed.put("lastModified", trigger.get("last_ddl_time"));
+                transformed.put("icon", "trigger");
+                transformed.put("isSynonym", false);
+                result.add(transformed);
+            }
+
+            String synonymSql =
+                    "SELECT " +
+                            "    s.synonym_name as name, " +
+                            "    'SYNONYM' as type, " +
+                            "    CASE " +
+                            "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                            "        ELSE o.status " +
+                            "    END as status, " +
+                            "    NULL as trigger_type, " +
+                            "    NULL as triggering_event, " +
+                            "    NULL as table_name, " +
+                            "    NULL as description, " +
+                            "    NULL as created, " +
+                            "    NULL as last_ddl_time, " +
+                            "    s.table_owner as target_owner, " +
+                            "    s.table_name as target_name, " +
+                            "    CASE " +
+                            "        WHEN s.db_link IS NOT NULL THEN 'REMOTE_TRIGGER' " +
+                            "        ELSE o.object_type " +
+                            "    END as target_type, " +
+                            "    s.db_link " +
+                            "FROM user_synonyms s " +
+                            "LEFT JOIN all_objects o ON s.table_owner = o.owner " +
+                            "    AND s.table_name = o.object_name " +
+                            "WHERE (o.object_type = 'TRIGGER' OR s.db_link IS NOT NULL) " +
+                            "ORDER BY s.synonym_name";
+
+            try {
+                List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(synonymSql);
+                log.info("Found {} synonyms targeting triggers", synonyms.size());
+
+                for (Map<String, Object> syn : synonyms) {
+                    Map<String, Object> transformed = new HashMap<>();
+                    transformed.put("id", "syn-trig-" + System.currentTimeMillis() + "-" + syn.get("name"));
+                    transformed.put("name", syn.get("name"));
+                    transformed.put("owner", getCurrentUser());
+                    transformed.put("type", "SYNONYM");
+                    transformed.put("status", syn.get("status") != null ? syn.get("status") : "VALID");
+                    transformed.put("triggerType", null);
+                    transformed.put("triggeringEvent", null);
+                    transformed.put("tableName", null);
+                    transformed.put("description", null);
+                    transformed.put("created", null);
+                    transformed.put("lastModified", null);
+                    transformed.put("targetOwner", syn.get("target_owner"));
+                    transformed.put("targetName", syn.get("target_name"));
+                    transformed.put("targetType", syn.get("target_type") != null ? syn.get("target_type") : "TRIGGER");
+                    transformed.put("dbLink", syn.get("db_link"));
+                    transformed.put("isRemote", syn.get("db_link") != null);
+                    transformed.put("isSynonym", true);
+                    transformed.put("icon", "synonym");
+                    transformed.put("targetIcon", "trigger");
+
+                    String targetType = (String) syn.get("target_type");
+                    if (targetType != null) {
+                        transformed.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                    } else {
+                        transformed.put("targetDisplayType", "Trigger");
+                    }
+
+                    if (syn.get("db_link") == null && syn.get("target_name") != null) {
+                        try {
+                            String targetSql = "SELECT status, created, last_ddl_time " +
+                                    "FROM all_objects " +
+                                    "WHERE owner = ? AND object_name = ? AND object_type = 'TRIGGER'";
+                            Map<String, Object> targetInfo = oracleJdbcTemplate.queryForMap(
+                                    targetSql, syn.get("target_owner"), syn.get("target_name"));
+                            transformed.put("targetStatus", targetInfo.get("status"));
+                            transformed.put("targetCreated", targetInfo.get("created"));
+                            transformed.put("targetModified", targetInfo.get("last_ddl_time"));
+                        } catch (Exception e) {
+                            transformed.put("targetStatus", "UNKNOWN");
+                        }
+                    } else if (syn.get("db_link") != null) {
+                        transformed.put("targetStatus", "REMOTE");
+                    }
+
+                    result.add(transformed);
+                }
+            } catch (Exception e) {
+                log.error("Error fetching synonyms for triggers: {}", e.getMessage());
+            }
+
+            result.sort((a, b) -> {
+                String nameA = (String) a.get("name");
+                String nameB = (String) b.get("name");
+                return nameA.compareTo(nameB);
+            });
+
+            log.info("Returning {} total items (triggers + synonyms)", result.size());
+
+        } catch (Exception e) {
+            log.error("Error in getAllTriggersForFrontend: {}", e.getMessage(), e);
+            return new ArrayList<>();
+        }
+        return result;
+    }
+
+    // ============================================================
+    // 9a. ALL TRIGGERS FOR FRONTEND (PAGINATED) - UPDATED
+    // ============================================================
+
+    public Map<String, Object> getAllTriggersForFrontend(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            String triggerCountSql = "SELECT COUNT(*) FROM user_triggers";
+            int triggerCount = oracleJdbcTemplate.queryForObject(triggerCountSql, Integer.class);
+
+            String synonymCountSql =
+                    "SELECT COUNT(*) FROM user_synonyms s " +
+                            "WHERE EXISTS (SELECT 1 FROM all_objects " +
+                            "              WHERE owner = s.table_owner " +
+                            "                AND object_name = s.table_name " +
+                            "                AND object_type = 'TRIGGER') " +
+                            "   OR (s.db_link IS NOT NULL)";
+
+            int synonymCount = 0;
+            try {
+                synonymCount = oracleJdbcTemplate.queryForObject(synonymCountSql, Integer.class);
+            } catch (Exception e) {
+                log.warn("Error counting synonyms for triggers: {}", e.getMessage());
+            }
+
+            int totalCount = triggerCount + synonymCount;
+            log.info("Found {} triggers and {} synonyms targeting triggers, total: {}", triggerCount, synonymCount, totalCount);
+
+            List<Map<String, Object>> allItems = new ArrayList<>();
+
+            if (triggerCount > 0 && offset < triggerCount) {
+                int trigOffset = offset;
+                int trigLimit = Math.min(pageSize, triggerCount - trigOffset);
+
+                if (trigLimit > 0) {
+                    String triggerSql = "SELECT " +
+                            "    t.trigger_name as name, " +
+                            "    'TRIGGER' as type, " +
+                            "    t.trigger_type, " +
+                            "    t.triggering_event, " +
+                            "    t.table_name, " +
+                            "    t.status as trigger_status, " +
+                            "    t.description, " +
+                            "    o.created, " +
+                            "    o.last_ddl_time, " +
+                            "    o.status as object_status, " +
+                            "    NULL as target_owner, " +
+                            "    NULL as target_name, " +
+                            "    NULL as target_type, " +
+                            "    NULL as db_link " +
+                            "FROM user_triggers t " +
+                            "JOIN user_objects o ON t.trigger_name = o.object_name AND o.object_type = 'TRIGGER' " +
+                            "ORDER BY t.trigger_name " +
+                            "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+                    try {
+                        List<Map<String, Object>> triggers = oracleJdbcTemplate.queryForList(triggerSql, trigOffset, trigLimit);
+                        allItems.addAll(triggers);
+                    } catch (Exception e) {
+                        log.error("Error fetching triggers: {}", e.getMessage());
+                    }
+                }
+            }
+
+            if (allItems.size() < pageSize && synonymCount > 0) {
+                int synOffset;
+                int synLimit;
+
+                if (offset >= triggerCount) {
+                    synOffset = offset - triggerCount;
+                    synLimit = pageSize;
+                } else {
+                    synOffset = 0;
+                    synLimit = pageSize - allItems.size();
+                }
+
+                if (synLimit > 0) {
+                    String synonymSql =
+                            "SELECT * FROM ( " +
+                                    "  SELECT a.*, ROWNUM rnum FROM ( " +
+                                    "    SELECT " +
+                                    "      s.synonym_name as name, " +
+                                    "      'SYNONYM' as type, " +
+                                    "      CASE " +
+                                    "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                                    "        ELSE o.status " +
+                                    "      END as status, " +
+                                    "      NULL as trigger_type, " +
+                                    "      NULL as triggering_event, " +
+                                    "      NULL as table_name, " +
+                                    "      NULL as description, " +
+                                    "      NULL as created, " +
+                                    "      NULL as last_ddl_time, " +
+                                    "      s.table_owner as target_owner, " +
+                                    "      s.table_name as target_name, " +
+                                    "      CASE " +
+                                    "        WHEN s.db_link IS NOT NULL THEN 'REMOTE_TRIGGER' " +
+                                    "        ELSE o.object_type " +
+                                    "      END as target_type, " +
+                                    "      s.db_link " +
+                                    "    FROM user_synonyms s " +
+                                    "    LEFT JOIN all_objects o ON s.table_owner = o.owner " +
+                                    "        AND s.table_name = o.object_name " +
+                                    "    WHERE (o.object_type = 'TRIGGER' OR s.db_link IS NOT NULL) " +
+                                    "    ORDER BY s.synonym_name " +
+                                    "  ) a " +
+                                    ") WHERE rnum > ? AND rnum <= ?";
+
+                    try {
+                        List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(
+                                synonymSql, synOffset, synOffset + synLimit);
+                        allItems.addAll(synonyms);
+                    } catch (Exception e) {
+                        log.error("Error fetching synonyms for triggers: {}", e.getMessage());
+                    }
+                }
+            }
+
+            List<Map<String, Object>> transformed = new ArrayList<>();
+            for (Map<String, Object> item : allItems) {
+                Map<String, Object> transformedItem = new HashMap<>();
+                String type = (String) item.get("type");
+                String name = (String) item.get("name");
+
+                if ("TRIGGER".equals(type)) {
+                    transformedItem.put("id", "trigger-" + System.currentTimeMillis() + "-" + name);
+                    transformedItem.put("name", name);
+                    transformedItem.put("owner", getCurrentUser());
+                    transformedItem.put("type", "TRIGGER");
+                    transformedItem.put("status", item.get("trigger_status"));
+                    transformedItem.put("objectStatus", item.get("object_status"));
+                    transformedItem.put("triggerType", item.get("trigger_type"));
+                    transformedItem.put("triggeringEvent", item.get("triggering_event"));
+                    transformedItem.put("tableName", item.get("table_name"));
+                    transformedItem.put("description", item.get("description"));
+                    transformedItem.put("created", item.get("created"));
+                    transformedItem.put("lastModified", item.get("last_ddl_time"));
+                    transformedItem.put("icon", "trigger");
+                    transformedItem.put("isSynonym", false);
+                } else {
+                    transformedItem.put("id", "syn-trig-" + System.currentTimeMillis() + "-" + name);
+                    transformedItem.put("name", name);
+                    transformedItem.put("owner", getCurrentUser());
+                    transformedItem.put("type", "SYNONYM");
+                    transformedItem.put("status", item.get("status") != null ? item.get("status") : "VALID");
+                    transformedItem.put("triggerType", null);
+                    transformedItem.put("triggeringEvent", null);
+                    transformedItem.put("tableName", null);
+                    transformedItem.put("description", null);
+                    transformedItem.put("created", null);
+                    transformedItem.put("lastModified", null);
+                    transformedItem.put("targetOwner", item.get("target_owner"));
+                    transformedItem.put("targetName", item.get("target_name"));
+                    transformedItem.put("targetType", item.get("target_type") != null ? item.get("target_type") : "TRIGGER");
+                    transformedItem.put("dbLink", item.get("db_link"));
+                    transformedItem.put("isRemote", item.get("db_link") != null);
+                    transformedItem.put("isSynonym", true);
+                    transformedItem.put("icon", "synonym");
+                    transformedItem.put("targetIcon", "trigger");
+
+                    String targetType = (String) item.get("target_type");
+                    if (targetType != null) {
+                        transformedItem.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                    } else {
+                        transformedItem.put("targetDisplayType", "Trigger");
+                    }
+                }
+                transformed.add(transformedItem);
+            }
+
+            result.put("items", transformed);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", pageSize > 0 ? (int) Math.ceil((double) totalCount / pageSize) : 0);
+
+        } catch (Exception e) {
+            log.error("Error in getAllTriggersForFrontend paginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", 0);
+        }
+        return result;
+    }
+
+    // ============================================================
+    // 10. ALL SYNONYMS FOR FRONTEND (ORIGINAL)
+    // ============================================================
+
+    public List<Map<String, Object>> getAllSynonymsForFrontend() {
+        try {
+            List<Map<String, Object>> synonyms = getAllSynonymsWithDetails();
+
+            return synonyms.stream().map(syn -> {
+                Map<String, Object> transformed = new HashMap<>();
+                transformed.put("id", "synonym-" + System.currentTimeMillis() + "-" + syn.get("synonym_name"));
+                transformed.put("name", syn.get("synonym_name"));
+                transformed.put("owner", getCurrentUser());
+                transformed.put("type", "SYNONYM");
+                transformed.put("targetOwner", syn.get("target_owner"));
+                transformed.put("targetName", syn.get("target_name"));
+                transformed.put("targetType", syn.get("target_type"));
+                transformed.put("targetStatus", syn.get("target_status"));
+                transformed.put("targetCreated", syn.get("target_created"));
+                transformed.put("targetModified", syn.get("target_modified"));
+                transformed.put("dbLink", syn.get("db_link"));
+                transformed.put("isRemote", syn.get("db_link") != null);
+                transformed.put("isSynonym", true);
+
+                if (syn.get("target_type") != null) {
+                    String targetType = syn.get("target_type").toString();
+                    transformed.put("targetIcon", getObjectTypeIcon(targetType));
+                    transformed.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                }
+
+                return transformed;
+            }).collect(Collectors.toList());
+
+        } catch (Exception e) {
+            log.error("Error in getAllSynonymsForFrontend: {}", e.getMessage(), e);
+            return new ArrayList<>();
+        }
+    }
+
+    // ============================================================
+    // 10a. ALL SYNONYMS FOR FRONTEND (PAGINATED)
+    // ============================================================
+
+    public Map<String, Object> getAllSynonymsForFrontend(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            String countSql = "SELECT COUNT(*) FROM user_synonyms";
+            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class);
+
+            String dataSql = "SELECT " +
+                    "    s.synonym_name, " +
+                    "    s.table_owner as target_owner, " +
+                    "    s.table_name as target_name, " +
+                    "    s.db_link, " +
+                    "    CASE " +
+                    "        WHEN s.db_link IS NOT NULL THEN 'DATABASE_LINK' " +
+                    "        ELSE (SELECT object_type FROM all_objects " +
+                    "              WHERE owner = s.table_owner AND object_name = s.table_name AND ROWNUM = 1) " +
+                    "    END as target_type, " +
+                    "    CASE " +
+                    "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                    "        ELSE (SELECT status FROM all_objects " +
+                    "              WHERE owner = s.table_owner AND object_name = s.table_name AND ROWNUM = 1) " +
+                    "    END as target_status " +
+                    "FROM user_synonyms s " +
+                    "ORDER BY s.synonym_name " +
+                    "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+            List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(dataSql, offset, pageSize);
+
+            List<Map<String, Object>> transformed = synonyms.stream().map(syn -> {
+                Map<String, Object> item = new HashMap<>();
+                item.put("id", "syn-" + System.currentTimeMillis() + "-" + syn.get("synonym_name"));
+                item.put("name", syn.get("synonym_name"));
+                item.put("owner", getCurrentUser());
+                item.put("type", "SYNONYM");
+                item.put("isSynonym", true);
+                item.put("targetOwner", syn.get("target_owner"));
+                item.put("targetName", syn.get("target_name"));
+                item.put("dbLink", syn.get("db_link"));
+                item.put("isRemote", syn.get("db_link") != null);
+
+                String targetType = (String) syn.get("target_type");
+                item.put("targetType", targetType != null ? targetType : "UNKNOWN");
+
+                if (syn.get("target_status") != null) {
+                    item.put("targetStatus", syn.get("target_status"));
+                }
+
+                if (targetType != null) {
+                    item.put("targetIcon", getObjectTypeIcon(targetType));
+                    item.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                }
+
+                item.put("icon", "synonym");
+                return item;
+            }).collect(Collectors.toList());
+
+            result.put("items", transformed);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+
+        } catch (Exception e) {
+            log.error("Error in getAllSynonymsForFrontend paginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+        }
+        return result;
+    }
+
+    // ============================================================
+    // 11. ALL SEQUENCES FOR FRONTEND (ORIGINAL)
+    // ============================================================
+
+    public List<Map<String, Object>> getAllSequencesForFrontend() {
+        try {
+            String sql = "SELECT " +
+                    "    sequence_name, " +
+                    "    min_value, " +
+                    "    max_value, " +
+                    "    increment_by, " +
+                    "    cycle_flag, " +
+                    "    order_flag, " +
+                    "    cache_size, " +
+                    "    last_number " +
+                    "FROM user_sequences " +
+                    "ORDER BY sequence_name";
+
+            List<Map<String, Object>> sequences = oracleJdbcTemplate.queryForList(sql);
+
+            return sequences.stream().map(seq -> {
+                Map<String, Object> transformed = new HashMap<>();
+                transformed.put("id", "sequence-" + System.currentTimeMillis() + "-" + seq.get("sequence_name"));
+                transformed.put("name", seq.get("sequence_name"));
+                transformed.put("owner", getCurrentUser());
+                transformed.put("type", "SEQUENCE");
+                transformed.put("minValue", seq.get("min_value"));
+                transformed.put("maxValue", seq.get("max_value"));
+                transformed.put("incrementBy", seq.get("increment_by"));
+                transformed.put("cycleFlag", seq.get("cycle_flag"));
+                transformed.put("orderFlag", seq.get("order_flag"));
+                transformed.put("cacheSize", seq.get("cache_size"));
+                transformed.put("lastNumber", seq.get("last_number"));
+                transformed.put("icon", "sequence");
+                transformed.put("isSynonym", false);
+                return transformed;
+            }).collect(Collectors.toList());
+
+        } catch (Exception e) {
+            log.error("Error in getAllSequencesForFrontend: {}", e.getMessage(), e);
+            return new ArrayList<>();
+        }
+    }
+
+    // ============================================================
+    // 11a. ALL SEQUENCES FOR FRONTEND (PAGINATED)
+    // ============================================================
+
+    public Map<String, Object> getAllSequencesForFrontend(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            String countSql = "SELECT COUNT(*) FROM user_sequences";
+            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class);
+
+            String dataSql = "SELECT " +
+                    "    sequence_name, " +
+                    "    min_value, " +
+                    "    max_value, " +
+                    "    increment_by, " +
+                    "    cycle_flag, " +
+                    "    order_flag, " +
+                    "    cache_size, " +
+                    "    last_number " +
+                    "FROM user_sequences " +
+                    "ORDER BY sequence_name " +
+                    "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+            List<Map<String, Object>> sequences = oracleJdbcTemplate.queryForList(dataSql, offset, pageSize);
+
+            List<Map<String, Object>> transformed = sequences.stream().map(seq -> {
+                Map<String, Object> transformedSeq = new HashMap<>();
+                transformedSeq.put("id", "sequence-" + System.currentTimeMillis() + "-" + seq.get("sequence_name"));
+                transformedSeq.put("name", seq.get("sequence_name"));
+                transformedSeq.put("owner", getCurrentUser());
+                transformedSeq.put("type", "SEQUENCE");
+                transformedSeq.put("minValue", seq.get("min_value"));
+                transformedSeq.put("maxValue", seq.get("max_value"));
+                transformedSeq.put("incrementBy", seq.get("increment_by"));
+                transformedSeq.put("cycleFlag", seq.get("cycle_flag"));
+                transformedSeq.put("orderFlag", seq.get("order_flag"));
+                transformedSeq.put("cacheSize", seq.get("cache_size"));
+                transformedSeq.put("lastNumber", seq.get("last_number"));
+                transformedSeq.put("icon", "sequence");
+                transformedSeq.put("isSynonym", false);
+                return transformedSeq;
+            }).collect(Collectors.toList());
+
+            result.put("items", transformed);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+
+        } catch (Exception e) {
+            log.error("Error in getAllSequencesForFrontend paginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+        }
+        return result;
+    }
+
+    // ============================================================
+    // 12. ALL TYPES FOR FRONTEND (ORIGINAL)
+    // ============================================================
+
+    public List<Map<String, Object>> getAllTypesForFrontend() {
+        try {
+            String sql = "SELECT " +
+                    "    t.type_name, " +
+                    "    t.typecode, " +
+                    "    t.attributes, " +
+                    "    t.methods, " +
+                    "    o.created, " +
+                    "    o.last_ddl_time, " +
+                    "    o.status " +
+                    "FROM user_types t " +
+                    "JOIN user_objects o ON t.type_name = o.object_name AND o.object_type LIKE '%TYPE' " +
+                    "ORDER BY t.type_name";
+
+            List<Map<String, Object>> types = oracleJdbcTemplate.queryForList(sql);
+
+            return types.stream().map(type -> {
+                Map<String, Object> transformed = new HashMap<>();
+                transformed.put("id", "type-" + System.currentTimeMillis() + "-" + type.get("type_name"));
+                transformed.put("name", type.get("type_name"));
+                transformed.put("owner", getCurrentUser());
+                transformed.put("type", "TYPE");
+                transformed.put("status", type.get("status"));
+                transformed.put("typecode", type.get("typecode"));
+                transformed.put("attributeCount", type.get("attributes"));
+                transformed.put("methodCount", type.get("methods"));
+                transformed.put("created", type.get("created"));
+                transformed.put("lastModified", type.get("last_ddl_time"));
+                transformed.put("icon", "type");
+                transformed.put("isSynonym", false);
+                return transformed;
+            }).collect(Collectors.toList());
+
+        } catch (Exception e) {
+            log.error("Error in getAllTypesForFrontend: {}", e.getMessage(), e);
+            return new ArrayList<>();
+        }
+    }
+
+    // ============================================================
+    // 12a. ALL TYPES FOR FRONTEND (PAGINATED)
+    // ============================================================
+
+    public Map<String, Object> getAllTypesForFrontend(int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int offset = (page - 1) * pageSize;
+
+            String countSql = "SELECT COUNT(*) FROM user_types";
+            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class);
+
+            String dataSql = "SELECT " +
+                    "    t.type_name, " +
+                    "    t.typecode, " +
+                    "    t.attributes, " +
+                    "    t.methods, " +
+                    "    o.created, " +
+                    "    o.last_ddl_time, " +
+                    "    o.status " +
+                    "FROM user_types t " +
+                    "JOIN user_objects o ON t.type_name = o.object_name AND o.object_type LIKE '%TYPE' " +
+                    "ORDER BY t.type_name " +
+                    "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+            List<Map<String, Object>> types = oracleJdbcTemplate.queryForList(dataSql, offset, pageSize);
+
+            List<Map<String, Object>> transformed = types.stream().map(type -> {
+                Map<String, Object> transformedType = new HashMap<>();
+                transformedType.put("id", "type-" + System.currentTimeMillis() + "-" + type.get("type_name"));
+                transformedType.put("name", type.get("type_name"));
+                transformedType.put("owner", getCurrentUser());
+                transformedType.put("type", "TYPE");
+                transformedType.put("status", type.get("status"));
+                transformedType.put("typecode", type.get("typecode"));
+                transformedType.put("attributeCount", type.get("attributes"));
+                transformedType.put("methodCount", type.get("methods"));
+                transformedType.put("created", type.get("created"));
+                transformedType.put("lastModified", type.get("last_ddl_time"));
+                transformedType.put("icon", "type");
+                transformedType.put("isSynonym", false);
+                return transformedType;
+            }).collect(Collectors.toList());
+
+            result.put("items", transformed);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+
+        } catch (Exception e) {
+            log.error("Error in getAllTypesForFrontend paginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+        }
+        return result;
+    }
+
+    // ============================================================
+    // 13. GET OBJECT DETAILS (ORIGINAL) - UPDATED
+    // ============================================================
+
+    public Map<String, Object> getObjectDetails(String objectName, String objectType, String owner) {
+        // First check if it's a synonym
+        Map<String, Object> synonymInfo = checkIfSynonymAndGetTarget(objectName, objectType);
+
+        if (synonymInfo != null && (boolean) synonymInfo.get("isSynonym")) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("objectName", objectName);
+            result.put("objectType", "SYNONYM");
+            result.put("owner", owner);
+            result.put("isSynonym", true);
+            result.putAll(synonymInfo);
+
+            // Get target object details
+            if (!(boolean) synonymInfo.get("isRemote") && synonymInfo.get("targetName") != null) {
+                try {
+                    Map<String, Object> targetDetails = getObjectDetailsByNameAndType(
+                            (String) synonymInfo.get("targetName"),
+                            (String) synonymInfo.get("targetType"),
+                            (String) synonymInfo.get("targetOwner"));
+                    result.put("targetDetails", targetDetails);
+                } catch (Exception e) {
+                    log.warn("Could not fetch target details: {}", e.getMessage());
+                }
+            }
+
+            return result;
+        }
+
+        return getObjectDetailsByNameAndType(objectName, objectType, owner);
+    }
+
+    // ============================================================
+    // 13a. GET OBJECT DETAILS (PAGINATED) - UPDATED
+    // ============================================================
+
+    public Map<String, Object> getObjectDetails(String objectName, String objectType,
+                                                String owner, int page, int pageSize) {
+        // First check if it's a synonym
+        Map<String, Object> synonymInfo = checkIfSynonymAndGetTarget(objectName, objectType);
+
+        if (synonymInfo != null && (boolean) synonymInfo.get("isSynonym")) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("objectName", objectName);
+            result.put("objectType", "SYNONYM");
+            result.put("owner", owner);
+            result.put("isSynonym", true);
+            result.putAll(synonymInfo);
+
+            // Get paginated target details
+            if (!(boolean) synonymInfo.get("isRemote") && synonymInfo.get("targetName") != null) {
+                try {
+                    Map<String, Object> targetDetails = getObjectDetailsPaginated(
+                            (String) synonymInfo.get("targetName"),
+                            (String) synonymInfo.get("targetType"),
+                            (String) synonymInfo.get("targetOwner"),
+                            page, pageSize, true);
+                    result.put("targetDetails", targetDetails);
+                } catch (Exception e) {
+                    log.warn("Could not fetch target details: {}", e.getMessage());
+                }
+            }
+
+            return result;
+        }
+
+        return getObjectDetailsPaginated(objectName, objectType, owner, page, pageSize, true);
+    }
+
+    // ============================================================
+    // 14. GET OBJECT DDL (ORIGINAL) - UPDATED
+    // ============================================================
+
+    public Map<String, Object> getObjectDDL(String objectName, String objectType) {
+        // First check if it's a synonym
+        Map<String, Object> synonymInfo = checkIfSynonymAndGetTarget(objectName, objectType);
+
+        if (synonymInfo != null && (boolean) synonymInfo.get("isSynonym")) {
+            // If it's a synonym, return DDL of the target
+            if (!(boolean) synonymInfo.get("isRemote") && synonymInfo.get("targetName") != null) {
+                return getObjectDDLForFrontend(
+                        (String) synonymInfo.get("targetName"),
+                        (String) synonymInfo.get("targetType"));
+            } else {
+                Map<String, Object> result = new HashMap<>();
+                result.put("objectName", objectName);
+                result.put("objectType", "SYNONYM");
+                result.put("status", "REMOTE");
+                result.put("ddl", "-- Remote object via database link: " + synonymInfo.get("dbLink"));
+                return result;
+            }
+        }
+
+        return getObjectDDLForFrontend(objectName, objectType);
+    }
+
+    // ============================================================
+    // 15. LAZY LOADING METHOD FOR SYNONYM TARGET DETAILS
+    // ============================================================
+
+    public Map<String, Object> getSynonymTargetDetails(String synonymName) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            String sql = "SELECT " +
+                    "    s.table_owner as target_owner, " +
+                    "    s.table_name as target_name, " +
+                    "    s.db_link, " +
+                    "    o.object_type as target_type, " +
+                    "    o.status as target_status, " +
+                    "    o.created as target_created, " +
+                    "    o.last_ddl_time as target_modified " +
+                    "FROM user_synonyms s " +
+                    "LEFT JOIN all_objects o ON s.table_owner = o.owner AND s.table_name = o.object_name " +
+                    "WHERE UPPER(s.synonym_name) = UPPER(?)";
+
+            Map<String, Object> target = oracleJdbcTemplate.queryForMap(sql, synonymName);
+
+            result.put("targetOwner", target.get("target_owner"));
+            result.put("targetName", target.get("target_name"));
+            result.put("targetType", target.get("target_type") != null ? target.get("target_type") : "UNKNOWN");
+            result.put("targetStatus", target.get("target_status"));
+            result.put("dbLink", target.get("db_link"));
+            result.put("isRemote", target.get("db_link") != null);
+            result.put("targetCreated", target.get("target_created"));
+            result.put("targetModified", target.get("target_modified"));
+
+            if (target.get("db_link") != null) {
+                result.put("fullPath", target.get("target_owner") + "." +
+                        target.get("target_name") + "@" + target.get("db_link"));
+            } else {
+                result.put("fullPath", target.get("target_owner") + "." + target.get("target_name"));
+            }
+
+        } catch (EmptyResultDataAccessException e) {
+            result.put("error", "Synonym not found");
+        } catch (Exception e) {
+            log.error("Error resolving synonym target {}: {}", synonymName, e.getMessage());
+            result.put("error", e.getMessage());
+        }
+        return result;
+    }
+
+    // ============================================================
+    // 16. PAGINATED SEARCH FOR FRONTEND - UPDATED
+    // ============================================================
+
+    public Map<String, Object> searchObjectsForFrontend(String searchPattern, String type,
+                                                        int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            String searchParam = "%" + searchPattern.toUpperCase() + "%";
+            int offset = (page - 1) * pageSize;
+
+            // Count both objects and synonyms
+            int objectCount = 0;
+            int synonymCount = 0;
+
+            if (type != null && !type.isEmpty() && !"ALL".equalsIgnoreCase(type)) {
+                String objectCountSql = "SELECT COUNT(*) FROM all_objects " +
+                        "WHERE UPPER(object_name) LIKE ? AND object_type = ?";
+                objectCount = oracleJdbcTemplate.queryForObject(
+                        objectCountSql, Integer.class, searchParam, type.toUpperCase());
+
+                String synonymCountSql =
+                        "SELECT COUNT(*) FROM user_synonyms s " +
+                                "WHERE EXISTS (SELECT 1 FROM all_objects " +
+                                "              WHERE owner = s.table_owner " +
+                                "                AND object_name = s.table_name " +
+                                "                AND object_type = ?) " +
+                                "   AND UPPER(s.synonym_name) LIKE ?";
+                try {
+                    synonymCount = oracleJdbcTemplate.queryForObject(
+                            synonymCountSql, Integer.class, type.toUpperCase(), searchParam);
+                } catch (Exception e) {
+                    log.warn("Error counting synonyms in search: {}", e.getMessage());
+                }
+            } else {
+                String objectCountSql = "SELECT COUNT(*) FROM all_objects WHERE UPPER(object_name) LIKE ?";
+                objectCount = oracleJdbcTemplate.queryForObject(objectCountSql, Integer.class, searchParam);
+
+                String synonymCountSql =
+                        "SELECT COUNT(*) FROM user_synonyms s " +
+                                "WHERE UPPER(s.synonym_name) LIKE ?";
+                try {
+                    synonymCount = oracleJdbcTemplate.queryForObject(synonymCountSql, Integer.class, searchParam);
+                } catch (Exception e) {
+                    log.warn("Error counting synonyms in search: {}", e.getMessage());
+                }
+            }
+
+            int totalCount = objectCount + synonymCount;
+
+            // Get paginated results combining objects and synonyms
+            List<Map<String, Object>> allItems = new ArrayList<>();
+
+            // Get objects first
+            if (objectCount > 0 && offset < objectCount) {
+                int objOffset = offset;
+                int objLimit = Math.min(pageSize, objectCount - objOffset);
+
+                if (objLimit > 0) {
+                    String objectSql;
+                    List<Map<String, Object>> objects;
+
+                    if (type != null && !type.isEmpty() && !"ALL".equalsIgnoreCase(type)) {
+                        objectSql = "SELECT " +
+                                "    owner, " +
+                                "    object_name as name, " +
+                                "    object_type as type, " +
+                                "    status, " +
+                                "    created, " +
+                                "    last_ddl_time, " +
+                                "    NULL as target_owner, " +
+                                "    NULL as target_name, " +
+                                "    NULL as target_type, " +
+                                "    NULL as db_link " +
+                                "FROM all_objects " +
+                                "WHERE UPPER(object_name) LIKE ? AND object_type = ? " +
+                                "ORDER BY object_type, object_name " +
+                                "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+                        objects = oracleJdbcTemplate.queryForList(
+                                objectSql, searchParam, type.toUpperCase(), objOffset, objLimit);
+                    } else {
+                        objectSql = "SELECT " +
+                                "    owner, " +
+                                "    object_name as name, " +
+                                "    object_type as type, " +
+                                "    status, " +
+                                "    created, " +
+                                "    last_ddl_time, " +
+                                "    NULL as target_owner, " +
+                                "    NULL as target_name, " +
+                                "    NULL as target_type, " +
+                                "    NULL as db_link " +
+                                "FROM all_objects " +
+                                "WHERE UPPER(object_name) LIKE ? " +
+                                "ORDER BY object_type, object_name " +
+                                "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+                        objects = oracleJdbcTemplate.queryForList(
+                                objectSql, searchParam, objOffset, objLimit);
+                    }
+
+                    for (Map<String, Object> obj : objects) {
+                        obj.put("isSynonym", false);
+                        obj.put("icon", getObjectTypeIcon((String) obj.get("type")));
+                    }
+                    allItems.addAll(objects);
+                }
+            }
+
+            // Get synonyms if needed
+            if (allItems.size() < pageSize && synonymCount > 0) {
+                int synOffset;
+                int synLimit;
+
+                if (offset >= objectCount) {
+                    synOffset = offset - objectCount;
+                    synLimit = pageSize;
+                } else {
+                    synOffset = 0;
+                    synLimit = pageSize - allItems.size();
+                }
+
+                if (synLimit > 0) {
+                    String synonymSql;
+                    List<Map<String, Object>> synonyms;
+
+                    if (type != null && !type.isEmpty() && !"ALL".equalsIgnoreCase(type)) {
+                        synonymSql =
+                                "SELECT * FROM ( " +
+                                        "  SELECT a.*, ROWNUM rnum FROM ( " +
+                                        "    SELECT " +
+                                        "      s.owner, " +
+                                        "      s.synonym_name as name, " +
+                                        "      'SYNONYM' as type, " +
+                                        "      CASE " +
+                                        "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                                        "        ELSE o.status " +
+                                        "      END as status, " +
+                                        "      NULL as created, " +
+                                        "      NULL as last_ddl_time, " +
+                                        "      s.table_owner as target_owner, " +
+                                        "      s.table_name as target_name, " +
+                                        "      o.object_type as target_type, " +
+                                        "      s.db_link " +
+                                        "    FROM all_synonyms s " +
+                                        "    LEFT JOIN all_objects o ON s.table_owner = o.owner " +
+                                        "        AND s.table_name = o.object_name " +
+                                        "    WHERE o.object_type = ? " +
+                                        "      AND UPPER(s.synonym_name) LIKE ? " +
+                                        "    ORDER BY s.synonym_name " +
+                                        "  ) a " +
+                                        ") WHERE rnum > ? AND rnum <= ?";
+                        synonyms = oracleJdbcTemplate.queryForList(
+                                synonymSql, type.toUpperCase(), searchParam, synOffset, synOffset + synLimit);
+                    } else {
+                        synonymSql =
+                                "SELECT * FROM ( " +
+                                        "  SELECT a.*, ROWNUM rnum FROM ( " +
+                                        "    SELECT " +
+                                        "      s.owner, " +
+                                        "      s.synonym_name as name, " +
+                                        "      'SYNONYM' as type, " +
+                                        "      CASE " +
+                                        "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                                        "        ELSE o.status " +
+                                        "      END as status, " +
+                                        "      NULL as created, " +
+                                        "      NULL as last_ddl_time, " +
+                                        "      s.table_owner as target_owner, " +
+                                        "      s.table_name as target_name, " +
+                                        "      o.object_type as target_type, " +
+                                        "      s.db_link " +
+                                        "    FROM all_synonyms s " +
+                                        "    LEFT JOIN all_objects o ON s.table_owner = o.owner " +
+                                        "        AND s.table_name = o.object_name " +
+                                        "    WHERE UPPER(s.synonym_name) LIKE ? " +
+                                        "    ORDER BY s.synonym_name " +
+                                        "  ) a " +
+                                        ") WHERE rnum > ? AND rnum <= ?";
+                        synonyms = oracleJdbcTemplate.queryForList(
+                                synonymSql, searchParam, synOffset, synOffset + synLimit);
+                    }
+
+                    for (Map<String, Object> syn : synonyms) {
+                        syn.put("isSynonym", true);
+                        syn.put("icon", "synonym");
+                        syn.put("targetIcon", getObjectTypeIcon((String) syn.get("target_type")));
+                    }
+                    allItems.addAll(synonyms);
+                }
+            }
+
+            // Transform results
+            List<Map<String, Object>> transformed = allItems.stream().map(item -> {
+                Map<String, Object> transformedItem = new HashMap<>();
+                transformedItem.put("id", "search-" + System.currentTimeMillis() + "-" + item.get("name"));
+                transformedItem.put("name", item.get("name"));
+                transformedItem.put("owner", item.get("owner"));
+                transformedItem.put("type", item.get("type"));
+                transformedItem.put("status", item.get("status"));
+                transformedItem.put("created", item.get("created"));
+                transformedItem.put("lastModified", item.get("last_ddl_time"));
+                transformedItem.put("icon", item.get("icon"));
+                transformedItem.put("isSynonym", item.get("isSynonym"));
+
+                if ((boolean) item.get("isSynonym")) {
+                    transformedItem.put("targetOwner", item.get("target_owner"));
+                    transformedItem.put("targetName", item.get("target_name"));
+                    transformedItem.put("targetType", item.get("target_type"));
+                    transformedItem.put("dbLink", item.get("db_link"));
+                    transformedItem.put("isRemote", item.get("db_link") != null);
+                    transformedItem.put("targetIcon", item.get("targetIcon"));
+                    transformedItem.put("targetDisplayType", formatObjectTypeForDisplay((String) item.get("target_type")));
+                }
+
+                return transformedItem;
+            }).collect(Collectors.toList());
+
+            result.put("items", transformed);
+            result.put("totalCount", totalCount);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", pageSize > 0 ? (int) Math.ceil((double) totalCount / pageSize) : 0);
+            result.put("query", searchPattern);
+            result.put("type", type);
+
+        } catch (Exception e) {
+            log.error("Error in searchObjectsForFrontend paginated: {}", e.getMessage(), e);
+            result.put("items", new ArrayList<>());
+            result.put("totalCount", 0);
+            result.put("error", e.getMessage());
+        }
+        return result;
+    }
+
+    // ============================================================
+    // TRANSFORM SEARCH RESULTS HELPER
+    // ============================================================
+
+    private List<Map<String, Object>> transformSearchResults(List<Map<String, Object>> objects) {
+        return objects.stream().map(obj -> {
+            Map<String, Object> transformed = new HashMap<>();
+            transformed.put("id", "search-" + System.currentTimeMillis() + "-" + obj.get("object_name"));
+            transformed.put("name", obj.get("object_name"));
+            transformed.put("owner", obj.get("owner"));
+            transformed.put("type", obj.get("object_type"));
+            transformed.put("status", obj.get("status"));
+            transformed.put("created", obj.get("created"));
+            transformed.put("lastModified", obj.get("last_ddl_time"));
+            transformed.put("icon", getObjectTypeIcon((String) obj.get("object_type")));
+            transformed.put("isSynonym", false);
+            return transformed;
+        }).collect(Collectors.toList());
+    }
 
     // ============================================================
     // 1. PAGINATED OBJECT DETAILS REPOSITORY METHOD
@@ -499,7 +3373,7 @@ public class OracleSchemaRepository {
             List<Map<String, Object>> columns = oracleJdbcTemplate.queryForList(
                     colSql, owner, tableName, offset, pageSize);
 
-            result.put("columns", columns);
+            result.put("items", columns);
             result.put("totalCount", totalCount);
             result.put("page", page);
             result.put("pageSize", pageSize);
@@ -520,6 +3394,7 @@ public class OracleSchemaRepository {
     public Map<String, Object> searchObjectsPaginated(String searchPattern, String type,
                                                       int page, int pageSize) {
         Map<String, Object> result = new HashMap<>();
+        List<Map<String, Object>> allResults = new ArrayList<>();
 
         try {
             String searchParam = "%" + searchPattern.toUpperCase() + "%";
@@ -539,7 +3414,14 @@ public class OracleSchemaRepository {
                         "    object_type, " +
                         "    status, " +
                         "    created, " +
-                        "    last_ddl_time " +
+                        "    last_ddl_time, " +
+                        "    temporary, " +
+                        "    generated, " +
+                        "    secondary, " +
+                        "    NULL as target_owner, " +
+                        "    NULL as target_name, " +
+                        "    NULL as target_type, " +
+                        "    NULL as db_link " +
                         "FROM all_objects " +
                         "WHERE UPPER(object_name) LIKE ? AND object_type = ? " +
                         "ORDER BY object_type, object_name " +
@@ -551,34 +3433,137 @@ public class OracleSchemaRepository {
                 List<Map<String, Object>> objects = oracleJdbcTemplate.queryForList(
                         dataSql, searchParam, type.toUpperCase(), offset, pageSize);
 
-                result.put("results", objects);
+                // Transform objects to frontend format
+                for (Map<String, Object> obj : objects) {
+                    Map<String, Object> transformed = transformObject(obj, type);
+                    allResults.add(transformed);
+                }
+
                 result.put("totalCount", totalCount);
 
             } else {
-                // Search all types
-                countSql = "SELECT COUNT(*) FROM all_objects " +
-                        "WHERE UPPER(object_name) LIKE ?";
+                // Search all types - include actual objects and synonyms
+                String fullCountSql = "SELECT COUNT(*) FROM (" +
+                        "    SELECT object_name FROM all_objects " +
+                        "    WHERE UPPER(object_name) LIKE ? " +
+                        "    UNION " +
+                        "    SELECT synonym_name FROM all_synonyms " +
+                        "    WHERE UPPER(synonym_name) LIKE ?" +
+                        ")";
 
-                dataSql = "SELECT " +
+                int totalCount = oracleJdbcTemplate.queryForObject(
+                        fullCountSql, Integer.class, searchParam, searchParam);
+
+                // Get actual objects
+                String objectsSql = "SELECT " +
                         "    owner, " +
                         "    object_name, " +
                         "    object_type, " +
                         "    status, " +
                         "    created, " +
-                        "    last_ddl_time " +
+                        "    last_ddl_time, " +
+                        "    temporary, " +
+                        "    generated, " +
+                        "    secondary, " +
+                        "    NULL as target_owner, " +
+                        "    NULL as target_name, " +
+                        "    NULL as target_type, " +
+                        "    NULL as db_link " +
                         "FROM all_objects " +
                         "WHERE UPPER(object_name) LIKE ? " +
-                        "ORDER BY object_type, object_name " +
-                        "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
-
-                int totalCount = oracleJdbcTemplate.queryForObject(
-                        countSql, Integer.class, searchParam);
+                        "ORDER BY object_type, object_name";
 
                 List<Map<String, Object>> objects = oracleJdbcTemplate.queryForList(
-                        dataSql, searchParam, offset, pageSize);
+                        objectsSql, searchParam);
 
-                result.put("results", objects);
-                result.put("totalCount", totalCount);
+                // Transform objects
+                for (Map<String, Object> obj : objects) {
+                    Map<String, Object> transformed = transformObject(obj, (String) obj.get("object_type"));
+                    allResults.add(transformed);
+                }
+
+                // Get synonyms
+                try {
+                    String synonymSql = "SELECT " +
+                            "    s.owner, " +
+                            "    s.synonym_name as object_name, " +
+                            "    'SYNONYM' as object_type, " +
+                            "    CASE " +
+                            "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                            "        ELSE o.status " +
+                            "    END as status, " +
+                            "    NULL as created, " +
+                            "    NULL as last_ddl_time, " +
+                            "    NULL as temporary, " +
+                            "    NULL as generated, " +
+                            "    NULL as secondary, " +
+                            "    s.table_owner as target_owner, " +
+                            "    s.table_name as target_name, " +
+                            "    CASE " +
+                            "        WHEN s.db_link IS NOT NULL THEN 'REMOTE_' || o.object_type " +
+                            "        ELSE o.object_type " +
+                            "    END as target_type, " +
+                            "    s.db_link " +
+                            "FROM all_synonyms s " +
+                            "LEFT JOIN all_objects o ON s.table_owner = o.owner " +
+                            "    AND s.table_name = o.object_name " +
+                            "WHERE UPPER(s.synonym_name) LIKE ? " +
+                            "ORDER BY s.synonym_name";
+
+                    List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(synonymSql, searchParam);
+
+                    // Transform synonyms
+                    for (Map<String, Object> syn : synonyms) {
+                        Map<String, Object> transformed = transformSynonym(syn);
+                        allResults.add(transformed);
+                    }
+                } catch (Exception e) {
+                    log.error("Error fetching synonyms: {}", e.getMessage());
+                    // Fallback to simpler synonym query
+                    try {
+                        String simpleSynonymSql = "SELECT " +
+                                "    owner, " +
+                                "    synonym_name as object_name, " +
+                                "    'SYNONYM' as object_type, " +
+                                "    'VALID' as status, " +
+                                "    NULL as created, " +
+                                "    NULL as last_ddl_time, " +
+                                "    NULL as temporary, " +
+                                "    NULL as generated, " +
+                                "    NULL as secondary, " +
+                                "    table_owner as target_owner, " +
+                                "    table_name as target_name, " +
+                                "    'UNKNOWN' as target_type, " +
+                                "    db_link " +
+                                "FROM all_synonyms " +
+                                "WHERE UPPER(synonym_name) LIKE ? " +
+                                "ORDER BY synonym_name";
+
+                        List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(simpleSynonymSql, searchParam);
+
+                        for (Map<String, Object> syn : synonyms) {
+                            Map<String, Object> transformed = transformSynonym(syn);
+                            allResults.add(transformed);
+                        }
+                    } catch (Exception ex) {
+                        log.error("Fallback synonym query also failed: {}", ex.getMessage());
+                    }
+                }
+
+                // Sort combined results
+                allResults.sort((a, b) -> {
+                    String nameA = (String) a.get("name");
+                    String nameB = (String) b.get("name");
+                    return nameA.compareTo(nameB);
+                });
+
+                // Apply pagination to combined results
+                int fromIndex = Math.min(offset, allResults.size());
+                int toIndex = Math.min(offset + pageSize, allResults.size());
+                List<Map<String, Object>> paginatedResults = allResults.subList(fromIndex, toIndex);
+
+                result.put("results", paginatedResults);
+                result.put("totalCount", allResults.size());
             }
 
             result.put("page", page);
@@ -596,8 +3581,132 @@ public class OracleSchemaRepository {
         }
     }
 
+    /**
+     * Transform a database object to the frontend format
+     */
+    private Map<String, Object> transformObject(Map<String, Object> obj, String objectType) {
+        Map<String, Object> transformed = new HashMap<>();
+        String objectName = (String) obj.get("object_name");
+        String owner = (String) obj.get("owner");
+
+        transformed.put("id", "obj-" + System.currentTimeMillis() + "-" + objectName + "-" + owner);
+        transformed.put("name", objectName);
+        transformed.put(objectType.toLowerCase() + "_name", objectName); // e.g., procedure_name for PROCEDURE
+        transformed.put("owner", owner);
+        transformed.put("type", objectType);
+        transformed.put("object_type", objectType);
+        transformed.put("status", obj.get("status"));
+        transformed.put("created", obj.get("created"));
+        transformed.put("lastModified", obj.get("last_ddl_time"));
+        transformed.put("last_ddl_time", obj.get("last_ddl_time"));
+        transformed.put("temporary", obj.get("temporary"));
+        transformed.put("generated", obj.get("generated"));
+        transformed.put("secondary", obj.get("secondary"));
+
+        // Add type-specific fields
+        if ("PROCEDURE".equals(objectType) || "FUNCTION".equals(objectType)) {
+            try {
+                String countSql = "SELECT COUNT(*) FROM all_arguments " +
+                        "WHERE owner = ? AND object_name = ? " +
+                        "AND package_name IS NULL " +
+                        "AND argument_name IS NOT NULL";
+                int paramCount = oracleJdbcTemplate.queryForObject(
+                        countSql, Integer.class, owner, objectName);
+                transformed.put("parameterCount", paramCount);
+            } catch (Exception e) {
+                transformed.put("parameterCount", 0);
+            }
+        } else {
+            transformed.put("parameterCount", 0);
+        }
+
+        transformed.put("icon", objectType.toLowerCase());
+        transformed.put("isSynonym", false);
+        transformed.put("targetOwner", null);
+        transformed.put("targetName", null);
+        transformed.put("targetType", null);
+        transformed.put("dbLink", null);
+        transformed.put("isRemote", false);
+
+        return transformed;
+    }
+
+    /**
+     * Transform a synonym to the frontend format
+     */
+    private Map<String, Object> transformSynonym(Map<String, Object> syn) {
+        Map<String, Object> transformed = new HashMap<>();
+        String synonymName = (String) syn.get("object_name");
+        String owner = (String) syn.get("owner");
+        String targetType = (String) syn.get("target_type");
+        String dbLink = (String) syn.get("db_link");
+
+        transformed.put("id", "syn-" + System.currentTimeMillis() + "-" + synonymName);
+        transformed.put("name", synonymName);
+        transformed.put(synonymName.toLowerCase() + "_name", synonymName);
+        transformed.put("owner", owner);
+        transformed.put("type", "SYNONYM");
+        transformed.put("object_type", "SYNONYM");
+        transformed.put("status", syn.get("status") != null ? syn.get("status") : "VALID");
+        transformed.put("created", syn.get("created"));
+        transformed.put("lastModified", syn.get("last_ddl_time"));
+        transformed.put("last_ddl_time", syn.get("last_ddl_time"));
+        transformed.put("temporary", syn.get("temporary") != null ? syn.get("temporary") : "N");
+        transformed.put("generated", syn.get("generated") != null ? syn.get("generated") : "N");
+        transformed.put("secondary", syn.get("secondary") != null ? syn.get("secondary") : "N");
+        transformed.put("parameterCount", 0);
+        transformed.put("targetOwner", syn.get("target_owner"));
+        transformed.put("targetName", syn.get("target_name"));
+        transformed.put("targetType", targetType != null ? targetType : "UNKNOWN");
+        transformed.put("dbLink", dbLink);
+        transformed.put("isRemote", dbLink != null);
+        transformed.put("isSynonym", true);
+        transformed.put("icon", "synonym");
+        transformed.put("targetIcon", targetType != null ? targetType.toLowerCase() : "unknown");
+
+        // For display purposes
+        String displayTargetType = targetType != null ? targetType : "Unknown";
+        if (displayTargetType.startsWith("REMOTE_")) {
+            displayTargetType = displayTargetType.substring(7);
+        }
+        transformed.put("targetDisplayType", formatObjectTypeForDisplay(displayTargetType));
+
+        // Get target object info if accessible
+        if (dbLink == null && syn.get("target_name") != null && syn.get("target_owner") != null) {
+            try {
+                String targetSql = "SELECT status, created, last_ddl_time " +
+                        "FROM all_objects " +
+                        "WHERE owner = ? AND object_name = ?";
+                if (targetType != null && !targetType.startsWith("REMOTE_")) {
+                    targetSql += " AND object_type = ?";
+                    Map<String, Object> targetInfo = oracleJdbcTemplate.queryForMap(
+                            targetSql, syn.get("target_owner"), syn.get("target_name"), targetType);
+                    transformed.put("targetStatus", targetInfo.get("status"));
+                    transformed.put("targetCreated", targetInfo.get("created"));
+                    transformed.put("targetModified", targetInfo.get("last_ddl_time"));
+                } else {
+                    List<Map<String, Object>> targetInfo = oracleJdbcTemplate.queryForList(
+                            targetSql, syn.get("target_owner"), syn.get("target_name"));
+                    if (!targetInfo.isEmpty()) {
+                        transformed.put("targetStatus", targetInfo.get(0).get("status"));
+                        transformed.put("targetCreated", targetInfo.get(0).get("created"));
+                        transformed.put("targetModified", targetInfo.get(0).get("last_ddl_time"));
+                    } else {
+                        transformed.put("targetStatus", "UNKNOWN");
+                    }
+                }
+            } catch (Exception e) {
+                transformed.put("targetStatus", "UNKNOWN");
+            }
+        } else if (dbLink != null) {
+            transformed.put("targetStatus", "REMOTE");
+        }
+
+        return transformed;
+    }
+
     // ============================================================
-    // 8. GET OBJECT COUNTS ONLY REPOSITORY METHOD
+    // 8. GET OBJECT COUNTS ONLY REPOSITORY METHOD - UPDATED
     // ============================================================
 
     public Map<String, Object> getObjectCountsOnly(String objectName, String objectType, String owner) {
@@ -616,6 +3725,23 @@ public class OracleSchemaRepository {
 
             int exists = oracleJdbcTemplate.queryForObject(existsSql, Integer.class, owner, objectName);
             counts.put("exists", exists > 0);
+
+            // Check if it's a synonym
+            String synonymCheckSql = "SELECT COUNT(*) FROM user_synonyms " +
+                    "WHERE UPPER(synonym_name) = UPPER(?)";
+            int isSynonym = oracleJdbcTemplate.queryForObject(synonymCheckSql, Integer.class, objectName);
+            counts.put("isSynonym", isSynonym > 0);
+
+            if (isSynonym > 0) {
+                // Get synonym target info
+                String targetSql = "SELECT table_owner, table_name, db_link FROM user_synonyms " +
+                        "WHERE UPPER(synonym_name) = UPPER(?)";
+                Map<String, Object> target = oracleJdbcTemplate.queryForMap(targetSql, objectName);
+                counts.put("targetOwner", target.get("table_owner"));
+                counts.put("targetName", target.get("table_name"));
+                counts.put("dbLink", target.get("db_link"));
+                counts.put("isRemote", target.get("db_link") != null);
+            }
 
             if (exists > 0) {
                 // Get column count for tables/views
@@ -714,7 +3840,6 @@ public class OracleSchemaRepository {
         if (filter == null || filter.isEmpty()) return "";
 
         // Basic sanitization - remove dangerous characters
-        // This is a simple implementation - in production, use a proper SQL builder
         String sanitized = filter.replaceAll(";", "")
                 .replaceAll("--", "")
                 .replaceAll("/\\*", "")
@@ -730,8 +3855,6 @@ public class OracleSchemaRepository {
 
         return sanitized;
     }
-
-
 
     // ==================== ENHANCED SYNONYM METHODS ====================
 
@@ -784,44 +3907,6 @@ public class OracleSchemaRepository {
 
         } catch (Exception e) {
             log.error("Error in getSynonymsByTargetType: {}", e.getMessage(), e);
-            return new ArrayList<>();
-        }
-    }
-
-    /**
-     * Get all synonyms for frontend with proper type information
-     */
-    public List<Map<String, Object>> getAllSynonymsForFrontend() {
-        try {
-            List<Map<String, Object>> synonyms = getAllSynonymsWithDetails();
-
-            return synonyms.stream().map(syn -> {
-                Map<String, Object> transformed = new HashMap<>();
-                transformed.put("id", "synonym-" + System.currentTimeMillis() + "-" + syn.get("synonym_name"));
-                transformed.put("name", syn.get("synonym_name"));
-                transformed.put("owner", getCurrentUser());
-                transformed.put("type", "SYNONYM");
-                transformed.put("targetOwner", syn.get("target_owner"));
-                transformed.put("targetName", syn.get("target_name"));
-                transformed.put("targetType", syn.get("target_type"));
-                transformed.put("targetStatus", syn.get("target_status"));
-                transformed.put("targetCreated", syn.get("target_created"));
-                transformed.put("targetModified", syn.get("target_modified"));
-                transformed.put("dbLink", syn.get("db_link"));
-                transformed.put("isRemote", syn.get("db_link") != null);
-
-                // Add additional info based on target type
-                if (syn.get("target_type") != null) {
-                    String targetType = syn.get("target_type").toString();
-                    transformed.put("targetIcon", getObjectTypeIcon(targetType));
-                    transformed.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
-                }
-
-                return transformed;
-            }).collect(Collectors.toList());
-
-        } catch (Exception e) {
-            log.error("Error in getAllSynonymsForFrontend: {}", e.getMessage(), e);
             return new ArrayList<>();
         }
     }
@@ -935,6 +4020,45 @@ public class OracleSchemaRepository {
             log.error("Error resolving synonym {}: {}", synonymName, e.getMessage());
             throw new RuntimeException("Failed to resolve synonym: " + e.getMessage(), e);
         }
+    }
+
+    // ==================== HELPER METHODS FOR SYNONYM HANDLING ====================
+
+    private Map<String, Object> checkIfSynonymAndGetTarget(String objectName, String expectedTargetType) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("isSynonym", false);
+
+        try {
+            String sql = "SELECT " +
+                    "    s.synonym_name, " +
+                    "    s.table_owner as target_owner, " +
+                    "    s.table_name as target_name, " +
+                    "    s.db_link, " +
+                    "    o.object_type as target_type, " +
+                    "    o.status as target_status " +
+                    "FROM user_synonyms s " +
+                    "LEFT JOIN all_objects o ON s.table_owner = o.owner AND s.table_name = o.object_name " +
+                    "WHERE UPPER(s.synonym_name) = UPPER(?)";
+
+            Map<String, Object> synonym = oracleJdbcTemplate.queryForMap(sql, objectName);
+
+            if (synonym != null && !synonym.isEmpty()) {
+                result.put("isSynonym", true);
+                result.put("synonymName", synonym.get("synonym_name"));
+                result.put("targetOwner", synonym.get("target_owner"));
+                result.put("targetName", synonym.get("target_name"));
+                result.put("targetType", synonym.get("target_type"));
+                result.put("targetStatus", synonym.get("target_status"));
+                result.put("dbLink", synonym.get("db_link"));
+                result.put("isRemote", synonym.get("db_link") != null);
+            }
+        } catch (EmptyResultDataAccessException e) {
+            // Not a synonym, ignore
+        } catch (Exception e) {
+            log.debug("Error checking if {} is a synonym: {}", objectName, e.getMessage());
+        }
+
+        return result;
     }
 
     // ==================== ENHANCED OBJECT RETRIEVAL METHODS ====================
@@ -3913,69 +7037,10 @@ public class OracleSchemaRepository {
     /**
      * Get all tables with frontend-friendly format
      */
-    public List<Map<String, Object>> getAllTablesForFrontend() {
-        try {
-            List<Map<String, Object>> tables = getAllTables();
-
-            return tables.stream().map(table -> {
-                Map<String, Object> transformed = new HashMap<>();
-                transformed.put("id", "table-" + System.currentTimeMillis() + "-" + table.get("table_name"));
-                transformed.put("name", table.get("table_name"));
-                transformed.put("owner", getCurrentUser());
-                transformed.put("type", "TABLE");
-                transformed.put("status", table.get("status") != null ? table.get("status") : table.get("object_status"));
-                transformed.put("rowCount", table.get("num_rows"));
-                transformed.put("size", formatBytes(getLongValue(getTableSize((String) table.get("table_name")))));
-                transformed.put("comments", getTableComment((String) table.get("table_name")));
-                transformed.put("created", table.get("created"));
-                transformed.put("lastModified", table.get("last_analyzed"));
-                transformed.put("tablespace", table.get("tablespace_name"));
-                transformed.put("icon", "table");
-                return transformed;
-            }).collect(Collectors.toList());
-
-        } catch (Exception e) {
-            log.error("Error in getAllTablesForFrontend: {}", e.getMessage(), e);
-            return new ArrayList<>();
-        }
-    }
 
     /**
      * Get table details with frontend-friendly format
      */
-    public Map<String, Object> getTableDetailsForFrontend(String tableName) {
-        try {
-            Map<String, Object> details = getTableDetails(getCurrentUser(), tableName);
-
-            // Get additional info
-            List<Map<String, Object>> columns = getTableColumns(getCurrentUser(), tableName);
-            List<Map<String, Object>> constraints = getTableConstraints(getCurrentUser(), tableName);
-            List<Map<String, Object>> indexes = getTableIndexes(getCurrentUser(), tableName);
-
-            Map<String, Object> result = new HashMap<>();
-            result.put("table_name", tableName);
-            result.put("owner", getCurrentUser());
-            result.put("table_status", details.get("table_status"));
-            result.put("object_status", details.get("object_status"));
-            result.put("num_rows", details.get("num_rows"));
-            result.put("bytes", details.get("size_bytes"));
-            result.put("size", formatBytes(getLongValue(details.get("size_bytes"))));
-            result.put("comments", getTableComment(tableName));
-            result.put("columns", transformColumnsForFrontend(columns));
-            result.put("constraints", transformConstraintsForFrontend(constraints));
-            result.put("indexes", transformIndexesForFrontend(indexes));
-            result.put("created", details.get("created"));
-            result.put("lastModified", details.get("last_analyzed"));
-            result.put("tablespace_name", details.get("tablespace_name"));
-            result.put("icon", "table");
-
-            return result;
-
-        } catch (Exception e) {
-            log.error("Error in getTableDetailsForFrontend for {}: {}", tableName, e.getMessage(), e);
-            throw new RuntimeException("Failed to retrieve details for table " + tableName + ": " + e.getMessage(), e);
-        }
-    }
 
     /**
      * Get table data with pagination (for frontend)
@@ -4378,74 +7443,226 @@ public class OracleSchemaRepository {
         }
     }
 
-    /**
-     * Get all views for frontend
-     */
-    public List<Map<String, Object>> getAllViewsForFrontend() {
-        try {
-            String sql = "SELECT " +
-                    "    v.view_name, " +
-                    "    v.text_length, " +
-                    "    v.read_only, " +
-                    "    o.created, " +
-                    "    o.last_ddl_time, " +
-                    "    o.status, " +
-                    "    (SELECT COUNT(*) FROM user_tab_columns WHERE table_name = v.view_name) as column_count " +
-                    "FROM user_views v " +
-                    "JOIN user_objects o ON v.view_name = o.object_name AND o.object_type = 'VIEW' " +
-                    "ORDER BY v.view_name";
-
-            List<Map<String, Object>> views = oracleJdbcTemplate.queryForList(sql);
-
-            return views.stream().map(view -> {
-                Map<String, Object> transformed = new HashMap<>();
-                transformed.put("id", "view-" + System.currentTimeMillis() + "-" + view.get("view_name"));
-                transformed.put("name", view.get("view_name"));
-                transformed.put("owner", getCurrentUser());
-                transformed.put("type", "VIEW");
-                transformed.put("status", view.get("status"));
-                transformed.put("columnCount", view.get("column_count"));
-                transformed.put("textLength", view.get("text_length"));
-                transformed.put("readOnly", view.get("read_only"));
-                transformed.put("created", view.get("created"));
-                transformed.put("lastModified", view.get("last_ddl_time"));
-                transformed.put("icon", "view");
-                return transformed;
-            }).collect(Collectors.toList());
-
-        } catch (Exception e) {
-            log.error("Error in getAllViewsForFrontend: {}", e.getMessage(), e);
-            return new ArrayList<>();
-        }
-    }
-
     // ==================== EXISTING PROCEDURE METHODS ====================
 
     /**
-     * Get all procedures
+     * Get all procedures and synonyms that target procedures
      */
     public List<Map<String, Object>> getAllProcedures() {
+        List<Map<String, Object>> result = new ArrayList<>();
         try {
-            String sql = "SELECT " +
-                    "    object_name as procedure_name, " +
-                    "    object_type, " +
-                    "    created, " +
-                    "    last_ddl_time, " +
-                    "    status, " +
-                    "    temporary, " +
-                    "    generated, " +
-                    "    secondary, " +
-                    "    (SELECT COUNT(*) FROM user_arguments WHERE object_name = o.object_name AND package_name IS NULL AND argument_name IS NOT NULL) as parameter_count " +
-                    "FROM user_objects o " +
-                    "WHERE object_type = 'PROCEDURE' " +
-                    "ORDER BY object_name";
+            // Get actual procedures
+            String procedureSql =
+                    "SELECT " +
+                            "    object_name as name, " +
+                            "    'PROCEDURE' as type, " +
+                            "    status, " +
+                            "    created, " +
+                            "    last_ddl_time, " +
+                            "    temporary, " +
+                            "    generated, " +
+                            "    secondary, " +
+                            "    (SELECT COUNT(*) FROM user_arguments " +
+                            "     WHERE object_name = o.object_name " +
+                            "       AND package_name IS NULL " +
+                            "       AND argument_name IS NOT NULL) as parameter_count, " +
+                            "    NULL as target_owner, " +
+                            "    NULL as target_name, " +
+                            "    NULL as target_type, " +
+                            "    NULL as db_link " +
+                            "FROM user_objects o " +
+                            "WHERE object_type = 'PROCEDURE' " +
+                            "ORDER BY object_name";
 
-            return oracleJdbcTemplate.queryForList(sql);
+            List<Map<String, Object>> procedures = oracleJdbcTemplate.queryForList(procedureSql);
+            log.info("Found {} procedures", procedures.size());
+
+            // Transform procedures to frontend format
+            for (Map<String, Object> proc : procedures) {
+                Map<String, Object> transformed = new HashMap<>();
+                transformed.put("id", "proc-" + System.currentTimeMillis() + "-" + proc.get("name"));
+                transformed.put("name", proc.get("name"));
+                transformed.put("procedure_name", proc.get("name")); // Keep original field name for backward compatibility
+                transformed.put("owner", getCurrentUser());
+                transformed.put("type", "PROCEDURE");
+                transformed.put("object_type", "PROCEDURE");
+                transformed.put("status", proc.get("status"));
+                transformed.put("created", proc.get("created"));
+                transformed.put("lastModified", proc.get("last_ddl_time"));
+                transformed.put("last_ddl_time", proc.get("last_ddl_time"));
+                transformed.put("temporary", proc.get("temporary"));
+                transformed.put("generated", proc.get("generated"));
+                transformed.put("secondary", proc.get("secondary"));
+                transformed.put("parameterCount", proc.get("parameter_count") != null ? proc.get("parameter_count") : 0);
+                transformed.put("icon", "procedure");
+                transformed.put("isSynonym", false);
+
+                result.add(transformed);
+            }
+
+            // Get synonyms that target procedures
+            String synonymSql =
+                    "SELECT " +
+                            "    s.synonym_name as name, " +
+                            "    'SYNONYM' as type, " +
+                            "    CASE " +
+                            "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                            "        ELSE o.status " +
+                            "    END as status, " +
+                            "    NULL as created, " +
+                            "    NULL as last_ddl_time, " +
+                            "    NULL as temporary, " +
+                            "    NULL as generated, " +
+                            "    NULL as secondary, " +
+                            "    0 as parameter_count, " +
+                            "    s.table_owner as target_owner, " +
+                            "    s.table_name as target_name, " +
+                            "    CASE " +
+                            "        WHEN s.db_link IS NOT NULL THEN 'REMOTE_PROCEDURE' " +
+                            "        ELSE o.object_type " +
+                            "    END as target_type, " +
+                            "    s.db_link " +
+                            "FROM user_synonyms s " +
+                            "LEFT JOIN all_objects o ON s.table_owner = o.owner " +
+                            "    AND s.table_name = o.object_name " +
+                            "WHERE (o.object_type = 'PROCEDURE' OR s.db_link IS NOT NULL) " +
+                            "ORDER BY s.synonym_name";
+
+            try {
+                List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(synonymSql);
+                log.info("Found {} synonyms targeting procedures", synonyms.size());
+
+                // Transform synonyms to frontend format
+                for (Map<String, Object> syn : synonyms) {
+                    Map<String, Object> transformed = new HashMap<>();
+                    transformed.put("id", "syn-" + System.currentTimeMillis() + "-" + syn.get("name"));
+                    transformed.put("name", syn.get("name"));
+                    transformed.put("procedure_name", syn.get("name")); // Keep for backward compatibility
+                    transformed.put("owner", getCurrentUser());
+                    transformed.put("type", "SYNONYM");
+                    transformed.put("object_type", "SYNONYM");
+                    transformed.put("status", syn.get("status") != null ? syn.get("status") : "VALID");
+                    transformed.put("created", null);
+                    transformed.put("lastModified", null);
+                    transformed.put("last_ddl_time", null);
+                    transformed.put("temporary", "N");
+                    transformed.put("generated", "N");
+                    transformed.put("secondary", "N");
+                    transformed.put("parameterCount", 0);
+                    transformed.put("targetOwner", syn.get("target_owner"));
+                    transformed.put("targetName", syn.get("target_name"));
+                    transformed.put("targetType", syn.get("target_type") != null ? syn.get("target_type") : "PROCEDURE");
+                    transformed.put("dbLink", syn.get("db_link"));
+                    transformed.put("isRemote", syn.get("db_link") != null);
+                    transformed.put("isSynonym", true);
+                    transformed.put("icon", "synonym");
+                    transformed.put("targetIcon", "procedure");
+
+                    // For display purposes
+                    String targetType = (String) syn.get("target_type");
+                    if (targetType != null) {
+                        transformed.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                    } else {
+                        transformed.put("targetDisplayType", "Procedure");
+                    }
+
+                    // Get target procedure info if accessible
+                    if (syn.get("db_link") == null && syn.get("target_name") != null) {
+                        try {
+                            String targetSql = "SELECT status, created, last_ddl_time " +
+                                    "FROM all_objects " +
+                                    "WHERE owner = ? AND object_name = ? AND object_type = 'PROCEDURE'";
+                            Map<String, Object> targetInfo = oracleJdbcTemplate.queryForMap(
+                                    targetSql, syn.get("target_owner"), syn.get("target_name"));
+                            transformed.put("targetStatus", targetInfo.get("status"));
+                            transformed.put("targetCreated", targetInfo.get("created"));
+                            transformed.put("targetModified", targetInfo.get("last_ddl_time"));
+                        } catch (Exception e) {
+                            transformed.put("targetStatus", "UNKNOWN");
+                        }
+                    } else if (syn.get("db_link") != null) {
+                        transformed.put("targetStatus", "REMOTE");
+                    }
+
+                    result.add(transformed);
+                }
+            } catch (Exception e) {
+                log.error("Error fetching synonyms for procedures: {}", e.getMessage());
+
+                // Fallback to simpler query if the complex one fails
+                try {
+                    String simpleSynonymSql =
+                            "SELECT " +
+                                    "    synonym_name as name, " +
+                                    "    'SYNONYM' as type, " +
+                                    "    'VALID' as status, " +
+                                    "    NULL as created, " +
+                                    "    NULL as last_ddl_time, " +
+                                    "    NULL as temporary, " +
+                                    "    NULL as generated, " +
+                                    "    NULL as secondary, " +
+                                    "    0 as parameter_count, " +
+                                    "    table_owner as target_owner, " +
+                                    "    table_name as target_name, " +
+                                    "    'PROCEDURE' as target_type, " +
+                                    "    db_link " +
+                                    "FROM user_synonyms s " +
+                                    "WHERE db_link IS NULL " +
+                                    "ORDER BY synonym_name";
+
+                    List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(simpleSynonymSql);
+                    log.info("Found {} synonyms from fallback query", synonyms.size());
+
+                    for (Map<String, Object> syn : synonyms) {
+                        Map<String, Object> transformed = new HashMap<>();
+                        transformed.put("id", "syn-" + System.currentTimeMillis() + "-" + syn.get("name"));
+                        transformed.put("name", syn.get("name"));
+                        transformed.put("procedure_name", syn.get("name"));
+                        transformed.put("owner", getCurrentUser());
+                        transformed.put("type", "SYNONYM");
+                        transformed.put("object_type", "SYNONYM");
+                        transformed.put("status", "VALID");
+                        transformed.put("created", null);
+                        transformed.put("lastModified", null);
+                        transformed.put("last_ddl_time", null);
+                        transformed.put("temporary", "N");
+                        transformed.put("generated", "N");
+                        transformed.put("secondary", "N");
+                        transformed.put("parameterCount", 0);
+                        transformed.put("targetOwner", syn.get("target_owner"));
+                        transformed.put("targetName", syn.get("target_name"));
+                        transformed.put("targetType", "PROCEDURE");
+                        transformed.put("dbLink", syn.get("db_link"));
+                        transformed.put("isRemote", syn.get("db_link") != null);
+                        transformed.put("isSynonym", true);
+                        transformed.put("icon", "synonym");
+                        transformed.put("targetIcon", "procedure");
+                        transformed.put("targetDisplayType", "Procedure");
+                        transformed.put("targetStatus", "UNKNOWN");
+
+                        result.add(transformed);
+                    }
+                } catch (Exception ex) {
+                    log.error("Fallback synonym query also failed: {}", ex.getMessage());
+                }
+            }
+
+            // Sort combined results by name
+            result.sort((a, b) -> {
+                String nameA = (String) a.get("name");
+                String nameB = (String) b.get("name");
+                return nameA.compareTo(nameB);
+            });
+
+            log.info("Returning {} total items (procedures + synonyms)", result.size());
 
         } catch (Exception e) {
             log.error("Error in getAllProcedures: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to retrieve procedures: " + e.getMessage(), e);
+            // Return empty list instead of throwing exception to maintain backward compatibility
+            return new ArrayList<>();
         }
+
+        return result;
     }
 
     /**
@@ -4500,43 +7717,6 @@ public class OracleSchemaRepository {
         } catch (Exception e) {
             log.error("Error in getProcedureDetails: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to retrieve procedure details: " + e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Get all procedures for frontend
-     */
-    public List<Map<String, Object>> getAllProceduresForFrontend() {
-        try {
-            String sql = "SELECT " +
-                    "    object_name as procedure_name, " +
-                    "    created, " +
-                    "    last_ddl_time, " +
-                    "    status, " +
-                    "    (SELECT COUNT(*) FROM user_arguments WHERE object_name = o.object_name AND package_name IS NULL AND argument_name IS NOT NULL) as parameter_count " +
-                    "FROM user_objects o " +
-                    "WHERE object_type = 'PROCEDURE' " +
-                    "ORDER BY object_name";
-
-            List<Map<String, Object>> procedures = oracleJdbcTemplate.queryForList(sql);
-
-            return procedures.stream().map(proc -> {
-                Map<String, Object> transformed = new HashMap<>();
-                transformed.put("id", "procedure-" + System.currentTimeMillis() + "-" + proc.get("procedure_name"));
-                transformed.put("name", proc.get("procedure_name"));
-                transformed.put("owner", getCurrentUser());
-                transformed.put("type", "PROCEDURE");
-                transformed.put("status", proc.get("status"));
-                transformed.put("parameterCount", proc.get("parameter_count"));
-                transformed.put("created", proc.get("created"));
-                transformed.put("lastModified", proc.get("last_ddl_time"));
-                transformed.put("icon", "procedure");
-                return transformed;
-            }).collect(Collectors.toList());
-
-        } catch (Exception e) {
-            log.error("Error in getAllProceduresForFrontend: {}", e.getMessage(), e);
-            return new ArrayList<>();
         }
     }
 
@@ -4626,45 +7806,6 @@ public class OracleSchemaRepository {
         }
     }
 
-    /**
-     * Get all functions for frontend
-     */
-    public List<Map<String, Object>> getAllFunctionsForFrontend() {
-        try {
-            String sql = "SELECT " +
-                    "    object_name as function_name, " +
-                    "    created, " +
-                    "    last_ddl_time, " +
-                    "    status, " +
-                    "    (SELECT COUNT(*) FROM user_arguments WHERE object_name = o.object_name AND package_name IS NULL AND argument_name IS NOT NULL) as parameter_count, " +
-                    "    (SELECT data_type FROM user_arguments WHERE object_name = o.object_name AND package_name IS NULL AND argument_name IS NULL AND ROWNUM = 1) as return_type " +
-                    "FROM user_objects o " +
-                    "WHERE object_type = 'FUNCTION' " +
-                    "ORDER BY object_name";
-
-            List<Map<String, Object>> functions = oracleJdbcTemplate.queryForList(sql);
-
-            return functions.stream().map(func -> {
-                Map<String, Object> transformed = new HashMap<>();
-                transformed.put("id", "function-" + System.currentTimeMillis() + "-" + func.get("function_name"));
-                transformed.put("name", func.get("function_name"));
-                transformed.put("owner", getCurrentUser());
-                transformed.put("type", "FUNCTION");
-                transformed.put("status", func.get("status"));
-                transformed.put("parameterCount", func.get("parameter_count"));
-                transformed.put("returnType", func.get("return_type"));
-                transformed.put("created", func.get("created"));
-                transformed.put("lastModified", func.get("last_ddl_time"));
-                transformed.put("icon", "function");
-                return transformed;
-            }).collect(Collectors.toList());
-
-        } catch (Exception e) {
-            log.error("Error in getAllFunctionsForFrontend: {}", e.getMessage(), e);
-            return new ArrayList<>();
-        }
-    }
-
     // ==================== EXISTING PACKAGE METHODS ====================
 
     /**
@@ -4747,48 +7888,6 @@ public class OracleSchemaRepository {
         } catch (Exception e) {
             log.error("Error in getPackageDetails: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to retrieve package details: " + e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Get all packages for frontend
-     */
-    public List<Map<String, Object>> getAllPackagesForFrontend() {
-        try {
-            String distinctSql = "SELECT DISTINCT object_name as package_name FROM user_objects " +
-                    "WHERE object_type IN ('PACKAGE', 'PACKAGE BODY') ORDER BY object_name";
-
-            List<Map<String, Object>> packageNames = oracleJdbcTemplate.queryForList(distinctSql);
-
-            return packageNames.stream().map(pkg -> {
-                String pkgName = (String) pkg.get("package_name");
-                Map<String, Object> transformed = new HashMap<>();
-                transformed.put("id", "package-" + System.currentTimeMillis() + "-" + pkgName);
-                transformed.put("name", pkgName);
-                transformed.put("owner", getCurrentUser());
-                transformed.put("type", "PACKAGE");
-
-                String specStatus = getPackageSpecStatus(pkgName);
-                String bodyStatus = getPackageBodyStatus(pkgName);
-
-                String status = "VALID";
-                if ("INVALID".equals(specStatus) || "INVALID".equals(bodyStatus)) {
-                    status = "INVALID";
-                }
-
-                transformed.put("status", status);
-                transformed.put("specStatus", specStatus);
-                transformed.put("bodyStatus", bodyStatus);
-                transformed.put("created", getPackageCreated(pkgName));
-                transformed.put("lastModified", getPackageLastModified(pkgName));
-                transformed.put("icon", "package");
-
-                return transformed;
-            }).collect(Collectors.toList());
-
-        } catch (Exception e) {
-            log.error("Error in getAllPackagesForFrontend: {}", e.getMessage(), e);
-            return new ArrayList<>();
         }
     }
 
@@ -4885,51 +7984,6 @@ public class OracleSchemaRepository {
         }
     }
 
-    /**
-     * Get all triggers for frontend
-     */
-    public List<Map<String, Object>> getAllTriggersForFrontend() {
-        try {
-            String sql = "SELECT " +
-                    "    t.trigger_name, " +
-                    "    t.trigger_type, " +
-                    "    t.triggering_event, " +
-                    "    t.table_name, " +
-                    "    t.status as trigger_status, " +
-                    "    t.description, " +
-                    "    o.created, " +
-                    "    o.last_ddl_time, " +
-                    "    o.status as object_status " +
-                    "FROM user_triggers t " +
-                    "JOIN user_objects o ON t.trigger_name = o.object_name AND o.object_type = 'TRIGGER' " +
-                    "ORDER BY t.trigger_name";
-
-            List<Map<String, Object>> triggers = oracleJdbcTemplate.queryForList(sql);
-
-            return triggers.stream().map(trigger -> {
-                Map<String, Object> transformed = new HashMap<>();
-                transformed.put("id", "trigger-" + System.currentTimeMillis() + "-" + trigger.get("trigger_name"));
-                transformed.put("name", trigger.get("trigger_name"));
-                transformed.put("owner", getCurrentUser());
-                transformed.put("type", "TRIGGER");
-                transformed.put("status", trigger.get("trigger_status"));
-                transformed.put("objectStatus", trigger.get("object_status"));
-                transformed.put("triggerType", trigger.get("trigger_type"));
-                transformed.put("triggeringEvent", trigger.get("triggering_event"));
-                transformed.put("tableName", trigger.get("table_name"));
-                transformed.put("description", trigger.get("description"));
-                transformed.put("created", trigger.get("created"));
-                transformed.put("lastModified", trigger.get("last_ddl_time"));
-                transformed.put("icon", "trigger");
-                return transformed;
-            }).collect(Collectors.toList());
-
-        } catch (Exception e) {
-            log.error("Error in getAllTriggersForFrontend: {}", e.getMessage(), e);
-            return new ArrayList<>();
-        }
-    }
-
     // ==================== EXISTING SEQUENCE METHODS ====================
 
     /**
@@ -5008,48 +8062,6 @@ public class OracleSchemaRepository {
         } catch (Exception e) {
             log.error("Error in getSequenceDetails: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to retrieve sequence details: " + e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Get all sequences for frontend
-     */
-    public List<Map<String, Object>> getAllSequencesForFrontend() {
-        try {
-            String sql = "SELECT " +
-                    "    sequence_name, " +
-                    "    min_value, " +
-                    "    max_value, " +
-                    "    increment_by, " +
-                    "    cycle_flag, " +
-                    "    order_flag, " +
-                    "    cache_size, " +
-                    "    last_number " +
-                    "FROM user_sequences " +
-                    "ORDER BY sequence_name";
-
-            List<Map<String, Object>> sequences = oracleJdbcTemplate.queryForList(sql);
-
-            return sequences.stream().map(seq -> {
-                Map<String, Object> transformed = new HashMap<>();
-                transformed.put("id", "sequence-" + System.currentTimeMillis() + "-" + seq.get("sequence_name"));
-                transformed.put("name", seq.get("sequence_name"));
-                transformed.put("owner", getCurrentUser());
-                transformed.put("type", "SEQUENCE");
-                transformed.put("minValue", seq.get("min_value"));
-                transformed.put("maxValue", seq.get("max_value"));
-                transformed.put("incrementBy", seq.get("increment_by"));
-                transformed.put("cycleFlag", seq.get("cycle_flag"));
-                transformed.put("orderFlag", seq.get("order_flag"));
-                transformed.put("cacheSize", seq.get("cache_size"));
-                transformed.put("lastNumber", seq.get("last_number"));
-                transformed.put("icon", "sequence");
-                return transformed;
-            }).collect(Collectors.toList());
-
-        } catch (Exception e) {
-            log.error("Error in getAllSequencesForFrontend: {}", e.getMessage(), e);
-            return new ArrayList<>();
         }
     }
 
@@ -5186,47 +8198,6 @@ public class OracleSchemaRepository {
         } catch (Exception e) {
             log.error("Error in getTypeDetails: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to retrieve type details: " + e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Get all types for frontend
-     */
-    public List<Map<String, Object>> getAllTypesForFrontend() {
-        try {
-            String sql = "SELECT " +
-                    "    t.type_name, " +
-                    "    t.typecode, " +
-                    "    t.attributes, " +
-                    "    t.methods, " +
-                    "    o.created, " +
-                    "    o.last_ddl_time, " +
-                    "    o.status " +
-                    "FROM user_types t " +
-                    "JOIN user_objects o ON t.type_name = o.object_name AND o.object_type LIKE '%TYPE' " +
-                    "ORDER BY t.type_name";
-
-            List<Map<String, Object>> types = oracleJdbcTemplate.queryForList(sql);
-
-            return types.stream().map(type -> {
-                Map<String, Object> transformed = new HashMap<>();
-                transformed.put("id", "type-" + System.currentTimeMillis() + "-" + type.get("type_name"));
-                transformed.put("name", type.get("type_name"));
-                transformed.put("owner", getCurrentUser());
-                transformed.put("type", "TYPE");
-                transformed.put("status", type.get("status"));
-                transformed.put("typecode", type.get("typecode"));
-                transformed.put("attributeCount", type.get("attributes"));
-                transformed.put("methodCount", type.get("methods"));
-                transformed.put("created", type.get("created"));
-                transformed.put("lastModified", type.get("last_ddl_time"));
-                transformed.put("icon", "type");
-                return transformed;
-            }).collect(Collectors.toList());
-
-        } catch (Exception e) {
-            log.error("Error in getAllTypesForFrontend: {}", e.getMessage(), e);
-            return new ArrayList<>();
         }
     }
 
@@ -5481,24 +8452,24 @@ public class OracleSchemaRepository {
     /**
      * Get object DDL
      */
-    public String getObjectDDL(String objectName, String objectType) {
-        try {
-            Map<String, Object> objectLocation = findObjectLocation(objectName, objectType);
-            String owner = (String) objectLocation.get("owner");
-
-            if (owner == null) {
-                log.warn("Object {} of type {} not found", objectName, objectType);
-                return null;
-            }
-
-            String sql = "SELECT DBMS_METADATA.GET_DDL(?, ?, ?) FROM DUAL";
-            return oracleJdbcTemplate.queryForObject(sql, String.class, objectType.toUpperCase(), objectName.toUpperCase(), owner.toUpperCase());
-
-        } catch (Exception e) {
-            log.warn("Could not get DDL for object {}: {}", objectName, e.getMessage());
-            return null;
-        }
-    }
+//    public String getObjectDDL(String objectName, String objectType) {
+//        try {
+//            Map<String, Object> objectLocation = findObjectLocation(objectName, objectType);
+//            String owner = (String) objectLocation.get("owner");
+//
+//            if (owner == null) {
+//                log.warn("Object {} of type {} not found", objectName, objectType);
+//                return null;
+//            }
+//
+//            String sql = "SELECT DBMS_METADATA.GET_DDL(?, ?, ?) FROM DUAL";
+//            return oracleJdbcTemplate.queryForObject(sql, String.class, objectType.toUpperCase(), objectName.toUpperCase(), owner.toUpperCase());
+//
+//        } catch (Exception e) {
+//            log.warn("Could not get DDL for object {}: {}", objectName, e.getMessage());
+//            return null;
+//        }
+//    }
 
 
 
@@ -5551,10 +8522,9 @@ public class OracleSchemaRepository {
         }
     }
 
-
     // ============================================================
-// PAGINATED METHODS FOR LARGE DATASETS
-// ============================================================
+    // PAGINATED METHODS FOR LARGE DATASETS
+    // ============================================================
 
     /**
      * Get paginated tables with total count only
@@ -5627,31 +8597,253 @@ public class OracleSchemaRepository {
     }
 
     /**
-     * Get paginated procedures with total count only
+     * Get paginated procedures with synonyms that target procedures
+     */
+    /**
+     * Get paginated procedures with synonyms that target procedures
+     */
+    /**
+     * Get paginated procedures with synonyms that target procedures
      */
     public Map<String, Object> getProceduresPaginated(int page, int pageSize) {
         Map<String, Object> result = new HashMap<>();
         try {
             int offset = (page - 1) * pageSize;
 
-            String countSql = "SELECT COUNT(*) FROM user_objects WHERE object_type = 'PROCEDURE'";
-            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class);
+            // First, get count of actual procedures
+            String procedureCountSql = "SELECT COUNT(*) FROM user_objects WHERE object_type = 'PROCEDURE'";
+            int procedureCount = oracleJdbcTemplate.queryForObject(procedureCountSql, Integer.class);
 
-            String dataSql = "SELECT object_name as procedure_name, status, created, last_ddl_time " +
-                    "FROM user_objects WHERE object_type = 'PROCEDURE' " +
-                    "ORDER BY object_name OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
-            List<Map<String, Object>> procedures = oracleJdbcTemplate.queryForList(dataSql, offset, pageSize);
+            // Get count of synonyms that target procedures
+            String synonymCountSql =
+                    "SELECT COUNT(*) FROM user_synonyms s " +
+                            "WHERE EXISTS (SELECT 1 FROM all_objects " +
+                            "              WHERE owner = s.table_owner " +
+                            "                AND object_name = s.table_name " +
+                            "                AND object_type = 'PROCEDURE') " +
+                            "   OR (s.db_link IS NOT NULL)"; // Include remote synonyms that might target procedures
 
-            result.put("items", procedures);
+            int synonymCount = 0;
+            try {
+                synonymCount = oracleJdbcTemplate.queryForObject(synonymCountSql, Integer.class);
+            } catch (Exception e) {
+                log.warn("Error counting synonyms: {}", e.getMessage());
+                synonymCount = 0;
+            }
+
+            int totalCount = procedureCount + synonymCount;
+            log.info("Found {} procedures and {} synonyms targeting procedures, total: {}",
+                    procedureCount, synonymCount, totalCount);
+
+            // Get all items (procedures + synonyms) with pagination
+            List<Map<String, Object>> allItems = new ArrayList<>();
+
+            // First, try to get procedures if any exist and we're within procedure range
+            if (procedureCount > 0 && offset < procedureCount) {
+                int procOffset = offset;
+                int procLimit = Math.min(pageSize, procedureCount - procOffset);
+
+                if (procLimit > 0) {
+                    String procedureSql =
+                            "SELECT " +
+                                    "    object_name as name, " +
+                                    "    'PROCEDURE' as type, " +
+                                    "    status, " +
+                                    "    created, " +
+                                    "    last_ddl_time, " +
+                                    "    NULL as target_owner, " +
+                                    "    NULL as target_name, " +
+                                    "    NULL as target_type, " +
+                                    "    NULL as db_link " +
+                                    "FROM user_objects " +
+                                    "WHERE object_type = 'PROCEDURE' " +
+                                    "ORDER BY object_name " +
+                                    "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+                    try {
+                        List<Map<String, Object>> procedures = oracleJdbcTemplate.queryForList(
+                                procedureSql, procOffset, procLimit);
+                        allItems.addAll(procedures);
+                        log.info("Added {} procedures to results", procedures.size());
+                    } catch (Exception e) {
+                        log.error("Error fetching procedures: {}", e.getMessage());
+                    }
+                }
+            }
+
+            // Always try to get synonyms if:
+            // 1. We haven't filled the page yet, OR
+            // 2. We're beyond the procedure count (offset >= procedureCount)
+            if (allItems.size() < pageSize && synonymCount > 0) {
+                int synOffset;
+                int synLimit;
+
+                if (offset >= procedureCount) {
+                    // We're past all procedures, adjust synonym offset
+                    synOffset = offset - procedureCount;
+                    synLimit = pageSize;
+                } else {
+                    // We're in procedure range but need more items
+                    synOffset = 0;
+                    synLimit = pageSize - allItems.size();
+                }
+
+                if (synLimit > 0) {
+                    log.info("Fetching synonyms with offset: {}, limit: {}", synOffset, synLimit);
+
+                    String synonymSql =
+                            "SELECT * FROM ( " +
+                                    "  SELECT a.*, ROWNUM rnum FROM ( " +
+                                    "    SELECT " +
+                                    "      s.synonym_name as name, " +
+                                    "      'SYNONYM' as type, " +
+                                    "      CASE " +
+                                    "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                                    "        ELSE o.status " +
+                                    "      END as status, " +
+                                    "      NULL as created, " +
+                                    "      NULL as last_ddl_time, " +
+                                    "      s.table_owner as target_owner, " +
+                                    "      s.table_name as target_name, " +
+                                    "      CASE " +
+                                    "        WHEN s.db_link IS NOT NULL THEN 'REMOTE_PROCEDURE' " +
+                                    "        ELSE o.object_type " +
+                                    "      END as target_type, " +
+                                    "      s.db_link " +
+                                    "    FROM user_synonyms s " +
+                                    "    LEFT JOIN all_objects o ON s.table_owner = o.owner " +
+                                    "        AND s.table_name = o.object_name " +
+                                    "    WHERE (o.object_type = 'PROCEDURE' OR s.db_link IS NOT NULL) " +
+                                    "    ORDER BY s.synonym_name " +
+                                    "  ) a " +
+                                    ") WHERE rnum > ? AND rnum <= ?";
+
+                    try {
+                        List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(
+                                synonymSql, synOffset, synOffset + synLimit);
+                        allItems.addAll(synonyms);
+                        log.info("Added {} synonyms to results", synonyms.size());
+                    } catch (Exception e) {
+                        log.error("Error fetching synonyms: {}", e.getMessage(), e);
+
+                        // Fallback to simpler query if the complex one fails
+                        try {
+                            String simpleSynonymSql =
+                                    "SELECT " +
+                                            "    s.synonym_name as name, " +
+                                            "    'SYNONYM' as type, " +
+                                            "    'VALID' as status, " +
+                                            "    NULL as created, " +
+                                            "    NULL as last_ddl_time, " +
+                                            "    s.table_owner as target_owner, " +
+                                            "    s.table_name as target_name, " +
+                                            "    'PROCEDURE' as target_type, " +
+                                            "    s.db_link " +
+                                            "FROM user_synonyms s " +
+                                            "WHERE s.db_link IS NULL " +
+                                            "ORDER BY s.synonym_name " +
+                                            "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
+                            List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(
+                                    simpleSynonymSql, synOffset, synLimit);
+                            allItems.addAll(synonyms);
+                            log.info("Added {} synonyms from fallback query", synonyms.size());
+                        } catch (Exception ex) {
+                            log.error("Fallback synonym query also failed: {}", ex.getMessage());
+                        }
+                    }
+                }
+            }
+
+            // Transform the results
+            List<Map<String, Object>> transformed = new ArrayList<>();
+            for (Map<String, Object> item : allItems) {
+                Map<String, Object> transformedItem = new HashMap<>();
+                String type = (String) item.get("type");
+
+                if ("PROCEDURE".equals(type)) {
+                    transformedItem.put("id", "proc-" + System.currentTimeMillis() + "-" + item.get("name"));
+                    transformedItem.put("name", item.get("name"));
+                    transformedItem.put("owner", getCurrentUser());
+                    transformedItem.put("type", "PROCEDURE");
+                    transformedItem.put("status", item.get("status"));
+                    transformedItem.put("created", item.get("created"));
+                    transformedItem.put("lastModified", item.get("last_ddl_time"));
+                    transformedItem.put("icon", "procedure");
+                    transformedItem.put("isSynonym", false);
+
+                    // Get parameter count
+                    try {
+                        String paramSql = "SELECT COUNT(*) FROM user_arguments " +
+                                "WHERE object_name = ? AND package_name IS NULL AND argument_name IS NOT NULL";
+                        int paramCount = oracleJdbcTemplate.queryForObject(paramSql, Integer.class, item.get("name"));
+                        transformedItem.put("parameterCount", paramCount);
+                    } catch (Exception e) {
+                        transformedItem.put("parameterCount", 0);
+                    }
+
+                } else { // SYNONYM
+                    transformedItem.put("id", "syn-" + System.currentTimeMillis() + "-" + item.get("name"));
+                    transformedItem.put("name", item.get("name"));
+                    transformedItem.put("owner", getCurrentUser());
+                    transformedItem.put("type", "SYNONYM");
+                    transformedItem.put("status", item.get("status") != null ? item.get("status") : "VALID");
+                    transformedItem.put("targetOwner", item.get("target_owner"));
+                    transformedItem.put("targetName", item.get("target_name"));
+                    transformedItem.put("targetType", item.get("target_type") != null ? item.get("target_type") : "PROCEDURE");
+                    transformedItem.put("dbLink", item.get("db_link"));
+                    transformedItem.put("isRemote", item.get("db_link") != null);
+                    transformedItem.put("isSynonym", true);
+                    transformedItem.put("icon", "synonym");
+                    transformedItem.put("targetIcon", "procedure");
+                    transformedItem.put("parameterCount", 0);
+
+                    // For display purposes, set targetDisplayType
+                    String targetType = (String) item.get("target_type");
+                    if (targetType != null) {
+                        transformedItem.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                    } else {
+                        transformedItem.put("targetDisplayType", "Procedure");
+                    }
+
+                    // Get target procedure info if accessible
+                    if (item.get("db_link") == null && item.get("target_name") != null) {
+                        try {
+                            String targetSql = "SELECT status, created, last_ddl_time " +
+                                    "FROM all_objects " +
+                                    "WHERE owner = ? AND object_name = ? AND object_type = 'PROCEDURE'";
+                            Map<String, Object> targetInfo = oracleJdbcTemplate.queryForMap(
+                                    targetSql, item.get("target_owner"), item.get("target_name"));
+                            transformedItem.put("targetStatus", targetInfo.get("status"));
+                            transformedItem.put("targetCreated", targetInfo.get("created"));
+                            transformedItem.put("targetModified", targetInfo.get("last_ddl_time"));
+                        } catch (Exception e) {
+                            // Target might not be accessible or might not exist
+                            transformedItem.put("targetStatus", "UNKNOWN");
+                        }
+                    } else if (item.get("db_link") != null) {
+                        transformedItem.put("targetStatus", "REMOTE");
+                    }
+                }
+
+                transformed.add(transformedItem);
+            }
+
+            result.put("items", transformed);
             result.put("totalCount", totalCount);
             result.put("page", page);
             result.put("pageSize", pageSize);
-            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+            result.put("totalPages", pageSize > 0 ? (int) Math.ceil((double) totalCount / pageSize) : 0);
+
+            log.info("Returning {} items out of total {}", transformed.size(), totalCount);
 
         } catch (Exception e) {
             log.error("Error in getProceduresPaginated: {}", e.getMessage(), e);
             result.put("items", new ArrayList<>());
             result.put("totalCount", 0);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", 0);
         }
         return result;
     }
@@ -5719,6 +8911,10 @@ public class OracleSchemaRepository {
     /**
      * Get paginated synonyms with total count only - CRITICAL for performance
      */
+    // ============================================================
+    // PAGINATED SYNONYMS METHOD (FROM THE BOTTOM SECTION)
+    // ============================================================
+
     public Map<String, Object> getSynonymsPaginated(int page, int pageSize) {
         Map<String, Object> result = new HashMap<>();
         try {
@@ -5728,25 +8924,55 @@ public class OracleSchemaRepository {
             String countSql = "SELECT COUNT(*) FROM user_synonyms";
             int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class);
 
-            // Only fetch the page we need
-            String dataSql = "SELECT synonym_name, table_owner, table_name, db_link " +
-                    "FROM user_synonyms ORDER BY synonym_name " +
+            // Enhanced query that resolves target types
+            String dataSql = "SELECT " +
+                    "    s.synonym_name, " +
+                    "    s.table_owner as target_owner, " +
+                    "    s.table_name as target_name, " +
+                    "    s.db_link, " +
+                    "    CASE " +
+                    "        WHEN s.db_link IS NOT NULL THEN 'DATABASE_LINK' " +
+                    "        ELSE (SELECT object_type FROM all_objects " +
+                    "              WHERE owner = s.table_owner AND object_name = s.table_name AND ROWNUM = 1) " +
+                    "    END as target_type, " +
+                    "    CASE " +
+                    "        WHEN s.db_link IS NOT NULL THEN 'REMOTE' " +
+                    "        ELSE (SELECT status FROM all_objects " +
+                    "              WHERE owner = s.table_owner AND object_name = s.table_name AND ROWNUM = 1) " +
+                    "    END as target_status " +
+                    "FROM user_synonyms s " +
+                    "ORDER BY s.synonym_name " +
                     "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+
             List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(dataSql, offset, pageSize);
 
-            // Transform to frontend format without resolving target types (lazy loading)
+            // Transform to frontend format with actual target types
             List<Map<String, Object>> transformed = synonyms.stream().map(syn -> {
                 Map<String, Object> item = new HashMap<>();
                 item.put("id", "syn-" + System.currentTimeMillis() + "-" + syn.get("synonym_name"));
                 item.put("name", syn.get("synonym_name"));
                 item.put("owner", getCurrentUser());
                 item.put("type", "SYNONYM");
-                item.put("targetOwner", syn.get("table_owner"));
-                item.put("targetName", syn.get("table_name"));
+                item.put("targetOwner", syn.get("target_owner"));
+                item.put("targetName", syn.get("target_name"));
                 item.put("dbLink", syn.get("db_link"));
                 item.put("isRemote", syn.get("db_link") != null);
-                // Don't resolve target type here - do it lazily when user expands
-                item.put("targetType", "PENDING");
+
+                // Get actual target type from the query
+                String targetType = (String) syn.get("target_type");
+                item.put("targetType", targetType != null ? targetType : "UNKNOWN");
+
+                // Add target status if available
+                if (syn.get("target_status") != null) {
+                    item.put("targetStatus", syn.get("target_status"));
+                }
+
+                // Add icon based on target type
+                if (targetType != null) {
+                    item.put("targetIcon", getObjectTypeIcon(targetType));
+                    item.put("targetDisplayType", formatObjectTypeForDisplay(targetType));
+                }
+
                 return item;
             }).collect(Collectors.toList());
 
@@ -5903,32 +9129,6 @@ public class OracleSchemaRepository {
     /**
      * Resolve synonym target type on demand (lazy loading)
      */
-    public Map<String, Object> resolveSynonymTarget(String synonymName) {
-        Map<String, Object> result = new HashMap<>();
-        try {
-            String sql = "SELECT s.table_owner, s.table_name, s.db_link, " +
-                    "o.object_type, o.status " +
-                    "FROM user_synonyms s " +
-                    "LEFT JOIN all_objects o ON s.table_owner = o.owner AND s.table_name = o.object_name " +
-                    "WHERE UPPER(s.synonym_name) = UPPER(?)";
-
-            Map<String, Object> target = oracleJdbcTemplate.queryForMap(sql, synonymName);
-
-            result.put("targetOwner", target.get("table_owner"));
-            result.put("targetName", target.get("table_name"));
-            result.put("targetType", target.get("object_type"));
-            result.put("targetStatus", target.get("status"));
-            result.put("dbLink", target.get("db_link"));
-            result.put("isRemote", target.get("db_link") != null);
-
-        } catch (Exception e) {
-            log.error("Error resolving synonym target {}: {}", synonymName, e.getMessage());
-            result.put("error", e.getMessage());
-        }
-        return result;
-    }
-
-
 
     // ==================== DIAGNOSTIC METHODS ====================
 
@@ -6004,6 +9204,179 @@ public class OracleSchemaRepository {
 
         return diagnostics;
     }
+
+
+    // ============================================================
+// NEW: COMBINED SEARCH WITH PAGINATION
+// ============================================================
+
+    public Map<String, Object> searchCombinedTypes(String query, String[] types, int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+
+        int offset = (page - 1) * pageSize;
+
+        // Build the type condition
+        String typeCondition = "";
+        if (types != null && types.length > 0) {
+            typeCondition = "AND UPPER(OBJECT_TYPE) IN (";
+            for (int i = 0; i < types.length; i++) {
+                if (i > 0) typeCondition += ",";
+                typeCondition += "UPPER('" + types[i] + "')";
+            }
+            typeCondition += ")";
+        }
+
+        // Main search query
+        String sql = "SELECT * FROM ( " +
+                "  SELECT a.*, ROWNUM rnum FROM ( " +
+                "    SELECT " +
+                "      OBJECT_NAME, " +
+                "      OWNER, " +
+                "      OBJECT_TYPE, " +
+                "      STATUS, " +
+                "      CREATED, " +
+                "      LAST_DDL_TIME, " +
+                "      CASE " +
+                "        WHEN OBJECT_TYPE = 'SYNONYM' THEN " +
+                "          (SELECT TABLE_OWNER FROM ALL_SYNONYMS WHERE SYNONYM_NAME = OBJECT_NAME AND OWNER = a.OWNER) " +
+                "        ELSE NULL " +
+                "      END as TABLE_OWNER, " +
+                "      CASE " +
+                "        WHEN OBJECT_TYPE = 'SYNONYM' THEN " +
+                "          (SELECT TABLE_NAME FROM ALL_SYNONYMS WHERE SYNONYM_NAME = OBJECT_NAME AND OWNER = a.OWNER) " +
+                "        ELSE NULL " +
+                "      END as TABLE_NAME " +
+                "    FROM ALL_OBJECTS a " +
+                "    WHERE (UPPER(OBJECT_NAME) LIKE UPPER(?) OR UPPER(?) IS NULL) " +
+                typeCondition +
+                "    ORDER BY OBJECT_NAME " +
+                "  ) a WHERE ROWNUM <= ? " +
+                ") WHERE rnum > ?";
+
+        List<Map> items = oracleJdbcTemplate.query(
+                sql,
+                new Object[]{ "%" + query + "%", query, offset + pageSize, offset },
+                new BeanPropertyRowMapper<>(Map.class)
+        );
+
+        // Get total count
+        String countSql = "SELECT COUNT(*) FROM ALL_OBJECTS " +
+                "WHERE (UPPER(OBJECT_NAME) LIKE UPPER(?) OR UPPER(?) IS NULL) " + typeCondition;
+
+        int totalCount = oracleJdbcTemplate.queryForObject(
+                countSql,
+                new Object[]{ "%" + query + "%", query },
+                Integer.class
+        );
+
+        result.put("items", items);
+        result.put("totalCount", totalCount);
+        result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+        result.put("page", page);
+        result.put("pageSize", pageSize);
+
+        return result;
+    }
+
+// ============================================================
+// NEW: SEARCH PROCEDURES WITH SYNONYMS (Optimized)
+// ============================================================
+
+    public Map<String, Object> searchProceduresWithSynonyms(String query, int page, int pageSize) {
+        Map<String, Object> result = new HashMap<>();
+
+        int offset = (page - 1) * pageSize;
+
+        String sql = "SELECT * FROM ( " +
+                "  SELECT a.*, ROWNUM rnum FROM ( " +
+                "    SELECT " +
+                "      OBJECT_NAME as NAME, " +
+                "      OWNER, " +
+                "      OBJECT_TYPE as TYPE, " +
+                "      STATUS, " +
+                "      NULL as TARGET_OWNER, " +
+                "      NULL as TARGET_NAME " +
+                "    FROM ALL_OBJECTS " +
+                "    WHERE OBJECT_TYPE = 'PROCEDURE' " +
+                "      AND UPPER(OBJECT_NAME) LIKE UPPER(?) " +
+                "    UNION ALL " +
+                "    SELECT " +
+                "      s.SYNONYM_NAME as NAME, " +
+                "      s.OWNER, " +
+                "      'SYNONYM' as TYPE, " +
+                "      'VALID' as STATUS, " +
+                "      s.TABLE_OWNER as TARGET_OWNER, " +
+                "      s.TABLE_NAME as TARGET_NAME " +
+                "    FROM ALL_SYNONYMS s " +
+                "    WHERE EXISTS ( " +
+                "      SELECT 1 FROM ALL_OBJECTS o " +
+                "      WHERE o.OBJECT_NAME = s.TABLE_NAME " +
+                "        AND o.OWNER = s.TABLE_OWNER " +
+                "        AND o.OBJECT_TYPE = 'PROCEDURE' " +
+                "    ) " +
+                "    AND UPPER(s.SYNONYM_NAME) LIKE UPPER(?) " +
+                "    ORDER BY NAME " +
+                "  ) a WHERE ROWNUM <= ? " +
+                ") WHERE rnum > ?";
+
+        List<Map> items = oracleJdbcTemplate.query(
+                sql,
+                new Object[]{ "%" + query + "%", "%" + query + "%", offset + pageSize, offset },
+                new BeanPropertyRowMapper<>(Map.class)
+        );
+
+        // Get total count (optimized - just counts)
+        String countSql = "SELECT " +
+                "  (SELECT COUNT(*) FROM ALL_OBJECTS WHERE OBJECT_TYPE = 'PROCEDURE' AND UPPER(OBJECT_NAME) LIKE UPPER(?)) + " +
+                "  (SELECT COUNT(*) FROM ALL_SYNONYMS s " +
+                "   WHERE EXISTS (SELECT 1 FROM ALL_OBJECTS o " +
+                "                WHERE o.OBJECT_NAME = s.TABLE_NAME " +
+                "                  AND o.OWNER = s.TABLE_OWNER " +
+                "                  AND o.OBJECT_TYPE = 'PROCEDURE') " +
+                "   AND UPPER(s.SYNONYM_NAME) LIKE UPPER(?)) as TOTAL " +
+                "FROM DUAL";
+
+        int totalCount = oracleJdbcTemplate.queryForObject(
+                countSql,
+                new Object[]{ "%" + query + "%", "%" + query + "%" },
+                Integer.class
+        );
+
+        result.put("items", items);
+        result.put("totalCount", totalCount);
+        result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+        result.put("page", page);
+        result.put("pageSize", pageSize);
+
+        return result;
+    }
+
+// ============================================================
+// NEW: FAST SEARCH COUNT
+// ============================================================
+
+    public int getSearchCount(String query, String[] types) {
+        String typeCondition = "";
+        if (types != null && types.length > 0) {
+            typeCondition = "AND OBJECT_TYPE IN (";
+            for (int i = 0; i < types.length; i++) {
+                if (i > 0) typeCondition += ",";
+                typeCondition += "'" + types[i] + "'";
+            }
+            typeCondition += ")";
+        }
+
+        String sql = "SELECT COUNT(*) FROM ALL_OBJECTS " +
+                "WHERE (UPPER(OBJECT_NAME) LIKE UPPER(?) OR UPPER(?) IS NULL) " + typeCondition;
+
+        return oracleJdbcTemplate.queryForObject(
+                sql,
+                new Object[]{ "%" + query + "%", query },
+                Integer.class
+        );
+    }
+
+
 
     // ==================== HELPER METHODS ====================
 

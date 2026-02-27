@@ -864,7 +864,7 @@ export default function ApiGenerationModal({
     primaryKeyColumn: '',
     sequenceName: '',
     enablePagination: true,
-    pageSize: 50,
+    pageSize: 10,
     enableSorting: true,
     defaultSortColumn: '',
     defaultSortDirection: 'ASC'

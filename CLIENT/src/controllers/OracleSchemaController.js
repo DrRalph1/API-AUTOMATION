@@ -57,314 +57,7 @@ export const clearCachedSchemaData = (key) => {
 };
 
 // ============================================================
-// 1. PAGINATED OBJECT DETAILS ENDPOINT
-// ============================================================
-
-/**
- * Get paginated object details
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)
- * @param {string} params.objectName - Object name
- * @param {string} params.owner - Object owner (optional)
- * @param {number} params.page - Page number (1-based)
- * @param {number} params.pageSize - Number of items per page
- * @param {boolean} params.includeCounts - Include total counts without fetching all data
- * @returns {Promise} API response
- */
-export const getObjectDetailsPaginated = async (authorizationHeader, params = {}) => {
-    const requestId = generateRequestId();
-    const { objectType, objectName, owner, page = 1, pageSize = 20, includeCounts = false } = params;
-    
-    const queryParams = buildQueryParams({
-        owner,
-        page,
-        pageSize,
-        includeCounts
-    });
-    
-    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/details${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(url, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformPaginatedResponse(response);
-    });
-};
-
-// ============================================================
-// 2. ADVANCED TABLE DATA ENDPOINT
-// ============================================================
-
-/**
- * Get table data with advanced pagination
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.tableName - Table name
- * @param {number} params.page - Page number (1-based)
- * @param {number} params.pageSize - Number of rows per page
- * @param {string} params.sortColumn - Column to sort by
- * @param {string} params.sortDirection - Sort direction (ASC/DESC)
- * @param {string} params.filter - Filter condition (e.g., column=value)
- * @returns {Promise} API response
- */
-export const getTableDataAdvanced = async (authorizationHeader, params = {}) => {
-    const requestId = generateRequestId();
-    const { tableName, page = 1, pageSize = 50, sortColumn, sortDirection = 'ASC', filter } = params;
-    
-    const queryParams = buildQueryParams({
-        page,
-        pageSize,
-        sortColumn,
-        sortDirection,
-        filter
-    });
-    
-    const url = `/oracle/schema/tables/${encodeURIComponent(tableName)}/data/advanced${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(url, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformTableDataAdvancedResponse(response, tableName, params);
-    });
-};
-
-// ============================================================
-// 3. PAGINATED PROCEDURE PARAMETERS ENDPOINT
-// ============================================================
-
-/**
- * Get procedure parameters with pagination
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.procedureName - Procedure name
- * @param {string} params.owner - Procedure owner (optional)
- * @param {number} params.page - Page number (1-based)
- * @param {number} params.pageSize - Number of parameters per page
- * @returns {Promise} API response
- */
-export const getProcedureParametersPaginated = async (authorizationHeader, params = {}) => {
-    const requestId = generateRequestId();
-    const { procedureName, owner, page = 1, pageSize = 20 } = params;
-    
-    const queryParams = buildQueryParams({
-        owner,
-        page,
-        pageSize
-    });
-    
-    const url = `/oracle/schema/procedures/${encodeURIComponent(procedureName)}/parameters${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(url, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformPaginatedResponse(response);
-    });
-};
-
-// ============================================================
-// 4. PAGINATED FUNCTION PARAMETERS ENDPOINT
-// ============================================================
-
-/**
- * Get function parameters with pagination
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.functionName - Function name
- * @param {string} params.owner - Function owner (optional)
- * @param {number} params.page - Page number (1-based)
- * @param {number} params.pageSize - Number of parameters per page
- * @returns {Promise} API response
- */
-export const getFunctionParametersPaginated = async (authorizationHeader, params = {}) => {
-    const requestId = generateRequestId();
-    const { functionName, owner, page = 1, pageSize = 20 } = params;
-    
-    const queryParams = buildQueryParams({
-        owner,
-        page,
-        pageSize
-    });
-    
-    const url = `/oracle/schema/functions/${encodeURIComponent(functionName)}/parameters${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(url, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformPaginatedResponse(response);
-    });
-};
-
-// ============================================================
-// 5. PAGINATED PACKAGE ITEMS ENDPOINT
-// ============================================================
-
-/**
- * Get package items with pagination
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.packageName - Package name
- * @param {string} params.owner - Package owner (optional)
- * @param {string} params.itemType - Item type (PROCEDURE, FUNCTION, VARIABLE, ALL)
- * @param {number} params.page - Page number (1-based)
- * @param {number} params.pageSize - Number of items per page
- * @returns {Promise} API response
- */
-export const getPackageItemsPaginated = async (authorizationHeader, params = {}) => {
-    const requestId = generateRequestId();
-    const { packageName, owner, itemType = 'ALL', page = 1, pageSize = 20 } = params;
-    
-    const queryParams = buildQueryParams({
-        owner,
-        itemType,
-        page,
-        pageSize
-    });
-    
-    const url = `/oracle/schema/packages/${encodeURIComponent(packageName)}/items${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(url, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformPaginatedResponse(response);
-    });
-};
-
-// ============================================================
-// 6. PAGINATED TABLE COLUMNS ENDPOINT
-// ============================================================
-
-/**
- * Get table columns with pagination
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.tableName - Table name
- * @param {string} params.owner - Table owner (optional)
- * @param {number} params.page - Page number (1-based)
- * @param {number} params.pageSize - Number of columns per page
- * @returns {Promise} API response
- */
-export const getTableColumnsPaginated = async (authorizationHeader, params = {}) => {
-    const requestId = generateRequestId();
-    const { tableName, owner, page = 1, pageSize = 20 } = params;
-    
-    const queryParams = buildQueryParams({
-        owner,
-        page,
-        pageSize
-    });
-    
-    const url = `/oracle/schema/tables/${encodeURIComponent(tableName)}/columns${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(url, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformPaginatedResponse(response);
-    });
-};
-
-// ============================================================
-// 7. PAGINATED SEARCH ENDPOINT
-// ============================================================
-
-/**
- * Paginated search for Oracle objects
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.query - Search query
- * @param {string} params.type - Search type (ALL, TABLE, VIEW, PROCEDURE, etc.)
- * @param {number} params.page - Page number (1-based)
- * @param {number} params.pageSize - Number of results per page
- * @returns {Promise} API response
- */
-export const searchObjectsPaginated = async (authorizationHeader, params = {}) => {
-    const requestId = generateRequestId();
-    const { query, type, page = 1, pageSize = 20 } = params;
-    
-    const queryParams = buildQueryParams({
-        query,
-        type,
-        page,
-        pageSize
-    });
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/search/paginated?${queryParams.toString()}`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformPaginatedResponse(response);
-    });
-};
-
-// ============================================================
-// 8. GET TOTAL COUNTS ONLY ENDPOINT
-// ============================================================
-
-/**
- * Get object counts only
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE)
- * @param {string} params.objectName - Object name
- * @param {string} params.owner - Object owner (optional)
- * @returns {Promise} API response
- */
-export const getObjectCountsOnly = async (authorizationHeader, params = {}) => {
-    const requestId = generateRequestId();
-    const { objectType, objectName, owner } = params;
-    
-    const queryParams = buildQueryParams({ owner });
-    
-    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/counts${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(url, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformObjectCountsOnlyResponse(response);
-    });
-};
-
-// ============================================================
-// 9. SCHEMA INFO ENDPOINT
+// 1. SCHEMA INFO ENDPOINTS
 // ============================================================
 
 /**
@@ -387,8 +80,28 @@ export const getCurrentSchemaInfo = async (authorizationHeader) => {
     });
 };
 
+/**
+ * Get current user
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getCurrentUser = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/current-user`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformCurrentUserResponse(response);
+    });
+};
+
 // ============================================================
-// 10. TABLE ENDPOINTS - FRONTEND FORMAT
+// 2. TABLE ENDPOINTS - LEGACY FORMAT
 // ============================================================
 
 /**
@@ -563,8 +276,12 @@ export const getRecentTables = async (authorizationHeader, days = 7) => {
     });
 };
 
+// ============================================================
+// 3. TABLE ENDPOINTS - FRONTEND FORMAT
+// ============================================================
+
 /**
- * Get tables for frontend (optimized format)
+ * Get all Oracle tables (Frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
  */
@@ -584,7 +301,33 @@ export const getAllTablesForFrontend = async (authorizationHeader) => {
 };
 
 /**
- * Get table details for frontend (optimized format)
+ * Get paginated tables (Frontend format)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of items per page
+ * @returns {Promise} API response
+ */
+export const getAllTablesForFrontendPaginated = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({ page, pageSize });
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/tables/paginated?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
+/**
+ * Get table details for frontend
  * @param {string} authorizationHeader - Bearer token
  * @param {string} tableName - Table name
  * @returns {Promise} API response
@@ -607,11 +350,40 @@ export const getTableDetailsForFrontend = async (authorizationHeader, tableName)
 };
 
 /**
+ * Get table details with paginated columns (Frontend format)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} tableName - Table name
+ * @param {Object} params - Parameters
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of columns per page
+ * @returns {Promise} API response
+ */
+export const getTableDetailsForFrontendPaginated = async (authorizationHeader, tableName, params = {}) => {
+    const requestId = generateRequestId();
+    const { page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({ page, pageSize });
+    
+    const url = `/oracle/schema/frontend/tables/${encodeURIComponent(tableName)}/details/paginated${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
+/**
  * Get table data with pagination
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} params - Parameters
  * @param {string} params.tableName - Table name
- * @param {number} params.page - Page number (0-based)
+ * @param {number} params.page - Page number (1-based)
  * @param {number} params.pageSize - Number of rows per page
  * @param {string} params.sortColumn - Column to sort by
  * @param {string} params.sortDirection - Sort direction (ASC/DESC)
@@ -619,7 +391,7 @@ export const getTableDetailsForFrontend = async (authorizationHeader, tableName)
  */
 export const getTableData = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
-    const { tableName, page = 0, pageSize = 50, sortColumn, sortDirection = 'ASC' } = params;
+    const { tableName, page = 1, pageSize = 10, sortColumn, sortDirection = 'ASC' } = params;
     
     const queryParams = buildQueryParams({
         page,
@@ -642,8 +414,80 @@ export const getTableData = async (authorizationHeader, params = {}) => {
     });
 };
 
+/**
+ * Get table data with advanced pagination
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.tableName - Table name
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of rows per page
+ * @param {string} params.sortColumn - Column to sort by
+ * @param {string} params.sortDirection - Sort direction (ASC/DESC)
+ * @param {string} params.filter - Filter condition (e.g., column=value)
+ * @returns {Promise} API response
+ */
+export const getTableDataAdvanced = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { tableName, page = 1, pageSize = 10, sortColumn, sortDirection = 'ASC', filter } = params;
+    
+    const queryParams = buildQueryParams({
+        page,
+        pageSize,
+        sortColumn,
+        sortDirection,
+        filter
+    });
+    
+    const url = `/oracle/schema/tables/${encodeURIComponent(tableName)}/data/advanced${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformTableDataAdvancedResponse(response, tableName, params);
+    });
+};
+
+/**
+ * Get table columns with pagination
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.tableName - Table name
+ * @param {string} params.owner - Table owner (optional)
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of columns per page
+ * @returns {Promise} API response
+ */
+export const getTableColumnsPaginated = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { tableName, owner, page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({
+        owner,
+        page,
+        pageSize
+    });
+    
+    const url = `/oracle/schema/tables/${encodeURIComponent(tableName)}/columns${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
 // ============================================================
-// 11. VIEW ENDPOINTS - FRONTEND FORMAT
+// 4. VIEW ENDPOINTS - LEGACY FORMAT
 // ============================================================
 
 /**
@@ -711,8 +555,12 @@ export const getViewDetails = async (authorizationHeader, viewName) => {
     });
 };
 
+// ============================================================
+// 5. VIEW ENDPOINTS - FRONTEND FORMAT
+// ============================================================
+
 /**
- * Get views for frontend (optimized format)
+ * Get all Oracle views (Frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
  */
@@ -731,8 +579,34 @@ export const getAllViewsForFrontend = async (authorizationHeader) => {
     });
 };
 
+/**
+ * Get paginated views (Frontend format)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of items per page
+ * @returns {Promise} API response
+ */
+export const getAllViewsForFrontendPaginated = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({ page, pageSize });
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/views/paginated?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
 // ============================================================
-// 12. PROCEDURE ENDPOINTS - FRONTEND FORMAT
+// 6. PROCEDURE ENDPOINTS - LEGACY FORMAT
 // ============================================================
 
 /**
@@ -801,7 +675,45 @@ export const getProcedureDetails = async (authorizationHeader, procedureName) =>
 };
 
 /**
- * Get procedures for frontend (optimized format)
+ * Get procedure parameters with pagination
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.procedureName - Procedure name
+ * @param {string} params.owner - Procedure owner (optional)
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of parameters per page
+ * @returns {Promise} API response
+ */
+export const getProcedureParametersPaginated = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { procedureName, owner, page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({
+        owner,
+        page,
+        pageSize
+    });
+    
+    const url = `/oracle/schema/procedures/${encodeURIComponent(procedureName)}/parameters${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
+// ============================================================
+// 7. PROCEDURE ENDPOINTS - FRONTEND FORMAT
+// ============================================================
+
+/**
+ * Get all Oracle procedures (Frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
  */
@@ -820,8 +732,34 @@ export const getAllProceduresForFrontend = async (authorizationHeader) => {
     });
 };
 
+/**
+ * Get paginated procedures (Frontend format)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of items per page
+ * @returns {Promise} API response
+ */
+export const getAllProceduresForFrontendPaginated = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({ page, pageSize });
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/procedures/paginated?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
 // ============================================================
-// 13. FUNCTION ENDPOINTS - FRONTEND FORMAT
+// 8. FUNCTION ENDPOINTS - LEGACY FORMAT
 // ============================================================
 
 /**
@@ -890,7 +828,45 @@ export const getFunctionDetails = async (authorizationHeader, functionName) => {
 };
 
 /**
- * Get functions for frontend (optimized format)
+ * Get function parameters with pagination
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.functionName - Function name
+ * @param {string} params.owner - Function owner (optional)
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of parameters per page
+ * @returns {Promise} API response
+ */
+export const getFunctionParametersPaginated = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { functionName, owner, page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({
+        owner,
+        page,
+        pageSize
+    });
+    
+    const url = `/oracle/schema/functions/${encodeURIComponent(functionName)}/parameters${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
+// ============================================================
+// 9. FUNCTION ENDPOINTS - FRONTEND FORMAT
+// ============================================================
+
+/**
+ * Get all Oracle functions (Frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
  */
@@ -909,8 +885,34 @@ export const getAllFunctionsForFrontend = async (authorizationHeader) => {
     });
 };
 
+/**
+ * Get paginated functions (Frontend format)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of items per page
+ * @returns {Promise} API response
+ */
+export const getAllFunctionsForFrontendPaginated = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({ page, pageSize });
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/functions/paginated?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
 // ============================================================
-// 14. PACKAGE ENDPOINTS - FRONTEND FORMAT
+// 10. PACKAGE ENDPOINTS - LEGACY FORMAT
 // ============================================================
 
 /**
@@ -979,7 +981,47 @@ export const getPackageDetails = async (authorizationHeader, packageName) => {
 };
 
 /**
- * Get packages for frontend (optimized format)
+ * Get package items with pagination
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.packageName - Package name
+ * @param {string} params.owner - Package owner (optional)
+ * @param {string} params.itemType - Item type (PROCEDURE, FUNCTION, VARIABLE, ALL)
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of items per page
+ * @returns {Promise} API response
+ */
+export const getPackageItemsPaginated = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { packageName, owner, itemType = 'ALL', page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({
+        owner,
+        itemType,
+        page,
+        pageSize
+    });
+    
+    const url = `/oracle/schema/packages/${encodeURIComponent(packageName)}/items${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
+// ============================================================
+// 11. PACKAGE ENDPOINTS - FRONTEND FORMAT
+// ============================================================
+
+/**
+ * Get all Oracle packages (Frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
  */
@@ -998,8 +1040,34 @@ export const getAllPackagesForFrontend = async (authorizationHeader) => {
     });
 };
 
+/**
+ * Get paginated packages (Frontend format)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of items per page
+ * @returns {Promise} API response
+ */
+export const getAllPackagesForFrontendPaginated = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({ page, pageSize });
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/packages/paginated?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
 // ============================================================
-// 15. SEQUENCE ENDPOINTS - FRONTEND FORMAT
+// 12. SEQUENCE ENDPOINTS - LEGACY FORMAT
 // ============================================================
 
 /**
@@ -1067,8 +1135,12 @@ export const getSequenceDetails = async (authorizationHeader, sequenceName) => {
     });
 };
 
+// ============================================================
+// 13. SEQUENCE ENDPOINTS - FRONTEND FORMAT
+// ============================================================
+
 /**
- * Get sequences for frontend (optimized format)
+ * Get all Oracle sequences (Frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
  */
@@ -1087,8 +1159,34 @@ export const getAllSequencesForFrontend = async (authorizationHeader) => {
     });
 };
 
+/**
+ * Get paginated sequences (Frontend format)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of items per page
+ * @returns {Promise} API response
+ */
+export const getAllSequencesForFrontendPaginated = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({ page, pageSize });
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/sequences/paginated?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
 // ============================================================
-// 16. SYNONYM ENDPOINTS - ENHANCED + FRONTEND
+// 14. SYNONYM ENDPOINTS - LEGACY FORMAT
 // ============================================================
 
 /**
@@ -1133,31 +1231,12 @@ export const getSynonymsBySchema = async (authorizationHeader, schemaName) => {
     });
 };
 
-/**
- * Get synonym details
- * @param {string} authorizationHeader - Bearer token
- * @param {string} synonymName - Synonym name
- * @returns {Promise} API response
- */
-export const getSynonymDetails = async (authorizationHeader, synonymName) => {
-    const requestId = generateRequestId();
-    
-    const url = `/oracle/schema/synonyms/${encodeURIComponent(synonymName)}/details`;
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(url, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformSynonymDetailsResponse(response, synonymName);
-    });
-};
+// ============================================================
+// 15. SYNONYM ENDPOINTS - ENHANCED FORMAT
+// ============================================================
 
 /**
- * Get all synonyms with details (enhanced)
+ * Get all synonyms with details
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
  */
@@ -1200,7 +1279,30 @@ export const getSynonymsByTargetType = async (authorizationHeader, targetType) =
 };
 
 /**
- * Resolve synonym to its target object
+ * Get synonym details enhanced
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} synonymName - Synonym name
+ * @returns {Promise} API response
+ */
+export const getSynonymDetailsEnhanced = async (authorizationHeader, synonymName) => {
+    const requestId = generateRequestId();
+    
+    const url = `/oracle/schema/synonyms/${encodeURIComponent(synonymName)}/details`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformSynonymDetailsResponse(response, synonymName);
+    });
+};
+
+/**
+ * Resolve synonym
  * @param {string} authorizationHeader - Bearer token
  * @param {string} synonymName - Synonym name
  * @returns {Promise} API response
@@ -1223,7 +1325,7 @@ export const resolveSynonym = async (authorizationHeader, synonymName) => {
 };
 
 /**
- * Validate synonym and check if target exists
+ * Validate synonym
  * @param {string} authorizationHeader - Bearer token
  * @param {string} synonymName - Synonym name
  * @returns {Promise} API response
@@ -1246,7 +1348,34 @@ export const validateSynonym = async (authorizationHeader, synonymName) => {
 };
 
 /**
- * Get synonyms for frontend (optimized format)
+ * Get synonym target details
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} synonymName - Synonym name
+ * @returns {Promise} API response
+ */
+export const getSynonymTargetDetails = async (authorizationHeader, synonymName) => {
+    const requestId = generateRequestId();
+    
+    const url = `/oracle/schema/synonyms/${encodeURIComponent(synonymName)}/target`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformSynonymTargetDetailsResponse(response);
+    });
+};
+
+// ============================================================
+// 16. SYNONYM ENDPOINTS - FRONTEND FORMAT
+// ============================================================
+
+/**
+ * Get all Oracle synonyms (Frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
  */
@@ -1265,8 +1394,34 @@ export const getAllSynonymsForFrontend = async (authorizationHeader) => {
     });
 };
 
+/**
+ * Get paginated synonyms (Frontend format)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of items per page
+ * @returns {Promise} API response
+ */
+export const getAllSynonymsForFrontendPaginated = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({ page, pageSize });
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/synonyms/paginated?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
 // ============================================================
-// 17. TYPE ENDPOINTS - FRONTEND FORMAT
+// 17. TYPE ENDPOINTS - LEGACY FORMAT
 // ============================================================
 
 /**
@@ -1334,8 +1489,12 @@ export const getTypeDetails = async (authorizationHeader, typeName) => {
     });
 };
 
+// ============================================================
+// 18. TYPE ENDPOINTS - FRONTEND FORMAT
+// ============================================================
+
 /**
- * Get types for frontend (optimized format)
+ * Get all Oracle types (Frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
  */
@@ -1354,8 +1513,34 @@ export const getAllTypesForFrontend = async (authorizationHeader) => {
     });
 };
 
+/**
+ * Get paginated types (Frontend format)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of items per page
+ * @returns {Promise} API response
+ */
+export const getAllTypesForFrontendPaginated = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({ page, pageSize });
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/types/paginated?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
 // ============================================================
-// 18. TRIGGER ENDPOINTS - FRONTEND FORMAT
+// 19. TRIGGER ENDPOINTS - LEGACY FORMAT
 // ============================================================
 
 /**
@@ -1423,8 +1608,12 @@ export const getTriggerDetails = async (authorizationHeader, triggerName) => {
     });
 };
 
+// ============================================================
+// 20. TRIGGER ENDPOINTS - FRONTEND FORMAT
+// ============================================================
+
 /**
- * Get triggers for frontend (optimized format)
+ * Get all Oracle triggers (Frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
  */
@@ -1443,8 +1632,34 @@ export const getAllTriggersForFrontend = async (authorizationHeader) => {
     });
 };
 
+/**
+ * Get paginated triggers (Frontend format)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of items per page
+ * @returns {Promise} API response
+ */
+export const getAllTriggersForFrontendPaginated = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({ page, pageSize });
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/triggers/paginated?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
 // ============================================================
-// 19. DATABASE LINK ENDPOINTS
+// 21. DATABASE LINK ENDPOINTS
 // ============================================================
 
 /**
@@ -1490,7 +1705,7 @@ export const getDbLinksBySchema = async (authorizationHeader, schemaName) => {
 };
 
 // ============================================================
-// 20. GENERAL OBJECT ENDPOINTS
+// 22. GENERAL OBJECT ENDPOINTS
 // ============================================================
 
 /**
@@ -1621,7 +1836,7 @@ export const getObjectsByStatus = async (authorizationHeader, status) => {
 };
 
 // ============================================================
-// 21. OBJECT DETAILS AND VALIDATION ENDPOINTS
+// 23. OBJECT DETAILS ENDPOINTS
 // ============================================================
 
 /**
@@ -1649,6 +1864,72 @@ export const getObjectDetails = async (authorizationHeader, params = {}) => {
         })
     ).then(response => {
         return transformObjectDetailsResponse(response, objectType, objectName);
+    });
+};
+
+/**
+ * Get paginated object details
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)
+ * @param {string} params.objectName - Object name
+ * @param {string} params.owner - Object owner (optional)
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of items per page
+ * @param {boolean} params.includeCounts - Include total counts without fetching all data
+ * @returns {Promise} API response
+ */
+export const getObjectDetailsPaginated = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectType, objectName, owner, page = 1, pageSize = 10, includeCounts = false } = params;
+    
+    const queryParams = buildQueryParams({
+        owner,
+        page,
+        pageSize,
+        includeCounts
+    });
+    
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/details/paginated${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
+/**
+ * Get object counts only
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE)
+ * @param {string} params.objectName - Object name
+ * @param {string} params.owner - Object owner (optional)
+ * @returns {Promise} API response
+ */
+export const getObjectCountsOnly = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectType, objectName, owner } = params;
+    
+    const queryParams = buildQueryParams({ owner });
+    
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/counts${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformObjectCountsOnlyResponse(response);
     });
 };
 
@@ -1683,66 +1964,31 @@ export const validateObject = async (authorizationHeader, params = {}) => {
     });
 };
 
-// ============================================================
-// 22. SEARCH ENDPOINTS - ENHANCED
-// ============================================================
-
 /**
- * Advanced search for Oracle objects (frontend format)
+ * Get object size
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} params - Parameters
- * @param {string} params.query - Search query
- * @param {string} params.type - Object type to search (optional)
- * @param {number} params.maxResults - Maximum number of results (default: 100)
+ * @param {string} params.objectType - Object type (TABLE, INDEX, etc.)
+ * @param {string} params.objectName - Object name
  * @returns {Promise} API response
  */
-export const searchObjectsAdvanced = async (authorizationHeader, params = {}) => {
+export const getObjectSize = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
-    const { query, type, maxResults = 100 } = params;
+    const { objectType, objectName } = params;
     
-    const queryParams = buildQueryParams({
-        query,
-        type,
-        maxResults
-    });
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/size`;
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/search?${queryParams.toString()}`, {
+        (authHeader) => apiCall(url, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
         })
     ).then(response => {
-        return transformSearchResponse(response);
+        return transformObjectSizeResponse(response);
     });
 };
-
-/**
- * Comprehensive search across all objects including synonym targets
- * @param {string} authorizationHeader - Bearer token
- * @param {string} pattern - Search pattern
- * @returns {Promise} API response
- */
-export const comprehensiveSearch = async (authorizationHeader, pattern) => {
-    const requestId = generateRequestId();
-    const queryParams = buildQueryParams({ pattern });
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/comprehensive-search?${queryParams.toString()}`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformComprehensiveSearchResponse(response);
-    });
-};
-
-// ============================================================
-// 23. DDL ENDPOINTS
-// ============================================================
 
 /**
  * Get object DDL
@@ -1756,7 +2002,7 @@ export const getObjectDDL = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
     const { objectType, objectName } = params;
     
-    const url = `/oracle/schema/${objectType.toUpperCase()}s/${encodeURIComponent(objectName)}/ddl`;
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType).toUpperCase()}/${encodeURIComponent(objectName)}/ddl`;
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
@@ -1783,34 +2029,100 @@ export const getObjectDDL = async (authorizationHeader, params = {}) => {
     });
 };
 
+// ============================================================
+// 24. SEARCH ENDPOINTS - ENHANCED
+// ============================================================
+
 /**
- * Get object size information
+ * Paginated search for Oracle objects
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} params - Parameters
- * @param {string} params.objectType - Object type (TABLE, INDEX, etc.)
- * @param {string} params.objectName - Object name
+ * @param {string} params.query - Search query
+ * @param {string} params.type - Search type (ALL, TABLE, VIEW, PROCEDURE, etc.)
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of results per page
  * @returns {Promise} API response
  */
-export const getObjectSize = async (authorizationHeader, params = {}) => {
+export const searchObjectsPaginated = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
-    const { objectType, objectName } = params;
+    const { query, type, page = 1, pageSize = 10 } = params;
     
-    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/size`;
+    const queryParams = buildQueryParams({
+        query,
+        type,
+        page,
+        pageSize
+    });
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(url, {
+        (authHeader) => apiCall(`/oracle/schema/search/paginated?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
         })
     ).then(response => {
-        return transformObjectSizeResponse(response);
+        return transformPaginatedResponse(response);
+    });
+};
+
+/**
+ * Paginated search for frontend
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.query - Search query
+ * @param {string} params.type - Search type (ALL, TABLE, VIEW, PROCEDURE, etc.)
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of results per page
+ * @returns {Promise} API response
+ */
+export const searchObjectsForFrontendPaginated = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { query, type, page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({
+        query,
+        type,
+        page,
+        pageSize
+    });
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/search/paginated?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
+/**
+ * Comprehensive search across all objects including synonym targets
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} pattern - Search pattern
+ * @returns {Promise} API response
+ */
+export const comprehensiveSearch = async (authorizationHeader, pattern) => {
+    const requestId = generateRequestId();
+    const queryParams = buildQueryParams({ pattern });
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/comprehensive-search?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformComprehensiveSearchResponse(response);
     });
 };
 
 // ============================================================
-// 24. RECENT OBJECTS ENDPOINTS
+// 25. RECENT OBJECTS ENDPOINTS
 // ============================================================
 
 /**
@@ -1837,7 +2149,7 @@ export const getRecentObjects = async (authorizationHeader, days) => {
 };
 
 // ============================================================
-// 25. EXECUTE QUERY ENDPOINT
+// 26. EXECUTE QUERY ENDPOINT
 // ============================================================
 
 /**
@@ -1871,7 +2183,7 @@ export const executeQuery = async (authorizationHeader, queryRequest = {}) => {
 };
 
 // ============================================================
-// 26. DIAGNOSTICS ENDPOINT
+// 27. DIAGNOSTICS ENDPOINT
 // ============================================================
 
 /**
@@ -1895,11 +2207,11 @@ export const diagnoseDatabase = async (authorizationHeader) => {
 };
 
 // ============================================================
-// PAGINATED ENDPOINTS FOR FRONTEND
+// 28. PAGINATED OBJECT LISTS FOR FRONTEND
 // ============================================================
 
 /**
- * Get paginated tables
+ * Get paginated tables (Frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} params - Parameters
  * @param {number} params.page - Page number (1-based)
@@ -1908,13 +2220,13 @@ export const diagnoseDatabase = async (authorizationHeader) => {
  */
 export const getTablesPaginated = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
-    const { page = 1, pageSize = 50 } = params;
+    const { page = 1, pageSize = 10 } = params;
     
     const queryParams = buildQueryParams({ page, pageSize });
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/tables/paginated?${queryParams.toString()}`, {
+        (authHeader) => apiCall(`/oracle/schema/tables/filtered/paginated?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -1925,7 +2237,7 @@ export const getTablesPaginated = async (authorizationHeader, params = {}) => {
 };
 
 /**
- * Get paginated views
+ * Get paginated views (Frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} params - Parameters
  * @param {number} params.page - Page number (1-based)
@@ -1934,13 +2246,13 @@ export const getTablesPaginated = async (authorizationHeader, params = {}) => {
  */
 export const getViewsPaginated = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
-    const { page = 1, pageSize = 50 } = params;
+    const { page = 1, pageSize = 10 } = params;
     
     const queryParams = buildQueryParams({ page, pageSize });
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/views/paginated?${queryParams.toString()}`, {
+        (authHeader) => apiCall(`/oracle/schema/views/filtered/paginated?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -1951,7 +2263,7 @@ export const getViewsPaginated = async (authorizationHeader, params = {}) => {
 };
 
 /**
- * Get paginated procedures
+ * Get paginated procedures (Frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} params - Parameters
  * @param {number} params.page - Page number (1-based)
@@ -1960,13 +2272,13 @@ export const getViewsPaginated = async (authorizationHeader, params = {}) => {
  */
 export const getProceduresPaginated = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
-    const { page = 1, pageSize = 50 } = params;
+    const { page = 1, pageSize = 10 } = params;
     
     const queryParams = buildQueryParams({ page, pageSize });
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/procedures/paginated?${queryParams.toString()}`, {
+        (authHeader) => apiCall(`/oracle/schema/procedures/filtered/paginated?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -1977,7 +2289,7 @@ export const getProceduresPaginated = async (authorizationHeader, params = {}) =
 };
 
 /**
- * Get paginated functions
+ * Get paginated functions (Frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} params - Parameters
  * @param {number} params.page - Page number (1-based)
@@ -1986,13 +2298,13 @@ export const getProceduresPaginated = async (authorizationHeader, params = {}) =
  */
 export const getFunctionsPaginated = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
-    const { page = 1, pageSize = 50 } = params;
+    const { page = 1, pageSize = 10 } = params;
     
     const queryParams = buildQueryParams({ page, pageSize });
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/functions/paginated?${queryParams.toString()}`, {
+        (authHeader) => apiCall(`/oracle/schema/functions/filtered/paginated?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -2003,7 +2315,7 @@ export const getFunctionsPaginated = async (authorizationHeader, params = {}) =>
 };
 
 /**
- * Get paginated packages
+ * Get paginated packages (Frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} params - Parameters
  * @param {number} params.page - Page number (1-based)
@@ -2012,13 +2324,13 @@ export const getFunctionsPaginated = async (authorizationHeader, params = {}) =>
  */
 export const getPackagesPaginated = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
-    const { page = 1, pageSize = 50 } = params;
+    const { page = 1, pageSize = 10 } = params;
     
     const queryParams = buildQueryParams({ page, pageSize });
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/packages/paginated?${queryParams.toString()}`, {
+        (authHeader) => apiCall(`/oracle/schema/packages/filtered/paginated?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -2029,7 +2341,7 @@ export const getPackagesPaginated = async (authorizationHeader, params = {}) => 
 };
 
 /**
- * Get paginated synonyms
+ * Get paginated synonyms (Frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} params - Parameters
  * @param {number} params.page - Page number (1-based)
@@ -2038,13 +2350,13 @@ export const getPackagesPaginated = async (authorizationHeader, params = {}) => 
  */
 export const getSynonymsPaginated = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
-    const { page = 1, pageSize = 50 } = params;
+    const { page = 1, pageSize = 10 } = params;
     
     const queryParams = buildQueryParams({ page, pageSize });
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/synonyms/paginated?${queryParams.toString()}`, {
+        (authHeader) => apiCall(`/oracle/schema/synonyms/filtered/paginated?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -2055,7 +2367,7 @@ export const getSynonymsPaginated = async (authorizationHeader, params = {}) => 
 };
 
 /**
- * Get paginated sequences
+ * Get paginated sequences (Frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} params - Parameters
  * @param {number} params.page - Page number (1-based)
@@ -2064,13 +2376,13 @@ export const getSynonymsPaginated = async (authorizationHeader, params = {}) => 
  */
 export const getSequencesPaginated = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
-    const { page = 1, pageSize = 50 } = params;
+    const { page = 1, pageSize = 10 } = params;
     
     const queryParams = buildQueryParams({ page, pageSize });
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/sequences/paginated?${queryParams.toString()}`, {
+        (authHeader) => apiCall(`/oracle/schema/sequences/filtered/paginated?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -2081,7 +2393,7 @@ export const getSequencesPaginated = async (authorizationHeader, params = {}) =>
 };
 
 /**
- * Get paginated types
+ * Get paginated types (Frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} params - Parameters
  * @param {number} params.page - Page number (1-based)
@@ -2090,13 +2402,13 @@ export const getSequencesPaginated = async (authorizationHeader, params = {}) =>
  */
 export const getTypesPaginated = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
-    const { page = 1, pageSize = 50 } = params;
+    const { page = 1, pageSize = 10 } = params;
     
     const queryParams = buildQueryParams({ page, pageSize });
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/types/paginated?${queryParams.toString()}`, {
+        (authHeader) => apiCall(`/oracle/schema/types/filtered/paginated?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -2107,7 +2419,7 @@ export const getTypesPaginated = async (authorizationHeader, params = {}) => {
 };
 
 /**
- * Get paginated triggers
+ * Get paginated triggers (Frontend format)
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} params - Parameters
  * @param {number} params.page - Page number (1-based)
@@ -2116,13 +2428,13 @@ export const getTypesPaginated = async (authorizationHeader, params = {}) => {
  */
 export const getTriggersPaginated = async (authorizationHeader, params = {}) => {
     const requestId = generateRequestId();
-    const { page = 1, pageSize = 50 } = params;
+    const { page = 1, pageSize = 10 } = params;
     
     const queryParams = buildQueryParams({ page, pageSize });
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/triggers/paginated?${queryParams.toString()}`, {
+        (authHeader) => apiCall(`/oracle/schema/triggers/filtered/paginated?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -2133,7 +2445,7 @@ export const getTriggersPaginated = async (authorizationHeader, params = {}) => 
 };
 
 /**
- * Get all object counts
+ * Get all object counts (fast)
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
  */
@@ -2161,7 +2473,7 @@ export const getAllObjectCounts = async (authorizationHeader) => {
 export const resolveSynonymTarget = async (authorizationHeader, synonymName) => {
     const requestId = generateRequestId();
     
-    const url = `/oracle/schema/frontend/synonyms/${encodeURIComponent(synonymName)}/resolve`;
+    const url = `/oracle/schema/frontend/synonyms/${encodeURIComponent(synonymName)}/resolve-target`;
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
@@ -2172,6 +2484,54 @@ export const resolveSynonymTarget = async (authorizationHeader, synonymName) => 
         })
     ).then(response => {
         return transformResolveSynonymResponse(response);
+    });
+};
+
+// ============================================================
+// 29. HEALTH CHECK ENDPOINT
+// ============================================================
+
+/**
+ * Health check
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const healthCheck = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/health`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformHealthCheckResponse(response, requestId);
+    });
+};
+
+// ============================================================
+// 30. HELPER ENDPOINTS
+// ============================================================
+
+/**
+ * Get supported object types
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getSupportedObjectTypes = async (authorizationHeader) => {
+    const requestId = generateRequestId();
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/supported-object-types`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformSupportedObjectTypesResponse(response);
     });
 };
 
@@ -2191,11 +2551,12 @@ export const getComprehensiveSchemaData = async (authorizationHeader, params = {
     const { useFrontendEndpoints = false } = params;
     
     try {
-        let schemaInfo, tables, views, procedures, functions, packages, sequences, synonyms, types, triggers, dbLinks;
+        let schemaInfo, currentUser, tables, views, procedures, functions, packages, sequences, synonyms, types, triggers, dbLinks, objectCounts, tablespaceStats, recentTables;
         
         if (useFrontendEndpoints) {
-            [schemaInfo, tables, views, procedures, functions, packages, sequences, synonyms, types, triggers] = await Promise.all([
+            [schemaInfo, currentUser, tables, views, procedures, functions, packages, sequences, synonyms, types, triggers, objectCounts, tablespaceStats, recentTables] = await Promise.all([
                 getCurrentSchemaInfo(authorizationHeader).catch(() => ({ data: {} })),
+                getCurrentUser(authorizationHeader).catch(() => ({ data: {} })),
                 getAllTablesForFrontend(authorizationHeader).catch(() => ({ data: [] })),
                 getAllViewsForFrontend(authorizationHeader).catch(() => ({ data: [] })),
                 getAllProceduresForFrontend(authorizationHeader).catch(() => ({ data: [] })),
@@ -2204,13 +2565,17 @@ export const getComprehensiveSchemaData = async (authorizationHeader, params = {
                 getAllSequencesForFrontend(authorizationHeader).catch(() => ({ data: [] })),
                 getAllSynonymsForFrontend(authorizationHeader).catch(() => ({ data: [] })),
                 getAllTypesForFrontend(authorizationHeader).catch(() => ({ data: [] })),
-                getAllTriggersForFrontend(authorizationHeader).catch(() => ({ data: [] }))
+                getAllTriggersForFrontend(authorizationHeader).catch(() => ({ data: [] })),
+                getAllObjectCounts(authorizationHeader).catch(() => ({ data: { counts: [], totalObjects: 0 } })),
+                getTablespaceStats(authorizationHeader).catch(() => ({ data: { tablespaces: [] } })),
+                getRecentTables(authorizationHeader, 7).catch(() => ({ data: [] }))
             ]);
             
             dbLinks = { data: [] };
         } else {
-            [schemaInfo, tables, views, procedures, functions, packages, sequences, synonyms, types, triggers, dbLinks] = await Promise.all([
+            [schemaInfo, currentUser, tables, views, procedures, functions, packages, sequences, synonyms, types, triggers, dbLinks, objectCounts, tablespaceStats, recentTables] = await Promise.all([
                 getCurrentSchemaInfo(authorizationHeader).catch(() => ({ data: {} })),
+                getCurrentUser(authorizationHeader).catch(() => ({ data: {} })),
                 getAllTables(authorizationHeader).catch(() => ({ data: [] })),
                 getAllViews(authorizationHeader).catch(() => ({ data: [] })),
                 getAllProcedures(authorizationHeader).catch(() => ({ data: [] })),
@@ -2220,7 +2585,10 @@ export const getComprehensiveSchemaData = async (authorizationHeader, params = {
                 getAllSynonyms(authorizationHeader).catch(() => ({ data: [] })),
                 getAllTypes(authorizationHeader).catch(() => ({ data: [] })),
                 getAllTriggers(authorizationHeader).catch(() => ({ data: [] })),
-                getAllDbLinks(authorizationHeader).catch(() => ({ data: [] }))
+                getAllDbLinks(authorizationHeader).catch(() => ({ data: [] })),
+                getObjectCountByType(authorizationHeader).catch(() => ({ data: { counts: [], totalObjects: 0 } })),
+                getTablespaceStats(authorizationHeader).catch(() => ({ data: { tablespaces: [] } })),
+                getRecentTables(authorizationHeader, 7).catch(() => ({ data: [] }))
             ]);
         }
 
@@ -2229,6 +2597,7 @@ export const getComprehensiveSchemaData = async (authorizationHeader, params = {
             message: "Comprehensive schema data retrieved successfully",
             data: {
                 schemaInfo: schemaInfo.data || {},
+                currentUser: currentUser.data || {},
                 tables: {
                     objects: tables.data || [],
                     totalCount: (tables.data || []).length
@@ -2268,7 +2637,10 @@ export const getComprehensiveSchemaData = async (authorizationHeader, params = {
                 dbLinks: dbLinks ? {
                     objects: dbLinks.data || [],
                     totalCount: (dbLinks.data || []).length
-                } : { objects: [], totalCount: 0 }
+                } : { objects: [], totalCount: 0 },
+                objectCounts: objectCounts.data || { counts: [], totalObjects: 0 },
+                tablespaceStats: tablespaceStats.data || { tablespaces: [] },
+                recentTables: recentTables.data || []
             },
             requestId
         };
@@ -2281,6 +2653,7 @@ export const getComprehensiveSchemaData = async (authorizationHeader, params = {
             message: error.message,
             data: {
                 schemaInfo: {},
+                currentUser: {},
                 tables: { objects: [], totalCount: 0 },
                 views: { objects: [], totalCount: 0 },
                 procedures: { objects: [], totalCount: 0 },
@@ -2290,12 +2663,120 @@ export const getComprehensiveSchemaData = async (authorizationHeader, params = {
                 synonyms: { objects: [], totalCount: 0 },
                 types: { objects: [], totalCount: 0 },
                 triggers: { objects: [], totalCount: 0 },
-                dbLinks: { objects: [], totalCount: 0 }
+                dbLinks: { objects: [], totalCount: 0 },
+                objectCounts: { counts: [], totalObjects: 0 },
+                tablespaceStats: { tablespaces: [] },
+                recentTables: []
             },
             requestId
         };
     }
 };
+
+
+
+// ============================================================
+// NEW: SEARCH ACROSS MULTIPLE TYPES
+// ============================================================
+
+/**
+ * Search across multiple object types (e.g., procedures AND synonyms)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.query - Search query
+ * @param {string[]} params.types - Array of object types (e.g., ['PROCEDURE', 'SYNONYM'])
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Items per page
+ * @returns {Promise} API response
+ */
+export const searchCombinedTypes = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { query, types = [], page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({
+        query,
+        types: types.join(','),
+        page,
+        pageSize
+    });
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/search/combined?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
+// ============================================================
+// NEW: SEARCH PROCEDURES WITH SYNONYMS (Specific)
+// ============================================================
+
+/**
+ * Search for procedures AND synonyms that target procedures
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.query - Search query
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Items per page
+ * @returns {Promise} API response
+ */
+export const searchProceduresWithSynonyms = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { query, page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({ query, page, pageSize });
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/procedures/with-synonyms/search?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
+// ============================================================
+// NEW: GET SEARCH COUNT (Fast)
+// ============================================================
+
+/**
+ * Get only the count of search results (very fast)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.query - Search query
+ * @param {string[]} params.types - Array of object types
+ * @returns {Promise<number>} Count of matches
+ */
+export const getSearchCount = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { query, types = [] } = params;
+    
+    const queryParams = buildQueryParams({
+        query,
+        types: types.join(',')
+    });
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/search/count?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return response.data?.count || 0;
+    });
+};
+
+
 
 // ============================================================
 // RESPONSE HANDLERS (Enhanced)
@@ -2335,69 +2816,20 @@ export const handleSchemaBrowserResponse = (response) => {
  * Transform paginated response
  */
 const transformPaginatedResponse = (response) => {
-    const data = response.data || {};
+    // Extract the data object from response
+    const responseData = response.data || {};
     
+    // In the updated structure, pagination metadata is inside responseData
     const transformedData = {
-        items: data.items || data.data || [],
-        totalCount: data.totalCount || data.total || 0,
-        totalPages: data.totalPages || data.pages || 1,
-        page: data.page || 1,
-        pageSize: data.pageSize || 20,
-        hasNext: data.hasNext || (data.page < data.totalPages),
-        hasPrev: data.hasPrev || (data.page > 1)
-    };
-
-    return {
-        ...response,
-        data: transformedData
-    };
-};
-
-/**
- * Transform advanced table data response
- */
-const transformTableDataAdvancedResponse = (response, tableName, params) => {
-    const data = response.data || {};
-    
-    const transformedData = {
-        tableName: tableName,
-        columns: data.columns || [],
-        rows: data.rows || [],
-        totalRows: data.totalRows || 0,
-        totalPages: data.totalPages || 1,
-        page: data.page || params.page || 1,
-        pageSize: data.pageSize || params.pageSize || 50,
-        sortColumn: params.sortColumn,
-        sortDirection: params.sortDirection,
-        filter: params.filter,
-        hasNext: data.hasNext || (data.page < data.totalPages),
-        hasPrev: data.hasPrev || (data.page > 1)
-    };
-
-    return {
-        ...response,
-        data: transformedData
-    };
-};
-
-/**
- * Transform object counts only response
- */
-const transformObjectCountsOnlyResponse = (response) => {
-    const data = response.data || {};
-    
-    const transformedData = {
-        objectName: data.object_name,
-        objectType: data.object_type,
-        owner: data.owner,
-        counts: {
-            columns: data.columns || 0,
-            parameters: data.parameters || 0,
-            items: data.items || 0,
-            rows: data.rows || 0,
-            dependencies: data.dependencies || 0
-        },
-        timestamp: data.timestamp || new Date().toISOString()
+        items: responseData.items || [],
+        totalCount: responseData.totalCount || responseData.pagination?.totalCount || 0,
+        totalPages: responseData.pagination?.totalPages || 1,
+        page: responseData.pagination?.page || 1,
+        pageSize: responseData.pagination?.pageSize || 20,
+        hasNext: responseData.pagination?.hasNext || 
+                (responseData.pagination?.page < responseData.pagination?.totalPages),
+        hasPrev: responseData.pagination?.hasPrev || 
+                (responseData.pagination?.page > 1)
     };
 
     return {
@@ -2419,6 +2851,25 @@ const transformSchemaInfoResponse = (response) => {
         defaultTablespace: data.default_tablespace || '',
         tempTablespace: data.temp_tablespace || '',
         created: data.created
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform current user response
+ */
+const transformCurrentUserResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        username: data.username || data.user || '',
+        schema: data.schema || '',
+        defaultTablespace: data.defaultTablespace || '',
+        tempTablespace: data.tempTablespace || ''
     };
 
     return {
@@ -2477,6 +2928,7 @@ const transformTableDetailsResponse = (response, tableName) => {
         constraints: (data.constraints || []).map(con => ({
             name: con.constraint_name,
             type: con.constraint_type,
+            typeFormatted: formatConstraintType(con.constraint_type),
             columns: con.columns || [],
             searchCondition: con.search_condition,
             rOwner: con.r_owner,
@@ -2520,12 +2972,11 @@ const transformTableDetailsResponse = (response, tableName) => {
 const transformTableDataResponse = (response, tableName, params) => {
     const data = response.data || {};
     
-    // Handle different response structures
     let rows = [];
     let columns = [];
     let totalRows = 0;
     let totalPages = 1;
-    let page = params?.page || 0;
+    let page = params?.page || 1;
     let pageSize = params?.pageSize || 50;
     
     if (data.data) {
@@ -2559,8 +3010,35 @@ const transformTableDataResponse = (response, tableName, params) => {
         totalPages: totalPages,
         pageSize: pageSize,
         page: page,
-        hasNext: page < totalPages - 1,
-        hasPrev: page > 0
+        hasNext: page < totalPages,
+        hasPrev: page > 1
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform advanced table data response
+ */
+const transformTableDataAdvancedResponse = (response, tableName, params) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        tableName: tableName,
+        columns: data.columns || [],
+        rows: data.rows || [],
+        totalRows: data.totalRows || 0,
+        totalPages: data.totalPages || 1,
+        page: data.page || params.page || 1,
+        pageSize: data.pageSize || params.pageSize || 50,
+        sortColumn: params.sortColumn,
+        sortDirection: params.sortDirection,
+        filter: params.filter,
+        hasNext: data.hasNext || (data.page < data.totalPages),
+        hasPrev: data.hasPrev || (data.page > 1)
     };
 
     return {
@@ -2909,6 +3387,27 @@ const transformSynonymDetailsResponse = (response, synonymName) => {
 };
 
 /**
+ * Transform synonym target details response
+ */
+const transformSynonymTargetDetailsResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        synonymName: data.synonym_name,
+        targetOwner: data.target_owner,
+        targetName: data.target_name,
+        targetType: data.target_type,
+        targetDetails: data.target_details || {},
+        valid: data.valid === true
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
  * Transform resolve synonym response
  */
 const transformResolveSynonymResponse = (response) => {
@@ -3140,6 +3639,32 @@ const transformObjectDetailsResponse = (response, objectType, objectName) => {
 };
 
 /**
+ * Transform object counts only response
+ */
+const transformObjectCountsOnlyResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        objectName: data.object_name,
+        objectType: data.object_type,
+        owner: data.owner,
+        counts: {
+            columns: data.columns || 0,
+            parameters: data.parameters || 0,
+            items: data.items || 0,
+            rows: data.rows || 0,
+            dependencies: data.dependencies || 0
+        },
+        timestamp: data.timestamp || new Date().toISOString()
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
  * Transform validate object response
  */
 const transformValidateObjectResponse = (response) => {
@@ -3153,27 +3678,6 @@ const transformValidateObjectResponse = (response) => {
         status: data.status,
         accessible: data.accessible === true,
         message: data.message || ''
-    };
-
-    return {
-        ...response,
-        data: transformedData
-    };
-};
-
-/**
- * Transform object count response
- */
-const transformObjectCountResponse = (response) => {
-    const data = response.data || {};
-    
-    const transformedData = {
-        counts: data.counts || [],
-        totalObjects: data.totalObjects || 0,
-        byType: (data.counts || []).reduce((acc, item) => {
-            acc[item.object_type] = item.count;
-            return acc;
-        }, {})
     };
 
     return {
@@ -3317,32 +3821,50 @@ const transformQueryResponse = (response) => {
 };
 
 /**
- * Transform statistics response
+ * Transform object count response
  */
-const transformStatisticsResponse = (response, objectName) => {
+const transformObjectCountResponse = (response) => {
     const data = response.data || {};
     
     const transformedData = {
-        objectName: objectName,
-        statistics: {
-            numRows: data.num_rows || 0,
-            blocks: data.blocks || 0,
-            emptyBlocks: data.empty_blocks || 0,
-            avgRowLen: data.avg_row_len || 0,
-            lastAnalyzed: data.last_analyzed,
-            sampleSize: data.sample_size || 0,
-            globalStats: data.global_stats || '',
-            userStats: data.user_stats || '',
-            stattypeLocked: data.stattype_locked || '',
-            staleStats: data.stale_stats || 'NO'
+        counts: data.counts || [],
+        totalObjects: data.totalObjects || 0,
+        byType: (data.counts || []).reduce((acc, item) => {
+            acc[item.object_type] = item.count;
+            return acc;
+        }, {})
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform diagnostics response
+ */
+const transformDiagnosticsResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        diagnosticStatus: data.diagnosticStatus || 'COMPLETED',
+        connection: {
+            status: data.connection?.status || 'UNKNOWN',
+            details: data.connection?.details || {}
         },
-        columnStatistics: (data.column_statistics || []).map(col => ({
-            columnName: col.column_name,
-            distinctCount: col.num_distinct,
-            nullCount: col.num_nulls,
-            avgColLen: col.avg_col_len,
-            histogram: col.histogram || 'NONE'
-        }))
+        schema: {
+            status: data.schema?.status || 'UNKNOWN',
+            objectCounts: data.schema?.objectCounts || {},
+            details: data.schema?.details || {}
+        },
+        permissions: {
+            status: data.permissions?.status || 'UNKNOWN',
+            granted: data.permissions?.granted || []
+        },
+        issues: data.issues || [],
+        warnings: data.warnings || [],
+        timestamp: data.timestamp || new Date().toISOString()
     };
 
     return {
@@ -3406,29 +3928,74 @@ const transformTablespaceStatsResponse = (response) => {
 };
 
 /**
- * Transform diagnostics response
+ * Transform statistics response
  */
-const transformDiagnosticsResponse = (response) => {
+const transformStatisticsResponse = (response, objectName) => {
     const data = response.data || {};
     
     const transformedData = {
-        diagnosticStatus: data.diagnosticStatus || 'COMPLETED',
-        connection: {
-            status: data.connection?.status || 'UNKNOWN',
-            details: data.connection?.details || {}
+        objectName: objectName,
+        statistics: {
+            numRows: data.num_rows || 0,
+            blocks: data.blocks || 0,
+            emptyBlocks: data.empty_blocks || 0,
+            avgRowLen: data.avg_row_len || 0,
+            lastAnalyzed: data.last_analyzed,
+            sampleSize: data.sample_size || 0,
+            globalStats: data.global_stats || '',
+            userStats: data.user_stats || '',
+            stattypeLocked: data.stattype_locked || '',
+            staleStats: data.stale_stats || 'NO'
         },
-        schema: {
-            status: data.schema?.status || 'UNKNOWN',
-            objectCounts: data.schema?.objectCounts || {},
-            details: data.schema?.details || {}
-        },
-        permissions: {
-            status: data.permissions?.status || 'UNKNOWN',
-            granted: data.permissions?.granted || []
-        },
-        issues: data.issues || [],
-        warnings: data.warnings || [],
-        timestamp: data.timestamp || new Date().toISOString()
+        columnStatistics: (data.column_statistics || []).map(col => ({
+            columnName: col.column_name,
+            distinctCount: col.num_distinct,
+            nullCount: col.num_nulls,
+            avgColLen: col.avg_col_len,
+            histogram: col.histogram || 'NONE'
+        }))
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform health check response
+ */
+const transformHealthCheckResponse = (response, requestId) => {
+    const data = response.data || response || {};
+    
+    const transformedData = {
+        status: data.status || 'UP',
+        service: data.service || 'Oracle Schema Browser',
+        timestamp: data.timestamp || new Date().toISOString(),
+        requestId: data.requestId || requestId,
+        performedBy: data.performedBy || ''
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform supported object types response
+ */
+const transformSupportedObjectTypesResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        objectTypes: data.objectTypes || [
+            'TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'PACKAGE',
+            'SYNONYM', 'SEQUENCE', 'TRIGGER', 'TYPE', 'INDEX',
+            'CONSTRAINT', 'DB_LINK', 'MATERIALIZED_VIEW'
+        ],
+        responseCode: data.responseCode || 200,
+        message: data.message || 'Supported object types retrieved successfully'
     };
 
     return {
@@ -3452,6 +4019,10 @@ export const extractSchemaInfo = (response) => {
     return response?.data || {};
 };
 
+export const extractCurrentUser = (response) => {
+    return response?.data || {};
+};
+
 export const extractSchemaObjects = (response, objectType) => {
     if (objectType) {
         return response?.data?.[objectType]?.objects || [];
@@ -3472,7 +4043,7 @@ export const extractTableData = (response) => {
             totalRows: tableData.totalRows || tableData.rows?.length || 0,
             totalPages: tableData.totalPages || 1,
             pageSize: tableData.pageSize || 50,
-            page: tableData.page || 0
+            page: tableData.page || 1
         };
     } else if (response?.data?.columns && response?.data?.rows) {
         return {
@@ -3481,7 +4052,7 @@ export const extractTableData = (response) => {
             totalRows: response.data.totalRows || response.data.rows.length,
             totalPages: response.data.totalPages || 1,
             pageSize: response.data.pageSize || 50,
-            page: response.data.page || 0
+            page: response.data.page || 1
         };
     } else if (response?.columns && response?.rows) {
         return {
@@ -3490,7 +4061,7 @@ export const extractTableData = (response) => {
             totalRows: response.totalRows || response.rows.length,
             totalPages: response.totalPages || 1,
             pageSize: response.pageSize || 50,
-            page: response.page || 0
+            page: response.page || 1
         };
     }
     
@@ -3499,8 +4070,8 @@ export const extractTableData = (response) => {
         rows: [],
         totalRows: 0,
         totalPages: 1,
-        pageSize: 50,
-        page: 0
+        pageSize: 10,
+        page: 1
     };
 };
 
@@ -3519,6 +4090,7 @@ export const extractQueryResults = (response) => {
 export const extractComprehensiveSchemaData = (response) => {
     return response?.data || {
         schemaInfo: {},
+        currentUser: {},
         tables: { objects: [], totalCount: 0 },
         views: { objects: [], totalCount: 0 },
         procedures: { objects: [], totalCount: 0 },
@@ -3528,7 +4100,10 @@ export const extractComprehensiveSchemaData = (response) => {
         synonyms: { objects: [], totalCount: 0 },
         types: { objects: [], totalCount: 0 },
         triggers: { objects: [], totalCount: 0 },
-        dbLinks: { objects: [], totalCount: 0 }
+        dbLinks: { objects: [], totalCount: 0 },
+        objectCounts: { counts: [], totalObjects: 0 },
+        tablespaceStats: { tablespaces: [] },
+        recentTables: []
     };
 };
 
@@ -3562,7 +4137,7 @@ export const extractPaginatedData = (response) => {
         totalCount: 0,
         totalPages: 1,
         page: 1,
-        pageSize: 20
+        pageSize: 10
     };
 };
 
@@ -3571,6 +4146,22 @@ export const extractObjectCountsOnly = (response) => {
         counts: {},
         timestamp: new Date().toISOString()
     };
+};
+
+export const extractTablespaceStats = (response) => {
+    return response?.data || { tablespaces: [] };
+};
+
+export const extractHealthStatus = (response) => {
+    return response?.data || { status: 'UNKNOWN' };
+};
+
+export const extractSupportedObjectTypes = (response) => {
+    return response?.data?.objectTypes || [];
+};
+
+export const extractSynonymTargetDetails = (response) => {
+    return response?.data || {};
 };
 
 // ============================================================
@@ -3626,6 +4217,24 @@ export const formatDataType = (type, length, precision, scale) => {
 };
 
 /**
+ * Format constraint type
+ */
+export const formatConstraintType = (type) => {
+    const types = {
+        'P': 'PRIMARY KEY',
+        'R': 'FOREIGN KEY',
+        'U': 'UNIQUE',
+        'C': 'CHECK',
+        'V': 'VIEW CHECK',
+        'O': 'READ ONLY VIEW',
+        'H': 'HASH EXPRESSION',
+        'F': 'REF COLUMN',
+        'S': 'SUPPLEMENTAL LOGGING'
+    };
+    return types[type] || type;
+};
+
+/**
  * Get object type icon
  */
 export const getObjectTypeIcon = (type) => {
@@ -3640,8 +4249,10 @@ export const getObjectTypeIcon = (type) => {
         'TYPE': '📐',
         'TRIGGER': '⚡',
         'INDEX': '📌',
+        'CONSTRAINT': '🔒',
+        'DB_LINK': '🔗',
         'DATABASE LINK': '🔗',
-        'DB_LINK': '🔗'
+        'MATERIALIZED_VIEW': '📋'
     };
     return icons[type?.toUpperCase()] || '📄';
 };
@@ -3661,8 +4272,10 @@ export const getObjectTypeColor = (type, isDark = true) => {
         'TYPE': isDark ? '#C084FC' : '#A855F7',
         'TRIGGER': isDark ? '#F472B6' : '#EC4899',
         'INDEX': isDark ? '#2DD4BF' : '#14B8A6',
+        'CONSTRAINT': isDark ? '#FB7185' : '#F43F5E',
+        'DB_LINK': isDark ? '#F97316' : '#EA580C',
         'DATABASE LINK': isDark ? '#F97316' : '#EA580C',
-        'DB_LINK': isDark ? '#F97316' : '#EA580C'
+        'MATERIALIZED_VIEW': isDark ? '#818CF8' : '#6366F1'
     };
     return colors[type?.toUpperCase()] || (isDark ? '#94A3B8' : '#6B7280');
 };
@@ -3723,19 +4336,31 @@ export const downloadExportedSchema = (exportResult, filename) => {
 };
 
 /**
- * Format constraint type
+ * Build filter object from query string
  */
-const formatConstraintType = (type) => {
-    const types = {
-        'P': 'PRIMARY KEY',
-        'R': 'FOREIGN KEY',
-        'U': 'UNIQUE',
-        'C': 'CHECK',
-        'V': 'VIEW CHECK',
-        'O': 'READ ONLY VIEW',
-        'H': 'HASH EXPRESSION',
-        'F': 'REF COLUMN',
-        'S': 'SUPPLEMENTAL LOGGING'
-    };
-    return types[type] || type;
+export const buildFilterFromQuery = (queryString) => {
+    if (!queryString) return {};
+    
+    const filter = {};
+    const pairs = queryString.split('&');
+    
+    pairs.forEach(pair => {
+        const [key, value] = pair.split('=');
+        if (key && value) {
+            filter[decodeURIComponent(key)] = decodeURIComponent(value);
+        }
+    });
+    
+    return filter;
+};
+
+/**
+ * Build query string from filter object
+ */
+export const buildQueryFromFilter = (filter) => {
+    if (!filter || Object.keys(filter).length === 0) return '';
+    
+    return Object.entries(filter)
+        .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+        .join('&');
 };
