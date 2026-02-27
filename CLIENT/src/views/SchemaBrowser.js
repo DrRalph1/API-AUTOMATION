@@ -864,7 +864,7 @@ const LeftSidebar = React.memo(({
           />
 
           {/* Synonyms Section */}
-          {/* <ObjectTreeSection
+          <ObjectTreeSection
             title="Synonyms"
             type="synonyms"
             objects={filterObjects(schemaObjects.synonyms || [], 'synonyms')}
@@ -886,7 +886,7 @@ const LeftSidebar = React.memo(({
             onSelectObject={handleObjectSelect}
             hasActiveFilter={hasActiveFilter}
             isFiltering={isFiltering}
-          /> */}
+          />
 
           {/* Types Section */}
           <ObjectTreeSection
@@ -2019,7 +2019,7 @@ useEffect(() => {
       // Clear results if search term is empty
       setFilteredResults({});
     }
-  }, 500); // 1000ms debounce
+  }, 1500);
 
   return () => clearTimeout(timer);
 }, [filterQuery, selectedOwner, searchObjects]);
@@ -2298,11 +2298,13 @@ const handleObjectSelect = useCallback(async (object, type) => {
     Logger.debug('SchemaBrowser', 'handleObjectSelect', `Loading details for ${object.name}`);
     
     // Check if this object is actually a synonym
-    const isSynonym = 
+    const isSynonym = true ||
       object.objectType === 'SYNONYM' || 
       object.type === 'SYNONYM' ||
       object.isSynonym === true ||
       object.synonym_name === object.name; // Some APIs return synonym_name
+
+      // console.log("object::::::" + JSON.stringify(object));
     
     // Determine the correct object type for the API call
     let apiObjectType;
