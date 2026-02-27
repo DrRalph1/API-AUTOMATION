@@ -836,6 +836,7 @@ export default function ApiGenerationModal({
   onSave,
   selectedObject = null,
   colors = {},
+  obType,
   theme = 'dark',
   authToken = null
 }) {
@@ -890,7 +891,7 @@ export default function ApiGenerationModal({
     
     try {
       const response = await getObjectDetails(authToken, { 
-        objectType: type, 
+        objectType: obType, 
         objectName: object.name 
       });
       

@@ -1216,6 +1216,8 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   // New state to track if filter is active
   const [hasActiveFilter, setHasActiveFilter] = useState(false);
 
+  const [obType, setObType] = useState("");
+
   // Pagination state for each object type
   const [pagination, setPagination] = useState({
     procedures: { page: 1, totalPages: 1, totalCount: 0 },
@@ -2214,7 +2216,6 @@ useEffect(() => {
   }, []);
 
   // Handle Object Select
-  // Handle Object Select
 const handleObjectSelect = useCallback(async (object, type) => {
   if (!authToken || !object) {
     console.error('Cannot select object: missing authToken or object', { authToken: !!authToken, object });
@@ -2280,6 +2281,8 @@ const handleObjectSelect = useCallback(async (object, type) => {
       // For non-synonym objects, pass the original type
       apiObjectType = type;
     }
+
+    setObType(apiObjectType);
     
     const response = await getObjectDetails(authToken, { 
       objectType: apiObjectType, 
@@ -3560,6 +3563,7 @@ const handleObjectSelect = useCallback(async (object, type) => {
           onClose={() => setShowApiModal(false)}
           selectedObject={selectedForApiGeneration || activeObject}
           colors={colors}
+          obType={obType}
           theme={theme}
           authToken={authToken}
         />
