@@ -1836,6 +1836,44 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
     }
   }, [authToken, dataView]);
 
+  // Add this new function to load view data
+const loadViewData = useCallback(async (viewName) => {
+  if (!authToken || !viewName) return;
+  
+  setTableDataLoading(true);
+  setTableData(null);
+  
+  try {
+    const params = {
+      viewName,  // Using viewName parameter to distinguish from tables
+      page: dataView.page - 1,
+      pageSize: dataView.pageSize,
+      sortColumn: dataView.sortColumn || undefined,
+      sortDirection: dataView.sortDirection
+    };
+    
+    // Reuse getTableData but pass view name
+    const response = await getTableData(authToken, { 
+      tableName: viewName,  // The API might expect tableName parameter
+      page: params.page,
+      pageSize: params.pageSize,
+      sortColumn: params.sortColumn,
+      sortDirection: params.sortDirection
+    });
+    
+    const processed = handleSchemaBrowserResponse(response);
+    const viewDataResult = extractTableData({ data: processed });
+    
+    setTableData(viewDataResult);
+    
+  } catch (err) {
+    Logger.error('SchemaBrowser', 'loadViewData', `Error loading data for view ${viewName}`, err);
+    setError(`Failed to load view data: ${err.message}`);
+  } finally {
+    setTableDataLoading(false);
+  }
+}, [authToken, dataView]);
+
   // Handle context menu
   const handleContextMenu = useCallback((e, object, type) => {
     e.preventDefault();
@@ -2192,13 +2230,28 @@ useEffect(() => {
 
   // Update table data when dataView changes
   useEffect(() => {
-    if (activeObject?.type === 'TABLE' || (activeObject?.type === 'SYNONYM' && objectDetails?.TARGET_TYPE === 'TABLE')) {
-      const tableName = activeObject.type === 'SYNONYM' && objectDetails?.TARGET_NAME 
-        ? objectDetails.TARGET_NAME 
-        : activeObject.name;
-      loadTableData(tableName);
+    if (activeObject) {
+      const objectType = activeObject.type?.toUpperCase();
+      const effectiveType = objectDetails?.targetDetails?.OBJECT_TYPE || objectType;
+      
+      if (objectType === 'TABLE' || effectiveType === 'TABLE' || 
+          objectType === 'VIEW' || effectiveType === 'VIEW') {
+        
+        let objectName;
+        if (objectType === 'SYNONYM' && objectDetails?.TARGET_NAME) {
+          objectName = objectDetails.TARGET_NAME;
+        } else {
+          objectName = activeObject.name;
+        }
+        
+        if (objectType === 'TABLE' || effectiveType === 'TABLE') {
+          loadTableData(objectName);
+        } else if (objectType === 'VIEW' || effectiveType === 'VIEW') {
+          loadViewData(objectName);
+        }
+      }
     }
-  }, [dataView.page, dataView.pageSize, dataView.sortColumn, dataView.sortDirection, activeObject, objectDetails, loadTableData]);
+  }, [dataView.page, dataView.pageSize, dataView.sortColumn, dataView.sortDirection, activeObject, objectDetails, loadTableData, loadViewData]);
 
   // Close context menu on outside click
   useEffect(() => {
@@ -2220,7 +2273,7 @@ useEffect(() => {
         case 'TABLE':
           return ['Columns', 'Data', 'Constraints', 'DDL', 'Properties'];
         case 'VIEW':
-          return ['Definition', 'Columns', 'Properties'];
+          return ['Definition', 'Columns', 'Data', 'Properties'];
         case 'PROCEDURE':
           return ['Parameters', 'DDL', 'Properties'];
         case 'FUNCTION':
@@ -2243,7 +2296,7 @@ useEffect(() => {
       case 'TABLE':
         return ['Columns', 'Data', 'Constraints', 'DDL', 'Properties'];
       case 'VIEW':
-        return ['Definition', 'Columns', 'Properties'];
+        return ['Definition', 'Columns', 'Data', 'Properties'];
       case 'PROCEDURE':
         return ['Parameters', 'DDL', 'Properties'];
       case 'FUNCTION':
@@ -2372,6 +2425,14 @@ const handleObjectSelect = useCallback(async (object, type) => {
         loadTableData(targetName).catch(err => console.error('Background table load error:', err));
       } else {
         loadTableData(object.name).catch(err => console.error('Background table load error:', err));
+      }
+    }
+
+    if (effectiveType === 'VIEW') {
+      if (isSynonym && targetType === 'VIEW') {
+        loadViewData(targetName).catch(err => console.error('Background view load error:', err));
+      } else {
+        loadViewData(object.name).catch(err => console.error('Background view load error:', err));
       }
     }
     
@@ -2505,279 +2566,304 @@ const handleObjectSelect = useCallback(async (object, type) => {
 
   // Render Data Tab
   const renderDataTab = () => {
-    const data = tableData?.rows || [];
+  const data = tableData?.rows || [];
+  const isView = activeObject?.type?.toUpperCase() === 'VIEW' || 
+                 objectDetails?.targetDetails?.OBJECT_TYPE === 'VIEW';
+  
+  let columns = tableData?.columns || [];
+  if (columns.length === 0 && data.length > 0) {
+    columns = Object.keys(data[0]).map(key => ({ name: key }));
+  }
+  
+  if (columns.length === 0) {
+    columns = objectDetails?.columns || activeObject?.columns || [];
+  }
+  
+  const totalRows = tableData?.totalRows || 0;
+  const totalPages = tableData?.totalPages || 1;
+  
+  const downloadData = () => {
+    if (data.length === 0) return;
     
-    let columns = tableData?.columns || [];
-    if (columns.length === 0 && data.length > 0) {
-      columns = Object.keys(data[0]).map(key => ({ name: key }));
-    }
+    const objectName = isView ? 
+      (objectDetails?.TARGET_NAME || activeObject?.name) : 
+      activeObject?.name;
     
-    if (columns.length === 0) {
-      columns = objectDetails?.columns || activeObject?.columns || [];
-    }
+    const headers = ['#', ...columns.map(col => col.name || col.COLUMN_NAME)];
     
-    const totalRows = tableData?.totalRows || 0;
-    const totalPages = tableData?.totalPages || 1;
+    const csvRows = [
+      headers.join(','),
+      ...data.map((row, index) => {
+        const rowValues = [
+          index + 1 + (dataView.page - 1) * dataView.pageSize,
+          ...columns.map(col => {
+            const columnName = col.name || col.COLUMN_NAME;
+            const value = row[columnName];
+            
+            if (value === null || value === undefined) return '';
+            if (typeof value === 'object') return `"${JSON.stringify(value).replace(/"/g, '""')}"`;
+            if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+              return `"${value.replace(/"/g, '""')}"`;
+            }
+            return value;
+          })
+        ];
+        return rowValues.join(',');
+      })
+    ].join('\n');
     
-    const downloadData = () => {
-      if (data.length === 0) return;
-      
-      const headers = ['#', ...columns.map(col => col.name || col.COLUMN_NAME)];
-      
-      const csvRows = [
-        headers.join(','),
-        ...data.map((row, index) => {
-          const rowValues = [
-            index + 1 + (dataView.page - 1) * dataView.pageSize,
-            ...columns.map(col => {
-              const columnName = col.name || col.COLUMN_NAME;
-              const value = row[columnName];
-              
-              if (value === null || value === undefined) return '';
-              if (typeof value === 'object') return `"${JSON.stringify(value).replace(/"/g, '""')}"`;
-              if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
-                return `"${value.replace(/"/g, '""')}"`;
-              }
-              return value;
-            })
-          ];
-          return rowValues.join(',');
-        })
-      ].join('\n');
-      
-      const blob = new Blob([csvRows], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `${activeObject?.name || 'table'}_data.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    };
-    
-    return (
-      <div className="flex-1 flex flex-col h-full" style={{ minHeight: 0 }}>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 border-b shrink-0" style={{ borderColor: colors.border }}>
-          <div className="flex items-center gap-2">
-            <button 
-              className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2"
-              style={{ backgroundColor: colors.primaryDark, color: colors.white }}
-              onClick={async () => {
-                if (activeObject) {
-                  const tableName = activeObject.type === 'SYNONYM' && objectDetails?.TARGET_NAME 
-                    ? objectDetails.TARGET_NAME 
-                    : activeObject.name;
-                  await loadTableData(tableName);
+    const blob = new Blob([csvRows], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${objectName}_data.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+  
+  return (
+    <div className="flex-1 flex flex-col h-full" style={{ minHeight: 0 }}>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 border-b shrink-0" style={{ borderColor: colors.border }}>
+        <div className="flex items-center gap-2">
+          <button 
+            className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2"
+            style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+            onClick={async () => {
+              if (activeObject) {
+                const objectType = activeObject.type?.toUpperCase();
+                const effectiveType = objectDetails?.targetDetails?.OBJECT_TYPE || objectType;
+                
+                let objectName;
+                if (objectType === 'SYNONYM' && objectDetails?.TARGET_NAME) {
+                  objectName = objectDetails.TARGET_NAME;
+                } else {
+                  objectName = activeObject.name;
                 }
-              }}
-              disabled={tableDataLoading || !activeObject}
+                
+                if (objectType === 'TABLE' || effectiveType === 'TABLE') {
+                  await loadTableData(objectName);
+                } else if (objectType === 'VIEW' || effectiveType === 'VIEW') {
+                  await loadViewData(objectName);
+                }
+              }
+            }}
+            disabled={tableDataLoading || !activeObject}
+          >
+            {tableDataLoading ? (
+              <Loader size={12} className="animate-spin" />
+            ) : (
+              <Play size={12} />
+            )}
+            <span>Execute</span>
+          </button>
+          <select 
+            className="px-2 py-1 border rounded text-sm"
+            style={{ backgroundColor: colors.bg, borderColor: colors.border, color: colors.text }}
+            value={dataView.pageSize}
+            onChange={(e) => handlePageSizeChange(parseInt(e.target.value))}
+            disabled={tableDataLoading}
+          >
+            <option value="25">25 rows</option>
+            <option value="50">50 rows</option>
+            <option value="100">100 rows</option>
+            <option value="250">250 rows</option>
+            <option value="500">500 rows</option>
+          </select>
+          {data.length > 0 && (
+            <button
+              className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2"
+              style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}`, color: colors.text }}
+              onClick={downloadData}
             >
-              {tableDataLoading ? (
-                <Loader size={12} className="animate-spin" />
-              ) : (
-                <Play size={12} />
-              )}
-              <span>Execute</span>
+              <Download size={12} />
+              <span>Download CSV</span>
             </button>
-            <select 
-              className="px-2 py-1 border rounded text-sm"
-              style={{ backgroundColor: colors.bg, borderColor: colors.border, color: colors.text }}
-              value={dataView.pageSize}
-              onChange={(e) => handlePageSizeChange(parseInt(e.target.value))}
-              disabled={tableDataLoading}
-            >
-              <option value="25">25 rows</option>
-              <option value="50">50 rows</option>
-              <option value="100">100 rows</option>
-              <option value="250">250 rows</option>
-              <option value="500">500 rows</option>
-            </select>
-            {data.length > 0 && (
-              <button
-                className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2"
-                style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}`, color: colors.text }}
-                onClick={downloadData}
-              >
-                <Download size={12} />
-                <span>Download CSV</span>
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs" style={{ color: colors.textSecondary }}>
-              {totalRows > 0 ? (
-                <>Page {dataView.page} of {totalPages} | Total: {totalRows.toLocaleString()} rows</>
-              ) : (
-                'No data'
-              )}
-            </span>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-2">
-                <button 
-                  className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
-                  style={{ backgroundColor: colors.hover }}
-                  onClick={() => handlePageChange(dataView.page - 1)}
-                  disabled={tableDataLoading || dataView.page <= 1}
-                >
-                  <ChevronLeft size={14} />
-                </button>
-                <button 
-                  className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
-                  style={{ backgroundColor: colors.hover }}
-                  onClick={() => handlePageChange(dataView.page + 1)}
-                  disabled={tableDataLoading || dataView.page >= totalPages}
-                >
-                  <ChevronRight size={14} />
-                </button>
-              </div>
-            )}
-          </div>
+          )}
         </div>
-
-        <div className="flex-1 relative" style={{ minHeight: 0, overflow: 'hidden' }}>
-          {tableDataLoading ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <Loader className="animate-spin mx-auto mb-4" size={40} style={{ color: colors.primary }} />
-                <div className="text-sm font-medium" style={{ color: colors.text }}>Loading table data...</div>
-                <div className="text-xs mt-2" style={{ color: colors.textSecondary }}>Please wait while we fetch the rows</div>
-              </div>
-            </div>
-          ) : data.length === 0 ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <div className="flex justify-center mb-4">
-                  <TableIcon size={64} style={{ color: colors.textSecondary, opacity: 0.5 }} />
-                </div>
-                <div className="text-lg font-medium" style={{ color: colors.text }}>No data available</div>
-                <div className="text-sm mt-2" style={{ color: colors.textSecondary }}>
-                  Click the Execute button to load data
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div 
-              className="absolute inset-0 border rounded" 
-              style={{ 
-                borderColor: colors.gridBorder,
-                overflow: 'auto'
-              }}
-            >
-              <table style={{ borderCollapse: 'collapse', minWidth: '100%', width: 'max-content' }}>
-                <thead style={{ 
-                  backgroundColor: colors.tableHeader, 
-                  position: 'sticky', 
-                  top: 0, 
-                  zIndex: 10 
-                }}>
-                  <tr>
-                    <th 
-                      className="text-left p-2 text-xs font-medium"
-                      style={{ 
-                        color: colors.textSecondary, 
-                        background: colors.bg,
-                        position: 'sticky',
-                        left: 0,
-                        zIndex: 20,
-                        minWidth: '60px',
-                        borderRight: `1px solid ${colors.gridBorder}`,
-                        borderBottom: `1px solid ${colors.gridBorder}`,
-                        padding: '8px'
-                      }}
-                    >
-                      <div className="flex items-center gap-1">
-                        <span>#</span>
-                      </div>
-                    </th>
-                    {columns.map(col => (
-                      <th 
-                        key={col.name || col.COLUMN_NAME} 
-                        className="text-left p-2 text-xs font-medium cursor-pointer hover:bg-opacity-50"
-                        onClick={() => handleSortChange(
-                          col.name || col.COLUMN_NAME, 
-                          dataView.sortColumn === (col.name || col.COLUMN_NAME) && dataView.sortDirection === 'ASC' ? 'DESC' : 'ASC'
-                        )}
-                        style={{ 
-                          color: colors.textSecondary, 
-                          background: colors.bg,
-                          minWidth: '150px',
-                          borderBottom: `1px solid ${colors.gridBorder}`,
-                          padding: '8px',
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        <div className="flex items-center gap-1">
-                          <span>{col.name || col.COLUMN_NAME}</span>
-                          {dataView.sortColumn === (col.name || col.COLUMN_NAME) && (
-                            dataView.sortDirection === 'ASC' ? 
-                              <ChevronUp size={10} /> : 
-                              <ChevronDown size={10} />
-                          )}
-                        </div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.map((row, rowIndex) => (
-                    <tr 
-                      key={rowIndex} 
-                      style={{ 
-                        backgroundColor: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                      }}
-                    >
-                      <td 
-                        className="p-2 text-xs border-b"
-                        style={{ 
-                          borderColor: colors.gridBorder,
-                          color: colors.text,
-                          background: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                          position: 'sticky',
-                          left: 0,
-                          zIndex: 5,
-                          minWidth: '60px',
-                          borderRight: `1px solid ${colors.gridBorder}`,
-                          padding: '8px',
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        {rowIndex + 1 + (dataView.page - 1) * dataView.pageSize}
-                      </td>
-                      {columns.map(col => {
-                        const columnName = col.name || col.COLUMN_NAME;
-                        const value = row[columnName];
-                        return (
-                          <td 
-                            key={columnName} 
-                            className="p-2 text-xs border-b" 
-                            style={{ 
-                              borderColor: colors.gridBorder,
-                              color: colors.text,
-                              minWidth: '150px',
-                              padding: '8px',
-                              whiteSpace: 'nowrap'
-                            }}
-                            title={value?.toString()}
-                          >
-                            {value !== null && value !== undefined ? (
-                              typeof value === 'object' ? JSON.stringify(value) : value.toString()
-                            ) : (
-                              <span style={{ color: colors.textTertiary }}>NULL</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <div className="flex items-center gap-2">
+          <span className="text-xs" style={{ color: colors.textSecondary }}>
+            {totalRows > 0 ? (
+              <>Page {dataView.page} of {totalPages} | Total: {totalRows.toLocaleString()} rows</>
+            ) : (
+              isView ? 'No view data' : 'No data'
+            )}
+          </span>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <button 
+                className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
+                style={{ backgroundColor: colors.hover }}
+                onClick={() => handlePageChange(dataView.page - 1)}
+                disabled={tableDataLoading || dataView.page <= 1}
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <button 
+                className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
+                style={{ backgroundColor: colors.hover }}
+                onClick={() => handlePageChange(dataView.page + 1)}
+                disabled={tableDataLoading || dataView.page >= totalPages}
+              >
+                <ChevronRight size={14} />
+              </button>
             </div>
           )}
         </div>
       </div>
-    );
-  };
+
+      <div className="flex-1 relative" style={{ minHeight: 0, overflow: 'hidden' }}>
+        {tableDataLoading ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center">
+              <Loader className="animate-spin mx-auto mb-4" size={40} style={{ color: colors.primary }} />
+              <div className="text-sm font-medium" style={{ color: colors.text }}>
+                Loading {isView ? 'view' : 'table'} data...
+              </div>
+              <div className="text-xs mt-2" style={{ color: colors.textSecondary }}>Please wait while we fetch the rows</div>
+            </div>
+          </div>
+        ) : data.length === 0 ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center">
+              <div className="flex justify-center mb-4">
+                {isView ? (
+                  <FileText size={64} style={{ color: colors.textSecondary, opacity: 0.5 }} />
+                ) : (
+                  <TableIcon size={64} style={{ color: colors.textSecondary, opacity: 0.5 }} />
+                )}
+              </div>
+              <div className="text-lg font-medium" style={{ color: colors.text }}>
+                No {isView ? 'view' : ''} data available
+              </div>
+              <div className="text-sm mt-2" style={{ color: colors.textSecondary }}>
+                Click the Execute button to load data
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div 
+            className="absolute inset-0 border rounded" 
+            style={{ 
+              borderColor: colors.gridBorder,
+              overflow: 'auto'
+            }}
+          >
+            <table style={{ borderCollapse: 'collapse', minWidth: '100%', width: 'max-content' }}>
+              <thead style={{ 
+                backgroundColor: colors.tableHeader, 
+                position: 'sticky', 
+                top: 0, 
+                zIndex: 10 
+              }}>
+                <tr>
+                  <th 
+                    className="text-left p-2 text-xs font-medium"
+                    style={{ 
+                      color: colors.textSecondary, 
+                      background: colors.bg,
+                      position: 'sticky',
+                      left: 0,
+                      zIndex: 20,
+                      minWidth: '60px',
+                      borderRight: `1px solid ${colors.gridBorder}`,
+                      borderBottom: `1px solid ${colors.gridBorder}`,
+                      padding: '8px'
+                    }}
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>#</span>
+                    </div>
+                  </th>
+                  {columns.map(col => (
+                    <th 
+                      key={col.name || col.COLUMN_NAME} 
+                      className="text-left p-2 text-xs font-medium cursor-pointer hover:bg-opacity-50"
+                      onClick={() => handleSortChange(
+                        col.name || col.COLUMN_NAME, 
+                        dataView.sortColumn === (col.name || col.COLUMN_NAME) && dataView.sortDirection === 'ASC' ? 'DESC' : 'ASC'
+                      )}
+                      style={{ 
+                        color: colors.textSecondary, 
+                        background: colors.bg,
+                        minWidth: '150px',
+                        borderBottom: `1px solid ${colors.gridBorder}`,
+                        padding: '8px',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>{col.name || col.COLUMN_NAME}</span>
+                        {dataView.sortColumn === (col.name || col.COLUMN_NAME) && (
+                          dataView.sortDirection === 'ASC' ? 
+                            <ChevronUp size={10} /> : 
+                            <ChevronDown size={10} />
+                        )}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((row, rowIndex) => (
+                  <tr 
+                    key={rowIndex} 
+                    style={{ 
+                      backgroundColor: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                    }}
+                  >
+                    <td 
+                      className="p-2 text-xs border-b"
+                      style={{ 
+                        borderColor: colors.gridBorder,
+                        color: colors.text,
+                        background: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                        position: 'sticky',
+                        left: 0,
+                        zIndex: 5,
+                        minWidth: '60px',
+                        borderRight: `1px solid ${colors.gridBorder}`,
+                        padding: '8px',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {rowIndex + 1 + (dataView.page - 1) * dataView.pageSize}
+                    </td>
+                    {columns.map(col => {
+                      const columnName = col.name || col.COLUMN_NAME;
+                      const value = row[columnName];
+                      return (
+                        <td 
+                          key={columnName} 
+                          className="p-2 text-xs border-b" 
+                          style={{ 
+                            borderColor: colors.gridBorder,
+                            color: colors.text,
+                            minWidth: '150px',
+                            padding: '8px',
+                            whiteSpace: 'nowrap'
+                          }}
+                          title={value?.toString()}
+                        >
+                          {value !== null && value !== undefined ? (
+                            typeof value === 'object' ? JSON.stringify(value) : value.toString()
+                          ) : (
+                            <span style={{ color: colors.textTertiary }}>NULL</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
   // Render Parameters Tab
   const renderParametersTab = () => {
