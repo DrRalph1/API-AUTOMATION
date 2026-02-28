@@ -3067,124 +3067,123 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                 )}
 
                 {/* Authentication Tab */}
-{activeTab === 'auth' && (
-  <div className="space-y-6">
-    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-      Authentication & Authorization
-    </h3>
+  {activeTab === 'auth' && (
+    <div className="space-y-6">
+      <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+        Authentication & Authorization
+      </h3>
     
-    {/* Auth Type Selection with Description */}
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-      {[
-        { 
-          id: 'NONE', 
-          label: 'Public (No Auth)', 
-          icon: <Globe className="h-5 w-5" />,
-          desc: 'Open access - suitable for public data only',
-          warning: 'Use with caution - no authentication required'
-        },
-        { 
-          id: 'API_KEY', 
-          label: 'API Key', 
-          icon: <Key className="h-5 w-5" />,
-          desc: 'Simple key-based authentication for service-to-service',
-          warning: 'Basic security - rotate keys regularly'
-        },
-        { 
-          id: 'BASIC', 
-          label: 'Basic Auth', 
-          icon: <Lock className="h-5 w-5" />,
-          desc: 'Username/password with Base64 encoding',
-          warning: 'Use only with HTTPS - credentials sent in plaintext'
-        },
-        { 
-          id: 'JWT', 
-          label: 'JWT Bearer Token', 
-          icon: <Shield className="h-5 w-5" />,
-          desc: 'Stateless authentication with signed tokens',
-          warning: 'Implement proper token validation and expiration'
-        },
-        { 
-          id: 'OAUTH2', 
-          label: 'OAuth 2.0', 
-          icon: <Users className="h-5 w-5" />,
-          desc: 'Industry standard for delegated authorization',
-          warning: 'Complex setup - requires OAuth provider'
-        },
-        { 
-          id: 'ORACLE_ROLES', 
-          label: 'Oracle Database Roles', 
-          icon: <Database className="h-5 w-5" />,
-          desc: 'Leverage existing Oracle database security',
-          warning: 'Direct database authentication - use with caution'
-        },
-        { 
-          id: 'MUTUAL_TLS', 
-          label: 'Mutual TLS (mTLS)', 
-          icon: <ShieldCheck className="h-5 w-5" />,
-          desc: 'Certificate-based mutual authentication',
-          warning: 'Requires certificate management infrastructure'
-        },
-        { 
-          id: 'SAML', 
-          label: 'SAML 2.0', 
-          icon: <Users className="h-5 w-5" />,
-          desc: 'Enterprise SSO with SAML assertions',
-          warning: 'Complex setup - requires IdP configuration'
-        },
-        { 
-          id: 'LDAP', 
-          label: 'LDAP / Active Directory', 
-          icon: <Server className="h-5 w-5" />,
-          desc: 'Integration with corporate directory services',
-          warning: 'Requires LDAP server configuration'
-        },
-        { 
-          id: 'CUSTOM', 
-          label: 'Custom Auth Function', 
-          icon: <Code className="h-5 w-5" />,
-          desc: 'Implement your own authentication logic',
-          warning: 'Full flexibility - security is your responsibility'
-        }
-      ].map((type) => (
-        <button
-          key={type.id}
-          onClick={() => handleAuthConfigChange('authType', type.id)}
-          className={`p-4 rounded-lg border-2 transition-all hover-lift ${
-            authConfig.authType === type.id 
-              ? 'border-blue-500 bg-blue-500/10' 
-              : 'border-transparent hover:border-gray-600'
-          }`}
+    {/* Auth Type Selection */}
+    <div className="mb-6">
+      <label className="block text-sm font-small mb-2" style={{ color: themeColors.text }}>
+        Authentication Type
+      </label>
+      <div className="relative">
+        <select
+          value={authConfig.authType}
+          onChange={(e) => handleAuthConfigChange('authType', e.target.value)}
+          className="w-full p-3 rounded-lg border-2 appearance-none cursor-pointer"
+          style={{
+            backgroundColor: themeColors.bg,
+            borderColor: themeColors.border,
+            color: themeColors.text,
+            paddingRight: '2.5rem' // Space for custom arrow
+          }}
+        >
+          <optgroup label="Authentication Methods">
+            <option value="NONE">🌐 Public (No Auth) - Open access for public data</option>
+            <option value="API_KEY">🔑 API Key - Simple key-based authentication</option>
+            <option value="BASIC">🔒 Basic Auth - Username/password with Base64</option>
+            <option value="JWT">🛡️ JWT Bearer Token - Stateless signed tokens</option>
+            <option value="OAUTH2">👥 OAuth 2.0 - Industry standard for delegated auth</option>
+            <option value="ORACLE_ROLES">🗄️ Oracle Database Roles - Database security</option>
+            <option value="MUTUAL_TLS">🔐 Mutual TLS (mTLS) - Certificate-based auth</option>
+            <option value="SAML">👤 SAML 2.0 - Enterprise SSO</option>
+            <option value="LDAP">🖥️ LDAP / Active Directory - Corporate directory</option>
+            <option value="CUSTOM">⚙️ Custom Auth Function - Your own logic</option>
+          </optgroup>
+        </select>
+        
+        {/* Custom dropdown arrow */}
+        <div 
+          className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none"
+          style={{ color: themeColors.textSecondary }}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </div>
+
+      {/* Selected Auth Type Details */}
+      {authConfig.authType && (
+        <div 
+          className="mt-4 p-4 rounded-lg"
           style={{ 
-            backgroundColor: authConfig.authType === type.id ? themeColors.info + '20' : themeColors.card,
-            borderColor: authConfig.authType === type.id ? themeColors.info : themeColors.border
+            backgroundColor: themeColors.card,
+            borderLeft: `4px solid ${themeColors.info}`,
+            borderColor: themeColors.border
           }}
         >
           <div className="flex items-start gap-3">
-            <div className="p-2 rounded-lg" style={{ 
-              backgroundColor: authConfig.authType === type.id ? themeColors.info + '30' : themeColors.hover 
-            }}>
-              <div style={{ color: authConfig.authType === type.id ? themeColors.info : themeColors.textSecondary }}>
-                {type.icon}
+            <div className="p-2 rounded-lg" style={{ backgroundColor: themeColors.info + '20' }}>
+              <div style={{ color: themeColors.info }}>
+                {authConfig.authType === 'NONE' && <Globe className="h-5 w-5" />}
+                {authConfig.authType === 'API_KEY' && <Key className="h-5 w-5" />}
+                {authConfig.authType === 'BASIC' && <Lock className="h-5 w-5" />}
+                {authConfig.authType === 'JWT' && <Shield className="h-5 w-5" />}
+                {authConfig.authType === 'OAUTH2' && <Users className="h-5 w-5" />}
+                {authConfig.authType === 'ORACLE_ROLES' && <Database className="h-5 w-5" />}
+                {authConfig.authType === 'MUTUAL_TLS' && <ShieldCheck className="h-5 w-5" />}
+                {authConfig.authType === 'SAML' && <Users className="h-5 w-5" />}
+                {authConfig.authType === 'LDAP' && <Server className="h-5 w-5" />}
+                {authConfig.authType === 'CUSTOM' && <Code className="h-5 w-5" />}
               </div>
             </div>
-            <div className="flex-1 text-left">
+            <div className="flex-1">
               <h4 className="font-medium text-sm" style={{ color: themeColors.text }}>
-                {type.label}
+                {authConfig.authType === 'NONE' && 'Public (No Auth)'}
+                {authConfig.authType === 'API_KEY' && 'API Key'}
+                {authConfig.authType === 'BASIC' && 'Basic Auth'}
+                {authConfig.authType === 'JWT' && 'JWT Bearer Token'}
+                {authConfig.authType === 'OAUTH2' && 'OAuth 2.0'}
+                {authConfig.authType === 'ORACLE_ROLES' && 'Oracle Database Roles'}
+                {authConfig.authType === 'MUTUAL_TLS' && 'Mutual TLS (mTLS)'}
+                {authConfig.authType === 'SAML' && 'SAML 2.0'}
+                {authConfig.authType === 'LDAP' && 'LDAP / Active Directory'}
+                {authConfig.authType === 'CUSTOM' && 'Custom Auth Function'}
               </h4>
               <p className="text-xs mt-1" style={{ color: themeColors.textSecondary }}>
-                {type.desc}
+                {authConfig.authType === 'NONE' && 'Open access - suitable for public data only'}
+                {authConfig.authType === 'API_KEY' && 'Simple key-based authentication for service-to-service'}
+                {authConfig.authType === 'BASIC' && 'Username/password with Base64 encoding'}
+                {authConfig.authType === 'JWT' && 'Stateless authentication with signed tokens'}
+                {authConfig.authType === 'OAUTH2' && 'Industry standard for delegated authorization'}
+                {authConfig.authType === 'ORACLE_ROLES' && 'Leverage existing Oracle database security'}
+                {authConfig.authType === 'MUTUAL_TLS' && 'Certificate-based mutual authentication'}
+                {authConfig.authType === 'SAML' && 'Enterprise SSO with SAML assertions'}
+                {authConfig.authType === 'LDAP' && 'Integration with corporate directory services'}
+                {authConfig.authType === 'CUSTOM' && 'Implement your own authentication logic'}
               </p>
-              <p className="text-xs mt-2 p-1 rounded" style={{ 
+              <p className="text-xs mt-2 p-2 rounded" style={{ 
                 backgroundColor: themeColors.warning + '20',
                 color: themeColors.warning
               }}>
-                ⚠️ {type.warning}
+                ⚠️ {authConfig.authType === 'NONE' && 'Use with caution - no authentication required'}
+                {authConfig.authType === 'API_KEY' && 'Basic security - rotate keys regularly'}
+                {authConfig.authType === 'BASIC' && 'Use only with HTTPS - credentials sent in plaintext'}
+                {authConfig.authType === 'JWT' && 'Implement proper token validation and expiration'}
+                {authConfig.authType === 'OAUTH2' && 'Complex setup - requires OAuth provider'}
+                {authConfig.authType === 'ORACLE_ROLES' && 'Direct database authentication - use with caution'}
+                {authConfig.authType === 'MUTUAL_TLS' && 'Requires certificate management infrastructure'}
+                {authConfig.authType === 'SAML' && 'Complex setup - requires IdP configuration'}
+                {authConfig.authType === 'LDAP' && 'Requires LDAP server configuration'}
+                {authConfig.authType === 'CUSTOM' && 'Full flexibility - security is your responsibility'}
               </p>
             </div>
           </div>
-        </button>
-      ))}
+        </div>
+      )}
     </div>
 
     {/* Conditional Configuration Based on Auth Type */}
