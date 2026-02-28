@@ -2359,6 +2359,546 @@ public class OracleSchemaController {
         }
     }
 
+
+
+    // ============================================================
+// NEW: USED BY / DEPENDENT OBJECTS ENDPOINTS
+// ============================================================
+
+    @GetMapping("/objects/{objectType}/{objectName}/used-by")
+    @Operation(summary = "Get objects that depend on this object",
+            description = "Retrieves all procedures, functions, packages, etc. that depend on (use) the specified object",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "objectType", description = "Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "objectName", description = "Object name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "Object owner (optional, defaults to current user)",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getUsedBy(
+            @PathVariable String objectType,
+            @PathVariable String objectName,
+            @RequestParam(required = false) String owner,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting used by objects");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting used by objects");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting objects that depend on " + objectType + ": " + objectName);
+
+            Map<String, Object> result = oracleSchemaService.getUsedBy(
+                    requestId, req, performedBy, objectName, objectType, owner);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting used by objects: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting used by objects: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/objects/{objectType}/{objectName}/used-by/paginated")
+    @Operation(summary = "Get paginated objects that depend on this object",
+            description = "Retrieves paginated list of procedures, functions, packages, etc. that depend on (use) the specified object",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "objectType", description = "Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "objectName", description = "Object name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "Object owner (optional, defaults to current user)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "page", description = "Page number (1-based)",
+                            required = false, in = ParameterIn.QUERY),
+                    @Parameter(name = "pageSize", description = "Number of items per page",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getUsedByPaginated(
+            @PathVariable String objectType,
+            @PathVariable String objectName,
+            @RequestParam(required = false) String owner,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting paginated used by objects");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting paginated used by objects");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting paginated objects that depend on " + objectType + ": " + objectName +
+                    ", page: " + page + ", pageSize: " + pageSize);
+
+            Map<String, Object> result = oracleSchemaService.getUsedByPaginated(
+                    requestId, req, performedBy, objectName, objectType, owner, page, pageSize);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting paginated used by objects: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting paginated used by objects: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/objects/{objectType}/{objectName}/dependency-hierarchy")
+    @Operation(summary = "Get complete dependency hierarchy",
+            description = "Retrieves both what this object depends on and what depends on it",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "objectType", description = "Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "objectName", description = "Object name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "Object owner (optional, defaults to current user)",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getDependencyHierarchy(
+            @PathVariable String objectType,
+            @PathVariable String objectName,
+            @RequestParam(required = false) String owner,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting dependency hierarchy");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting dependency hierarchy");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting dependency hierarchy for " + objectType + ": " + objectName);
+
+            Map<String, Object> result = oracleSchemaService.getDependencyHierarchy(
+                    requestId, req, performedBy, objectName, objectType, owner);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting dependency hierarchy: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting dependency hierarchy: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/objects/{objectType}/{objectName}/used-by/count")
+    @Operation(summary = "Get count of objects that depend on this object",
+            description = "Retrieves only the count of objects that depend on the specified object (fast)",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "objectType", description = "Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "objectName", description = "Object name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "Object owner (optional, defaults to current user)",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getUsedByCount(
+            @PathVariable String objectType,
+            @PathVariable String objectName,
+            @RequestParam(required = false) String owner,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting used by count");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting used by count");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting count of objects that depend on " + objectType + ": " + objectName);
+
+            Map<String, Object> result = oracleSchemaService.getUsedByCount(
+                    requestId, req, performedBy, objectName, objectType, owner);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting used by count: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting used by count: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/objects/{objectType}/{objectName}/used-by/summary")
+    @Operation(summary = "Get used by summary grouped by object type",
+            description = "Retrieves summary of dependent objects grouped by their type",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "objectType", description = "Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "objectName", description = "Object name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "Object owner (optional, defaults to current user)",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getUsedBySummary(
+            @PathVariable String objectType,
+            @PathVariable String objectName,
+            @RequestParam(required = false) String owner,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting used by summary");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting used by summary");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting used by summary for " + objectType + ": " + objectName);
+
+            Map<String, Object> result = oracleSchemaService.getUsedBySummary(
+                    requestId, req, performedBy, objectName, objectType, owner);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting used by summary: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting used by summary: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+// ============================================================
+// CONVENIENCE ENDPOINTS FOR SPECIFIC OBJECT TYPES
+// ============================================================
+
+    @GetMapping("/tables/{tableName}/used-by")
+    @Operation(summary = "Get objects that depend on a table",
+            description = "Retrieves all procedures, functions, packages, etc. that depend on the specified table",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "tableName", description = "Table name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "Table owner (optional, defaults to current user)",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getTableUsedBy(
+            @PathVariable String tableName,
+            @RequestParam(required = false) String owner,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting table dependencies");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting table dependencies");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting objects that depend on table: " + tableName);
+
+            Map<String, Object> result = oracleSchemaService.getTableUsedBy(
+                    requestId, req, performedBy, tableName, owner);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting table dependencies: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting table dependencies: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/procedures/{procedureName}/used-by")
+    @Operation(summary = "Get objects that depend on a procedure",
+            description = "Retrieves all objects that depend on the specified procedure",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "procedureName", description = "Procedure name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "Procedure owner (optional, defaults to current user)",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getProcedureUsedBy(
+            @PathVariable String procedureName,
+            @RequestParam(required = false) String owner,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting procedure dependencies");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting procedure dependencies");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting objects that depend on procedure: " + procedureName);
+
+            Map<String, Object> result = oracleSchemaService.getProcedureUsedBy(
+                    requestId, req, performedBy, procedureName, owner);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting procedure dependencies: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting procedure dependencies: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/functions/{functionName}/used-by")
+    @Operation(summary = "Get objects that depend on a function",
+            description = "Retrieves all objects that depend on the specified function",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "functionName", description = "Function name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "Function owner (optional, defaults to current user)",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getFunctionUsedBy(
+            @PathVariable String functionName,
+            @RequestParam(required = false) String owner,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting function dependencies");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting function dependencies");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting objects that depend on function: " + functionName);
+
+            Map<String, Object> result = oracleSchemaService.getFunctionUsedBy(
+                    requestId, req, performedBy, functionName, owner);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting function dependencies: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting function dependencies: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/packages/{packageName}/used-by")
+    @Operation(summary = "Get objects that depend on a package",
+            description = "Retrieves all objects that depend on the specified package",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "packageName", description = "Package name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "Package owner (optional, defaults to current user)",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getPackageUsedBy(
+            @PathVariable String packageName,
+            @RequestParam(required = false) String owner,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting package dependencies");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting package dependencies");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting objects that depend on package: " + packageName);
+
+            Map<String, Object> result = oracleSchemaService.getPackageUsedBy(
+                    requestId, req, performedBy, packageName, owner);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting package dependencies: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting package dependencies: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/views/{viewName}/used-by")
+    @Operation(summary = "Get objects that depend on a view",
+            description = "Retrieves all objects that depend on the specified view",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "viewName", description = "View name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "View owner (optional, defaults to current user)",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getViewUsedBy(
+            @PathVariable String viewName,
+            @RequestParam(required = false) String owner,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting view dependencies");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting view dependencies");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting objects that depend on view: " + viewName);
+
+            Map<String, Object> result = oracleSchemaService.getViewUsedBy(
+                    requestId, req, performedBy, viewName, owner);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting view dependencies: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting view dependencies: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    @GetMapping("/triggers/{triggerName}/used-by")
+    @Operation(summary = "Get objects that depend on a trigger",
+            description = "Retrieves all objects that depend on the specified trigger",
+            parameters = {
+                    @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}",
+                            required = true, in = ParameterIn.HEADER),
+                    @Parameter(name = "triggerName", description = "Trigger name",
+                            required = true, in = ParameterIn.PATH),
+                    @Parameter(name = "owner", description = "Trigger owner (optional, defaults to current user)",
+                            required = false, in = ParameterIn.QUERY)
+            })
+    public ResponseEntity<?> getTriggerUsedBy(
+            @PathVariable String triggerName,
+            @RequestParam(required = false) String owner,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting trigger dependencies");
+        if (authValidation != null) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Authorization failed for getting trigger dependencies");
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Getting objects that depend on trigger: " + triggerName);
+
+            Map<String, Object> result = oracleSchemaService.getTriggerUsedBy(
+                    requestId, req, performedBy, triggerName, owner);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            loggerUtil.log("oracleSchema", "RequestEntity ID: " + requestId +
+                    ", Error getting trigger dependencies: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting trigger dependencies: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            errorResponse.put("timestamp", java.time.Instant.now().toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+
+
     // ============================================================
     // 17. TYPE ENDPOINTS - LEGACY FORMAT
     // ============================================================

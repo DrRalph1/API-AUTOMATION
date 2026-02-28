@@ -2561,6 +2561,676 @@ export const getSupportedObjectTypes = async (authorizationHeader) => {
     });
 };
 
+
+
+// ============================================================
+// NEW: USED BY / DEPENDENT OBJECTS ENDPOINTS
+// ============================================================
+
+/**
+ * Get all objects that depend on (use) the specified object
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)
+ * @param {string} params.objectName - Object name
+ * @param {string} params.owner - Object owner (optional)
+ * @returns {Promise} API response
+ */
+export const getUsedBy = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectType, objectName, owner } = params;
+    
+    const queryParams = buildQueryParams({ owner });
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/used-by${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformUsedByResponse(response);
+    });
+};
+
+/**
+ * Get paginated objects that depend on (use) the specified object
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)
+ * @param {string} params.objectName - Object name
+ * @param {string} params.owner - Object owner (optional)
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of items per page
+ * @returns {Promise} API response
+ */
+export const getUsedByPaginated = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectType, objectName, owner, page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({ owner, page, pageSize });
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/used-by/paginated${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        // return transformPaginatedUsedByResponse(response);
+        return response;
+    });
+};
+
+/**
+ * Get complete dependency hierarchy for an object
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)
+ * @param {string} params.objectName - Object name
+ * @param {string} params.owner - Object owner (optional)
+ * @returns {Promise} API response
+ */
+export const getDependencyHierarchy = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectType, objectName, owner } = params;
+    
+    const queryParams = buildQueryParams({ owner });
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/dependency-hierarchy${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformDependencyHierarchyResponse(response);
+    });
+};
+
+/**
+ * Get count of objects that depend on (use) the specified object
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)
+ * @param {string} params.objectName - Object name
+ * @param {string} params.owner - Object owner (optional)
+ * @returns {Promise} API response
+ */
+export const getUsedByCount = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectType, objectName, owner } = params;
+    
+    const queryParams = buildQueryParams({ owner });
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/used-by/count${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformUsedByCountResponse(response);
+    });
+};
+
+/**
+ * Get used by summary grouped by object type
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)
+ * @param {string} params.objectName - Object name
+ * @param {string} params.owner - Object owner (optional)
+ * @returns {Promise} API response
+ */
+export const getUsedBySummary = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectType, objectName, owner } = params;
+    
+    const queryParams = buildQueryParams({ owner });
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/used-by/summary${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return response;
+    });
+};
+
+// ============================================================
+// CONVENIENCE ENDPOINTS FOR SPECIFIC OBJECT TYPES
+// ============================================================
+
+/**
+ * Get objects that depend on a table
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.tableName - Table name
+ * @param {string} params.owner - Table owner (optional)
+ * @returns {Promise} API response
+ */
+export const getTableUsedBy = async (authorizationHeader, params = {}) => {
+    const { tableName, owner } = params;
+    return getUsedBy(authorizationHeader, { 
+        objectType: 'TABLE', 
+        objectName: tableName, 
+        owner 
+    });
+};
+
+/**
+ * Get objects that depend on a procedure
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.procedureName - Procedure name
+ * @param {string} params.owner - Procedure owner (optional)
+ * @returns {Promise} API response
+ */
+export const getProcedureUsedBy = async (authorizationHeader, params = {}) => {
+    const { procedureName, owner } = params;
+    return getUsedBy(authorizationHeader, { 
+        objectType: 'PROCEDURE', 
+        objectName: procedureName, 
+        owner 
+    });
+};
+
+/**
+ * Get objects that depend on a function
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.functionName - Function name
+ * @param {string} params.owner - Function owner (optional)
+ * @returns {Promise} API response
+ */
+export const getFunctionUsedBy = async (authorizationHeader, params = {}) => {
+    const { functionName, owner } = params;
+    return getUsedBy(authorizationHeader, { 
+        objectType: 'FUNCTION', 
+        objectName: functionName, 
+        owner 
+    });
+};
+
+/**
+ * Get objects that depend on a package
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.packageName - Package name
+ * @param {string} params.owner - Package owner (optional)
+ * @returns {Promise} API response
+ */
+export const getPackageUsedBy = async (authorizationHeader, params = {}) => {
+    const { packageName, owner } = params;
+    return getUsedBy(authorizationHeader, { 
+        objectType: 'PACKAGE', 
+        objectName: packageName, 
+        owner 
+    });
+};
+
+/**
+ * Get objects that depend on a view
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.viewName - View name
+ * @param {string} params.owner - View owner (optional)
+ * @returns {Promise} API response
+ */
+export const getViewUsedBy = async (authorizationHeader, params = {}) => {
+    const { viewName, owner } = params;
+    return getUsedBy(authorizationHeader, { 
+        objectType: 'VIEW', 
+        objectName: viewName, 
+        owner 
+    });
+};
+
+/**
+ * Get objects that depend on a trigger
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.triggerName - Trigger name
+ * @param {string} params.owner - Trigger owner (optional)
+ * @returns {Promise} API response
+ */
+export const getTriggerUsedBy = async (authorizationHeader, params = {}) => {
+    const { triggerName, owner } = params;
+    return getUsedBy(authorizationHeader, { 
+        objectType: 'TRIGGER', 
+        objectName: triggerName, 
+        owner 
+    });
+};
+
+/**
+ * Get objects that depend on a synonym
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.synonymName - Synonym name
+ * @param {string} params.owner - Synonym owner (optional)
+ * @returns {Promise} API response
+ */
+export const getSynonymUsedBy = async (authorizationHeader, params = {}) => {
+    const { synonymName, owner } = params;
+    return getUsedBy(authorizationHeader, { 
+        objectType: 'SYNONYM', 
+        objectName: synonymName, 
+        owner 
+    });
+};
+
+// ============================================================
+// NEW TRANSFORM FUNCTIONS FOR USED BY RESPONSES
+// ============================================================
+
+/**
+ * Transform used by response
+ */
+const transformUsedByResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        items: (data.items || []).map((item, index) => ({
+            id: `usedby-${index + 1}`,
+            name: item.name || item.dependent_name,
+            owner: item.owner || item.dependent_owner,
+            type: item.type || item.object_type,
+            objectType: item.object_type || item.type,
+            status: item.status || item.dependent_status,
+            created: item.created || item.dependent_created,
+            lastModified: item.lastModified || item.dependent_modified,
+            dependencyType: item.dependency_type,
+            parameterCount: item.parameterCount || item.parameter_count || 0,
+            hasParameters: item.hasParameters || false,
+            icon: getObjectTypeIcon(item.type || item.object_type),
+            reference: item.reference || ''
+        })),
+        totalCount: data.totalCount || data.items?.length || 0,
+        objectName: data.objectName || '',
+        objectType: data.objectType || '',
+        owner: data.owner || ''
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform paginated used by response
+ */
+const transformPaginatedUsedByResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        items: (data.items || []).map((item, index) => ({
+            id: `usedby-${index + 1}`,
+            name: item.name || item.dependent_name,
+            owner: item.owner || item.dependent_owner,
+            type: item.type || item.object_type,
+            objectType: item.object_type || item.type,
+            status: item.status || item.dependent_status,
+            created: item.created || item.dependent_created,
+            lastModified: item.lastModified || item.dependent_modified,
+            dependencyType: item.dependency_type,
+            parameterCount: item.parameterCount || item.parameter_count || 0,
+            hasParameters: item.hasParameters || false,
+            icon: getObjectTypeIcon(item.type || item.object_type)
+        })),
+        totalCount: data.totalCount || 0,
+        totalPages: data.totalPages || 1,
+        page: data.page || 1,
+        pageSize: data.pageSize || 10,
+        hasNext: data.page < data.totalPages,
+        hasPrev: data.page > 1,
+        objectName: data.objectName || '',
+        objectType: data.objectType || '',
+        owner: data.owner || ''
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform dependency hierarchy response
+ */
+const transformDependencyHierarchyResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        objectName: data.objectName || '',
+        objectType: data.objectType || '',
+        owner: data.owner || '',
+        dependsOn: (data.dependsOn || []).map((item, index) => ({
+            id: `depends-${index + 1}`,
+            name: item.name,
+            owner: item.owner,
+            type: item.type,
+            icon: getObjectTypeIcon(item.type),
+            status: item.status
+        })),
+        usedBy: (data.usedBy || []).map((item, index) => ({
+            id: `used-${index + 1}`,
+            name: item.name,
+            owner: item.owner,
+            type: item.type,
+            icon: getObjectTypeIcon(item.type),
+            status: item.status
+        })),
+        dependsOnCount: data.dependsOnCount || 0,
+        usedByCount: data.usedByCount || 0
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform used by count response
+ */
+const transformUsedByCountResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        count: data.count || 0,
+        objectName: data.objectName || '',
+        objectType: data.objectType || '',
+        owner: data.owner || ''
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform used by summary response
+ */
+const transformUsedBySummaryResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        byType: (data.byType || []).map(item => ({
+            dependentType: item.dependent_type,
+            count: item.count,
+            validCount: item.valid_count || 0,
+            invalidCount: item.invalid_count || 0
+        })),
+        totalCount: data.totalCount || 0,
+        objectName: data.objectName || '',
+        objectType: data.objectType || '',
+        owner: data.owner || '',
+        generatedAt: data.generatedAt || new Date().toISOString()
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+// ============================================================
+// EXTRACT FUNCTIONS FOR USED BY RESPONSES
+// ============================================================
+
+/**
+ * Extract used by items from response
+ */
+export const extractUsedByItems = (response) => {
+    return response?.data?.items || [];
+};
+
+/**
+ * Extract used by count from response
+ */
+export const extractUsedByCount = (response) => {
+    return response?.data?.count || 0;
+};
+
+/**
+ * Extract dependency hierarchy from response
+ */
+export const extractDependencyHierarchy = (response) => {
+    return response?.data || {
+        dependsOn: [],
+        usedBy: [],
+        dependsOnCount: 0,
+        usedByCount: 0
+    };
+};
+
+/**
+ * Extract used by summary from response
+ */
+export const extractUsedBySummary = (response) => {
+    return response?.data || {
+        byType: [],
+        totalCount: 0
+    };
+};
+
+// ============================================================
+// UTILITY FUNCTIONS FOR DEPENDENCY ANALYSIS
+// ============================================================
+
+/**
+ * Check if an object has any dependencies
+ */
+export const hasDependencies = (objectName, objectType, owner) => {
+    return async (authorizationHeader) => {
+        const response = await getUsedByCount(authorizationHeader, { objectType, objectName, owner });
+        return (response?.data?.count || 0) > 0;
+    };
+};
+
+/**
+ * Check if an object has circular dependencies
+ * Note: This requires fetching the full hierarchy
+ */
+export const hasCircularDependencies = async (authorizationHeader, params) => {
+    const hierarchy = await getDependencyHierarchy(authorizationHeader, params);
+    const data = extractDependencyHierarchy(hierarchy);
+    
+    // Simple circular detection - if an object depends on itself
+    const dependsOnNames = data.dependsOn.map(item => item.name);
+    const usedByNames = data.usedBy.map(item => item.name);
+    
+    return dependsOnNames.includes(params.objectName) || 
+           usedByNames.includes(params.objectName);
+};
+
+/**
+ * Get dependency graph for visualization
+ */
+export const getDependencyGraph = async (authorizationHeader, params) => {
+    const hierarchy = await getDependencyHierarchy(authorizationHeader, params);
+    const data = extractDependencyHierarchy(hierarchy);
+    
+    // Create nodes and edges for graph visualization
+    const nodes = [
+        {
+            id: params.objectName,
+            label: params.objectName,
+            type: params.objectType,
+            isTarget: true
+        }
+    ];
+    
+    const edges = [];
+    
+    // Add nodes and edges for dependencies
+    data.dependsOn.forEach(dep => {
+        if (!nodes.some(n => n.id === dep.name)) {
+            nodes.push({
+                id: dep.name,
+                label: dep.name,
+                type: dep.type,
+                isTarget: false
+            });
+        }
+        edges.push({
+            from: params.objectName,
+            to: dep.name,
+            type: 'depends_on'
+        });
+    });
+    
+    // Add nodes and edges for dependents
+    data.usedBy.forEach(use => {
+        if (!nodes.some(n => n.id === use.name)) {
+            nodes.push({
+                id: use.name,
+                label: use.name,
+                type: use.type,
+                isTarget: false
+            });
+        }
+        edges.push({
+            from: use.name,
+            to: params.objectName,
+            type: 'used_by'
+        });
+    });
+    
+    return {
+        nodes,
+        edges,
+        totalNodes: nodes.length,
+        totalEdges: edges.length
+    };
+};
+
+/**
+ * Get dependency impact analysis
+ */
+export const getDependencyImpact = async (authorizationHeader, params) => {
+    const [usedBy, summary] = await Promise.all([
+        getUsedBy(authorizationHeader, params),
+        getUsedBySummary(authorizationHeader, params)
+    ]);
+    
+    const usedByData = extractUsedByItems(usedBy);
+    const summaryData = extractUsedBySummary(summary);
+    
+    // Group by object type for impact analysis
+    const impactByType = {};
+    usedByData.forEach(item => {
+        const type = item.type;
+        if (!impactByType[type]) {
+            impactByType[type] = [];
+        }
+        impactByType[type].push(item);
+    });
+    
+    // Calculate risk level based on number and types of dependencies
+    let riskLevel = 'LOW';
+    const totalDeps = usedByData.length;
+    const hasProcedures = usedByData.some(item => item.type === 'PROCEDURE');
+    const hasPackages = usedByData.some(item => item.type === 'PACKAGE');
+    const hasInvalid = usedByData.some(item => item.status === 'INVALID');
+    
+    if (totalDeps > 20 || hasPackages || (hasProcedures && totalDeps > 10)) {
+        riskLevel = 'HIGH';
+    } else if (totalDeps > 10 || hasProcedures || hasInvalid) {
+        riskLevel = 'MEDIUM';
+    }
+    
+    return {
+        objectName: params.objectName,
+        objectType: params.objectType,
+        owner: params.owner,
+        totalDependencies: totalDeps,
+        impactByType,
+        summary: summaryData,
+        riskLevel,
+        hasInvalidDependencies: hasInvalid,
+        recommendedAction: getRecommendedAction(riskLevel, totalDeps, hasInvalid)
+    };
+};
+
+/**
+ * Get recommended action based on impact analysis
+ */
+const getRecommendedAction = (riskLevel, totalDeps, hasInvalid) => {
+    if (hasInvalid) {
+        return 'Fix invalid dependencies before making changes';
+    }
+    
+    switch (riskLevel) {
+        case 'HIGH':
+            return 'Thoroughly test changes in development environment first. Consider impact on ' + totalDeps + ' dependent objects.';
+        case 'MEDIUM':
+            return 'Review dependent objects and test changes in development environment.';
+        case 'LOW':
+            return 'Changes have minimal impact. Standard testing recommended.';
+        default:
+            return 'Review dependent objects before making changes.';
+    }
+};
+
+/**
+ * Export dependency report
+ */
+export const exportDependencyReport = async (authorizationHeader, params) => {
+    const [usedBy, summary] = await Promise.all([
+        getUsedBy(authorizationHeader, params),
+        getUsedBySummary(authorizationHeader, params)
+    ]);
+    
+    const usedByData = extractUsedByItems(usedBy);
+    const summaryData = extractUsedBySummary(summary);
+    
+    const report = {
+        generatedAt: new Date().toISOString(),
+        object: {
+            name: params.objectName,
+            type: params.objectType,
+            owner: params.owner
+        },
+        summary: summaryData,
+        dependencies: usedByData.map(item => ({
+            name: item.name,
+            owner: item.owner,
+            type: item.type,
+            status: item.status,
+            created: item.created,
+            lastModified: item.lastModified,
+            parameterCount: item.parameterCount
+        })),
+        statistics: {
+            total: usedByData.length,
+            byType: summaryData.byType,
+            valid: usedByData.filter(item => item.status === 'VALID').length,
+            invalid: usedByData.filter(item => item.status === 'INVALID').length
+        }
+    };
+    
+    return report;
+};
+
+
+
 // ============================================================
 // COMPREHENSIVE SCHEMA DATA (Enhanced)
 // ============================================================

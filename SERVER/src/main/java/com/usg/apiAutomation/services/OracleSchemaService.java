@@ -1108,6 +1108,288 @@ public class OracleSchemaService {
         }
     }
 
+
+
+    // ============================================================
+// NEW: USED BY / DEPENDENT OBJECTS SERVICE METHODS
+// ============================================================
+
+    /**
+     * Get all objects that depend on (use) the specified object
+     */
+    public Map<String, Object> getUsedBy(String requestId, HttpServletRequest req,
+                                         String performedBy, String objectName,
+                                         String objectType, String owner) {
+        log.info("RequestEntity ID: {}, Getting used by for {}: {}, owner: {}",
+                requestId, objectType, objectName, owner);
+
+        try {
+            List<Map<String, Object>> usedBy = oracleSchemaRepository.getUsedBy(objectName, objectType, owner);
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("items", usedBy);
+            data.put("totalCount", usedBy.size());
+            data.put("objectName", objectName);
+            data.put("objectType", objectType);
+            data.put("owner", owner != null ? owner : oracleSchemaRepository.getCurrentUser());
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", data);
+            result.put("responseCode", 200);
+            result.put("message", "Used by objects retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Found {} objects that depend on {}: {}",
+                    requestId, usedBy.size(), objectType, objectName);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting used by for {} {}: {}",
+                    requestId, objectType, objectName, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Get paginated list of objects that depend on (use) the specified object
+     */
+    public Map<String, Object> getUsedByPaginated(String requestId, HttpServletRequest req,
+                                                  String performedBy, String objectName,
+                                                  String objectType, String owner,
+                                                  int page, int pageSize) {
+        log.info("RequestEntity ID: {}, Getting paginated used by for {}: {}, page: {}, pageSize: {}",
+                requestId, objectType, objectName, page, pageSize);
+
+        try {
+            Map<String, Object> paginatedData = oracleSchemaRepository.getUsedByPaginated(
+                    objectName, objectType, owner, page, pageSize);
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("items", paginatedData.get("items"));
+            data.put("pagination", Map.of(
+                    "page", paginatedData.get("page"),
+                    "pageSize", paginatedData.get("pageSize"),
+                    "totalCount", paginatedData.get("totalCount"),
+                    "totalPages", paginatedData.get("totalPages")
+            ));
+            data.put("totalCount", paginatedData.get("totalCount"));
+            data.put("objectName", objectName);
+            data.put("objectType", objectType);
+            data.put("owner", owner != null ? owner : oracleSchemaRepository.getCurrentUser());
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", data);
+            result.put("responseCode", 200);
+            result.put("message", "Used by objects retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved {} of {} total objects that depend on {}: {}",
+                    requestId, ((List<?>) paginatedData.get("items")).size(),
+                    paginatedData.get("totalCount"), objectType, objectName);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting paginated used by for {} {}: {}",
+                    requestId, objectType, objectName, e.getMessage());
+
+            Map<String, Object> errorData = new HashMap<>();
+            errorData.put("items", new ArrayList<>());
+            errorData.put("totalCount", 0);
+            errorData.put("objectName", objectName);
+            errorData.put("objectType", objectType);
+
+            Map<String, Object> errorResult = new HashMap<>();
+            errorResult.put("data", errorData);
+            errorResult.put("responseCode", 500);
+            errorResult.put("message", e.getMessage());
+            errorResult.put("requestId", requestId);
+            errorResult.put("timestamp", java.time.Instant.now().toString());
+
+            return errorResult;
+        }
+    }
+
+    /**
+     * Get complete dependency hierarchy (what this object depends on and what depends on it)
+     */
+    public Map<String, Object> getDependencyHierarchy(String requestId, HttpServletRequest req,
+                                                      String performedBy, String objectName,
+                                                      String objectType, String owner) {
+        log.info("RequestEntity ID: {}, Getting dependency hierarchy for {}: {}, owner: {}",
+                requestId, objectType, objectName, owner);
+
+        try {
+            Map<String, Object> hierarchy = oracleSchemaRepository.getDependencyHierarchy(
+                    objectName, objectType, owner);
+
+            hierarchy.put("generatedAt", java.time.LocalDateTime.now().toString());
+            hierarchy.put("generatedBy", performedBy);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", hierarchy);
+            result.put("responseCode", 200);
+            result.put("message", "Dependency hierarchy retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved dependency hierarchy for {}: {} - depends on: {}, used by: {}",
+                    requestId, objectType, objectName,
+                    hierarchy.get("dependsOnCount"), hierarchy.get("usedByCount"));
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting dependency hierarchy for {} {}: {}",
+                    requestId, objectType, objectName, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Get count of objects that depend on (use) the specified object
+     */
+    public Map<String, Object> getUsedByCount(String requestId, HttpServletRequest req,
+                                              String performedBy, String objectName,
+                                              String objectType, String owner) {
+        log.info("RequestEntity ID: {}, Getting used by count for {}: {}, owner: {}",
+                requestId, objectType, objectName, owner);
+
+        try {
+            int count = oracleSchemaRepository.getUsedByCount(objectName, objectType, owner);
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("count", count);
+            data.put("objectName", objectName);
+            data.put("objectType", objectType);
+            data.put("owner", owner != null ? owner : oracleSchemaRepository.getCurrentUser());
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", data);
+            result.put("responseCode", 200);
+            result.put("message", "Used by count retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Found {} objects that depend on {}: {}",
+                    requestId, count, objectType, objectName);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting used by count for {} {}: {}",
+                    requestId, objectType, objectName, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Get used by summary grouped by object type
+     */
+    public Map<String, Object> getUsedBySummary(String requestId, HttpServletRequest req,
+                                                String performedBy, String objectName,
+                                                String objectType, String owner) {
+        log.info("RequestEntity ID: {}, Getting used by summary for {}: {}, owner: {}",
+                requestId, objectType, objectName, owner);
+
+        try {
+            Map<String, Object> summary = oracleSchemaRepository.getUsedBySummary(
+                    objectName, objectType, owner);
+
+            summary.put("objectName", objectName);
+            summary.put("objectType", objectType);
+            summary.put("owner", owner != null ? owner : oracleSchemaRepository.getCurrentUser());
+            summary.put("generatedAt", java.time.LocalDateTime.now().toString());
+            summary.put("generatedBy", performedBy);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", summary);
+            result.put("responseCode", 200);
+            result.put("message", "Used by summary retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", java.time.Instant.now().toString());
+
+            log.info("RequestEntity ID: {}, Retrieved used by summary for {}: {} - total: {}",
+                    requestId, objectType, objectName, summary.get("totalCount"));
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("RequestEntity ID: {}, Error getting used by summary for {} {}: {}",
+                    requestId, objectType, objectName, e.getMessage());
+
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+    /**
+     * Get used by for a table (convenience method)
+     */
+    public Map<String, Object> getTableUsedBy(String requestId, HttpServletRequest req,
+                                              String performedBy, String tableName, String owner) {
+        log.info("RequestEntity ID: {}, Getting used by for table: {}, owner: {}",
+                requestId, tableName, owner);
+        return getUsedBy(requestId, req, performedBy, tableName, "TABLE", owner);
+    }
+
+    /**
+     * Get used by for a procedure (convenience method)
+     */
+    public Map<String, Object> getProcedureUsedBy(String requestId, HttpServletRequest req,
+                                                  String performedBy, String procedureName, String owner) {
+        log.info("RequestEntity ID: {}, Getting used by for procedure: {}, owner: {}",
+                requestId, procedureName, owner);
+        return getUsedBy(requestId, req, performedBy, procedureName, "PROCEDURE", owner);
+    }
+
+    /**
+     * Get used by for a function (convenience method)
+     */
+    public Map<String, Object> getFunctionUsedBy(String requestId, HttpServletRequest req,
+                                                 String performedBy, String functionName, String owner) {
+        log.info("RequestEntity ID: {}, Getting used by for function: {}, owner: {}",
+                requestId, functionName, owner);
+        return getUsedBy(requestId, req, performedBy, functionName, "FUNCTION", owner);
+    }
+
+    /**
+     * Get used by for a package (convenience method)
+     */
+    public Map<String, Object> getPackageUsedBy(String requestId, HttpServletRequest req,
+                                                String performedBy, String packageName, String owner) {
+        log.info("RequestEntity ID: {}, Getting used by for package: {}, owner: {}",
+                requestId, packageName, owner);
+        return getUsedBy(requestId, req, performedBy, packageName, "PACKAGE", owner);
+    }
+
+    /**
+     * Get used by for a view (convenience method)
+     */
+    public Map<String, Object> getViewUsedBy(String requestId, HttpServletRequest req,
+                                             String performedBy, String viewName, String owner) {
+        log.info("RequestEntity ID: {}, Getting used by for view: {}, owner: {}",
+                requestId, viewName, owner);
+        return getUsedBy(requestId, req, performedBy, viewName, "VIEW", owner);
+    }
+
+    /**
+     * Get used by for a trigger (convenience method)
+     */
+    public Map<String, Object> getTriggerUsedBy(String requestId, HttpServletRequest req,
+                                                String performedBy, String triggerName, String owner) {
+        log.info("RequestEntity ID: {}, Getting used by for trigger: {}, owner: {}",
+                requestId, triggerName, owner);
+        return getUsedBy(requestId, req, performedBy, triggerName, "TRIGGER", owner);
+    }
+
+
+
     // ============================================================
     // 20. PAGINATED PACKAGE ITEMS SERVICE METHOD - UPDATED
     // ============================================================
