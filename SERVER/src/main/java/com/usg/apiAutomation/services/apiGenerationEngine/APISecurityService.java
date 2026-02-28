@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.services;
+package com.usg.apiAutomation.services.apiGenerationEngine;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiSecurity.*;

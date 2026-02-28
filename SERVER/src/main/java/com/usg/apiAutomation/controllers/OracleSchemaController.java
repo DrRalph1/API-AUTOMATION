@@ -24,7 +24,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/plx/api/oracle/schema")
 @RequiredArgsConstructor
-@Tag(name = "ORACLE SCHEMA BROWSER", description = "Endpoints for browsing Oracle database schema including tables, views, procedures, functions, packages, triggers, synonyms, sequences, types, and database links")
+@Tag(name = "ORACLE SCHEMA BROWSER", description = "Endpoints for browsing Oracle database schema including tables, views, procedures, functions, packages, triggers, synonyms, sequences, types etc.")
 public class OracleSchemaController {
 
     private final OracleSchemaService oracleSchemaService;
