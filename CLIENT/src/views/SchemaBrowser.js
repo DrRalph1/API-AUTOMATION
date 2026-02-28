@@ -534,8 +534,6 @@ const LeftSidebar = React.memo(({
   hasActiveFilter,
   isFiltering  // Make sure this is included
 }) => {
-
-  console.log("schemaInfoINSIDELEFTSIDEBAR:::::" + JSON.stringify(schemaInfo));
   
   // Add debug logging
   console.log('LeftSidebar Debug:', {
@@ -584,20 +582,50 @@ const LeftSidebar = React.memo(({
     return totalCount;
   }, [hasActiveFilter, filteredResults]);
 
+  // Define the order of sections with their display names and types
+  const sectionDefinitions = [
+    { title: 'Procedures', type: 'procedures', iconType: 'procedure' },
+    { title: 'Views', type: 'views', iconType: 'view' },
+    { title: 'Functions', type: 'functions', iconType: 'function' },
+    { title: 'Packages', type: 'packages', iconType: 'package' },
+    { title: 'Tables', type: 'tables', iconType: 'table' },
+    { title: 'Sequences', type: 'sequences', iconType: 'sequence' },
+    { title: 'Synonyms', type: 'synonyms', iconType: 'synonym' },
+    { title: 'Types', type: 'types', iconType: 'type' },
+    { title: 'Triggers', type: 'triggers', iconType: 'trigger' }
+  ];
+
+  // Sort sections based on filtered results
+  const sortedSections = useMemo(() => {
+    if (!hasActiveFilter || !filteredResults) {
+      // When no filter is active, maintain the original order
+      return sectionDefinitions;
+    }
+
+    // Create a copy of sections to sort
+    return [...sectionDefinitions].sort((a, b) => {
+      const aHasItems = filteredResults[a.type]?.length > 0;
+      const bHasItems = filteredResults[b.type]?.length > 0;
+
+      // If both have items or both have no items, maintain original order
+      if (aHasItems === bHasItems) {
+        // To maintain original order, find their original indices
+        const aIndex = sectionDefinitions.findIndex(s => s.type === a.type);
+        const bIndex = sectionDefinitions.findIndex(s => s.type === b.type);
+        return aIndex - bIndex;
+      }
+
+      // Move sections with items to the top
+      return aHasItems ? -1 : 1;
+    });
+  }, [hasActiveFilter, filteredResults, sectionDefinitions]);
+
   // Show schema info in header
   const renderSchemaInfo = () => {
     if (!schemaInfo) return null;
-
-    // console.log(JSON.stringify("schemaInfo:::::" + JSON.stringify(schemaInfo)));
     
    return (
     <div className="px-3 py-2 border-b text-xs" style={{ borderColor: colors.border, backgroundColor: colors.hover }}>
-      {/* <div className="flex items-center gap-2">
-        <Server size={12} style={{ color: colors.primary }} />
-        <span className="truncate" style={{ color: colors.textSecondary }} title={schemaInfo.currentUser || schemaInfo.schemaName}>
-          {schemaInfo.currentUser || schemaInfo.schemaName}
-        </span>
-      </div> */}
      {schemaInfo.databaseVersion && (
         <div className="flex items-center gap-2 mt-1">
           <Cpu size={12} style={{ color: colors.textTertiary }} />
@@ -723,230 +751,33 @@ const LeftSidebar = React.memo(({
              scrollbarColor: `${colors.border} transparent`
            }}>
         <div className="space-y-1">
-          {/* Procedures Section */}
-          <ObjectTreeSection
-            title="Procedures"
-            type="procedures"
-            objects={filterObjects(schemaObjects.procedures || [], 'procedures')}
-            totalCount={getDisplayCount('procedures', schemaObjects.proceduresTotalCount || 0)}
-            isLoading={loadingStates.procedures}
-            isExpanded={objectTree.procedures}
-            onToggle={handleToggleSection}
-            onLoadSection={handleLoadSection}
-            onLoadMore={handleLoadMore}
-            activeObjectId={activeObject?.id}
-            filterQuery={filterQuery}
-            selectedOwner={selectedOwner}
-            colors={colors}
-            getObjectIcon={getObjectIcon}
-            handleContextMenu={handleContextMenu}
-            isLoaded={loadedSections.procedures}
-            currentPage={pagination.procedures.page}
-            totalPages={pagination.procedures.totalPages}
-            onSelectObject={handleObjectSelect}
-            hasActiveFilter={hasActiveFilter}
-            isFiltering={isFiltering}
-          />
-
-          {/* Views Section */}
-          <ObjectTreeSection
-            title="Views"
-            type="views"
-            objects={filterObjects(schemaObjects.views || [], 'views')}
-            totalCount={getDisplayCount('views', schemaObjects.viewsTotalCount || 0)}
-            isLoading={loadingStates.views}
-            isExpanded={objectTree.views}
-            onToggle={handleToggleSection}
-            onLoadSection={handleLoadSection}
-            onLoadMore={handleLoadMore}
-            activeObjectId={activeObject?.id}
-            filterQuery={filterQuery}
-            selectedOwner={selectedOwner}
-            colors={colors}
-            getObjectIcon={getObjectIcon}
-            handleContextMenu={handleContextMenu}
-            isLoaded={loadedSections.views}
-            currentPage={pagination.views.page}
-            totalPages={pagination.views.totalPages}
-            onSelectObject={handleObjectSelect}
-            hasActiveFilter={hasActiveFilter}
-            isFiltering={isFiltering}
-          />
-
-          {/* Functions Section */}
-          <ObjectTreeSection
-            title="Functions"
-            type="functions"
-            objects={filterObjects(schemaObjects.functions || [], 'functions')}
-            totalCount={getDisplayCount('functions', schemaObjects.functionsTotalCount || 0)}
-            isLoading={loadingStates.functions}
-            isExpanded={objectTree.functions}
-            onToggle={handleToggleSection}
-            onLoadSection={handleLoadSection}
-            onLoadMore={handleLoadMore}
-            activeObjectId={activeObject?.id}
-            filterQuery={filterQuery}
-            selectedOwner={selectedOwner}
-            colors={colors}
-            getObjectIcon={getObjectIcon}
-            handleContextMenu={handleContextMenu}
-            isLoaded={loadedSections.functions}
-            currentPage={pagination.functions.page}
-            totalPages={pagination.functions.totalPages}
-            onSelectObject={handleObjectSelect}
-            hasActiveFilter={hasActiveFilter}
-            isFiltering={isFiltering}
-          />
-
-          {/* Packages Section */}
-          <ObjectTreeSection
-            title="Packages"
-            type="packages"
-            objects={filterObjects(schemaObjects.packages || [], 'packages')}
-            totalCount={getDisplayCount('packages', schemaObjects.packagesTotalCount || 0)}
-            isLoading={loadingStates.packages}
-            isExpanded={objectTree.packages}
-            onToggle={handleToggleSection}
-            onLoadSection={handleLoadSection}
-            onLoadMore={handleLoadMore}
-            activeObjectId={activeObject?.id}
-            filterQuery={filterQuery}
-            selectedOwner={selectedOwner}
-            colors={colors}
-            getObjectIcon={getObjectIcon}
-            handleContextMenu={handleContextMenu}
-            isLoaded={loadedSections.packages}
-            currentPage={pagination.packages.page}
-            totalPages={pagination.packages.totalPages}
-            onSelectObject={handleObjectSelect}
-            hasActiveFilter={hasActiveFilter}
-            isFiltering={isFiltering}
-          />
-
-          {/* Tables Section */}
-          <ObjectTreeSection
-            title="Tables"
-            type="tables"
-            objects={filterObjects(schemaObjects.tables || [], 'tables')}
-            totalCount={getDisplayCount('tables', schemaObjects.tablesTotalCount || 0)}
-            isLoading={loadingStates.tables}
-            isExpanded={objectTree.tables}
-            onToggle={handleToggleSection}
-            onLoadSection={handleLoadSection}
-            onLoadMore={handleLoadMore}
-            activeObjectId={activeObject?.id}
-            filterQuery={filterQuery}
-            selectedOwner={selectedOwner}
-            colors={colors}
-            getObjectIcon={getObjectIcon}
-            handleContextMenu={handleContextMenu}
-            isLoaded={loadedSections.tables}
-            currentPage={pagination.tables.page}
-            totalPages={pagination.tables.totalPages}
-            onSelectObject={handleObjectSelect}
-            hasActiveFilter={hasActiveFilter}
-            isFiltering={isFiltering}
-          />
-
-          {/* Sequences Section */}
-          <ObjectTreeSection
-            title="Sequences"
-            type="sequences"
-            objects={filterObjects(schemaObjects.sequences || [], 'sequences')}
-            totalCount={getDisplayCount('sequences', schemaObjects.sequencesTotalCount || 0)}
-            isLoading={loadingStates.sequences}
-            isExpanded={objectTree.sequences}
-            onToggle={handleToggleSection}
-            onLoadSection={handleLoadSection}
-            onLoadMore={handleLoadMore}
-            activeObjectId={activeObject?.id}
-            filterQuery={filterQuery}
-            selectedOwner={selectedOwner}
-            colors={colors}
-            getObjectIcon={getObjectIcon}
-            handleContextMenu={handleContextMenu}
-            isLoaded={loadedSections.sequences}
-            currentPage={pagination.sequences.page}
-            totalPages={pagination.sequences.totalPages}
-            onSelectObject={handleObjectSelect}
-            hasActiveFilter={hasActiveFilter}
-            isFiltering={isFiltering}
-          />
-
-          {/* Synonyms Section */}
-          <ObjectTreeSection
-            title="Synonyms"
-            type="synonyms"
-            objects={filterObjects(schemaObjects.synonyms || [], 'synonyms')}
-            totalCount={getDisplayCount('synonyms', schemaObjects.synonymsTotalCount || 0)}
-            isLoading={loadingStates.synonyms}
-            isExpanded={objectTree.synonyms}
-            onToggle={handleToggleSection}
-            onLoadSection={handleLoadSection}
-            onLoadMore={handleLoadMore}
-            activeObjectId={activeObject?.id}
-            filterQuery={filterQuery}
-            selectedOwner={selectedOwner}
-            colors={colors}
-            getObjectIcon={() => getObjectIcon('synonym')}
-            handleContextMenu={handleContextMenu}
-            isLoaded={loadedSections.synonyms}
-            currentPage={pagination.synonyms.page}
-            totalPages={pagination.synonyms.totalPages}
-            onSelectObject={handleObjectSelect}
-            hasActiveFilter={hasActiveFilter}
-            isFiltering={isFiltering}
-          />
-
-          {/* Types Section */}
-          <ObjectTreeSection
-            title="Types"
-            type="types"
-            objects={filterObjects(schemaObjects.types || [], 'types')}
-            totalCount={getDisplayCount('types', schemaObjects.typesTotalCount || 0)}
-            isLoading={loadingStates.types}
-            isExpanded={objectTree.types}
-            onToggle={handleToggleSection}
-            onLoadSection={handleLoadSection}
-            onLoadMore={handleLoadMore}
-            activeObjectId={activeObject?.id}
-            filterQuery={filterQuery}
-            selectedOwner={selectedOwner}
-            colors={colors}
-            getObjectIcon={getObjectIcon}
-            handleContextMenu={handleContextMenu}
-            isLoaded={loadedSections.types}
-            currentPage={pagination.types.page}
-            totalPages={pagination.types.totalPages}
-            onSelectObject={handleObjectSelect}
-            hasActiveFilter={hasActiveFilter}
-            isFiltering={isFiltering}
-          />
-
-          {/* Triggers Section */}
-          <ObjectTreeSection
-            title="Triggers"
-            type="triggers"
-            objects={filterObjects(schemaObjects.triggers || [], 'triggers')}
-            totalCount={getDisplayCount('triggers', schemaObjects.triggersTotalCount || 0)}
-            isLoading={loadingStates.triggers}
-            isExpanded={objectTree.triggers}
-            onToggle={handleToggleSection}
-            onLoadSection={handleLoadSection}
-            onLoadMore={handleLoadMore}
-            activeObjectId={activeObject?.id}
-            filterQuery={filterQuery}
-            selectedOwner={selectedOwner}
-            colors={colors}
-            getObjectIcon={getObjectIcon}
-            handleContextMenu={handleContextMenu}
-            isLoaded={loadedSections.triggers}
-            currentPage={pagination.triggers.page}
-            totalPages={pagination.triggers.totalPages}
-            onSelectObject={handleObjectSelect}
-            hasActiveFilter={hasActiveFilter}
-            isFiltering={isFiltering}
-          />
+          {/* Dynamically render sections in sorted order */}
+          {sortedSections.map(section => (
+            <ObjectTreeSection
+              key={section.type}
+              title={section.title}
+              type={section.type}
+              objects={filterObjects(schemaObjects[section.type] || [], section.type)}
+              totalCount={getDisplayCount(section.type, schemaObjects[`${section.type}TotalCount`] || 0)}
+              isLoading={loadingStates[section.type]}
+              isExpanded={objectTree[section.type]}
+              onToggle={handleToggleSection}
+              onLoadSection={handleLoadSection}
+              onLoadMore={handleLoadMore}
+              activeObjectId={activeObject?.id}
+              filterQuery={filterQuery}
+              selectedOwner={selectedOwner}
+              colors={colors}
+              getObjectIcon={() => getObjectIcon(section.iconType)}
+              handleContextMenu={handleContextMenu}
+              isLoaded={loadedSections[section.type]}
+              currentPage={pagination[section.type]?.page || 1}
+              totalPages={pagination[section.type]?.totalPages || 1}
+              onSelectObject={handleObjectSelect}
+              hasActiveFilter={hasActiveFilter}
+              isFiltering={isFiltering}
+            />
+          ))}
         </div>
 
         {/* Loading More Indicator */}
@@ -1008,17 +839,7 @@ const LeftSidebar = React.memo(({
         <div className="flex items-center justify-between">
           <span>Total Objects:</span>
           <span className="font-mono">
-            {(
-              // (schemaObjects.proceduresTotalCount || 0) +
-              // (schemaObjects.viewsTotalCount || 0) +
-              // (schemaObjects.functionsTotalCount || 0) +
-              // (schemaObjects.tablesTotalCount || 0) +
-              // (schemaObjects.packagesTotalCount || 0) +
-              // (schemaObjects.sequencesTotalCount || 0) +
-              (schemaObjects.synonymsTotalCount || 0) 
-              // (schemaObjects.typesTotalCount || 0) +
-              // (schemaObjects.triggersTotalCount || 0)
-            ).toLocaleString()}
+            {(schemaObjects.synonymsTotalCount || 0).toLocaleString()}
           </span>
         </div>
         {hasActiveFilter && !isFiltering && (
@@ -1033,6 +854,8 @@ const LeftSidebar = React.memo(({
     </div>
   );
 });
+
+LeftSidebar.displayName = 'LeftSidebar';
 
 LeftSidebar.displayName = 'LeftSidebar';
 
@@ -2665,6 +2488,7 @@ const handleObjectSelect = useCallback(async (object, type) => {
             onChange={(e) => handlePageSizeChange(parseInt(e.target.value))}
             disabled={tableDataLoading}
           >
+            <option value="10">10 rows</option>
             <option value="25">25 rows</option>
             <option value="50">50 rows</option>
             <option value="100">100 rows</option>
