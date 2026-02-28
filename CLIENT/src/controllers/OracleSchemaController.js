@@ -76,7 +76,7 @@ export const getCurrentSchemaInfo = async (authorizationHeader) => {
             requestId: requestId
         })
     ).then(response => {
-        return transformSchemaInfoResponse(response);
+        return response;
     });
 };
 

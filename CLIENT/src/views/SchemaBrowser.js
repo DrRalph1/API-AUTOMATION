@@ -204,7 +204,7 @@ const FilterInput = React.memo(({
             )}
           </div>
           
-          {owners && owners.length > 0 && (
+          {/* {owners && owners.length > 0 && (
             <select
               value={selectedOwner}
               onChange={handleOwnerChange}
@@ -222,7 +222,7 @@ const FilterInput = React.memo(({
                 <option key={owner} value={owner}>{owner}</option>
               ))}
             </select>
-          )}
+          )} */}
         </div>
       </div>
 
@@ -534,6 +534,8 @@ const LeftSidebar = React.memo(({
   hasActiveFilter,
   isFiltering  // Make sure this is included
 }) => {
+
+  console.log("schemaInfoINSIDELEFTSIDEBAR:::::" + JSON.stringify(schemaInfo));
   
   // Add debug logging
   console.log('LeftSidebar Debug:', {
@@ -585,27 +587,35 @@ const LeftSidebar = React.memo(({
   // Show schema info in header
   const renderSchemaInfo = () => {
     if (!schemaInfo) return null;
+
+    // console.log(JSON.stringify("schemaInfo:::::" + JSON.stringify(schemaInfo)));
     
-    const currentSchema = schemaInfo.currentUser || schemaInfo.currentSchema || 'Not connected';
-    
-    return (
-      <div className="px-3 py-2 border-b text-xs" style={{ borderColor: colors.border, backgroundColor: colors.hover }}>
-        <div className="flex items-center gap-2">
-          <Server size={12} style={{ color: colors.primary }} />
-          <span className="truncate" style={{ color: colors.textSecondary }} title={currentSchema}>
-            {currentSchema}
+   return (
+    <div className="px-3 py-2 border-b text-xs" style={{ borderColor: colors.border, backgroundColor: colors.hover }}>
+      {/* <div className="flex items-center gap-2">
+        <Server size={12} style={{ color: colors.primary }} />
+        <span className="truncate" style={{ color: colors.textSecondary }} title={schemaInfo.currentUser || schemaInfo.schemaName}>
+          {schemaInfo.currentUser || schemaInfo.schemaName}
+        </span>
+      </div> */}
+     {schemaInfo.databaseVersion && (
+        <div className="flex items-center gap-2 mt-1">
+          <Cpu size={12} style={{ color: colors.textTertiary }} />
+          <span className="truncate text-[10px]" style={{ color: colors.textTertiary }}>
+            {schemaInfo.databaseVersion.split(' ').slice(0, 4).join(' ')}
           </span>
         </div>
-        {schemaInfo.databaseVersion && (
-          <div className="flex items-center gap-2 mt-1">
-            <Cpu size={12} style={{ color: colors.textTertiary }} />
-            <span className="truncate text-[10px]" style={{ color: colors.textTertiary }}>
-              {schemaInfo.databaseVersion.split(' ')[0]}
-            </span>
-          </div>
-        )}
-      </div>
-    );
+      )}
+      {schemaInfo.objectCounts && schemaInfo.objectCounts.total > 0 && (
+        <div className="flex items-center gap-2 mt-1">
+          <Database size={12} style={{ color: colors.textTertiary }} />
+          <span className="truncate text-[10px]" style={{ color: colors.textTertiary }}>
+            {schemaInfo.objectCounts.total.toLocaleString()} Schema Objects
+          </span>
+        </div>
+      )}
+    </div>
+  );
   };
 
   // Show skeleton during initial load
@@ -650,7 +660,7 @@ const LeftSidebar = React.memo(({
           <div className="flex items-center gap-2 flex-1 text-left">
             <Database size={16} style={{ color: colors.primary }} />
             <span className="text-sm font-medium truncate" style={{ color: colors.text }}>
-              Schema Browser
+              {schemaInfo.currentUser || schemaInfo.schemaName}
             </span>
           </div>
           <div className="flex gap-1 shrink-0">
@@ -999,15 +1009,15 @@ const LeftSidebar = React.memo(({
           <span>Total Objects:</span>
           <span className="font-mono">
             {(
-              (schemaObjects.proceduresTotalCount || 0) +
-              (schemaObjects.viewsTotalCount || 0) +
-              (schemaObjects.functionsTotalCount || 0) +
-              (schemaObjects.tablesTotalCount || 0) +
-              (schemaObjects.packagesTotalCount || 0) +
-              (schemaObjects.sequencesTotalCount || 0) +
-              (schemaObjects.synonymsTotalCount || 0) +
-              (schemaObjects.typesTotalCount || 0) +
-              (schemaObjects.triggersTotalCount || 0)
+              // (schemaObjects.proceduresTotalCount || 0) +
+              // (schemaObjects.viewsTotalCount || 0) +
+              // (schemaObjects.functionsTotalCount || 0) +
+              // (schemaObjects.tablesTotalCount || 0) +
+              // (schemaObjects.packagesTotalCount || 0) +
+              // (schemaObjects.sequencesTotalCount || 0) +
+              (schemaObjects.synonymsTotalCount || 0) 
+              // (schemaObjects.typesTotalCount || 0) +
+              // (schemaObjects.triggersTotalCount || 0)
             ).toLocaleString()}
           </span>
         </div>
@@ -1416,30 +1426,33 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   // Load schema info - only once at initialization
   const loadSchemaInfo = useCallback(async () => {
     if (!authToken) {
-      setError('Authentication required');
-      return;
+        setError('Authentication required');
+        return;
     }
 
     Logger.info('SchemaBrowser', 'loadSchemaInfo', 'Loading schema info');
     setError(null);
 
     try {
-      const response = await getCurrentSchemaInfo(authToken);
-      const data = handleSchemaBrowserResponse(response);
-      
-      Logger.info('SchemaBrowser', 'loadSchemaInfo', `Connected as: ${data.currentUser || data.currentSchema}`);
-      
-      setSchemaInfo(data);
-      
-      if (data.currentUser || data.currentSchema) {
-        setOwners([data.currentUser || data.currentSchema]);
-      }
+        const response = await getCurrentSchemaInfo(authToken);
+        console.log('Raw response:', response);
+        
+        const data = handleSchemaBrowserResponse(response);
+        console.log('Processed data:', JSON.stringify(data));
+        
+        Logger.info('SchemaBrowser', 'loadSchemaInfo', `Connected as: ${data.currentUser || data.currentSchema}`);
+        
+        setSchemaInfo(data);
+        
+        if (data.currentUser || data.currentSchema) {
+            setOwners([data.currentUser || data.currentSchema]);
+        }
 
     } catch (err) {
-      Logger.error('SchemaBrowser', 'loadSchemaInfo', 'Error', err);
-      setError(`Failed to connect: ${err.message}`);
+        Logger.error('SchemaBrowser', 'loadSchemaInfo', 'Error', err);
+        setError(`Failed to connect: ${err.message}`);
     }
-  }, [authToken]);
+}, [authToken]);
 
   // Optimized function to load only procedures first (since it's expanded by default)
   const loadInitialData = useCallback(async () => {
