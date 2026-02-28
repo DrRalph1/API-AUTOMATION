@@ -2913,6 +2913,9 @@ const handleObjectSelect = useCallback(async (object, type) => {
                 activeObject?.body || 
                 '';
     
+    // Split DDL into lines for line numbering
+    const ddlLines = ddl ? ddl.split('\n') : [];
+    
     return (
       <div className="flex-1 overflow-auto">
         <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
@@ -2926,9 +2929,25 @@ const handleObjectSelect = useCallback(async (object, type) => {
             </div>
           ) : (
             <>
-              <pre className="text-xs font-mono whitespace-pre-wrap overflow-auto max-h-[calc(100vh-300px)]" style={{ color: colors.text }}>
-                {ddl || '-- No DDL available for this object'}
-              </pre>
+              <div className="flex overflow-auto max-h-[calc(100vh-300px)] font-mono text-xs">
+                {/* Line numbers column */}
+                {ddlLines.length > 0 && (
+                  <div className="select-none text-right pr-4 border-r" 
+                       style={{ color: colors.textSecondary, borderColor: colors.border }}>
+                    {ddlLines.map((_, index) => (
+                      <div key={index} className="pr-2">
+                        {index + 1}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Code content column */}
+                <pre className="flex-1 whitespace-pre-wrap pl-4" style={{ color: colors.text }}>
+                  {ddl || '-- No DDL available for this object'}
+                </pre>
+              </div>
+              
               <div className="mt-2 flex justify-end">
                 <button 
                   className="px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1"
