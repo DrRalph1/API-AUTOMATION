@@ -46,7 +46,7 @@ public class ClientIpHelper {
 
         try {
             // Query API key & secret + server IP
-            String query = "SELECT COUNT(*) FROM tb_api_validation " +
+            String query = "SELECT COUNT(*) FROM tb_sys_api_validation " +
                     "WHERE api_key = ? AND api_secret = ? AND server_ip = ? AND micro_service_id = 'swagger-ui'";
 
             Integer count = jdbcTemplate.queryForObject(query, Integer.class, apiKey, apiSecret, serverIp);
@@ -100,7 +100,7 @@ public class ClientIpHelper {
 
         try {
             // Query API key & secret + server IP
-            String query = "SELECT COUNT(*) FROM tb_api_validation " +
+            String query = "SELECT COUNT(*) FROM tb_sys_api_validation " +
                     "WHERE api_key = ? AND api_secret = ? AND server_ip = ? AND micro_service_id = 'api-automation'";
 
             Integer count = jdbcTemplate.queryForObject(query, Integer.class, apiKey, apiSecret, serverIp);

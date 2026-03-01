@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(
-        name = "tb_app_users",
+        name = "tb_sys_users",
         uniqueConstraints = {
                 @UniqueConstraint(name = "uk_username", columnNames = {"username"})
         },

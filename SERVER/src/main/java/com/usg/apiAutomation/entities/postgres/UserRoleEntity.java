@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "tb_app_roles",
+@Table(name = "tb_sys_roles",
         uniqueConstraints = {
                 @UniqueConstraint(name = "uk_role_name", columnNames = {"role_name"})
         },

@@ -810,50 +810,53 @@ export const formatDocumentationEndpoint = (endpoint) => {
  * @param {Object} details - Endpoint details
  * @returns {Object} Formatted endpoint details
  */
-export const formatEndpointDetails = (details) => {
-  if (!details) return {};
+export const formatEndpointDetails = (endpointData) => {
+  if (!endpointData) return null;
   
-  const formatted = { ...details };
-  
-  // Format headers
-  if (formatted.headers && Array.isArray(formatted.headers)) {
-    formatted.formattedHeaders = formatted.headers.map(header => ({
+  return {
+    id: endpointData.endpointId || endpointData.id,
+    name: endpointData.name || '',
+    method: endpointData.method || 'GET',
+    url: endpointData.url || '',
+    path: endpointData.url || endpointData.path || '',
+    description: endpointData.description || '',
+    category: endpointData.category || 'general',
+    tags: endpointData.tags || [],
+    formattedTags: (endpointData.tags || []).map(tag => ({
+      name: tag,
+      color: getTagColor(tag)
+    })),
+    lastModified: endpointData.lastModified,
+    timeAgo: getTimeAgo(endpointData.lastModified),
+    version: endpointData.version || '1.0.0',
+    requiresAuthentication: endpointData.requiresAuthentication || false,
+    rateLimit: endpointData.rateLimit || null,
+    formattedRateLimit: endpointData.formattedRateLimit || 
+      (endpointData.rateLimit ? formatRateLimit(endpointData.rateLimit) : 'Not rate limited'),
+    deprecated: endpointData.deprecated || false,
+    headers: Array.isArray(endpointData.headers) ? endpointData.headers.map(header => ({
       ...header,
       requiredBadge: header.required ? 'Required' : 'Optional'
-    }));
-  }
-  
-  // Format parameters
-  if (formatted.parameters && Array.isArray(formatted.parameters)) {
-    formatted.formattedParameters = formatted.parameters.map(param => ({
+    })) : [],
+    parameters: Array.isArray(endpointData.parameters) ? endpointData.parameters.map(param => ({
       ...param,
-      requiredBadge: param.required ? 'Required' : 'Optional'
-    }));
-  }
-  
-  // Format response examples
-  if (formatted.responseExamples && Array.isArray(formatted.responseExamples)) {
-    formatted.formattedResponseExamples = formatted.responseExamples.map(example => ({
-      ...example,
-      statusBadge: getStatusCodeBadge(example.statusCode),
-      formattedExample: formatJsonExample(example.example)
-    }));
-  }
-  
-  // Format changelog
-  if (formatted.changelog && Array.isArray(formatted.changelog)) {
-    formatted.formattedChangelog = formatted.changelog.map(entry => ({
+      requiredBadge: param.required ? 'Required' : 'Optional',
+      in: param.in || 'query' // Add default location if not specified
+    })) : [],
+    responseExamples: Array.isArray(endpointData.responseExamples) ? 
+      endpointData.responseExamples.map(example => ({
+        ...example,
+        statusBadge: getStatusCodeBadge(example.statusCode),
+        formattedExample: example.example ? formatJsonExample(example.example) : '{}'
+      })) : [],
+    requestBodyExample: endpointData.requestBodyExample || '{}',
+    changelog: Array.isArray(endpointData.changelog) ? endpointData.changelog.map(entry => ({
       ...entry,
-      timeAgo: getTimeAgo(entry.date)
-    }));
-  }
-  
-  // Format rate limit
-  if (formatted.rateLimit) {
-    formatted.formattedRateLimit = formatRateLimit(formatted.rateLimit);
-  }
-  
-  return formatted;
+      date: entry.date ? formatDateForDisplay(entry.date) : '',
+      type: entry.type || 'UPDATE'
+    })) : [],
+    rateLimitInfo: endpointData.rateLimitInfo || null
+  };
 };
 
 /**

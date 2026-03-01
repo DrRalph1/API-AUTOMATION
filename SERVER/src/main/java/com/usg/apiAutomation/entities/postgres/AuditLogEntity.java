@@ -8,7 +8,7 @@ import java.util.UUID;
 
 @Entity
 @Table(
-        name = "tb_audit_logs",
+        name = "tb_sys_audit_logs",
         indexes = {
                 @Index(name = "idx_audit_user", columnList = "user_id"),
                 @Index(name = "idx_audit_action", columnList = "action"),
@@ -24,8 +24,8 @@ import java.util.UUID;
 public class AuditLogEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(name = "audit_id", updatable = false, nullable = false)
+    @GeneratedValue(strategy = GenerationType.AUTO)
+    @Column(name = "audit_id")
     private UUID auditId;
 
     @Column(name = "user_id", nullable = false)

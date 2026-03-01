@@ -5,7 +5,7 @@ import jakarta.persistence.*;
 import java.time.Instant;
 
 @Entity
-@Table(name = "tb_user_otps", indexes = {
+@Table(name = "tb_sys_user_otps", indexes = {
         @Index(name = "idx_user_otps_user_id", columnList = "user_id")
 })
 public class UserOtpEntity {

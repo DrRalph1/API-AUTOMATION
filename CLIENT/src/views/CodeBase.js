@@ -662,7 +662,7 @@ const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
     }
   }, [authToken, selectedLanguage, selectedComponent]);
 
-  // Load implementation details - FIXED to properly set implementation
+  // Load implementation details - FIXED to use allImplementations as primary source
 const fetchImplementationDetails = useCallback(async (collectionId, requestId, language, component) => {
   console.log(`📡 [CodeBase] Fetching implementation for ${language}/${component}`);
   
@@ -674,6 +674,22 @@ const fetchImplementationDetails = useCallback(async (collectionId, requestId, l
   setIsLoading(prev => ({ ...prev, implementationDetails: true }));
   
   try {
+    // First check if we already have this implementation in allImplementations
+    const existingImpl = allImplementations[language]?.[component];
+    
+    if (existingImpl) {
+      console.log(`✅ [CodeBase] Using existing implementation from allImplementations for ${language}/${component}`);
+      setCurrentImplementation(prev => ({
+        ...prev,
+        [language]: {
+          ...(prev[language] || {}),
+          [component]: existingImpl
+        }
+      }));
+      return;
+    }
+
+    // If not in allImplementations, try to fetch from API
     const response = await getImplementationDetails(authToken, collectionId, requestId, language, component);
     console.log('📦 [CodeBase] Implementation details response:', response);
     
@@ -682,22 +698,15 @@ const fetchImplementationDetails = useCallback(async (collectionId, requestId, l
     
     console.log('📊 [CodeBase] Extracted implementation details:', details);
     
-    if (details?.code) {
-      // CRITICAL: Set the implementation with the actual fetched code
-      setCurrentImplementation(prev => {
-        const updated = {
-          ...prev,
-          [language]: {
-            ...(prev[language] || {}),
-            [component]: details.code
-          }
-        };
-        console.log(`✅ [CodeBase] Set implementation for ${language}/${component}`, {
-          length: details.code.length,
-          preview: details.code.substring(0, 100) + '...'
-        });
-        return updated;
-      });
+    // Check if implementation was found
+    if (details && !details.notFound && details.code) {
+      setCurrentImplementation(prev => ({
+        ...prev,
+        [language]: {
+          ...(prev[language] || {}),
+          [component]: details.code
+        }
+      }));
       
       // Cache the implementation
       const userId = extractUserIdFromToken(authToken);
@@ -705,9 +714,9 @@ const fetchImplementationDetails = useCallback(async (collectionId, requestId, l
         cacheCodebaseData(userId, `${requestId}_${language}_${component}`, details.code);
       }
     } else {
-      console.log(`⚠️ [CodeBase] No implementation found for ${language}/${component}`);
+      console.log(`⚠️ [CodeBase] Implementation details API returned notFound for ${language}/${component}`);
       
-      // Try to get from allImplementations cache
+      // Try to get from allImplementations cache again (in case it was loaded after we checked)
       const allImpl = allImplementations[language]?.[component];
       if (allImpl) {
         setCurrentImplementation(prev => ({
@@ -732,20 +741,29 @@ const fetchImplementationDetails = useCallback(async (collectionId, requestId, l
   } catch (error) {
     console.error('❌ [CodeBase] Error loading implementation details:', error);
     
-    // Try to get from cache
+    // Try to get from cache or allImplementations
     const userId = extractUserIdFromToken(authToken);
-    if (userId) {
-      const cachedCode = getCachedCodebaseData(userId, `${requestId}_${language}_${component}`);
-      if (cachedCode) {
-        setCurrentImplementation(prev => ({
-          ...prev,
-          [language]: {
-            ...prev[language],
-            [component]: cachedCode
-          }
-        }));
-        console.log(`📦 [CodeBase] Using cached implementation for ${language}/${component}`);
-      }
+    const cachedCode = userId ? getCachedCodebaseData(userId, `${requestId}_${language}_${component}`) : null;
+    const allImpl = allImplementations[language]?.[component];
+    
+    if (cachedCode) {
+      setCurrentImplementation(prev => ({
+        ...prev,
+        [language]: {
+          ...prev[language],
+          [component]: cachedCode
+        }
+      }));
+      console.log(`📦 [CodeBase] Using cached implementation for ${language}/${component}`);
+    } else if (allImpl) {
+      setCurrentImplementation(prev => ({
+        ...prev,
+        [language]: {
+          ...prev[language],
+          [component]: allImpl
+        }
+      }));
+      console.log(`📦 [CodeBase] Using allImplementations for ${language}/${component}`);
     }
   } finally {
     setIsLoading(prev => ({ ...prev, implementationDetails: false }));
@@ -774,39 +792,55 @@ const fetchImplementationDetails = useCallback(async (collectionId, requestId, l
   }, [authToken]);
 
   // Load all implementations for a request
-  const fetchAllImplementations = useCallback(async (collectionId, requestId) => {
-    console.log(`📡 [CodeBase] Fetching all implementations for request ${requestId}`);
-    
-    if (!authToken || !collectionId || !requestId) {
-      console.log('Missing params for fetchAllImplementations');
-      return;
-    }
+const fetchAllImplementations = useCallback(async (collectionId, requestId) => {
+  console.log(`📡 [CodeBase] Fetching all implementations for request ${requestId}`);
+  
+  if (!authToken || !collectionId || !requestId) {
+    console.log('Missing params for fetchAllImplementations');
+    return;
+  }
 
-    try {
-      const response = await getAllImplementations(authToken, collectionId, requestId);
-      console.log('📦 [CodeBase] All implementations response:', response);
+  try {
+    const response = await getAllImplementations(authToken, collectionId, requestId);
+    console.log('📦 [CodeBase] All implementations response:', response);
+    
+    const handledResponse = handleCodebaseResponse(response);
+    const allImplData = extractAllImplementations(handledResponse);
+    
+    if (allImplData && allImplData.implementations) {
+      // Transform the data structure - each language has a "main" property
+      const transformedImplementations = {};
       
-      const handledResponse = handleCodebaseResponse(response);
-      const allImplData = extractAllImplementations(handledResponse);
-      
-      if (allImplData) {
-        setAllImplementations(allImplData.implementations || {});
-        console.log('📊 [CodeBase] Loaded all implementations:', Object.keys(allImplData.implementations || {}));
+      Object.entries(allImplData.implementations).forEach(([language, implData]) => {
+        // For each language, map its components (like "main") to the component names
+        transformedImplementations[language] = {};
         
-        // Update current implementation if we have data for selected language
-        if (selectedLanguage && allImplData.implementations?.[selectedLanguage]) {
-          setCurrentImplementation(prev => ({
-            ...prev,
-            [selectedLanguage]: allImplData.implementations[selectedLanguage]
-          }));
-        }
-      }
+        Object.entries(implData).forEach(([componentKey, code]) => {
+          // Map the component key (e.g., "main", "controller", etc.) to the code
+          // If it's "main", we might want to map it to a standard component like "controller"
+          const componentName = componentKey === 'main' ? 'controller' : componentKey;
+          transformedImplementations[language][componentName] = code;
+        });
+      });
       
-    } catch (error) {
-      console.error('❌ [CodeBase] Error loading all implementations:', error);
-      // Don't show toast for this as it's not critical
+      setAllImplementations(transformedImplementations);
+      console.log('📊 [CodeBase] Loaded and transformed implementations:', 
+        Object.keys(transformedImplementations));
+      
+      // Update current implementation if we have data for selected language
+      if (selectedLanguage && transformedImplementations[selectedLanguage]) {
+        setCurrentImplementation(prev => ({
+          ...prev,
+          [selectedLanguage]: transformedImplementations[selectedLanguage]
+        }));
+      }
     }
-  }, [authToken, selectedLanguage]);
+    
+  } catch (error) {
+    console.error('❌ [CodeBase] Error loading all implementations:', error);
+    // Don't show toast for this as it's not critical
+  }
+}, [authToken, selectedLanguage]);
 
   // Generate implementation
   const generateImplementationAPI = async (generateRequest) => {
@@ -839,6 +873,22 @@ const fetchImplementationDetails = useCallback(async (collectionId, requestId, l
       setIsLoading(prev => ({ ...prev, generateImplementation: false }));
     }
   };
+
+  // Add this helper function for default languages
+const getDefaultSupportedProgrammingLanguages = () => {
+  return [
+    { value: 'java', label: 'Java', framework: 'Spring Boot', color: '#f89820' },
+    { value: 'javascript', label: 'JavaScript', framework: 'Node.js/Express', color: '#f7df1e' },
+    { value: 'python', label: 'Python', framework: 'FastAPI/Flask', color: '#3572A5' },
+    { value: 'csharp', label: 'C#', framework: '.NET Core', color: '#178600' },
+    { value: 'php', label: 'PHP', framework: 'Laravel/Symfony', color: '#4F5D95' },
+    { value: 'go', label: 'Go', framework: 'Gin/Echo', color: '#00ADD8' },
+    { value: 'ruby', label: 'Ruby', framework: 'Rails/Sinatra', color: '#701516' },
+    { value: 'kotlin', label: 'Kotlin', framework: 'Spring Boot', color: '#B125EA' },
+    { value: 'swift', label: 'Swift', framework: 'Vapor', color: '#F05138' },
+    { value: 'rust', label: 'Rust', framework: 'Rocket/Actix', color: '#dea584' }
+  ];
+};
 
   // Export implementation
   const exportImplementationAPI = async (exportRequest) => {

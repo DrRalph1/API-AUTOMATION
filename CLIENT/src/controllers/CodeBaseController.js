@@ -479,6 +479,13 @@ export const extractImplementationDetails = (response) => {
     fileName: details.fileName,
     languageInfo: details.languageInfo || {},
     success: details.success !== undefined ? details.success : (details.code !== undefined),
+    // Add these fields to handle the "not found" case
+    notFound: details.notFound === true,
+    status: details.status,
+    fileSize: details.fileSize,
+    linesOfCode: details.linesOfCode,
+    syntaxInfo: details.syntaxInfo,
+    generatedAt: details.generatedAt,
     metadata: details.metadata || {},
     validationStatus: details.validationStatus,
     testResults: details.testResults
@@ -495,12 +502,32 @@ export const extractAllImplementations = (response) => {
   
   const data = response.data;
   
+  // Transform the implementations data
+  const transformedImplementations = {};
+  
+  if (data.implementations) {
+    Object.entries(data.implementations).forEach(([language, implData]) => {
+      transformedImplementations[language] = {};
+      
+      // Handle different possible structures
+      if (typeof implData === 'object' && implData !== null) {
+        Object.entries(implData).forEach(([componentKey, code]) => {
+          // Map common component keys
+          const componentName = componentKey === 'main' ? 'controller' : componentKey;
+          transformedImplementations[language][componentName] = code;
+        });
+      }
+    });
+  }
+  
   return {
     requestId: data.requestId,
     collectionId: data.collectionId,
-    implementations: data.implementations || {},
-    availableLanguages: data.availableLanguages || [],
+    implementations: transformedImplementations,
+    availableLanguages: data.availableLanguages || Object.keys(transformedImplementations),
     totalImplementations: data.totalImplementations || 0,
+    totalFiles: data.totalFiles || 0,
+    retrievedAt: data.retrievedAt,
     metadata: data.metadata || {}
   };
 };

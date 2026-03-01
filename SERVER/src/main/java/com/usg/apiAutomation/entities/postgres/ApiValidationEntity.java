@@ -8,7 +8,7 @@ import java.util.UUID;
 
 @Entity
 @Table(
-        name = "tb_api_validation",
+        name = "tb_sys_api_validation",
         indexes = {
                 @Index(name = "idx_api_key_secret_ip", columnList = "api_key, api_secret, server_ip")
         }

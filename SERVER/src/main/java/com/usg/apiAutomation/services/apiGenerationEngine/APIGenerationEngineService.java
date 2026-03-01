@@ -1710,8 +1710,8 @@ public class APIGenerationEngineService {
 
                 // Update collection with info from frontend
                 collection.setName(collectionInfo != null ?
-                        collectionInfo.getCollectionName() + " API Documentation" :
-                        api.getApiName() + " API Documentation");
+                        collectionInfo.getCollectionName()  :
+                        api.getApiName() );
                 collection.setDescription(api.getDescription());
                 collection.setVersion(api.getVersion());
                 collection.setBaseUrl(api.getBasePath() != null ? api.getBasePath() : "");
@@ -4937,7 +4937,7 @@ public class APIGenerationEngineService {
                 log.info("Found existing documentation collection: {}", docCollection.getId());
 
                 // Update collection details
-                docCollection.setName(collectionInfo.getCollectionName() + " API Documentation");
+                docCollection.setName(collectionInfo.getCollectionName() );
                 docCollection.setDescription(api.getDescription());
                 docCollection.setVersion(api.getVersion());
                 docCollection.setBaseUrl(api.getBasePath() != null ? api.getBasePath() : "");
@@ -4947,7 +4947,7 @@ public class APIGenerationEngineService {
                 // Create new collection
                 docCollection = new APICollectionEntity();
                 docCollection.setId(collectionInfo.getCollectionId());
-                docCollection.setName(collectionInfo.getCollectionName() + " API Documentation");
+                docCollection.setName(collectionInfo.getCollectionName() );
                 docCollection.setDescription(api.getDescription());
                 docCollection.setVersion(api.getVersion());
                 docCollection.setOwner(performedBy);

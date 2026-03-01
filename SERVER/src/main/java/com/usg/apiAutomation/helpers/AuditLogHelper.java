@@ -59,18 +59,27 @@ public class AuditLogHelper {
 
     // Helper method to log audit actions themselves
     public void logAuditAction(String action, String performedBy, String details, String requestId) {
-        AuditLogEntity auditEntity = new AuditLogEntity();
-        auditEntity.setUserId(performedBy);
-        auditEntity.setAction("AUDIT_SERVICE_ACTION");
-        auditEntity.setOperation(action);
-        auditEntity.setDetails(details + " [RequestID: " + requestId + "]");
-        auditEntity.setCreatedAt(LocalDateTime.now(ZoneId.of("UTC")));
-
         try {
+            AuditLogEntity auditEntity = new AuditLogEntity();
+
+            // Handle null performedBy
+            if (performedBy == null) {
+                performedBy = "SYSTEM"; // or some default value
+            }
+
+            auditEntity.setAuditId(UUID.randomUUID());
+            auditEntity.setUserId(performedBy);
+            auditEntity.setAction("AUDIT_SERVICE_ACTION");
+            auditEntity.setOperation(action);
+            auditEntity.setDetails(details + " [RequestID: " + requestId + "]");
+            auditEntity.setCreatedAt(LocalDateTime.now(ZoneId.of("UTC")));
+            auditEntity.setLastModifiedDate(LocalDateTime.now(ZoneId.of("UTC")));
+
             auditLogRepository.save(auditEntity);
         } catch (Exception e) {
-            // Log error but don't fail the main operation
+            // Consider using a proper logger here
             System.err.println("Failed to log audit action: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 

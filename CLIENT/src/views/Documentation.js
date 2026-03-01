@@ -803,39 +803,101 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     }
   }, [authToken, selectedRequest, collections]);
 
-  // Load endpoint details
-  const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
-    console.log(`📡 [Documentation] Fetching details for endpoint ${endpointId}`);
-    
-    if (!authToken || !collectionId || !endpointId) {
-      console.log('Missing params for fetchEndpointDetails');
-      return;
-    }
+  // Load endpoint details - FIXED VERSION
+const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
+  console.log(`📡 [Documentation] Fetching details for endpoint ${endpointId}`);
+  
+  if (!authToken || !collectionId || !endpointId) {
+    console.log('Missing params for fetchEndpointDetails');
+    return;
+  }
 
-    try {
-      setIsLoading(prev => ({ ...prev, endpointDetails: true }));
-      const response = await getEndpointDetails(authToken, collectionId, endpointId);
-      const handledResponse = handleDocumentationResponse(response);
-      const details = extractEndpointDetails(handledResponse);
+  try {
+    setIsLoading(prev => ({ ...prev, endpointDetails: true }));
+    const response = await getEndpointDetails(authToken, collectionId, endpointId);
+    console.log('📦 [Documentation] Raw endpoint details response:', response);
+    
+    // Handle the response properly
+    const handledResponse = handleDocumentationResponse(response);
+    console.log('🔄 [Documentation] Handled response:', handledResponse);
+    
+    // Extract the endpoint details from the response structure
+    let endpointData = null;
+    
+    if (handledResponse && handledResponse.data) {
+      endpointData = handledResponse.data;
+    } else if (handledResponse && handledResponse.endpoint) {
+      endpointData = handledResponse.endpoint;
+    } else if (handledResponse && typeof handledResponse === 'object') {
+      endpointData = handledResponse;
+    }
+    
+    console.log('📊 [Documentation] Extracted endpoint data:', endpointData);
+    
+    if (endpointData) {
+      // Format the details for display
+      const formattedDetails = {
+        id: endpointData.endpointId || endpointData.id,
+        name: endpointData.name || '',
+        method: endpointData.method || 'GET',
+        url: endpointData.url || '',
+        path: endpointData.url || endpointData.path || '',
+        description: endpointData.description || '',
+        category: endpointData.category || 'general',
+        tags: endpointData.tags || [],
+        formattedTags: (endpointData.tags || []).map(tag => ({
+          name: tag,
+          color: getTagColor(tag)
+        })),
+        lastModified: endpointData.lastModified,
+        timeAgo: getTimeAgo(endpointData.lastModified),
+        version: endpointData.version || '1.0.0',
+        requiresAuthentication: endpointData.requiresAuthentication || false,
+        rateLimit: endpointData.rateLimit || null,
+        formattedRateLimit: endpointData.formattedRateLimit || 
+          (endpointData.rateLimit ? formatRateLimit(endpointData.rateLimit) : 'Not rate limited'),
+        deprecated: endpointData.deprecated || false,
+        headers: Array.isArray(endpointData.headers) ? endpointData.headers.map(header => ({
+          ...header,
+          requiredBadge: header.required ? 'Required' : 'Optional'
+        })) : [],
+        parameters: Array.isArray(endpointData.parameters) ? endpointData.parameters.map(param => ({
+          ...param,
+          requiredBadge: param.required ? 'Required' : 'Optional'
+        })) : [],
+        responseExamples: Array.isArray(endpointData.responseExamples) ? 
+          endpointData.responseExamples.map(example => ({
+            ...example,
+            statusBadge: getStatusCodeBadge(example.statusCode),
+            formattedExample: example.example ? formatJsonExample(example.example) : '{}'
+          })) : [],
+        requestBodyExample: endpointData.requestBodyExample || '{}',
+        changelog: Array.isArray(endpointData.changelog) ? endpointData.changelog : [],
+        rateLimitInfo: endpointData.rateLimitInfo || null
+      };
       
-      if (details) {
-        const formattedDetails = formatEndpointDetails(details);
-        setEndpointDetails(formattedDetails);
-        
-        // Load changelog for this endpoint
+      console.log('📊 [Documentation] Formatted endpoint details:', formattedDetails);
+      setEndpointDetails(formattedDetails);
+      
+      // Load changelog for this endpoint if available
+      if (formattedDetails.changelog && formattedDetails.changelog.length > 0) {
+        setChangelog(formattedDetails.changelog);
+      } else {
+        // Try to fetch changelog separately
         await fetchChangelog(collectionId);
-        
-        // Load code examples for the selected language
-        await fetchCodeExamples(endpointId, selectedLanguage);
       }
       
-    } catch (error) {
-      console.error('❌ [Documentation] Error loading endpoint details:', error);
-      showToast(`Failed to load endpoint details: ${error.message}`, 'error');
-    } finally {
-      setIsLoading(prev => ({ ...prev, endpointDetails: false }));
+      // Load code examples for the selected language
+      await fetchCodeExamples(endpointId, selectedLanguage);
     }
-  }, [authToken, selectedLanguage]);
+    
+  } catch (error) {
+    console.error('❌ [Documentation] Error loading endpoint details:', error);
+    showToast(`Failed to load endpoint details: ${error.message}`, 'error');
+  } finally {
+    setIsLoading(prev => ({ ...prev, endpointDetails: false }));
+  }
+}, [authToken, selectedLanguage]);
 
   // Load code examples
   const fetchCodeExamples = useCallback(async (endpointId, language) => {

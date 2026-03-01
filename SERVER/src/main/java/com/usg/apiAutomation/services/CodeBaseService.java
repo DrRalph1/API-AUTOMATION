@@ -294,21 +294,31 @@ public class CodeBaseService {
             loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
                     ", Getting implementation for language: " + language + ", component: " + component);
 
-            ImplementationEntity implementation = implementationRepository
-                    .findByRequestIdAndLanguageAndComponent(requestIdParam, language, component)
-                    .orElseThrow(() -> new RuntimeException(
-                            "ImplementationEntity not found for language: " + language + ", component: " + component));
+            Optional<ImplementationEntity> implementationOpt = implementationRepository
+                    .findByRequestIdAndLanguageAndComponent(requestIdParam, language, component);
 
             ImplementationResponse response = new ImplementationResponse();
             response.setLanguage(language);
             response.setComponent(component);
             response.setRequestId(requestIdParam);
             response.setCollectionId(collectionId);
-            response.setCode(implementation.getCode());
-            response.setFileName(getFileName(component, language));
-            response.setFileSize((long) implementation.getCode().length());
-            response.setLinesOfCode(implementation.getLinesOfCode());
-            response.setGeneratedAt(Date.from(implementation.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant()));
+
+            if (implementationOpt.isPresent()) {
+                ImplementationEntity implementation = implementationOpt.get();
+                response.setCode(implementation.getCode());
+                response.setFileName(getFileName(component, language));
+                response.setFileSize((long) implementation.getCode().length());
+                response.setLinesOfCode(implementation.getLinesOfCode());
+                response.setGeneratedAt(Date.from(implementation.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant()));
+            } else {
+                // Return empty/default values for missing implementation
+                response.setCode("// No implementation found for " + language + "/" + component);
+                response.setFileName(getFileName(component, language));
+                response.setFileSize(0L);
+                response.setLinesOfCode(0);
+                response.setGeneratedAt(new Date());
+                response.setNotFound(true); // You'd need to add this field to your DTO
+            }
 
             // Get language info from database or configuration
             Map<String, Object> languageInfo = getLanguageInfoFromDb(language);

@@ -37,7 +37,7 @@ public class ApiKeyNSecretHelper {
 
         try {
             // Query API key & secret for swagger-ui microservice
-            String query = "SELECT COUNT(*) FROM tb_api_validation " +
+            String query = "SELECT COUNT(*) FROM tb_sys_api_validation " +
                     "WHERE api_key = ? AND api_secret = ? AND micro_service_id = 'swagger-ui'";
 
             Integer count = jdbcTemplate.queryForObject(query, Integer.class, apiKey, apiSecret);
@@ -77,7 +77,7 @@ public class ApiKeyNSecretHelper {
 
         try {
             // Query API key & secret for api-automation microservice
-            String query = "SELECT COUNT(*) FROM tb_api_validation " +
+            String query = "SELECT COUNT(*) FROM tb_sys_api_validation " +
                     "WHERE api_key = ? AND api_secret = ? AND micro_service_id = 'api-automation'";
 
             Integer count = jdbcTemplate.queryForObject(query, Integer.class, apiKey, apiSecret);

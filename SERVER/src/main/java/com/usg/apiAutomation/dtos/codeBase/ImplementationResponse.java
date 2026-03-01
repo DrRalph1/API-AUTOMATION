@@ -18,6 +18,7 @@ public class ImplementationResponse {
     private String requestId;
     private String collectionId;
     private String code;
+    private Boolean notFound;
     private String fileName;
     private Map<String, Object> languageInfo;
     private Date generatedAt;
