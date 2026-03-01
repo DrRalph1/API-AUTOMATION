@@ -7186,22 +7186,91 @@ public class OracleSchemaRepository {
                 result.put("owner", owner);
             }
 
+            // First try to find the object in all_objects
             String sql = "SELECT status FROM all_objects " +
                     "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
                     "AND object_type = ?";
 
-            String status = oracleJdbcTemplate.queryForObject(sql, String.class, owner, objectName, objectType);
+            String status = null;
+            boolean foundInObjects = false;
 
-            result.put("exists", true);
-            result.put("status", status);
-            result.put("accessible", true);
-            result.put("valid", "VALID".equalsIgnoreCase(status));
+            try {
+                status = oracleJdbcTemplate.queryForObject(sql, String.class, owner, objectName, objectType);
+                foundInObjects = true;
+            } catch (EmptyResultDataAccessException e) {
+                // Object not found in all_objects, try synonyms
+                foundInObjects = false;
+            }
 
-        } catch (EmptyResultDataAccessException e) {
-            result.put("exists", false);
-            result.put("status", "NOT_FOUND");
-            result.put("accessible", false);
-            result.put("message", "Object not found");
+            if (foundInObjects) {
+                result.put("exists", true);
+                result.put("status", status);
+                result.put("accessible", true);
+                result.put("valid", "VALID".equalsIgnoreCase(status));
+                result.put("source", "OBJECT");
+            } else {
+                // Check if it's a synonym
+                String synonymSql = "SELECT s.table_owner, s.table_name, s.db_link, " +
+                        "o.status as table_status " +
+                        "FROM all_synonyms s " +
+                        "LEFT JOIN all_objects o ON UPPER(o.owner) = UPPER(s.table_owner) " +
+                        "AND UPPER(o.object_name) = UPPER(s.table_name) " +
+                        "WHERE UPPER(s.owner) = UPPER(?) AND UPPER(s.synonym_name) = UPPER(?)";
+
+                try {
+                    Map<String, Object> synonymResult = oracleJdbcTemplate.queryForMap(synonymSql, owner, objectName);
+
+                    if (synonymResult != null && !synonymResult.isEmpty()) {
+                        String tableOwner = (String) synonymResult.get("table_owner");
+                        String tableName = (String) synonymResult.get("table_name");
+                        String dbLink = (String) synonymResult.get("db_link");
+                        String tableStatus = (String) synonymResult.get("table_status");
+
+                        result.put("exists", true);
+                        result.put("is_synonym", true);
+                        result.put("target_owner", tableOwner);
+                        result.put("target_object", tableName);
+                        result.put("db_link", dbLink);
+                        result.put("source", "SYNONYM");
+
+                        // Check if the target object exists and is valid
+                        if (tableStatus != null) {
+                            result.put("status", tableStatus);
+                            result.put("valid", "VALID".equalsIgnoreCase(tableStatus));
+                            result.put("target_exists", true);
+                        } else {
+                            // Check if it's a remote synonym
+                            if (dbLink != null && !dbLink.isEmpty()) {
+                                result.put("status", "REMOTE");
+                                result.put("valid", true); // Assume remote objects are valid
+                                result.put("target_exists", true);
+                                result.put("message", "Remote object via database link");
+                            } else {
+                                result.put("status", "TARGET_NOT_FOUND");
+                                result.put("valid", false);
+                                result.put("target_exists", false);
+                                result.put("message", "Synonym target object not found");
+                            }
+                        }
+
+                        // Check if user has access to the synonym
+                        result.put("accessible", checkSynonymAccess(owner, objectName));
+                    } else {
+                        // Neither object nor synonym found
+                        result.put("exists", false);
+                        result.put("status", "NOT_FOUND");
+                        result.put("accessible", false);
+                        result.put("message", "Object or synonym not found");
+                    }
+                } catch (EmptyResultDataAccessException ex) {
+                    // Synonym not found either
+                    result.put("exists", false);
+                    result.put("status", "NOT_FOUND");
+                    result.put("accessible", false);
+                    result.put("message", "Object or synonym not found");
+                }
+            }
+
         } catch (DataAccessException e) {
             result.put("exists", false);
             result.put("status", "ERROR");
@@ -7210,7 +7279,26 @@ public class OracleSchemaRepository {
         }
 
         return result;
+
     }
+
+
+    /**
+     * Helper method to check if the user has access to a synonym
+     */
+    private boolean checkSynonymAccess(String owner, String synonymName) {
+        try {
+            String accessSql = "SELECT COUNT(*) FROM all_synonyms " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(synonym_name) = UPPER(?)";
+
+            Integer count = oracleJdbcTemplate.queryForObject(accessSql, Integer.class, owner, synonymName);
+            return count != null && count > 0;
+        } catch (DataAccessException e) {
+            return false;
+        }
+    }
+
+
 
     /**
      * Validate synonym and resolve target
@@ -9820,111 +9908,82 @@ public class OracleSchemaRepository {
         List<Map<String, Object>> params = new ArrayList<>();
 
         try {
-            // Get the source code - need to get the actual source, not just all_objects
+            // Get the source code - this should always work even for invalid objects
             String sourceSql = "SELECT text FROM all_source " +
                     "WHERE UPPER(owner) = UPPER(?) AND UPPER(name) = UPPER(?) " +
-                    "AND UPPER(type) = 'PACKAGE' ORDER BY line";
+                    "AND UPPER(type) = 'PROCEDURE' ORDER BY line";
 
             List<String> sourceLines = oracleJdbcTemplate.queryForList(sourceSql, String.class, owner, procedureName);
 
-            // If not found in PACKAGE, try PROCEDURE
             if (sourceLines.isEmpty()) {
-                sourceSql = "SELECT text FROM all_source " +
-                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(name) = UPPER(?) " +
-                        "AND UPPER(type) = 'PROCEDURE' ORDER BY line";
-                sourceLines = oracleJdbcTemplate.queryForList(sourceSql, String.class, owner, procedureName);
-            }
-
-            if (sourceLines.isEmpty()) {
-                log.info("No source found for {}.{}", owner, procedureName);
+                log.info("No source found for {}.{} in PROCEDURE type", owner, procedureName);
                 return params;
             }
 
             // Combine all source lines
-            String fullSource = String.join(" ", sourceLines);
+            StringBuilder fullSource = new StringBuilder();
+            for (String line : sourceLines) {
+                fullSource.append(line).append(" ");
+            }
 
-            // Look for the procedure signature - more flexible pattern
-            // This pattern looks for PROCEDURE name ( followed by parameters until )
-            String signature = "PROCEDURE\\s+" + java.util.regex.Pattern.quote(procedureName) +
-                    "\\s*\\((.*?)\\)";
-            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(signature,
-                    java.util.regex.Pattern.DOTALL | java.util.regex.Pattern.CASE_INSENSITIVE);
-            java.util.regex.Matcher matcher = pattern.matcher(fullSource);
+            String source = fullSource.toString();
+            log.info("Full source length: {}", source.length());
+
+            // Look for the procedure signature - simplified pattern
+            // Pattern: PROCEDURE procedure_name ( ... )
+            String patternStr = "PROCEDURE\\s+" + procedureName + "\\s*\\((.*?)\\)\\s*(?:IS|AS)";
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                    patternStr,
+                    java.util.regex.Pattern.DOTALL | java.util.regex.Pattern.CASE_INSENSITIVE
+            );
+
+            java.util.regex.Matcher matcher = pattern.matcher(source);
 
             if (matcher.find()) {
                 String paramsStr = matcher.group(1).trim();
-                log.info("Found parameter string: {}", paramsStr);
+                log.info("Found parameter section: {}", paramsStr);
 
                 if (!paramsStr.isEmpty()) {
-                    // Split parameters by comma, but be careful with commas inside parentheses
-                    List<String> paramDefs = new ArrayList<>();
-                    StringBuilder currentParam = new StringBuilder();
-                    int parenCount = 0;
-
-                    for (char c : paramsStr.toCharArray()) {
-                        if (c == '(') parenCount++;
-                        else if (c == ')') parenCount--;
-
-                        if (c == ',' && parenCount == 0) {
-                            paramDefs.add(currentParam.toString().trim());
-                            currentParam = new StringBuilder();
-                        } else {
-                            currentParam.append(c);
-                        }
-                    }
-                    if (currentParam.length() > 0) {
-                        paramDefs.add(currentParam.toString().trim());
-                    }
+                    // Split parameters by comma, handling nested parentheses
+                    List<String> paramDefs = splitParameters(paramsStr);
 
                     int position = 1;
                     for (String paramDef : paramDefs) {
-                        if (paramDef.isEmpty() || paramDef.equals("--")) continue;
+                        Map<String, Object> param = parseSingleParameter(paramDef, position);
+                        if (param != null && !param.isEmpty()) {
+                            params.add(param);
+                            position++;
+                        }
+                    }
+                }
+            } else {
+                log.info("No procedure signature found with pattern: {}", patternStr);
 
-                        Map<String, Object> param = new HashMap<>();
-                        param.put("position", position);
+                // Try alternative pattern without requiring IS/AS
+                patternStr = "PROCEDURE\\s+" + procedureName + "\\s*\\((.*?)\\)";
+                pattern = java.util.regex.Pattern.compile(
+                        patternStr,
+                        java.util.regex.Pattern.DOTALL | java.util.regex.Pattern.CASE_INSENSITIVE
+                );
 
-                        // Parse parameter definition: NAME [IN|OUT|IN OUT] DATATYPE
-                        String[] parts = paramDef.split("\\s+");
+                matcher = pattern.matcher(source);
+                if (matcher.find()) {
+                    String paramsStr = matcher.group(1).trim();
+                    log.info("Found parameter section (alt pattern): {}", paramsStr);
 
-                        if (parts.length >= 1) {
-                            // First part is always the parameter name
-                            String paramName = parts[0].replaceAll("\\s+", "");
-                            if (!paramName.isEmpty() && !paramName.equals("--")) {
-                                param.put("argument_name", paramName);
+                    if (!paramsStr.isEmpty()) {
+                        List<String> paramDefs = splitParameters(paramsStr);
 
-                                // Default values
-                                String inOut = "IN";
-                                String dataType = "VARCHAR2"; // Default
-
-                                // Check if second part is IN/OUT/IN OUT
-                                int dataTypeIndex = 1;
-                                if (parts.length > 1) {
-                                    String secondPart = parts[1].toUpperCase();
-                                    if (secondPart.equals("IN") || secondPart.equals("OUT") ||
-                                            secondPart.equals("IN/OUT") || secondPart.equals("IN OUT")) {
-                                        inOut = secondPart;
-                                        dataTypeIndex = 2;
-                                    }
-                                }
-
-                                // Get data type
-                                if (parts.length > dataTypeIndex) {
-                                    dataType = parts[dataTypeIndex];
-                                    // Remove any trailing punctuation
-                                    dataType = dataType.replaceAll("[,\\s]+$", "");
-                                }
-
-                                param.put("in_out", inOut);
-                                param.put("data_type", dataType);
-
+                        int position = 1;
+                        for (String paramDef : paramDefs) {
+                            Map<String, Object> param = parseSingleParameter(paramDef, position);
+                            if (param != null && !param.isEmpty()) {
                                 params.add(param);
                                 position++;
                             }
                         }
                     }
                 }
-            } else {
-                log.info("No procedure signature found for {}.{}", owner, procedureName);
             }
 
         } catch (Exception e) {
@@ -9933,6 +9992,232 @@ public class OracleSchemaRepository {
 
         log.info("Parsed {} parameters for {}.{}", params.size(), owner, procedureName);
         return params;
+    }
+
+    private List<String> splitParameters(String paramsStr) {
+        List<String> params = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        int parenCount = 0;
+        boolean inComment = false;
+
+        for (int i = 0; i < paramsStr.length(); i++) {
+            char c = paramsStr.charAt(i);
+
+            // Check for comment start
+            if (c == '-' && i + 1 < paramsStr.length() && paramsStr.charAt(i + 1) == '-') {
+                inComment = true;
+            }
+
+            // If we're in a comment, skip until end of line or comma
+            if (inComment) {
+                if (c == '\n' || c == '\r') {
+                    inComment = false;
+                }
+                continue;
+            }
+
+            if (c == '(') {
+                parenCount++;
+                current.append(c);
+            } else if (c == ')') {
+                parenCount--;
+                current.append(c);
+            } else if (c == ',' && parenCount == 0) {
+                // End of parameter
+                String param = current.toString().trim();
+                if (!param.isEmpty() && !param.startsWith("--")) {
+                    params.add(param);
+                }
+                current = new StringBuilder();
+            } else {
+                current.append(c);
+            }
+        }
+
+        // Add last parameter
+        String lastParam = current.toString().trim();
+        if (!lastParam.isEmpty() && !lastParam.startsWith("--")) {
+            params.add(lastParam);
+        }
+
+        return params;
+    }
+
+    private Map<String, Object> parseSingleParameter(String paramDef, int position) {
+        Map<String, Object> param = new HashMap<>();
+
+        // Remove inline comments
+        int commentIdx = paramDef.indexOf("--");
+        if (commentIdx > 0) {
+            paramDef = paramDef.substring(0, commentIdx).trim();
+        }
+
+        // Skip if empty or just dashes
+        if (paramDef.isEmpty() || paramDef.matches("^[-]+$")) {
+            return null;
+        }
+
+        // Clean up the parameter definition
+        paramDef = paramDef.replaceAll("\\s+", " ").trim();
+
+        // Split into parts
+        String[] parts = paramDef.split("\\s+");
+        if (parts.length < 1) return null;
+
+        // First part is parameter name (remove any special characters)
+        String paramName = parts[0].replaceAll("[^a-zA-Z0-9_]", "");
+        if (paramName.isEmpty()) return null;
+
+        param.put("argument_name", paramName);
+        param.put("position", position);
+
+        // Default values
+        String inOut = "IN";
+        String dataType = "VARCHAR2";
+
+        // Check for IN/OUT/IN OUT
+        int dataTypeIndex = 1;
+        if (parts.length > 1) {
+            String secondPart = parts[1].toUpperCase();
+            if (secondPart.equals("IN") || secondPart.equals("OUT") ||
+                    secondPart.equals("IN/OUT") || secondPart.equals("IN OUT")) {
+                inOut = secondPart;
+                dataTypeIndex = 2;
+            }
+        }
+        param.put("in_out", inOut);
+
+        // Get data type
+        if (parts.length > dataTypeIndex) {
+            StringBuilder dataTypeBuilder = new StringBuilder();
+            for (int i = dataTypeIndex; i < parts.length; i++) {
+                if (i > dataTypeIndex) dataTypeBuilder.append(" ");
+                dataTypeBuilder.append(parts[i]);
+            }
+            dataType = dataTypeBuilder.toString().replaceAll("[,\\s]+$", "");
+            dataType = dataType.replaceAll("[,;]$", "").trim();
+        }
+        param.put("data_type", dataType);
+
+        log.debug("Parsed parameter: {} -> name={}, in_out={}, data_type={}",
+                paramDef, paramName, inOut, dataType);
+
+        return param;
+    }
+
+    private void parseParameterSection(String paramSection, List<Map<String, Object>> params) {
+        if (paramSection == null || paramSection.trim().isEmpty()) {
+            return;
+        }
+
+        // Split parameters by comma, but handle nested parentheses
+        List<String> paramDefs = new ArrayList<>();
+        StringBuilder currentParam = new StringBuilder();
+        int parenCount = 0;
+        boolean inString = false;
+
+        for (char c : paramSection.toCharArray()) {
+            if (c == '\'' && !inString) {
+                inString = true;
+                currentParam.append(c);
+            } else if (c == '\'' && inString) {
+                inString = false;
+                currentParam.append(c);
+            } else if (c == '(' && !inString) {
+                parenCount++;
+                currentParam.append(c);
+            } else if (c == ')' && !inString) {
+                parenCount--;
+                currentParam.append(c);
+            } else if (c == ',' && parenCount == 0 && !inString) {
+                // End of parameter
+                String paramDef = currentParam.toString().trim();
+                if (!paramDef.isEmpty() && !paramDef.startsWith("--")) {
+                    processParameterDefinition(paramDef, params);
+                }
+                currentParam = new StringBuilder();
+            } else {
+                currentParam.append(c);
+            }
+        }
+
+        // Add the last parameter
+        String lastParam = currentParam.toString().trim();
+        if (!lastParam.isEmpty() && !lastParam.startsWith("--")) {
+            processParameterDefinition(lastParam, params);
+        }
+    }
+
+    private void processParameterDefinition(String paramDef, List<Map<String, Object>> params) {
+        // Remove any trailing comments
+        int commentIndex = paramDef.indexOf("--");
+        if (commentIndex > 0) {
+            paramDef = paramDef.substring(0, commentIndex).trim();
+        }
+
+        // Skip if it's just a comment or empty
+        if (paramDef.isEmpty() || paramDef.startsWith("--")) {
+            return;
+        }
+
+        // Clean up the parameter definition
+        paramDef = paramDef.replaceAll("\\s+", " ").trim();
+
+        // Split into parts
+        String[] parts = paramDef.split("\\s+");
+        if (parts.length < 1) return;
+
+        Map<String, Object> param = new HashMap<>();
+        int position = params.size() + 1;
+        param.put("position", position);
+
+        // First part is the parameter name (remove any special characters at start)
+        String paramName = parts[0].replaceAll("^[^a-zA-Z0-9_]+", "");
+        if (paramName.isEmpty() || paramName.matches("^[-]+$")) {
+            return; // Skip if it's just dashes
+        }
+        param.put("argument_name", paramName);
+
+        // Default values
+        String inOut = "IN";
+        String dataType = "VARCHAR2";
+
+        // Check for IN/OUT/IN OUT
+        int dataTypeIndex = 1;
+        if (parts.length > 1) {
+            String secondPart = parts[1].toUpperCase();
+            if (secondPart.equals("IN") || secondPart.equals("OUT") ||
+                    secondPart.equals("IN/OUT") || secondPart.equals("IN OUT")) {
+                inOut = secondPart;
+                dataTypeIndex = 2;
+            }
+        }
+        param.put("in_out", inOut);
+
+        // Get data type
+        if (parts.length > dataTypeIndex) {
+            StringBuilder dataTypeBuilder = new StringBuilder();
+            for (int i = dataTypeIndex; i < parts.length; i++) {
+                if (i > dataTypeIndex) dataTypeBuilder.append(" ");
+                dataTypeBuilder.append(parts[i]);
+            }
+            dataType = dataTypeBuilder.toString().replaceAll("[,\\s]+$", "");
+
+            // Clean up data type - remove any trailing special characters
+            dataType = dataType.replaceAll("[,;]$", "").trim();
+
+            // Skip if data type is just dashes or empty
+            if (dataType.matches("^[-]+$") || dataType.isEmpty()) {
+                return;
+            }
+        }
+        param.put("data_type", dataType);
+
+        // Log for debugging
+        log.info("Parsed parameter: name={}, in_out={}, data_type={}, definition='{}'",
+                paramName, inOut, dataType, paramDef);
+
+        params.add(param);
     }
 
 

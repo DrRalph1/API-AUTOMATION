@@ -30,7 +30,9 @@ public interface ApiExecutionLogRepository extends JpaRepository<ApiExecutionLog
     List<Object[]> getStatusDistribution(@Param("apiId") String apiId);
 
     @Query("SELECT DATE(l.executedAt), COUNT(l) FROM ApiExecutionLogEntity l " +
-            "WHERE l.generatedApi.id = :apiId AND l.executedAt > :since " +
+            "WHERE l.generatedApi.id = :apiId AND l.executedAt BETWEEN :startDate AND :endDate " +
             "GROUP BY DATE(l.executedAt) ORDER BY DATE(l.executedAt)")
-    List<Object[]> getDailyCallStats(@Param("apiId") String apiId, @Param("since") LocalDateTime since);
+    List<Object[]> getDailyCallStats(@Param("apiId") String apiId,
+                                     @Param("startDate") LocalDateTime startDate,
+                                     @Param("endDate") LocalDateTime endDate);
 }

@@ -1,17 +1,16 @@
 package com.usg.apiAutomation.entities.postgres.apiGenerationEngine;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 import org.hibernate.annotations.GenericGenerator;
 
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 @Entity
 @Table(name = "tb_eng_schema_configs")
-@Data
+@Getter
+@Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
@@ -22,8 +21,10 @@ public class ApiSchemaConfigEntity {
     @GenericGenerator(name = "UUID", strategy = "org.hibernate.id.UUIDGenerator")
     private String id;
 
-    @OneToOne
+    @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "api_id")
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private GeneratedApiEntity generatedApi;
 
     @Column(name = "schema_name")
@@ -70,4 +71,61 @@ public class ApiSchemaConfigEntity {
 
     @Column(name = "target_owner")
     private String targetOwner;
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        ApiSchemaConfigEntity that = (ApiSchemaConfigEntity) o;
+        return Objects.equals(id, that.id) &&
+                Objects.equals(schemaName, that.schemaName) &&
+                Objects.equals(objectType, that.objectType) &&
+                Objects.equals(objectName, that.objectName) &&
+                Objects.equals(operation, that.operation) &&
+                Objects.equals(primaryKeyColumn, that.primaryKeyColumn) &&
+                Objects.equals(sequenceName, that.sequenceName) &&
+                Objects.equals(enablePagination, that.enablePagination) &&
+                Objects.equals(pageSize, that.pageSize) &&
+                Objects.equals(enableSorting, that.enableSorting) &&
+                Objects.equals(defaultSortColumn, that.defaultSortColumn) &&
+                Objects.equals(defaultSortDirection, that.defaultSortDirection) &&
+                Objects.equals(isSynonym, that.isSynonym) &&
+                Objects.equals(targetType, that.targetType) &&
+                Objects.equals(targetName, that.targetName) &&
+                Objects.equals(targetOwner, that.targetOwner) &&
+                Objects.equals(generatedApi != null ? generatedApi.getId() : null,
+                        that.generatedApi != null ? that.generatedApi.getId() : null);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(id, schemaName, objectType, objectName, operation,
+                primaryKeyColumn, sequenceName, enablePagination, pageSize,
+                enableSorting, defaultSortColumn, defaultSortDirection,
+                isSynonym, targetType, targetName, targetOwner,
+                generatedApi != null ? generatedApi.getId() : null);
+    }
+
+    @Override
+    public String toString() {
+        return "ApiSchemaConfigEntity{" +
+                "id='" + id + '\'' +
+                ", apiId='" + (generatedApi != null ? generatedApi.getId() : null) + '\'' +
+                ", schemaName='" + schemaName + '\'' +
+                ", objectType='" + objectType + '\'' +
+                ", objectName='" + objectName + '\'' +
+                ", operation='" + operation + '\'' +
+                ", primaryKeyColumn='" + primaryKeyColumn + '\'' +
+                ", sequenceName='" + sequenceName + '\'' +
+                ", enablePagination=" + enablePagination +
+                ", pageSize=" + pageSize +
+                ", enableSorting=" + enableSorting +
+                ", defaultSortColumn='" + defaultSortColumn + '\'' +
+                ", defaultSortDirection='" + defaultSortDirection + '\'' +
+                ", isSynonym=" + isSynonym +
+                ", targetType='" + targetType + '\'' +
+                ", targetName='" + targetName + '\'' +
+                ", targetOwner='" + targetOwner + '\'' +
+                '}';
+    }
 }

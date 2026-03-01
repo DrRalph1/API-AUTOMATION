@@ -1,20 +1,22 @@
 package com.usg.apiAutomation.entities.postgres.apiGenerationEngine;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import com.vladmihalcea.hibernate.type.json.JsonType;
+import lombok.*;
 import org.hibernate.annotations.GenericGenerator;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.Type;
+
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Entity
 @Table(name = "tb_eng_generated_apis")
-@Data
+@Getter
+@Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
@@ -77,30 +79,48 @@ public class GeneratedApiEntity {
     private LocalDateTime lastCalledAt;
 
     @OneToOne(mappedBy = "generatedApi", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private ApiSchemaConfigEntity schemaConfig;
 
     @OneToOne(mappedBy = "generatedApi", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private ApiAuthConfigEntity authConfig;
 
     @OneToOne(mappedBy = "generatedApi", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private ApiRequestConfigEntity requestConfig;
 
     @OneToOne(mappedBy = "generatedApi", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private ApiResponseConfigEntity responseConfig;
 
     @OneToOne(mappedBy = "generatedApi", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private ApiSettingsEntity settings;
 
     @OneToMany(mappedBy = "generatedApi", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private List<ApiParameterEntity> parameters = new ArrayList<>();
 
     @OneToMany(mappedBy = "generatedApi", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private List<ApiResponseMappingEntity> responseMappings = new ArrayList<>();
 
     @OneToMany(mappedBy = "generatedApi", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private List<ApiHeaderEntity> headers = new ArrayList<>();
 
     @OneToMany(mappedBy = "generatedApi", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private List<ApiTestEntity> tests = new ArrayList<>();
 
     @ElementCollection
@@ -108,6 +128,65 @@ public class GeneratedApiEntity {
     @Column(name = "tag")
     private List<String> tags = new ArrayList<>();
 
+    @Type(JsonType.class)
     @Column(name = "source_object_info", columnDefinition = "jsonb")
-    private String sourceObjectInfo;
+    private Map<String, Object> sourceObjectInfo;
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        GeneratedApiEntity that = (GeneratedApiEntity) o;
+        return Objects.equals(id, that.id) &&
+                Objects.equals(apiName, that.apiName) &&
+                Objects.equals(apiCode, that.apiCode) &&
+                Objects.equals(version, that.version) &&
+                Objects.equals(status, that.status) &&
+                Objects.equals(httpMethod, that.httpMethod) &&
+                Objects.equals(basePath, that.basePath) &&
+                Objects.equals(endpointPath, that.endpointPath) &&
+                Objects.equals(category, that.category) &&
+                Objects.equals(owner, that.owner) &&
+                Objects.equals(createdAt, that.createdAt) &&
+                Objects.equals(updatedAt, that.updatedAt) &&
+                Objects.equals(updatedBy, that.updatedBy) &&
+                Objects.equals(createdBy, that.createdBy) &&
+                Objects.equals(isActive, that.isActive) &&
+                Objects.equals(totalCalls, that.totalCalls) &&
+                Objects.equals(lastCalledAt, that.lastCalledAt) &&
+                Objects.equals(tags, that.tags) &&
+                Objects.equals(sourceObjectInfo, that.sourceObjectInfo);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(id, apiName, apiCode, version, status, httpMethod, basePath,
+                endpointPath, category, owner, createdAt, updatedAt, updatedBy,
+                createdBy, isActive, totalCalls, lastCalledAt, tags, sourceObjectInfo);
+    }
+
+    @Override
+    public String toString() {
+        return "GeneratedApiEntity{" +
+                "id='" + id + '\'' +
+                ", apiName='" + apiName + '\'' +
+                ", apiCode='" + apiCode + '\'' +
+                ", version='" + version + '\'' +
+                ", status='" + status + '\'' +
+                ", httpMethod='" + httpMethod + '\'' +
+                ", basePath='" + basePath + '\'' +
+                ", endpointPath='" + endpointPath + '\'' +
+                ", category='" + category + '\'' +
+                ", owner='" + owner + '\'' +
+                ", createdAt=" + createdAt +
+                ", updatedAt=" + updatedAt +
+                ", updatedBy='" + updatedBy + '\'' +
+                ", createdBy='" + createdBy + '\'' +
+                ", isActive=" + isActive +
+                ", totalCalls=" + totalCalls +
+                ", lastCalledAt=" + lastCalledAt +
+                ", tags=" + tags +
+                ", sourceObjectInfo=" + sourceObjectInfo +
+                '}';
+    }
 }

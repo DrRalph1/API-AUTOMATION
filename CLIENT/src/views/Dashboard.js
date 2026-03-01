@@ -162,7 +162,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
 
   // Pagination for API endpoints
   const [apiPage, setApiPage] = useState(1);
-  const [apisPerPage, setApisPerPage] = useState(6);
+  const [apisPerPage, setApisPerPage] = useState(10);
   
   const [dashboardData, setDashboardData] = useState({
     stats: {

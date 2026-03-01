@@ -1,5 +1,6 @@
 package com.usg.apiAutomation.services.apiGenerationEngine;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.*;
 import com.usg.apiAutomation.dtos.codeBase.*;
@@ -26,6 +27,7 @@ import com.usg.apiAutomation.services.OracleSchemaService;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.SqlOutParameter;
 import org.springframework.jdbc.core.SqlParameter;
@@ -33,9 +35,9 @@ import org.springframework.jdbc.core.simple.SimpleJdbcCall;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.sql.CallableStatement;
 import java.sql.Types;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -116,9 +118,9 @@ public class APIGenerationEngineService {
                     .createdBy(performedBy)
                     .isActive(true)
                     .totalCalls(0L)
-                    .tags(request.getTags())
+                    .tags(request.getTags() != null ? request.getTags() : new ArrayList<>())
                     .sourceObjectInfo(sourceObjectDTO != null ?
-                            objectMapper.writeValueAsString(sourceObjectDTO) : null)
+                            objectMapper.convertValue(sourceObjectDTO, Map.class) : null)
                     .build();
 
             // Save schema config (Oracle object mapping)
@@ -165,6 +167,8 @@ public class APIGenerationEngineService {
                 // Auto-generate parameters from source object (fallback)
                 List<ApiParameterEntity> parameters = generateParametersFromSource(sourceObjectDTO, api);
                 api.setParameters(parameters);
+            } else {
+                api.setParameters(new ArrayList<>());
             }
 
             // Save response mappings from UI
@@ -181,20 +185,26 @@ public class APIGenerationEngineService {
                 // Auto-generate response mappings from source object (fallback)
                 List<ApiResponseMappingEntity> mappings = generateResponseMappingsFromSource(sourceObjectDTO, api);
                 api.setResponseMappings(mappings);
+            } else {
+                api.setResponseMappings(new ArrayList<>());
             }
 
             // Save headers
-            if (request.getHeaders() != null) {
+            if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
                 List<ApiHeaderEntity> headers = request.getHeaders().stream()
                         .map(headerDto -> mapToHeaderEntity(headerDto, api))
                         .collect(Collectors.toList());
                 api.setHeaders(headers);
+            } else {
+                api.setHeaders(new ArrayList<>());
             }
 
             // Save tests
             if (request.getTests() != null) {
                 List<ApiTestEntity> tests = createTestEntities(request.getTests(), api);
                 api.setTests(tests);
+            } else {
+                api.setTests(new ArrayList<>());
             }
 
             // Save to database
@@ -281,10 +291,10 @@ public class APIGenerationEngineService {
             api.setOwner(request.getOwner());
             api.setUpdatedAt(LocalDateTime.now());
             api.setUpdatedBy(performedBy);
-            api.setTags(request.getTags());
+            api.setTags(request.getTags() != null ? request.getTags() : new ArrayList<>());
 
             if (sourceObjectDTO != null) {
-                api.setSourceObjectInfo(objectMapper.writeValueAsString(sourceObjectDTO));
+                api.setSourceObjectInfo(objectMapper.convertValue(sourceObjectDTO, Map.class));
             }
 
             // Clear existing relationships to replace them
@@ -334,6 +344,8 @@ public class APIGenerationEngineService {
                 // Auto-generate parameters from source object
                 List<ApiParameterEntity> parameters = generateParametersFromSource(sourceObjectDTO, api);
                 api.setParameters(parameters);
+            } else {
+                api.setParameters(new ArrayList<>());
             }
 
             // Update response mappings from UI
@@ -350,20 +362,26 @@ public class APIGenerationEngineService {
                 // Auto-generate response mappings from source object
                 List<ApiResponseMappingEntity> mappings = generateResponseMappingsFromSource(sourceObjectDTO, api);
                 api.setResponseMappings(mappings);
+            } else {
+                api.setResponseMappings(new ArrayList<>());
             }
 
             // Update headers
-            if (request.getHeaders() != null) {
+            if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
                 List<ApiHeaderEntity> headers = request.getHeaders().stream()
                         .map(headerDto -> mapToHeaderEntity(headerDto, api))
                         .collect(Collectors.toList());
                 api.setHeaders(headers);
+            } else {
+                api.setHeaders(new ArrayList<>());
             }
 
             // Update tests
             if (request.getTests() != null) {
                 List<ApiTestEntity> tests = createTestEntities(request.getTests(), api);
                 api.setTests(tests);
+            } else {
+                api.setTests(new ArrayList<>());
             }
 
             // Save updated API
@@ -567,10 +585,7 @@ public class APIGenerationEngineService {
         List<String> allowedMediaTypes = null;
         if (entity.getAllowedMediaTypes() != null) {
             try {
-                allowedMediaTypes = objectMapper.readValue(
-                        entity.getAllowedMediaTypes(),
-                        new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {}
-                );
+                allowedMediaTypes = Arrays.asList(entity.getAllowedMediaTypes().split(","));
             } catch (Exception e) {
                 log.warn("Failed to parse allowed media types: {}", e.getMessage());
             }
@@ -607,10 +622,7 @@ public class APIGenerationEngineService {
         List<String> corsOrigins = null;
         if (entity.getCorsOrigins() != null) {
             try {
-                corsOrigins = objectMapper.readValue(
-                        entity.getCorsOrigins(),
-                        new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {}
-                );
+                corsOrigins = Arrays.asList(entity.getCorsOrigins().split(","));
             } catch (Exception e) {
                 log.warn("Failed to parse cors origins: {}", e.getMessage());
             }
@@ -757,10 +769,7 @@ public class APIGenerationEngineService {
         // Parse source object info
         if (api.getSourceObjectInfo() != null) {
             try {
-                Map<String, Object> sourceObject = objectMapper.readValue(
-                        api.getSourceObjectInfo(),
-                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}
-                );
+                Map<String, Object> sourceObject = api.getSourceObjectInfo();
                 request.setSourceObject(sourceObject);
             } catch (Exception e) {
                 log.warn("Failed to parse source object info: {}", e.getMessage());
@@ -855,7 +864,7 @@ public class APIGenerationEngineService {
             try {
                 Map<String, Object> requestBodyMap = objectMapper.readValue(
                         api.getRequestConfig().getSample(),
-                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}
+                        new TypeReference<Map<String, Object>>() {}
                 );
                 requestEntity.setRequestBody(requestBodyMap);
             } catch (Exception e) {
@@ -872,7 +881,7 @@ public class APIGenerationEngineService {
             try {
                 Map<String, Object> responseMap = objectMapper.readValue(
                         api.getResponseConfig().getSuccessSchema(),
-                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}
+                        new TypeReference<Map<String, Object>>() {}
                 );
                 requestEntity.setResponseExample(responseMap);
             } catch (Exception e) {
@@ -1093,7 +1102,7 @@ public class APIGenerationEngineService {
             try {
                 Map<String, Object> bodyMap = objectMapper.readValue(
                         api.getRequestConfig().getSample(),
-                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}
+                        new TypeReference<Map<String, Object>>() {}
                 );
                 endpoint.setRequestBodyExample(bodyMap);
             } catch (Exception e) {
@@ -1200,7 +1209,7 @@ public class APIGenerationEngineService {
             try {
                 Map<String, Object> exampleMap = objectMapper.readValue(
                         api.getResponseConfig().getSuccessSchema(),
-                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}
+                        new TypeReference<Map<String, Object>>() {}
                 );
                 successExample.setExample(exampleMap);
             } catch (Exception e) {
@@ -1222,7 +1231,7 @@ public class APIGenerationEngineService {
             try {
                 Map<String, Object> exampleMap = objectMapper.readValue(
                         api.getResponseConfig().getErrorSchema(),
-                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}
+                        new TypeReference<Map<String, Object>>() {}
                 );
                 errorExample.setExample(exampleMap);
             } catch (Exception e) {
@@ -1236,7 +1245,7 @@ public class APIGenerationEngineService {
     private void addDocumentationChangelog(APICollectionEntity collection, GeneratedApiEntity api, String performedBy) {
         ChangelogEntryEntity changelog = new ChangelogEntryEntity();
         changelog.setVersion(api.getVersion());
-        changelog.setDate(String.valueOf(LocalDateTime.now()));
+        changelog.setDate(LocalDateTime.now().toString());
         changelog.setType("UPDATED");
         changelog.setAuthor(performedBy);
         changelog.setCollection(collection);
@@ -1323,10 +1332,7 @@ public class APIGenerationEngineService {
     private String getCodeBaseRequestId(GeneratedApiEntity api) {
         try {
             if (api.getSourceObjectInfo() != null) {
-                Map<String, Object> metadata = objectMapper.readValue(
-                        api.getSourceObjectInfo(),
-                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}
-                );
+                Map<String, Object> metadata = api.getSourceObjectInfo();
                 return (String) metadata.get("codeBaseRequestId");
             }
         } catch (Exception e) {
@@ -1338,10 +1344,7 @@ public class APIGenerationEngineService {
     private String getCollectionsCollectionId(GeneratedApiEntity api) {
         try {
             if (api.getSourceObjectInfo() != null) {
-                Map<String, Object> metadata = objectMapper.readValue(
-                        api.getSourceObjectInfo(),
-                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}
-                );
+                Map<String, Object> metadata = api.getSourceObjectInfo();
                 return (String) metadata.get("collectionsCollectionId");
             }
         } catch (Exception e) {
@@ -1353,10 +1356,7 @@ public class APIGenerationEngineService {
     private String getDocumentationCollectionId(GeneratedApiEntity api) {
         try {
             if (api.getSourceObjectInfo() != null) {
-                Map<String, Object> metadata = objectMapper.readValue(
-                        api.getSourceObjectInfo(),
-                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}
-                );
+                Map<String, Object> metadata = api.getSourceObjectInfo();
                 return (String) metadata.get("documentationCollectionId");
             }
         } catch (Exception e) {
@@ -1813,7 +1813,7 @@ public class APIGenerationEngineService {
             ApiSourceObjectDTO sourceObject = null;
             if (api.getSourceObjectInfo() != null && !api.getSourceObjectInfo().isEmpty()) {
                 try {
-                    sourceObject = objectMapper.readValue(api.getSourceObjectInfo(), ApiSourceObjectDTO.class);
+                    sourceObject = objectMapper.convertValue(api.getSourceObjectInfo(), ApiSourceObjectDTO.class);
                 } catch (Exception e) {
                     log.warn("Failed to parse source object info: {}", e.getMessage());
                 }
@@ -1971,7 +1971,7 @@ public class APIGenerationEngineService {
     private Object executeTableSelect(String tableName, String owner, Map<String, Object> params,
                                       GeneratedApiEntity api) {
         StringBuilder sql = new StringBuilder("SELECT * FROM ");
-        if (owner != null) {
+        if (owner != null && !owner.isEmpty()) {
             sql.append(owner).append(".");
         }
         sql.append(tableName);
@@ -1994,7 +1994,7 @@ public class APIGenerationEngineService {
             int offset = 0;
 
             // Check for page parameter
-            if (params.containsKey("page")) {
+            if (params != null && params.containsKey("page")) {
                 int page = Integer.parseInt(params.get("page").toString());
                 offset = (page - 1) * pageSize;
                 sql.append(" OFFSET ? ROWS FETCH NEXT ? ROWS ONLY");
@@ -2015,7 +2015,7 @@ public class APIGenerationEngineService {
      */
     private Object executeTableInsert(String tableName, String owner, Map<String, Object> params,
                                       GeneratedApiEntity api) {
-        if (params.isEmpty()) {
+        if (params == null || params.isEmpty()) {
             throw new RuntimeException("No parameters provided for INSERT");
         }
 
@@ -2033,7 +2033,7 @@ public class APIGenerationEngineService {
             paramValues.add(entry.getValue());
         }
 
-        String sql = "INSERT INTO " + (owner != null ? owner + "." : "") + tableName +
+        String sql = "INSERT INTO " + (owner != null && !owner.isEmpty() ? owner + "." : "") + tableName +
                 " (" + columns + ") VALUES (" + values + ")";
 
         int rowsAffected = oracleJdbcTemplate.update(sql, paramValues.toArray());
@@ -2052,7 +2052,7 @@ public class APIGenerationEngineService {
                     .orElse(null);
 
             if (pkColumn != null && params.containsKey(pkColumn.toLowerCase())) {
-                String selectSql = "SELECT * FROM " + (owner != null ? owner + "." : "") + tableName +
+                String selectSql = "SELECT * FROM " + (owner != null && !owner.isEmpty() ? owner + "." : "") + tableName +
                         " WHERE " + pkColumn + " = ?";
                 List<Map<String, Object>> inserted = oracleJdbcTemplate.queryForList(
                         selectSql, params.get(pkColumn.toLowerCase()));
@@ -2070,7 +2070,7 @@ public class APIGenerationEngineService {
      */
     private Object executeTableUpdate(String tableName, String owner, Map<String, Object> params,
                                       GeneratedApiEntity api) {
-        if (params.isEmpty()) {
+        if (params == null || params.isEmpty()) {
             throw new RuntimeException("No parameters provided for UPDATE");
         }
 
@@ -2114,7 +2114,7 @@ public class APIGenerationEngineService {
             throw new RuntimeException("No primary key values provided for UPDATE");
         }
 
-        String sql = "UPDATE " + (owner != null ? owner + "." : "") + tableName +
+        String sql = "UPDATE " + (owner != null && !owner.isEmpty() ? owner + "." : "") + tableName +
                 " SET " + setClause + whereClause;
 
         List<Object> allParams = new ArrayList<>(setValues);
@@ -2134,7 +2134,7 @@ public class APIGenerationEngineService {
      */
     private Object executeTableDelete(String tableName, String owner, Map<String, Object> params,
                                       GeneratedApiEntity api) {
-        if (params.isEmpty()) {
+        if (params == null || params.isEmpty()) {
             throw new RuntimeException("No parameters provided for DELETE");
         }
 
@@ -2151,7 +2151,7 @@ public class APIGenerationEngineService {
             whereValues.add(entry.getValue());
         }
 
-        String sql = "DELETE FROM " + (owner != null ? owner + "." : "") + tableName + whereClause;
+        String sql = "DELETE FROM " + (owner != null && !owner.isEmpty() ? owner + "." : "") + tableName + whereClause;
 
         int rowsAffected = oracleJdbcTemplate.update(sql, whereValues.toArray());
 
@@ -2371,8 +2371,7 @@ public class APIGenerationEngineService {
                         apiId, fromDate, toDate);
             } else {
                 // Use pagination for the default case
-                org.springframework.data.domain.PageRequest pageRequest =
-                        org.springframework.data.domain.PageRequest.of(0, limit);
+                PageRequest pageRequest = PageRequest.of(0, limit);
                 logs = executionLogRepository.findByGeneratedApiIdOrderByExecutedAtDesc(apiId, pageRequest)
                         .getContent();
             }
@@ -2568,12 +2567,12 @@ public class APIGenerationEngineService {
         if (entity == null) return null;
 
         return ApiExecutionLogDTO.builder()
-                .id(entity.getId() != null ? entity.getId().toString() : null)
+                .id(entity.getId())
                 .apiId(entity.getGeneratedApi() != null ? entity.getGeneratedApi().getId() : null)
                 .requestId(entity.getRequestId())
-                .requestParams(entity.getRequestParams())
-                .requestBody(entity.getRequestBody())
-                .responseBody(entity.getResponseBody())
+                .requestParams(entity.getRequestParams() != null ? entity.getRequestParams().toString() : null)
+                .requestBody(entity.getRequestBody() != null ? entity.getRequestBody().toString() : null)
+                .responseBody(entity.getResponseBody() != null ? entity.getResponseBody().toString() : null)
                 .responseStatus(entity.getResponseStatus())
                 .executionTimeMs(entity.getExecutionTimeMs())
                 .executedAt(entity.getExecutedAt())
@@ -2588,21 +2587,12 @@ public class APIGenerationEngineService {
     private ApiTestResultDTO mapToTestResultDTO(ApiTestEntity entity) {
         if (entity == null) return null;
 
-        Object actualResponse = null;
-        try {
-            if (entity.getActualResponse() != null) {
-                actualResponse = objectMapper.readValue(entity.getActualResponse(), Object.class);
-            }
-        } catch (Exception e) {
-            log.warn("Failed to parse actual response: {}", e.getMessage());
-        }
-
         return ApiTestResultDTO.builder()
                 .testName(entity.getTestName())
                 .passed("PASSED".equals(entity.getStatus()))
                 .executionTimeMs(entity.getExecutionTimeMs())
                 .statusCode(extractStatusCode(entity))
-                .actualResponse(actualResponse)
+                .actualResponse(entity.getActualResponse())
                 .message(entity.getStatus())
                 .build();
     }
@@ -2611,12 +2601,11 @@ public class APIGenerationEngineService {
     private int extractStatusCode(ApiTestEntity entity) {
         try {
             if (entity.getActualResponse() != null) {
-                Map<String, Object> response = objectMapper.readValue(
-                        entity.getActualResponse(),
-                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}
-                );
-                if (response.containsKey("statusCode")) {
-                    return (Integer) response.get("statusCode");
+                if (entity.getActualResponse().containsKey("statusCode")) {
+                    Object statusCode = entity.getActualResponse().get("statusCode");
+                    if (statusCode instanceof Integer) {
+                        return (Integer) statusCode;
+                    }
                 }
             }
         } catch (Exception e) {
@@ -2649,10 +2638,10 @@ public class APIGenerationEngineService {
         Map<String, Object> result = new HashMap<>();
 
         if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
-            for (var mapping : api.getResponseMappings()) {
+            for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
                 if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
                     // Generate sample data based on type
-                    switch (mapping.getApiType()) {
+                    switch (mapping.getApiType() != null ? mapping.getApiType() : "string") {
                         case "integer":
                         case "number":
                             result.put(mapping.getApiField(), 1);
@@ -2709,14 +2698,26 @@ public class APIGenerationEngineService {
             // Compare with expected response
             boolean passed = compareResponses(executionResult, testRequest.getExpectedResponse());
 
+            // Create test data map from request (since there's no getTestData() method)
+            Map<String, Object> testDataMap = new HashMap<>();
+            if (testRequest.getPathParams() != null) testDataMap.put("pathParams", testRequest.getPathParams());
+            if (testRequest.getQueryParams() != null) testDataMap.put("queryParams", testRequest.getQueryParams());
+            if (testRequest.getHeaders() != null) testDataMap.put("headers", testRequest.getHeaders());
+            if (testRequest.getBody() != null) testDataMap.put("body", testRequest.getBody());
+            testDataMap.put("expectedResponse", testRequest.getExpectedResponse());
+            testDataMap.put("testName", testRequest.getTestName());
+            testDataMap.put("testType", testRequest.getTestType());
+
             // Save test result
             ApiTestEntity testEntity = ApiTestEntity.builder()
                     .generatedApi(api)
                     .testName(testRequest.getTestName())
-                    .testType(testRequest.getTestType())
-                    .testData(objectMapper.writeValueAsString(testRequest))
-                    .expectedResponse(objectMapper.writeValueAsString(testRequest.getExpectedResponse()))
-                    .actualResponse(objectMapper.writeValueAsString(executionResult))
+                    .testType(testRequest.getTestType() != null ? testRequest.getTestType() : "UNIT")
+                    .testData(testDataMap)  // Using the map we created
+                    .expectedResponse(testRequest.getExpectedResponse() != null ?
+                            convertToMap(testRequest.getExpectedResponse()) : new HashMap<>())
+                    .actualResponse(executionResult.getData() instanceof Map ?
+                            (Map<String, Object>) executionResult.getData() : convertToMap(executionResult.getData()))
                     .status(passed ? "PASSED" : "FAILED")
                     .executionTimeMs(executionTime)
                     .executedAt(LocalDateTime.now())
@@ -2738,6 +2739,20 @@ public class APIGenerationEngineService {
             loggerUtil.log("apiGeneration", "Request ID: " + requestId +
                     ", Error testing API: " + e.getMessage());
             throw new RuntimeException("Failed to test API: " + e.getMessage(), e);
+        }
+    }
+
+    private Map<String, Object> convertToMap(Object obj) {
+        if (obj == null) return new HashMap<>();
+        if (obj instanceof Map) {
+            return (Map<String, Object>) obj;
+        }
+        try {
+            return objectMapper.convertValue(obj, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("value", obj.toString());
+            return result;
         }
     }
 
@@ -2783,13 +2798,14 @@ public class APIGenerationEngineService {
                     .average()
                     .orElse(0.0);
             long totalErrors = logs.stream()
-                    .filter(log -> log.getResponseStatus() >= 400)
+                    .filter(log -> log.getResponseStatus() != null && log.getResponseStatus() >= 400)
                     .count();
             double successRate = totalCalls > 0 ?
                     ((totalCalls - totalErrors) * 100.0 / totalCalls) : 0.0;
 
             // Status code distribution
             Map<Integer, Long> statusDistribution = logs.stream()
+                    .filter(log -> log.getResponseStatus() != null)
                     .collect(Collectors.groupingBy(
                             ApiExecutionLogEntity::getResponseStatus,
                             Collectors.counting()
@@ -2797,7 +2813,16 @@ public class APIGenerationEngineService {
 
             // Daily call stats
             List<Object[]> dailyStats = executionLogRepository
-                    .getDailyCallStats(apiId, startDate);
+                    .getDailyCallStats(apiId, startDate, endDate);
+
+            Map<String, Long> dailyCallStats = new HashMap<>();
+            if (dailyStats != null) {
+                for (Object[] stat : dailyStats) {
+                    if (stat.length >= 2 && stat[0] != null && stat[1] != null) {
+                        dailyCallStats.put(stat[0].toString(), ((Number) stat[1]).longValue());
+                    }
+                }
+            }
 
             return ApiAnalyticsDTO.builder()
                     .apiId(apiId)
@@ -2808,11 +2833,7 @@ public class APIGenerationEngineService {
                     .totalErrors(totalErrors)
                     .successRate(successRate)
                     .statusDistribution(statusDistribution)
-                    .dailyCallStats(dailyStats.stream()
-                            .collect(Collectors.toMap(
-                                    stat -> stat[0].toString(),
-                                    stat -> (Long) stat[1]
-                            )))
+                    .dailyCallStats(dailyCallStats)
                     .build();
 
         } catch (Exception e) {
@@ -2856,9 +2877,11 @@ public class APIGenerationEngineService {
         sb.append("-- ============================================================\n\n");
 
         if (api.getSchemaConfig() != null) {
-            sb.append("-- Source Object: ")
-                    .append(api.getSchemaConfig().getSchemaName()).append(".")
-                    .append(api.getSchemaConfig().getObjectName())
+            sb.append("-- Source Object: ");
+            if (api.getSchemaConfig().getSchemaName() != null) {
+                sb.append(api.getSchemaConfig().getSchemaName()).append(".");
+            }
+            sb.append(api.getSchemaConfig().getObjectName())
                     .append(" (").append(api.getSchemaConfig().getObjectType()).append(")\n");
             sb.append("-- Operation: ").append(api.getSchemaConfig().getOperation()).append("\n\n");
         }
@@ -2871,13 +2894,13 @@ public class APIGenerationEngineService {
         // Add parameters
         if (api.getParameters() != null && !api.getParameters().isEmpty()) {
             for (int i = 0; i < api.getParameters().size(); i++) {
-                var param = api.getParameters().get(i);
+                ApiParameterEntity param = api.getParameters().get(i);
                 // For parameters, use dbParameter if available (for procedures/functions)
                 String paramName = param.getDbParameter() != null ?
                         "p_" + param.getDbParameter() :
-                        "p_" + param.getKey();
+                        "p_" + (param.getKey() != null ? param.getKey() : "param" + i);
 
-                sb.append("    ").append(paramName).append(" IN ").append(param.getOracleType());
+                sb.append("    ").append(paramName).append(" IN ").append(param.getOracleType() != null ? param.getOracleType() : "VARCHAR2");
                 if (Boolean.TRUE.equals(param.getRequired())) {
                     sb.append(" NOT NULL");
                 }
@@ -2904,20 +2927,20 @@ public class APIGenerationEngineService {
         // Package body
         sb.append("CREATE OR REPLACE PACKAGE BODY ").append(api.getApiCode()).append("_PKG AS\n\n");
 
-        sb.append("  g_api_version CONSTANT VARCHAR2(10) := '").append(api.getVersion()).append("';\n");
-        sb.append("  g_api_name CONSTANT VARCHAR2(100) := '").append(api.getApiName()).append("';\n\n");
+        sb.append("  g_api_version CONSTANT VARCHAR2(10) := '").append(api.getVersion() != null ? api.getVersion() : "1.0").append("';\n");
+        sb.append("  g_api_name CONSTANT VARCHAR2(100) := '").append(api.getApiName() != null ? api.getApiName() : "API").append("';\n\n");
 
         sb.append("  PROCEDURE execute_api(\n");
 
         // Add parameters again for body
         if (api.getParameters() != null && !api.getParameters().isEmpty()) {
             for (int i = 0; i < api.getParameters().size(); i++) {
-                var param = api.getParameters().get(i);
+                ApiParameterEntity param = api.getParameters().get(i);
                 String paramName = param.getDbParameter() != null ?
                         "p_" + param.getDbParameter() :
-                        "p_" + param.getKey();
+                        "p_" + (param.getKey() != null ? param.getKey() : "param" + i);
 
-                sb.append("    ").append(paramName).append(" IN ").append(param.getOracleType());
+                sb.append("    ").append(paramName).append(" IN ").append(param.getOracleType() != null ? param.getOracleType() : "VARCHAR2");
                 if (i < api.getParameters().size() - 1) {
                     sb.append(",");
                 }
@@ -2933,7 +2956,8 @@ public class APIGenerationEngineService {
 
         // Determine return type
         if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
-            sb.append(api.getResponseMappings().get(0).getOracleType());
+            sb.append(api.getResponseMappings().get(0).getOracleType() != null ?
+                    api.getResponseMappings().get(0).getOracleType() : "VARCHAR2");
         } else {
             sb.append("VARCHAR2(4000)");
         }
@@ -2954,173 +2978,195 @@ public class APIGenerationEngineService {
             String objectName = api.getSchemaConfig().getObjectName();
             String operation = api.getSchemaConfig().getOperation();
 
-            switch (operation) {
-                case "SELECT":
-                    sb.append("    OPEN v_cursor FOR\n");
-                    sb.append("    SELECT ");
-                    if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
-                        sb.append(api.getResponseMappings().stream()
-                                .filter(m -> Boolean.TRUE.equals(m.getIncludeInResponse()))
-                                .map(ApiResponseMappingEntity::getDbColumn)
-                                .collect(Collectors.joining(", ")));
-                    } else {
-                        sb.append("*");
-                    }
-                    sb.append("\n    FROM ")
-                            .append(schemaName).append(".")
-                            .append(objectName);
-                    sb.append("\n    WHERE 1=1\n");
+            if (schemaName != null && objectName != null && operation != null) {
+                switch (operation) {
+                    case "SELECT":
+                        sb.append("    OPEN v_cursor FOR\n");
+                        sb.append("    SELECT ");
+                        if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
+                            sb.append(api.getResponseMappings().stream()
+                                    .filter(m -> Boolean.TRUE.equals(m.getIncludeInResponse()))
+                                    .map(ApiResponseMappingEntity::getDbColumn)
+                                    .filter(Objects::nonNull)
+                                    .collect(Collectors.joining(", ")));
+                        } else {
+                            sb.append("*");
+                        }
+                        sb.append("\n    FROM ");
+                        if (schemaName != null && !schemaName.isEmpty()) {
+                            sb.append(schemaName).append(".");
+                        }
+                        sb.append(objectName);
+                        sb.append("\n    WHERE 1=1\n");
 
-                    // Add parameter filters
-                    if (api.getParameters() != null) {
-                        for (var param : api.getParameters()) {
-                            if ("query".equals(param.getParameterType()) ||
-                                    "path".equals(param.getParameterType())) {
-                                String columnName = param.getDbColumn() != null ? param.getDbColumn() : param.getKey();
+                        // Add parameter filters
+                        if (api.getParameters() != null) {
+                            for (ApiParameterEntity param : api.getParameters()) {
+                                if ("query".equals(param.getParameterType()) ||
+                                        "path".equals(param.getParameterType())) {
+                                    String columnName = param.getDbColumn() != null ? param.getDbColumn() : param.getKey();
+                                    String paramName = param.getDbParameter() != null ?
+                                            "p_" + param.getDbParameter() :
+                                            "p_" + param.getKey();
+
+                                    if (columnName != null && paramName != null) {
+                                        sb.append("    AND ")
+                                                .append(columnName)
+                                                .append(" = ").append(paramName).append("\n");
+                                    }
+                                }
+                            }
+                        }
+
+                        // Add pagination
+                        if (Boolean.TRUE.equals(api.getSchemaConfig().getEnablePagination())) {
+                            sb.append("    OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY\n");
+                        }
+                        break;
+
+                    case "INSERT":
+                        sb.append("    INSERT INTO ");
+                        if (schemaName != null && !schemaName.isEmpty()) {
+                            sb.append(schemaName).append(".");
+                        }
+                        sb.append(objectName)
+                                .append(" (\n      ");
+
+                        // Add columns
+                        if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
+                            String columns = api.getResponseMappings().stream()
+                                    .filter(m -> Boolean.TRUE.equals(m.getIncludeInResponse()))
+                                    .map(ApiResponseMappingEntity::getDbColumn)
+                                    .filter(Objects::nonNull)
+                                    .collect(Collectors.joining(",\n      "));
+                            sb.append(columns);
+                        }
+                        sb.append("\n    ) VALUES (\n      ");
+
+                        // Add values from parameters
+                        if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+                            String values = api.getParameters().stream()
+                                    .map(p -> {
+                                        return p.getDbParameter() != null ?
+                                                "p_" + p.getDbParameter() :
+                                                "p_" + (p.getKey() != null ? p.getKey() : "param");
+                                    })
+                                    .collect(Collectors.joining(",\n      "));
+                            sb.append(values);
+                        }
+                        sb.append("\n    );\n");
+
+                        // Get the inserted row using sequence or returning clause
+                        if (api.getSchemaConfig().getSequenceName() != null) {
+                            sb.append("\n    -- Get generated ID\n");
+                            sb.append("    SELECT ").append(api.getSchemaConfig().getSequenceName())
+                                    .append(".CURRVAL INTO v_result FROM DUAL;\n");
+                        }
+                        break;
+
+                    case "UPDATE":
+                        sb.append("    UPDATE ");
+                        if (schemaName != null && !schemaName.isEmpty()) {
+                            sb.append(schemaName).append(".");
+                        }
+                        sb.append(objectName)
+                                .append("\n    SET\n      ");
+
+                        // Add set clauses
+                        if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+                            String setClauses = api.getParameters().stream()
+                                    .filter(p -> !"query".equals(p.getParameterType()) && !"path".equals(p.getParameterType()))
+                                    .map(p -> {
+                                        String columnName = p.getDbColumn() != null ? p.getDbColumn() : p.getKey();
+                                        String paramName = p.getDbParameter() != null ?
+                                                "p_" + p.getDbParameter() :
+                                                "p_" + p.getKey();
+                                        return (columnName != null && paramName != null) ?
+                                                columnName + " = " + paramName : null;
+                                    })
+                                    .filter(Objects::nonNull)
+                                    .collect(Collectors.joining(",\n      "));
+                            sb.append(setClauses);
+                        }
+                        sb.append("\n    WHERE 1=1\n");
+
+                        // Add where conditions from path/query parameters
+                        if (api.getParameters() != null) {
+                            for (ApiParameterEntity param : api.getParameters()) {
+                                if ("query".equals(param.getParameterType()) ||
+                                        "path".equals(param.getParameterType())) {
+                                    String columnName = param.getDbColumn() != null ? param.getDbColumn() : param.getKey();
+                                    String paramName = param.getDbParameter() != null ?
+                                            "p_" + param.getDbParameter() :
+                                            "p_" + param.getKey();
+
+                                    if (columnName != null && paramName != null) {
+                                        sb.append("      AND ")
+                                                .append(columnName)
+                                                .append(" = ").append(paramName).append("\n");
+                                    }
+                                }
+                            }
+                        }
+                        break;
+
+                    case "DELETE":
+                        sb.append("    DELETE FROM ");
+                        if (schemaName != null && !schemaName.isEmpty()) {
+                            sb.append(schemaName).append(".");
+                        }
+                        sb.append(objectName);
+                        sb.append("\n    WHERE 1=1\n");
+
+                        // Add where conditions from path/query parameters
+                        if (api.getParameters() != null) {
+                            for (ApiParameterEntity param : api.getParameters()) {
+                                if ("query".equals(param.getParameterType()) ||
+                                        "path".equals(param.getParameterType())) {
+                                    String columnName = param.getDbColumn() != null ? param.getDbColumn() : param.getKey();
+                                    String paramName = param.getDbParameter() != null ?
+                                            "p_" + param.getDbParameter() :
+                                            "p_" + param.getKey();
+
+                                    if (columnName != null && paramName != null) {
+                                        sb.append("      AND ")
+                                                .append(columnName)
+                                                .append(" = ").append(paramName).append("\n");
+                                    }
+                                }
+                            }
+                        }
+                        break;
+
+                    case "EXECUTE":
+                        sb.append("    -- Execute ").append(api.getSchemaConfig().getObjectType()).append("\n");
+                        sb.append("    ");
+                        if ("FUNCTION".equals(api.getSchemaConfig().getObjectType())) {
+                            sb.append("v_result := ");
+                        }
+                        if (schemaName != null && !schemaName.isEmpty()) {
+                            sb.append(schemaName).append(".");
+                        }
+                        sb.append(objectName).append("(\n");
+
+                        // Add parameters
+                        if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+                            for (int i = 0; i < api.getParameters().size(); i++) {
+                                ApiParameterEntity param = api.getParameters().get(i);
                                 String paramName = param.getDbParameter() != null ?
                                         "p_" + param.getDbParameter() :
-                                        "p_" + param.getKey();
+                                        "p_" + (param.getKey() != null ? param.getKey() : "param" + i);
 
-                                sb.append("    AND ")
-                                        .append(columnName)
-                                        .append(" = ").append(paramName).append("\n");
+                                sb.append("        ").append(paramName);
+                                if (i < api.getParameters().size() - 1) {
+                                    sb.append(",");
+                                }
+                                sb.append("\n");
                             }
                         }
-                    }
-
-                    // Add pagination
-                    if (Boolean.TRUE.equals(api.getSchemaConfig().getEnablePagination())) {
-                        sb.append("    OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY\n");
-                    }
-                    break;
-
-                case "INSERT":
-                    sb.append("    INSERT INTO ")
-                            .append(schemaName).append(".")
-                            .append(objectName)
-                            .append(" (\n      ");
-
-                    // Add columns
-                    if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
-                        String columns = api.getResponseMappings().stream()
-                                .filter(m -> Boolean.TRUE.equals(m.getIncludeInResponse()))
-                                .map(ApiResponseMappingEntity::getDbColumn)
-                                .collect(Collectors.joining(",\n      "));
-                        sb.append(columns);
-                    }
-                    sb.append("\n    ) VALUES (\n      ");
-
-                    // Add values from parameters
-                    if (api.getParameters() != null && !api.getParameters().isEmpty()) {
-                        String values = api.getParameters().stream()
-                                .map(p -> {
-                                    return p.getDbParameter() != null ?
-                                            "p_" + p.getDbParameter() :
-                                            "p_" + p.getKey();
-                                })
-                                .collect(Collectors.joining(",\n      "));
-                        sb.append(values);
-                    }
-                    sb.append("\n    );\n");
-
-                    // Get the inserted row using sequence or returning clause
-                    if (api.getSchemaConfig().getSequenceName() != null) {
-                        sb.append("\n    -- Get generated ID\n");
-                        sb.append("    SELECT ").append(api.getSchemaConfig().getSequenceName())
-                                .append(".CURRVAL INTO v_result FROM DUAL;\n");
-                    }
-                    break;
-
-                case "UPDATE":
-                    sb.append("    UPDATE ")
-                            .append(schemaName).append(".")
-                            .append(objectName)
-                            .append("\n    SET\n      ");
-
-                    // Add set clauses
-                    if (api.getParameters() != null && !api.getParameters().isEmpty()) {
-                        String setClauses = api.getParameters().stream()
-                                .filter(p -> !"query".equals(p.getParameterType()) && !"path".equals(p.getParameterType()))
-                                .map(p -> {
-                                    String columnName = p.getDbColumn() != null ? p.getDbColumn() : p.getKey();
-                                    String paramName = p.getDbParameter() != null ?
-                                            "p_" + p.getDbParameter() :
-                                            "p_" + p.getKey();
-                                    return columnName + " = " + paramName;
-                                })
-                                .collect(Collectors.joining(",\n      "));
-                        sb.append(setClauses);
-                    }
-                    sb.append("\n    WHERE 1=1\n");
-
-                    // Add where conditions from path/query parameters
-                    if (api.getParameters() != null) {
-                        for (var param : api.getParameters()) {
-                            if ("query".equals(param.getParameterType()) ||
-                                    "path".equals(param.getParameterType())) {
-                                String columnName = param.getDbColumn() != null ? param.getDbColumn() : param.getKey();
-                                String paramName = param.getDbParameter() != null ?
-                                        "p_" + param.getDbParameter() :
-                                        "p_" + param.getKey();
-
-                                sb.append("      AND ")
-                                        .append(columnName)
-                                        .append(" = ").append(paramName).append("\n");
-                            }
-                        }
-                    }
-                    break;
-
-                case "DELETE":
-                    sb.append("    DELETE FROM ")
-                            .append(schemaName).append(".")
-                            .append(objectName);
-                    sb.append("\n    WHERE 1=1\n");
-
-                    // Add where conditions from path/query parameters
-                    if (api.getParameters() != null) {
-                        for (var param : api.getParameters()) {
-                            if ("query".equals(param.getParameterType()) ||
-                                    "path".equals(param.getParameterType())) {
-                                String columnName = param.getDbColumn() != null ? param.getDbColumn() : param.getKey();
-                                String paramName = param.getDbParameter() != null ?
-                                        "p_" + param.getDbParameter() :
-                                        "p_" + param.getKey();
-
-                                sb.append("      AND ")
-                                        .append(columnName)
-                                        .append(" = ").append(paramName).append("\n");
-                            }
-                        }
-                    }
-                    break;
-
-                case "EXECUTE":
-                    sb.append("    -- Execute ").append(api.getSchemaConfig().getObjectType()).append("\n");
-                    sb.append("    ");
-                    if ("FUNCTION".equals(api.getSchemaConfig().getObjectType())) {
-                        sb.append("v_result := ");
-                    }
-                    sb.append(schemaName).append(".")
-                            .append(objectName).append("(\n");
-
-                    // Add parameters
-                    if (api.getParameters() != null && !api.getParameters().isEmpty()) {
-                        for (int i = 0; i < api.getParameters().size(); i++) {
-                            var param = api.getParameters().get(i);
-                            String paramName = param.getDbParameter() != null ?
-                                    "p_" + param.getDbParameter() :
-                                    "p_" + param.getKey();
-
-                            sb.append("        ").append(paramName);
-                            if (i < api.getParameters().size() - 1) {
-                                sb.append(",");
-                            }
-                            sb.append("\n");
-                        }
-                    }
-                    sb.append("    );\n");
-                    break;
+                        sb.append("    );\n");
+                        break;
+                }
             }
         }
 
@@ -3167,9 +3213,9 @@ public class APIGenerationEngineService {
 
         // Info
         Map<String, Object> info = new HashMap<>();
-        info.put("title", api.getApiName());
-        info.put("description", api.getDescription());
-        info.put("version", api.getVersion());
+        info.put("title", api.getApiName() != null ? api.getApiName() : "API");
+        info.put("description", api.getDescription() != null ? api.getDescription() : "");
+        info.put("version", api.getVersion() != null ? api.getVersion() : "1.0.0");
 
         if (api.getOwner() != null) {
             Map<String, Object> contact = new HashMap<>();
@@ -3195,23 +3241,23 @@ public class APIGenerationEngineService {
         Map<String, Object> pathItem = new HashMap<>();
         Map<String, Object> operation = new HashMap<>();
 
-        operation.put("summary", api.getApiName());
-        operation.put("description", api.getDescription());
-        operation.put("operationId", api.getApiCode().toLowerCase());
-        operation.put("tags", api.getTags() != null ? api.getTags() : Arrays.asList("default"));
+        operation.put("summary", api.getApiName() != null ? api.getApiName() : "API");
+        operation.put("description", api.getDescription() != null ? api.getDescription() : "");
+        operation.put("operationId", api.getApiCode() != null ? api.getApiCode().toLowerCase() : "api");
+        operation.put("tags", api.getTags() != null && !api.getTags().isEmpty() ? api.getTags() : Arrays.asList("default"));
 
         // Parameters
         if (api.getParameters() != null && !api.getParameters().isEmpty()) {
             List<Map<String, Object>> parameters = new ArrayList<>();
-            for (var param : api.getParameters()) {
+            for (ApiParameterEntity param : api.getParameters()) {
                 Map<String, Object> paramSpec = new HashMap<>();
-                paramSpec.put("name", param.getKey());
-                paramSpec.put("in", param.getParameterType());
-                paramSpec.put("description", param.getDescription());
-                paramSpec.put("required", param.getRequired());
+                paramSpec.put("name", param.getKey() != null ? param.getKey() : "param");
+                paramSpec.put("in", param.getParameterType() != null ? param.getParameterType() : "query");
+                paramSpec.put("description", param.getDescription() != null ? param.getDescription() : "");
+                paramSpec.put("required", param.getRequired() != null ? param.getRequired() : false);
 
                 Map<String, Object> schema = new HashMap<>();
-                schema.put("type", param.getApiType());
+                schema.put("type", param.getApiType() != null ? param.getApiType() : "string");
                 if (param.getExample() != null) {
                     schema.put("example", param.getExample());
                 }
@@ -3269,20 +3315,24 @@ public class APIGenerationEngineService {
                 // Add properties from response mappings
                 if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
                     Map<String, Object> properties = new HashMap<>();
-                    for (var mapping : api.getResponseMappings()) {
+                    for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
                         if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
                             Map<String, Object> propSchema = new HashMap<>();
-                            propSchema.put("type", mapping.getApiType());
+                            propSchema.put("type", mapping.getApiType() != null ? mapping.getApiType() : "string");
                             if (mapping.getFormat() != null && !mapping.getFormat().isEmpty()) {
                                 propSchema.put("format", mapping.getFormat());
                             }
                             if (Boolean.TRUE.equals(mapping.getNullable())) {
                                 propSchema.put("nullable", true);
                             }
-                            properties.put(mapping.getApiField(), propSchema);
+                            if (mapping.getApiField() != null) {
+                                properties.put(mapping.getApiField(), propSchema);
+                            }
                         }
                     }
-                    schema.put("properties", properties);
+                    if (!properties.isEmpty()) {
+                        schema.put("properties", properties);
+                    }
                 }
 
                 mediaType.put("schema", schema);
@@ -3312,7 +3362,7 @@ public class APIGenerationEngineService {
             operation.put("security", security);
         }
 
-        pathItem.put(api.getHttpMethod().toLowerCase(), operation);
+        pathItem.put(api.getHttpMethod() != null ? api.getHttpMethod().toLowerCase() : "get", operation);
         paths.put(api.getEndpointPath() != null ? api.getEndpointPath() : "/", pathItem);
         spec.put("paths", paths);
 
@@ -3383,19 +3433,19 @@ public class APIGenerationEngineService {
 
         // Info
         Map<String, Object> info = new HashMap<>();
-        info.put("name", api.getApiName());
-        info.put("description", api.getDescription());
+        info.put("name", api.getApiName() != null ? api.getApiName() : "API Collection");
+        info.put("description", api.getDescription() != null ? api.getDescription() : "");
         info.put("schema", "https://schema.getpostman.com/json/collection/v2.1.0/collection.json");
         collection.put("info", info);
 
         // Items
         List<Map<String, Object>> items = new ArrayList<>();
         Map<String, Object> item = new HashMap<>();
-        item.put("name", api.getApiName());
+        item.put("name", api.getApiName() != null ? api.getApiName() : "API");
 
         // Request
         Map<String, Object> request = new HashMap<>();
-        request.put("method", api.getHttpMethod());
+        request.put("method", api.getHttpMethod() != null ? api.getHttpMethod() : "GET");
 
         // URL
         Map<String, Object> url = new HashMap<>();
@@ -3419,12 +3469,12 @@ public class APIGenerationEngineService {
         // Query parameters
         if (api.getParameters() != null) {
             List<Map<String, Object>> queryParams = new ArrayList<>();
-            for (var param : api.getParameters()) {
+            for (ApiParameterEntity param : api.getParameters()) {
                 if ("query".equals(param.getParameterType())) {
                     Map<String, Object> queryParam = new HashMap<>();
-                    queryParam.put("key", param.getKey());
+                    queryParam.put("key", param.getKey() != null ? param.getKey() : "");
                     queryParam.put("value", param.getExample() != null ? param.getExample() : "");
-                    queryParam.put("description", param.getDescription());
+                    queryParam.put("description", param.getDescription() != null ? param.getDescription() : "");
                     queryParam.put("disabled", !Boolean.TRUE.equals(param.getRequired()));
                     queryParams.add(queryParam);
                 }
@@ -3442,12 +3492,12 @@ public class APIGenerationEngineService {
 
             // Add configured headers
             if (api.getHeaders() != null) {
-                for (var header : api.getHeaders()) {
+                for (ApiHeaderEntity header : api.getHeaders()) {
                     if (Boolean.TRUE.equals(header.getIsRequestHeader())) {
                         Map<String, Object> headerSpec = new HashMap<>();
-                        headerSpec.put("key", header.getKey());
+                        headerSpec.put("key", header.getKey() != null ? header.getKey() : "");
                         headerSpec.put("value", header.getValue() != null ? header.getValue() : "");
-                        headerSpec.put("description", header.getDescription());
+                        headerSpec.put("description", header.getDescription() != null ? header.getDescription() : "");
                         headerSpec.put("disabled", !Boolean.TRUE.equals(header.getRequired()));
                         headers.add(headerSpec);
                     }
@@ -3740,10 +3790,10 @@ public class APIGenerationEngineService {
                 for (ApiHeaderEntity header : api.getHeaders()) {
                     if (Boolean.TRUE.equals(header.getIsRequestHeader())) {
                         Map<String, Object> headerMap = new HashMap<>();
-                        headerMap.put("key", header.getKey());
+                        headerMap.put("key", header.getKey() != null ? header.getKey() : "");
                         headerMap.put("value", header.getValue() != null ? header.getValue() : "");
-                        headerMap.put("description", header.getDescription());
-                        headerMap.put("required", header.getRequired());
+                        headerMap.put("description", header.getDescription() != null ? header.getDescription() : "");
+                        headerMap.put("required", header.getRequired() != null ? header.getRequired() : false);
                         headerMap.put("disabled", false);
                         headers.add(headerMap);
                     }
@@ -3798,11 +3848,11 @@ public class APIGenerationEngineService {
                         .filter(p -> "path".equals(p.getParameterType()))
                         .map(p -> {
                             Map<String, Object> param = new HashMap<>();
-                            param.put("name", p.getKey());
-                            param.put("type", p.getApiType());
-                            param.put("required", p.getRequired());
-                            param.put("description", p.getDescription());
-                            param.put("key", p.getKey());
+                            param.put("name", p.getKey() != null ? p.getKey() : "");
+                            param.put("type", p.getApiType() != null ? p.getApiType() : "string");
+                            param.put("required", p.getRequired() != null ? p.getRequired() : false);
+                            param.put("description", p.getDescription() != null ? p.getDescription() : "");
+                            param.put("key", p.getKey() != null ? p.getKey() : "");
                             param.put("value", p.getExample() != null ? p.getExample() : "");
                             return param;
                         })
@@ -3815,7 +3865,7 @@ public class APIGenerationEngineService {
                 try {
                     Map<String, Object> requestBodyMap = objectMapper.readValue(
                             api.getRequestConfig().getSample(),
-                            new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}
+                            new TypeReference<Map<String, Object>>() {}
                     );
                     codeBaseRequest.setRequestBody(requestBodyMap);
                 } catch (Exception e) {
@@ -3831,7 +3881,7 @@ public class APIGenerationEngineService {
                 try {
                     Map<String, Object> responseMap = objectMapper.readValue(
                             api.getResponseConfig().getSuccessSchema(),
-                            new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}
+                            new TypeReference<Map<String, Object>>() {}
                     );
                     codeBaseRequest.setResponseExample(responseMap);
                 } catch (Exception e) {
@@ -3871,7 +3921,7 @@ public class APIGenerationEngineService {
                             .language(language)
                             .component("main")
                             .code(code)
-                            .linesOfCode(code.split("\n").length)
+                            .linesOfCode(code != null ? code.split("\n").length : 0)
                             .request(request)
                             .isValidated(false)
                             .build();
@@ -3952,7 +4002,7 @@ public class APIGenerationEngineService {
                     new com.usg.apiAutomation.entities.postgres.collections.RequestEntity();
             requestEntity.setName(api.getApiName() + " - " + api.getHttpMethod());
             requestEntity.setMethod(api.getHttpMethod());
-            requestEntity.setUrl("{{baseUrl}}" + api.getEndpointPath());
+            requestEntity.setUrl("{{baseUrl}}" + (api.getEndpointPath() != null ? api.getEndpointPath() : ""));
             requestEntity.setDescription(api.getDescription());
             requestEntity.setCollection(savedCollection);
             requestEntity.setFolder(savedFolder);
@@ -3998,9 +4048,9 @@ public class APIGenerationEngineService {
                 for (ApiHeaderEntity apiHeader : api.getHeaders()) {
                     if (Boolean.TRUE.equals(apiHeader.getIsRequestHeader())) {
                         HeaderEntity header = new HeaderEntity();
-                        header.setKey(apiHeader.getKey());
+                        header.setKey(apiHeader.getKey() != null ? apiHeader.getKey() : "");
                         header.setValue(apiHeader.getValue() != null ? apiHeader.getValue() : "");
-                        header.setDescription(apiHeader.getDescription());
+                        header.setDescription(apiHeader.getDescription() != null ? apiHeader.getDescription() : "");
                         header.setEnabled(apiHeader.getRequired() != null ? apiHeader.getRequired() : true);
                         header.setRequest(requestEntity);
                         headers.add(header);
@@ -4014,9 +4064,9 @@ public class APIGenerationEngineService {
                 List<ParameterEntity> params = new ArrayList<>();
                 for (ApiParameterEntity apiParam : api.getParameters()) {
                     ParameterEntity param = new ParameterEntity();
-                    param.setKey(apiParam.getKey());
+                    param.setKey(apiParam.getKey() != null ? apiParam.getKey() : "");
                     param.setValue(apiParam.getExample() != null ? apiParam.getExample() : "");
-                    param.setDescription(apiParam.getDescription());
+                    param.setDescription(apiParam.getDescription() != null ? apiParam.getDescription() : "");
                     param.setEnabled(apiParam.getRequired() != null ? apiParam.getRequired() : true);
                     param.setRequest(requestEntity);
                     params.add(param);
@@ -4045,14 +4095,15 @@ public class APIGenerationEngineService {
         }
     }
 
-    private String generateDocumentation(GeneratedApiEntity api, String performedBy,
-                                         GenerateApiRequestDTO request,
-                                         String codeBaseRequestId,
-                                         String collectionsCollectionId) {
+    @Transactional
+    String generateDocumentation(GeneratedApiEntity api, String performedBy,
+                                 GenerateApiRequestDTO request,
+                                 String codeBaseRequestId,
+                                 String collectionsCollectionId) {
         try {
             log.info("Generating Documentation for API: {}", api.getApiCode());
 
-            // Create documentation collection
+            // ==================== STEP 1: Create and save collection ====================
             APICollectionEntity docCollection = new APICollectionEntity();
             docCollection.setName(api.getApiName() + " API Documentation");
             docCollection.setDescription(api.getDescription());
@@ -4064,15 +4115,17 @@ public class APIGenerationEngineService {
             docCollection.setColor(getRandomColor());
             docCollection.setStatus("published");
             docCollection.setBaseUrl(api.getBasePath() != null ? api.getBasePath() : "");
-            docCollection.setTags(api.getTags());
+            docCollection.setTags(new ArrayList<>());
             docCollection.setCreatedBy(performedBy);
             docCollection.setUpdatedBy(performedBy);
             docCollection.setTotalEndpoints(0);
             docCollection.setTotalFolders(0);
 
-            APICollectionEntity savedDocCollection = docCollectionRepository.save(docCollection);
+            // Save collection FIRST
+            APICollectionEntity savedDocCollection = docCollectionRepository.saveAndFlush(docCollection);
+            log.debug("Saved documentation collection with ID: {}", savedDocCollection.getId());
 
-            // Create folder
+            // ==================== STEP 2: Create and save folder ====================
             com.usg.apiAutomation.entities.postgres.documentation.FolderEntity docFolder =
                     new com.usg.apiAutomation.entities.postgres.documentation.FolderEntity();
             docFolder.setName(api.getApiName());
@@ -4081,14 +4134,17 @@ public class APIGenerationEngineService {
             docFolder.setDisplayOrder(1);
             docFolder.setCreatedBy(performedBy);
             docFolder.setUpdatedBy(performedBy);
+
+            // Save folder
             com.usg.apiAutomation.entities.postgres.documentation.FolderEntity savedDocFolder =
-                    docFolderRepository.save(docFolder);
+                    docFolderRepository.saveAndFlush(docFolder);
+            log.debug("Saved documentation folder with ID: {}", savedDocFolder.getId());
 
             // Update collection folder count
             savedDocCollection.setTotalFolders(1);
             docCollectionRepository.save(savedDocCollection);
 
-            // Create endpoint
+            // ==================== STEP 3: Create endpoint WITHOUT tags ====================
             APIEndpointEntity endpoint = new APIEndpointEntity();
             endpoint.setName(api.getApiName());
             endpoint.setMethod(api.getHttpMethod());
@@ -4101,7 +4157,7 @@ public class APIGenerationEngineService {
             endpoint.setRequiresAuth(api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType()));
             endpoint.setDeprecated(false);
             endpoint.setCategory(api.getCategory());
-            endpoint.setTags(api.getTags());
+            endpoint.setTags(null); // IMPORTANT: Set to null to avoid any tag processing
             endpoint.setCreatedBy(performedBy);
             endpoint.setUpdatedBy(performedBy);
             endpoint.setLastModifiedBy(performedBy);
@@ -4119,32 +4175,68 @@ public class APIGenerationEngineService {
             // Set request body example
             if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
                 try {
-                    Map<String, Object> bodyMap = objectMapper.readValue(api.getRequestConfig().getSample(), Map.class);
+                    Map<String, Object> bodyMap = objectMapper.readValue(
+                            api.getRequestConfig().getSample(),
+                            new TypeReference<Map<String, Object>>() {}
+                    );
                     endpoint.setRequestBodyExample(bodyMap);
                 } catch (Exception e) {
                     log.warn("Failed to parse request body example: {}", e.getMessage());
                 }
             }
 
-            APIEndpointEntity savedEndpoint = endpointRepository.save(endpoint);
+            // ==================== STEP 4: Save endpoint FIRST (WITHOUT tags) ====================
+            APIEndpointEntity savedEndpoint = endpointRepository.saveAndFlush(endpoint);
+            log.debug("Saved endpoint with ID: {}", savedEndpoint.getId());
 
-            // Add headers
-            if (api.getHeaders() != null) {
+            // ==================== STEP 5: Verify endpoint exists in database ====================
+            Optional<APIEndpointEntity> verifyEndpoint = endpointRepository.findById(savedEndpoint.getId());
+            if (verifyEndpoint.isEmpty()) {
+                log.error("Endpoint not found in database after save!");
+                throw new RuntimeException("Failed to save endpoint");
+            }
+            log.debug("Endpoint verified in database");
+
+            // ==================== STEP 6: Add tags using native query ====================
+            if (api.getTags() != null && !api.getTags().isEmpty()) {
+                // Use JdbcTemplate to insert tags directly
+                String sql = "INSERT INTO tb_doc_endpoint_tags (endpoint_id, tag) VALUES (?, ?)";
+
+                int tagCount = 0;
+                for (String tag : api.getTags()) {
+                    try {
+                        int rowsAffected = oracleJdbcTemplate.update(sql, savedEndpoint.getId(), tag);
+                        if (rowsAffected > 0) {
+                            tagCount++;
+                            log.debug("Inserted tag: {} for endpoint: {}", tag, savedEndpoint.getId());
+                        }
+                    } catch (Exception e) {
+                        log.error("Failed to insert tag: {} - {}", tag, e.getMessage());
+                    }
+                }
+                log.debug("Inserted {} tags for endpoint using native query", tagCount);
+            }
+
+            // ==================== STEP 7: Add headers (each saved individually) ====================
+            if (api.getHeaders() != null && !api.getHeaders().isEmpty()) {
+                int headerCount = 0;
                 for (ApiHeaderEntity apiHeader : api.getHeaders()) {
                     if (Boolean.TRUE.equals(apiHeader.getIsRequestHeader())) {
                         com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity header =
                                 new com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity();
-                        header.setKey(apiHeader.getKey());
+                        header.setKey(apiHeader.getKey() != null ? apiHeader.getKey() : "");
                         header.setValue(apiHeader.getValue() != null ? apiHeader.getValue() : "");
-                        header.setDescription(apiHeader.getDescription());
+                        header.setDescription(apiHeader.getDescription() != null ? apiHeader.getDescription() : "");
                         header.setRequired(apiHeader.getRequired() != null ? apiHeader.getRequired() : false);
                         header.setEndpoint(savedEndpoint);
                         docHeaderRepository.save(header);
+                        headerCount++;
                     }
                 }
+                log.debug("Saved {} headers for endpoint", headerCount);
             }
 
-            // Add auth headers to documentation
+            // ==================== STEP 8: Add auth headers ====================
             if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
                 com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity authHeader =
                         new com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity();
@@ -4176,24 +4268,29 @@ public class APIGenerationEngineService {
                         break;
                 }
                 docHeaderRepository.save(authHeader);
+                log.debug("Saved auth header for endpoint");
             }
 
-            // Add parameters
-            if (api.getParameters() != null) {
+            // ==================== STEP 9: Add parameters ====================
+            if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+                int paramCount = 0;
                 for (ApiParameterEntity apiParam : api.getParameters()) {
                     com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity param =
                             new com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity();
-                    param.setName(apiParam.getKey());
-                    param.setIn(apiParam.getParameterType());
-                    param.setType(apiParam.getApiType());
+                    param.setName(apiParam.getKey() != null ? apiParam.getKey() : "");
+                    param.setIn(apiParam.getParameterType() != null ? apiParam.getParameterType() : "query");
+                    param.setType(apiParam.getApiType() != null ? apiParam.getApiType() : "string");
                     param.setRequired(apiParam.getRequired() != null ? apiParam.getRequired() : false);
-                    param.setDescription(apiParam.getDescription());
+                    param.setDescription(apiParam.getDescription() != null ? apiParam.getDescription() : "");
                     param.setExample(apiParam.getExample());
                     param.setEndpoint(savedEndpoint);
                     docParameterRepository.save(param);
+                    paramCount++;
                 }
+                log.debug("Saved {} parameters for endpoint", paramCount);
             }
 
+            // ==================== STEP 10: Add response examples ====================
             // Add success response example
             if (api.getResponseConfig() != null && api.getResponseConfig().getSuccessSchema() != null) {
                 ResponseExampleEntity successExample = new ResponseExampleEntity();
@@ -4205,13 +4302,16 @@ public class APIGenerationEngineService {
 
                 try {
                     Map<String, Object> exampleMap = objectMapper.readValue(
-                            api.getResponseConfig().getSuccessSchema(), Map.class);
+                            api.getResponseConfig().getSuccessSchema(),
+                            new TypeReference<Map<String, Object>>() {}
+                    );
                     successExample.setExample(exampleMap);
                 } catch (Exception e) {
                     log.warn("Failed to parse success response example: {}", e.getMessage());
                 }
 
                 responseExampleRepository.save(successExample);
+                log.debug("Saved success response example for endpoint");
             }
 
             // Add error response example
@@ -4225,22 +4325,25 @@ public class APIGenerationEngineService {
 
                 try {
                     Map<String, Object> exampleMap = objectMapper.readValue(
-                            api.getResponseConfig().getErrorSchema(), Map.class);
+                            api.getResponseConfig().getErrorSchema(),
+                            new TypeReference<Map<String, Object>>() {}
+                    );
                     errorExample.setExample(exampleMap);
                 } catch (Exception e) {
                     log.warn("Failed to parse error response example: {}", e.getMessage());
                 }
 
                 responseExampleRepository.save(errorExample);
+                log.debug("Saved error response example for endpoint");
             }
 
-            // Add code examples
+            // ==================== STEP 11: Add code examples ====================
             generateDocumentationCodeExamples(api, savedEndpoint, codeBaseRequestId);
 
-            // Add changelog entry
+            // ==================== STEP 12: Add changelog entry ====================
             ChangelogEntryEntity changelog = new ChangelogEntryEntity();
             changelog.setVersion(api.getVersion());
-            changelog.setDate(String.valueOf(LocalDateTime.now()));
+            changelog.setDate(LocalDateTime.now().toString());
             changelog.setType("ADDED");
             changelog.setAuthor(performedBy);
             changelog.setCollection(savedDocCollection);
@@ -4251,10 +4354,15 @@ public class APIGenerationEngineService {
             changelog.setChanges(changes);
 
             changelogRepository.save(changelog);
+            log.debug("Saved changelog entry for collection");
 
-            // Update endpoint count
+            // ==================== STEP 13: Update endpoint count ====================
             savedDocCollection.setTotalEndpoints(1);
             docCollectionRepository.save(savedDocCollection);
+
+            // Force a final flush to ensure everything is committed
+            docCollectionRepository.flush();
+            endpointRepository.flush();
 
             log.info("Documentation generated successfully with Collection ID: {}", savedDocCollection.getId());
             return savedDocCollection.getId();
@@ -4264,6 +4372,7 @@ public class APIGenerationEngineService {
             throw new RuntimeException("Failed to generate Documentation: " + e.getMessage(), e);
         }
     }
+
 
     private void generateDocumentationCodeExamples(GeneratedApiEntity api, APIEndpointEntity endpoint,
                                                    String codeBaseRequestId) {
@@ -4277,10 +4386,11 @@ public class APIGenerationEngineService {
                 codeExample.setLanguage(language);
                 codeExample.setCode(code);
                 codeExample.setDescription("Auto-generated " + language + " code example");
-                codeExample.setEndpoint(endpoint);
+                codeExample.setEndpoint(endpoint); // Set relationship
                 codeExample.setDefault(language.equals("curl"));
 
                 codeExampleRepository.save(codeExample);
+                log.debug("Saved {} code example for endpoint", language);
             } catch (Exception e) {
                 log.warn("Failed to generate documentation code example for {}: {}", language, e.getMessage());
             }
@@ -4290,7 +4400,7 @@ public class APIGenerationEngineService {
     private String generateCodeForLanguage(GeneratedApiEntity api, String language) {
         String fullUrl = (api.getBasePath() != null ? api.getBasePath() : "") +
                 (api.getEndpointPath() != null ? api.getEndpointPath() : "");
-        String method = api.getHttpMethod().toLowerCase();
+        String method = api.getHttpMethod() != null ? api.getHttpMethod().toLowerCase() : "get";
 
         switch (language) {
             case "curl":
@@ -4316,7 +4426,7 @@ public class APIGenerationEngineService {
 
     private String generateCurlCode(GeneratedApiEntity api, String fullUrl) {
         StringBuilder curl = new StringBuilder();
-        curl.append("curl -X ").append(api.getHttpMethod()).append(" \\\n");
+        curl.append("curl -X ").append(api.getHttpMethod() != null ? api.getHttpMethod() : "GET").append(" \\\n");
         curl.append("  '").append(fullUrl).append("'");
 
         // Add headers
@@ -4344,9 +4454,9 @@ public class APIGenerationEngineService {
         // Add other headers
         if (api.getHeaders() != null) {
             for (ApiHeaderEntity header : api.getHeaders()) {
-                if (Boolean.TRUE.equals(header.getIsRequestHeader())) {
+                if (Boolean.TRUE.equals(header.getIsRequestHeader()) && header.getKey() != null) {
                     curl.append(" \\\n");
-                    curl.append("  -H '").append(header.getKey()).append(": ").append(header.getValue()).append("'");
+                    curl.append("  -H '").append(header.getKey()).append(": ").append(header.getValue() != null ? header.getValue() : "").append("'");
                 }
             }
         }
@@ -4363,9 +4473,9 @@ public class APIGenerationEngineService {
 
     private String generateJavaScriptCode(GeneratedApiEntity api, String fullUrl) {
         StringBuilder js = new StringBuilder();
-        js.append("// Auto-generated JavaScript code for ").append(api.getApiName()).append("\n\n");
+        js.append("// Auto-generated JavaScript code for ").append(api.getApiName() != null ? api.getApiName() : "API").append("\n\n");
         js.append("fetch('").append(fullUrl).append("', {\n");
-        js.append("  method: '").append(api.getHttpMethod()).append("',\n");
+        js.append("  method: '").append(api.getHttpMethod() != null ? api.getHttpMethod() : "GET").append("',\n");
 
         // Headers
         js.append("  headers: {\n");
@@ -4393,8 +4503,8 @@ public class APIGenerationEngineService {
 
         if (api.getHeaders() != null) {
             for (ApiHeaderEntity header : api.getHeaders()) {
-                if (Boolean.TRUE.equals(header.getIsRequestHeader())) {
-                    js.append("    '").append(header.getKey()).append("': '").append(header.getValue()).append("',\n");
+                if (Boolean.TRUE.equals(header.getIsRequestHeader()) && header.getKey() != null) {
+                    js.append("    '").append(header.getKey()).append("': '").append(header.getValue() != null ? header.getValue() : "").append("',\n");
                 }
             }
         }
@@ -4416,7 +4526,7 @@ public class APIGenerationEngineService {
 
     private String generatePythonCode(GeneratedApiEntity api, String fullUrl) {
         StringBuilder py = new StringBuilder();
-        py.append("# Auto-generated Python code for ").append(api.getApiName()).append("\n\n");
+        py.append("# Auto-generated Python code for ").append(api.getApiName() != null ? api.getApiName() : "API").append("\n\n");
         py.append("import requests\n\n");
 
         // Headers
@@ -4445,15 +4555,15 @@ public class APIGenerationEngineService {
 
         if (api.getHeaders() != null) {
             for (ApiHeaderEntity header : api.getHeaders()) {
-                if (Boolean.TRUE.equals(header.getIsRequestHeader())) {
-                    py.append("    '").append(header.getKey()).append("': '").append(header.getValue()).append("',\n");
+                if (Boolean.TRUE.equals(header.getIsRequestHeader()) && header.getKey() != null) {
+                    py.append("    '").append(header.getKey()).append("': '").append(header.getValue() != null ? header.getValue() : "").append("',\n");
                 }
             }
         }
         py.append("}\n\n");
 
         // Make request
-        py.append("response = requests.").append(api.getHttpMethod().toLowerCase());
+        py.append("response = requests.").append(api.getHttpMethod() != null ? api.getHttpMethod().toLowerCase() : "get");
         py.append("(\n");
         py.append("    url='").append(fullUrl).append("',\n");
         py.append("    headers=headers");
@@ -4471,19 +4581,19 @@ public class APIGenerationEngineService {
 
     private String generateJavaCode(GeneratedApiEntity api, String fullUrl) {
         StringBuilder java = new StringBuilder();
-        java.append("// Auto-generated Java code for ").append(api.getApiName()).append("\n\n");
+        java.append("// Auto-generated Java code for ").append(api.getApiName() != null ? api.getApiName() : "API").append("\n\n");
         java.append("import java.net.http.HttpClient;\n");
         java.append("import java.net.http.HttpRequest;\n");
         java.append("import java.net.http.HttpResponse;\n");
         java.append("import java.net.URI;\n\n");
-        java.append("public class ").append(api.getApiCode()).append("Client {\n\n");
+        java.append("public class ").append(api.getApiCode() != null ? api.getApiCode() : "ApiClient").append(" {\n\n");
         java.append("    public static void main(String[] args) throws Exception {\n");
         java.append("        HttpClient client = HttpClient.newHttpClient();\n\n");
 
         // Build request
         java.append("        HttpRequest request = HttpRequest.newBuilder()\n");
         java.append("                .uri(URI.create(\"").append(fullUrl).append("\"))\n");
-        java.append("                .method(\"").append(api.getHttpMethod()).append("\", HttpRequest.BodyPublishers.noBody())\n");
+        java.append("                .method(\"").append(api.getHttpMethod() != null ? api.getHttpMethod() : "GET").append("\", HttpRequest.BodyPublishers.noBody())\n");
 
         // Headers
         if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
@@ -4520,7 +4630,7 @@ public class APIGenerationEngineService {
 
     private String generateCSharpCode(GeneratedApiEntity api, String fullUrl) {
         StringBuilder cs = new StringBuilder();
-        cs.append("// Auto-generated C# code for ").append(api.getApiName()).append("\n\n");
+        cs.append("// Auto-generated C# code for ").append(api.getApiName() != null ? api.getApiName() : "API").append("\n\n");
         cs.append("using System;\n");
         cs.append("using System.Net.Http;\n");
         cs.append("using System.Threading.Tasks;\n\n");
@@ -4552,7 +4662,7 @@ public class APIGenerationEngineService {
         }
 
         cs.append("\n");
-        cs.append("        var response = await client.").append(api.getHttpMethod()).append("Async(\"");
+        cs.append("        var response = await client.").append(api.getHttpMethod() != null ? api.getHttpMethod() : "GET").append("Async(\"");
         cs.append(fullUrl).append("\");\n\n");
         cs.append("        var content = await response.Content.ReadAsStringAsync();\n");
         cs.append("        Console.WriteLine(content);\n");
@@ -4565,12 +4675,12 @@ public class APIGenerationEngineService {
     private String generatePhpCode(GeneratedApiEntity api, String fullUrl) {
         StringBuilder php = new StringBuilder();
         php.append("<?php\n\n");
-        php.append("// Auto-generated PHP code for ").append(api.getApiName()).append("\n\n");
+        php.append("// Auto-generated PHP code for ").append(api.getApiName() != null ? api.getApiName() : "API").append("\n\n");
 
         php.append("$ch = curl_init();\n\n");
         php.append("curl_setopt($ch, CURLOPT_URL, \"").append(fullUrl).append("\");\n");
         php.append("curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n");
-        php.append("curl_setopt($ch, CURLOPT_CUSTOMREQUEST, \"").append(api.getHttpMethod()).append("\");\n\n");
+        php.append("curl_setopt($ch, CURLOPT_CUSTOMREQUEST, \"").append(api.getHttpMethod() != null ? api.getHttpMethod() : "GET").append("\");\n\n");
 
         // Headers
         php.append("$headers = [\n");
@@ -4598,8 +4708,8 @@ public class APIGenerationEngineService {
 
         if (api.getHeaders() != null) {
             for (ApiHeaderEntity header : api.getHeaders()) {
-                if (Boolean.TRUE.equals(header.getIsRequestHeader())) {
-                    php.append("    '").append(header.getKey()).append(": ").append(header.getValue()).append("',\n");
+                if (Boolean.TRUE.equals(header.getIsRequestHeader()) && header.getKey() != null) {
+                    php.append("    '").append(header.getKey()).append(": ").append(header.getValue() != null ? header.getValue() : "").append("',\n");
                 }
             }
         }
@@ -4622,14 +4732,15 @@ public class APIGenerationEngineService {
 
     private String generateRubyCode(GeneratedApiEntity api, String fullUrl) {
         StringBuilder rb = new StringBuilder();
-        rb.append("# Auto-generated Ruby code for ").append(api.getApiName()).append("\n\n");
+        rb.append("# Auto-generated Ruby code for ").append(api.getApiName() != null ? api.getApiName() : "API").append("\n\n");
         rb.append("require 'uri'\n");
         rb.append("require 'net/http'\n");
         rb.append("require 'json'\n\n");
 
         rb.append("uri = URI.parse('").append(fullUrl).append("')\n");
-        rb.append("request = Net::HTTP::").append(api.getHttpMethod().charAt(0) +
-                api.getHttpMethod().substring(1).toLowerCase()).append(".new(uri)\n\n");
+        String methodCapitalized = api.getHttpMethod() != null ?
+                api.getHttpMethod().substring(0, 1).toUpperCase() + api.getHttpMethod().substring(1).toLowerCase() : "Get";
+        rb.append("request = Net::HTTP::").append(methodCapitalized).append(".new(uri)\n\n");
 
         // Headers
         rb.append("request['Content-Type'] = 'application/json'\n");
@@ -4656,8 +4767,8 @@ public class APIGenerationEngineService {
 
         if (api.getHeaders() != null) {
             for (ApiHeaderEntity header : api.getHeaders()) {
-                if (Boolean.TRUE.equals(header.getIsRequestHeader())) {
-                    rb.append("request['").append(header.getKey()).append("'] = '").append(header.getValue()).append("'\n");
+                if (Boolean.TRUE.equals(header.getIsRequestHeader()) && header.getKey() != null) {
+                    rb.append("request['").append(header.getKey()).append("'] = '").append(header.getValue() != null ? header.getValue() : "").append("'\n");
                 }
             }
         }
@@ -4673,7 +4784,7 @@ public class APIGenerationEngineService {
 
     private String generateGoCode(GeneratedApiEntity api, String fullUrl) {
         StringBuilder go = new StringBuilder();
-        go.append("// Auto-generated Go code for ").append(api.getApiName()).append("\n\n");
+        go.append("// Auto-generated Go code for ").append(api.getApiName() != null ? api.getApiName() : "API").append("\n\n");
         go.append("package main\n\n");
         go.append("import (\n");
         go.append("    \"fmt\"\n");
@@ -4688,10 +4799,10 @@ public class APIGenerationEngineService {
                 api.getRequestConfig().getSample() != null) {
             go.append("    jsonBody := `").append(api.getRequestConfig().getSample()).append("`\n");
             go.append("    body := strings.NewReader(jsonBody)\n");
-            go.append("    req, err := http.NewRequest(\"").append(api.getHttpMethod()).append("\", \"");
+            go.append("    req, err := http.NewRequest(\"").append(api.getHttpMethod() != null ? api.getHttpMethod() : "GET").append("\", \"");
             go.append(fullUrl).append("\", body)\n");
         } else {
-            go.append("    req, err := http.NewRequest(\"").append(api.getHttpMethod()).append("\", \"");
+            go.append("    req, err := http.NewRequest(\"").append(api.getHttpMethod() != null ? api.getHttpMethod() : "GET").append("\", \"");
             go.append(fullUrl).append("\", nil)\n");
         }
 
@@ -4725,9 +4836,9 @@ public class APIGenerationEngineService {
 
         if (api.getHeaders() != null) {
             for (ApiHeaderEntity header : api.getHeaders()) {
-                if (Boolean.TRUE.equals(header.getIsRequestHeader())) {
+                if (Boolean.TRUE.equals(header.getIsRequestHeader()) && header.getKey() != null) {
                     go.append("    req.Header.Set(\"").append(header.getKey()).append("\", \"");
-                    go.append(header.getValue()).append("\")\n");
+                    go.append(header.getValue() != null ? header.getValue() : "").append("\")\n");
                 }
             }
         }
@@ -4761,6 +4872,8 @@ public class APIGenerationEngineService {
     // ============================================================
 
     private ApiSchemaConfigEntity mapToSchemaConfigEntity(ApiSchemaConfigDTO dto, GeneratedApiEntity api) {
+        if (dto == null) return null;
+
         return ApiSchemaConfigEntity.builder()
                 .generatedApi(api)
                 .schemaName(dto.getSchemaName())
@@ -4782,7 +4895,9 @@ public class APIGenerationEngineService {
     }
 
     private ApiAuthConfigEntity mapToAuthConfigEntity(ApiAuthConfigDTO dto, GeneratedApiEntity api) {
-        ApiAuthConfigEntity entity = ApiAuthConfigEntity.builder()
+        if (dto == null) return null;
+
+        return ApiAuthConfigEntity.builder()
                 .generatedApi(api)
                 .authType(dto.getAuthType())
                 .apiKeyHeader(dto.getApiKeyHeader())
@@ -4802,8 +4917,8 @@ public class APIGenerationEngineService {
                 .oauthClientSecret(dto.getOauthClientSecret())
                 .oauthTokenUrl(dto.getOauthTokenUrl())
                 .oauthAuthUrl(dto.getOauthAuthUrl())
-                .oauthScopes(dto.getOauthScopes())
-                .requiredRoles(dto.getRequiredRoles())
+                .oauthScopes(dto.getOauthScopes() != null ? dto.getOauthScopes() : new ArrayList<>())
+                .requiredRoles(dto.getRequiredRoles() != null ? dto.getRequiredRoles() : new ArrayList<>())
                 .customAuthFunction(dto.getCustomAuthFunction())
                 .validateSession(dto.getValidateSession())
                 .checkObjectPrivileges(dto.getCheckObjectPrivileges())
@@ -4814,11 +4929,11 @@ public class APIGenerationEngineService {
                 .corsOrigins(dto.getCorsOrigins())
                 .corsCredentials(dto.getCorsCredentials())
                 .build();
-
-        return entity;
     }
 
     private ApiRequestConfigEntity mapToRequestConfigEntity(ApiRequestConfigDTO dto, GeneratedApiEntity api) {
+        if (dto == null) return null;
+
         try {
             return ApiRequestConfigEntity.builder()
                     .generatedApi(api)
@@ -4826,9 +4941,9 @@ public class APIGenerationEngineService {
                     .sample(dto.getSample())
                     .maxSize(dto.getMaxSize())
                     .validateSchema(dto.getValidateSchema())
-                    .allowedMediaTypes(dto.getAllowedMediaTypes() != null ?
-                            objectMapper.writeValueAsString(dto.getAllowedMediaTypes()) : null)
-                    .requiredFields(dto.getRequiredFields())
+                    .allowedMediaTypes(dto.getAllowedMediaTypes() != null && !dto.getAllowedMediaTypes().isEmpty() ?
+                            String.join(",", dto.getAllowedMediaTypes()) : null)
+                    .requiredFields(dto.getRequiredFields() != null ? dto.getRequiredFields() : new ArrayList<>())
                     .build();
         } catch (Exception e) {
             throw new RuntimeException("Failed to map request config: " + e.getMessage());
@@ -4836,18 +4951,22 @@ public class APIGenerationEngineService {
     }
 
     private ApiResponseConfigEntity mapToResponseConfigEntity(ApiResponseConfigDTO dto, GeneratedApiEntity api) {
+        if (dto == null) return null;
+
         return ApiResponseConfigEntity.builder()
                 .generatedApi(api)
                 .successSchema(dto.getSuccessSchema())
                 .errorSchema(dto.getErrorSchema())
                 .includeMetadata(dto.getIncludeMetadata())
-                .metadataFields(dto.getMetadataFields())
+                .metadataFields(dto.getMetadataFields() != null ? dto.getMetadataFields() : new ArrayList<>())
                 .contentType(dto.getContentType())
                 .compression(dto.getCompression())
                 .build();
     }
 
     private ApiSettingsEntity mapToSettingsEntity(ApiSettingsDTO dto, GeneratedApiEntity api) {
+        if (dto == null) return null;
+
         try {
             return ApiSettingsEntity.builder()
                     .generatedApi(api)
@@ -4870,8 +4989,8 @@ public class APIGenerationEngineService {
                     .alertEmail(dto.getAlertEmail())
                     .enableTracing(dto.getEnableTracing())
                     .corsEnabled(dto.getCorsEnabled())
-                    .corsOrigins(dto.getCorsOrigins() != null ?
-                            objectMapper.writeValueAsString(dto.getCorsOrigins()) : null)
+                    .corsOrigins(dto.getCorsOrigins() != null && !dto.getCorsOrigins().isEmpty() ?
+                            String.join(",", dto.getCorsOrigins()) : null)
                     .build();
         } catch (Exception e) {
             throw new RuntimeException("Failed to map settings: " + e.getMessage());
@@ -4879,6 +4998,8 @@ public class APIGenerationEngineService {
     }
 
     private ApiParameterEntity mapToParameterEntity(ApiParameterDTO dto, GeneratedApiEntity api) {
+        if (dto == null) return null;
+
         return ApiParameterEntity.builder()
                 .generatedApi(api)
                 .key(dto.getKey())
@@ -4892,11 +5013,13 @@ public class APIGenerationEngineService {
                 .example(dto.getExample())
                 .validationPattern(dto.getValidationPattern())
                 .defaultValue(dto.getDefaultValue())
-                .position(dto.getPosition())
+                .position(dto.getPosition() != null ? dto.getPosition() : 0)
                 .build();
     }
 
     private ApiResponseMappingEntity mapToResponseMappingEntity(ApiResponseMappingDTO dto, GeneratedApiEntity api) {
+        if (dto == null) return null;
+
         return ApiResponseMappingEntity.builder()
                 .generatedApi(api)
                 .apiField(dto.getApiField())
@@ -4907,11 +5030,13 @@ public class APIGenerationEngineService {
                 .nullable(dto.getNullable())
                 .isPrimaryKey(dto.getIsPrimaryKey())
                 .includeInResponse(dto.getIncludeInResponse())
-                .position(dto.getPosition())
+                .position(dto.getPosition() != null ? dto.getPosition() : 0)
                 .build();
     }
 
     private ApiHeaderEntity mapToHeaderEntity(ApiHeaderDTO dto, GeneratedApiEntity api) {
+        if (dto == null) return null;
+
         return ApiHeaderEntity.builder()
                 .generatedApi(api)
                 .key(dto.getKey())
@@ -4924,35 +5049,157 @@ public class APIGenerationEngineService {
     }
 
     private List<ApiTestEntity> createTestEntities(ApiTestsDTO dto, GeneratedApiEntity api) {
+        if (dto == null) return new ArrayList<>();
+
         List<ApiTestEntity> tests = new ArrayList<>();
+        ObjectMapper objectMapper = new ObjectMapper(); // You can inject this instead of creating new instance
 
-        // Unit test
+        // Unit test - parse JSON string to Map
         if (dto.getUnitTests() != null && !dto.getUnitTests().isEmpty()) {
-            tests.add(ApiTestEntity.builder()
-                    .generatedApi(api)
-                    .testName("Unit Tests")
-                    .testType("UNIT")
-                    .testData(dto.getUnitTests())
-                    .build());
+            try {
+                Map<String, Object> unitTestData = new HashMap<>();
+
+                // Try to parse as JSON if it's a JSON string
+                if (dto.getUnitTests().trim().startsWith("{") || dto.getUnitTests().trim().startsWith("[")) {
+                    Object parsed = objectMapper.readValue(dto.getUnitTests(), Object.class);
+                    unitTestData.put("tests", parsed);
+                } else {
+                    // If it's not JSON, store as plain text
+                    unitTestData.put("tests", dto.getUnitTests());
+                }
+
+                // Add additional metadata
+                unitTestData.put("type", "unit");
+                unitTestData.put("assertions", dto.getAssertions());
+                unitTestData.put("environment", dto.getTestEnvironment());
+                unitTestData.put("iterations", dto.getTestIterations());
+                unitTestData.put("users", dto.getTestUsers());
+
+                tests.add(ApiTestEntity.builder()
+                        .generatedApi(api)
+                        .testName("Unit Tests")
+                        .testType("UNIT")
+                        .testData(unitTestData)
+                        .status("PENDING")
+                        .build());
+            } catch (Exception e) {
+                log.warn("Failed to parse unit tests JSON: {}", e.getMessage());
+                // Fallback: store as plain text map
+                Map<String, Object> fallbackData = new HashMap<>();
+                fallbackData.put("tests", dto.getUnitTests());
+                fallbackData.put("type", "unit");
+                tests.add(ApiTestEntity.builder()
+                        .generatedApi(api)
+                        .testName("Unit Tests")
+                        .testType("UNIT")
+                        .testData(fallbackData)
+                        .status("PENDING")
+                        .build());
+            }
         }
 
-        // Integration test
+        // Integration test - parse JSON string to Map
         if (dto.getIntegrationTests() != null && !dto.getIntegrationTests().isEmpty()) {
-            tests.add(ApiTestEntity.builder()
-                    .generatedApi(api)
-                    .testName("Integration Tests")
-                    .testType("INTEGRATION")
-                    .testData(dto.getIntegrationTests())
-                    .build());
+            try {
+                Map<String, Object> integrationTestData = new HashMap<>();
+
+                // Try to parse as JSON if it's a JSON string
+                if (dto.getIntegrationTests().trim().startsWith("{") || dto.getIntegrationTests().trim().startsWith("[")) {
+                    Object parsed = objectMapper.readValue(dto.getIntegrationTests(), Object.class);
+                    integrationTestData.put("tests", parsed);
+                } else {
+                    // If it's not JSON, store as plain text
+                    integrationTestData.put("tests", dto.getIntegrationTests());
+                }
+
+                // Add additional metadata
+                integrationTestData.put("type", "integration");
+                integrationTestData.put("assertions", dto.getAssertions());
+                integrationTestData.put("environment", dto.getTestEnvironment());
+                integrationTestData.put("iterations", dto.getTestIterations());
+                integrationTestData.put("users", dto.getTestUsers());
+                integrationTestData.put("performanceThreshold", dto.getPerformanceThreshold());
+
+                tests.add(ApiTestEntity.builder()
+                        .generatedApi(api)
+                        .testName("Integration Tests")
+                        .testType("INTEGRATION")
+                        .testData(integrationTestData)
+                        .status("PENDING")
+                        .build());
+            } catch (Exception e) {
+                log.warn("Failed to parse integration tests JSON: {}", e.getMessage());
+                // Fallback: store as plain text map
+                Map<String, Object> fallbackData = new HashMap<>();
+                fallbackData.put("tests", dto.getIntegrationTests());
+                fallbackData.put("type", "integration");
+                tests.add(ApiTestEntity.builder()
+                        .generatedApi(api)
+                        .testName("Integration Tests")
+                        .testType("INTEGRATION")
+                        .testData(fallbackData)
+                        .status("PENDING")
+                        .build());
+            }
         }
 
-        // Test data
+        // Test data - parse JSON string to Map
         if (dto.getTestData() != null && !dto.getTestData().isEmpty()) {
+            try {
+                Map<String, Object> testDataMap = new HashMap<>();
+
+                // Try to parse as JSON if it's a JSON string
+                if (dto.getTestData().trim().startsWith("{") || dto.getTestData().trim().startsWith("[")) {
+                    Object parsed = objectMapper.readValue(dto.getTestData(), Object.class);
+                    testDataMap.put("data", parsed);
+                } else {
+                    // If it's not JSON, store as plain text
+                    testDataMap.put("data", dto.getTestData());
+                }
+
+                // Add additional metadata
+                testDataMap.put("type", "test-data");
+                testDataMap.put("environment", dto.getTestEnvironment());
+                testDataMap.put("iterations", dto.getTestIterations());
+
+                tests.add(ApiTestEntity.builder()
+                        .generatedApi(api)
+                        .testName("Test Data")
+                        .testType("DATA")
+                        .testData(testDataMap)
+                        .status("PENDING")
+                        .build());
+            } catch (Exception e) {
+                log.warn("Failed to parse test data JSON: {}", e.getMessage());
+                // Fallback: store as plain text map
+                Map<String, Object> fallbackData = new HashMap<>();
+                fallbackData.put("data", dto.getTestData());
+                fallbackData.put("type", "test-data");
+                tests.add(ApiTestEntity.builder()
+                        .generatedApi(api)
+                        .testName("Test Data")
+                        .testType("DATA")
+                        .testData(fallbackData)
+                        .status("PENDING")
+                        .build());
+            }
+        }
+
+        // If no specific tests are provided but assertions exist, create a generic test
+        if (tests.isEmpty() && dto.getAssertions() != null && !dto.getAssertions().isEmpty()) {
+            Map<String, Object> genericTestData = new HashMap<>();
+            genericTestData.put("assertions", dto.getAssertions());
+            genericTestData.put("environment", dto.getTestEnvironment());
+            genericTestData.put("performanceThreshold", dto.getPerformanceThreshold());
+            genericTestData.put("iterations", dto.getTestIterations());
+            genericTestData.put("users", dto.getTestUsers());
+
             tests.add(ApiTestEntity.builder()
                     .generatedApi(api)
-                    .testName("Test Data")
-                    .testType("DATA")
-                    .testData(dto.getTestData())
+                    .testName("Generic Tests")
+                    .testType("GENERIC")
+                    .testData(genericTestData)
+                    .status("PENDING")
                     .build());
         }
 
@@ -4960,6 +5207,8 @@ public class APIGenerationEngineService {
     }
 
     private GeneratedApiResponseDTO mapToResponse(GeneratedApiEntity entity) {
+        if (entity == null) return null;
+
         try {
             GeneratedApiResponseDTO response = GeneratedApiResponseDTO.builder()
                     .id(entity.getId())
@@ -4979,9 +5228,9 @@ public class APIGenerationEngineService {
                     .updatedAt(entity.getUpdatedAt())
                     .createdBy(entity.getCreatedBy())
                     .isActive(entity.getIsActive())
-                    .totalCalls(entity.getTotalCalls())
+                    .totalCalls(entity.getTotalCalls() != null ? entity.getTotalCalls() : 0L)
                     .lastCalledAt(entity.getLastCalledAt())
-                    .tags(entity.getTags())
+                    .tags(entity.getTags() != null ? entity.getTags() : new ArrayList<>())
                     .parametersCount(entity.getParameters() != null ? entity.getParameters().size() : 0)
                     .responseMappingsCount(entity.getResponseMappings() != null ? entity.getResponseMappings().size() : 0)
                     .headersCount(entity.getHeaders() != null ? entity.getHeaders().size() : 0)
@@ -5063,13 +5312,14 @@ public class APIGenerationEngineService {
         try {
             ApiExecutionLogEntity log = ApiExecutionLogEntity.builder()
                     .generatedApi(api)
-                    .requestId(request != null ? request.getRequestId() : UUID.randomUUID().toString())
+                    .requestId(request != null && request.getRequestId() != null ?
+                            request.getRequestId() : UUID.randomUUID().toString())
                     .requestParams(request != null && request.getQueryParams() != null ?
-                            objectMapper.writeValueAsString(request.getQueryParams()) : null)
-                    .requestBody(request != null && request.getBody() != null ?
-                            objectMapper.writeValueAsString(request.getBody()) : null)
-                    .responseBody(response != null ?
-                            objectMapper.writeValueAsString(response) : null)
+                            request.getQueryParams() : null)
+                    .requestBody(request != null && request.getBody() instanceof Map ?
+                            (Map<String, Object>) request.getBody() : null)
+                    .responseBody(response instanceof Map ?
+                            (Map<String, Object>) response : convertToMap(response))
                     .responseStatus(status)
                     .executionTimeMs(executionTime)
                     .executedAt(LocalDateTime.now())
@@ -5093,6 +5343,7 @@ public class APIGenerationEngineService {
         Map<String, Object> error = new HashMap<>();
         error.put("code", statusCode);
         error.put("message", message);
+        error.put("timestamp", LocalDateTime.now().toString());
 
         return ExecuteApiResponseDTO.builder()
                 .requestId(requestId)
@@ -5113,7 +5364,7 @@ public class APIGenerationEngineService {
         if (api.getResponseConfig() != null && api.getResponseConfig().getMetadataFields() != null) {
             Map<String, Object> filtered = new HashMap<>();
             for (String field : api.getResponseConfig().getMetadataFields()) {
-                if (metadata.containsKey(field)) {
+                if (field != null && metadata.containsKey(field)) {
                     filtered.put(field, metadata.get(field));
                 }
             }
@@ -5134,15 +5385,17 @@ public class APIGenerationEngineService {
             metadata.put("apiVersion", api.getVersion());
             metadata.put("requestId", UUID.randomUUID().toString());
 
-            if (api.getResponseConfig().getMetadataFields() != null) {
+            if (api.getResponseConfig().getMetadataFields() != null && !api.getResponseConfig().getMetadataFields().isEmpty()) {
                 // Include only specified metadata fields
                 Map<String, Object> filteredMetadata = new HashMap<>();
                 for (String field : api.getResponseConfig().getMetadataFields()) {
-                    if (metadata.containsKey(field)) {
+                    if (field != null && metadata.containsKey(field)) {
                         filteredMetadata.put(field, metadata.get(field));
                     }
                 }
-                formatted.put("metadata", filteredMetadata);
+                if (!filteredMetadata.isEmpty()) {
+                    formatted.put("metadata", filteredMetadata);
+                }
             } else {
                 formatted.put("metadata", metadata);
             }

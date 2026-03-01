@@ -94,4 +94,13 @@ public class APICollectionEntity {
 
     @OneToOne(mappedBy = "collection", cascade = CascadeType.ALL)
     private MockServerEntity mockServer;
+
+    // Add defensive copying in setter
+    public void setTags(List<String> tags) {
+        if (tags == null) {
+            this.tags = new ArrayList<>();
+        } else {
+            this.tags = new ArrayList<>(tags);
+        }
+    }
 }

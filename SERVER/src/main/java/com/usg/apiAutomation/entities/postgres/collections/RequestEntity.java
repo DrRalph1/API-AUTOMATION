@@ -2,6 +2,7 @@ package com.usg.apiAutomation.entities.postgres.collections;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.ToString;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -13,20 +14,29 @@ import java.util.List;
 @Entity(name = "RequestsEntityCollections")
 @Table(name = "tb_col_requests")
 @Data
-@ToString(exclude = {"headers", "params", "collection", "folder"})
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@ToString(onlyExplicitlyIncluded = true)
 public class RequestEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
+    @EqualsAndHashCode.Include
+    @ToString.Include
     private String id;
 
     @Column(nullable = false)
+    @EqualsAndHashCode.Include
+    @ToString.Include
     private String name;
 
     @Column(nullable = false)
+    @EqualsAndHashCode.Include
+    @ToString.Include
     private String method;
 
     @Column(nullable = false, length = 2000)
+    @EqualsAndHashCode.Include
+    @ToString.Include
     private String url;
 
     @Column(length = 2000)
@@ -58,22 +68,32 @@ public class RequestEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "collection_id", nullable = false)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private CollectionEntity collection;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "folder_id")
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private FolderEntity folder;
 
     @OneToOne(mappedBy = "request", cascade = CascadeType.ALL,
             orphanRemoval = true, fetch = FetchType.LAZY)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private AuthConfigEntity authConfig;
 
     @OneToMany(mappedBy = "request", cascade = CascadeType.ALL,
             orphanRemoval = true, fetch = FetchType.LAZY)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private List<HeaderEntity> headers = new ArrayList<>();
 
     @OneToMany(mappedBy = "request", cascade = CascadeType.ALL,
             orphanRemoval = true, fetch = FetchType.LAZY)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private List<ParameterEntity> params = new ArrayList<>();
 
     @CreationTimestamp
@@ -86,4 +106,40 @@ public class RequestEntity {
 
     @Version
     private Integer version;
+
+    // Helper methods for maintaining bidirectional relationships
+    public void addHeader(HeaderEntity header) {
+        headers.add(header);
+        header.setRequest(this);
+    }
+
+    public void removeHeader(HeaderEntity header) {
+        headers.remove(header);
+        header.setRequest(null);
+    }
+
+    public void addParameter(ParameterEntity param) {
+        params.add(param);
+        param.setRequest(this);
+    }
+
+    public void removeParameter(ParameterEntity param) {
+        params.remove(param);
+        param.setRequest(null);
+    }
+
+    public void setAuthConfig(AuthConfigEntity authConfig) {
+        this.authConfig = authConfig;
+        if (authConfig != null) {
+            authConfig.setRequest(this);
+        }
+    }
+
+    public void setCollection(CollectionEntity collection) {
+        this.collection = collection;
+    }
+
+    public void setFolder(FolderEntity folder) {
+        this.folder = folder;
+    }
 }

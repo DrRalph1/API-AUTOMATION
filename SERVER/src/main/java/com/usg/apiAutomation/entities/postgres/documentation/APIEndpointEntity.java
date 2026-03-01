@@ -36,7 +36,7 @@ public class APIEndpointEntity {
     private String description;
 
     @ElementCollection
-    @CollectionTable(name = "tb_endpoint_tags",
+    @CollectionTable(name = "tb_doc_endpoint_tags",
             joinColumns = @JoinColumn(name = "endpoint_id"))
     @Column(name = "tag")
     private List<String> tags = new ArrayList<>();

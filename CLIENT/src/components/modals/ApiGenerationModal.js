@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   X, Plus, Trash2, Save, Copy, Code, Globe, Lock, FileText, 
   Settings, Database, Map, FileJson, TestTube, Wrench, 
-  RefreshCw, Eye, EyeOff, Download, Upload, Play, Key, 
+  RefreshCw, Eye, EyeOff, Download, Upload, Play, Key, XCircle,
   Shield, Hash, Calendar, Clock, Type, List, Link, ExternalLink,
   Check, AlertCircle, Star, Zap, Terminal, Package,
   CheckCircle, ChevronRight, Info, Layers, Cpu, Sparkles,
@@ -2064,12 +2064,12 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                         </span>
                       )}
                     </p>
-                    {loading && (
+                    {/* {loading && (
                       <p className="text-xs mt-1 flex items-center gap-1" style={{ color: themeColors.info }}>
                         <Loader className="h-3 w-3 animate-spin" />
                         Fetching object details...
                       </p>
-                    )}
+                    )} */}
                     {validating && (
                       <p className="text-xs mt-1 flex items-center gap-1" style={{ color: themeColors.warning }}>
                         <Loader className="h-3 w-3 animate-spin" />
