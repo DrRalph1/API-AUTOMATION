@@ -74,11 +74,11 @@ public class JWTService {
             result.put("data", tokenData);
 
             // Log the token refresh activity
-            loggerUtil.log("api-gateway",
+            loggerUtil.log("api-automation",
                     String.format("Token refreshed for user %s. RequestEntity ID: %s", userId, requestId));
 
         } catch (Exception e) {
-            loggerUtil.log("api-gateway",
+            loggerUtil.log("api-automation",
                     String.format("Refresh token failed - Error: %s, RequestEntity ID: %s", e.getMessage(), requestId));
 
             result.put("status", "failed");
@@ -145,7 +145,7 @@ public class JWTService {
             }
 
         } catch (Exception e) {
-            loggerUtil.log("api-gateway", "Check token expiry error: " + e.getMessage());
+            loggerUtil.log("api-automation", "Check token expiry error: " + e.getMessage());
 
             result.put("status", "failed");
             result.put("message", e.getMessage() != null ? e.getMessage() : "Unknown error");

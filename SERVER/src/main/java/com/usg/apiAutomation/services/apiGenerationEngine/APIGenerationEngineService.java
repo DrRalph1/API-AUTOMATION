@@ -151,7 +151,7 @@ public class APIGenerationEngineService {
                 api.setSettings(settings);
             }
 
-            // Save parameters - auto-generate from source object if not provided
+            // Save parameters from UI
             if (request.getParameters() != null && !request.getParameters().isEmpty()) {
                 List<ApiParameterEntity> parameters = new ArrayList<>();
                 for (int i = 0; i < request.getParameters().size(); i++) {
@@ -162,12 +162,12 @@ public class APIGenerationEngineService {
                 }
                 api.setParameters(parameters);
             } else if (sourceObjectDTO != null) {
-                // Auto-generate parameters from source object
+                // Auto-generate parameters from source object (fallback)
                 List<ApiParameterEntity> parameters = generateParametersFromSource(sourceObjectDTO, api);
                 api.setParameters(parameters);
             }
 
-            // Save response mappings - auto-generate from source object if not provided
+            // Save response mappings from UI
             if (request.getResponseMappings() != null && !request.getResponseMappings().isEmpty()) {
                 List<ApiResponseMappingEntity> mappings = new ArrayList<>();
                 for (int i = 0; i < request.getResponseMappings().size(); i++) {
@@ -178,7 +178,7 @@ public class APIGenerationEngineService {
                 }
                 api.setResponseMappings(mappings);
             } else if (sourceObjectDTO != null) {
-                // Auto-generate response mappings from source object
+                // Auto-generate response mappings from source object (fallback)
                 List<ApiResponseMappingEntity> mappings = generateResponseMappingsFromSource(sourceObjectDTO, api);
                 api.setResponseMappings(mappings);
             }
@@ -239,7 +239,6 @@ public class APIGenerationEngineService {
             throw new RuntimeException("Failed to generate API: " + e.getMessage(), e);
         }
     }
-
 
     @Transactional
     public GeneratedApiResponseDTO updateApi(String requestId, String apiId, String performedBy,
@@ -321,7 +320,7 @@ public class APIGenerationEngineService {
                 api.setSettings(settings);
             }
 
-            // Update parameters
+            // Update parameters from UI
             if (request.getParameters() != null && !request.getParameters().isEmpty()) {
                 List<ApiParameterEntity> parameters = new ArrayList<>();
                 for (int i = 0; i < request.getParameters().size(); i++) {
@@ -337,7 +336,7 @@ public class APIGenerationEngineService {
                 api.setParameters(parameters);
             }
 
-            // Update response mappings
+            // Update response mappings from UI
             if (request.getResponseMappings() != null && !request.getResponseMappings().isEmpty()) {
                 List<ApiResponseMappingEntity> mappings = new ArrayList<>();
                 for (int i = 0; i < request.getResponseMappings().size(); i++) {
@@ -476,7 +475,6 @@ public class APIGenerationEngineService {
         }
     }
 
-
     @Transactional
     public void syncGeneratedComponents(GeneratedApiEntity api, String performedBy) {
         try {
@@ -501,7 +499,6 @@ public class APIGenerationEngineService {
             throw new RuntimeException("Failed to sync components: " + e.getMessage(), e);
         }
     }
-
 
     // Convert SchemaConfig Entity to DTO
     private ApiSchemaConfigDTO convertSchemaConfigToDTO(ApiSchemaConfigEntity entity) {
@@ -694,8 +691,6 @@ public class APIGenerationEngineService {
                 .build();
     }
 
-
-
     // Helper method to convert entity back to DTO
     private GenerateApiRequestDTO convertEntityToRequestDTO(GeneratedApiEntity api) {
         GenerateApiRequestDTO request = new GenerateApiRequestDTO();
@@ -775,8 +770,6 @@ public class APIGenerationEngineService {
         return request;
     }
 
-
-
     private void updateCodeBaseHeaders(RequestEntity requestEntity, GeneratedApiEntity api) {
         List<Map<String, Object>> headers = new ArrayList<>();
 
@@ -820,6 +813,14 @@ public class APIGenerationEngineService {
                     authHeader.put("key", "Authorization");
                     authHeader.put("value", "Basic {{base64Credentials}}");
                     authHeader.put("description", "Basic authentication");
+                    authHeader.put("required", true);
+                    authHeader.put("disabled", false);
+                    headers.add(authHeader);
+                    break;
+                case "ORACLE_ROLES":
+                    authHeader.put("key", "X-Oracle-Session");
+                    authHeader.put("value", "{{oracleSessionId}}");
+                    authHeader.put("description", "Oracle Database Session ID");
                     authHeader.put("required", true);
                     authHeader.put("disabled", false);
                     headers.add(authHeader);
@@ -883,8 +884,6 @@ public class APIGenerationEngineService {
         }
     }
 
-
-
     // Update Code Base
     private void updateCodeBase(GeneratedApiEntity api, String performedBy, GenerateApiRequestDTO request) {
         try {
@@ -930,8 +929,6 @@ public class APIGenerationEngineService {
         }
     }
 
-
-
     private void updateCollectionsAuthConfig(
             com.usg.apiAutomation.entities.postgres.collections.RequestEntity requestEntity,
             GeneratedApiEntity api) {
@@ -961,6 +958,12 @@ public class APIGenerationEngineService {
                 case "BASIC":
                     authConfig.setUsername("{{username}}");
                     authConfig.setPassword("{{password}}");
+                    break;
+                case "ORACLE_ROLES":
+                    authConfig.setType("oracle-roles");
+                    authConfig.setKey("X-Oracle-Session");
+                    authConfig.setValue("{{oracleSessionId}}");
+                    authConfig.setAddTo("header");
                     break;
             }
             requestEntity.setAuthConfig(authConfig);
@@ -1015,8 +1018,6 @@ public class APIGenerationEngineService {
             requestEntity.setBody(api.getRequestConfig().getSample());
         }
     }
-
-
 
     // Update Collections
     private void updateCollections(GeneratedApiEntity api, String performedBy, GenerateApiRequestDTO request) {
@@ -1075,8 +1076,6 @@ public class APIGenerationEngineService {
             log.error("Failed to update collections: {}", e.getMessage(), e);
         }
     }
-
-
 
     private void updateDocumentationRateLimit(APIEndpointEntity endpoint, GeneratedApiEntity api) {
         if (api.getSettings() != null && api.getSettings().getEnableRateLimiting() != null) {
@@ -1149,6 +1148,11 @@ public class APIGenerationEngineService {
                     authHeader.setKey("Authorization");
                     authHeader.setValue("Basic base64_encoded_credentials");
                     authHeader.setDescription("Basic authentication (username:password encoded in base64)");
+                    break;
+                case "ORACLE_ROLES":
+                    authHeader.setKey("X-Oracle-Session");
+                    authHeader.setValue("Your Oracle Session ID");
+                    authHeader.setDescription("Oracle Database Session ID for authentication");
                     break;
             }
             docHeaderRepository.save(authHeader);
@@ -1244,8 +1248,6 @@ public class APIGenerationEngineService {
 
         changelogRepository.save(changelog);
     }
-
-
 
     // Update Documentation
     private void updateDocumentation(GeneratedApiEntity api, String performedBy, GenerateApiRequestDTO request) {
@@ -1363,8 +1365,6 @@ public class APIGenerationEngineService {
         return null;
     }
 
-
-
     // Helper method to determine if components should be regenerated
     private boolean shouldRegenerateComponents(GenerateApiRequestDTO request) {
         return request.getRegenerateComponents() != null && request.getRegenerateComponents();
@@ -1390,7 +1390,6 @@ public class APIGenerationEngineService {
             log.warn("Failed to regenerate components: {}", e.getMessage());
         }
     }
-
 
     /**
      * Generate parameters automatically from Oracle source object
@@ -1528,6 +1527,7 @@ public class APIGenerationEngineService {
                 .generatedApi(api)
                 .key(columnName.toLowerCase())
                 .dbColumn(columnName)
+                .dbParameter(null) // No dbParameter for columns
                 .oracleType(mapOracleType(dataType))
                 .apiType(mapToApiType(dataType))
                 .parameterType("query")
@@ -1552,6 +1552,7 @@ public class APIGenerationEngineService {
         return ApiParameterEntity.builder()
                 .generatedApi(api)
                 .key(argName != null ? argName.toLowerCase() : "param_" + position)
+                .dbColumn(null) // No dbColumn for parameters
                 .dbParameter(argName)
                 .oracleType(mapOracleType(dataType))
                 .apiType(mapToApiType(dataType))
@@ -1726,7 +1727,7 @@ public class APIGenerationEngineService {
             return "string";
         } else if (upperType.contains("NUMBER") || upperType.contains("INTEGER") ||
                 upperType.contains("FLOAT") || upperType.contains("DECIMAL")) {
-            return "number";
+            return "integer";
         } else if (upperType.contains("DATE") || upperType.contains("TIMESTAMP")) {
             return "string";
         } else if (upperType.contains("BLOB") || upperType.contains("RAW")) {
@@ -2204,10 +2205,13 @@ public class APIGenerationEngineService {
         if (api.getParameters() != null) {
             for (ApiParameterEntity param : api.getParameters()) {
                 if (inParams.containsKey(param.getKey())) {
+                    // Check if this is a procedure parameter (using dbParameter) or table column (using dbColumn)
+                    String paramName = param.getDbParameter() != null ?
+                            param.getDbParameter() :
+                            (param.getDbColumn() != null ? param.getDbColumn() : param.getKey());
+
                     jdbcCall.declareParameters(
-                            new SqlParameter(param.getDbParameter() != null ?
-                                    param.getDbParameter() : param.getKey(),
-                                    mapToSqlType(param.getOracleType()))
+                            new SqlParameter(paramName, mapToSqlType(param.getOracleType()))
                     );
                 }
             }
@@ -2220,8 +2224,9 @@ public class APIGenerationEngineService {
         Map<String, Object> responseData = new HashMap<>();
         if (api.getResponseMappings() != null) {
             for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
-                if (result.containsKey(mapping.getDbColumn())) {
-                    responseData.put(mapping.getApiField(), result.get(mapping.getDbColumn()));
+                String dbColumn = mapping.getDbColumn();
+                if (result.containsKey(dbColumn)) {
+                    responseData.put(mapping.getApiField(), result.get(dbColumn));
                 }
             }
         }
@@ -2259,10 +2264,13 @@ public class APIGenerationEngineService {
         if (api.getParameters() != null) {
             for (ApiParameterEntity param : api.getParameters()) {
                 if (inParams.containsKey(param.getKey())) {
+                    // Check if this is a function parameter (using dbParameter) or table column (using dbColumn)
+                    String paramName = param.getDbParameter() != null ?
+                            param.getDbParameter() :
+                            (param.getDbColumn() != null ? param.getDbColumn() : param.getKey());
+
                     jdbcCall.declareParameters(
-                            new SqlParameter(param.getDbParameter() != null ?
-                                    param.getDbParameter() : param.getKey(),
-                                    mapToSqlType(param.getOracleType()))
+                            new SqlParameter(paramName, mapToSqlType(param.getOracleType()))
                     );
                 }
             }
@@ -2318,10 +2326,13 @@ public class APIGenerationEngineService {
         if (api.getParameters() != null) {
             for (ApiParameterEntity param : api.getParameters()) {
                 if (inParams.containsKey(param.getKey())) {
+                    // Check if this is a procedure parameter (using dbParameter) or table column (using dbColumn)
+                    String paramName = param.getDbParameter() != null ?
+                            param.getDbParameter() :
+                            (param.getDbColumn() != null ? param.getDbColumn() : param.getKey());
+
                     jdbcCall.declareParameters(
-                            new SqlParameter(param.getDbParameter() != null ?
-                                    param.getDbParameter() : param.getKey(),
-                                    mapToSqlType(param.getOracleType()))
+                            new SqlParameter(paramName, mapToSqlType(param.getOracleType()))
                     );
                 }
             }
@@ -2342,8 +2353,6 @@ public class APIGenerationEngineService {
 
         return responseData;
     }
-
-
 
     // Add this method to get the entity
     public GeneratedApiEntity getApiEntity(String apiId) {
@@ -2616,8 +2625,6 @@ public class APIGenerationEngineService {
         return 200;
     }
 
-
-
     /**
      * Map Oracle type to SQL type for JDBC
      */
@@ -2865,7 +2872,12 @@ public class APIGenerationEngineService {
         if (api.getParameters() != null && !api.getParameters().isEmpty()) {
             for (int i = 0; i < api.getParameters().size(); i++) {
                 var param = api.getParameters().get(i);
-                sb.append("    p_").append(param.getKey()).append(" IN ").append(param.getOracleType());
+                // For parameters, use dbParameter if available (for procedures/functions)
+                String paramName = param.getDbParameter() != null ?
+                        "p_" + param.getDbParameter() :
+                        "p_" + param.getKey();
+
+                sb.append("    ").append(paramName).append(" IN ").append(param.getOracleType());
                 if (Boolean.TRUE.equals(param.getRequired())) {
                     sb.append(" NOT NULL");
                 }
@@ -2901,7 +2913,11 @@ public class APIGenerationEngineService {
         if (api.getParameters() != null && !api.getParameters().isEmpty()) {
             for (int i = 0; i < api.getParameters().size(); i++) {
                 var param = api.getParameters().get(i);
-                sb.append("    p_").append(param.getKey()).append(" IN ").append(param.getOracleType());
+                String paramName = param.getDbParameter() != null ?
+                        "p_" + param.getDbParameter() :
+                        "p_" + param.getKey();
+
+                sb.append("    ").append(paramName).append(" IN ").append(param.getOracleType());
                 if (i < api.getParameters().size() - 1) {
                     sb.append(",");
                 }
@@ -2960,9 +2976,14 @@ public class APIGenerationEngineService {
                         for (var param : api.getParameters()) {
                             if ("query".equals(param.getParameterType()) ||
                                     "path".equals(param.getParameterType())) {
+                                String columnName = param.getDbColumn() != null ? param.getDbColumn() : param.getKey();
+                                String paramName = param.getDbParameter() != null ?
+                                        "p_" + param.getDbParameter() :
+                                        "p_" + param.getKey();
+
                                 sb.append("    AND ")
-                                        .append(param.getDbColumn() != null ? param.getDbColumn() : param.getKey())
-                                        .append(" = p_").append(param.getKey()).append("\n");
+                                        .append(columnName)
+                                        .append(" = ").append(paramName).append("\n");
                             }
                         }
                     }
@@ -2992,7 +3013,11 @@ public class APIGenerationEngineService {
                     // Add values from parameters
                     if (api.getParameters() != null && !api.getParameters().isEmpty()) {
                         String values = api.getParameters().stream()
-                                .map(p -> "p_" + p.getKey())
+                                .map(p -> {
+                                    return p.getDbParameter() != null ?
+                                            "p_" + p.getDbParameter() :
+                                            "p_" + p.getKey();
+                                })
                                 .collect(Collectors.joining(",\n      "));
                         sb.append(values);
                     }
@@ -3016,7 +3041,13 @@ public class APIGenerationEngineService {
                     if (api.getParameters() != null && !api.getParameters().isEmpty()) {
                         String setClauses = api.getParameters().stream()
                                 .filter(p -> !"query".equals(p.getParameterType()) && !"path".equals(p.getParameterType()))
-                                .map(p -> p.getDbColumn() + " = p_" + p.getKey())
+                                .map(p -> {
+                                    String columnName = p.getDbColumn() != null ? p.getDbColumn() : p.getKey();
+                                    String paramName = p.getDbParameter() != null ?
+                                            "p_" + p.getDbParameter() :
+                                            "p_" + p.getKey();
+                                    return columnName + " = " + paramName;
+                                })
                                 .collect(Collectors.joining(",\n      "));
                         sb.append(setClauses);
                     }
@@ -3027,9 +3058,14 @@ public class APIGenerationEngineService {
                         for (var param : api.getParameters()) {
                             if ("query".equals(param.getParameterType()) ||
                                     "path".equals(param.getParameterType())) {
+                                String columnName = param.getDbColumn() != null ? param.getDbColumn() : param.getKey();
+                                String paramName = param.getDbParameter() != null ?
+                                        "p_" + param.getDbParameter() :
+                                        "p_" + param.getKey();
+
                                 sb.append("      AND ")
-                                        .append(param.getDbColumn() != null ? param.getDbColumn() : param.getKey())
-                                        .append(" = p_").append(param.getKey()).append("\n");
+                                        .append(columnName)
+                                        .append(" = ").append(paramName).append("\n");
                             }
                         }
                     }
@@ -3046,9 +3082,14 @@ public class APIGenerationEngineService {
                         for (var param : api.getParameters()) {
                             if ("query".equals(param.getParameterType()) ||
                                     "path".equals(param.getParameterType())) {
+                                String columnName = param.getDbColumn() != null ? param.getDbColumn() : param.getKey();
+                                String paramName = param.getDbParameter() != null ?
+                                        "p_" + param.getDbParameter() :
+                                        "p_" + param.getKey();
+
                                 sb.append("      AND ")
-                                        .append(param.getDbColumn() != null ? param.getDbColumn() : param.getKey())
-                                        .append(" = p_").append(param.getKey()).append("\n");
+                                        .append(columnName)
+                                        .append(" = ").append(paramName).append("\n");
                             }
                         }
                     }
@@ -3067,7 +3108,11 @@ public class APIGenerationEngineService {
                     if (api.getParameters() != null && !api.getParameters().isEmpty()) {
                         for (int i = 0; i < api.getParameters().size(); i++) {
                             var param = api.getParameters().get(i);
-                            sb.append("        p_").append(param.getKey());
+                            String paramName = param.getDbParameter() != null ?
+                                    "p_" + param.getDbParameter() :
+                                    "p_" + param.getKey();
+
+                            sb.append("        ").append(paramName);
                             if (i < api.getParameters().size() - 1) {
                                 sb.append(",");
                             }
@@ -3591,7 +3636,6 @@ public class APIGenerationEngineService {
         }
     }
 
-
     // Helper method to convert Map to ApiSourceObjectDTO
     private ApiSourceObjectDTO convertMapToSourceObjectDTO(Map<String, Object> sourceObjectMap) {
         if (sourceObjectMap == null || sourceObjectMap.isEmpty()) {
@@ -3605,7 +3649,6 @@ public class APIGenerationEngineService {
             throw new RuntimeException("Failed to convert source object: " + e.getMessage(), e);
         }
     }
-
 
     // Helper method to convert Map to ApiSourceObjectDTO
     private ApiSourceObjectDTO convertToSourceObjectDTO(Object sourceObject) {
@@ -3733,6 +3776,14 @@ public class APIGenerationEngineService {
                         authHeader.put("key", "Authorization");
                         authHeader.put("value", "Basic {{base64Credentials}}");
                         authHeader.put("description", "Basic authentication");
+                        authHeader.put("required", true);
+                        authHeader.put("disabled", false);
+                        headers.add(authHeader);
+                        break;
+                    case "ORACLE_ROLES":
+                        authHeader.put("key", "X-Oracle-Session");
+                        authHeader.put("value", "{{oracleSessionId}}");
+                        authHeader.put("description", "Oracle Database Session ID");
                         authHeader.put("required", true);
                         authHeader.put("disabled", false);
                         headers.add(authHeader);
@@ -3931,6 +3982,12 @@ public class APIGenerationEngineService {
                         authConfig.setUsername("{{username}}");
                         authConfig.setPassword("{{password}}");
                         break;
+                    case "ORACLE_ROLES":
+                        authConfig.setType("oracle-roles");
+                        authConfig.setKey("X-Oracle-Session");
+                        authConfig.setValue("{{oracleSessionId}}");
+                        authConfig.setAddTo("header");
+                        break;
                 }
                 requestEntity.setAuthConfig(authConfig);
             }
@@ -4112,6 +4169,11 @@ public class APIGenerationEngineService {
                         authHeader.setValue("Basic base64_encoded_credentials");
                         authHeader.setDescription("Basic authentication (username:password encoded in base64)");
                         break;
+                    case "ORACLE_ROLES":
+                        authHeader.setKey("X-Oracle-Session");
+                        authHeader.setValue("Your Oracle Session ID");
+                        authHeader.setDescription("Oracle Database Session ID for authentication");
+                        break;
                 }
                 docHeaderRepository.save(authHeader);
             }
@@ -4273,6 +4335,9 @@ public class APIGenerationEngineService {
                 case "BASIC":
                     curl.append("  -u 'username:password'");
                     break;
+                case "ORACLE_ROLES":
+                    curl.append("  -H 'X-Oracle-Session: YOUR_SESSION_ID'");
+                    break;
             }
         }
 
@@ -4319,6 +4384,9 @@ public class APIGenerationEngineService {
                     break;
                 case "BASIC":
                     js.append("    'Authorization': 'Basic ' + btoa('username:password'),\n");
+                    break;
+                case "ORACLE_ROLES":
+                    js.append("    'X-Oracle-Session': 'YOUR_SESSION_ID',\n");
                     break;
             }
         }
@@ -4368,6 +4436,9 @@ public class APIGenerationEngineService {
                     break;
                 case "BASIC":
                     py.append("    'Authorization': 'Basic base64_encoded_credentials',\n");
+                    break;
+                case "ORACLE_ROLES":
+                    py.append("    'X-Oracle-Session': 'YOUR_SESSION_ID',\n");
                     break;
             }
         }
@@ -4429,6 +4500,9 @@ public class APIGenerationEngineService {
                 case "BASIC":
                     java.append("                .header(\"Authorization\", \"Basic base64_encoded_credentials\")\n");
                     break;
+                case "ORACLE_ROLES":
+                    java.append("                .header(\"X-Oracle-Session\", \"YOUR_SESSION_ID\")\n");
+                    break;
             }
         }
 
@@ -4471,6 +4545,9 @@ public class APIGenerationEngineService {
                 case "BASIC":
                     cs.append("        client.DefaultRequestHeaders.Add(\"Authorization\", \"Basic base64_encoded_credentials\");\n");
                     break;
+                case "ORACLE_ROLES":
+                    cs.append("        client.DefaultRequestHeaders.Add(\"X-Oracle-Session\", \"YOUR_SESSION_ID\");\n");
+                    break;
             }
         }
 
@@ -4512,6 +4589,9 @@ public class APIGenerationEngineService {
                     break;
                 case "BASIC":
                     php.append("    'Authorization: Basic ' . base64_encode('username:password'),\n");
+                    break;
+                case "ORACLE_ROLES":
+                    php.append("    'X-Oracle-Session: YOUR_SESSION_ID',\n");
                     break;
             }
         }
@@ -4567,6 +4647,9 @@ public class APIGenerationEngineService {
                     break;
                 case "BASIC":
                     rb.append("request.basic_auth('username', 'password')\n");
+                    break;
+                case "ORACLE_ROLES":
+                    rb.append("request['X-Oracle-Session'] = 'YOUR_SESSION_ID'\n");
                     break;
             }
         }
@@ -4633,6 +4716,9 @@ public class APIGenerationEngineService {
                     break;
                 case "BASIC":
                     go.append("    req.SetBasicAuth(\"username\", \"password\")\n");
+                    break;
+                case "ORACLE_ROLES":
+                    go.append("    req.Header.Set(\"X-Oracle-Session\", \"YOUR_SESSION_ID\")\n");
                     break;
             }
         }

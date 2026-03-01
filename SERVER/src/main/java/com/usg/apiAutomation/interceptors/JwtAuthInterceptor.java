@@ -39,7 +39,7 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType("application/json");
             response.getWriter().write("{\"responseCode\":401,\"message\":\"Missing or invalid Authorization header\"}");
-            loggerUtil.log("api-gateway", "Unauthorized: Missing or invalid Authorization header for path: " + path);
+            loggerUtil.log("api-automation", "Unauthorized: Missing or invalid Authorization header for path: " + path);
             return false;
         }
 
@@ -48,7 +48,7 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType("application/json");
             response.getWriter().write("{\"responseCode\":401,\"message\":\"Invalid or expired token\"}");
-            loggerUtil.log("api-gateway", "Unauthorized: Invalid/expired token for path: " + path);
+            loggerUtil.log("api-automation", "Unauthorized: Invalid/expired token for path: " + path);
             return false;
         }
 

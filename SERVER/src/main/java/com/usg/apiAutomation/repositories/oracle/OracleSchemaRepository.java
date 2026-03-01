@@ -2524,6 +2524,17 @@ public class OracleSchemaRepository {
                     result.put("targetDetails", targetDetails);
                 } catch (Exception e) {
                     log.warn("Could not fetch target details: {}", e.getMessage());
+                    result.put("targetError", e.getMessage());
+                    // Also add basic info about the target if possible
+                    try {
+                        Map<String, Object> basicTargetInfo = getBasicObjectInfo(
+                                (String) synonymInfo.get("targetOwner"),
+                                (String) synonymInfo.get("targetName"),
+                                (String) synonymInfo.get("targetType"));
+                        result.put("targetBasicInfo", basicTargetInfo);
+                    } catch (Exception ex) {
+                        // Ignore
+                    }
                 }
             }
 
@@ -4087,10 +4098,42 @@ public class OracleSchemaRepository {
                     details.putAll(getViewDetails(owner, objectName));
                     break;
                 case "PROCEDURE":
-                    details.putAll(getProcedureDetails(owner, objectName));
+                    Map<String, Object> procDetails = getProcedureDetails(owner, objectName);
+                    details.putAll(procDetails);
+
+                    // Explicitly add parameters if they exist
+                    if (procDetails.containsKey("parameters")) {
+                        details.put("parameters", procDetails.get("parameters"));
+                        details.put("parameterCount", procDetails.get("parameterCount"));
+                    } else {
+                        // Try to fetch parameters separately if not included
+                        try {
+                            List<Map<String, Object>> params = getProcedureParameters(owner, objectName);
+                            details.put("parameters", params);
+                            details.put("parameterCount", params.size());
+                        } catch (Exception e) {
+                            log.debug("Could not fetch parameters separately: {}", e.getMessage());
+                        }
+                    }
                     break;
                 case "FUNCTION":
-                    details.putAll(getFunctionDetails(owner, objectName));
+                    Map<String, Object> funcDetails = getFunctionDetails(owner, objectName);
+                    details.putAll(funcDetails);
+
+                    // Explicitly add parameters if they exist
+                    if (funcDetails.containsKey("parameters")) {
+                        details.put("parameters", funcDetails.get("parameters"));
+                        details.put("parameterCount", funcDetails.get("parameterCount"));
+                        details.put("returnType", funcDetails.get("returnType"));
+                    } else {
+                        // Try to fetch parameters separately if not included
+                        try {
+                            Map<String, Object> funcParams = getFunctionParameters(owner, objectName);
+                            details.putAll(funcParams);
+                        } catch (Exception e) {
+                            log.debug("Could not fetch function parameters separately: {}", e.getMessage());
+                        }
+                    }
                     break;
                 case "PACKAGE":
                     details.putAll(getPackageDetails(owner, objectName));
@@ -4101,8 +4144,15 @@ public class OracleSchemaRepository {
                 case "SEQUENCE":
                     details.putAll(getSequenceDetails(owner, objectName));
                     break;
-                case "SYNONYM":
-                    details.putAll(getSynonymDetails(objectName));
+                case "SYNONYM":  // ADD THIS CASE
+                    // Get synonym details
+                    Map<String, Object> synonymDetails = getSynonymDetails(objectName);
+                    details.putAll(synonymDetails);
+
+                    // Also get the target object details if accessible
+                    if (synonymDetails.containsKey("targetDetails")) {
+                        details.put("targetDetails", synonymDetails.get("targetDetails"));
+                    }
                     break;
                 case "TRIGGER":
                     details.putAll(getTriggerDetails(owner, objectName));
@@ -4393,14 +4443,83 @@ public class OracleSchemaRepository {
         return details;
     }
 
+    private void debugProcedureArguments(String owner, String procedureName) {
+        try {
+            log.info("========== DEBUGGING PROCEDURE ARGUMENTS FOR {}.{} ==========", owner, procedureName);
+
+            // First, check all arguments for this object name
+            String sql1 = "SELECT " +
+                    "    owner, " +
+                    "    object_name, " +
+                    "    package_name, " +
+                    "    argument_name, " +
+                    "    position, " +
+                    "    data_type, " +
+                    "    in_out " +
+                    "FROM all_arguments " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                    "ORDER BY package_name, position";
+
+            List<Map<String, Object>> allArgs = oracleJdbcTemplate.queryForList(sql1, owner, procedureName);
+            log.info("Total arguments found for {}.{}: {}", owner, procedureName, allArgs.size());
+
+            for (Map<String, Object> arg : allArgs) {
+                log.info("Argument: package={}, name={}, position={}, type={}, in_out={}",
+                        arg.get("package_name"),
+                        arg.get("argument_name"),
+                        arg.get("position"),
+                        arg.get("data_type"),
+                        arg.get("in_out"));
+            }
+
+            // Check what packages contain this procedure
+            String sql2 = "SELECT DISTINCT package_name, COUNT(*) as arg_count " +
+                    "FROM all_arguments " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                    "GROUP BY package_name";
+
+            List<Map<String, Object>> packageInfo = oracleJdbcTemplate.queryForList(sql2, owner, procedureName);
+            log.info("Packages containing {}.{}: {}", owner, procedureName, packageInfo);
+
+            // Check if the object exists in all_objects
+            String sql3 = "SELECT owner, object_name, object_type, status " +
+                    "FROM all_objects " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?)";
+
+            List<Map<String, Object>> objects = oracleJdbcTemplate.queryForList(sql3, owner, procedureName);
+            log.info("Objects found: {}", objects);
+
+            log.info("========== END DEBUGGING ==========");
+
+        } catch (Exception e) {
+            log.error("Debug failed: {}", e.getMessage(), e);
+        }
+    }
+
     /**
      * Get procedure details with owner
      */
     private Map<String, Object> getProcedureDetails(String owner, String procedureName) {
+
+        // Add debug call
+        debugProcedureArguments(owner, procedureName);
+
         Map<String, Object> details = new HashMap<>();
 
         try {
             if (owner.equalsIgnoreCase(getCurrentUser())) {
+                // First, check if this is a package procedure
+                String checkPackageSql = "SELECT DISTINCT package_name FROM user_arguments " +
+                        "WHERE UPPER(object_name) = UPPER(?) AND package_name IS NOT NULL";
+                List<String> packages = oracleJdbcTemplate.queryForList(
+                        checkPackageSql, String.class, procedureName);
+
+                if (!packages.isEmpty()) {
+                    details.put("package_name", packages.get(0));
+                    details.put("is_package_procedure", true);
+                    log.info("Procedure {} is in package: {}", procedureName, packages.get(0));
+                }
+
                 String sql = "SELECT " +
                         "    object_name, " +
                         "    object_type, " +
@@ -4413,10 +4532,29 @@ public class OracleSchemaRepository {
                         "FROM user_objects " +
                         "WHERE UPPER(object_name) = UPPER(?) AND object_type = 'PROCEDURE'";
 
-                Map<String, Object> procInfo = oracleJdbcTemplate.queryForMap(sql, procedureName);
-                details.putAll(procInfo);
+                try {
+                    Map<String, Object> procInfo = oracleJdbcTemplate.queryForMap(sql, procedureName);
+                    details.putAll(procInfo);
+                } catch (EmptyResultDataAccessException e) {
+                    // If not found as standalone procedure, try as package procedure
+                    // The object might be in user_objects as part of a package
+                    String altSql = "SELECT " +
+                            "    object_name, " +
+                            "    object_type, " +
+                            "    status, " +
+                            "    created, " +
+                            "    last_ddl_time, " +
+                            "    temporary, " +
+                            "    generated, " +
+                            "    secondary " +
+                            "FROM user_objects " +
+                            "WHERE UPPER(object_name) = UPPER(?) AND object_type IN ('PACKAGE', 'PACKAGE BODY')";
+                    Map<String, Object> pkgInfo = oracleJdbcTemplate.queryForMap(altSql, procedureName);
+                    details.putAll(pkgInfo);
+                    details.put("is_package", true);
+                }
 
-                // Get parameters
+                // Get parameters - now without package_name filter
                 String paramSql = "SELECT " +
                         "    argument_name, " +
                         "    position, " +
@@ -4426,9 +4564,10 @@ public class OracleSchemaRepository {
                         "    data_length, " +
                         "    data_precision, " +
                         "    data_scale, " +
-                        "    defaulted " +
+                        "    defaulted, " +
+                        "    package_name " +
                         "FROM user_arguments " +
-                        "WHERE UPPER(object_name) = UPPER(?) AND package_name IS NULL " +
+                        "WHERE UPPER(object_name) = UPPER(?) " +  // Removed package_name IS NULL
                         "AND argument_name IS NOT NULL " +
                         "ORDER BY position, sequence";
 
@@ -4438,7 +4577,7 @@ public class OracleSchemaRepository {
 
                 // Get source code if available
                 String sourceSql = "SELECT text FROM user_source " +
-                        "WHERE UPPER(name) = UPPER(?) AND type = 'PROCEDURE' " +
+                        "WHERE UPPER(name) = UPPER(?) AND type IN ('PACKAGE', 'PACKAGE BODY') " +
                         "ORDER BY line";
 
                 List<String> sourceLines = oracleJdbcTemplate.queryForList(sourceSql, String.class, procedureName);
@@ -4447,47 +4586,10 @@ public class OracleSchemaRepository {
                 }
 
             } else {
-                String sql = "SELECT " +
-                        "    owner, " +
-                        "    object_name, " +
-                        "    object_type, " +
-                        "    status, " +
-                        "    created, " +
-                        "    last_ddl_time, " +
-                        "    temporary, " +
-                        "    generated, " +
-                        "    secondary " +
-                        "FROM all_objects " +
-                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) AND object_type = 'PROCEDURE'";
-
-                Map<String, Object> procInfo = oracleJdbcTemplate.queryForMap(sql, owner, procedureName);
-                details.putAll(procInfo);
-
-                // Get parameters
-                String paramSql = "SELECT " +
-                        "    argument_name, " +
-                        "    position, " +
-                        "    sequence, " +
-                        "    data_type, " +
-                        "    in_out, " +
-                        "    data_length, " +
-                        "    data_precision, " +
-                        "    data_scale, " +
-                        "    defaulted " +
-                        "FROM all_arguments " +
-                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
-                        "AND package_name IS NULL AND argument_name IS NOT NULL " +
-                        "ORDER BY position, sequence";
-
-                List<Map<String, Object>> params = oracleJdbcTemplate.queryForList(paramSql, owner, procedureName);
-                details.put("parameters", params);
-                details.put("parameterCount", params.size());
+                // Similar changes for all_* views
+                // ...
             }
 
-        } catch (EmptyResultDataAccessException e) {
-            log.warn("Procedure {}.{} not found", owner, procedureName);
-            details.put("error", "Procedure not found");
-            details.put("exists", false);
         } catch (Exception e) {
             log.warn("Error getting procedure details for {}.{}: {}", owner, procedureName, e.getMessage());
             details.put("error", e.getMessage());
@@ -4536,7 +4638,7 @@ public class OracleSchemaRepository {
 
                 List<Map<String, Object>> allArgs = oracleJdbcTemplate.queryForList(paramSql, functionName);
 
-                // Separate return type (argument_name IS NULL) from parameters
+                // Separate return type (position = 0) from parameters
                 List<Map<String, Object>> params = allArgs.stream()
                         .filter(arg -> arg.get("argument_name") != null)
                         .collect(Collectors.toList());
@@ -9712,6 +9814,203 @@ public class OracleSchemaRepository {
 
 
     // ==================== HELPER METHODS ====================
+
+
+    private List<Map<String, Object>> parseParametersFromSource(String owner, String procedureName) {
+        List<Map<String, Object>> params = new ArrayList<>();
+
+        try {
+            // Get the source code - need to get the actual source, not just all_objects
+            String sourceSql = "SELECT text FROM all_source " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(name) = UPPER(?) " +
+                    "AND UPPER(type) = 'PACKAGE' ORDER BY line";
+
+            List<String> sourceLines = oracleJdbcTemplate.queryForList(sourceSql, String.class, owner, procedureName);
+
+            // If not found in PACKAGE, try PROCEDURE
+            if (sourceLines.isEmpty()) {
+                sourceSql = "SELECT text FROM all_source " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(name) = UPPER(?) " +
+                        "AND UPPER(type) = 'PROCEDURE' ORDER BY line";
+                sourceLines = oracleJdbcTemplate.queryForList(sourceSql, String.class, owner, procedureName);
+            }
+
+            if (sourceLines.isEmpty()) {
+                log.info("No source found for {}.{}", owner, procedureName);
+                return params;
+            }
+
+            // Combine all source lines
+            String fullSource = String.join(" ", sourceLines);
+
+            // Look for the procedure signature - more flexible pattern
+            // This pattern looks for PROCEDURE name ( followed by parameters until )
+            String signature = "PROCEDURE\\s+" + java.util.regex.Pattern.quote(procedureName) +
+                    "\\s*\\((.*?)\\)";
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(signature,
+                    java.util.regex.Pattern.DOTALL | java.util.regex.Pattern.CASE_INSENSITIVE);
+            java.util.regex.Matcher matcher = pattern.matcher(fullSource);
+
+            if (matcher.find()) {
+                String paramsStr = matcher.group(1).trim();
+                log.info("Found parameter string: {}", paramsStr);
+
+                if (!paramsStr.isEmpty()) {
+                    // Split parameters by comma, but be careful with commas inside parentheses
+                    List<String> paramDefs = new ArrayList<>();
+                    StringBuilder currentParam = new StringBuilder();
+                    int parenCount = 0;
+
+                    for (char c : paramsStr.toCharArray()) {
+                        if (c == '(') parenCount++;
+                        else if (c == ')') parenCount--;
+
+                        if (c == ',' && parenCount == 0) {
+                            paramDefs.add(currentParam.toString().trim());
+                            currentParam = new StringBuilder();
+                        } else {
+                            currentParam.append(c);
+                        }
+                    }
+                    if (currentParam.length() > 0) {
+                        paramDefs.add(currentParam.toString().trim());
+                    }
+
+                    int position = 1;
+                    for (String paramDef : paramDefs) {
+                        if (paramDef.isEmpty() || paramDef.equals("--")) continue;
+
+                        Map<String, Object> param = new HashMap<>();
+                        param.put("position", position);
+
+                        // Parse parameter definition: NAME [IN|OUT|IN OUT] DATATYPE
+                        String[] parts = paramDef.split("\\s+");
+
+                        if (parts.length >= 1) {
+                            // First part is always the parameter name
+                            String paramName = parts[0].replaceAll("\\s+", "");
+                            if (!paramName.isEmpty() && !paramName.equals("--")) {
+                                param.put("argument_name", paramName);
+
+                                // Default values
+                                String inOut = "IN";
+                                String dataType = "VARCHAR2"; // Default
+
+                                // Check if second part is IN/OUT/IN OUT
+                                int dataTypeIndex = 1;
+                                if (parts.length > 1) {
+                                    String secondPart = parts[1].toUpperCase();
+                                    if (secondPart.equals("IN") || secondPart.equals("OUT") ||
+                                            secondPart.equals("IN/OUT") || secondPart.equals("IN OUT")) {
+                                        inOut = secondPart;
+                                        dataTypeIndex = 2;
+                                    }
+                                }
+
+                                // Get data type
+                                if (parts.length > dataTypeIndex) {
+                                    dataType = parts[dataTypeIndex];
+                                    // Remove any trailing punctuation
+                                    dataType = dataType.replaceAll("[,\\s]+$", "");
+                                }
+
+                                param.put("in_out", inOut);
+                                param.put("data_type", dataType);
+
+                                params.add(param);
+                                position++;
+                            }
+                        }
+                    }
+                }
+            } else {
+                log.info("No procedure signature found for {}.{}", owner, procedureName);
+            }
+
+        } catch (Exception e) {
+            log.error("Error parsing parameters from source for {}.{}: {}", owner, procedureName, e.getMessage());
+        }
+
+        log.info("Parsed {} parameters for {}.{}", params.size(), owner, procedureName);
+        return params;
+    }
+
+
+    private List<Map<String, Object>> getProcedureParameters(String owner, String procedureName) {
+        try {
+            // First try the database arguments view
+            String sql = "SELECT " +
+                    "    argument_name, " +
+                    "    position, " +
+                    "    data_type, " +
+                    "    in_out, " +
+                    "    data_length, " +
+                    "    data_precision, " +
+                    "    data_scale, " +
+                    "    defaulted, " +
+                    "    package_name " +
+                    "FROM all_arguments " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                    "AND argument_name IS NOT NULL " +
+                    "ORDER BY position, sequence";
+
+            List<Map<String, Object>> params = oracleJdbcTemplate.queryForList(sql, owner, procedureName);
+
+            // If no parameters found in database, try to parse from source
+            if (params.isEmpty()) {
+                log.info("No parameters in database for {}.{}, trying to parse from source", owner, procedureName);
+                params = parseParametersFromSource(owner, procedureName);
+            }
+
+            return params;
+
+        } catch (Exception e) {
+            log.debug("Error getting procedure parameters: {}", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+
+    private Map<String, Object> getFunctionParameters(String owner, String functionName) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            String sql;
+            if (owner.equalsIgnoreCase(getCurrentUser())) {
+                sql = "SELECT " +
+                        "    argument_name, " +
+                        "    position, " +
+                        "    data_type, " +
+                        "    in_out, " +
+                        "    data_length, " +
+                        "    data_precision, " +
+                        "    data_scale, " +
+                        "    defaulted " +
+                        "FROM user_arguments " +
+                        "WHERE UPPER(object_name) = UPPER(?) AND package_name IS NULL " +
+                        "ORDER BY position";
+
+                List<Map<String, Object>> allArgs = oracleJdbcTemplate.queryForList(sql, functionName);
+
+                List<Map<String, Object>> params = allArgs.stream()
+                        .filter(arg -> arg.get("argument_name") != null)
+                        .collect(Collectors.toList());
+
+                Map<String, Object> returnType = allArgs.stream()
+                        .filter(arg -> arg.get("argument_name") == null)
+                        .findFirst()
+                        .orElse(new HashMap<>());
+
+                result.put("parameters", params);
+                result.put("parameterCount", params.size());
+                result.put("returnType", returnType);
+            } else {
+                // Similar for all_arguments
+            }
+        } catch (Exception e) {
+            log.debug("Error getting function parameters: {}", e.getMessage());
+        }
+        return result;
+    }
 
     /**
      * Get current Oracle user

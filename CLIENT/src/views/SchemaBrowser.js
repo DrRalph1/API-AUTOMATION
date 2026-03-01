@@ -3111,12 +3111,12 @@ useEffect(() => {
               </thead>
               <tbody>
                 {parameters.map((param, i) => (
-                  <tr key={param.ARGUMENT_NAME || param.name || i} style={{ 
+                  <tr key={param.argument_name || param.ARGUMENT_NAME || param.name || i} style={{ 
                     backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
                     borderBottom: `1px solid ${colors.gridBorder}`
                   }}>
                     <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{param.POSITION || param.position || i + 1}</td>
-                    <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{param.ARGUMENT_NAME || param.name}</td>
+                    <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{param.argument_name || param.ARGUMENT_NAME || param.name}</td>
                     <td className="p-2 text-xs" style={{ color: colors.text }}>{param.DATA_TYPE || param.data_type || param.type}</td>
                     <td className="p-2 text-xs">
                       <span className={`px-2 py-0.5 rounded text-xs ${

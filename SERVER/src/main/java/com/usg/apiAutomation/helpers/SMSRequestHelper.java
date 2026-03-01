@@ -334,7 +334,7 @@ public class SMSRequestHelper {
     public Map<String, Object> sendSMSUTB(String destination, String message) {
         try {
             System.out.println("[SMSRequestHelper] Starting sendSMSUTB");
-            loggerUtil.log(Level.INFO, "api-gateway", "SMSRequestHelper.sendSMSUTB",
+            loggerUtil.log(Level.INFO, "api-automation", "SMSRequestHelper.sendSMSUTB",
                     "Submitting message to SierraHive API for UTB: " + message);
 
             // Generate random reference number similar to the original method
@@ -398,7 +398,7 @@ public class SMSRequestHelper {
 
             String responseString = dataFromUrl.toString();
             System.out.println("[SMSRequestHelper] Response received: " + responseString);
-            loggerUtil.log(Level.INFO, "api-gateway", "SMSRequestHelper.sendSMSUTB",
+            loggerUtil.log(Level.INFO, "api-automation", "SMSRequestHelper.sendSMSUTB",
                     "Message submitted successfully: " + responseString);
 
             // Check response
@@ -424,9 +424,9 @@ public class SMSRequestHelper {
         } catch (Exception ex) {
             System.out.println("[SMSRequestHelper] Exception in sendSMSUTB: " + ex.getMessage());
             saveMessagetoFile("UTB_" + destination + "_" + message);
-            loggerUtil.log(Level.SEVERE, "api-gateway", "SMSRequestHelper.sendSMSUTB",
+            loggerUtil.log(Level.SEVERE, "api-automation", "SMSRequestHelper.sendSMSUTB",
                     "Error submitting message to SMS provider: " + ex.getMessage());
-            loggerUtil.log(Level.SEVERE, "api-gateway", "SMSRequestHelper.sendSMSUTB",
+            loggerUtil.log(Level.SEVERE, "api-automation", "SMSRequestHelper.sendSMSUTB",
                     "Exception stack trace: " + Arrays.toString(ex.getStackTrace()));
 
             return Map.of(
