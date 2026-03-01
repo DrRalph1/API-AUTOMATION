@@ -61,6 +61,9 @@ public class GeneratedApiEntity {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    @Column(name = "updated_by")
+    private String updatedBy;
+
     @Column(name = "created_by")
     private String createdBy;
 

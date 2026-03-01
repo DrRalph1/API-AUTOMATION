@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface GeneratedApiRepository extends JpaRepository<GeneratedApiEntity, String> {
+public interface GeneratedAPIRepository extends JpaRepository<GeneratedApiEntity, String> {
 
     Optional<GeneratedApiEntity> findByApiCode(String apiCode);
 

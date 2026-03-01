@@ -2,7 +2,7 @@ package com.usg.apiAutomation.controllers;
 
 import com.usg.apiAutomation.dtos.apiSecurity.*;
 import com.usg.apiAutomation.helpers.JwtHelper;
-import com.usg.apiAutomation.services.apiGenerationEngine.APISecurityService;
+import com.usg.apiAutomation.services.APISecurityService;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;

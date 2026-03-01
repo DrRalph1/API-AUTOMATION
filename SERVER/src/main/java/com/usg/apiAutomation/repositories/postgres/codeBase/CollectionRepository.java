@@ -16,6 +16,8 @@ public interface CollectionRepository extends JpaRepository<CollectionEntity, St
 
     List<CollectionEntity> findByOwnerOrderByUpdatedAtDesc(String owner);
 
+    Optional<CollectionEntity> findByNameAndOwner(String name, String owner);
+
     List<CollectionEntity> findByOwnerAndIsFavoriteTrueOrderByUpdatedAtDesc(String owner);
 
     @Query("SELECT c FROM CollectionEntityCodeBase c WHERE " +
