@@ -116,7 +116,7 @@ export const generateApi = async (authorizationHeader, request = {}) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/generate`, {
+        (authHeader) => apiCall(`/gen-engine/generate`, {
             method: 'POST',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             body: JSON.stringify(request),
@@ -160,7 +160,7 @@ export const executeApi = async (authorizationHeader, apiId, executeRequest = {}
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/${encodeURIComponent(apiId)}/execute`, {
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(apiId)}/execute`, {
             method: 'POST',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             body: JSON.stringify(executeRequest),
@@ -214,7 +214,7 @@ export const testApi = async (authorizationHeader, apiId, testRequest = {}) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/${encodeURIComponent(apiId)}/test`, {
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(apiId)}/test`, {
             method: 'POST',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             body: JSON.stringify(testRequest),
@@ -252,7 +252,7 @@ export const getApiDetails = async (authorizationHeader, apiId) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/${encodeURIComponent(apiId)}`, {
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(apiId)}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -301,7 +301,7 @@ export const getApiAnalytics = async (authorizationHeader, apiId, startDate, end
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/${encodeURIComponent(apiId)}/analytics?${queryParams.toString()}`, {
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(apiId)}/analytics?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -338,7 +338,7 @@ export const generateApiCode = async (authorizationHeader, apiId) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/${encodeURIComponent(apiId)}/code`, {
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(apiId)}/code`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -384,7 +384,7 @@ export const getCodeExample = async (authorizationHeader, apiId, language) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/${encodeURIComponent(apiId)}/code/${encodeURIComponent(language)}`, {
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(apiId)}/code/${encodeURIComponent(language)}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -426,7 +426,7 @@ export const getExecutionLogs = async (authorizationHeader, apiId, fromDate, toD
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/${encodeURIComponent(apiId)}/logs${queryParams.toString() ? `?${queryParams.toString()}` : ''}`, {
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(apiId)}/logs${queryParams.toString() ? `?${queryParams.toString()}` : ''}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -463,7 +463,7 @@ export const getTestResults = async (authorizationHeader, apiId) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/${encodeURIComponent(apiId)}/tests`, {
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(apiId)}/tests`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -518,7 +518,7 @@ export const updateApiStatus = async (authorizationHeader, apiId, status) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/${encodeURIComponent(apiId)}/status`, {
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(apiId)}/status`, {
             method: 'PUT',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             body: JSON.stringify({ status }),
@@ -570,7 +570,7 @@ export const validateSourceObject = async (authorizationHeader, params = {}) => 
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/validate/source-object?${queryParams.toString()}`, {
+        (authHeader) => apiCall(`/gen-engine/validate/source-object?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -607,7 +607,7 @@ export const getRelatedComponents = async (authorizationHeader, apiId) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/${encodeURIComponent(apiId)}/related-components`, {
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(apiId)}/related-components`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -662,7 +662,7 @@ export const updateApi = async (authorizationHeader, apiId, request = {}) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/${encodeURIComponent(apiId)}`, {
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(apiId)}`, {
             method: 'PUT',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             body: JSON.stringify(request),
@@ -715,7 +715,7 @@ export const partialUpdateApi = async (authorizationHeader, apiId, updates = {})
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/${encodeURIComponent(apiId)}`, {
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(apiId)}`, {
             method: 'PATCH',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             body: JSON.stringify(updates),
@@ -753,7 +753,7 @@ export const syncComponents = async (authorizationHeader, apiId) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/${encodeURIComponent(apiId)}/sync-components`, {
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(apiId)}/sync-components`, {
             method: 'POST',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -799,7 +799,7 @@ export const getAllApis = async (authorizationHeader, params = {}) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis?${queryParams.toString()}`, {
+        (authHeader) => apiCall(`/gen-engine?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -833,7 +833,7 @@ export const getMyApis = async (authorizationHeader, params = {}) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/my-apis?${queryParams.toString()}`, {
+        (authHeader) => apiCall(`/gen-engine/my-apis?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -872,7 +872,7 @@ export const getApiVersions = async (authorizationHeader, apiCode) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/versions?${queryParams.toString()}`, {
+        (authHeader) => apiCall(`/gen-engine/versions?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -911,7 +911,7 @@ export const checkApiCodeAvailability = async (authorizationHeader, apiCode) => 
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/check-code?${queryParams.toString()}`, {
+        (authHeader) => apiCall(`/gen-engine/check-code?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -947,7 +947,7 @@ export const getApiCategories = async (authorizationHeader) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/categories`, {
+        (authHeader) => apiCall(`/gen-engine/categories`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -979,7 +979,7 @@ export const getApiDashboardStats = async (authorizationHeader) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/dashboard/stats`, {
+        (authHeader) => apiCall(`/gen-engine/dashboard/stats`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -1020,7 +1020,7 @@ export const getRecentApiActivity = async (authorizationHeader, limit = 10) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/recent-activity?${queryParams.toString()}`, {
+        (authHeader) => apiCall(`/gen-engine/recent-activity?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -1051,7 +1051,7 @@ export const getApiUsageSummary = async (authorizationHeader, period = 'week') =
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/usage-summary?${queryParams.toString()}`, {
+        (authHeader) => apiCall(`/gen-engine/usage-summary?${queryParams.toString()}`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -1098,7 +1098,7 @@ export const exportApiConfig = async (authorizationHeader, apiId) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/${encodeURIComponent(apiId)}/export`, {
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(apiId)}/export`, {
             method: 'GET',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -1135,7 +1135,7 @@ export const importApiConfig = async (authorizationHeader, importData) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/import`, {
+        (authHeader) => apiCall(`/gen-engine/import`, {
             method: 'POST',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             body: JSON.stringify(importData),
@@ -1192,7 +1192,7 @@ export const cloneApi = async (authorizationHeader, sourceApiId, cloneRequest = 
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/${encodeURIComponent(sourceApiId)}/clone`, {
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(sourceApiId)}/clone`, {
             method: 'POST',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             body: JSON.stringify(cloneRequest),
@@ -1234,7 +1234,7 @@ export const deleteApi = async (authorizationHeader, apiId) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/${encodeURIComponent(apiId)}`, {
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(apiId)}`, {
             method: 'DELETE',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -1276,7 +1276,7 @@ export const permanentlyDeleteApi = async (authorizationHeader, apiId) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/${encodeURIComponent(apiId)}/permanent`, {
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(apiId)}/permanent`, {
             method: 'DELETE',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId
@@ -1318,7 +1318,7 @@ export const restoreApi = async (authorizationHeader, apiId) => {
     
     return apiCallWithTokenRefresh(
         authorizationHeader,
-        (authHeader) => apiCall(`/plx/api/generated-apis/${encodeURIComponent(apiId)}/restore`, {
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(apiId)}/restore`, {
             method: 'POST',
             headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
             requestId: requestId

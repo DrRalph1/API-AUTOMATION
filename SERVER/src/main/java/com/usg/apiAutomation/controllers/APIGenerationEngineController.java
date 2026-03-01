@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
-@RequestMapping("/plx/api/generated-apis")
+@RequestMapping("/plx/api/gen-engine")
 @RequiredArgsConstructor
 @Tag(name = "API GENERATION ENGINE", description = "Endpoints for generating and managing APIs")
 public class APIGenerationEngineController {
