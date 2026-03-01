@@ -17,7 +17,7 @@ import java.util.Map;
 public class ResponseExampleEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
+//    @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
     @Column(name = "status_code", nullable = false)

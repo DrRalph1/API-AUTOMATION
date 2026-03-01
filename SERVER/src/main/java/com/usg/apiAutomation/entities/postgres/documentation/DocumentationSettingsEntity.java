@@ -10,7 +10,7 @@ import java.util.Map;
 @Table(name = "tb_doc_settings")
 public class DocumentationSettingsEntity {
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
+//    @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
     private String userId;

@@ -11,7 +11,7 @@ import lombok.ToString;
 public class EnvironmentVariableEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
+//    @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
     @Column(nullable = false)

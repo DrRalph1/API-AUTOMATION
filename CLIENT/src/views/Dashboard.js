@@ -2470,12 +2470,15 @@ const handleGenerateAPIFromModal = useCallback(async (objectType, objectName, ap
                 </div>
 
                 <div className="flex flex-col gap-3 sm:gap-4 md:gap-6">
-                  <div className="border rounded-xl flex flex-col h-full" style={{ 
-                    borderColor: colors.border,
-                    backgroundColor: colors.card,
-                    backdropFilter: isDark ? 'blur(10px)' : 'none'
-                  }}>
-                    <div className="p-2 sm:p-3 md:p-4 border-b flex-shrink-0" style={{ borderColor: colors.border }}>
+                  <div 
+                    className="border rounded-xl flex flex-col" 
+                    style={{ 
+                      borderColor: colors.border,
+                      backgroundColor: colors.card,
+                      backdropFilter: isDark ? 'blur(10px)' : 'none'
+                    }}
+                  >
+                    <div className="p-2 sm:p-3 md:p-4 border-b" style={{ borderColor: colors.border }}>
                       <div className="flex items-center justify-between">
                         <h3 className="text-xs sm:text-sm font-semibold" style={{ color: colors.text }}>
                           Recently Generated APIs
@@ -2501,9 +2504,11 @@ const handleGenerateAPIFromModal = useCallback(async (objectType, objectName, ap
                         </div>
                       </div>
                     </div>
-                    <div className="flex-1 overflow-auto min-h-0">
+                    
+                    {/* Content area - no fixed height constraints */}
+                    <div>
                       {currentPageApis.length > 0 ? (
-                        <div className="space-y-5" style={{ borderColor: colors.border }}>
+                        <div className="space-y-5 p-2 sm:p-3 md:p-4" style={{ borderColor: colors.border }}>
                           {currentPageApis.map(api => (
                             <ApiEndpointItem key={api.id} api={api} />
                           ))}
@@ -2514,6 +2519,7 @@ const handleGenerateAPIFromModal = useCallback(async (objectType, objectName, ap
                         </div>
                       )}
                     </div>
+                    
                     <ApiPagination />
                   </div>
                 </div>

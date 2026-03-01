@@ -1,9 +1,11 @@
 package com.usg.apiAutomation.repositories.postgres.codeBase;
 
 import com.usg.apiAutomation.entities.postgres.codeBase.RequestEntity;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -108,4 +110,8 @@ public interface RequestRepository extends JpaRepository<RequestEntity, String> 
     @Modifying
     @Transactional
     void deleteByFolderId(String folderId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from RequestEntityCodeBase r where r.id = :id")
+    Optional<RequestEntity> findByIdWithLock(@Param("id") String id);
 }

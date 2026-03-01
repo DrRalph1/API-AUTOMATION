@@ -13,7 +13,7 @@ import lombok.ToString;
 public class HeaderEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
+//    @GeneratedValue(strategy = GenerationType.UUID)
     @EqualsAndHashCode.Include
     @ToString.Include
     private String id;

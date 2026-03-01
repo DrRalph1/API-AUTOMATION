@@ -1,8 +1,10 @@
 package com.usg.apiAutomation.repositories.postgres.codeBase;
 
 import com.usg.apiAutomation.entities.postgres.codeBase.CollectionEntity;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -33,12 +35,7 @@ public interface CollectionRepository extends JpaRepository<CollectionEntity, St
 
     boolean existsByNameAndOwner(String name, String owner);
 
-    // FIXED: Either use this approach (with proper naming convention)
     List<CollectionEntity> findByUpdatedAtAfter(LocalDateTime since);
-
-    // OR this approach (keep the name but add @Query)
-    // @Query("SELECT c FROM CollectionEntity c WHERE c.updatedAt > :since")
-    // List<CollectionEntity> findRecentlyUpdated(@Param("since") LocalDateTime since);
 
     @Query("SELECT c.owner, COUNT(c) FROM CollectionEntityCodeBase c GROUP BY c.owner")
     List<Object[]> getCollectionStatsByOwner();
@@ -67,4 +64,8 @@ public interface CollectionRepository extends JpaRepository<CollectionEntity, St
     List<CollectionEntity> findByRequestTag(@Param("tag") String tag);
 
     long countByOwner(String owner);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM CollectionEntityCodeBase c WHERE c.id = :id")  // FIXED: Use correct entity name
+    Optional<CollectionEntity> findByIdWithLock(@Param("id") String id);
 }

@@ -17,6 +17,8 @@ public class ApiSourceObjectDTO {
     private String owner;
     private String operation; // SELECT, INSERT, UPDATE, DELETE, EXECUTE
 
+    private String SchemaName;
+
     // For synonyms - target object info
     private Boolean isSynonym;
     private String targetType;

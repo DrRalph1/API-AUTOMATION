@@ -2483,7 +2483,7 @@ const handleUsedByPageSizeChange = useCallback((newSize) => {
     setActiveObject(enrichedObject);
     setSelectedForApiGeneration(enrichedObject);
     
-    const tabId = `${type}_${objectId}`;
+    const tabId = `${type}_${object.owner || 'unknown'}_${object.name}`;
     const existingTab = tabs.find(t => t.id === tabId);
     
     if (existingTab) {
@@ -2494,6 +2494,7 @@ const handleUsedByPageSizeChange = useCallback((newSize) => {
         name: object.name,
         type,
         objectId: objectId,
+        owner: object.owner, // Add this line to store owner
         isActive: true
       }].map(t => ({ ...t, isActive: t.id === tabId })));
     }
@@ -3806,11 +3807,38 @@ useEffect(() => {
                     borderRightColor: colors.border,
                     borderTop: tab.isActive ? `2px solid ${colors.tabActive}` : 'none'
                   }}
-                  onClick={() => {
-                    const allObjects = Object.values(schemaObjects).flat();
-                    const found = allObjects.find(obj => (obj.id || obj.name) === tab.objectId);
-                    if (found) {
-                      handleObjectSelect(found, tab.type);
+                 onClick={async () => {
+                    // Don't do anything if it's already the active tab
+                    if (tab.isActive) return;
+                    
+                    // Parse the tab ID to get the object info
+                    // Tab ID format is: `${type}_${owner}_${name}`
+                    const parts = tab.id.split('_');
+                    if (parts.length >= 3) {
+                      const type = parts[0];
+                      const owner = parts[1];
+                      const name = parts.slice(2).join('_'); // In case name has underscores
+                      
+                      // Create a minimal object to pass to handleObjectSelect
+                      const objectToSelect = {
+                        name: name,
+                        owner: owner,
+                        type: type,
+                        id: tab.id // Use the existing tab ID
+                      };
+                      
+                      // Call handleObjectSelect directly with the constructed object
+                      await handleObjectSelect(objectToSelect, type);
+                    } else {
+                      // Fallback to the old method if parsing fails
+                      const allObjects = Object.values(schemaObjects).flat();
+                      const found = allObjects.find(obj => 
+                        (obj.id || `${obj.owner}_${obj.name}`) === tab.objectId || 
+                        (obj.name === tab.name && obj.owner === tab.owner)
+                      );
+                      if (found) {
+                        await handleObjectSelect(found, tab.type);
+                      }
                     }
                   }}
                 >

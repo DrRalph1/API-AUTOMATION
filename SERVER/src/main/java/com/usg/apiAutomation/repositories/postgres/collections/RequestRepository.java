@@ -32,4 +32,7 @@ public interface RequestRepository extends JpaRepository<RequestEntity, String> 
             "LEFT JOIN FETCH r.authConfig ac " +
             "WHERE r.id = :requestId")
     Optional<RequestEntity> findByIdWithDetails(@Param("requestId") String requestId);
+
+    List<com.usg.apiAutomation.entities.postgres.collections.RequestEntity> findByFolderIdAndName(String folderId, String name);
+
 }

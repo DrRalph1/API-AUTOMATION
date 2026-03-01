@@ -16,7 +16,6 @@ import java.util.List;
 public class FolderEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     @EqualsAndHashCode.Include
     @ToString.Include
     private String id;

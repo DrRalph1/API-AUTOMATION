@@ -132,6 +132,14 @@ public class GeneratedApiEntity {
     @Column(name = "source_object_info", columnDefinition = "jsonb")
     private Map<String, Object> sourceObjectInfo;
 
+    /**
+     * Collection information from the frontend
+     * Stores details about which collection and folder this API belongs to
+     */
+    @Type(JsonType.class)
+    @Column(name = "collection_info", columnDefinition = "jsonb")
+    private Map<String, Object> collectionInfo;
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -155,14 +163,15 @@ public class GeneratedApiEntity {
                 Objects.equals(totalCalls, that.totalCalls) &&
                 Objects.equals(lastCalledAt, that.lastCalledAt) &&
                 Objects.equals(tags, that.tags) &&
-                Objects.equals(sourceObjectInfo, that.sourceObjectInfo);
+                Objects.equals(sourceObjectInfo, that.sourceObjectInfo) &&
+                Objects.equals(collectionInfo, that.collectionInfo);
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(id, apiName, apiCode, version, status, httpMethod, basePath,
                 endpointPath, category, owner, createdAt, updatedAt, updatedBy,
-                createdBy, isActive, totalCalls, lastCalledAt, tags, sourceObjectInfo);
+                createdBy, isActive, totalCalls, lastCalledAt, tags, sourceObjectInfo, collectionInfo);
     }
 
     @Override
@@ -187,6 +196,7 @@ public class GeneratedApiEntity {
                 ", lastCalledAt=" + lastCalledAt +
                 ", tags=" + tags +
                 ", sourceObjectInfo=" + sourceObjectInfo +
+                ", collectionInfo=" + collectionInfo +
                 '}';
     }
 }

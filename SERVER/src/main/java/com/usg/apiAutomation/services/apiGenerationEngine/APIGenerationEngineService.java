@@ -25,6 +25,7 @@ import com.usg.apiAutomation.repositories.postgres.collections.ParameterReposito
 import com.usg.apiAutomation.repositories.postgres.documentation.*;
 import com.usg.apiAutomation.services.OracleSchemaService;
 import com.usg.apiAutomation.utils.LoggerUtil;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -32,6 +33,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.SqlOutParameter;
 import org.springframework.jdbc.core.SqlParameter;
 import org.springframework.jdbc.core.simple.SimpleJdbcCall;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -54,6 +56,7 @@ public class APIGenerationEngineService {
     private final ApiValidatorService validatorService;
     private final OracleSchemaService oracleSchemaService;
     private final JdbcTemplate oracleJdbcTemplate;
+    private final EntityManager entityManager;
 
     // CodeBase repositories
     private final CollectionRepository codeBaseCollectionRepository;
@@ -101,6 +104,15 @@ public class APIGenerationEngineService {
                 validateSourceObject(sourceObjectDTO);
             }
 
+            // Extract collection and folder information from request
+            CollectionInfoDTO collectionInfo = request.getCollectionInfo();
+            if (collectionInfo == null) {
+                throw new RuntimeException("Collection information is required");
+            }
+
+            // Validate collection info
+            validateCollectionInfo(collectionInfo);
+
             // Create main API entity
             GeneratedApiEntity api = GeneratedApiEntity.builder()
                     .apiName(request.getApiName())
@@ -121,6 +133,7 @@ public class APIGenerationEngineService {
                     .tags(request.getTags() != null ? request.getTags() : new ArrayList<>())
                     .sourceObjectInfo(sourceObjectDTO != null ?
                             objectMapper.convertValue(sourceObjectDTO, Map.class) : null)
+                    .collectionInfo(objectMapper.convertValue(collectionInfo, Map.class))
                     .build();
 
             // Save schema config (Oracle object mapping)
@@ -210,17 +223,19 @@ public class APIGenerationEngineService {
             // Save to database
             GeneratedApiEntity savedApi = generatedAPIRepository.save(api);
 
-            // Generate code and documentation
+            // Generate code and documentation using the collection info from frontend
             Map<String, String> generatedFiles = generateApiCode(savedApi);
-            String codeBaseRequestId = generateCodeBase(savedApi, performedBy, request);
-            String collectionId = generateCollections(savedApi, performedBy, request);
-            String docCollectionId = generateDocumentation(savedApi, performedBy, request, codeBaseRequestId, collectionId);
+
+            // Use the collection info from frontend instead of generating new ones
+            String codeBaseRequestId = generateCodeBase(savedApi, performedBy, request, collectionInfo);
+            String collectionId = generateCollections(savedApi, performedBy, request, collectionInfo);
+            String docCollectionId = generateDocumentation(savedApi, performedBy, request, codeBaseRequestId, collectionId, collectionInfo);
 
             // Build response
             GeneratedApiResponseDTO response = mapToResponse(savedApi);
             response.setGeneratedFiles(generatedFiles);
 
-            // Add metadata with references to generated components
+            // Add metadata with references to generated components and collection info
             Map<String, Object> metadata = new HashMap<>();
             metadata.put("parametersCount", savedApi.getParameters() != null ? savedApi.getParameters().size() : 0);
             metadata.put("responseMappingsCount", savedApi.getResponseMappings() != null ? savedApi.getResponseMappings().size() : 0);
@@ -229,6 +244,15 @@ public class APIGenerationEngineService {
             metadata.put("codeBaseRequestId", codeBaseRequestId);
             metadata.put("collectionsCollectionId", collectionId);
             metadata.put("documentationCollectionId", docCollectionId);
+
+            // Add collection info to metadata
+            Map<String, Object> collectionMetadata = new HashMap<>();
+            collectionMetadata.put("collectionId", collectionInfo.getCollectionId());
+            collectionMetadata.put("collectionName", collectionInfo.getCollectionName());
+            collectionMetadata.put("collectionType", collectionInfo.getCollectionType());
+            collectionMetadata.put("folderId", collectionInfo.getFolderId());
+            collectionMetadata.put("folderName", collectionInfo.getFolderName());
+            metadata.put("collectionInfo", collectionMetadata);
 
             Map<String, String> urls = new HashMap<>();
             urls.put("codeBase", "/plx/api/code-base/requests/" + codeBaseRequestId);
@@ -239,7 +263,9 @@ public class APIGenerationEngineService {
             response.setMetadata(metadata);
 
             loggerUtil.log("apiGeneration", "Request ID: " + requestId +
-                    ", API generated successfully with ID: " + savedApi.getId());
+                    ", API generated successfully with ID: " + savedApi.getId() +
+                    ", Collection: " + collectionInfo.getCollectionName() +
+                    ", Folder: " + collectionInfo.getFolderName());
 
             return response;
 
@@ -278,6 +304,12 @@ public class APIGenerationEngineService {
                 validateSourceObject(sourceObjectDTO);
             }
 
+            // Validate collection info
+            if (request.getCollectionInfo() == null) {
+                throw new RuntimeException("Collection information is required");
+            }
+            validateCollectionInfo(request.getCollectionInfo());
+
             // Update main API entity
             api.setApiName(request.getApiName());
             api.setApiCode(request.getApiCode());
@@ -296,6 +328,9 @@ public class APIGenerationEngineService {
             if (sourceObjectDTO != null) {
                 api.setSourceObjectInfo(objectMapper.convertValue(sourceObjectDTO, Map.class));
             }
+
+            // Update collection info
+            api.setCollectionInfo(objectMapper.convertValue(request.getCollectionInfo(), Map.class));
 
             // Clear existing relationships to replace them
             clearApiRelationships(api);
@@ -389,7 +424,13 @@ public class APIGenerationEngineService {
 
             // Optionally regenerate code and documentation if major changes
             if (shouldRegenerateComponents(request)) {
-                regenerateComponents(savedApi, performedBy, request);
+                regenerateComponents(savedApi, performedBy, request, request.getCollectionInfo());
+            } else {
+                // Still need to update the components with the collection info
+                updateCodeBase(savedApi, performedBy, request, request.getCollectionInfo());
+                updateCollections(savedApi, performedBy, request, request.getCollectionInfo());
+                updateDocumentation(savedApi, performedBy, request, request.getCollectionInfo(),
+                        getCodeBaseRequestId(savedApi), getCollectionsCollectionId(savedApi));
             }
 
             loggerUtil.log("apiGeneration", "Request ID: " + requestId +
@@ -403,6 +444,7 @@ public class APIGenerationEngineService {
             throw new RuntimeException("Failed to update API: " + e.getMessage(), e);
         }
     }
+
 
     @Transactional
     public GeneratedApiResponseDTO partialUpdateApi(String requestId, String apiId, String performedBy,
@@ -894,17 +936,45 @@ public class APIGenerationEngineService {
     }
 
     // Update Code Base
-    private void updateCodeBase(GeneratedApiEntity api, String performedBy, GenerateApiRequestDTO request) {
+    /**
+     * Update code base with collection info from frontend
+     */
+    private void updateCodeBase(GeneratedApiEntity api, String performedBy,
+                                GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo) {
         try {
-            // Get the code base request ID from metadata
-            String codeBaseRequestId = getCodeBaseRequestId(api);
+            log.info("Updating code base for API: {} using collection: {}",
+                    api.getApiCode(), collectionInfo != null ? collectionInfo.getCollectionName() : "unknown");
+
+            // Get the code base request ID from metadata or from collection info
+            String codeBaseRequestId = null;
+
+            // First try to get from collection info (if available)
+            if (collectionInfo != null && collectionInfo.getCollectionId() != null) {
+                Optional<RequestEntity> requestByCollection = findRequestByCollectionInfo(collectionInfo);
+                if (requestByCollection.isPresent()) {
+                    codeBaseRequestId = requestByCollection.get().getId();
+                    log.info("Found code base request by collection info: {}", codeBaseRequestId);
+                }
+            }
+
+            // If not found, try to get from API metadata
+            if (codeBaseRequestId == null) {
+                codeBaseRequestId = getCodeBaseRequestId(api);
+            }
+
             if (codeBaseRequestId == null) {
                 log.warn("No code base request ID found for API: {}", api.getId());
+
+                // If we have collection info, we could create a new request
+                if (collectionInfo != null) {
+                    log.info("Creating new code base request from collection info");
+                    generateCodeBase(api, performedBy, request, collectionInfo);
+                }
                 return;
             }
 
-            // Find existing request
-            Optional<RequestEntity> existingRequest = codeBaseRequestRepository.findById(codeBaseRequestId);
+            // Find existing request with pessimistic lock to prevent concurrent updates
+            Optional<RequestEntity> existingRequest = codeBaseRequestRepository.findByIdWithLock(codeBaseRequestId);
             if (existingRequest.isPresent()) {
                 RequestEntity requestEntity = existingRequest.get();
 
@@ -916,6 +986,11 @@ public class APIGenerationEngineService {
                         (api.getEndpointPath() != null ? api.getEndpointPath() : "");
                 requestEntity.setUrl(fullUrl);
                 requestEntity.setDescription(api.getDescription());
+
+                // Update collection and folder information if available (this now uses pessimistic locks)
+                if (collectionInfo != null) {
+                    updateCodeBaseCollectionInfo(requestEntity, collectionInfo, performedBy);
+                }
 
                 // Update headers
                 updateCodeBaseHeaders(requestEntity, api);
@@ -929,13 +1004,199 @@ public class APIGenerationEngineService {
                 // Update response example
                 updateCodeBaseResponseExample(requestEntity, api);
 
-                codeBaseRequestRepository.save(requestEntity);
-                log.info("Updated code base request: {}", codeBaseRequestId);
+                // Save with version check
+                RequestEntity savedRequest = codeBaseRequestRepository.saveAndFlush(requestEntity);
+                log.info("Updated code base request: {} with collection: {}",
+                        savedRequest.getId(),
+                        collectionInfo != null ? collectionInfo.getCollectionName() : "default");
+
+            } else {
+                log.warn("Code base request not found with ID: {}", codeBaseRequestId);
+
+                // If request doesn't exist but we have collection info, create it
+                if (collectionInfo != null) {
+                    log.info("Creating new code base request as existing one not found");
+                    generateCodeBase(api, performedBy, request, collectionInfo);
+                }
             }
 
+        } catch (ObjectOptimisticLockingFailureException e) {
+            log.error("Optimistic locking failure while updating code base: {}", e.getMessage());
+            throw new RuntimeException("Failed to update Code Base due to concurrent modification. Please try again.", e);
         } catch (Exception e) {
             log.error("Failed to update code base: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update code base: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Helper method to update code base collection information
+     */
+    private void updateCodeBaseCollectionInfo(RequestEntity requestEntity, CollectionInfoDTO collectionInfo,
+                                              String performedBy) {
+        try {
+            // Use pessimistic lock - THIS IS CRITICAL
+            Optional<com.usg.apiAutomation.entities.postgres.codeBase.CollectionEntity> existingCollection =
+                    codeBaseCollectionRepository.findByIdWithLock(collectionInfo.getCollectionId());
+
+            com.usg.apiAutomation.entities.postgres.codeBase.CollectionEntity collection;
+
+            if (existingCollection.isPresent()) {
+                collection = existingCollection.get();
+                log.debug("Found existing code base collection with lock: {}", collection.getId());
+
+                // Check if update is actually needed
+                boolean needsUpdate = false;
+
+                if (!collectionInfo.getCollectionName().equals(collection.getName())) {
+                    collection.setName(collectionInfo.getCollectionName());
+                    needsUpdate = true;
+                }
+
+                String expectedDescription = collectionInfo.getCollectionType() != null ?
+                        "Collection type: " + collectionInfo.getCollectionType() :
+                        "Collection for " + collectionInfo.getCollectionName();
+
+                if (!expectedDescription.equals(collection.getDescription())) {
+                    collection.setDescription(expectedDescription);
+                    needsUpdate = true;
+                }
+
+                if (needsUpdate) {
+                    collection.setUpdatedAt(LocalDateTime.now());
+                    collection = codeBaseCollectionRepository.saveAndFlush(collection);
+                    log.debug("Updated code base collection: {}", collection.getId());
+                } else {
+                    // Even if no updates, refresh to ensure latest version
+                    entityManager.refresh(collection);
+                    log.debug("Refreshed code base collection: {}", collection.getId());
+                }
+            } else {
+                // Create new collection
+                collection = com.usg.apiAutomation.entities.postgres.codeBase.CollectionEntity.builder()
+                        .id(collectionInfo.getCollectionId())
+                        .name(collectionInfo.getCollectionName())
+                        .description(collectionInfo.getCollectionType() != null ?
+                                "Collection type: " + collectionInfo.getCollectionType() :
+                                "Collection for " + collectionInfo.getCollectionName())
+                        .version("1.0.0")
+                        .owner(performedBy)
+                        .isExpanded(false)
+                        .isFavorite(false)
+                        .createdAt(LocalDateTime.now())
+                        .updatedAt(LocalDateTime.now())
+                        .build();
+                collection = codeBaseCollectionRepository.saveAndFlush(collection);
+                log.debug("Created new code base collection: {}", collection.getId());
+            }
+
+            requestEntity.setCollection(collection);
+
+            // Find or update folder with pessimistic lock
+            if (collectionInfo.getFolderId() != null) {
+                Optional<com.usg.apiAutomation.entities.postgres.codeBase.FolderEntity> existingFolder =
+                        codeBaseFolderRepository.findByIdWithLock(collectionInfo.getFolderId());
+
+                com.usg.apiAutomation.entities.postgres.codeBase.FolderEntity folder;
+
+                if (existingFolder.isPresent()) {
+                    folder = existingFolder.get();
+                    log.debug("Found existing code base folder with lock: {}", folder.getId());
+
+                    boolean folderNeedsUpdate = false;
+
+                    if (!collectionInfo.getFolderName().equals(folder.getName())) {
+                        folder.setName(collectionInfo.getFolderName());
+                        folderNeedsUpdate = true;
+                    }
+
+                    String folderDescription = "Folder for " + collectionInfo.getFolderName();
+                    if (!folderDescription.equals(folder.getDescription())) {
+                        folder.setDescription(folderDescription);
+                        folderNeedsUpdate = true;
+                    }
+
+                    if (folderNeedsUpdate) {
+                        folder.setUpdatedAt(LocalDateTime.now());
+                        folder = codeBaseFolderRepository.saveAndFlush(folder);
+                        log.debug("Updated code base folder: {}", folder.getId());
+                    } else {
+                        entityManager.refresh(folder);
+                        log.debug("Refreshed code base folder: {}", folder.getId());
+                    }
+                } else {
+                    // Create new folder
+                    folder = com.usg.apiAutomation.entities.postgres.codeBase.FolderEntity.builder()
+                            .id(collectionInfo.getFolderId())
+                            .name(collectionInfo.getFolderName())
+                            .description("Folder for " + collectionInfo.getFolderName())
+                            .isExpanded(false)
+                            .collection(collection)
+                            .createdAt(LocalDateTime.now())
+                            .updatedAt(LocalDateTime.now())
+                            .build();
+                    folder = codeBaseFolderRepository.saveAndFlush(folder);
+                    log.debug("Created new code base folder: {}", folder.getId());
+                }
+
+                requestEntity.setFolder(folder);
+            }
+
+        } catch (ObjectOptimisticLockingFailureException e) {
+            log.error("Optimistic locking failure in updateCodeBaseCollectionInfo: {}", e.getMessage());
+            throw e; // Let the caller handle it
+        } catch (Exception e) {
+            log.error("Failed to update code base collection info: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update code base collection info: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Helper method to find request by collection info
+     */
+    private Optional<RequestEntity> findRequestByCollectionInfo(CollectionInfoDTO collectionInfo) {
+        try {
+            if (collectionInfo == null || collectionInfo.getCollectionId() == null) {
+                return Optional.empty();
+            }
+
+            // Try to find by collection ID
+            List<RequestEntity> requests = codeBaseRequestRepository.findByCollectionId(collectionInfo.getCollectionId());
+
+            if (!requests.isEmpty()) {
+                return Optional.of(requests.get(0));
+            }
+
+            // If not found and folder ID is provided, try by folder
+            if (collectionInfo.getFolderId() != null) {
+                requests = codeBaseRequestRepository.findByFolderId(collectionInfo.getFolderId());
+                if (!requests.isEmpty()) {
+                    return Optional.of(requests.get(0));
+                }
+            }
+
+            return Optional.empty();
+
+        } catch (Exception e) {
+            log.error("Failed to find request by collection info: {}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Overloaded method for backward compatibility (if needed)
+     */
+    private void updateCodeBase(GeneratedApiEntity api, String performedBy, GenerateApiRequestDTO request) {
+        // Extract collection info from request or from API entity
+        CollectionInfoDTO collectionInfo = null;
+        if (request != null && request.getCollectionInfo() != null) {
+            collectionInfo = request.getCollectionInfo();
+        } else if (api.getCollectionInfo() != null) {
+            collectionInfo = objectMapper.convertValue(api.getCollectionInfo(), CollectionInfoDTO.class);
+        }
+
+        // Call the main method with all parameters
+        updateCodeBase(api, performedBy, request, collectionInfo);
     }
 
     private void updateCollectionsAuthConfig(
@@ -943,12 +1204,14 @@ public class APIGenerationEngineService {
             GeneratedApiEntity api) {
 
         if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
-            AuthConfigEntity authConfig = requestEntity.getAuthConfig();
-            if (authConfig == null) {
-                authConfig = new AuthConfigEntity();
-                authConfig.setRequest(requestEntity);
+            // Remove existing auth config if present
+            if (requestEntity.getAuthConfig() != null) {
+                requestEntity.setAuthConfig(null);
             }
 
+            AuthConfigEntity authConfig = new AuthConfigEntity();
+            authConfig.setId(UUID.randomUUID().toString());
+            authConfig.setRequest(requestEntity);
             authConfig.setType(api.getAuthConfig().getAuthType());
 
             switch (api.getAuthConfig().getAuthType()) {
@@ -976,6 +1239,11 @@ public class APIGenerationEngineService {
                     break;
             }
             requestEntity.setAuthConfig(authConfig);
+        } else {
+            // Remove auth config if exists
+            if (requestEntity.getAuthConfig() != null) {
+                requestEntity.setAuthConfig(null);
+            }
         }
     }
 
@@ -984,19 +1252,18 @@ public class APIGenerationEngineService {
             GeneratedApiEntity api) {
 
         if (api.getHeaders() != null) {
-            List<HeaderEntity> headers = new ArrayList<>();
             for (ApiHeaderEntity apiHeader : api.getHeaders()) {
                 if (Boolean.TRUE.equals(apiHeader.getIsRequestHeader())) {
                     HeaderEntity header = new HeaderEntity();
-                    header.setKey(apiHeader.getKey());
+                    header.setId(UUID.randomUUID().toString());
+                    header.setKey(apiHeader.getKey() != null ? apiHeader.getKey() : "");
                     header.setValue(apiHeader.getValue() != null ? apiHeader.getValue() : "");
-                    header.setDescription(apiHeader.getDescription());
+                    header.setDescription(apiHeader.getDescription() != null ? apiHeader.getDescription() : "");
                     header.setEnabled(apiHeader.getRequired() != null ? apiHeader.getRequired() : true);
                     header.setRequest(requestEntity);
-                    headers.add(header);
+                    requestEntity.getHeaders().add(header);
                 }
             }
-            requestEntity.setHeaders(headers);
         }
     }
 
@@ -1005,17 +1272,16 @@ public class APIGenerationEngineService {
             GeneratedApiEntity api) {
 
         if (api.getParameters() != null) {
-            List<ParameterEntity> params = new ArrayList<>();
             for (ApiParameterEntity apiParam : api.getParameters()) {
                 ParameterEntity param = new ParameterEntity();
-                param.setKey(apiParam.getKey());
+                param.setId(UUID.randomUUID().toString());
+                param.setKey(apiParam.getKey() != null ? apiParam.getKey() : "");
                 param.setValue(apiParam.getExample() != null ? apiParam.getExample() : "");
-                param.setDescription(apiParam.getDescription());
+                param.setDescription(apiParam.getDescription() != null ? apiParam.getDescription() : "");
                 param.setEnabled(apiParam.getRequired() != null ? apiParam.getRequired() : true);
                 param.setRequest(requestEntity);
-                params.add(param);
+                requestEntity.getParams().add(param);
             }
-            requestEntity.setParams(params);
         }
     }
 
@@ -1029,62 +1295,222 @@ public class APIGenerationEngineService {
     }
 
     // Update Collections
-    private void updateCollections(GeneratedApiEntity api, String performedBy, GenerateApiRequestDTO request) {
+    /**
+     * Update collections with collection info from frontend
+     */
+    private void updateCollections(GeneratedApiEntity api, String performedBy,
+                                   GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo) {
         try {
-            // Get the collection ID from metadata
-            String collectionId = getCollectionsCollectionId(api);
+            log.info("Updating collections for API: {} using collection: {}",
+                    api.getApiCode(), collectionInfo != null ? collectionInfo.getCollectionName() : "unknown");
+
+            // Get the collection ID from metadata or from collectionInfo
+            String collectionId = null;
+
+            // First try to get from collection info (if available)
+            if (collectionInfo != null && collectionInfo.getCollectionId() != null) {
+                collectionId = collectionInfo.getCollectionId();
+                log.info("Using collection ID from frontend: {}", collectionId);
+            }
+
+            // If not found, try to get from API metadata
+            if (collectionId == null) {
+                collectionId = getCollectionsCollectionId(api);
+                log.info("Using collection ID from metadata: {}", collectionId);
+            }
+
             if (collectionId == null) {
                 log.warn("No collection ID found for API: {}", api.getId());
+
+                // If we have collection info, we could create a new collection
+                if (collectionInfo != null) {
+                    log.info("Creating new collections from frontend data");
+                    generateCollections(api, performedBy, request, collectionInfo);
+                }
                 return;
             }
 
-            // Find existing collection and its request
+            // Find existing collection
             Optional<CollectionEntity> existingCollection = collectionsCollectionRepository.findById(collectionId);
             if (existingCollection.isPresent()) {
                 CollectionEntity collection = existingCollection.get();
 
-                // Update collection
-                collection.setName(api.getApiName() + " Collection");
-                collection.setDescription(api.getDescription());
+                // Update collection with info from frontend
+                collection.setName(collectionInfo != null ?
+                        collectionInfo.getCollectionName() :
+                        api.getApiName() + " Collection");
+                collection.setDescription(api.getDescription() != null ? api.getDescription() :
+                        "Collection for " + (collectionInfo != null ? collectionInfo.getCollectionName() : api.getApiName()));
                 collection.setLastActivity(LocalDateTime.now());
+
+                // Update collection type if provided
+                if (collectionInfo != null && collectionInfo.getCollectionType() != null) {
+                    // You might want to store this in a separate field or as metadata
+                    Map<String, Object> metadata = collection.getMetadata() != null ?
+                            collection.getMetadata() : new HashMap<>();
+                    metadata.put("collectionType", collectionInfo.getCollectionType());
+                    collection.setMetadata(metadata);
+                }
+
+                // Update folder if collectionInfo has folder info
+                if (collectionInfo != null && collectionInfo.getFolderId() != null) {
+                    updateCollectionsFolder(collection, collectionInfo, performedBy);
+                }
 
                 // Find and update the request in this collection
                 List<com.usg.apiAutomation.entities.postgres.collections.RequestEntity> requests =
                         collectionsRequestRepository.findByCollectionId(collectionId);
 
+                com.usg.apiAutomation.entities.postgres.collections.RequestEntity requestEntity;
+
                 if (!requests.isEmpty()) {
-                    com.usg.apiAutomation.entities.postgres.collections.RequestEntity requestEntity = requests.get(0);
+                    requestEntity = requests.get(0);
+                    log.info("Found existing request in collection: {}", requestEntity.getId());
 
-                    // Update request
-                    requestEntity.setName(api.getApiName() + " - " + api.getHttpMethod());
-                    requestEntity.setMethod(api.getHttpMethod());
-                    requestEntity.setUrl("{{baseUrl}}" + api.getEndpointPath());
-                    requestEntity.setDescription(api.getDescription());
-                    requestEntity.setLastModified(LocalDateTime.now());
+                    // Clear existing collections properly before updating
+                    if (requestEntity.getHeaders() != null) {
+                        requestEntity.getHeaders().clear();
+                    }
+                    if (requestEntity.getParams() != null) {
+                        requestEntity.getParams().clear();
+                    }
+                } else {
+                    // Create new request if none exists
+                    requestEntity = new com.usg.apiAutomation.entities.postgres.collections.RequestEntity();
+                    requestEntity.setId(UUID.randomUUID().toString()); // Generate ID for new request
+                    requestEntity.setCollection(collection);
+                    requestEntity.setHeaders(new ArrayList<>());
+                    requestEntity.setParams(new ArrayList<>());
 
-                    // Update auth config
-                    updateCollectionsAuthConfig(requestEntity, api);
+                    // Set folder if available
+                    if (collectionInfo != null && collectionInfo.getFolderId() != null) {
+                        Optional<FolderEntity> folder = collectionsFolderRepository.findById(collectionInfo.getFolderId());
+                        folder.ifPresent(requestEntity::setFolder);
+                    }
 
-                    // Update headers
-                    updateCollectionsHeaders(requestEntity, api);
-
-                    // Update parameters
-                    updateCollectionsParameters(requestEntity, api);
-
-                    // Update body
-                    updateCollectionsBody(requestEntity, api);
-
-                    collectionsRequestRepository.save(requestEntity);
+                    log.info("Creating new request for collection: {}", collectionId);
                 }
 
+                // Update request with API details
+                requestEntity.setName(api.getApiName() + " - " + api.getHttpMethod());
+                requestEntity.setMethod(api.getHttpMethod());
+                requestEntity.setUrl("{{baseUrl}}" + (api.getEndpointPath() != null ? api.getEndpointPath() : ""));
+                requestEntity.setDescription(api.getDescription());
+                requestEntity.setLastModified(LocalDateTime.now());
+                requestEntity.setSaved(true);
+
+                // Update auth config
+                updateCollectionsAuthConfig(requestEntity, api);
+
+                // Update headers
+                updateCollectionsHeaders(requestEntity, api);
+
+                // Update parameters
+                updateCollectionsParameters(requestEntity, api);
+
+                // Update body
+                updateCollectionsBody(requestEntity, api);
+
+                // Save request
+                com.usg.apiAutomation.entities.postgres.collections.RequestEntity savedRequest =
+                        collectionsRequestRepository.save(requestEntity);
+                collectionsRequestRepository.flush();
+
+                // Update folder request count if needed
+                if (collectionInfo != null && collectionInfo.getFolderId() != null) {
+                    updateFolderRequestCount(collectionInfo.getFolderId());
+                }
+
+                // Save collection
                 collectionsCollectionRepository.save(collection);
-                log.info("Updated collections collection: {}", collectionId);
+
+                log.info("Updated collections collection: {} with folder: {}",
+                        collectionId,
+                        collectionInfo != null ? collectionInfo.getFolderName() : "default");
+
+            } else {
+                log.warn("Collections collection not found with ID: {}", collectionId);
+
+                // If collection doesn't exist but we have collectionInfo, create it
+                if (collectionInfo != null) {
+                    log.info("Creating new collections from frontend data as existing not found");
+                    generateCollections(api, performedBy, request, collectionInfo);
+                }
             }
 
         } catch (Exception e) {
             log.error("Failed to update collections: {}", e.getMessage(), e);
         }
     }
+
+    /**
+     * Helper method to update collections folder
+     */
+    private void updateCollectionsFolder(CollectionEntity collection, CollectionInfoDTO collectionInfo,
+                                         String performedBy) {
+        try {
+            Optional<FolderEntity> existingFolder = collectionsFolderRepository.findById(collectionInfo.getFolderId());
+
+            if (existingFolder.isPresent()) {
+                FolderEntity folder = existingFolder.get();
+                folder.setName(collectionInfo.getFolderName());
+                folder.setDescription("Folder for " + collectionInfo.getFolderName());
+                folder.setCollection(collection);
+                collectionsFolderRepository.save(folder);
+                log.debug("Updated existing folder: {}", folder.getId());
+            } else {
+                // Create new folder
+                FolderEntity newFolder = new FolderEntity();
+                newFolder.setId(collectionInfo.getFolderId());
+                newFolder.setName(collectionInfo.getFolderName());
+                newFolder.setDescription("Folder for " + collectionInfo.getFolderName());
+                newFolder.setExpanded(false);
+                newFolder.setEditing(false);
+                newFolder.setRequestCount(0);
+                newFolder.setCollection(collection);
+                collectionsFolderRepository.save(newFolder);
+                log.debug("Created new folder: {}", newFolder.getId());
+            }
+        } catch (Exception e) {
+            log.error("Failed to update collections folder: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Helper method to update folder request count
+     */
+    private void updateFolderRequestCount(String folderId) {
+        try {
+            Optional<FolderEntity> folderOpt = collectionsFolderRepository.findById(folderId);
+            if (folderOpt.isPresent()) {
+                FolderEntity folder = folderOpt.get();
+                List<com.usg.apiAutomation.entities.postgres.collections.RequestEntity> requests =
+                        collectionsRequestRepository.findByFolderId(folderId);
+                folder.setRequestCount(requests != null ? requests.size() : 0);
+                collectionsFolderRepository.save(folder);
+            }
+        } catch (Exception e) {
+            log.error("Failed to update folder request count: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Overloaded method for backward compatibility (if needed)
+     */
+    private void updateCollections(GeneratedApiEntity api, String performedBy, GenerateApiRequestDTO request) {
+        // Extract collection info from request or from API entity
+        CollectionInfoDTO collectionInfo = null;
+        if (request != null && request.getCollectionInfo() != null) {
+            collectionInfo = request.getCollectionInfo();
+        } else if (api.getCollectionInfo() != null) {
+            collectionInfo = objectMapper.convertValue(api.getCollectionInfo(), CollectionInfoDTO.class);
+        }
+
+        // Call the main method with all parameters
+        updateCollections(api, performedBy, request, collectionInfo);
+    }
+
+
 
     private void updateDocumentationRateLimit(APIEndpointEntity endpoint, GeneratedApiEntity api) {
         if (api.getSettings() != null && api.getSettings().getEnableRateLimiting() != null) {
@@ -1259,73 +1685,199 @@ public class APIGenerationEngineService {
     }
 
     // Update Documentation
-    private void updateDocumentation(GeneratedApiEntity api, String performedBy, GenerateApiRequestDTO request) {
+    /**
+     * Update documentation with collection info from frontend
+     */
+    private void updateDocumentation(GeneratedApiEntity api, String performedBy,
+                                     GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo,
+                                     String codeBaseRequestId, String collectionsCollectionId) {
         try {
-            // Get the documentation collection ID from metadata
-            String docCollectionId = getDocumentationCollectionId(api);
+            log.info("Updating documentation for API: {} using collection: {}",
+                    api.getApiCode(), collectionInfo != null ? collectionInfo.getCollectionName() : "unknown");
+
+            // Get the documentation collection ID from metadata or use the one from collectionInfo
+            String docCollectionId = collectionInfo != null ? collectionInfo.getCollectionId() : getDocumentationCollectionId(api);
+
             if (docCollectionId == null) {
                 log.warn("No documentation collection ID found for API: {}", api.getId());
                 return;
             }
 
-            // Find existing documentation collection and its endpoint
+            // Find existing documentation collection
             Optional<APICollectionEntity> existingCollection = docCollectionRepository.findById(docCollectionId);
             if (existingCollection.isPresent()) {
                 APICollectionEntity collection = existingCollection.get();
 
-                // Update collection
-                collection.setName(api.getApiName() + " API Documentation");
+                // Update collection with info from frontend
+                collection.setName(collectionInfo != null ?
+                        collectionInfo.getCollectionName() + " API Documentation" :
+                        api.getApiName() + " API Documentation");
                 collection.setDescription(api.getDescription());
                 collection.setVersion(api.getVersion());
                 collection.setBaseUrl(api.getBasePath() != null ? api.getBasePath() : "");
                 collection.setTags(api.getTags());
                 collection.setUpdatedBy(performedBy);
 
-                // Find and update the endpoint
-                List<APIEndpointEntity> endpoints = endpointRepository.findByCollectionId(docCollectionId);
-                if (!endpoints.isEmpty()) {
-                    APIEndpointEntity endpoint = endpoints.get(0);
-
-                    // Update endpoint
-                    endpoint.setName(api.getApiName());
-                    endpoint.setMethod(api.getHttpMethod());
-                    endpoint.setUrl((api.getBasePath() != null ? api.getBasePath() : "") +
-                            (api.getEndpointPath() != null ? api.getEndpointPath() : ""));
-                    endpoint.setDescription(api.getDescription());
-                    endpoint.setApiVersion(api.getVersion());
-                    endpoint.setRequiresAuth(api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType()));
-                    endpoint.setCategory(api.getCategory());
-                    endpoint.setTags(api.getTags());
-                    endpoint.setUpdatedBy(performedBy);
-
-                    // Update rate limit
-                    updateDocumentationRateLimit(endpoint, api);
-
-                    // Update request body example
-                    updateDocumentationRequestBody(endpoint, api);
-
-                    endpointRepository.save(endpoint);
-
-                    // Update headers
-                    updateDocumentationHeaders(endpoint, api);
-
-                    // Update parameters
-                    updateDocumentationParameters(endpoint, api);
-
-                    // Update response examples
-                    updateDocumentationResponses(endpoint, api);
+                // Update folder if collectionInfo has folder info
+                if (collectionInfo != null && collectionInfo.getFolderId() != null) {
+                    updateDocumentationFolder(collection, collectionInfo, performedBy, api);
                 }
 
-                // Add changelog entry
-                addDocumentationChangelog(collection, api, performedBy);
+                // Find and update the endpoint
+                List<APIEndpointEntity> endpoints = endpointRepository.findByCollectionId(docCollectionId);
+                APIEndpointEntity endpoint;
 
+                if (!endpoints.isEmpty()) {
+                    endpoint = endpoints.get(0);
+                    log.info("Found existing endpoint: {}", endpoint.getId());
+                } else {
+                    // Create new endpoint if none exists
+                    endpoint = new APIEndpointEntity();
+                    endpoint.setCollection(collection);
+
+                    // Set folder if available
+                    if (collectionInfo != null && collectionInfo.getFolderId() != null) {
+                        Optional<com.usg.apiAutomation.entities.postgres.documentation.FolderEntity> folder =
+                                docFolderRepository.findById(collectionInfo.getFolderId());
+                        folder.ifPresent(endpoint::setFolder);
+                    }
+
+                    log.info("Creating new endpoint for collection: {}", docCollectionId);
+                }
+
+                // Update endpoint with API details
+                endpoint.setName(api.getApiName());
+                endpoint.setMethod(api.getHttpMethod());
+                endpoint.setUrl((api.getBasePath() != null ? api.getBasePath() : "") +
+                        (api.getEndpointPath() != null ? api.getEndpointPath() : ""));
+                endpoint.setDescription(api.getDescription());
+                endpoint.setApiVersion(api.getVersion());
+                endpoint.setRequiresAuth(api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType()));
+                endpoint.setCategory(api.getCategory());
+                endpoint.setTags(api.getTags());
+                endpoint.setUpdatedBy(performedBy);
+
+                // Update rate limit
+                updateDocumentationRateLimit(endpoint, api);
+
+                // Update request body example
+                updateDocumentationRequestBody(endpoint, api);
+
+                // Save endpoint first
+                APIEndpointEntity savedEndpoint = endpointRepository.save(endpoint);
+                log.debug("Saved endpoint: {}", savedEndpoint.getId());
+
+                // Update headers (delete existing and add new)
+                updateDocumentationHeaders(savedEndpoint, api);
+
+                // Update parameters (delete existing and add new)
+                updateDocumentationParameters(savedEndpoint, api);
+
+                // Update response examples (delete existing and add new)
+                updateDocumentationResponses(savedEndpoint, api);
+
+                // Add changelog entry
+                addDocumentationChangelog(collection, api, performedBy, collectionInfo);
+
+                // Save collection
                 docCollectionRepository.save(collection);
-                log.info("Updated documentation collection: {}", docCollectionId);
+
+                log.info("Updated documentation collection: {} with folder: {}",
+                        docCollectionId,
+                        collectionInfo != null ? collectionInfo.getFolderName() : "default");
+
+            } else {
+                log.warn("Documentation collection not found with ID: {}", docCollectionId);
+
+                // If collection doesn't exist but we have collectionInfo, create it
+                if (collectionInfo != null) {
+                    log.info("Creating new documentation collection from frontend data");
+                    generateDocumentation(api, performedBy, request, codeBaseRequestId,
+                            collectionsCollectionId, collectionInfo);
+                }
             }
 
         } catch (Exception e) {
             log.error("Failed to update documentation: {}", e.getMessage(), e);
         }
+    }
+
+    /**
+     * Helper method to update documentation folder
+     */
+    private void updateDocumentationFolder(APICollectionEntity collection, CollectionInfoDTO collectionInfo,
+                                           String performedBy, GeneratedApiEntity api) {
+        try {
+            Optional<com.usg.apiAutomation.entities.postgres.documentation.FolderEntity> existingFolder =
+                    docFolderRepository.findById(collectionInfo.getFolderId());
+
+            if (existingFolder.isPresent()) {
+                com.usg.apiAutomation.entities.postgres.documentation.FolderEntity folder = existingFolder.get();
+                folder.setName(collectionInfo.getFolderName());
+                folder.setDescription("Folder for " + collectionInfo.getFolderName() + " APIs");
+                folder.setUpdatedBy(performedBy);
+                docFolderRepository.save(folder);
+                log.debug("Updated existing folder: {}", folder.getId());
+            } else {
+                // Create new folder
+                com.usg.apiAutomation.entities.postgres.documentation.FolderEntity newFolder =
+                        new com.usg.apiAutomation.entities.postgres.documentation.FolderEntity();
+                newFolder.setId(collectionInfo.getFolderId());
+                newFolder.setName(collectionInfo.getFolderName());
+                newFolder.setDescription("Folder for " + collectionInfo.getFolderName() + " APIs");
+                newFolder.setCollection(collection);
+                newFolder.setDisplayOrder(1);
+                newFolder.setCreatedBy(performedBy);
+                newFolder.setUpdatedBy(performedBy);
+                docFolderRepository.save(newFolder);
+                log.debug("Created new folder: {}", newFolder.getId());
+            }
+        } catch (Exception e) {
+            log.error("Failed to update documentation folder: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Overloaded method for backward compatibility (if needed)
+     */
+    private void updateDocumentation(GeneratedApiEntity api, String performedBy, GenerateApiRequestDTO request) {
+        // Extract collection info from request or from API entity
+        CollectionInfoDTO collectionInfo = null;
+        if (request != null && request.getCollectionInfo() != null) {
+            collectionInfo = request.getCollectionInfo();
+        } else if (api.getCollectionInfo() != null) {
+            collectionInfo = objectMapper.convertValue(api.getCollectionInfo(), CollectionInfoDTO.class);
+        }
+
+        // Call the main method with all parameters
+        updateDocumentation(api, performedBy, request, collectionInfo,
+                getCodeBaseRequestId(api), getCollectionsCollectionId(api));
+    }
+
+    /**
+     * Updated method to add changelog with collection info
+     */
+    private void addDocumentationChangelog(APICollectionEntity collection, GeneratedApiEntity api,
+                                           String performedBy, CollectionInfoDTO collectionInfo) {
+        ChangelogEntryEntity changelog = new ChangelogEntryEntity();
+        changelog.setVersion(api.getVersion());
+        changelog.setDate(LocalDateTime.now().toString());
+        changelog.setType("UPDATED");
+        changelog.setAuthor(performedBy);
+        changelog.setCollection(collection);
+
+        List<String> changes = new ArrayList<>();
+        changes.add("Updated endpoint: " + api.getApiName() + " (" + api.getHttpMethod() + ")");
+        changes.add("API details modified");
+
+        if (collectionInfo != null) {
+            changes.add("Collection: " + collectionInfo.getCollectionName());
+            changes.add("Folder: " + collectionInfo.getFolderName());
+        }
+
+        changelog.setChanges(changes);
+
+        changelogRepository.save(changelog);
     }
 
     // Helper methods to extract IDs from metadata
@@ -1372,19 +1924,21 @@ public class APIGenerationEngineService {
 
     // Helper method to regenerate components
     private void regenerateComponents(GeneratedApiEntity api, String performedBy,
-                                      GenerateApiRequestDTO request) {
+                                      GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo) {
         try {
             // Generate code
             generateApiCode(api);
 
-            // Update code base
-            generateCodeBase(api, performedBy, request);
+            // Update code base with collection info
+            generateCodeBase(api, performedBy, request, collectionInfo);
 
-            // Update collections
-            generateCollections(api, performedBy, request);
+            // Update collections with collection info
+            generateCollections(api, performedBy, request, collectionInfo);
 
-            // Update documentation
-            generateDocumentation(api, performedBy, request, null, null);
+            // Update documentation with collection info
+            String codeBaseRequestId = getCodeBaseRequestId(api);
+            String collectionId = getCollectionsCollectionId(api);
+            generateDocumentation(api, performedBy, request, codeBaseRequestId, collectionId, collectionInfo);
 
         } catch (Exception e) {
             log.warn("Failed to regenerate components: {}", e.getMessage());
@@ -3735,53 +4289,210 @@ public class APIGenerationEngineService {
     // Helper Methods for Code Generation
     // ============================================================
 
-    private String generateCodeBase(GeneratedApiEntity api, String performedBy, GenerateApiRequestDTO request) {
+    /**
+     * Validate collection information from frontend
+     */
+    private void validateCollectionInfo(CollectionInfoDTO collectionInfo) {
+        if (collectionInfo.getCollectionId() == null || collectionInfo.getCollectionId().trim().isEmpty()) {
+            throw new RuntimeException("Collection ID is required");
+        }
+        if (collectionInfo.getCollectionName() == null || collectionInfo.getCollectionName().trim().isEmpty()) {
+            throw new RuntimeException("Collection name is required");
+        }
+        if (collectionInfo.getFolderId() == null || collectionInfo.getFolderId().trim().isEmpty()) {
+            throw new RuntimeException("Folder ID is required");
+        }
+        if (collectionInfo.getFolderName() == null || collectionInfo.getFolderName().trim().isEmpty()) {
+            throw new RuntimeException("Folder name is required");
+        }
+    }
+
+    /**
+     * Generate code base using the provided collection info
+     */
+    private String generateCodeBase(GeneratedApiEntity api, String performedBy,
+                                    GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo) {
         try {
-            log.info("Generating Code Base for API: {}", api.getApiCode());
+            log.info("Generating Code Base for API: {} using collection: {}",
+                    api.getApiCode(), collectionInfo.getCollectionName());
 
-            // Create or get collection in code base
-            com.usg.apiAutomation.entities.postgres.codeBase.CollectionEntity collection;
-            String collectionName = api.getApiName() + " API Collection";
+            // STEP 1: Try to find existing collection with lock
+            com.usg.apiAutomation.entities.postgres.codeBase.CollectionEntity codeBaseCollection;
 
-            Optional<com.usg.apiAutomation.entities.postgres.codeBase.CollectionEntity> existingCollection =
-                    codeBaseCollectionRepository.findByNameAndOwner(collectionName, performedBy);
+            log.debug("Attempting to lock codebase collection with ID: {}", collectionInfo.getCollectionId());
 
-            if (existingCollection.isPresent()) {
-                collection = existingCollection.get();
+            // Try to find with lock first
+            Optional<com.usg.apiAutomation.entities.postgres.codeBase.CollectionEntity> existingCodeBaseCollection =
+                    codeBaseCollectionRepository.findByIdWithLock(collectionInfo.getCollectionId());
+
+            log.debug("findByIdWithLock returned: {}", existingCodeBaseCollection.isPresent());
+
+            if (existingCodeBaseCollection.isPresent()) {
+                // Collection exists - use it
+                codeBaseCollection = existingCodeBaseCollection.get();
+                log.info("Found existing code base collection with lock: {}", codeBaseCollection.getId());
+
+                // Update fields if needed
+                boolean needsUpdate = false;
+
+                if (!collectionInfo.getCollectionName().equals(codeBaseCollection.getName())) {
+                    log.debug("Collection name changed from '{}' to '{}'",
+                            codeBaseCollection.getName(), collectionInfo.getCollectionName());
+                    codeBaseCollection.setName(collectionInfo.getCollectionName());
+                    needsUpdate = true;
+                }
+
+                String expectedDescription = "Collection for " + collectionInfo.getCollectionName() +
+                        (collectionInfo.getCollectionType() != null ?
+                                " (" + collectionInfo.getCollectionType() + ")" : "");
+                if (!expectedDescription.equals(codeBaseCollection.getDescription())) {
+                    log.debug("Collection description changed");
+                    codeBaseCollection.setDescription(expectedDescription);
+                    needsUpdate = true;
+                }
+
+                if (!api.getVersion().equals(codeBaseCollection.getVersion())) {
+                    log.debug("Collection version changed from '{}' to '{}'",
+                            codeBaseCollection.getVersion(), api.getVersion());
+                    codeBaseCollection.setVersion(api.getVersion());
+                    needsUpdate = true;
+                }
+
+                if (!performedBy.equals(codeBaseCollection.getOwner())) {
+                    log.debug("Collection owner changed from '{}' to '{}'",
+                            codeBaseCollection.getOwner(), performedBy);
+                    codeBaseCollection.setOwner(performedBy);
+                    needsUpdate = true;
+                }
+
+                if (needsUpdate) {
+                    codeBaseCollection.setUpdatedAt(LocalDateTime.now());
+                    codeBaseCollection = codeBaseCollectionRepository.saveAndFlush(codeBaseCollection);
+                    log.debug("Updated code base collection: {}, new version: {}",
+                            codeBaseCollection.getId(), codeBaseCollection.getVersion());
+                }
             } else {
-                collection = com.usg.apiAutomation.entities.postgres.codeBase.CollectionEntity.builder()
-                        .name(collectionName)
-                        .description("Auto-generated collection for " + api.getApiName() + " API")
-                        .version(api.getVersion())
-                        .owner(performedBy)
-                        .isExpanded(false)
-                        .isFavorite(false)
-                        .build();
-                collection = codeBaseCollectionRepository.save(collection);
+                // Collection doesn't exist - attempt to create
+                log.info("Codebase collection not found with lock, attempting to create: {}", collectionInfo.getCollectionId());
+
+                try {
+                    codeBaseCollection = com.usg.apiAutomation.entities.postgres.codeBase.CollectionEntity.builder()
+                            .id(collectionInfo.getCollectionId())
+                            .name(collectionInfo.getCollectionName())
+                            .description("Collection for " + collectionInfo.getCollectionName() +
+                                    (collectionInfo.getCollectionType() != null ?
+                                            " (" + collectionInfo.getCollectionType() + ")" : ""))
+                            .version(api.getVersion())
+                            .owner(performedBy)
+                            .isExpanded(false)
+                            .isFavorite(false)
+                            .createdAt(LocalDateTime.now())
+                            .updatedAt(LocalDateTime.now())
+                            .build();
+
+                    codeBaseCollection = codeBaseCollectionRepository.saveAndFlush(codeBaseCollection);
+                    log.info("Successfully created new code base collection: {}, version: {}",
+                            codeBaseCollection.getId(), codeBaseCollection.getVersion());
+
+                } catch (Exception e) {
+                    log.warn("Failed to create collection, another transaction may have created it. Error: {}", e.getMessage());
+
+                    Optional<com.usg.apiAutomation.entities.postgres.codeBase.CollectionEntity> retryFetch =
+                            codeBaseCollectionRepository.findByIdWithLock(collectionInfo.getCollectionId());
+
+                    if (retryFetch.isPresent()) {
+                        codeBaseCollection = retryFetch.get();
+                        log.info("Retrieved collection created by another transaction: {}", codeBaseCollection.getId());
+                    } else {
+                        throw new RuntimeException("Failed to create or retrieve collection: " + collectionInfo.getCollectionId());
+                    }
+                }
             }
 
-            // Create folder for this API
-            com.usg.apiAutomation.entities.postgres.codeBase.FolderEntity folder =
-                    com.usg.apiAutomation.entities.postgres.codeBase.FolderEntity.builder()
-                            .name(api.getApiName())
-                            .description(api.getDescription())
-                            .isExpanded(false)
-                            .collection(collection)
-                            .build();
-            folder = codeBaseFolderRepository.save(folder);
+            // STEP 2: Handle folder with similar pattern
+            com.usg.apiAutomation.entities.postgres.codeBase.FolderEntity codeBaseFolder;
 
-            // Build full endpoint URL
+            log.debug("Attempting to lock codebase folder with ID: {}", collectionInfo.getFolderId());
+
+            Optional<com.usg.apiAutomation.entities.postgres.codeBase.FolderEntity> existingCodeBaseFolder =
+                    codeBaseFolderRepository.findByIdWithLock(collectionInfo.getFolderId());
+
+            if (existingCodeBaseFolder.isPresent()) {
+                codeBaseFolder = existingCodeBaseFolder.get();
+                log.info("Found existing code base folder with lock: {}", codeBaseFolder.getId());
+
+                boolean folderNeedsUpdate = false;
+
+                if (!collectionInfo.getFolderName().equals(codeBaseFolder.getName())) {
+                    log.debug("Folder name changed from '{}' to '{}'",
+                            codeBaseFolder.getName(), collectionInfo.getFolderName());
+                    codeBaseFolder.setName(collectionInfo.getFolderName());
+                    folderNeedsUpdate = true;
+                }
+
+                String folderDescription = "Folder for " + collectionInfo.getFolderName();
+                if (!folderDescription.equals(codeBaseFolder.getDescription())) {
+                    log.debug("Folder description changed");
+                    codeBaseFolder.setDescription(folderDescription);
+                    folderNeedsUpdate = true;
+                }
+
+                if (folderNeedsUpdate) {
+                    codeBaseFolder.setUpdatedAt(LocalDateTime.now());
+                    codeBaseFolder = codeBaseFolderRepository.saveAndFlush(codeBaseFolder);
+                    log.debug("Updated code base folder: {}", codeBaseFolder.getId());
+                }
+            } else {
+                log.info("Codebase folder not found, creating new one with ID: {}", collectionInfo.getFolderId());
+
+                try {
+                    codeBaseFolder = com.usg.apiAutomation.entities.postgres.codeBase.FolderEntity.builder()
+                            .id(collectionInfo.getFolderId())
+                            .name(collectionInfo.getFolderName())
+                            .description("Folder for " + collectionInfo.getFolderName())
+                            .isExpanded(false)
+                            .collection(codeBaseCollection)
+                            .createdAt(LocalDateTime.now())
+                            .updatedAt(LocalDateTime.now())
+                            .build();
+                    codeBaseFolder = codeBaseFolderRepository.saveAndFlush(codeBaseFolder);
+                    log.info("Created new code base folder: {}", codeBaseFolder.getId());
+                } catch (Exception e) {
+                    log.warn("Failed to create folder, another transaction may have created it. Error: {}", e.getMessage());
+
+                    Optional<com.usg.apiAutomation.entities.postgres.codeBase.FolderEntity> retryFolder =
+                            codeBaseFolderRepository.findByIdWithLock(collectionInfo.getFolderId());
+
+                    if (retryFolder.isPresent()) {
+                        codeBaseFolder = retryFolder.get();
+                        log.info("Retrieved folder created by another transaction: {}", codeBaseFolder.getId());
+                    } else {
+                        throw new RuntimeException("Failed to create or retrieve folder: " + collectionInfo.getFolderId());
+                    }
+                }
+            }
+
+            // STEP 3: Create the request with a generated ID
             String fullUrl = (api.getBasePath() != null ? api.getBasePath() : "") +
                     (api.getEndpointPath() != null ? api.getEndpointPath() : "");
 
-            // Create request entity
+            // Generate a unique ID for the request
+            String requestId = UUID.randomUUID().toString();
+            log.debug("Generated request ID: {} for API: {}", requestId, api.getApiCode());
+
             RequestEntity codeBaseRequest = RequestEntity.builder()
+                    .id(requestId)  // CRITICAL: Manually set the ID
                     .name(api.getApiName() + " - " + api.getHttpMethod())
                     .method(api.getHttpMethod())
                     .url(fullUrl)
                     .description(api.getDescription())
-                    .collection(collection)
-                    .folder(folder)
+                    .collection(codeBaseCollection)
+                    .folder(codeBaseFolder)
+                    .tags(new ArrayList<>()) // Initialize empty tags list
+                    .implementations(new ArrayList<>()) // Initialize empty implementations list
+                    .implementationsCount(0)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
                     .build();
 
             // Add headers
@@ -3860,6 +4571,24 @@ public class APIGenerationEngineService {
                 codeBaseRequest.setPathParameters(pathParams);
             }
 
+            // Add query parameters
+            if (api.getParameters() != null) {
+                List<Map<String, Object>> queryParams = api.getParameters().stream()
+                        .filter(p -> "query".equals(p.getParameterType()))
+                        .map(p -> {
+                            Map<String, Object> param = new HashMap<>();
+                            param.put("name", p.getKey() != null ? p.getKey() : "");
+                            param.put("type", p.getApiType() != null ? p.getApiType() : "string");
+                            param.put("required", p.getRequired() != null ? p.getRequired() : false);
+                            param.put("description", p.getDescription() != null ? p.getDescription() : "");
+                            param.put("key", p.getKey() != null ? p.getKey() : "");
+                            param.put("value", p.getExample() != null ? p.getExample() : "");
+                            return param;
+                        })
+                        .collect(Collectors.toList());
+                codeBaseRequest.setQueryParameters(queryParams);
+            }
+
             // Add request body
             if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
                 try {
@@ -3892,14 +4621,21 @@ public class APIGenerationEngineService {
                 }
             }
 
+            // Save the request
             RequestEntity savedRequest = codeBaseRequestRepository.save(codeBaseRequest);
+            codeBaseRequestRepository.flush();
 
             // Generate implementations for multiple languages
             generateImplementations(api, savedRequest);
 
-            log.info("Code Base generated successfully with Request ID: {}", savedRequest.getId());
+            log.info("Code Base generated successfully with Request ID: {} using Collection: {}, Folder: {}",
+                    savedRequest.getId(), collectionInfo.getCollectionName(), collectionInfo.getFolderName());
+
             return savedRequest.getId();
 
+        } catch (ObjectOptimisticLockingFailureException e) {
+            log.error("Optimistic locking failure in generateCodeBase: {}", e.getMessage());
+            throw new RuntimeException("Failed to generate Code Base due to concurrent modification. Please try again.", e);
         } catch (Exception e) {
             log.error("Error generating Code Base: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to generate Code Base: " + e.getMessage(), e);
@@ -3934,159 +4670,242 @@ public class APIGenerationEngineService {
         }
     }
 
-    private String generateCollections(GeneratedApiEntity api, String performedBy, GenerateApiRequestDTO request) {
+    /**
+     * Generate collections using the provided collection info
+     */
+    private String generateCollections(GeneratedApiEntity api, String performedBy,
+                                       GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo) {
         try {
-            log.info("Generating Collections for API: {}", api.getApiCode());
+            log.info("Generating Collections for API: {} using collection: {}",
+                    api.getApiCode(), collectionInfo.getCollectionName());
 
-            // Create collection
-            CollectionEntity collection = new CollectionEntity();
-            collection.setName(api.getApiName() + " Collection");
-            collection.setDescription(api.getDescription());
-            collection.setOwner(performedBy);
-            collection.setExpanded(false);
-            collection.setEditing(false);
-            collection.setFavorite(false);
-            collection.setLastActivity(LocalDateTime.now());
-            collection.setColor(getRandomColor());
+            // STEP 1: Handle Collection
+            CollectionEntity collection;
+            Optional<CollectionEntity> existingCollection = collectionsCollectionRepository
+                    .findById(collectionInfo.getCollectionId());
 
-            // Add variables
-            List<VariableEntity> variables = new ArrayList<>();
+            if (existingCollection.isPresent()) {
+                collection = existingCollection.get();
+                log.info("Found existing collection: {}", collection.getId());
 
-            // Add auth variables
-            if (api.getAuthConfig() != null) {
-                if (api.getAuthConfig().getApiKeyValue() != null) {
-                    VariableEntity apiKeyVar = new VariableEntity();
-                    apiKeyVar.setKey("apiKey");
-                    apiKeyVar.setValue(api.getAuthConfig().getApiKeyValue());
-                    apiKeyVar.setType("string");
-                    apiKeyVar.setEnabled(true);
-                    apiKeyVar.setCollection(collection);
-                    variables.add(apiKeyVar);
+                // Update collection details
+                boolean needsUpdate = false;
+
+                if (!collectionInfo.getCollectionName().equals(collection.getName())) {
+                    collection.setName(collectionInfo.getCollectionName());
+                    needsUpdate = true;
                 }
-                if (api.getAuthConfig().getApiKeySecret() != null) {
-                    VariableEntity apiSecretVar = new VariableEntity();
-                    apiSecretVar.setKey("apiSecret");
-                    apiSecretVar.setValue(api.getAuthConfig().getApiKeySecret());
-                    apiSecretVar.setType("string");
-                    apiSecretVar.setEnabled(true);
-                    apiSecretVar.setCollection(collection);
-                    variables.add(apiSecretVar);
+
+                String newDescription = api.getDescription() != null ? api.getDescription() :
+                        "Collection for " + collectionInfo.getCollectionName();
+                if (!newDescription.equals(collection.getDescription())) {
+                    collection.setDescription(newDescription);
+                    needsUpdate = true;
                 }
+
+                collection.setLastActivity(LocalDateTime.now());
+                needsUpdate = true;
+
+                if (collection.getColor() == null) {
+                    collection.setColor(getRandomColor());
+                    needsUpdate = true;
+                }
+
+                // Update collection type in metadata if provided
+                if (collectionInfo.getCollectionType() != null) {
+                    Map<String, Object> metadata = collection.getMetadata() != null ?
+                            collection.getMetadata() : new HashMap<>();
+                    if (!collectionInfo.getCollectionType().equals(metadata.get("collectionType"))) {
+                        metadata.put("collectionType", collectionInfo.getCollectionType());
+                        collection.setMetadata(metadata);
+                        needsUpdate = true;
+                    }
+                }
+
+                if (needsUpdate) {
+                    collection.setUpdatedAt(LocalDateTime.now());
+                    collection = collectionsCollectionRepository.save(collection);
+                    log.debug("Updated collection: {}", collection.getId());
+                }
+            } else {
+                // Create new collection
+                collection = new CollectionEntity();
+                collection.setId(collectionInfo.getCollectionId());
+                collection.setName(collectionInfo.getCollectionName());
+                collection.setDescription(api.getDescription() != null ? api.getDescription() :
+                        "Collection for " + collectionInfo.getCollectionName());
+                collection.setOwner(performedBy);
+                collection.setExpanded(false);
+                collection.setEditing(false);
+                collection.setFavorite(false);
+                collection.setLastActivity(LocalDateTime.now());
+                collection.setColor(getRandomColor());
+
+                if (collectionInfo.getCollectionType() != null) {
+                    Map<String, Object> metadata = new HashMap<>();
+                    metadata.put("collectionType", collectionInfo.getCollectionType());
+                    collection.setMetadata(metadata);
+                }
+
+                log.info("Created new collection: {}", collection.getId());
             }
 
-            // Add base URL variable
-            VariableEntity baseUrlVar = new VariableEntity();
-            baseUrlVar.setKey("baseUrl");
-            baseUrlVar.setValue(api.getBasePath() != null ? api.getBasePath() : "https://api.example.com");
-            baseUrlVar.setType("string");
-            baseUrlVar.setEnabled(true);
-            baseUrlVar.setCollection(collection);
-            variables.add(baseUrlVar);
+            // Add variables if not exists
+            if (collection.getVariables() == null || collection.getVariables().isEmpty()) {
+                List<VariableEntity> variables = new ArrayList<>();
 
-            collection.setVariables(variables);
+                if (api.getAuthConfig() != null) {
+                    if (api.getAuthConfig().getApiKeyValue() != null) {
+                        VariableEntity apiKeyVar = new VariableEntity();
+                        apiKeyVar.setId(UUID.randomUUID().toString());
+                        apiKeyVar.setKey("apiKey");
+                        apiKeyVar.setValue(api.getAuthConfig().getApiKeyValue());
+                        apiKeyVar.setType("string");
+                        apiKeyVar.setEnabled(true);
+                        variables.add(apiKeyVar);
+                    }
+                    if (api.getAuthConfig().getApiKeySecret() != null) {
+                        VariableEntity apiSecretVar = new VariableEntity();
+                        apiSecretVar.setId(UUID.randomUUID().toString());
+                        apiSecretVar.setKey("apiSecret");
+                        apiSecretVar.setValue(api.getAuthConfig().getApiKeySecret());
+                        apiSecretVar.setType("string");
+                        apiSecretVar.setEnabled(true);
+                        variables.add(apiSecretVar);
+                    }
+                }
+
+                VariableEntity baseUrlVar = new VariableEntity();
+                baseUrlVar.setId(UUID.randomUUID().toString());
+                baseUrlVar.setKey("baseUrl");
+                baseUrlVar.setValue(api.getBasePath() != null ? api.getBasePath() : "https://api.example.com");
+                baseUrlVar.setType("string");
+                baseUrlVar.setEnabled(true);
+                variables.add(baseUrlVar);
+
+                for (VariableEntity var : variables) {
+                    var.setCollection(collection);
+                }
+
+                collection.setVariables(variables);
+            }
 
             CollectionEntity savedCollection = collectionsCollectionRepository.save(collection);
+            collectionsCollectionRepository.flush();
 
-            // Create folder
-            FolderEntity folder = new FolderEntity();
-            folder.setName(api.getApiName());
-            folder.setDescription(api.getDescription());
-            folder.setExpanded(false);
-            folder.setEditing(false);
-            folder.setRequestCount(0);
-            folder.setCollection(savedCollection);
+            // STEP 2: Handle Folder
+            FolderEntity folder;
+            Optional<FolderEntity> existingFolder = collectionsFolderRepository
+                    .findById(collectionInfo.getFolderId());
+
+            if (existingFolder.isPresent()) {
+                folder = existingFolder.get();
+                log.info("Found existing folder: {}", folder.getId());
+
+                boolean folderNeedsUpdate = false;
+
+                if (!collectionInfo.getFolderName().equals(folder.getName())) {
+                    folder.setName(collectionInfo.getFolderName());
+                    folderNeedsUpdate = true;
+                }
+
+                String folderDescription = "Folder for " + collectionInfo.getFolderName();
+                if (!folderDescription.equals(folder.getDescription())) {
+                    folder.setDescription(folderDescription);
+                    folderNeedsUpdate = true;
+                }
+
+                if (folderNeedsUpdate) {
+                    folder = collectionsFolderRepository.save(folder);
+                    log.debug("Updated folder: {}", folder.getId());
+                }
+            } else {
+                folder = new FolderEntity();
+                folder.setId(collectionInfo.getFolderId());
+                folder.setName(collectionInfo.getFolderName());
+                folder.setDescription("Folder for " + collectionInfo.getFolderName());
+                folder.setExpanded(false);
+                folder.setEditing(false);
+                folder.setRequestCount(0);
+                folder.setCollection(savedCollection);
+
+                log.info("Created new folder: {}", folder.getId());
+            }
+
             FolderEntity savedFolder = collectionsFolderRepository.save(folder);
+            collectionsFolderRepository.flush();
 
-            // Create request
-            com.usg.apiAutomation.entities.postgres.collections.RequestEntity requestEntity =
-                    new com.usg.apiAutomation.entities.postgres.collections.RequestEntity();
-            requestEntity.setName(api.getApiName() + " - " + api.getHttpMethod());
+            // STEP 3: Handle Request - Create a NEW request for each API
+            // Instead of updating existing request, always create a new one with a unique name
+            String requestName = api.getApiName() + " - " + api.getHttpMethod();
+
+            // Check if a request with this name already exists in the folder
+            List<com.usg.apiAutomation.entities.postgres.collections.RequestEntity> existingRequestsByName =
+                    collectionsRequestRepository.findByFolderIdAndName(savedFolder.getId(), requestName);
+
+            com.usg.apiAutomation.entities.postgres.collections.RequestEntity requestEntity;
+
+            if (!existingRequestsByName.isEmpty()) {
+                // Update existing request with the same name
+                requestEntity = existingRequestsByName.get(0);
+                log.info("Updating existing request with name: {} in folder: {}", requestName, savedFolder.getName());
+
+                // Clear existing collections by removing all elements
+                if (requestEntity.getHeaders() != null) {
+                    requestEntity.getHeaders().clear();
+                }
+                if (requestEntity.getParams() != null) {
+                    requestEntity.getParams().clear();
+                }
+                if (requestEntity.getAuthConfig() != null) {
+                    requestEntity.setAuthConfig(null);
+                }
+            } else {
+                // Create new request
+                requestEntity = new com.usg.apiAutomation.entities.postgres.collections.RequestEntity();
+                requestEntity.setId(UUID.randomUUID().toString());
+                requestEntity.setCollection(savedCollection);
+                requestEntity.setFolder(savedFolder);
+                requestEntity.setHeaders(new ArrayList<>());
+                requestEntity.setParams(new ArrayList<>());
+
+                log.info("Creating new request in folder: {} with name: {}", savedFolder.getName(), requestName);
+            }
+
+            // Update request with API details
+            requestEntity.setName(requestName);
             requestEntity.setMethod(api.getHttpMethod());
             requestEntity.setUrl("{{baseUrl}}" + (api.getEndpointPath() != null ? api.getEndpointPath() : ""));
             requestEntity.setDescription(api.getDescription());
-            requestEntity.setCollection(savedCollection);
-            requestEntity.setFolder(savedFolder);
-            requestEntity.setSaved(true);
             requestEntity.setLastModified(LocalDateTime.now());
+            requestEntity.setSaved(true);
 
-            // Add auth config
-            if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
-                AuthConfigEntity authConfig = new AuthConfigEntity();
-                authConfig.setType(api.getAuthConfig().getAuthType());
-                authConfig.setRequest(requestEntity);
+            // Update auth config
+            updateCollectionsAuthConfig(requestEntity, api);
 
-                switch (api.getAuthConfig().getAuthType()) {
-                    case "API_KEY":
-                        authConfig.setKey(api.getAuthConfig().getApiKeyHeader() != null ?
-                                api.getAuthConfig().getApiKeyHeader() : "X-API-Key");
-                        authConfig.setValue(api.getAuthConfig().getApiKeyValue() != null ?
-                                api.getAuthConfig().getApiKeyValue() : "{{apiKey}}");
-                        authConfig.setAddTo("header");
-                        break;
-                    case "BEARER":
-                    case "JWT":
-                        authConfig.setType("bearer");
-                        authConfig.setToken("{{jwtToken}}");
-                        break;
-                    case "BASIC":
-                        authConfig.setUsername("{{username}}");
-                        authConfig.setPassword("{{password}}");
-                        break;
-                    case "ORACLE_ROLES":
-                        authConfig.setType("oracle-roles");
-                        authConfig.setKey("X-Oracle-Session");
-                        authConfig.setValue("{{oracleSessionId}}");
-                        authConfig.setAddTo("header");
-                        break;
-                }
-                requestEntity.setAuthConfig(authConfig);
-            }
+            // Update headers - add to existing collection
+            updateCollectionsHeaders(requestEntity, api);
 
-            // Add headers
-            if (api.getHeaders() != null) {
-                List<HeaderEntity> headers = new ArrayList<>();
-                for (ApiHeaderEntity apiHeader : api.getHeaders()) {
-                    if (Boolean.TRUE.equals(apiHeader.getIsRequestHeader())) {
-                        HeaderEntity header = new HeaderEntity();
-                        header.setKey(apiHeader.getKey() != null ? apiHeader.getKey() : "");
-                        header.setValue(apiHeader.getValue() != null ? apiHeader.getValue() : "");
-                        header.setDescription(apiHeader.getDescription() != null ? apiHeader.getDescription() : "");
-                        header.setEnabled(apiHeader.getRequired() != null ? apiHeader.getRequired() : true);
-                        header.setRequest(requestEntity);
-                        headers.add(header);
-                    }
-                }
-                requestEntity.setHeaders(headers);
-            }
+            // Update parameters - add to existing collection
+            updateCollectionsParameters(requestEntity, api);
 
-            // Add parameters
-            if (api.getParameters() != null) {
-                List<ParameterEntity> params = new ArrayList<>();
-                for (ApiParameterEntity apiParam : api.getParameters()) {
-                    ParameterEntity param = new ParameterEntity();
-                    param.setKey(apiParam.getKey() != null ? apiParam.getKey() : "");
-                    param.setValue(apiParam.getExample() != null ? apiParam.getExample() : "");
-                    param.setDescription(apiParam.getDescription() != null ? apiParam.getDescription() : "");
-                    param.setEnabled(apiParam.getRequired() != null ? apiParam.getRequired() : true);
-                    param.setRequest(requestEntity);
-                    params.add(param);
-                }
-                requestEntity.setParams(params);
-            }
+            // Update body
+            updateCollectionsBody(requestEntity, api);
 
-            // Add body
-            if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
-                requestEntity.setBody(api.getRequestConfig().getSample());
-            }
-
+            // Save the request
             com.usg.apiAutomation.entities.postgres.collections.RequestEntity savedRequest =
                     collectionsRequestRepository.save(requestEntity);
+            collectionsRequestRepository.flush();
 
             // Update folder request count
-            savedFolder.setRequestCount(1);
+            long requestCount = collectionsRequestRepository.countByFolderId(savedFolder.getId());
+            savedFolder.setRequestCount((int) requestCount);
             collectionsFolderRepository.save(savedFolder);
+            collectionsFolderRepository.flush();
 
-            log.info("Collections generated successfully with Collection ID: {}", savedCollection.getId());
+            log.info("Collections generated successfully with Collection ID: {} using Folder: {}",
+                    savedCollection.getId(), collectionInfo.getFolderName());
+
             return savedCollection.getId();
 
         } catch (Exception e) {
@@ -4095,45 +4914,88 @@ public class APIGenerationEngineService {
         }
     }
 
+    /**
+     * Generate documentation using the provided collection info
+     */
     @Transactional
     String generateDocumentation(GeneratedApiEntity api, String performedBy,
                                  GenerateApiRequestDTO request,
                                  String codeBaseRequestId,
-                                 String collectionsCollectionId) {
+                                 String collectionsCollectionId,
+                                 CollectionInfoDTO collectionInfo) {
         try {
-            log.info("Generating Documentation for API: {}", api.getApiCode());
+            log.info("Generating Documentation for API: {} using collection: {}",
+                    api.getApiCode(), collectionInfo.getCollectionName());
 
-            // ==================== STEP 1: Create and save collection ====================
-            APICollectionEntity docCollection = new APICollectionEntity();
-            docCollection.setName(api.getApiName() + " API Documentation");
-            docCollection.setDescription(api.getDescription());
-            docCollection.setVersion(api.getVersion());
-            docCollection.setOwner(performedBy);
-            docCollection.setType("REST");
-            docCollection.setFavorite(false);
-            docCollection.setExpanded(false);
-            docCollection.setColor(getRandomColor());
-            docCollection.setStatus("published");
-            docCollection.setBaseUrl(api.getBasePath() != null ? api.getBasePath() : "");
-            docCollection.setTags(new ArrayList<>());
-            docCollection.setCreatedBy(performedBy);
-            docCollection.setUpdatedBy(performedBy);
-            docCollection.setTotalEndpoints(0);
-            docCollection.setTotalFolders(0);
+            // ==================== STEP 1: Find or create collection ====================
+            APICollectionEntity docCollection;
+            Optional<APICollectionEntity> existingCollection = docCollectionRepository
+                    .findById(collectionInfo.getCollectionId());
 
-            // Save collection FIRST
+            if (existingCollection.isPresent()) {
+                docCollection = existingCollection.get();
+                log.info("Found existing documentation collection: {}", docCollection.getId());
+
+                // Update collection details
+                docCollection.setName(collectionInfo.getCollectionName() + " API Documentation");
+                docCollection.setDescription(api.getDescription());
+                docCollection.setVersion(api.getVersion());
+                docCollection.setBaseUrl(api.getBasePath() != null ? api.getBasePath() : "");
+                docCollection.setTags(api.getTags());
+                docCollection.setUpdatedBy(performedBy);
+            } else {
+                // Create new collection
+                docCollection = new APICollectionEntity();
+                docCollection.setId(collectionInfo.getCollectionId());
+                docCollection.setName(collectionInfo.getCollectionName() + " API Documentation");
+                docCollection.setDescription(api.getDescription());
+                docCollection.setVersion(api.getVersion());
+                docCollection.setOwner(performedBy);
+                docCollection.setType("REST");
+                docCollection.setFavorite(false);
+                docCollection.setExpanded(false);
+                docCollection.setColor(getRandomColor());
+                docCollection.setStatus("published");
+                docCollection.setBaseUrl(api.getBasePath() != null ? api.getBasePath() : "");
+                docCollection.setTags(new ArrayList<>());
+                docCollection.setCreatedBy(performedBy);
+                docCollection.setUpdatedBy(performedBy);
+                docCollection.setTotalEndpoints(0);
+                docCollection.setTotalFolders(0);
+
+                log.info("Created new documentation collection: {}", docCollection.getId());
+            }
+
+            // Save collection
             APICollectionEntity savedDocCollection = docCollectionRepository.saveAndFlush(docCollection);
             log.debug("Saved documentation collection with ID: {}", savedDocCollection.getId());
 
-            // ==================== STEP 2: Create and save folder ====================
-            com.usg.apiAutomation.entities.postgres.documentation.FolderEntity docFolder =
-                    new com.usg.apiAutomation.entities.postgres.documentation.FolderEntity();
-            docFolder.setName(api.getApiName());
-            docFolder.setDescription(api.getDescription());
-            docFolder.setCollection(savedDocCollection);
-            docFolder.setDisplayOrder(1);
-            docFolder.setCreatedBy(performedBy);
-            docFolder.setUpdatedBy(performedBy);
+            // ==================== STEP 2: Find or create folder ====================
+            com.usg.apiAutomation.entities.postgres.documentation.FolderEntity docFolder;
+            Optional<com.usg.apiAutomation.entities.postgres.documentation.FolderEntity> existingFolder =
+                    docFolderRepository.findById(collectionInfo.getFolderId());
+
+            if (existingFolder.isPresent()) {
+                docFolder = existingFolder.get();
+                log.info("Found existing documentation folder: {}", docFolder.getId());
+
+                // Update folder details
+                docFolder.setName(collectionInfo.getFolderName());
+                docFolder.setDescription("Folder for " + collectionInfo.getFolderName());
+                docFolder.setUpdatedBy(performedBy);
+            } else {
+                // Create new folder
+                docFolder = new com.usg.apiAutomation.entities.postgres.documentation.FolderEntity();
+                docFolder.setId(collectionInfo.getFolderId());
+                docFolder.setName(collectionInfo.getFolderName());
+                docFolder.setDescription("Folder for " + collectionInfo.getFolderName());
+                docFolder.setCollection(savedDocCollection);
+                docFolder.setDisplayOrder(1);
+                docFolder.setCreatedBy(performedBy);
+                docFolder.setUpdatedBy(performedBy);
+
+                log.info("Created new documentation folder: {}", docFolder.getId());
+            }
 
             // Save folder
             com.usg.apiAutomation.entities.postgres.documentation.FolderEntity savedDocFolder =
@@ -4145,7 +5007,18 @@ public class APIGenerationEngineService {
             docCollectionRepository.save(savedDocCollection);
 
             // ==================== STEP 3: Create endpoint WITHOUT tags ====================
-            APIEndpointEntity endpoint = new APIEndpointEntity();
+            List<APIEndpointEntity> existingEndpoints = endpointRepository.findByCollectionId(savedDocCollection.getId());
+            APIEndpointEntity endpoint;
+
+            if (!existingEndpoints.isEmpty()) {
+                endpoint = existingEndpoints.get(0);
+                log.info("Updating existing endpoint: {}", endpoint.getId());
+            } else {
+                endpoint = new APIEndpointEntity();
+                endpoint.setId(UUID.randomUUID().toString());  // ← ADDED
+                log.info("Creating new endpoint");
+            }
+
             endpoint.setName(api.getApiName());
             endpoint.setMethod(api.getHttpMethod());
             endpoint.setUrl((api.getBasePath() != null ? api.getBasePath() : "") +
@@ -4157,7 +5030,7 @@ public class APIGenerationEngineService {
             endpoint.setRequiresAuth(api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType()));
             endpoint.setDeprecated(false);
             endpoint.setCategory(api.getCategory());
-            endpoint.setTags(null); // IMPORTANT: Set to null to avoid any tag processing
+            endpoint.setTags(null);
             endpoint.setCreatedBy(performedBy);
             endpoint.setUpdatedBy(performedBy);
             endpoint.setLastModifiedBy(performedBy);
@@ -4185,11 +5058,11 @@ public class APIGenerationEngineService {
                 }
             }
 
-            // ==================== STEP 4: Save endpoint FIRST (WITHOUT tags) ====================
+            // Save endpoint
             APIEndpointEntity savedEndpoint = endpointRepository.saveAndFlush(endpoint);
             log.debug("Saved endpoint with ID: {}", savedEndpoint.getId());
 
-            // ==================== STEP 5: Verify endpoint exists in database ====================
+            // Verify endpoint exists
             Optional<APIEndpointEntity> verifyEndpoint = endpointRepository.findById(savedEndpoint.getId());
             if (verifyEndpoint.isEmpty()) {
                 log.error("Endpoint not found in database after save!");
@@ -4197,11 +5070,9 @@ public class APIGenerationEngineService {
             }
             log.debug("Endpoint verified in database");
 
-            // ==================== STEP 6: Add tags using native query ====================
+            // ==================== STEP 4: Add tags ====================
             if (api.getTags() != null && !api.getTags().isEmpty()) {
-                // Use JdbcTemplate to insert tags directly
                 String sql = "INSERT INTO tb_doc_endpoint_tags (endpoint_id, tag) VALUES (?, ?)";
-
                 int tagCount = 0;
                 for (String tag : api.getTags()) {
                     try {
@@ -4214,16 +5085,17 @@ public class APIGenerationEngineService {
                         log.error("Failed to insert tag: {} - {}", tag, e.getMessage());
                     }
                 }
-                log.debug("Inserted {} tags for endpoint using native query", tagCount);
+                log.debug("Inserted {} tags for endpoint", tagCount);
             }
 
-            // ==================== STEP 7: Add headers (each saved individually) ====================
+            // ==================== STEP 5: Add headers ====================
             if (api.getHeaders() != null && !api.getHeaders().isEmpty()) {
                 int headerCount = 0;
                 for (ApiHeaderEntity apiHeader : api.getHeaders()) {
                     if (Boolean.TRUE.equals(apiHeader.getIsRequestHeader())) {
                         com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity header =
                                 new com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity();
+                        header.setId(UUID.randomUUID().toString());  // ← ADDED
                         header.setKey(apiHeader.getKey() != null ? apiHeader.getKey() : "");
                         header.setValue(apiHeader.getValue() != null ? apiHeader.getValue() : "");
                         header.setDescription(apiHeader.getDescription() != null ? apiHeader.getDescription() : "");
@@ -4236,10 +5108,11 @@ public class APIGenerationEngineService {
                 log.debug("Saved {} headers for endpoint", headerCount);
             }
 
-            // ==================== STEP 8: Add auth headers ====================
+            // ==================== STEP 6: Add auth headers ====================
             if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
                 com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity authHeader =
                         new com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity();
+                authHeader.setId(UUID.randomUUID().toString());  // ← ADDED
                 authHeader.setRequired(true);
                 authHeader.setEndpoint(savedEndpoint);
 
@@ -4271,12 +5144,13 @@ public class APIGenerationEngineService {
                 log.debug("Saved auth header for endpoint");
             }
 
-            // ==================== STEP 9: Add parameters ====================
+            // ==================== STEP 7: Add parameters ====================
             if (api.getParameters() != null && !api.getParameters().isEmpty()) {
                 int paramCount = 0;
                 for (ApiParameterEntity apiParam : api.getParameters()) {
                     com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity param =
                             new com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity();
+                    param.setId(UUID.randomUUID().toString());  // ← ADDED
                     param.setName(apiParam.getKey() != null ? apiParam.getKey() : "");
                     param.setIn(apiParam.getParameterType() != null ? apiParam.getParameterType() : "query");
                     param.setType(apiParam.getApiType() != null ? apiParam.getApiType() : "string");
@@ -4290,10 +5164,11 @@ public class APIGenerationEngineService {
                 log.debug("Saved {} parameters for endpoint", paramCount);
             }
 
-            // ==================== STEP 10: Add response examples ====================
+            // ==================== STEP 8: Add response examples ====================
             // Add success response example
             if (api.getResponseConfig() != null && api.getResponseConfig().getSuccessSchema() != null) {
                 ResponseExampleEntity successExample = new ResponseExampleEntity();
+                successExample.setId(UUID.randomUUID().toString());  // ← ADDED
                 successExample.setStatusCode(200);
                 successExample.setDescription("Successful response");
                 successExample.setContentType(api.getResponseConfig().getContentType() != null ?
@@ -4317,6 +5192,7 @@ public class APIGenerationEngineService {
             // Add error response example
             if (api.getResponseConfig() != null && api.getResponseConfig().getErrorSchema() != null) {
                 ResponseExampleEntity errorExample = new ResponseExampleEntity();
+                errorExample.setId(UUID.randomUUID().toString());  // ← ADDED
                 errorExample.setStatusCode(400);
                 errorExample.setDescription("Error response");
                 errorExample.setContentType(api.getResponseConfig().getContentType() != null ?
@@ -4337,11 +5213,12 @@ public class APIGenerationEngineService {
                 log.debug("Saved error response example for endpoint");
             }
 
-            // ==================== STEP 11: Add code examples ====================
+            // ==================== STEP 9: Add code examples ====================
             generateDocumentationCodeExamples(api, savedEndpoint, codeBaseRequestId);
 
-            // ==================== STEP 12: Add changelog entry ====================
+            // ==================== STEP 10: Add changelog entry ====================
             ChangelogEntryEntity changelog = new ChangelogEntryEntity();
+            changelog.setId(UUID.randomUUID().toString());  // ← ADDED
             changelog.setVersion(api.getVersion());
             changelog.setDate(LocalDateTime.now().toString());
             changelog.setType("ADDED");
@@ -4351,12 +5228,14 @@ public class APIGenerationEngineService {
             List<String> changes = new ArrayList<>();
             changes.add("Added endpoint: " + api.getApiName() + " (" + api.getHttpMethod() + ")");
             changes.add("Initial version of the API");
+            changes.add("Added to collection: " + collectionInfo.getCollectionName());
+            changes.add("Added to folder: " + collectionInfo.getFolderName());
             changelog.setChanges(changes);
 
             changelogRepository.save(changelog);
             log.debug("Saved changelog entry for collection");
 
-            // ==================== STEP 13: Update endpoint count ====================
+            // ==================== STEP 11: Update endpoint count ====================
             savedDocCollection.setTotalEndpoints(1);
             docCollectionRepository.save(savedDocCollection);
 
@@ -4364,7 +5243,8 @@ public class APIGenerationEngineService {
             docCollectionRepository.flush();
             endpointRepository.flush();
 
-            log.info("Documentation generated successfully with Collection ID: {}", savedDocCollection.getId());
+            log.info("Documentation generated successfully with Collection ID: {} using Folder: {}",
+                    savedDocCollection.getId(), collectionInfo.getFolderName());
             return savedDocCollection.getId();
 
         } catch (Exception e) {
@@ -4372,7 +5252,6 @@ public class APIGenerationEngineService {
             throw new RuntimeException("Failed to generate Documentation: " + e.getMessage(), e);
         }
     }
-
 
     private void generateDocumentationCodeExamples(GeneratedApiEntity api, APIEndpointEntity endpoint,
                                                    String codeBaseRequestId) {
@@ -4383,10 +5262,11 @@ public class APIGenerationEngineService {
                 String code = generateCodeForLanguage(api, language);
 
                 CodeExampleEntity codeExample = new CodeExampleEntity();
+                codeExample.setId(UUID.randomUUID().toString());  // ← ADDED
                 codeExample.setLanguage(language);
                 codeExample.setCode(code);
                 codeExample.setDescription("Auto-generated " + language + " code example");
-                codeExample.setEndpoint(endpoint); // Set relationship
+                codeExample.setEndpoint(endpoint);
                 codeExample.setDefault(language.equals("curl"));
 
                 codeExampleRepository.save(codeExample);
@@ -4404,21 +5284,21 @@ public class APIGenerationEngineService {
 
         switch (language) {
             case "curl":
-                return generateCurlCode(api, fullUrl);
+                return generateFunctionalCurlCode(api, fullUrl);
             case "javascript":
-                return generateJavaScriptCode(api, fullUrl);
+                return generateFunctionalJavaScriptCode(api, fullUrl);
             case "python":
-                return generatePythonCode(api, fullUrl);
+                return generateFunctionalPythonCode(api, fullUrl);
             case "java":
-                return generateJavaCode(api, fullUrl);
+                return generateFunctionalJavaCode(api, fullUrl);
             case "csharp":
-                return generateCSharpCode(api, fullUrl);
+                return generateFunctionalCSharpCode(api, fullUrl);
             case "php":
-                return generatePhpCode(api, fullUrl);
+                return generateFunctionalPhpCode(api, fullUrl);
             case "ruby":
-                return generateRubyCode(api, fullUrl);
+                return generateFunctionalRubyCode(api, fullUrl);
             case "go":
-                return generateGoCode(api, fullUrl);
+                return generateFunctionalGoCode(api, fullUrl);
             default:
                 return "// No code example available for " + language;
         }
@@ -4860,6 +5740,1355 @@ public class APIGenerationEngineService {
 
         return go.toString();
     }
+
+
+    /**
+     * Generate functional cURL code with environment variables
+     */
+    private String generateFunctionalCurlCode(GeneratedApiEntity api, String fullUrl) {
+        StringBuilder curl = new StringBuilder();
+        curl.append("#!/bin/bash\n\n");
+        curl.append("# Auto-generated functional cURL script for ").append(api.getApiName()).append("\n\n");
+
+        // Load environment variables
+        curl.append("# Load environment variables\n");
+        curl.append("source .env 2>/dev/null || true\n\n");
+
+        curl.append("curl -X ").append(api.getHttpMethod() != null ? api.getHttpMethod() : "GET").append(" \\\n");
+        curl.append("  '").append(fullUrl).append("'");
+
+        // Add headers with environment variables
+        curl.append(" \\\n  -H 'Content-Type: application/json'");
+        curl.append(" \\\n  -H 'Accept: application/json'");
+
+        if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
+            curl.append(" \\\n");
+            switch (api.getAuthConfig().getAuthType()) {
+                case "API_KEY":
+                    String header = api.getAuthConfig().getApiKeyHeader() != null ?
+                            api.getAuthConfig().getApiKeyHeader() : "X-API-Key";
+                    curl.append("  -H '").append(header).append(": ${API_KEY}'");
+                    break;
+                case "BEARER":
+                case "JWT":
+                    curl.append("  -H 'Authorization: Bearer ${JWT_TOKEN}'");
+                    break;
+                case "BASIC":
+                    curl.append("  -u '${API_USERNAME}:${API_PASSWORD}'");
+                    break;
+                case "ORACLE_ROLES":
+                    curl.append("  -H 'X-Oracle-Session: ${ORACLE_SESSION_ID}'");
+                    break;
+            }
+        }
+
+        // Add custom headers
+        if (api.getHeaders() != null) {
+            for (ApiHeaderEntity header : api.getHeaders()) {
+                if (Boolean.TRUE.equals(header.getIsRequestHeader()) && header.getKey() != null) {
+                    curl.append(" \\\n");
+                    curl.append("  -H '").append(header.getKey()).append(": ${").append(header.getKey().toUpperCase().replace("-", "_")).append("}'");
+                }
+            }
+        }
+
+        // Add body for non-GET requests
+        if (!"GET".equals(api.getHttpMethod()) && api.getRequestConfig() != null &&
+                api.getRequestConfig().getSample() != null) {
+            curl.append(" \\\n");
+            curl.append("  -d '").append(api.getRequestConfig().getSample().replace("'", "\\'")).append("'");
+        }
+
+        return curl.toString();
+    }
+
+
+    /**
+     * Generate functional JavaScript code with async/await and error handling
+     */
+    private String generateFunctionalJavaScriptCode(GeneratedApiEntity api, String fullUrl) {
+        StringBuilder js = new StringBuilder();
+        js.append("// Auto-generated functional JavaScript code for ").append(api.getApiName()).append("\n\n");
+
+        js.append("/**\n");
+        js.append(" * Execute ").append(api.getApiName()).append(" API\n");
+        js.append(" * @param {Object} params - API parameters\n");
+        js.append(" * @returns {Promise<Object>} API response\n");
+        js.append(" */\n");
+        js.append("async function callApi(params = {}) {\n");
+        js.append("  const url = '").append(fullUrl).append("';\n");
+        js.append("  \n");
+        js.append("  // Build query string\n");
+        js.append("  const queryParams = new URLSearchParams();\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if ("query".equals(param.getParameterType())) {
+                    js.append("  if (params.").append(param.getKey()).append(") {\n");
+                    js.append("    queryParams.append('").append(param.getKey()).append("', params.").append(param.getKey()).append(");\n");
+                    js.append("  }\n");
+                }
+            }
+        }
+
+        js.append("  \n");
+        js.append("  const finalUrl = queryParams.toString() ? `${url}?${queryParams}` : url;\n");
+        js.append("  \n");
+        js.append("  // Build headers\n");
+        js.append("  const headers = {\n");
+        js.append("    'Content-Type': 'application/json',\n");
+        js.append("    'Accept': 'application/json',\n");
+
+        if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
+            switch (api.getAuthConfig().getAuthType()) {
+                case "API_KEY":
+                    js.append("    '").append(api.getAuthConfig().getApiKeyHeader() != null ?
+                            api.getAuthConfig().getApiKeyHeader() : "X-API-Key").append("': process.env.API_KEY || params.apiKey,\n");
+                    break;
+                case "BEARER":
+                case "JWT":
+                    js.append("    'Authorization': `Bearer ${process.env.JWT_TOKEN || params.jwtToken}`,\n");
+                    break;
+                case "BASIC":
+                    js.append("    'Authorization': `Basic ${Buffer.from(\n");
+                    js.append("      `${process.env.API_USERNAME || params.username}:${process.env.API_PASSWORD || params.password}`\n");
+                    js.append("    ).toString('base64')}`,\n");
+                    break;
+            }
+        }
+
+        // Add custom headers
+        if (api.getHeaders() != null) {
+            for (ApiHeaderEntity header : api.getHeaders()) {
+                if (Boolean.TRUE.equals(header.getIsRequestHeader()) && header.getKey() != null) {
+                    js.append("    '").append(header.getKey()).append("': params.").append(header.getKey().toLowerCase()).append(",\n");
+                }
+            }
+        }
+
+        js.append("  };\n");
+        js.append("  \n");
+        js.append("  // Build request options\n");
+        js.append("  const options = {\n");
+        js.append("    method: '").append(api.getHttpMethod() != null ? api.getHttpMethod() : "GET").append("',\n");
+        js.append("    headers,\n");
+
+        if (!"GET".equals(api.getHttpMethod())) {
+            js.append("    body: JSON.stringify(params.body || {}),\n");
+        }
+
+        js.append("  };\n");
+        js.append("  \n");
+        js.append("  try {\n");
+        js.append("    const response = await fetch(finalUrl, options);\n");
+        js.append("    \n");
+        js.append("    if (!response.ok) {\n");
+        js.append("      const error = await response.json().catch(() => ({}));\n");
+        js.append("      throw new Error(error.message || `HTTP error ${response.status}`);\n");
+        js.append("    }\n");
+        js.append("    \n");
+        js.append("    const data = await response.json();\n");
+        js.append("    return data;\n");
+        js.append("  } catch (error) {\n");
+        js.append("    console.error('API call failed:', error);\n");
+        js.append("    throw error;\n");
+        js.append("  }\n");
+        js.append("}\n\n");
+
+        // Add example usage
+        js.append("// Example usage:\n");
+        js.append("/*\n");
+        js.append("callApi({\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if (param.getExample() != null) {
+                    js.append("  ").append(param.getKey()).append(": '").append(param.getExample()).append("',\n");
+                }
+            }
+        }
+
+        js.append("  body: { /* request body */ }\n");
+        js.append("})\n");
+        js.append("  .then(data => console.log('Success:', data))\n");
+        js.append("  .catch(error => console.error('Error:', error));\n");
+        js.append("*/\n");
+
+        return js.toString();
+    }
+
+    /**
+     * Generate functional TypeScript code with types
+     */
+    private String generateFunctionalTypeScriptCode(GeneratedApiEntity api, String fullUrl) {
+        StringBuilder ts = new StringBuilder();
+        ts.append("// Auto-generated functional TypeScript code for ").append(api.getApiName()).append("\n\n");
+
+        // Generate interfaces
+        ts.append("/**\n");
+        ts.append(" * Request parameters interface\n");
+        ts.append(" */\n");
+        ts.append("export interface ").append(api.getApiCode()).append("RequestParams {\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                String type = mapToTypeScriptType(param.getApiType());
+                ts.append("  ").append(param.getKey());
+                if (!Boolean.TRUE.equals(param.getRequired())) {
+                    ts.append("?");
+                }
+                ts.append(": ").append(type).append(";\n");
+            }
+        }
+
+        ts.append("  body?: any;\n");
+        ts.append("}\n\n");
+
+        // Generate response interface
+        ts.append("/**\n");
+        ts.append(" * Response interface\n");
+        ts.append(" */\n");
+        ts.append("export interface ").append(api.getApiCode()).append("Response {\n");
+
+        if (api.getResponseMappings() != null) {
+            for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
+                if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
+                    String type = mapToTypeScriptType(mapping.getApiType());
+                    ts.append("  ").append(mapping.getApiField()).append("?: ").append(type).append(";\n");
+                }
+            }
+        }
+
+        ts.append("}\n\n");
+
+        // Generate API function
+        ts.append("/**\n");
+        ts.append(" * Call ").append(api.getApiName()).append(" API\n");
+        ts.append(" */\n");
+        ts.append("export async function call").append(api.getApiCode()).append("(\n");
+        ts.append("  params: ").append(api.getApiCode()).append("RequestParams\n");
+        ts.append("): Promise<").append(api.getApiCode()).append("Response> {\n");
+        ts.append("  const url = '").append(fullUrl).append("';\n");
+        ts.append("  \n");
+        ts.append("  // Build query string\n");
+        ts.append("  const queryParams = new URLSearchParams();\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if ("query".equals(param.getParameterType())) {
+                    ts.append("  if (params.").append(param.getKey()).append(") {\n");
+                    ts.append("    queryParams.append('").append(param.getKey()).append("', String(params.").append(param.getKey()).append("));\n");
+                    ts.append("  }\n");
+                }
+            }
+        }
+
+        ts.append("  \n");
+        ts.append("  const finalUrl = queryParams.toString() ? `${url}?${queryParams}` : url;\n");
+        ts.append("  \n");
+        ts.append("  // Build headers\n");
+        ts.append("  const headers: HeadersInit = {\n");
+        ts.append("    'Content-Type': 'application/json',\n");
+        ts.append("    'Accept': 'application/json',\n");
+
+        if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
+            switch (api.getAuthConfig().getAuthType()) {
+                case "API_KEY":
+                    ts.append("    '").append(api.getAuthConfig().getApiKeyHeader() != null ?
+                            api.getAuthConfig().getApiKeyHeader() : "X-API-Key").append("': process.env.API_KEY || params.apiKey || '',\n");
+                    break;
+                case "BEARER":
+                case "JWT":
+                    ts.append("    'Authorization': `Bearer ${process.env.JWT_TOKEN || params.jwtToken}`,\n");
+                    break;
+            }
+        }
+
+        ts.append("  };\n");
+        ts.append("  \n");
+        ts.append("  // Build request options\n");
+        ts.append("  const options: RequestInit = {\n");
+        ts.append("    method: '").append(api.getHttpMethod() != null ? api.getHttpMethod() : "GET").append("',\n");
+        ts.append("    headers,\n");
+
+        if (!"GET".equals(api.getHttpMethod())) {
+            ts.append("    body: JSON.stringify(params.body || {}),\n");
+        }
+
+        ts.append("  };\n");
+        ts.append("  \n");
+        ts.append("  try {\n");
+        ts.append("    const response = await fetch(finalUrl, options);\n");
+        ts.append("    \n");
+        ts.append("    if (!response.ok) {\n");
+        ts.append("      const error = await response.json().catch(() => ({}));\n");
+        ts.append("      throw new Error(error.message || `HTTP error ${response.status}`);\n");
+        ts.append("    }\n");
+        ts.append("    \n");
+        ts.append("    const data = await response.json();\n");
+        ts.append("    return data as ").append(api.getApiCode()).append("Response;\n");
+        ts.append("  } catch (error) {\n");
+        ts.append("    console.error('API call failed:', error);\n");
+        ts.append("    throw error;\n");
+        ts.append("  }\n");
+        ts.append("}\n");
+
+        return ts.toString();
+    }
+
+    /**
+     * Generate functional Python code with environment variables
+     */
+    private String generateFunctionalPythonCode(GeneratedApiEntity api, String fullUrl) {
+        StringBuilder py = new StringBuilder();
+        py.append("# Auto-generated functional Python code for ").append(api.getApiName()).append("\n\n");
+        py.append("import os\n");
+        py.append("import requests\n");
+        py.append("import json\n");
+        py.append("from typing import Optional, Dict, Any\n");
+        py.append("from dotenv import load_dotenv\n\n");
+        py.append("# Load environment variables\n");
+        py.append("load_dotenv()\n\n");
+
+        // Generate function
+        py.append("def call_").append(api.getApiCode().toLowerCase()).append("(\n");
+
+        if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+            List<String> params = new ArrayList<>();
+            for (ApiParameterEntity param : api.getParameters()) {
+                String type = mapToPythonType(param.getApiType());
+                params.add("    " + param.getKey() + ": Optional[" + type + "] = None");
+            }
+            py.append(String.join(",\n", params));
+            if (!api.getParameters().isEmpty()) {
+                py.append(",\n");
+            }
+        }
+
+        py.append("    body: Optional[Dict[str, Any]] = None\n");
+        py.append(") -> Dict[str, Any]:\n");
+        py.append("    \"\"\"\n");
+        py.append("    Call ").append(api.getApiName()).append(" API\n");
+        py.append("    \"\"\"\n");
+        py.append("    url = \"").append(fullUrl).append("\"\n");
+        py.append("    \n");
+        py.append("    # Build query parameters\n");
+        py.append("    params = {}\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if ("query".equals(param.getParameterType())) {
+                    py.append("    if ").append(param.getKey()).append(" is not None:\n");
+                    py.append("        params['").append(param.getKey()).append("'] = ").append(param.getKey()).append("\n");
+                }
+            }
+        }
+
+        py.append("    \n");
+        py.append("    # Build headers\n");
+        py.append("    headers = {\n");
+        py.append("        'Content-Type': 'application/json',\n");
+        py.append("        'Accept': 'application/json',\n");
+
+        if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
+            switch (api.getAuthConfig().getAuthType()) {
+                case "API_KEY":
+                    py.append("        '").append(api.getAuthConfig().getApiKeyHeader() != null ?
+                            api.getAuthConfig().getApiKeyHeader() : "X-API-Key").append("': os.getenv('API_KEY', ''),\n");
+                    break;
+                case "BEARER":
+                case "JWT":
+                    py.append("        'Authorization': f'Bearer {os.getenv(\"JWT_TOKEN\", \"\")}',\n");
+                    break;
+                case "BASIC":
+                    py.append("        'Authorization': requests.auth.HTTPBasicAuth(\n");
+                    py.append("            os.getenv('API_USERNAME', ''),\n");
+                    py.append("            os.getenv('API_PASSWORD', '')\n");
+                    py.append("        ),\n");
+                    break;
+            }
+        }
+
+        py.append("    }\n");
+        py.append("    \n");
+        py.append("    try:\n");
+        py.append("        response = requests.request(\n");
+        py.append("            method='").append(api.getHttpMethod() != null ? api.getHttpMethod() : "GET").append("',\n");
+        py.append("            url=url,\n");
+        py.append("            params=params,\n");
+        py.append("            headers=headers,\n");
+
+        if (!"GET".equals(api.getHttpMethod())) {
+            py.append("            json=body or {},\n");
+        }
+
+        py.append("            timeout=30\n");
+        py.append("        )\n");
+        py.append("        \n");
+        py.append("        response.raise_for_status()\n");
+        py.append("        return response.json()\n");
+        py.append("        \n");
+        py.append("    except requests.exceptions.RequestException as e:\n");
+        py.append("        print(f\"API call failed: {e}\")\n");
+        py.append("        if hasattr(e.response, 'text'):\n");
+        py.append("            print(f\"Response: {e.response.text}\")\n");
+        py.append("        raise\n\n");
+
+        // Add example usage
+        py.append("# Example usage:\n");
+        py.append("if __name__ == \"__main__\":\n");
+        py.append("    result = call_").append(api.getApiCode().toLowerCase()).append("(\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if (param.getExample() != null) {
+                    py.append("        ").append(param.getKey()).append("='").append(param.getExample()).append("',\n");
+                }
+            }
+        }
+
+        py.append("    )\n");
+        py.append("    print(json.dumps(result, indent=2))\n");
+
+        return py.toString();
+    }
+
+    /**
+     * Generate functional Java code with proper HTTP client
+     */
+    private String generateFunctionalJavaCode(GeneratedApiEntity api, String fullUrl) {
+        StringBuilder java = new StringBuilder();
+        java.append("// Auto-generated functional Java code for ").append(api.getApiName()).append("\n\n");
+        java.append("package com.example.api;\n\n");
+        java.append("import java.net.URI;\n");
+        java.append("import java.net.http.HttpClient;\n");
+        java.append("import java.net.http.HttpRequest;\n");
+        java.append("import java.net.http.HttpResponse;\n");
+        java.append("import java.time.Duration;\n");
+        java.append("import java.util.HashMap;\n");
+        java.append("import java.util.Map;\n");
+        java.append("import com.fasterxml.jackson.databind.ObjectMapper;\n");
+        java.append("import com.fasterxml.jackson.core.type.TypeReference;\n\n");
+
+        java.append("public class ").append(api.getApiCode()).append("Client {\n\n");
+        java.append("    private static final String BASE_URL = \"").append(fullUrl).append("\";\n");
+        java.append("    private final HttpClient httpClient;\n");
+        java.append("    private final ObjectMapper objectMapper;\n");
+
+        if (api.getAuthConfig() != null) {
+            java.append("    private final String apiKey;\n");
+            java.append("    private final String apiSecret;\n");
+        }
+
+        java.append("\n");
+        java.append("    public ").append(api.getApiCode()).append("Client() {\n");
+        java.append("        this.httpClient = HttpClient.newBuilder()\n");
+        java.append("                .connectTimeout(Duration.ofSeconds(30))\n");
+        java.append("                .build();\n");
+        java.append("        this.objectMapper = new ObjectMapper();\n");
+
+        if (api.getAuthConfig() != null) {
+            java.append("        this.apiKey = System.getenv(\"API_KEY\");\n");
+            java.append("        this.apiSecret = System.getenv(\"API_SECRET\");\n");
+        }
+
+        java.append("    }\n\n");
+
+        // Generate parameter class
+        java.append("    public static class RequestParams {\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                String type = mapToJavaType(param.getApiType());
+                java.append("        private ").append(type).append(" ").append(param.getKey()).append(";\n");
+            }
+        }
+
+        java.append("        private Map<String, Object> body;\n\n");
+
+        // Getters and setters
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                String type = mapToJavaType(param.getApiType());
+                String key = param.getKey();
+                String capitalized = key.substring(0, 1).toUpperCase() + key.substring(1);
+
+                java.append("        public ").append(type).append(" get").append(capitalized).append("() {\n");
+                java.append("            return ").append(key).append(";\n");
+                java.append("        }\n\n");
+
+                java.append("        public void set").append(capitalized).append("(").append(type).append(" ").append(key).append(") {\n");
+                java.append("            this.").append(key).append(" = ").append(key).append(";\n");
+                java.append("        }\n\n");
+            }
+        }
+
+        java.append("        public Map<String, Object> getBody() {\n");
+        java.append("            return body;\n");
+        java.append("        }\n\n");
+        java.append("        public void setBody(Map<String, Object> body) {\n");
+        java.append("            this.body = body;\n");
+        java.append("        }\n");
+        java.append("    }\n\n");
+
+        // Generate response class
+        java.append("    public static class ApiResponse {\n");
+
+        if (api.getResponseMappings() != null) {
+            for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
+                if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
+                    String type = mapToJavaType(mapping.getApiType());
+                    java.append("        private ").append(type).append(" ").append(mapping.getApiField()).append(";\n");
+                }
+            }
+        }
+
+        java.append("\n");
+
+        // Getters and setters for response
+        if (api.getResponseMappings() != null) {
+            for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
+                if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
+                    String type = mapToJavaType(mapping.getApiType());
+                    String field = mapping.getApiField();
+                    String capitalized = field.substring(0, 1).toUpperCase() + field.substring(1);
+
+                    java.append("        public ").append(type).append(" get").append(capitalized).append("() {\n");
+                    java.append("            return ").append(field).append(";\n");
+                    java.append("        }\n\n");
+
+                    java.append("        public void set").append(capitalized).append("(").append(type).append(" ").append(field).append(") {\n");
+                    java.append("            this.").append(field).append(" = ").append(field).append(";\n");
+                    java.append("        }\n\n");
+                }
+            }
+        }
+
+        java.append("    }\n\n");
+
+        // Generate main API method
+        java.append("    public ApiResponse callApi(RequestParams params) throws Exception {\n");
+        java.append("        // Build URL with query parameters\n");
+        java.append("        StringBuilder urlBuilder = new StringBuilder(BASE_URL);\n");
+        java.append("        \n");
+        java.append("        // Add query parameters\n");
+        java.append("        StringBuilder queryString = new StringBuilder();\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if ("query".equals(param.getParameterType())) {
+                    java.append("        if (params.get").append(capitalize(param.getKey())).append("() != null) {\n");
+                    java.append("            if (queryString.length() > 0) queryString.append(\"&\");\n");
+                    java.append("            queryString.append(\"").append(param.getKey()).append("=\")\n");
+                    java.append("                    .append(params.get").append(capitalize(param.getKey())).append("());\n");
+                    java.append("        }\n");
+                }
+            }
+        }
+
+        java.append("        \n");
+        java.append("        if (queryString.length() > 0) {\n");
+        java.append("            urlBuilder.append(\"?\").append(queryString);\n");
+        java.append("        }\n");
+        java.append("        \n");
+        java.append("        // Build request\n");
+        java.append("        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()\n");
+        java.append("                .uri(URI.create(urlBuilder.toString()))\n");
+        java.append("                .timeout(Duration.ofSeconds(30))\n");
+        java.append("                .header(\"Content-Type\", \"application/json\")\n");
+        java.append("                .header(\"Accept\", \"application/json\");\n");
+
+        // Add auth headers
+        if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
+            switch (api.getAuthConfig().getAuthType()) {
+                case "API_KEY":
+                    java.append("        if (apiKey != null) {\n");
+                    java.append("            requestBuilder.header(\"")
+                            .append(api.getAuthConfig().getApiKeyHeader() != null ?
+                                    api.getAuthConfig().getApiKeyHeader() : "X-API-Key")
+                            .append("\", apiKey);\n");
+                    java.append("        }\n");
+                    break;
+                case "BEARER":
+                case "JWT":
+                    java.append("        if (System.getenv(\"JWT_TOKEN\") != null) {\n");
+                    java.append("            requestBuilder.header(\"Authorization\", \n");
+                    java.append("                    \"Bearer \" + System.getenv(\"JWT_TOKEN\"));\n");
+                    java.append("        }\n");
+                    break;
+            }
+        }
+
+        // Set method and body
+        if (!"GET".equals(api.getHttpMethod())) {
+            java.append("        \n");
+            java.append("        String requestBody = params.getBody() != null ? \n");
+            java.append("                objectMapper.writeValueAsString(params.getBody()) : \"{}\";\n");
+            java.append("        requestBuilder.method(\"").append(api.getHttpMethod()).append("\", \n");
+            java.append("                HttpRequest.BodyPublishers.ofString(requestBody));\n");
+        } else {
+            java.append("        requestBuilder.GET();\n");
+        }
+
+        java.append("        \n");
+        java.append("        HttpRequest request = requestBuilder.build();\n");
+        java.append("        \n");
+        java.append("        // Send request\n");
+        java.append("        HttpResponse<String> response = httpClient.send(request,\n");
+        java.append("                HttpResponse.BodyHandlers.ofString());\n");
+        java.append("        \n");
+        java.append("        // Parse response\n");
+        java.append("        if (response.statusCode() >= 200 && response.statusCode() < 300) {\n");
+        java.append("            return objectMapper.readValue(response.body(), ApiResponse.class);\n");
+        java.append("        } else {\n");
+        java.append("            throw new RuntimeException(\"API call failed with status: \" \n");
+        java.append("                    + response.statusCode() + \" - \" + response.body());\n");
+        java.append("        }\n");
+        java.append("    }\n\n");
+
+        // Main method example
+        java.append("    public static void main(String[] args) {\n");
+        java.append("        try {\n");
+        java.append("            ").append(api.getApiCode()).append("Client client = new ").append(api.getApiCode()).append("Client();\n");
+        java.append("            RequestParams params = new RequestParams();\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if (param.getExample() != null) {
+                    String type = mapToJavaType(param.getApiType());
+                    String value = param.getExample();
+                    if ("string".equals(type)) {
+                        value = "\"" + value + "\"";
+                    }
+                    java.append("            params.set").append(capitalize(param.getKey())).append("(").append(value).append(");\n");
+                }
+            }
+        }
+
+        java.append("            \n");
+        java.append("            ApiResponse response = client.callApi(params);\n");
+        java.append("            System.out.println(objectMapper.writerWithDefaultPrettyPrinter()\n");
+        java.append("                    .writeValueAsString(response));\n");
+        java.append("        } catch (Exception e) {\n");
+        java.append("            e.printStackTrace();\n");
+        java.append("        }\n");
+        java.append("    }\n");
+        java.append("}\n");
+
+        return java.toString();
+    }
+
+    /**
+     * Generate functional C# code
+     */
+    private String generateFunctionalCSharpCode(GeneratedApiEntity api, String fullUrl) {
+        StringBuilder cs = new StringBuilder();
+        cs.append("// Auto-generated functional C# code for ").append(api.getApiName()).append("\n\n");
+        cs.append("using System;\n");
+        cs.append("using System.Net.Http;\n");
+        cs.append("using System.Net.Http.Headers;\n");
+        cs.append("using System.Threading.Tasks;\n");
+        cs.append("using System.Collections.Generic;\n");
+        cs.append("using System.Text.Json;\n");
+        cs.append("using System.Text.Json.Serialization;\n");
+        cs.append("using System.Linq;\n\n");
+
+        cs.append("namespace ApiClient\n");
+        cs.append("{\n");
+        cs.append("    public class ").append(api.getApiCode()).append("Client\n");
+        cs.append("    {\n");
+        cs.append("        private readonly HttpClient _httpClient;\n");
+        cs.append("        private readonly JsonSerializerOptions _jsonOptions;\n");
+        cs.append("        private readonly string _baseUrl = \"").append(fullUrl).append("\";\n\n");
+
+        cs.append("        public ").append(api.getApiCode()).append("Client()\n");
+        cs.append("        {\n");
+        cs.append("            _httpClient = new HttpClient\n");
+        cs.append("            {\n");
+        cs.append("                Timeout = TimeSpan.FromSeconds(30)\n");
+        cs.append("            };\n");
+        cs.append("            _httpClient.DefaultRequestHeaders.Accept.Add(\n");
+        cs.append("                new MediaTypeWithQualityHeaderValue(\"application/json\"));\n");
+
+        // Add auth headers from environment
+        if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
+            switch (api.getAuthConfig().getAuthType()) {
+                case "API_KEY":
+                    cs.append("            var apiKey = Environment.GetEnvironmentVariable(\"API_KEY\");\n");
+                    cs.append("            if (!string.IsNullOrEmpty(apiKey))\n");
+                    cs.append("            {\n");
+                    cs.append("                _httpClient.DefaultRequestHeaders.Add(\"")
+                            .append(api.getAuthConfig().getApiKeyHeader() != null ?
+                                    api.getAuthConfig().getApiKeyHeader() : "X-API-Key")
+                            .append("\", apiKey);\n");
+                    cs.append("            }\n");
+                    break;
+                case "BEARER":
+                case "JWT":
+                    cs.append("            var token = Environment.GetEnvironmentVariable(\"JWT_TOKEN\");\n");
+                    cs.append("            if (!string.IsNullOrEmpty(token))\n");
+                    cs.append("            {\n");
+                    cs.append("                _httpClient.DefaultRequestHeaders.Authorization =\n");
+                    cs.append("                    new AuthenticationHeaderValue(\"Bearer\", token);\n");
+                    cs.append("            }\n");
+                    break;
+            }
+        }
+
+        cs.append("            _jsonOptions = new JsonSerializerOptions\n");
+        cs.append("            {\n");
+        cs.append("                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,\n");
+        cs.append("                WriteIndented = true\n");
+        cs.append("            };\n");
+        cs.append("        }\n\n");
+
+        // Request parameters class
+        cs.append("        public class RequestParams\n");
+        cs.append("        {\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                String type = mapToCSharpType(param.getApiType());
+                cs.append("            [JsonPropertyName(\"").append(param.getKey()).append("\")]\n");
+                cs.append("            public ").append(type).append(" ").append(capitalize(param.getKey())).append(" { get; set; }\n");
+            }
+        }
+
+        cs.append("            public Dictionary<string, object> Body { get; set; }\n");
+        cs.append("        }\n\n");
+
+        // Response class
+        cs.append("        public class ApiResponse\n");
+        cs.append("        {\n");
+
+        if (api.getResponseMappings() != null) {
+            for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
+                if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
+                    String type = mapToCSharpType(mapping.getApiType());
+                    cs.append("            [JsonPropertyName(\"").append(mapping.getApiField()).append("\")]\n");
+                    cs.append("            public ").append(type).append(" ").append(capitalize(mapping.getApiField())).append(" { get; set; }\n");
+                }
+            }
+        }
+
+        cs.append("        }\n\n");
+
+        // Main API method
+        cs.append("        public async Task<ApiResponse> CallApiAsync(RequestParams params)\n");
+        cs.append("        {\n");
+        cs.append("            // Build URL with query parameters\n");
+        cs.append("            var queryParams = new List<string>();\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if ("query".equals(param.getParameterType())) {
+                    cs.append("            if (params.").append(capitalize(param.getKey())).append(" != null)\n");
+                    cs.append("            {\n");
+                    cs.append("                queryParams.Add($\"").append(param.getKey()).append("={params.").append(capitalize(param.getKey())).append("}\");\n");
+                    cs.append("            }\n");
+                }
+            }
+        }
+
+        cs.append("\n");
+        cs.append("            var url = _baseUrl;\n");
+        cs.append("            if (queryParams.Any())\n");
+        cs.append("            {\n");
+        cs.append("                url += \"?\" + string.Join(\"&\", queryParams);\n");
+        cs.append("            }\n\n");
+
+        cs.append("            // Create request\n");
+        cs.append("            var request = new HttpRequestMessage\n");
+        cs.append("            {\n");
+        cs.append("                Method = HttpMethod.").append(capitalize(api.getHttpMethod() != null ? api.getHttpMethod().toLowerCase() : "get")).append(",\n");
+        cs.append("                RequestUri = new Uri(url)\n");
+        cs.append("            };\n\n");
+
+        if (!"GET".equals(api.getHttpMethod())) {
+            cs.append("            if (params.Body != null)\n");
+            cs.append("            {\n");
+            cs.append("                var json = JsonSerializer.Serialize(params.Body, _jsonOptions);\n");
+            cs.append("                request.Content = new StringContent(json, System.Text.Encoding.UTF8, \"application/json\");\n");
+            cs.append("            }\n\n");
+        }
+
+        cs.append("            // Send request\n");
+        cs.append("            var response = await _httpClient.SendAsync(request);\n");
+        cs.append("            var content = await response.Content.ReadAsStringAsync();\n\n");
+
+        cs.append("            if (response.IsSuccessStatusCode)\n");
+        cs.append("            {\n");
+        cs.append("                return JsonSerializer.Deserialize<ApiResponse>(content, _jsonOptions);\n");
+        cs.append("            }\n");
+        cs.append("            else\n");
+        cs.append("            {\n");
+        cs.append("                throw new Exception($\"API call failed: {response.StatusCode} - {content}\");\n");
+        cs.append("            }\n");
+        cs.append("        }\n\n");
+
+        // Example usage
+        cs.append("        public static async Task Main(string[] args)\n");
+        cs.append("        {\n");
+        cs.append("            try\n");
+        cs.append("            {\n");
+        cs.append("                var client = new ").append(api.getApiCode()).append("Client();\n");
+        cs.append("                var requestParams = new RequestParams\n");
+        cs.append("                {\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if (param.getExample() != null) {
+                    String type = mapToCSharpType(param.getApiType());
+                    String value = param.getExample();
+                    if ("string".equals(type.toLowerCase())) {
+                        value = "\"" + value + "\"";
+                    }
+                    cs.append("                    ").append(capitalize(param.getKey())).append(" = ").append(value).append(",\n");
+                }
+            }
+        }
+
+        cs.append("                };\n\n");
+        cs.append("                var response = await client.CallApiAsync(requestParams);\n");
+        cs.append("                Console.WriteLine(JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true }));\n");
+        cs.append("            }\n");
+        cs.append("            catch (Exception ex)\n");
+        cs.append("            {\n");
+        cs.append("                Console.WriteLine($\"Error: {ex.Message}\");\n");
+        cs.append("            }\n");
+        cs.append("        }\n");
+        cs.append("    }\n");
+        cs.append("}\n");
+
+        return cs.toString();
+    }
+
+    /**
+     * Generate functional PHP code
+     */
+    private String generateFunctionalPhpCode(GeneratedApiEntity api, String fullUrl) {
+        StringBuilder php = new StringBuilder();
+        php.append("<?php\n\n");
+        php.append("/**\n");
+        php.append(" * Auto-generated functional PHP code for ").append(api.getApiName()).append("\n");
+        php.append(" */\n\n");
+
+        php.append("class ").append(api.getApiCode()).append("Client {\n");
+        php.append("    private $baseUrl = '").append(fullUrl).append("';\n");
+        php.append("    private $timeout = 30;\n");
+        php.append("    private $headers = [];\n\n");
+
+        php.append("    public function __construct() {\n");
+        php.append("        $this->headers = [\n");
+        php.append("            'Content-Type: application/json',\n");
+        php.append("            'Accept: application/json',\n");
+
+        if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
+            switch (api.getAuthConfig().getAuthType()) {
+                case "API_KEY":
+                    php.append("            '")
+                            .append(api.getAuthConfig().getApiKeyHeader() != null ?
+                                    api.getAuthConfig().getApiKeyHeader() : "X-API-Key")
+                            .append(": ' . getenv('API_KEY'),\n");
+                    break;
+                case "BEARER":
+                case "JWT":
+                    php.append("            'Authorization: Bearer ' . getenv('JWT_TOKEN'),\n");
+                    break;
+                case "BASIC":
+                    php.append("            'Authorization: Basic ' . base64_encode(getenv('API_USERNAME') . ':' . getenv('API_PASSWORD')),\n");
+                    break;
+                case "ORACLE_ROLES":
+                    php.append("            'X-Oracle-Session: ' . getenv('ORACLE_SESSION_ID'),\n");
+                    break;
+            }
+        }
+
+        php.append("        ];\n");
+        php.append("    }\n\n");
+
+        php.append("    /**\n");
+        php.append("     * Call the API\n");
+        php.append("     * @param array $params Request parameters\n");
+        php.append("     * @return array API response\n");
+        php.append("     * @throws Exception\n");
+        php.append("     */\n");
+        php.append("    public function callApi($params = []) {\n");
+        php.append("        // Build query string\n");
+        php.append("        $queryParams = [];\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if ("query".equals(param.getParameterType())) {
+                    php.append("        if (isset($params['").append(param.getKey()).append("'])) {\n");
+                    php.append("            $queryParams['").append(param.getKey()).append("'] = $params['").append(param.getKey()).append("'];\n");
+                    php.append("        }\n");
+                }
+            }
+        }
+
+        php.append("\n");
+        php.append("        $url = $this->baseUrl;\n");
+        php.append("        if (!empty($queryParams)) {\n");
+        php.append("            $url .= '?' . http_build_query($queryParams);\n");
+        php.append("        }\n\n");
+
+        php.append("        // Initialize cURL\n");
+        php.append("        $ch = curl_init($url);\n");
+        php.append("        \n");
+        php.append("        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n");
+        php.append("        curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);\n");
+        php.append("        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, '")
+                .append(api.getHttpMethod() != null ? api.getHttpMethod() : "GET")
+                .append("');\n");
+        php.append("        curl_setopt($ch, CURLOPT_HTTPHEADER, $this->headers);\n");
+        php.append("        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);\n\n");
+
+        if (!"GET".equals(api.getHttpMethod())) {
+            php.append("        if (isset($params['body'])) {\n");
+            php.append("            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($params['body']));\n");
+            php.append("        }\n\n");
+        }
+
+        php.append("        // Execute request\n");
+        php.append("        $response = curl_exec($ch);\n");
+        php.append("        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);\n");
+        php.append("        $error = curl_error($ch);\n");
+        php.append("        curl_close($ch);\n\n");
+
+        php.append("        if ($error) {\n");
+        php.append("            throw new Exception('cURL Error: ' . $error);\n");
+        php.append("        }\n\n");
+
+        php.append("        $data = json_decode($response, true);\n\n");
+
+        php.append("        if ($httpCode >= 200 && $httpCode < 300) {\n");
+        php.append("            return $data;\n");
+        php.append("        } else {\n");
+        php.append("            $errorMsg = isset($data['message']) ? $data['message'] : 'Unknown error';\n");
+        php.append("            throw new Exception('API Error (' . $httpCode . '): ' . $errorMsg);\n");
+        php.append("        }\n");
+        php.append("    }\n");
+        php.append("}\n\n");
+
+        // Example usage
+        php.append("// Example usage:\n");
+        php.append("/*\n");
+        php.append("try {\n");
+        php.append("    $client = new ").append(api.getApiCode()).append("Client();\n");
+        php.append("    $params = [\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if (param.getExample() != null) {
+                    php.append("        '").append(param.getKey()).append("' => '").append(param.getExample()).append("',\n");
+                }
+            }
+        }
+
+        php.append("    ];\n");
+        php.append("    \n");
+        php.append("    $result = $client->callApi($params);\n");
+        php.append("    print_r($result);\n");
+        php.append("} catch (Exception $e) {\n");
+        php.append("    echo 'Error: ' . $e->getMessage();\n");
+        php.append("}\n");
+        php.append("*/\n");
+
+        return php.toString();
+    }
+
+    /**
+     * Generate functional Ruby code
+     */
+    private String generateFunctionalRubyCode(GeneratedApiEntity api, String fullUrl) {
+        StringBuilder rb = new StringBuilder();
+        rb.append("# Auto-generated functional Ruby code for ").append(api.getApiName()).append("\n\n");
+        rb.append("require 'uri'\n");
+        rb.append("require 'net/http'\n");
+        rb.append("require 'json'\n");
+        rb.append("require 'dotenv/load'\n\n");
+
+        rb.append("class ").append(api.getApiCode()).append("Client\n");
+        rb.append("  def initialize\n");
+        rb.append("    @base_url = '").append(fullUrl).append("'\n");
+        rb.append("    @timeout = 30\n");
+        rb.append("  end\n\n");
+
+        rb.append("  def call_api(params = {})\n");
+        rb.append("    # Build URL with query parameters\n");
+        rb.append("    uri = URI(@base_url)\n");
+        rb.append("    \n");
+        rb.append("    # Add query parameters\n");
+        rb.append("    query_params = {}\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if ("query".equals(param.getParameterType())) {
+                    rb.append("    query_params['").append(param.getKey()).append("'] = params[:").append(param.getKey()).append("] if params[:").append(param.getKey()).append("]\n");
+                }
+            }
+        }
+
+        rb.append("    \n");
+        rb.append("    unless query_params.empty?\n");
+        rb.append("      uri.query = URI.encode_www_form(query_params)\n");
+        rb.append("    end\n\n");
+
+        rb.append("    # Build request\n");
+        rb.append("    http = Net::HTTP.new(uri.host, uri.port)\n");
+        rb.append("    http.use_ssl = uri.scheme == 'https'\n");
+        rb.append("    http.read_timeout = @timeout\n\n");
+
+        String methodName = api.getHttpMethod() != null ?
+                capitalize(api.getHttpMethod().toLowerCase()) : "Get";
+        rb.append("    request = Net::HTTP::").append(methodName).append(".new(uri)\n");
+        rb.append("    \n");
+        rb.append("    # Set headers\n");
+        rb.append("    request['Content-Type'] = 'application/json'\n");
+        rb.append("    request['Accept'] = 'application/json'\n");
+
+        if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
+            switch (api.getAuthConfig().getAuthType()) {
+                case "API_KEY":
+                    rb.append("    request['")
+                            .append(api.getAuthConfig().getApiKeyHeader() != null ?
+                                    api.getAuthConfig().getApiKeyHeader() : "X-API-Key")
+                            .append("'] = ENV['API_KEY']\n");
+                    break;
+                case "BEARER":
+                case "JWT":
+                    rb.append("    request['Authorization'] = \"Bearer \\#{ENV['JWT_TOKEN']}\"\n");
+                    break;
+                case "BASIC":
+                    rb.append("    request.basic_auth(ENV['API_USERNAME'], ENV['API_PASSWORD'])\n");
+                    break;
+                case "ORACLE_ROLES":
+                    rb.append("    request['X-Oracle-Session'] = ENV['ORACLE_SESSION_ID']\n");
+                    break;
+            }
+        }
+
+        rb.append("\n");
+
+        if (!"GET".equals(api.getHttpMethod())) {
+            rb.append("    if params[:body]\n");
+            rb.append("      request.body = params[:body].to_json\n");
+            rb.append("    end\n\n");
+        }
+
+        rb.append("    # Execute request\n");
+        rb.append("    response = http.request(request)\n\n");
+
+        rb.append("    # Parse response\n");
+        rb.append("    data = JSON.parse(response.body) if response.body && !response.body.empty?\n\n");
+
+        rb.append("    if response.is_a?(Net::HTTPSuccess)\n");
+        rb.append("      return data\n");
+        rb.append("    else\n");
+        rb.append("      error_msg = data && data['message'] ? data['message'] : 'Unknown error'\n");
+        rb.append("      raise \"API Error (\\#{response.code}): \\#{error_msg}\"\n");
+        rb.append("    end\n");
+        rb.append("  end\n");
+        rb.append("end\n\n");
+
+        // Example usage
+        rb.append("# Example usage:\n");
+        rb.append("# client = ").append(api.getApiCode()).append("Client.new\n");
+        rb.append("# result = client.call_api({\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if (param.getExample() != null) {
+                    rb.append("#   ").append(param.getKey()).append(": '").append(param.getExample()).append("',\n");
+                }
+            }
+        }
+
+        rb.append("# })\n");
+        rb.append("# puts JSON.pretty_generate(result)\n");
+
+        return rb.toString();
+    }
+
+    /**
+     * Generate functional Go code
+     */
+    private String generateFunctionalGoCode(GeneratedApiEntity api, String fullUrl) {
+        StringBuilder go = new StringBuilder();
+        go.append("// Auto-generated functional Go code for ").append(api.getApiName()).append("\n\n");
+        go.append("package main\n\n");
+        go.append("import (\n");
+        go.append("    \"bytes\"\n");
+        go.append("    \"encoding/json\"\n");
+        go.append("    \"fmt\"\n");
+        go.append("    \"io\"\n");
+        go.append("    \"net/http\"\n");
+        go.append("    \"os\"\n");
+        go.append("    \"time\"\n");
+        go.append(")\n\n");
+
+        // Request parameters struct
+        go.append("type ").append(api.getApiCode()).append("RequestParams struct {\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                String type = mapToGoType(param.getApiType());
+                go.append("    ").append(capitalize(param.getKey())).append(" ").append(type).append(" `json:\"").append(param.getKey()).append("\"`\n");
+            }
+        }
+
+        go.append("    Body map[string]interface{} `json:\"body,omitempty\"`\n");
+        go.append("}\n\n");
+
+        // Response struct
+        go.append("type ").append(api.getApiCode()).append("Response struct {\n");
+
+        if (api.getResponseMappings() != null) {
+            for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
+                if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
+                    String type = mapToGoType(mapping.getApiType());
+                    go.append("    ").append(capitalize(mapping.getApiField())).append(" ").append(type).append(" `json:\"").append(mapping.getApiField()).append("\"`\n");
+                }
+            }
+        }
+
+        go.append("}\n\n");
+
+        // Client struct
+        go.append("type ").append(api.getApiCode()).append("Client struct {\n");
+        go.append("    baseURL    string\n");
+        go.append("    httpClient *http.Client\n");
+        go.append("}\n\n");
+
+        go.append("func New").append(api.getApiCode()).append("Client() *").append(api.getApiCode()).append("Client {\n");
+        go.append("    return &").append(api.getApiCode()).append("Client{\n");
+        go.append("        baseURL: \"").append(fullUrl).append("\",\n");
+        go.append("        httpClient: &http.Client{\n");
+        go.append("            Timeout: time.Second * 30,\n");
+        go.append("        },\n");
+        go.append("    }\n");
+        go.append("}\n\n");
+
+        // Main API method
+        go.append("func (c *").append(api.getApiCode()).append("Client) CallAPI(params *").append(api.getApiCode()).append("RequestParams) (*").append(api.getApiCode()).append("Response, error) {\n");
+        go.append("    // Build URL with query parameters\n");
+        go.append("    req, err := http.NewRequest(\"")
+                .append(api.getHttpMethod() != null ? api.getHttpMethod() : "GET")
+                .append("\", c.baseURL, nil)\n");
+        go.append("    if err != nil {\n");
+        go.append("        return nil, fmt.Errorf(\"failed to create request: %w\", err)\n");
+        go.append("    }\n\n");
+
+        // Add query parameters
+        go.append("    // Add query parameters\n");
+        go.append("    q := req.URL.Query()\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if ("query".equals(param.getParameterType())) {
+                    go.append("    if params.").append(capitalize(param.getKey())).append(" != \"\" {\n");
+                    go.append("        q.Add(\"").append(param.getKey()).append("\", params.").append(capitalize(param.getKey())).append(")\n");
+                    go.append("    }\n");
+                }
+            }
+        }
+
+        go.append("    req.URL.RawQuery = q.Encode()\n\n");
+
+        // Add headers
+        go.append("    // Set headers\n");
+        go.append("    req.Header.Set(\"Content-Type\", \"application/json\")\n");
+        go.append("    req.Header.Set(\"Accept\", \"application/json\")\n");
+
+        if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
+            switch (api.getAuthConfig().getAuthType()) {
+                case "API_KEY":
+                    go.append("    if apiKey := os.Getenv(\"API_KEY\"); apiKey != \"\" {\n");
+                    go.append("        req.Header.Set(\"")
+                            .append(api.getAuthConfig().getApiKeyHeader() != null ?
+                                    api.getAuthConfig().getApiKeyHeader() : "X-API-Key")
+                            .append("\", apiKey)\n");
+                    go.append("    }\n");
+                    break;
+                case "BEARER":
+                case "JWT":
+                    go.append("    if token := os.Getenv(\"JWT_TOKEN\"); token != \"\" {\n");
+                    go.append("        req.Header.Set(\"Authorization\", \"Bearer \"+token)\n");
+                    go.append("    }\n");
+                    break;
+            }
+        }
+
+        go.append("\n");
+
+        // Add body for non-GET requests
+        if (!"GET".equals(api.getHttpMethod())) {
+            go.append("    // Add request body\n");
+            go.append("    if params.Body != nil {\n");
+            go.append("        bodyBytes, err := json.Marshal(params.Body)\n");
+            go.append("        if err != nil {\n");
+            go.append("            return nil, fmt.Errorf(\"failed to marshal body: %w\", err)\n");
+            go.append("        }\n");
+            go.append("        req.Body = io.NopCloser(bytes.NewReader(bodyBytes))\n");
+            go.append("        req.ContentLength = int64(len(bodyBytes))\n");
+            go.append("    }\n\n");
+        }
+
+        go.append("    // Execute request\n");
+        go.append("    resp, err := c.httpClient.Do(req)\n");
+        go.append("    if err != nil {\n");
+        go.append("        return nil, fmt.Errorf(\"failed to execute request: %w\", err)\n");
+        go.append("    }\n");
+        go.append("    defer resp.Body.Close()\n\n");
+
+        go.append("    // Read response body\n");
+        go.append("    body, err := io.ReadAll(resp.Body)\n");
+        go.append("    if err != nil {\n");
+        go.append("        return nil, fmt.Errorf(\"failed to read response body: %w\", err)\n");
+        go.append("    }\n\n");
+
+        go.append("    // Check status code\n");
+        go.append("    if resp.StatusCode < 200 || resp.StatusCode >= 300 {\n");
+        go.append("        return nil, fmt.Errorf(\"API returned error status: %d - %s\", resp.StatusCode, string(body))\n");
+        go.append("    }\n\n");
+
+        go.append("    // Parse response\n");
+        go.append("    var response ").append(api.getApiCode()).append("Response\n");
+        go.append("    if err := json.Unmarshal(body, &response); err != nil {\n");
+        go.append("        return nil, fmt.Errorf(\"failed to parse response: %w\", err)\n");
+        go.append("    }\n\n");
+
+        go.append("    return &response, nil\n");
+        go.append("}\n\n");
+
+        // Main function example
+        go.append("func main() {\n");
+        go.append("    client := New").append(api.getApiCode()).append("Client()\n");
+        go.append("    \n");
+        go.append("    params := &").append(api.getApiCode()).append("RequestParams{\n");
+
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if (param.getExample() != null) {
+                    String type = mapToGoType(param.getApiType());
+                    String value = param.getExample();
+                    if ("string".equals(type)) {
+                        value = "\"" + value + "\"";
+                    }
+                    go.append("        ").append(capitalize(param.getKey())).append(": ").append(value).append(",\n");
+                }
+            }
+        }
+
+        go.append("    }\n\n");
+        go.append("    response, err := client.CallAPI(params)\n");
+        go.append("    if err != nil {\n");
+        go.append("        fmt.Printf(\"Error: %v\\n\", err)\n");
+        go.append("        return\n");
+        go.append("    }\n\n");
+        go.append("    jsonResponse, _ := json.MarshalIndent(response, \"\", \"  \")\n");
+        go.append("    fmt.Println(string(jsonResponse))\n");
+        go.append("}\n");
+
+        return go.toString();
+    }
+
+
+    private String capitalize(String str) {
+        if (str == null || str.isEmpty()) return str;
+        return str.substring(0, 1).toUpperCase() + str.substring(1).toLowerCase();
+    }
+
+
+    private String mapToTypeScriptType(String apiType) {
+        if (apiType == null) return "string";
+        switch (apiType.toLowerCase()) {
+            case "integer":
+            case "number":
+                return "number";
+            case "boolean":
+                return "boolean";
+            case "array":
+                return "any[]";
+            case "object":
+                return "Record<string, any>";
+            default:
+                return "string";
+        }
+    }
+
+    private String mapToPythonType(String apiType) {
+        if (apiType == null) return "str";
+        switch (apiType.toLowerCase()) {
+            case "integer":
+            case "number":
+                return "int";
+            case "boolean":
+                return "bool";
+            case "array":
+                return "list";
+            case "object":
+                return "dict";
+            default:
+                return "str";
+        }
+    }
+
+    private String mapToJavaType(String apiType) {
+        if (apiType == null) return "String";
+        switch (apiType.toLowerCase()) {
+            case "integer":
+                return "Integer";
+            case "number":
+                return "Double";
+            case "boolean":
+                return "Boolean";
+            case "array":
+                return "List<Object>";
+            case "object":
+                return "Map<String, Object>";
+            default:
+                return "String";
+        }
+    }
+
+    private String mapToCSharpType(String apiType) {
+        if (apiType == null) return "string";
+        switch (apiType.toLowerCase()) {
+            case "integer":
+                return "int?";
+            case "number":
+                return "double?";
+            case "boolean":
+                return "bool?";
+            case "array":
+                return "List<object>";
+            case "object":
+                return "Dictionary<string, object>";
+            default:
+                return "string";
+        }
+    }
+
+    private String mapToGoType(String apiType) {
+        if (apiType == null) return "string";
+        switch (apiType.toLowerCase()) {
+            case "integer":
+                return "int64";
+            case "number":
+                return "float64";
+            case "boolean":
+                return "bool";
+            case "array":
+                return "[]interface{}";
+            case "object":
+                return "map[string]interface{}";
+            default:
+                return "string";
+        }
+    }
+
 
     private String getRandomColor() {
         String[] colors = {"#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6",

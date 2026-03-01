@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 public class PublishedDocumentationEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
+//    @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
     @ManyToOne(fetch = FetchType.LAZY)

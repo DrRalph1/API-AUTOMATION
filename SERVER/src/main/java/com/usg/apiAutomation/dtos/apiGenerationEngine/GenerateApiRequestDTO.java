@@ -58,6 +58,9 @@ public class GenerateApiRequestDTO {
     // Add this field for regeneration control
     private Boolean regenerateComponents;  // Flag to control component regeneration
 
+    // New field for collection information
+    private CollectionInfoDTO collectionInfo;
+
     // Lombok's @Data will generate the getter automatically,
     // but if you want a custom getter, remove this method or implement it properly:
 

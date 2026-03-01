@@ -19,7 +19,7 @@ import lombok.ToString;
 public class AuthConfigEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
+//    @GeneratedValue(strategy = GenerationType.UUID)
     @EqualsAndHashCode.Include
     @ToString.Include
     private String id;

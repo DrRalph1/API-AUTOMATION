@@ -1,12 +1,16 @@
 package com.usg.apiAutomation.repositories.postgres.codeBase;
 
+import com.usg.apiAutomation.entities.postgres.codeBase.CollectionEntity;
 import com.usg.apiAutomation.entities.postgres.codeBase.FolderEntity;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository("FolderRepositoryCodeBase")
 public interface FolderRepository extends JpaRepository<FolderEntity, String> {
@@ -28,4 +32,8 @@ public interface FolderRepository extends JpaRepository<FolderEntity, String> {
 
     // Delete all folders in a collection
     void deleteByCollectionId(String collectionId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT f FROM FolderEntityCodeBase f WHERE f.id = :id")  // FIXED: Use correct entity name
+    Optional<FolderEntity> findByIdWithLock(@Param("id") String id);  // Also simplified the return type
 }

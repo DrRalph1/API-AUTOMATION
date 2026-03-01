@@ -19,7 +19,6 @@ import java.time.LocalDateTime;
 public class FolderEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
     @Column(nullable = false)

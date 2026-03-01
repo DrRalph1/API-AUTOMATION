@@ -9,7 +9,8 @@ import {
   CheckCircle, ChevronRight, Info, Layers, Cpu, Sparkles,
   Loader, Search, Filter, User, Users, Bell, ShieldCheck,
   BellOff, ShieldOff, Clock as ClockIcon, BarChart, Cpu as CpuIcon,
-  Server, Cloud, CloudOff, FileCode, BookOpen, FileKey, GitBranch
+  Server, Cloud, CloudOff, FileCode, BookOpen, FileKey, GitBranch,
+  Folder, FolderOpen, FolderTree, Layers as LayersIcon, Archive
 } from 'lucide-react';
 
 // Import the API Generation Engine controller functions
@@ -31,6 +32,92 @@ import {
   getObjectDetails,
   handleSchemaBrowserResponse
 } from "../../controllers/OracleSchemaController.js";
+
+// Mock collections data for banking system
+const MOCK_COLLECTIONS = [
+  {
+    id: 'core-api',
+    name: 'Core Banking API Collection',
+    description: 'Core banking system APIs for loans, accounts, and customer management',
+    type: 'core',
+    folders: [
+      { id: 'loans', name: 'Loans', description: 'Loan origination, servicing, and management' },
+      { id: 'accounts', name: 'Accounts', description: 'Deposit accounts, savings, and current accounts' },
+      { id: 'customers', name: 'Customers', description: 'Customer onboarding and profile management' },
+      { id: 'transactions', name: 'Transactions', description: 'Financial transactions and history' },
+      { id: 'cards', name: 'Cards', description: 'Debit and credit card management' },
+      { id: 'trade-finance', name: 'Trade Finance', description: 'Letters of credit, guarantees, and collections' },
+      { id: 'treasury', name: 'Treasury', description: 'Treasury operations and foreign exchange' },
+      { id: 'enquiry', name: 'Enquiry Services', description: 'Balance enquiries, statement enquiries' }
+    ]
+  },
+  {
+    id: 'customer-channel',
+    name: 'Customer Channel API Collection',
+    description: 'APIs for mobile banking, internet banking, and customer portals',
+    type: 'channel',
+    folders: [
+      { id: 'mobile-banking', name: 'Mobile Banking', description: 'Mobile app specific APIs' },
+      { id: 'internet-banking', name: 'Internet Banking', description: 'Web banking portal APIs' },
+      { id: 'atm', name: 'ATM Services', description: 'ATM and CDM related services' },
+      { id: 'ussd', name: 'USSD Banking', description: 'USSD banking services' },
+      { id: 'notifications', name: 'Notifications', description: 'SMS, email, and push notifications' }
+    ]
+  },
+  {
+    id: 'payment-gateway',
+    name: 'Payment Gateway API Collection',
+    description: 'Payment processing, transfers, and gateway services',
+    type: 'payment',
+    folders: [
+      { id: 'transfers', name: 'Fund Transfers', description: 'Internal and external transfers' },
+      { id: 'rtgs-neft', name: 'RTGS/NEFT', description: 'Interbank payment systems' },
+      { id: 'upi', name: 'UPI Services', description: 'Unified Payments Interface' },
+      { id: 'imps', name: 'IMPS', description: 'Immediate Payment Service' },
+      { id: 'bill-payments', name: 'Bill Payments', description: 'Utility bill payments' },
+      { id: 'recurring', name: 'Recurring Payments', description: 'Standing instructions and mandates' }
+    ]
+  },
+  {
+    id: 'third-party',
+    name: 'Third Party API Collection',
+    description: 'APIs for third-party integration and open banking',
+    type: 'thirdparty',
+    folders: [
+      { id: 'open-banking', name: 'Open Banking', description: 'PSD2 and open banking APIs' },
+      { id: 'aggregators', name: 'Account Aggregators', description: 'Account aggregator framework' },
+      { id: 'partner-integration', name: 'Partner Integration', description: 'Third-party partner APIs' },
+      { id: 'credit-bureau', name: 'Credit Bureau', description: 'Credit bureau integration' },
+      { id: 'kYC', name: 'KYC Services', description: 'KYC verification services' }
+    ]
+  },
+  {
+    id: 'admin-operations',
+    name: 'Administrative API Collection',
+    description: 'Internal administrative and operational APIs',
+    type: 'admin',
+    folders: [
+      { id: 'user-admin', name: 'User Administration', description: 'User management and roles' },
+      { id: 'audit', name: 'Audit Services', description: 'Audit log and compliance' },
+      { id: 'reports', name: 'Reports', description: 'Reporting and analytics' },
+      { id: 'system-monitoring', name: 'System Monitoring', description: 'System health and monitoring' },
+      { id: 'configuration', name: 'Configuration', description: 'System configuration' }
+    ]
+  },
+  {
+    id: 'miscellaneous',
+    name: 'Miscellaneous API Collection',
+    description: 'Utility and miscellaneous services',
+    type: 'misc',
+    folders: [
+      { id: 'utilities', name: 'Utilities', description: 'Utility services' },
+      { id: 'reference-data', name: 'Reference Data', description: 'Reference and master data' },
+      { id: 'file-services', name: 'File Services', description: 'File upload and download' },
+      { id: 'document-management', name: 'Document Management', description: 'Document storage and retrieval' },
+      { id: 'other', name: 'Other Services', description: 'Miscellaneous services' }
+    ]
+  }
+];
 
 // New component for the preview modal
 function ApiPreviewModal({ 
@@ -156,6 +243,57 @@ function ApiPreviewModal({
                 </div>
               </div>
             </div>
+
+            {/* Collection & Folder Info */}
+            {apiData.collectionInfo && (
+              <div className="p-4 rounded-lg border" style={{ 
+                borderColor: themeColors.success + '40',
+                backgroundColor: themeColors.success + '10'
+              }}>
+                <h4 className="font-semibold flex items-center gap-2 mb-3" style={{ color: themeColors.success }}>
+                  <Layers className="h-5 w-5" />
+                  API Organization
+                </h4>
+                <div className="grid grid-cols-2 gap-4 text-xs">
+                  <div>
+                    <span style={{ color: themeColors.textSecondary }}>Collection:</span>
+                    <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                      {apiData.collectionInfo.collectionName}
+                    </span>
+                    {apiData.collectionInfo.isNewCollection && (
+                      <span className="ml-2 text-xs px-2 py-0.5 rounded" style={{ 
+                        backgroundColor: themeColors.success + '20',
+                        color: themeColors.success
+                      }}>
+                        New
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <span style={{ color: themeColors.textSecondary }}>Folder:</span>
+                    <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                      {apiData.collectionInfo.folderName}
+                    </span>
+                    {apiData.collectionInfo.isNewFolder && (
+                      <span className="ml-2 text-xs px-2 py-0.5 rounded" style={{ 
+                        backgroundColor: themeColors.success + '20',
+                        color: themeColors.success
+                      }}>
+                        New
+                      </span>
+                    )}
+                  </div>
+                  {apiData.collectionInfo.collectionType && (
+                    <div>
+                      <span style={{ color: themeColors.textSecondary }}>Collection Type:</span>
+                      <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                        {apiData.collectionInfo.collectionType}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Source Object */}
             <div className="space-y-4">
@@ -707,6 +845,33 @@ function ApiConfirmationModal({
                 </div>
               </div>
 
+              {/* Collection Info */}
+              {transformedData.collectionInfo && (
+                <div className="p-4 rounded-lg border" style={{ 
+                  borderColor: themeColors.success + '40',
+                  backgroundColor: themeColors.success + '10'
+                }}>
+                  <h4 className="font-semibold flex items-center gap-2 mb-3" style={{ color: themeColors.success }}>
+                    <Layers className="h-5 w-5" />
+                    API Organization
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4 text-xs">
+                    <div>
+                      <span style={{ color: themeColors.textSecondary }}>Collection:</span>
+                      <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                        {transformedData.collectionInfo.collectionName}
+                      </span>
+                    </div>
+                    <div>
+                      <span style={{ color: themeColors.textSecondary }}>Folder:</span>
+                      <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                        {transformedData.collectionInfo.folderName}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Generated Files */}
               {transformedData.generatedFiles && (
                 <div className="space-y-4">
@@ -899,6 +1064,144 @@ function ApiConfirmationModal({
   return null;
 }
 
+// New component for folder selection modal (when adding new folder)
+function AddFolderModal({ 
+  isOpen, 
+  onClose, 
+  onConfirm,
+  selectedCollection,
+  colors = {},
+  theme = 'dark' 
+}) {
+  const [folderName, setFolderName] = useState('');
+  const [folderDescription, setFolderDescription] = useState('');
+
+  const themeColors = colors || {
+    bg: theme === 'dark' ? 'rgb(1 14 35)' : '#f8fafc',
+    text: theme === 'dark' ? '#E8ECF1' : '#1e293b',
+    textSecondary: theme === 'dark' ? 'rgb(168 178 192)' : '#64748b',
+    border: theme === 'dark' ? 'rgb(61 73 92)' : '#e2e8f0',
+    hover: theme === 'dark' ? 'rgb(51 63 82)' : '#f1f5f9',
+    card: theme === 'dark' ? '#010e23' : '#ffffff',
+    modalBorder: theme === 'dark' ? 'rgb(61 73 92)' : '#e2e8f0',
+    success: theme === 'dark' ? 'rgb(16 185 129)' : '#10b981',
+    white: '#ffffff'
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4" style={{ zIndex: 1004 }}>
+      <div className="rounded-xl shadow-2xl w-full max-w-md p-6" style={{ 
+        backgroundColor: themeColors.bg,
+        border: `1px solid ${themeColors.modalBorder}`
+      }}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg" style={{ backgroundColor: themeColors.success + '20' }}>
+              <Folder className="h-5 w-5" style={{ color: themeColors.success }} />
+            </div>
+            <h3 className="text-lg font-bold" style={{ color: themeColors.text }}>
+              Add New Folder
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg transition-colors hover-lift"
+            style={{ backgroundColor: themeColors.hover, color: themeColors.textSecondary }}
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+              Collection
+            </label>
+            <div className="p-3 rounded-lg border" style={{ 
+              borderColor: themeColors.border,
+              backgroundColor: themeColors.card
+            }}>
+              <div className="font-medium text-sm" style={{ color: themeColors.text }}>
+                {selectedCollection?.name}
+              </div>
+              <div className="text-xs mt-1" style={{ color: themeColors.textSecondary }}>
+                {selectedCollection?.description}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+              Folder Name *
+            </label>
+            <input
+              type="text"
+              value={folderName}
+              onChange={(e) => setFolderName(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+              style={{ 
+                backgroundColor: themeColors.card,
+                borderColor: themeColors.border,
+                color: themeColors.text
+              }}
+              placeholder="e.g., Loan Origination"
+              autoFocus
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+              Description
+            </label>
+            <textarea
+              value={folderDescription}
+              onChange={(e) => setFolderDescription(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
+              style={{ 
+                backgroundColor: themeColors.card,
+                borderColor: themeColors.border,
+                color: themeColors.text
+              }}
+              rows="3"
+              placeholder="Describe the purpose of this folder..."
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 mt-6">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 border rounded-lg transition-colors hover-lift"
+            style={{ 
+              backgroundColor: themeColors.hover,
+              borderColor: themeColors.border,
+              color: themeColors.text
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm({ name: folderName, description: folderDescription })}
+            disabled={!folderName.trim()}
+            className="px-4 py-2 rounded-lg flex items-center gap-2 transition-colors hover-lift"
+            style={{ 
+              backgroundColor: folderName.trim() ? themeColors.success : themeColors.textSecondary,
+              color: themeColors.white,
+              opacity: folderName.trim() ? 1 : 0.5,
+              cursor: folderName.trim() ? 'pointer' : 'not-allowed'
+            }}
+          >
+            <Check className="h-4 w-4" />
+            Add Folder
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ApiGenerationModal({
   isOpen,
   onClose,
@@ -913,6 +1216,19 @@ export default function ApiGenerationModal({
   const [loading, setLoading] = useState(false);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
+  
+  // Collection and Folder state
+  const [collections, setCollections] = useState(MOCK_COLLECTIONS);
+  const [selectedCollection, setSelectedCollection] = useState(null);
+  const [folders, setFolders] = useState([]);
+  const [selectedFolder, setSelectedFolder] = useState(null);
+  const [isAddingNewCollection, setIsAddingNewCollection] = useState(false);
+  const [isAddingNewFolder, setIsAddingNewFolder] = useState(false);
+  const [newCollectionName, setNewCollectionName] = useState('');
+  const [newCollectionDescription, setNewCollectionDescription] = useState('');
+  const [newCollectionType, setNewCollectionType] = useState('core');
+  const [showAddFolderModal, setShowAddFolderModal] = useState(false);
+
   const [apiDetails, setApiDetails] = useState({
     apiName: '',
     apiCode: '',
@@ -1334,6 +1650,83 @@ export default function ApiGenerationModal({
     }
   }, [selectedObject, isOpen, authToken, obType]);
 
+  // Handle collection selection
+  const handleCollectionChange = (collectionId) => {
+    if (collectionId === 'new') {
+      setIsAddingNewCollection(true);
+      setSelectedCollection(null);
+      setFolders([]);
+      setSelectedFolder(null);
+    } else {
+      const collection = collections.find(c => c.id === collectionId);
+      setSelectedCollection(collection);
+      setFolders(collection.folders);
+      setSelectedFolder(null);
+      setIsAddingNewCollection(false);
+    }
+  };
+
+  // Handle folder selection
+  const handleFolderChange = (folderId) => {
+    if (folderId === 'new') {
+      if (!selectedCollection) {
+        alert('Please select a collection first');
+        return;
+      }
+      setShowAddFolderModal(true);
+    } else {
+      const folder = folders.find(f => f.id === folderId);
+      setSelectedFolder(folder);
+    }
+  };
+
+  // Handle adding new collection
+  const handleAddNewCollection = () => {
+    if (!newCollectionName.trim()) return;
+
+    const newCollection = {
+      id: `new-${Date.now()}`,
+      name: newCollectionName,
+      description: newCollectionDescription || `Collection for ${newCollectionName}`,
+      type: newCollectionType,
+      folders: []
+    };
+
+    setCollections([...collections, newCollection]);
+    setSelectedCollection(newCollection);
+    setFolders([]);
+    setSelectedFolder(null);
+    setIsAddingNewCollection(false);
+    setNewCollectionName('');
+    setNewCollectionDescription('');
+    setNewCollectionType('core');
+  };
+
+  // Handle adding new folder
+  const handleAddNewFolder = (folderData) => {
+    const newFolder = {
+      id: `new-folder-${Date.now()}`,
+      name: folderData.name,
+      description: folderData.description || `Folder for ${folderData.name}`
+    };
+
+    // Update folders in state
+    const updatedFolders = [...folders, newFolder];
+    setFolders(updatedFolders);
+    
+    // Update collection's folders
+    const updatedCollections = collections.map(c => {
+      if (c.id === selectedCollection.id) {
+        return { ...c, folders: updatedFolders };
+      }
+      return c;
+    });
+    setCollections(updatedCollections);
+    
+    setSelectedFolder(newFolder);
+    setShowAddFolderModal(false);
+  };
+
   const [authConfig, setAuthConfig] = useState({
     authType: 'ORACLE_ROLES',
     requiredRoles: [],
@@ -1611,6 +2004,8 @@ export default function ApiGenerationModal({
 -- Generated: ${new Date().toISOString()}
 -- Version: ${apiDetails.version}
 -- Source Object: ${schemaConfig.schemaName}.${schemaConfig.objectName} (${schemaConfig.objectType})
+-- Collection: ${selectedCollection?.name || 'Not assigned'}
+-- Folder: ${selectedFolder?.name || 'Not assigned'}
 -- ============================================================================
 
 CREATE OR REPLACE PACKAGE ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG AS
@@ -1694,7 +2089,16 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
         contact: {
           name: apiDetails.owner,
           email: `${apiDetails.owner.toLowerCase()}@example.com`
-        }
+        },
+        'x-collection': selectedCollection ? {
+          name: selectedCollection.name,
+          id: selectedCollection.id,
+          type: selectedCollection.type
+        } : undefined,
+        'x-folder': selectedFolder ? {
+          name: selectedFolder.name,
+          id: selectedFolder.id
+        } : undefined
       },
       servers: [
         {
@@ -1706,12 +2110,18 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
           },
         },
       ],
+      tags: [
+        {
+          name: selectedCollection?.name || 'General',
+          description: selectedCollection?.description || 'General APIs'
+        }
+      ],
       paths: {
         [apiDetails.endpointPath]: {
           [apiDetails.httpMethod.toLowerCase()]: {
             summary: apiDetails.apiName,
             description: apiDetails.description,
-            tags: apiDetails.tags,
+            tags: [selectedCollection?.name || 'General'],
             operationId: apiDetails.apiCode.toLowerCase(),
             parameters: parameters.map(p => ({
               name: p.key,
@@ -1835,6 +2245,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
         setGeneratedCode(JSON.stringify({
           apiDetails,
           schemaConfig,
+          collectionInfo: {
+            collectionId: selectedCollection?.id,
+            collectionName: selectedCollection?.name,
+            collectionType: selectedCollection?.type,
+            folderId: selectedFolder?.id,
+            folderName: selectedFolder?.name
+          },
           parameters: parameters.map(p => ({
             key: p.key,
             dbColumn: p.dbColumn,
@@ -1854,14 +2271,23 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
           validation: validationResult
         }, null, 2));
     }
-  }, [previewMode, apiDetails, schemaConfig, parameters, responseMappings, authConfig, settings, sourceObjectInfo, validationResult]);
+  }, [previewMode, apiDetails, schemaConfig, parameters, responseMappings, authConfig, settings, sourceObjectInfo, validationResult, selectedCollection, selectedFolder]);
 
   // Handle save - show preview first
-  const handleSave = () => {
-    const apiData = {
-      id: `api-${Date.now()}`,
-      ...apiDetails,
-      schemaConfig,
+const handleSave = () => {
+  const apiData = {
+    id: `api-${Date.now()}`,
+    ...apiDetails,
+    schemaConfig,
+    collectionInfo: {
+      collectionId: selectedCollection?.id,
+      collectionName: selectedCollection?.name,
+      collectionType: selectedCollection?.type,
+      isNewCollection: isAddingNewCollection,
+      folderId: selectedFolder?.id,
+      folderName: selectedFolder?.name,
+      isNewFolder: selectedFolder?.id?.startsWith('new-folder-')
+    },
       parameters,
       responseMappings,
       authConfig,
@@ -1891,48 +2317,56 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
   };
 
   // Handle preview confirmation - actually call the generateApi function
-  const handlePreviewConfirm = async () => {
-    setPreviewOpen(false);
-    setLoadingOpen(true);
-    
-    try {
-      // Prepare the request object for the generateApi function
-      const generateRequest = {
-        apiName: apiDetails.apiName,
-        apiCode: apiDetails.apiCode,
-        description: apiDetails.description,
-        version: apiDetails.version,
-        httpMethod: apiDetails.httpMethod,
-        basePath: apiDetails.basePath,
-        endpointPath: apiDetails.endpointPath,
-        category: apiDetails.category,
-        owner: apiDetails.owner,
-        status: apiDetails.status,
-        tags: apiDetails.tags,
-        sourceObject: {
-          schemaName: schemaConfig.schemaName,
-          objectType: schemaConfig.objectType,
-          objectName: schemaConfig.objectName,
-          operation: schemaConfig.operation,
-          primaryKeyColumn: schemaConfig.primaryKeyColumn,
-          sequenceName: schemaConfig.sequenceName,
-          enablePagination: schemaConfig.enablePagination,
-          pageSize: schemaConfig.pageSize,
-          enableSorting: schemaConfig.enableSorting,
-          defaultSortColumn: schemaConfig.defaultSortColumn,
-          defaultSortDirection: schemaConfig.defaultSortDirection
-        },
-        schemaConfig: schemaConfig,
-        authConfig: authConfig,
-        requestBody: requestBody,
-        responseBody: responseBody,
-        settings: settings,
-        parameters: parameters,
-        responseMappings: responseMappings,
-        headers: headers,
-        tests: tests,
-        regenerateComponents: true
-      };
+const handlePreviewConfirm = async () => {
+  setPreviewOpen(false);
+  setLoadingOpen(true);
+  
+  try {
+    // Prepare the request object for the generateApi function
+    const generateRequest = {
+      apiName: apiDetails.apiName,
+      apiCode: apiDetails.apiCode,
+      description: apiDetails.description,
+      version: apiDetails.version,
+      httpMethod: apiDetails.httpMethod,
+      basePath: apiDetails.basePath,
+      endpointPath: apiDetails.endpointPath,
+      category: apiDetails.category,
+      owner: apiDetails.owner,
+      status: apiDetails.status,
+      tags: apiDetails.tags,
+      // ADD THIS LINE - include the collection info
+      collectionInfo: {
+        collectionId: selectedCollection?.id,
+        collectionName: selectedCollection?.name,
+        collectionType: selectedCollection?.type,
+        folderId: selectedFolder?.id,
+        folderName: selectedFolder?.name
+      },
+      sourceObject: {
+        schemaName: schemaConfig.schemaName,
+        objectType: schemaConfig.objectType,
+        objectName: schemaConfig.objectName,
+        operation: schemaConfig.operation,
+        primaryKeyColumn: schemaConfig.primaryKeyColumn,
+        sequenceName: schemaConfig.sequenceName,
+        enablePagination: schemaConfig.enablePagination,
+        pageSize: schemaConfig.pageSize,
+        enableSorting: schemaConfig.enableSorting,
+        defaultSortColumn: schemaConfig.defaultSortColumn,
+        defaultSortDirection: schemaConfig.defaultSortDirection
+      },
+      schemaConfig: schemaConfig,
+      authConfig: authConfig,
+      requestBody: requestBody,
+      responseBody: responseBody,
+      settings: settings,
+      parameters: parameters,
+      responseMappings: responseMappings,
+      headers: headers,
+      tests: tests,
+      regenerateComponents: true
+    };
 
       console.log('📡 Calling generateApi with request:', generateRequest);
 
@@ -2064,12 +2498,6 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                         </span>
                       )}
                     </p>
-                    {/* {loading && (
-                      <p className="text-xs mt-1 flex items-center gap-1" style={{ color: themeColors.info }}>
-                        <Loader className="h-3 w-3 animate-spin" />
-                        Fetching object details...
-                      </p>
-                    )} */}
                     {validating && (
                       <p className="text-xs mt-1 flex items-center gap-1" style={{ color: themeColors.warning }}>
                         <Loader className="h-3 w-3 animate-spin" />
@@ -2095,6 +2523,202 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
               >
                 <X className="h-5 w-5" />
               </button>
+            </div>
+          </div>
+
+          {/* Collection & Folder Selection Section */}
+          <div className="px-6 py-4 border-b" style={{ 
+            borderColor: themeColors.border,
+            backgroundColor: themeColors.modalBg
+          }}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Collection Selection */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium flex items-center gap-1" style={{ color: themeColors.text }}>
+                  <Layers className="h-4 w-4" />
+                  API Collection *
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={selectedCollection?.id || ''}
+                    onChange={(e) => handleCollectionChange(e.target.value)}
+                    className="flex-1 px-3 py-2 border rounded-lg text-xs hover-lift"
+                    style={{ 
+                      backgroundColor: themeColors.bg,
+                      borderColor: themeColors.border,
+                      color: themeColors.text
+                    }}
+                  >
+                    <option value="">Select a collection</option>
+                    {collections.map(collection => (
+                      <option key={collection.id} value={collection.id}>
+                        {collection.name}
+                      </option>
+                    ))}
+                    <option value="new" style={{ color: themeColors.success }}>➕ Add New Collection...</option>
+                  </select>
+                  
+                  {isAddingNewCollection && (
+                    <button
+                      onClick={() => setIsAddingNewCollection(false)}
+                      className="px-2 py-2 border rounded-lg transition-colors hover-lift"
+                      style={{ 
+                        backgroundColor: themeColors.error + '20',
+                        borderColor: themeColors.error,
+                        color: themeColors.error
+                      }}
+                      title="Cancel adding new collection"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+
+                {/* New Collection Input */}
+                {isAddingNewCollection && (
+                  <div className="mt-3 p-3 rounded-lg border space-y-3" style={{ 
+                    borderColor: themeColors.success,
+                    backgroundColor: themeColors.success + '10'
+                  }}>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                        Collection Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={newCollectionName}
+                        onChange={(e) => setNewCollectionName(e.target.value)}
+                        className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                        style={{ 
+                          backgroundColor: themeColors.card,
+                          borderColor: themeColors.border,
+                          color: themeColors.text
+                        }}
+                        placeholder="e.g., Core Banking API Collection"
+                        autoFocus
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                        Collection Type
+                      </label>
+                      <select
+                        value={newCollectionType}
+                        onChange={(e) => setNewCollectionType(e.target.value)}
+                        className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                        style={{ 
+                          backgroundColor: themeColors.bg,
+                          borderColor: themeColors.border,
+                          color: themeColors.text
+                        }}
+                      >
+                        <option value="core">Core Banking</option>
+                        <option value="channel">Customer Channel</option>
+                        <option value="payment">Payment Gateway</option>
+                        <option value="thirdparty">Third Party</option>
+                        <option value="admin">Administrative</option>
+                        <option value="misc">Miscellaneous</option>
+                      </select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                        Description
+                      </label>
+                      <textarea
+                        value={newCollectionDescription}
+                        onChange={(e) => setNewCollectionDescription(e.target.value)}
+                        className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                        style={{ 
+                          backgroundColor: themeColors.card,
+                          borderColor: themeColors.border,
+                          color: themeColors.text
+                        }}
+                        rows="2"
+                        placeholder="Describe the purpose of this collection..."
+                      />
+                    </div>
+                    
+                    <button
+                      onClick={handleAddNewCollection}
+                      disabled={!newCollectionName.trim()}
+                      className="w-full px-3 py-2 rounded-lg flex items-center justify-center gap-2 text-xs transition-colors hover-lift"
+                      style={{ 
+                        backgroundColor: newCollectionName.trim() ? themeColors.success : themeColors.textSecondary,
+                        color: themeColors.white,
+                        opacity: newCollectionName.trim() ? 1 : 0.5,
+                        cursor: newCollectionName.trim() ? 'pointer' : 'not-allowed'
+                      }}
+                    >
+                      <Check className="h-4 w-4" />
+                      Create Collection
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Folder Selection */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium flex items-center gap-1" style={{ color: themeColors.text }}>
+                  <Folder className="h-4 w-4" />
+                  API Folder *
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={selectedFolder?.id || ''}
+                    onChange={(e) => handleFolderChange(e.target.value)}
+                    className="flex-1 px-3 py-2 border rounded-lg text-xs hover-lift"
+                    style={{ 
+                      backgroundColor: themeColors.bg,
+                      borderColor: themeColors.border,
+                      color: themeColors.text
+                    }}
+                    disabled={!selectedCollection && !isAddingNewCollection}
+                  >
+                    <option value="">{selectedCollection ? 'Select a folder' : 'Select a collection first'}</option>
+                    {folders.map(folder => (
+                      <option key={folder.id} value={folder.id}>
+                        📁 {folder.name}
+                      </option>
+                    ))}
+                    {selectedCollection && (
+                      <option value="new" style={{ color: themeColors.success }}>➕ Add New Folder...</option>
+                    )}
+                  </select>
+                  
+                  {selectedFolder && (
+                    <button
+                      onClick={() => setSelectedFolder(null)}
+                      className="px-2 py-2 border rounded-lg transition-colors hover-lift"
+                      style={{ 
+                        backgroundColor: themeColors.hover,
+                        borderColor: themeColors.border,
+                        color: themeColors.textSecondary
+                      }}
+                      title="Clear folder selection"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Selected Collection Info */}
+                {selectedCollection && !isAddingNewCollection && (
+                  <div className="mt-2 p-2 rounded text-xs" style={{ 
+                    backgroundColor: themeColors.hover
+                  }}>
+                    <div className="flex items-center justify-between">
+                      <span style={{ color: themeColors.textSecondary }}>Collection:</span>
+                      <span className="font-medium" style={{ color: themeColors.text }}>{selectedCollection.name}</span>
+                    </div>
+                    <div className="flex items-center justify-between mt-1">
+                      <span style={{ color: themeColors.textSecondary }}>Type:</span>
+                      <span style={{ color: themeColors.info }}>{selectedCollection.type}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -2409,6 +3033,11 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                           )}
                           <div className="mt-2 text-xs" style={{ color: themeColors.textSecondary }}>
                             Source: {schemaConfig.schemaName}.{schemaConfig.objectName} ({schemaConfig.objectType})
+                          </div>
+                          <div className="mt-2 text-xs flex items-center gap-2" style={{ color: themeColors.success }}>
+                            <Layers className="h-3 w-3" />
+                            {selectedCollection?.name || 'No collection'} 
+                            {selectedFolder && ` › ${selectedFolder.name}`}
                           </div>
                           {sourceObjectInfo.isSynonym && (
                             <div className="mt-1 text-xs" style={{ color: themeColors.warning }}>
@@ -5751,15 +6380,15 @@ END AUTHENTICATE_API_USER;`}
                 {apiDetails.httpMethod} {apiDetails.basePath}{apiDetails.endpointPath}
               </span>
               <br />
-              <span className="text-xs" style={{ color: themeColors.textSecondary }}>
+              {/* <span className="text-xs" style={{ color: themeColors.textSecondary }}>
                 Source: {schemaConfig.schemaName}.{schemaConfig.objectName} ({schemaConfig.objectType})
-              </span>
-              {sourceObjectInfo.isSynonym && (
+              </span> */}
+              {/* {sourceObjectInfo.isSynonym && (
                 <span className="text-xs block mt-1" style={{ color: themeColors.warning }}>
                   <Link className="h-3 w-3 inline mr-1" />
                   Synonym → {sourceObjectInfo.targetType}: {sourceObjectInfo.targetOwner}.{sourceObjectInfo.targetName}
                 </span>
-              )}
+              )} */}
               {validationResult && validationResult.valid && (
                 <span className="text-xs block mt-1" style={{ color: themeColors.success }}>
                   <Check className="h-3 w-3 inline mr-1" />

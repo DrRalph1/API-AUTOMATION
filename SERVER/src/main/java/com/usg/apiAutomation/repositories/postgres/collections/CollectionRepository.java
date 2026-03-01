@@ -1,7 +1,9 @@
 package com.usg.apiAutomation.repositories.postgres.collections;
 
 import com.usg.apiAutomation.entities.postgres.collections.CollectionEntity;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -26,4 +28,5 @@ public interface CollectionRepository extends JpaRepository<CollectionEntity, St
     long countByOwner(@Param("owner") String owner);
 
     void deleteByOwnerAndId(String owner, String id);
+
 }

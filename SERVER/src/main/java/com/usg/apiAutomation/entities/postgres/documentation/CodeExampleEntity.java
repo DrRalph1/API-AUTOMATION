@@ -11,13 +11,13 @@ import lombok.NoArgsConstructor;
 public class CodeExampleEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
+//    @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
     @Column(nullable = false)
     private String language;
 
-    @Column(length = 10000)
+    @Column(columnDefinition = "TEXT")  // ← Change this from @Column(length = 10000)
     private String code;
 
     private String description;
