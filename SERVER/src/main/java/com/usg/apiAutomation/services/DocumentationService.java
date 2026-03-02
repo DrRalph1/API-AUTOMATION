@@ -220,14 +220,14 @@ public class DocumentationService {
     // ========== API ENDPOINT METHODS ==========
 
     /**
-     * Get folders for a specific collection
+     * Get folders for a specific collection with their endpoints
      * @param requestId The request ID for logging
      * @param collectionId The collection ID
-     * @return List of FolderDTO objects
+     * @return List of FolderDTO objects containing their endpoints
      */
     public List<FolderDTO> getAPIFolders(String requestId, String collectionId) {
         try {
-            log.info("Request ID: {}, Getting folders for collection: {}", requestId, collectionId);
+            log.info("Request ID: {}, Getting folders with endpoints for collection: {}", requestId, collectionId);
 
             // Check if collection exists
             APICollectionEntity collection = collectionRepository.findById(collectionId)
@@ -237,17 +237,29 @@ public class DocumentationService {
             List<FolderEntity> folderEntities = folderRepository.findByCollectionId(collectionId);
 
             List<FolderDTO> folderDTOs = folderEntities.stream()
-                    .map(this::convertToFolderDTO)
+                    .map(folder -> {
+                        FolderDTO folderDTO = convertToFolderDTO(folder);
+
+                        // Get endpoints for this folder
+                        List<APIEndpointEntity> folderEndpoints = endpointRepository.findByFolderId(folder.getId());
+
+                        // Convert endpoints to DTOs
+                        List<APIEndpointDTO> endpointDTOs = folderEndpoints.stream()
+                                .map(this::convertToEndpointDtoSafely)
+                                .filter(Objects::nonNull)
+                                .collect(Collectors.toList());
+
+                        folderDTO.setEndpoints(endpointDTOs);
+                        folderDTO.setEndpointCount(endpointDTOs.size());
+
+                        return folderDTO;
+                    })
                     .collect(Collectors.toList());
 
-            // Add endpoint counts to each folder
-            folderDTOs.forEach(folder -> {
-                int endpointCount = folderRepository.countEndpointsInFolder(folder.getId());
-                folder.setEndpointCount(endpointCount);
-            });
-
-            log.info("Request ID: {}, Retrieved {} folders for collection: {}",
-                    requestId, folderDTOs.size(), collectionId);
+            log.info("Request ID: {}, Retrieved {} folders with {} total endpoints for collection: {}",
+                    requestId, folderDTOs.size(),
+                    folderDTOs.stream().mapToInt(FolderDTO::getEndpointCount).sum(),
+                    collectionId);
 
             return folderDTOs;
 
@@ -259,17 +271,17 @@ public class DocumentationService {
     }
 
     /**
-     * Get folders with hierarchy information (parent-child relationships)
+     * Get folders with hierarchy information (parent-child relationships) and their endpoints
      * @param requestId The request ID for logging
      * @param collectionId The collection ID
-     * @return List of FolderDTO objects with parent-child relationships preserved
+     * @return List of FolderDTO objects with parent-child relationships preserved and endpoints included
      */
     public List<FolderDTO> getAPIFoldersWithHierarchy(
             String requestId,
             String collectionId) {
 
         try {
-            log.info("Request ID: {}, Getting folder hierarchy for collection: {}", requestId, collectionId);
+            log.info("Request ID: {}, Getting folder hierarchy with endpoints for collection: {}", requestId, collectionId);
 
             // Check if collection exists
             APICollectionEntity collection = collectionRepository.findById(collectionId)
@@ -282,12 +294,23 @@ public class DocumentationService {
             Map<String, FolderDTO> folderMap = new HashMap<>();
             List<FolderDTO> rootFolders = new ArrayList<>();
 
-            // First pass: create all DTOs
+            // First pass: create all DTOs with their endpoints
             for (FolderEntity entity : allFolders) {
                 FolderDTO dto = convertToFolderDTO(entity);
-                int endpointCount = folderRepository.countEndpointsInFolder(entity.getId());
-                dto.setEndpointCount(endpointCount);
+
+                // Get endpoints for this folder
+                List<APIEndpointEntity> folderEndpoints = endpointRepository.findByFolderId(entity.getId());
+
+                // Convert endpoints to DTOs
+                List<APIEndpointDTO> endpointDTOs = folderEndpoints.stream()
+                        .map(this::convertToEndpointDtoSafely)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toList());
+
+                dto.setEndpoints(endpointDTOs);
+                dto.setEndpointCount(endpointDTOs.size());
                 dto.setSubFolders(new ArrayList<>());
+
                 folderMap.put(dto.getId(), dto);
             }
 
@@ -296,16 +319,16 @@ public class DocumentationService {
                 FolderDTO dto = folderMap.get(entity.getId());
 
                 if (entity.getParentFolder() != null && folderMap.containsKey(entity.getParentFolder().getId())) {
-                    FolderDTO parentDto =
-                            folderMap.get(entity.getParentFolder().getId());
+                    FolderDTO parentDto = folderMap.get(entity.getParentFolder().getId());
                     parentDto.getSubFolders().add(dto);
                 } else {
                     rootFolders.add(dto);
                 }
             }
 
-            log.info("Request ID: {}, Retrieved folder hierarchy for collection: {} with {} root folders",
-                    requestId, collectionId, rootFolders.size());
+            log.info("Request ID: {}, Retrieved folder hierarchy for collection: {} with {} root folders and {} total endpoints",
+                    requestId, collectionId, rootFolders.size(),
+                    folderMap.values().stream().mapToInt(FolderDTO::getEndpointCount).sum());
 
             return rootFolders;
 
@@ -317,29 +340,41 @@ public class DocumentationService {
     }
 
     /**
-     * Get root folders only (folders with no parent)
+     * Get root folders only (folders with no parent) with their endpoints
      * @param requestId The request ID for logging
      * @param collectionId The collection ID
-     * @return List of root FolderDTO objects
+     * @return List of root FolderDTO objects with their endpoints
      */
     public List<FolderDTO> getRootFolders(String requestId, String collectionId) {
         try {
-            log.info("Request ID: {}, Getting root folders for collection: {}", requestId, collectionId);
+            log.info("Request ID: {}, Getting root folders with endpoints for collection: {}", requestId, collectionId);
 
             List<FolderEntity> rootFolderEntities = folderRepository.findRootFoldersByCollectionId(collectionId);
 
             List<FolderDTO> rootFolderDTOs = rootFolderEntities.stream()
-                    .map(this::convertToFolderDTO)
+                    .map(folder -> {
+                        FolderDTO folderDTO = convertToFolderDTO(folder);
+
+                        // Get endpoints for this folder
+                        List<APIEndpointEntity> folderEndpoints = endpointRepository.findByFolderId(folder.getId());
+
+                        // Convert endpoints to DTOs
+                        List<APIEndpointDTO> endpointDTOs = folderEndpoints.stream()
+                                .map(this::convertToEndpointDtoSafely)
+                                .filter(Objects::nonNull)
+                                .collect(Collectors.toList());
+
+                        folderDTO.setEndpoints(endpointDTOs);
+                        folderDTO.setEndpointCount(endpointDTOs.size());
+
+                        return folderDTO;
+                    })
                     .collect(Collectors.toList());
 
-            // Add endpoint counts
-            rootFolderDTOs.forEach(folder -> {
-                int endpointCount = folderRepository.countEndpointsInFolder(folder.getId());
-                folder.setEndpointCount(endpointCount);
-            });
-
-            log.info("Request ID: {}, Retrieved {} root folders for collection: {}",
-                    requestId, rootFolderDTOs.size(), collectionId);
+            log.info("Request ID: {}, Retrieved {} root folders with {} total endpoints for collection: {}",
+                    requestId, rootFolderDTOs.size(),
+                    rootFolderDTOs.stream().mapToInt(FolderDTO::getEndpointCount).sum(),
+                    collectionId);
 
             return rootFolderDTOs;
 
@@ -351,29 +386,41 @@ public class DocumentationService {
     }
 
     /**
-     * Get subfolders for a specific parent folder
+     * Get subfolders for a specific parent folder with their endpoints
      * @param requestId The request ID for logging
      * @param parentFolderId The parent folder ID
-     * @return List of child FolderDTO objects
+     * @return List of child FolderDTO objects with their endpoints
      */
     public List<FolderDTO> getSubFolders(String requestId, String parentFolderId) {
         try {
-            log.info("Request ID: {}, Getting subfolders for parent folder: {}", requestId, parentFolderId);
+            log.info("Request ID: {}, Getting subfolders with endpoints for parent folder: {}", requestId, parentFolderId);
 
             List<FolderEntity> subFolderEntities = folderRepository.findByParentFolderId(parentFolderId);
 
             List<FolderDTO> subFolderDTOs = subFolderEntities.stream()
-                    .map(this::convertToFolderDTO)
+                    .map(folder -> {
+                        FolderDTO folderDTO = convertToFolderDTO(folder);
+
+                        // Get endpoints for this folder
+                        List<APIEndpointEntity> folderEndpoints = endpointRepository.findByFolderId(folder.getId());
+
+                        // Convert endpoints to DTOs
+                        List<APIEndpointDTO> endpointDTOs = folderEndpoints.stream()
+                                .map(this::convertToEndpointDtoSafely)
+                                .filter(Objects::nonNull)
+                                .collect(Collectors.toList());
+
+                        folderDTO.setEndpoints(endpointDTOs);
+                        folderDTO.setEndpointCount(endpointDTOs.size());
+
+                        return folderDTO;
+                    })
                     .collect(Collectors.toList());
 
-            // Add endpoint counts
-            subFolderDTOs.forEach(folder -> {
-                int endpointCount = folderRepository.countEndpointsInFolder(folder.getId());
-                folder.setEndpointCount(endpointCount);
-            });
-
-            log.info("Request ID: {}, Retrieved {} subfolders for parent folder: {}",
-                    requestId, subFolderDTOs.size(), parentFolderId);
+            log.info("Request ID: {}, Retrieved {} subfolders with {} total endpoints for parent folder: {}",
+                    requestId, subFolderDTOs.size(),
+                    subFolderDTOs.stream().mapToInt(FolderDTO::getEndpointCount).sum(),
+                    parentFolderId);
 
             return subFolderDTOs;
 
@@ -525,6 +572,55 @@ public class DocumentationService {
             return 0;
         }
     }
+
+
+    // Add this method to DocumentationService.java
+    public CollectionDetailsWithEndpointsDTO getCollectionDetailsWithEndpoints(String requestId, String collectionId, String performedBy) {
+        try {
+            log.info("Getting collection details with endpoints for: {}", collectionId);
+
+            // Get the collection
+            APICollectionEntity collection = collectionRepository.findById(collectionId)
+                    .orElseThrow(() -> new RuntimeException("Collection not found"));
+
+            // Get folders
+            List<FolderEntity> folderEntities = folderRepository.findByCollectionId(collectionId);
+
+            List<FolderWithEndpointsDTO> foldersWithEndpoints = new ArrayList<>();
+
+            for (FolderEntity folder : folderEntities) {
+                FolderWithEndpointsDTO folderDTO = new FolderWithEndpointsDTO();
+                folderDTO.setId(folder.getId());
+                folderDTO.setName(folder.getName());
+                folderDTO.setDescription(folder.getDescription());
+
+                // Get ALL endpoints for this folder - FIX: Make sure this returns ALL endpoints
+                List<APIEndpointEntity> folderEndpoints = endpointRepository.findByFolderId(folder.getId());
+
+                // Log the count to verify
+                log.info("Found {} endpoints for folder: {}", folderEndpoints.size(), folder.getName());
+
+                // Convert ALL endpoints to DTOs safely
+                List<APIEndpointDTO> endpointDTOs = folderEndpoints.stream()
+                        .map(this::convertToEndpointDtoSafely)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toList());
+
+                folderDTO.setEndpoints(endpointDTOs);
+                folderDTO.setEndpointCount(endpointDTOs.size());
+
+                foldersWithEndpoints.add(folderDTO);
+            }
+
+            return new CollectionDetailsWithEndpointsDTO(collection, foldersWithEndpoints);
+
+        } catch (Exception e) {
+            log.error("Error getting collection details with endpoints: {}", e.getMessage());
+            throw e;
+        }
+    }
+
+
 
     public EndpointDetailResponseDTO getEndpointDetails(String requestId, HttpServletRequest req, String performedBy,
                                                         String collectionId, String endpointId) {
@@ -1298,18 +1394,6 @@ public class DocumentationService {
         return dto;
     }
 
-    // ========== CACHE MANAGEMENT - REMOVED ==========
-
-    // All cache-related methods have been removed:
-    // - documentationCache map removed
-    // - CACHE_TTL_MS constant removed
-    // - clearDocumentationCache method removed
-    // - clearUserCache method removed
-    // - clearCollectionCache method removed
-    // - clearEndpointCache method removed
-    // - isCacheExpired method removed
-    // - DocCache inner class removed
-
     // ========== CONVERSION METHODS ==========
 
     private APICollectionDTO convertToCollectionDto(APICollectionEntity entity) {
@@ -1343,6 +1427,11 @@ public class DocumentationService {
         dto.setDisplayOrder(entity.getDisplayOrder());
         dto.setCreatedAt(entity.getCreatedAt());
         dto.setUpdatedAt(entity.getUpdatedAt());
+
+        // Initialize endpoints list (will be populated separately)
+        dto.setEndpoints(new ArrayList<>());
+        dto.setSubFolders(new ArrayList<>());
+
         return dto;
     }
 

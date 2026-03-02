@@ -51,6 +51,6 @@ public class ApiAuthConfigDTO {
     private Integer rateLimitRequests;
     private String rateLimitPeriod;
     private String auditLevel;
-    private String corsOrigins;
+    private List<String> corsOrigins;
     private Boolean corsCredentials;
 }

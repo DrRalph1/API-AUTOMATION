@@ -615,7 +615,7 @@ public class APIGenerationEngineService {
                 .rateLimitRequests(entity.getRateLimitRequests())
                 .rateLimitPeriod(entity.getRateLimitPeriod())
                 .auditLevel(entity.getAuditLevel())
-                .corsOrigins(entity.getCorsOrigins())
+                .corsOrigins(Collections.singletonList(entity.getCorsOrigins()))
                 .corsCredentials(entity.getCorsCredentials())
                 .build();
     }
@@ -4472,9 +4472,17 @@ public class APIGenerationEngineService {
                 }
             }
 
-            // STEP 3: Create the request with a generated ID
+            // STEP 3: Build the full URL with basePath and endpointPath
+            // This will create something like: /api/v1/tb-tparty-trans-log
             String fullUrl = (api.getBasePath() != null ? api.getBasePath() : "") +
                     (api.getEndpointPath() != null ? api.getEndpointPath() : "");
+
+            // Remove any double slashes if basePath ends with / and endpointPath starts with /
+            if (fullUrl.contains("//")) {
+                fullUrl = fullUrl.replaceAll("/+", "/");
+            }
+
+            log.info("Built full URL for code base: {}", fullUrl);
 
             // Generate a unique ID for the request
             String requestId = UUID.randomUUID().toString();
@@ -4484,7 +4492,7 @@ public class APIGenerationEngineService {
                     .id(requestId)  // CRITICAL: Manually set the ID
                     .name(api.getApiName() + " - " + api.getHttpMethod())
                     .method(api.getHttpMethod())
-                    .url(fullUrl)
+                    .url(fullUrl)  // This will be like: /api/v1/tb-tparty-trans-log (no baseUrl placeholder)
                     .description(api.getDescription())
                     .collection(codeBaseCollection)
                     .folder(codeBaseFolder)
@@ -4775,10 +4783,11 @@ public class APIGenerationEngineService {
                     }
                 }
 
+                // For collections, we use {{baseUrl}} placeholder that will be replaced with actual IP:port at runtime
                 VariableEntity baseUrlVar = new VariableEntity();
                 baseUrlVar.setId(UUID.randomUUID().toString());
                 baseUrlVar.setKey("baseUrl");
-                baseUrlVar.setValue(api.getBasePath() != null ? api.getBasePath() : "https://api.example.com");
+                baseUrlVar.setValue(""); // Empty default - will be populated by the user's IP and port
                 baseUrlVar.setType("string");
                 baseUrlVar.setEnabled(true);
                 variables.add(baseUrlVar);
@@ -4835,8 +4844,22 @@ public class APIGenerationEngineService {
             FolderEntity savedFolder = collectionsFolderRepository.save(folder);
             collectionsFolderRepository.flush();
 
-            // STEP 3: Handle Request - Create a NEW request for each API
-            // Instead of updating existing request, always create a new one with a unique name
+            // STEP 3: Build the full endpoint URL with basePath and endpointPath
+            // This will create something like: /api/v1/tb-tparty-trans-log
+            String fullEndpoint = (api.getBasePath() != null ? api.getBasePath() : "") +
+                    (api.getEndpointPath() != null ? api.getEndpointPath() : "");
+
+            // Remove any double slashes if basePath ends with / and endpointPath starts with /
+            if (fullEndpoint.contains("//")) {
+                fullEndpoint = fullEndpoint.replaceAll("/+", "/");
+            }
+
+            // For collections, we add the {{baseUrl}} placeholder which will be replaced with http://{ip}:{port}
+            String endpointUrl = "{{baseUrl}}" + fullEndpoint;
+
+            log.info("Built endpoint URL for collections: {}", endpointUrl);
+
+            // STEP 4: Handle Request - Create a NEW request for each API
             String requestName = api.getApiName() + " - " + api.getHttpMethod();
 
             // Check if a request with this name already exists in the folder
@@ -4875,7 +4898,7 @@ public class APIGenerationEngineService {
             // Update request with API details
             requestEntity.setName(requestName);
             requestEntity.setMethod(api.getHttpMethod());
-            requestEntity.setUrl("{{baseUrl}}" + (api.getEndpointPath() != null ? api.getEndpointPath() : ""));
+            requestEntity.setUrl(endpointUrl); // This will be like: {{baseUrl}}/api/v1/tb-tparty-trans-log
             requestEntity.setDescription(api.getDescription());
             requestEntity.setLastModified(LocalDateTime.now());
             requestEntity.setSaved(true);
@@ -4917,6 +4940,9 @@ public class APIGenerationEngineService {
     /**
      * Generate documentation using the provided collection info
      */
+    /**
+     * Generate documentation using the provided collection info
+     */
     @Transactional
     String generateDocumentation(GeneratedApiEntity api, String performedBy,
                                  GenerateApiRequestDTO request,
@@ -4937,17 +4963,16 @@ public class APIGenerationEngineService {
                 log.info("Found existing documentation collection: {}", docCollection.getId());
 
                 // Update collection details
-                docCollection.setName(collectionInfo.getCollectionName() );
+                docCollection.setName(collectionInfo.getCollectionName());
                 docCollection.setDescription(api.getDescription());
                 docCollection.setVersion(api.getVersion());
-                docCollection.setBaseUrl(api.getBasePath() != null ? api.getBasePath() : "");
                 docCollection.setTags(api.getTags());
                 docCollection.setUpdatedBy(performedBy);
             } else {
                 // Create new collection
                 docCollection = new APICollectionEntity();
                 docCollection.setId(collectionInfo.getCollectionId());
-                docCollection.setName(collectionInfo.getCollectionName() );
+                docCollection.setName(collectionInfo.getCollectionName());
                 docCollection.setDescription(api.getDescription());
                 docCollection.setVersion(api.getVersion());
                 docCollection.setOwner(performedBy);
@@ -4956,7 +4981,6 @@ public class APIGenerationEngineService {
                 docCollection.setExpanded(false);
                 docCollection.setColor(getRandomColor());
                 docCollection.setStatus("published");
-                docCollection.setBaseUrl(api.getBasePath() != null ? api.getBasePath() : "");
                 docCollection.setTags(new ArrayList<>());
                 docCollection.setCreatedBy(performedBy);
                 docCollection.setUpdatedBy(performedBy);
@@ -5006,23 +5030,42 @@ public class APIGenerationEngineService {
             savedDocCollection.setTotalFolders(1);
             docCollectionRepository.save(savedDocCollection);
 
-            // ==================== STEP 3: Create endpoint WITHOUT tags ====================
-            List<APIEndpointEntity> existingEndpoints = endpointRepository.findByCollectionId(savedDocCollection.getId());
-            APIEndpointEntity endpoint;
+            // ==================== STEP 3: Build the full endpoint URL with basePath and endpointPath ====================
+            // This will create something like: /api/v1/tb-tparty-trans-log
+            String endpointUrl = (api.getBasePath() != null ? api.getBasePath() : "") +
+                    (api.getEndpointPath() != null ? api.getEndpointPath() : "");
 
-            if (!existingEndpoints.isEmpty()) {
-                endpoint = existingEndpoints.get(0);
-                log.info("Updating existing endpoint: {}", endpoint.getId());
-            } else {
-                endpoint = new APIEndpointEntity();
-                endpoint.setId(UUID.randomUUID().toString());  // ← ADDED
-                log.info("Creating new endpoint");
+            // Remove any double slashes if basePath ends with / and endpointPath starts with /
+            if (endpointUrl.contains("//")) {
+                endpointUrl = endpointUrl.replaceAll("/+", "/");
             }
+
+            log.info("Built endpoint URL for documentation: {}", endpointUrl);
+
+            // ==================== STEP 4: Create endpoint ====================
+            // ALWAYS create a new endpoint for each API
+            APIEndpointEntity endpoint = new APIEndpointEntity();
+            endpoint.setId(UUID.randomUUID().toString()); // Generate a unique ID
+            log.info("Creating new endpoint with ID: {} for API: {}", endpoint.getId(), api.getApiCode());
 
             endpoint.setName(api.getApiName());
             endpoint.setMethod(api.getHttpMethod());
-            endpoint.setUrl((api.getBasePath() != null ? api.getBasePath() : "") +
-                    (api.getEndpointPath() != null ? api.getEndpointPath() : ""));
+            endpoint.setUrl(endpointUrl);
+            endpoint.setDescription(api.getDescription());
+            endpoint.setCollection(savedDocCollection);
+            endpoint.setFolder(savedDocFolder);
+            endpoint.setApiVersion(api.getVersion());
+            endpoint.setRequiresAuth(api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType()));
+            endpoint.setDeprecated(false);
+            endpoint.setCategory(api.getCategory());
+            endpoint.setTags(api.getTags()); // Make sure to set tags
+            endpoint.setCreatedBy(performedBy);
+            endpoint.setUpdatedBy(performedBy);
+            endpoint.setLastModifiedBy(performedBy);
+
+            endpoint.setName(api.getApiName());
+            endpoint.setMethod(api.getHttpMethod());
+            endpoint.setUrl(endpointUrl); // This will be like: /api/v1/tb-tparty-trans-log (no {{baseUrl}} placeholder)
             endpoint.setDescription(api.getDescription());
             endpoint.setCollection(savedDocCollection);
             endpoint.setFolder(savedDocFolder);
@@ -5070,7 +5113,7 @@ public class APIGenerationEngineService {
             }
             log.debug("Endpoint verified in database");
 
-            // ==================== STEP 4: Add tags ====================
+            // ==================== STEP 5: Add tags ====================
             if (api.getTags() != null && !api.getTags().isEmpty()) {
                 String sql = "INSERT INTO tb_doc_endpoint_tags (endpoint_id, tag) VALUES (?, ?)";
                 int tagCount = 0;
@@ -5088,15 +5131,24 @@ public class APIGenerationEngineService {
                 log.debug("Inserted {} tags for endpoint", tagCount);
             }
 
-            // ==================== STEP 5: Add headers ====================
+            // ==================== STEP 6: Add headers ====================
             if (api.getHeaders() != null && !api.getHeaders().isEmpty()) {
                 int headerCount = 0;
                 for (ApiHeaderEntity apiHeader : api.getHeaders()) {
                     if (Boolean.TRUE.equals(apiHeader.getIsRequestHeader())) {
                         com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity header =
                                 new com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity();
-                        header.setId(UUID.randomUUID().toString());  // ← ADDED
-                        header.setKey(apiHeader.getKey() != null ? apiHeader.getKey() : "");
+                        header.setId(UUID.randomUUID().toString());
+
+                        // Ensure key is never null
+                        String key = apiHeader.getKey();
+                        if (key == null || key.trim().isEmpty()) {
+                            // Skip this header if key is null or empty
+                            log.warn("Skipping header with null or empty key");
+                            continue;
+                        }
+                        header.setKey(key);
+
                         header.setValue(apiHeader.getValue() != null ? apiHeader.getValue() : "");
                         header.setDescription(apiHeader.getDescription() != null ? apiHeader.getDescription() : "");
                         header.setRequired(apiHeader.getRequired() != null ? apiHeader.getRequired() : false);
@@ -5108,49 +5160,62 @@ public class APIGenerationEngineService {
                 log.debug("Saved {} headers for endpoint", headerCount);
             }
 
-            // ==================== STEP 6: Add auth headers ====================
+            // ==================== STEP 7: Add auth headers ====================
             if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
                 com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity authHeader =
                         new com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity();
-                authHeader.setId(UUID.randomUUID().toString());  // ← ADDED
+                authHeader.setId(UUID.randomUUID().toString());
                 authHeader.setRequired(true);
                 authHeader.setEndpoint(savedEndpoint);
 
+                String key = null;
+                String value = null;
+                String description = null;
+
                 switch (api.getAuthConfig().getAuthType()) {
                     case "API_KEY":
-                        authHeader.setKey(api.getAuthConfig().getApiKeyHeader() != null ?
-                                api.getAuthConfig().getApiKeyHeader() : "X-API-Key");
-                        authHeader.setValue("Your API Key");
-                        authHeader.setDescription("API Key for authentication");
+                        key = api.getAuthConfig().getApiKeyHeader() != null ?
+                                api.getAuthConfig().getApiKeyHeader() : "X-API-Key";
+                        value = "Your API Key";
+                        description = "API Key for authentication";
                         break;
                     case "BEARER":
                     case "JWT":
-                        authHeader.setKey("Authorization");
-                        authHeader.setValue("Bearer YOUR_JWT_TOKEN");
-                        authHeader.setDescription("Bearer token authentication");
+                        key = "Authorization";
+                        value = "Bearer YOUR_JWT_TOKEN";
+                        description = "Bearer token authentication";
                         break;
                     case "BASIC":
-                        authHeader.setKey("Authorization");
-                        authHeader.setValue("Basic base64_encoded_credentials");
-                        authHeader.setDescription("Basic authentication (username:password encoded in base64)");
+                        key = "Authorization";
+                        value = "Basic base64_encoded_credentials";
+                        description = "Basic authentication (username:password encoded in base64)";
                         break;
                     case "ORACLE_ROLES":
-                        authHeader.setKey("X-Oracle-Session");
-                        authHeader.setValue("Your Oracle Session ID");
-                        authHeader.setDescription("Oracle Database Session ID for authentication");
+                        key = "X-Oracle-Session";
+                        value = "Your Oracle Session ID";
+                        description = "Oracle Database Session ID for authentication";
                         break;
                 }
-                docHeaderRepository.save(authHeader);
-                log.debug("Saved auth header for endpoint");
+
+                // Only save if key is not null
+                if (key != null && !key.trim().isEmpty()) {
+                    authHeader.setKey(key);
+                    authHeader.setValue(value);
+                    authHeader.setDescription(description);
+                    docHeaderRepository.save(authHeader);
+                    log.debug("Saved auth header for endpoint");
+                } else {
+                    log.warn("Skipping auth header with null key for auth type: {}", api.getAuthConfig().getAuthType());
+                }
             }
 
-            // ==================== STEP 7: Add parameters ====================
+            // ==================== STEP 8: Add parameters ====================
             if (api.getParameters() != null && !api.getParameters().isEmpty()) {
                 int paramCount = 0;
                 for (ApiParameterEntity apiParam : api.getParameters()) {
                     com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity param =
                             new com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity();
-                    param.setId(UUID.randomUUID().toString());  // ← ADDED
+                    param.setId(UUID.randomUUID().toString());
                     param.setName(apiParam.getKey() != null ? apiParam.getKey() : "");
                     param.setIn(apiParam.getParameterType() != null ? apiParam.getParameterType() : "query");
                     param.setType(apiParam.getApiType() != null ? apiParam.getApiType() : "string");
@@ -5164,11 +5229,11 @@ public class APIGenerationEngineService {
                 log.debug("Saved {} parameters for endpoint", paramCount);
             }
 
-            // ==================== STEP 8: Add response examples ====================
+            // ==================== STEP 9: Add response examples ====================
             // Add success response example
             if (api.getResponseConfig() != null && api.getResponseConfig().getSuccessSchema() != null) {
                 ResponseExampleEntity successExample = new ResponseExampleEntity();
-                successExample.setId(UUID.randomUUID().toString());  // ← ADDED
+                successExample.setId(UUID.randomUUID().toString());
                 successExample.setStatusCode(200);
                 successExample.setDescription("Successful response");
                 successExample.setContentType(api.getResponseConfig().getContentType() != null ?
@@ -5192,7 +5257,7 @@ public class APIGenerationEngineService {
             // Add error response example
             if (api.getResponseConfig() != null && api.getResponseConfig().getErrorSchema() != null) {
                 ResponseExampleEntity errorExample = new ResponseExampleEntity();
-                errorExample.setId(UUID.randomUUID().toString());  // ← ADDED
+                errorExample.setId(UUID.randomUUID().toString());
                 errorExample.setStatusCode(400);
                 errorExample.setDescription("Error response");
                 errorExample.setContentType(api.getResponseConfig().getContentType() != null ?
@@ -5213,12 +5278,12 @@ public class APIGenerationEngineService {
                 log.debug("Saved error response example for endpoint");
             }
 
-            // ==================== STEP 9: Add code examples ====================
+            // ==================== STEP 10: Add code examples ====================
             generateDocumentationCodeExamples(api, savedEndpoint, codeBaseRequestId);
 
-            // ==================== STEP 10: Add changelog entry ====================
+            // ==================== STEP 11: Add changelog entry ====================
             ChangelogEntryEntity changelog = new ChangelogEntryEntity();
-            changelog.setId(UUID.randomUUID().toString());  // ← ADDED
+            changelog.setId(UUID.randomUUID().toString());
             changelog.setVersion(api.getVersion());
             changelog.setDate(LocalDateTime.now().toString());
             changelog.setType("ADDED");
@@ -5235,7 +5300,7 @@ public class APIGenerationEngineService {
             changelogRepository.save(changelog);
             log.debug("Saved changelog entry for collection");
 
-            // ==================== STEP 11: Update endpoint count ====================
+            // ==================== STEP 12: Update endpoint count ====================
             savedDocCollection.setTotalEndpoints(1);
             docCollectionRepository.save(savedDocCollection);
 
@@ -7155,7 +7220,7 @@ public class APIGenerationEngineService {
                 .rateLimitRequests(dto.getRateLimitRequests())
                 .rateLimitPeriod(dto.getRateLimitPeriod())
                 .auditLevel(dto.getAuditLevel())
-                .corsOrigins(dto.getCorsOrigins())
+                .corsOrigins(dto.getCorsOrigins().toString())
                 .corsCredentials(dto.getCorsCredentials())
                 .build();
     }
@@ -7517,7 +7582,7 @@ public class APIGenerationEngineService {
                         .rateLimitRequests(entity.getAuthConfig().getRateLimitRequests())
                         .rateLimitPeriod(entity.getAuthConfig().getRateLimitPeriod())
                         .auditLevel(entity.getAuthConfig().getAuditLevel())
-                        .corsOrigins(entity.getAuthConfig().getCorsOrigins())
+                        .corsOrigins(Collections.singletonList(entity.getAuthConfig().getCorsOrigins()))
                         .corsCredentials(entity.getAuthConfig().getCorsCredentials())
                         .build();
                 response.setAuthConfig(authDto);

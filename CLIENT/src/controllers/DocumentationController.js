@@ -51,9 +51,93 @@ export const getAPIFolders = async (authorizationHeader, collectionId) => {
  * @returns {Promise} API response
  */
 export const getAPIEndpoints = async (authorizationHeader, collectionId, folderId) => {
+  console.log(`📡 getAPIEndpoints called for collection: ${collectionId}, folder: ${folderId}`);
+  
+  const url = `/documentation/collections/${collectionId}/folders/${folderId}/endpoints`;
+  console.log('📡 Calling API with URL:', url);
+  
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/documentation/collections/${collectionId}/folders/${folderId}/endpoints`, {
+    (authHeader) => apiCall(url, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+
+/**
+ * Extract collection details with endpoints from response
+ * @param {Object} response - API response
+ * @returns {Object} Collection details with endpoints
+ */
+export const extractCollectionDetailsWithEndpoints = (response) => {
+  if (!response || !response.data) return null;
+  
+  const data = response.data;
+  
+  return {
+    id: data.id,
+    name: data.name,
+    description: data.description,
+    version: data.version,
+    owner: data.owner,
+    type: data.type,
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt,
+    color: data.color,
+    status: data.status,
+    baseUrl: data.baseUrl,
+    tags: data.tags || [],
+    isFavorite: data.favorite || data.isFavorite || false,
+    isExpanded: data.expanded || data.isExpanded || false,
+    folders: (data.folders || []).map(folder => ({
+      id: folder.id,
+      name: folder.name,
+      description: folder.description,
+      collectionId: folder.collectionId,
+      parentFolderId: folder.parentFolderId,
+      displayOrder: folder.displayOrder,
+      createdAt: folder.createdAt,
+      updatedAt: folder.updatedAt,
+      endpoints: (folder.endpoints || []).map(endpoint => ({
+        id: endpoint.id,
+        name: endpoint.name,
+        method: endpoint.method,
+        url: endpoint.url,
+        path: endpoint.path || endpoint.url,
+        description: endpoint.description,
+        category: endpoint.category,
+        tags: endpoint.tags || [],
+        lastModified: endpoint.lastModified,
+        timeAgo: getTimeAgo(endpoint.lastModified),
+        requiresAuth: endpoint.requiresAuth || endpoint.requiresAuthentication || false,
+        deprecated: endpoint.deprecated || false,
+        // Include all fields that convertToEndpointDto would provide
+        endpointId: endpoint.id,
+        version: endpoint.version,
+        rateLimit: endpoint.rateLimit,
+        folder: endpoint.folder,
+        collectionId: endpoint.collectionId
+      })),
+      endpointCount: folder.endpointCount || (folder.endpoints ? folder.endpoints.length : 0)
+    })),
+    totalFolders: data.totalFolders || (data.folders ? data.folders.length : 0),
+    totalEndpoints: data.totalEndpoints || 0,
+    metadata: data.metadata || {}
+  };
+};
+
+/**
+ * Get collection details with endpoints
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} collectionId - Collection ID
+ * @returns {Promise} API response
+ */
+export const getCollectionDetailsWithEndpoints = async (authorizationHeader, collectionId) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`/documentation/collections/${collectionId}/with-endpoints`, {
       method: 'GET',
       headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
@@ -311,28 +395,48 @@ export const extractAPICollections = (response) => {
 };
 
 /**
- * Extract API endpoints from response
+ * Extract API endpoints from response - FIXED to match your API structure
  * @param {Object} response - API response
  * @returns {Array} API endpoints list
  */
 export const extractAPIEndpoints = (response) => {
-  if (!response || !response.data) return [];
+  console.log('🔍 Extracting endpoints from response:', response);
   
-  const data = response.data;
+  if (!response) {
+    console.log('❌ No response provided to extractAPIEndpoints');
+    return [];
+  }
+
+  let endpoints = [];
   
-  if (Array.isArray(data)) {
-    return data;
+  // Your API returns data with endpoints array inside response.data
+  if (response.data && response.data.endpoints && Array.isArray(response.data.endpoints)) {
+    endpoints = response.data.endpoints;
+    console.log('📊 Found endpoints in response.data.endpoints:', endpoints.length);
+  }
+  // Handle if response itself is an array
+  else if (Array.isArray(response)) {
+    endpoints = response;
+    console.log('📊 Found endpoints in response array:', endpoints.length);
+  }
+  // Handle if endpoints are in response.endpoints
+  else if (response.endpoints && Array.isArray(response.endpoints)) {
+    endpoints = response.endpoints;
+    console.log('📊 Found endpoints in response.endpoints:', endpoints.length);
+  }
+  // Handle if response.data is an array
+  else if (response.data && Array.isArray(response.data)) {
+    endpoints = response.data;
+    console.log('📊 Found endpoints in response.data array:', endpoints.length);
+  }
+  // Handle if response.data.data exists (nested)
+  else if (response.data && response.data.data && Array.isArray(response.data.data)) {
+    endpoints = response.data.data;
+    console.log('📊 Found endpoints in response.data.data:', endpoints.length);
   }
   
-  if (data.endpoints && Array.isArray(data.endpoints)) {
-    return data.endpoints;
-  }
-  
-  if (data.data && Array.isArray(data.data)) {
-    return data.data;
-  }
-  
-  return [];
+  console.log('✅ Extracted', endpoints.length, 'endpoints');
+  return endpoints;
 };
 
 /**
@@ -757,53 +861,30 @@ export const formatDocumentationCollection = (collection) => {
  * @returns {Object} Formatted endpoint
  */
 export const formatDocumentationEndpoint = (endpoint) => {
-  if (!endpoint) return {};
+  if (!endpoint) return null;
   
-  const formatted = { ...endpoint };
-  
-  // Format last modified
-  if (formatted.lastModified) {
-    formatted.formattedLastModified = formatDateForDisplay(formatted.lastModified);
-    formatted.timeAgo = getTimeAgo(formatted.lastModified);
-  }
-  
-  // Format method with color
-  if (formatted.method) {
-    formatted.methodColor = getMethodColor(formatted.method);
-  }
-  
-  // Format URL
-  if (formatted.url) {
-    const urlParts = formatted.url.split('/');
-    formatted.path = '/' + urlParts.slice(3).join('/'); // Remove protocol and domain
-    formatted.formattedPath = formatted.path.replace(/{([^}]+)}/g, '<span class="path-param">{$1}</span>');
-  }
-  
-  // Format requires auth
-  if (formatted.requiresAuth !== undefined) {
-    formatted.authStatus = formatted.requiresAuth ? 'Requires Auth' : 'No Auth';
-  }
-  
-  // Format deprecated
-  if (formatted.deprecated) {
-    formatted.deprecatedBadge = 'Deprecated';
-  }
-  
-  // Format tags
-  if (formatted.tags && Array.isArray(formatted.tags)) {
-    formatted.formattedTags = formatted.tags.map(tag => ({
-      name: tag,
-      color: getTagColor(tag)
-    }));
-  }
-  
-  // Set default expanded state
-  if (formatted.expanded === undefined) {
-    formatted.expanded = false;
-  }
-  
-  return formatted;
+  return {
+    id: endpoint.id || endpoint.endpointId || `endpoint-${Date.now()}`,
+    endpointId: endpoint.id || endpoint.endpointId,
+    name: endpoint.name || 'Unnamed Endpoint',
+    method: endpoint.method || 'GET',
+    path: endpoint.url || endpoint.path || '',
+    url: endpoint.url || endpoint.path || '',
+    description: endpoint.description || '',
+    category: endpoint.category || 'general',
+    tags: endpoint.tags || [],
+    folder: endpoint.folder || '',
+    collectionId: endpoint.collectionId || '',
+    lastModified: endpoint.lastModified || new Date().toISOString(),
+    timeAgo: getTimeAgo(endpoint.lastModified),
+    version: endpoint.version || '1.0.0',
+    requiresAuth: endpoint.requiresAuth || false,
+    deprecated: endpoint.deprecated || false,
+    rateLimit: endpoint.rateLimit || null,
+    isActive: false
+  };
 };
+
 
 /**
  * Format endpoint details for display

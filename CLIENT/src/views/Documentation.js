@@ -181,7 +181,9 @@ import {
   getSupportedContentTypes,
   getSupportedVisibilityOptions,
   getSupportedEnvironmentTypes,
-  getSupportedDocumentationFormats
+  getSupportedDocumentationFormats,
+  getCollectionDetailsWithEndpoints, // Add this
+  extractCollectionDetailsWithEndpoints, // Add this
 } from "../controllers/DocumentationController.js";
 
 // Also import apiCall for debug purposes
@@ -288,6 +290,10 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showEnvironmentMenu, setShowEnvironmentMenu] = useState(false);
   
+  // Add these state variables to track folder endpoints and loading states
+  const [folderEndpoints, setFolderEndpoints] = useState({});
+  const [folderLoading, setFolderLoading] = useState({});
+
   // Updated loading state to match APISecurity pattern
   const [isLoading, setIsLoading] = useState({
     collections: false,
@@ -527,7 +533,162 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     }
   }, [authToken]);
 
-  // Fetch folders for a specific collection and check all for endpoints
+
+
+  const fetchCollectionDetailsWithEndpoints = useCallback(async (collectionId) => {
+  console.log(`📡 [Documentation] Fetching collection details with endpoints for: ${collectionId}`);
+  
+  if (!authToken || !collectionId) {
+    return;
+  }
+
+  try {
+    setIsLoading(prev => ({ ...prev, folders: true }));
+    
+    const response = await getCollectionDetailsWithEndpoints(authToken, collectionId);
+    console.log(`📦 [Documentation] Collection details response for ${collectionId}:`, response);
+    
+    const handledResponse = handleDocumentationResponse(response);
+    const collectionDetails = extractCollectionDetailsWithEndpoints(handledResponse);
+    
+    console.log(`📊 [Documentation] Extracted collection details with endpoints:`, collectionDetails);
+    
+    if (collectionDetails) {
+      // Process folders to ensure they have the correct structure
+      const processedFolders = (collectionDetails.folders || []).map(folder => ({
+        id: folder.id,
+        name: folder.name,
+        description: folder.description || '',
+        collectionId: folder.collectionId || collectionId,
+        requests: folder.endpoints || [], // Map endpoints to requests
+        requestCount: folder.endpointCount || (folder.endpoints ? folder.endpoints.length : 0),
+        hasRequests: (folder.endpointCount || (folder.endpoints ? folder.endpoints.length : 0)) > 0,
+        isLoading: false,
+        error: null
+      }));
+      
+      // Update folderEndpoints state
+      const folderEndpointsMap = {};
+      processedFolders.forEach(folder => {
+        if (folder.requests.length > 0) {
+          folderEndpointsMap[folder.id] = folder.requests;
+        }
+      });
+      
+      if (Object.keys(folderEndpointsMap).length > 0) {
+        setFolderEndpoints(prev => ({
+          ...prev,
+          ...folderEndpointsMap
+        }));
+      }
+      
+      // Update collections state
+      setCollections(prevCollections => {
+        const updatedCollections = prevCollections.map(collection => {
+          if (collection.id === collectionId) {
+            return {
+              ...collection,
+              folders: processedFolders,
+              totalFolders: collectionDetails.totalFolders,
+              totalEndpoints: collectionDetails.totalEndpoints
+            };
+          }
+          return collection;
+        });
+        
+        console.log(`📊 Updated collection ${collectionId} with ${processedFolders.length} folders and endpoints`);
+        return updatedCollections;
+      });
+      
+      // Update selectedCollection if it's the current one
+      if (selectedCollection?.id === collectionId) {
+        setSelectedCollection(prev => ({
+          ...prev,
+          folders: processedFolders,
+          totalFolders: collectionDetails.totalFolders,
+          totalEndpoints: collectionDetails.totalEndpoints
+        }));
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ Error fetching collection details with endpoints:', error);
+    showToast(`Failed to load collection details: ${error.message}`, 'error');
+  } finally {
+    setIsLoading(prev => ({ ...prev, folders: false }));
+  }
+}, [authToken, selectedCollection]);
+
+
+// Update the auto-expand useEffect to work with the new flow
+useEffect(() => {
+  // Only run on first load and if not already triggered
+  if (!isFirstLoad.current || autoExpandTriggered.current) {
+    return;
+  }
+  
+  // Need selected collection
+  if (!selectedCollection) {
+    console.log('⏳ [Documentation] Waiting for selectedCollection...');
+    return;
+  }
+  
+  // Need folders to be loaded
+  if (!selectedCollection.folders || selectedCollection.folders.length === 0) {
+    console.log('⏳ [Documentation] Waiting for folders to load...');
+    return;
+  }
+  
+  // Mark as triggered immediately to prevent multiple calls
+  autoExpandTriggered.current = true;
+  
+  console.log('🔥🔥🔥 [Documentation] AUTO-EXPAND TRIGGERED');
+  
+  const autoExpandAndSelect = async () => {
+    // Find first folder that has requests
+    const firstFolderWithRequests = selectedCollection.folders.find(f => f.requests && f.requests.length > 0);
+    const folderToExpand = firstFolderWithRequests || selectedCollection.folders[0];
+    
+    if (!folderToExpand) {
+      console.log('❌ [Documentation] No folders found');
+      return;
+    }
+    
+    console.log(`📁 [Documentation] Auto-expanding folder: ${folderToExpand.id} - ${folderToExpand.name}`);
+    
+    // Expand the folder
+    setExpandedFolders([folderToExpand.id]);
+    
+    // Select the first endpoint if available
+    if (folderToExpand.requests && folderToExpand.requests.length > 0 && !selectedRequest) {
+      const firstEndpoint = folderToExpand.requests[0];
+      console.log(`🎯 [Documentation] Auto-selecting first endpoint: ${firstEndpoint.name}`);
+      
+      setSelectedRequest(firstEndpoint);
+      await fetchEndpointDetails(selectedCollection.id, firstEndpoint.id);
+      
+      showToast(`Viewing documentation for ${firstEndpoint.name}`, 'info');
+    }
+    
+    // Mark that first load is complete
+    isFirstLoad.current = false;
+    console.log('✅ [Documentation] Auto-expand completed');
+  };
+  
+  autoExpandAndSelect();
+  
+}, [
+  selectedCollection, 
+  selectedCollection?.folders,
+  selectedCollection?.folders?.length,
+  selectedRequest,
+  fetchEndpointDetails,
+  showToast
+]);
+
+
+
+  // Fetch folders for a specific collection
   const fetchFoldersForCollection = useCallback(async (collectionId) => {
     console.log(`📁 [Documentation] Fetching folders for collection: ${collectionId}`);
     
@@ -542,56 +703,65 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
       const response = await getFolders(authToken, collectionId);
       console.log(`📦 [Documentation] Folders response for ${collectionId}:`, response);
       
-      if (response && response.data && response.data.folders) {
-        const foldersData = response.data.folders;
-        console.log(`📁 Found ${foldersData.length} folders`);
-        
-        // Update the collection with its folders
-        setCollections(prevCollections => 
-          prevCollections.map(collection => {
-            if (collection.id === collectionId) {
-              return {
-                ...collection,
-                folders: foldersData.map(folder => ({
-                  id: folder.id,
-                  name: folder.name,
-                  description: folder.description,
-                  requests: [],
-                  isLoading: false,
-                  error: null
-                }))
-              };
-            }
-            return collection;
-          })
-        );
-        
-        // Check each folder for endpoints
-        for (const folder of foldersData) {
-          console.log(`🔍 Checking folder: ${folder.name} (${folder.id})`);
-          try {
-            const endpointResponse = await getAPIEndpoints(authToken, collectionId, folder.id);
-            console.log(`   Endpoints in ${folder.name}:`, endpointResponse?.data?.totalEndpoints || 0);
-          } catch (error) {
-            console.error(`   Error checking folder ${folder.name}:`, error.message);
+      const handledResponse = handleDocumentationResponse(response);
+      console.log('🔄 Handled folders response:', handledResponse);
+      
+      let foldersData = [];
+      
+      // Extract folders from your API structure
+      if (handledResponse?.data?.folders && Array.isArray(handledResponse.data.folders)) {
+        foldersData = handledResponse.data.folders;
+      } else if (handledResponse?.folders && Array.isArray(handledResponse.folders)) {
+        foldersData = handledResponse.folders;
+      }
+      
+      console.log(`📁 Found ${foldersData.length} folders for collection ${collectionId}`);
+      
+      // Create formatted folders with empty requests array
+      const formattedFolders = foldersData.map(folder => ({
+        id: folder.id,
+        name: folder.name,
+        description: folder.description || '',
+        collectionId: folder.collectionId || collectionId,
+        requests: [], // Initialize with empty array
+        requestCount: 0,
+        hasRequests: false,
+        isLoading: false,
+        error: null
+      }));
+      
+      // Update the collection with its folders
+      setCollections(prevCollections => {
+        const updatedCollections = prevCollections.map(collection => {
+          if (collection.id === collectionId) {
+            return {
+              ...collection,
+              folders: formattedFolders
+            };
           }
-        }
+          return collection;
+        });
         
-        // Also try fetching endpoints without a folder ID (directly under collection)
-        try {
-          console.log(`🔍 Checking endpoints directly under collection (no folder)`);
-          // You might need a different endpoint for this
-          // This depends on your backend implementation
-        } catch (error) {
-          console.log('No direct collection endpoints');
-        }
+        console.log(`📊 Updated collection ${collectionId} with ${formattedFolders.length} folders`);
+        return updatedCollections;
+      });
+      
+      // Also update selectedCollection if it's the current one
+      if (selectedCollection?.id === collectionId) {
+        setSelectedCollection(prev => ({
+          ...prev,
+          folders: formattedFolders
+        }));
+      }
+      
+      // Auto-expand first folder and load its endpoints
+      if (formattedFolders.length > 0) {
+        const firstFolder = formattedFolders[0];
+        console.log(`📁 Auto-expanding first folder: ${firstFolder.id} - ${firstFolder.name}`);
+        setExpandedFolders(prev => [...prev, firstFolder.id]);
         
-        // Auto-expand first folder and load its endpoints if it has any
-        if (foldersData.length > 0) {
-          const firstFolder = foldersData[0];
-          setExpandedFolders(prev => [...prev, firstFolder.id]);
-          await fetchAPIEndpoints(collectionId, firstFolder.id);
-        }
+        // Fetch endpoints for the first folder
+        await fetchAPIEndpoints(collectionId, firstFolder.id);
       }
       
     } catch (error) {
@@ -599,209 +769,360 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     } finally {
       setIsLoading(prev => ({ ...prev, folders: false }));
     }
-  }, [authToken]);
+  }, [authToken, selectedCollection, fetchAPIEndpoints]);
 
   // Load API collections and their folders
-  const fetchAPICollections = useCallback(async () => {
-    console.log('🔥 [Documentation] fetchAPICollections called');
+  // In your Documentation component
+const fetchAPICollections = useCallback(async () => {
+  console.log('🔥 [Documentation] fetchAPICollections called');
+  
+  if (!authToken) {
+    console.log('❌ No auth token available');
+    showToast('Authentication required. Please login.', 'error');
+    setIsLoading(prev => ({ ...prev, collections: false, initialLoad: false }));
+    return;
+  }
+
+  setIsLoading(prev => ({ ...prev, collections: true }));
+  console.log('📡 [Documentation] Fetching API collections...');
+
+  try {
+    const response = await getAPICollections(authToken);
+    console.log('📦 [Documentation] API response:', response);
     
-    if (!authToken) {
-      console.log('❌ No auth token available');
-      showToast('Authentication required. Please login.', 'error');
-      setIsLoading(prev => ({ ...prev, collections: false, initialLoad: false }));
-      return;
+    if (!response) {
+      throw new Error('No response from documentation service');
     }
+    
+    const handledResponse = handleDocumentationResponse(response);
+    const collectionsData = extractAPICollections(handledResponse);
+    
+    console.log('📊 [Documentation] Extracted collections data:', collectionsData.length, 'collections');
 
-    setIsLoading(prev => ({ ...prev, collections: true }));
-    console.log('📡 [Documentation] Fetching API collections...');
+    // Format collections with empty folders array
+    const formattedCollections = collectionsData.map(collection => {
+      const formatted = formatDocumentationCollection(collection);
+      formatted.folders = []; // Will be populated by details fetch
+      return formatted;
+    });
+    
+    setCollections(formattedCollections);
+    console.log('📊 [Documentation] Formatted collections:', formattedCollections);
+    
+    // Cache the data if we have userId
+    const userId = extractUserIdFromToken(authToken);
+    if (userId) {
+      cacheDocumentationData(userId, 'collections', formattedCollections);
+    }
+    
+    // NOW load details for ALL collections (like Collections component does)
+    await loadAllCollectionDetails(formattedCollections);
+    
+    showToast('Collections loaded successfully', 'success');
+    
+  } catch (error) {
+    console.error('❌ [Documentation] Error fetching API collections:', error);
+    showToast(`Failed to load collections: ${error.message}`, 'error');
+    setCollections([]);
+  } finally {
+    setIsLoading(prev => ({ ...prev, collections: false, initialLoad: false }));
+    console.log('🏁 [Documentation] fetchAPICollections completed');
+  }
+}, [authToken]);
 
-    try {
-      // Get collections from API
-      const response = await getAPICollections(authToken);
-      console.log('📦 [Documentation] API response:', response);
+// NEW function to load details for all collections (like Collections component)
+const loadAllCollectionDetails = useCallback(async (basicCollections) => {
+  console.log('📡 [Documentation] Loading details for all collections...');
+  
+  try {
+    setIsLoading(prev => ({ ...prev, folders: true }));
+    
+    const collectionsWithDetails = await Promise.all(
+      basicCollections.map(async (collection) => {
+        try {
+          // Fetch collection details with endpoints (folders + endpoints in one call)
+          const response = await getCollectionDetailsWithEndpoints(authToken, collection.id);
+          const handledResponse = handleDocumentationResponse(response);
+          const collectionDetails = extractCollectionDetailsWithEndpoints(handledResponse);
+          
+          if (collectionDetails) {
+            // Process folders with their endpoints
+            const processedFolders = (collectionDetails.folders || []).map(folder => ({
+              id: folder.id,
+              name: folder.name,
+              description: folder.description || '',
+              collectionId: folder.collectionId || collection.id,
+              requests: folder.endpoints || [], // Endpoints already attached!
+              requestCount: folder.endpointCount || (folder.endpoints ? folder.endpoints.length : 0),
+              hasRequests: (folder.endpointCount || (folder.endpoints ? folder.endpoints.length : 0)) > 0,
+              isLoading: false,
+              error: null
+            }));
+            
+            // Update folderEndpoints cache
+            const folderEndpointsMap = {};
+            processedFolders.forEach(folder => {
+              if (folder.requests.length > 0) {
+                folderEndpointsMap[folder.id] = folder.requests;
+              }
+            });
+            
+            if (Object.keys(folderEndpointsMap).length > 0) {
+              setFolderEndpoints(prev => ({
+                ...prev,
+                ...folderEndpointsMap
+              }));
+            }
+            
+            return {
+              ...collection,
+              folders: processedFolders,
+              totalFolders: collectionDetails.totalFolders || processedFolders.length,
+              totalEndpoints: collectionDetails.totalEndpoints || 
+                processedFolders.reduce((sum, f) => sum + f.requests.length, 0)
+            };
+          }
+          
+          return collection;
+          
+        } catch (error) {
+          console.error(`❌ Error loading details for collection ${collection.id}:`, error);
+          return collection;
+        }
+      })
+    );
+    
+    console.log('📊 [Documentation] Collections with details:', collectionsWithDetails);
+    setCollections(collectionsWithDetails);
+    
+    // Auto-select first collection and its first folder/request
+    if (collectionsWithDetails.length > 0) {
+      const firstCollection = collectionsWithDetails[0];
+      setSelectedCollection(firstCollection);
+      setExpandedCollections([firstCollection.id]);
       
-      if (!response) {
-        throw new Error('No response from documentation service');
-      }
-      
-      const handledResponse = handleDocumentationResponse(response);
-      const collectionsData = extractAPICollections(handledResponse);
-      
-      console.log('📊 [Documentation] Extracted collections data:', collectionsData.length, 'collections');
-
-      // Format collections with empty folders array
-      const formattedCollections = collectionsData.map(collection => {
-        const formatted = formatDocumentationCollection(collection);
-        formatted.folders = []; // Will be populated by folder fetch
-        return formatted;
-      });
-      
-      setCollections(formattedCollections);
-      console.log('📊 [Documentation] Formatted collections:', formattedCollections);
-      
-      // Cache the data if we have userId
-      const userId = extractUserIdFromToken(authToken);
-      if (userId) {
-        cacheDocumentationData(userId, 'collections', formattedCollections);
-      }
-      
-      // Fetch folders for the first collection
-      if (formattedCollections.length > 0) {
-        const firstCollection = formattedCollections[0];
-        setSelectedCollection(firstCollection);
-        setExpandedCollections([firstCollection.id]);
+      // Find first folder with requests
+      const firstFolderWithRequests = firstCollection.folders?.find(f => f.requests && f.requests.length > 0);
+      if (firstFolderWithRequests) {
+        setExpandedFolders([firstFolderWithRequests.id]);
         
-        // Fetch folders for the first collection
-        await fetchFoldersForCollection(firstCollection.id);
+        // Auto-select first endpoint
+        if (firstFolderWithRequests.requests.length > 0 && !selectedRequest) {
+          const firstEndpoint = firstFolderWithRequests.requests[0];
+          console.log(`🎯 [Documentation] Auto-selecting first endpoint: ${firstEndpoint.name}`);
+          setSelectedRequest(firstEndpoint);
+          await fetchEndpointDetails(firstCollection.id, firstEndpoint.id);
+          showToast(`Viewing documentation for ${firstEndpoint.name}`, 'info');
+        }
+      } else if (firstCollection.folders && firstCollection.folders.length > 0) {
+        // Just expand first folder even if no requests
+        setExpandedFolders([firstCollection.folders[0].id]);
       }
-      
-      showToast('Collections loaded successfully', 'success');
-      
-    } catch (error) {
-      console.error('❌ [Documentation] Error fetching API collections:', error);
-      showToast(`Failed to load collections: ${error.message}`, 'error');
-      setCollections([]);
-    } finally {
-      setIsLoading(prev => ({ ...prev, collections: false, initialLoad: false }));
-      console.log('🏁 [Documentation] fetchAPICollections completed');
     }
-  }, [authToken]);
-
-  // Load API endpoints for a folder - with better debugging
-  const fetchAPIEndpoints = useCallback(async (collectionId, folderId) => {
-    console.log(`📡 [Documentation] Fetching endpoints for collection ${collectionId}, folder ${folderId}`);
     
-    if (!authToken || !collectionId || !folderId) {
-      console.log('Missing params for fetchAPIEndpoints');
-      return;
-    }
+  } catch (error) {
+    console.error('❌ Error loading collection details:', error);
+  } finally {
+    setIsLoading(prev => ({ ...prev, folders: false }));
+  }
+}, [authToken, selectedRequest, fetchEndpointDetails]);
 
-    // Set loading state for this specific folder
+// Update toggleCollection to NOT fetch details again (they're already loaded)
+const toggleCollection = async (collectionId) => {
+  console.log(`📂 [Documentation] Toggling collection ${collectionId}`);
+  
+  const isExpanding = !expandedCollections.includes(collectionId);
+  
+  setExpandedCollections(prev =>
+    prev.includes(collectionId)
+      ? prev.filter(id => id !== collectionId)
+      : [...prev, collectionId]
+  );
+  
+  // Don't fetch details here - they're already loaded in loadAllCollectionDetails
+  // Just expand/collapse the UI
+};
+
+// Update toggleFolder to NOT fetch endpoints (they're already attached)
+const toggleFolder = async (folderId, collectionId) => {
+  console.log(`📁 [Documentation] Toggling folder ${folderId} in collection ${collectionId}`);
+  
+  if (!folderId || !collectionId) {
+    console.log('❌ Missing folderId or collectionId');
+    return;
+  }
+  
+  const isExpanding = !expandedFolders.includes(folderId);
+  
+  setExpandedFolders(prev =>
+    prev.includes(folderId)
+      ? prev.filter(id => id !== folderId)
+      : [...prev, folderId]
+  );
+  
+  // Don't fetch endpoints here - they're already attached to the folder
+  console.log(`📁 [Documentation] Using pre-loaded endpoints for folder ${folderId}`);
+};
+
+ // Load API endpoints for a folder - FIXED VERSION
+const fetchAPIEndpoints = useCallback(async (collectionId, folderId) => {
+  console.log(`📡 [Documentation] Fetching endpoints for collection ${collectionId}, folder ${folderId}`);
+  
+  if (!authToken || !collectionId || !folderId) {
+    console.log('Missing params for fetchAPIEndpoints');
+    return [];
+  }
+
+  // Set loading state for this specific folder
+  setFolderLoading(prev => ({ ...prev, [folderId]: true }));
+  
+  try {
+    console.log(`🔍 Making API call to get endpoints for folder: ${folderId}`);
+    const response = await getAPIEndpoints(authToken, collectionId, folderId);
+    console.log('📦 [Documentation] Raw endpoints response:', response);
+    
+    // Extract endpoints from the response
+    let endpoints = [];
+    
+    // Your API returns endpoints in response.data.endpoints
+    if (response?.data?.endpoints && Array.isArray(response.data.endpoints)) {
+      endpoints = response.data.endpoints;
+    } else if (response?.data && Array.isArray(response.data)) {
+      endpoints = response.data;
+    } else if (Array.isArray(response)) {
+      endpoints = response;
+    } else if (response?.endpoints && Array.isArray(response.endpoints)) {
+      endpoints = response.endpoints;
+    }
+    
+    console.log(`📊 Extracted ${endpoints.length} endpoints:`, endpoints);
+    
+    // Format endpoints for display
+    const formattedEndpoints = endpoints.map(endpoint => ({
+      id: endpoint.id,
+      name: endpoint.name || '',
+      method: endpoint.method || 'GET',
+      url: endpoint.url || '',
+      path: endpoint.url || endpoint.path || '',
+      description: endpoint.description || '',
+      category: endpoint.category || 'general',
+      tags: endpoint.tags || [],
+      lastModified: endpoint.lastModified,
+      timeAgo: getTimeAgo(endpoint.lastModified),
+      requiresAuth: endpoint.requiresAuth || endpoint.requiresAuthentication || false,
+      deprecated: endpoint.deprecated || false
+    }));
+    
+    console.log('📊 Formatted endpoints:', formattedEndpoints);
+    
+    // CRITICAL: Update BOTH state variables to ensure consistency
+    
+    // 1. Update folderEndpoints cache
+    setFolderEndpoints(prev => ({
+      ...prev,
+      [folderId]: formattedEndpoints
+    }));
+    
+    // 2. Update collections state with the endpoints
     setCollections(prevCollections => {
       const updatedCollections = prevCollections.map(collection => {
         if (collection.id === collectionId) {
-          const updatedFolders = (collection.folders || []).map(folder => {
-            if (folder.id === folderId) {
-              return { ...folder, isLoading: true, error: null };
-            }
-            return folder;
-          });
-          return { ...collection, folders: updatedFolders };
-        }
-        return collection;
-      });
-      return updatedCollections;
-    });
-
-    setIsLoading(prev => ({ ...prev, endpoints: true }));
-    
-    try {
-      console.log(`🔍 Making API call to get endpoints for folder: ${folderId}`);
-      const response = await getAPIEndpoints(authToken, collectionId, folderId);
-      console.log('📦 [Documentation] Raw endpoints response:', JSON.stringify(response, null, 2));
-      
-      // Check if the response has the expected structure
-      console.log('🔍 Response structure:', {
-        hasData: !!response?.data,
-        dataType: response?.data ? typeof response.data : 'undefined',
-        dataKeys: response?.data ? Object.keys(response.data) : [],
-        responseCode: response?.responseCode
-      });
-      
-      const handledResponse = handleDocumentationResponse(response);
-      console.log('🔄 Handled response:', handledResponse);
-      
-      const endpoints = extractAPIEndpoints(handledResponse);
-      console.log(`📊 Extracted ${endpoints.length} endpoints:`, endpoints);
-      
-      // Format endpoints for display
-      const formattedEndpoints = endpoints.map(endpoint => 
-        formatDocumentationEndpoint(endpoint)
-      );
-      
-      console.log('📊 Formatted endpoints:', formattedEndpoints);
-      
-      // Update collection with endpoints
-      setCollections(prevCollections => {
-        const updatedCollections = prevCollections.map(collection => {
-          if (collection.id === collectionId) {
-            const updatedFolders = (collection.folders || []).map(folder => {
+          return {
+            ...collection,
+            folders: (collection.folders || []).map(folder => {
               if (folder.id === folderId) {
                 return { 
                   ...folder, 
-                  requests: formattedEndpoints,
+                  requests: formattedEndpoints, // Store endpoints here
+                  requestCount: formattedEndpoints.length,
+                  hasRequests: formattedEndpoints.length > 0,
                   isLoading: false,
                   error: null
                 };
               }
               return folder;
-            });
-            
-            return { 
-              ...collection, 
-              folders: updatedFolders,
-              lastFetched: new Date().toISOString()
-            };
-          }
-          return collection;
-        });
-        
-        console.log('📊 Updated collections:', updatedCollections);
-        return updatedCollections;
-      });
-      
-      if (formattedEndpoints.length > 0) {
-        console.log('🎯 Auto-selecting first endpoint');
-        const firstEndpoint = formattedEndpoints[0];
-        
-        setSelectedRequest(firstEndpoint);
-        
-        const collection = collections.find(c => c.id === collectionId);
-        if (collection) {
-          setSelectedCollection(collection);
+            })
+          };
         }
-        
-        await fetchEndpointDetails(collectionId, firstEndpoint.id);
-        showToast(`Loaded ${formattedEndpoints.length} endpoints`, 'success');
-      } else {
-        console.log('⚠️ No endpoints found for this folder');
-        showToast('No endpoints found in this folder', 'info');
-      }
-      
-    } catch (error) {
-      console.error('❌ [Documentation] Error loading API endpoints:', error);
-      console.error('Error details:', {
-        message: error.message,
-        stack: error.stack,
-        response: error.response
+        return collection;
       });
       
-      setCollections(prevCollections => {
-        const updatedCollections = prevCollections.map(collection => {
-          if (collection.id === collectionId) {
-            const updatedFolders = (collection.folders || []).map(folder => {
+      console.log('📊 Updated collections with endpoints:', updatedCollections);
+      return updatedCollections;
+    });
+    
+    // 3. Update selectedCollection if needed
+    if (selectedCollection?.id === collectionId) {
+      setSelectedCollection(prev => {
+        if (!prev) return prev;
+        const updatedSelected = {
+          ...prev,
+          folders: (prev.folders || []).map(folder => 
+            folder.id === folderId 
+              ? { 
+                  ...folder, 
+                  requests: formattedEndpoints,
+                  requestCount: formattedEndpoints.length,
+                  hasRequests: formattedEndpoints.length > 0
+                }
+              : folder
+          )
+        };
+        console.log('📊 Updated selectedCollection:', updatedSelected);
+        return updatedSelected;
+      });
+    }
+    
+    // Auto-select first endpoint if none selected
+    if (formattedEndpoints.length > 0 && !selectedRequest) {
+      console.log('🎯 Auto-selecting first endpoint');
+      const firstEndpoint = formattedEndpoints[0];
+      
+      setSelectedRequest(firstEndpoint);
+      await fetchEndpointDetails(collectionId, firstEndpoint.id);
+      showToast(`Loaded ${formattedEndpoints.length} endpoints`, 'success');
+    } else if (formattedEndpoints.length === 0) {
+      console.log('⚠️ No endpoints found for this folder');
+      showToast('No endpoints found in this folder', 'info');
+    }
+    
+    return formattedEndpoints;
+    
+  } catch (error) {
+    console.error('❌ [Documentation] Error loading API endpoints:', error);
+    
+    // Update folder with error state
+    setCollections(prevCollections => 
+      prevCollections.map(collection => {
+        if (collection.id === collectionId) {
+          return {
+            ...collection,
+            folders: (collection.folders || []).map(folder => {
               if (folder.id === folderId) {
                 return { 
                   ...folder, 
                   requests: [],
+                  requestCount: 0,
+                  hasRequests: false,
                   error: error.message,
                   isLoading: false
                 };
               }
               return folder;
-            });
-            return { ...collection, folders: updatedFolders };
-          }
-          return collection;
-        });
-        return updatedCollections;
-      });
-      
-      showToast(`Failed to load endpoints: ${error.message}`, 'error');
-    } finally {
-      setIsLoading(prev => ({ ...prev, endpoints: false }));
-    }
-  }, [authToken, selectedRequest, collections]);
+            })
+          };
+        }
+        return collection;
+      })
+    );
+    
+    showToast(`Failed to load endpoints: ${error.message}`, 'error');
+    return [];
+    
+  } finally {
+    setFolderLoading(prev => ({ ...prev, [folderId]: false }));
+  }
+}, [authToken, selectedCollection, selectedRequest, fetchEndpointDetails]);
 
   // Load endpoint details - FIXED VERSION
 const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
@@ -824,8 +1145,10 @@ const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
     // Extract the endpoint details from the response structure
     let endpointData = null;
     
+    // Your API returns data directly in response.data
     if (handledResponse && handledResponse.data) {
       endpointData = handledResponse.data;
+      console.log('📊 [Documentation] Found endpoint data in response.data');
     } else if (handledResponse && handledResponse.endpoint) {
       endpointData = handledResponse.endpoint;
     } else if (handledResponse && typeof handledResponse === 'object') {
@@ -1139,65 +1462,23 @@ const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const toggleCollection = async (collectionId) => {
-    console.log(`📂 [Documentation] Toggling collection ${collectionId}`);
-    
-    const isExpanding = !expandedCollections.includes(collectionId);
-    
-    setExpandedCollections(prev =>
-      prev.includes(collectionId)
-        ? prev.filter(id => id !== collectionId)
-        : [...prev, collectionId]
-    );
-    
-    // Fetch folders if expanding and collection has no folders yet
-    if (isExpanding) {
-      const collection = collections.find(c => c.id === collectionId);
-      if (collection && (!collection.folders || collection.folders.length === 0)) {
-        await fetchFoldersForCollection(collectionId);
-      }
-    }
-  };
 
-  // FIXED: toggleFolder function
-  const toggleFolder = async (folderId) => {
-    console.log(`📁 [Documentation] Toggling folder ${folderId}`);
-    
-    const isExpanding = !expandedFolders.includes(folderId);
-    
-    setExpandedFolders(prev =>
-      prev.includes(folderId)
-        ? prev.filter(id => id !== folderId)
-        : [...prev, folderId]
-    );
-    
-    // Load endpoints for the folder if expanding
-    if (isExpanding && selectedCollection) {
-      console.log(`📁 [Documentation] Fetching endpoints for folder ${folderId}`);
-      
-      const collection = collections.find(c => c.id === selectedCollection.id);
-      const folder = collection?.folders?.find(f => f.id === folderId);
-      
-      if (folder && (!folder.requests || folder.requests.length === 0) && !folder.isLoading) {
-        await fetchAPIEndpoints(selectedCollection.id, folderId);
-      }
-    }
-  };
-
-  const handleSelectRequest = async (request, collectionId, folderId) => {
-    console.log('🎯 [Documentation] Selecting request:', request.name);
-    
-    const collection = collections.find(c => c.id === collectionId);
-    if (collection) {
-      setSelectedCollection(collection);
-    }
-    
-    setSelectedRequest(request);
-    
-    showToast(`Viewing documentation for ${request.name}`, 'info');
-    
-    await fetchEndpointDetails(collectionId, request.id);
-  };
+ const handleSelectRequest = async (request, collectionId, folderId) => {
+  console.log('🎯 [Documentation] Selecting request:', request.name);
+  
+  const collection = collections.find(c => c.id === collectionId);
+  if (collection) {
+    setSelectedCollection(collection);
+  }
+  
+  setSelectedRequest(request);
+  
+  showToast(`Viewing documentation for ${request.name}`, 'info');
+  
+  // Make sure we have the correct ID - your API uses 'id' not 'endpointId'
+  const endpointId = request.id || request.endpointId;
+  await fetchEndpointDetails(collectionId, endpointId);
+};
 
   const handleEnvironmentChange = (envId) => {
     setActiveEnvironment(envId);
@@ -1320,6 +1601,78 @@ req.end();`
       )
     );
   });
+
+
+  // Add this ref near your other refs
+const autoExpandTriggered = useRef(false);
+const isFirstLoad = useRef(true);
+
+// Auto-expand first folder and select first endpoint on initial load
+useEffect(() => {
+  // Only run on first load and if not already triggered
+  if (!isFirstLoad.current || autoExpandTriggered.current) {
+    return;
+  }
+  
+  // Need selected collection
+  if (!selectedCollection) {
+    console.log('⏳ [Documentation] Waiting for selectedCollection...');
+    return;
+  }
+  
+  // Need folders to be loaded
+  if (!selectedCollection.folders || selectedCollection.folders.length === 0) {
+    console.log('⏳ [Documentation] Waiting for folders to load...');
+    return;
+  }
+  
+  // Mark as triggered immediately to prevent multiple calls
+  autoExpandTriggered.current = true;
+  
+  console.log('🔥🔥🔥 [Documentation] AUTO-EXPAND TRIGGERED');
+  
+  const autoExpandAndSelect = async () => {
+    // Find first folder that has requests
+    const firstFolderWithRequests = selectedCollection.folders.find(f => f.requests && f.requests.length > 0);
+    const folderToExpand = firstFolderWithRequests || selectedCollection.folders[0];
+    
+    if (!folderToExpand) {
+      console.log('❌ [Documentation] No folders found');
+      return;
+    }
+    
+    console.log(`📁 [Documentation] Auto-expanding folder: ${folderToExpand.id} - ${folderToExpand.name}`);
+    
+    // Expand the folder
+    setExpandedFolders([folderToExpand.id]);
+    
+    // Select the first endpoint if available (endpoints are already loaded from the collection details)
+    if (folderToExpand.requests && folderToExpand.requests.length > 0 && !selectedRequest) {
+      const firstEndpoint = folderToExpand.requests[0];
+      console.log(`🎯 [Documentation] Auto-selecting first endpoint: ${firstEndpoint.name}`);
+      
+      setSelectedRequest(firstEndpoint);
+      await fetchEndpointDetails(selectedCollection.id, firstEndpoint.id);
+      
+      showToast(`Viewing documentation for ${firstEndpoint.name}`, 'info');
+    }
+    
+    // Mark that first load is complete
+    isFirstLoad.current = false;
+    console.log('✅ [Documentation] Auto-expand completed');
+  };
+  
+  autoExpandAndSelect();
+  
+}, [
+  selectedCollection, 
+  selectedCollection?.folders,
+  selectedCollection?.folders?.length,
+  selectedRequest,
+  fetchEndpointDetails,
+  showToast
+]);
+
 
   // Initialize data
   useEffect(() => {
@@ -1759,314 +2112,329 @@ req.end();`
   };
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden" style={{ 
-      backgroundColor: colors.bg,
-      color: colors.text,
-      fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
-      fontSize: '13px'
+  <div className="flex flex-col h-screen overflow-hidden" style={{ 
+    backgroundColor: colors.bg,
+    color: colors.text,
+    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+    fontSize: '13px'
+  }}>
+    <style>{`
+      @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      
+      .animate-fade-in-up {
+        animation: fadeInUp 0.2s ease-out;
+      }
+      
+      .animate-spin {
+        animation: spin 1s linear infinite;
+      }
+      
+      .text-blue-400 { color: #60a5fa; }
+      .text-green-400 { color: #34d399; }
+      .text-purple-400 { color: #a78bfa; }
+      .text-orange-400 { color: #fb923c; }
+      .text-red-400 { color: #f87171; }
+      .text-gray-500 { color: #9ca3af; }
+      
+      /* Custom scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      
+      ::-webkit-scrollbar-track {
+        background: ${colors.border};
+        border-radius: 4px;
+      }
+      
+      ::-webkit-scrollbar-thumb {
+        background: ${colors.textTertiary};
+        border-radius: 4px;
+      }
+      
+      ::-webkit-scrollbar-thumb:hover {
+        background: ${colors.textSecondary};
+      }
+      
+      .prose {
+        color: ${colors.textSecondary};
+        line-height: 1.6;
+      }
+      
+      .prose p {
+        margin-bottom: 1em;
+      }
+      
+      .prose strong {
+        color: ${colors.text};
+        font-weight: 600;
+      }
+      
+      code {
+        font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Segoe UI Mono', 'Roboto Mono', monospace;
+        font-size: 0.875em;
+      }
+      
+      /* Focus styles */
+      input:focus, button:focus {
+        outline: 2px solid ${colors.primary}40;
+        outline-offset: 2px;
+      }
+      
+      /* Hover effects */
+      .hover-lift:hover {
+        transform: translateY(-2px);
+        transition: transform 0.2s ease;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      }
+      
+      .gradient-bg {
+        background: linear-gradient(135deg, ${colors.primary}20 0%, ${colors.info}20 100%);
+      }
+    `}</style>
+
+    {/* Loading Overlay - Exactly matching APISecurity pattern */}
+    <LoadingOverlay 
+      isLoading={isLoading.initialLoad || isLoading.collections} 
+      colors={colors} 
+      loadingText={
+        isLoading.collections ? 'Loading collections...' :
+        isLoading.environments ? 'Loading environments...' :
+        isLoading.folders ? 'Loading folders...' :
+        'Please wait while we load your documentation data'
+      }
+    />
+
+    {/* TOP NAVIGATION */}
+    <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
+      backgroundColor: colors.header,
+      borderColor: colors.border
     }}>
-      <style>{`
-        @keyframes fadeInUp {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        
-        .animate-fade-in-up {
-          animation: fadeInUp 0.2s ease-out;
-        }
-        
-        .animate-spin {
-          animation: spin 1s linear infinite;
-        }
-        
-        .text-blue-400 { color: #60a5fa; }
-        .text-green-400 { color: #34d399; }
-        .text-purple-400 { color: #a78bfa; }
-        .text-orange-400 { color: #fb923c; }
-        .text-red-400 { color: #f87171; }
-        .text-gray-500 { color: #9ca3af; }
-        
-        /* Custom scrollbar */
-        ::-webkit-scrollbar {
-          width: 8px;
-          height: 8px;
-        }
-        
-        ::-webkit-scrollbar-track {
-          background: ${colors.border};
-          border-radius: 4px;
-        }
-        
-        ::-webkit-scrollbar-thumb {
-          background: ${colors.textTertiary};
-          border-radius: 4px;
-        }
-        
-        ::-webkit-scrollbar-thumb:hover {
-          background: ${colors.textSecondary};
-        }
-        
-        .prose {
-          color: ${colors.textSecondary};
-          line-height: 1.6;
-        }
-        
-        .prose p {
-          margin-bottom: 1em;
-        }
-        
-        .prose strong {
-          color: ${colors.text};
-          font-weight: 600;
-        }
-        
-        code {
-          font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Segoe UI Mono', 'Roboto Mono', monospace;
-          font-size: 0.875em;
-        }
-        
-        /* Focus styles */
-        input:focus, button:focus {
-          outline: 2px solid ${colors.primary}40;
-          outline-offset: 2px;
-        }
-        
-        /* Hover effects */
-        .hover-lift:hover {
-          transform: translateY(-2px);
-          transition: transform 0.2s ease;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-        
-        .gradient-bg {
-          background: linear-gradient(135deg, ${colors.primary}20 0%, ${colors.info}20 100%);
-        }
-      `}</style>
-
-      {/* Loading Overlay - Exactly matching APISecurity pattern */}
-      <LoadingOverlay 
-        isLoading={isLoading.initialLoad || isLoading.collections} 
-        colors={colors} 
-        loadingText={
-          isLoading.collections ? 'Loading collections...' :
-          isLoading.environments ? 'Loading environments...' :
-          isLoading.folders ? 'Loading folders...' :
-          'Please wait while we load your documentation data'
-        }
-      />
-
-      {/* TOP NAVIGATION */}
-      <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
-        backgroundColor: colors.header,
-        borderColor: colors.border
-      }}>
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <span className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift`}>API Documentation</span>
-          </div>
-
-          <div className="flex items-center gap-1 -ml-7 text-nowrap">
-            <span className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift`}>API Documentation</span>
-          </div>
+      <div className="flex items-center gap-4">
+        <div className="relative">
+          <span className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift`}>API Documentation</span>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Environment Selector */}
-          {environments.length > 0 && (
-            <div className="relative">
-              <button className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:bg-opacity-50 transition-colors hover-lift"
-                onClick={() => setShowEnvironmentMenu(!showEnvironmentMenu)}
-                style={{ backgroundColor: colors.hover }}>
-                <Globe size={12} style={{ color: colors.textSecondary }} />
-                <span style={{ color: colors.text }}>{environments.find(e => e.isActive)?.name || 'Select Env'}</span>
-                <ChevronDown size={12} style={{ color: colors.textSecondary }} />
-              </button>
-
-              {showEnvironmentMenu && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowEnvironmentMenu(false)} />
-                  <div className="absolute top-full right-0 mt-1 py-2 rounded shadow-lg z-50 border min-w-48"
-                    style={{ 
-                      backgroundColor: colors.bg,
-                      borderColor: colors.border
-                    }}>
-                    {environments.map(env => (
-                      <button
-                        key={env.id}
-                        onClick={() => handleEnvironmentChange(env.id)}
-                        className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors hover-lift"
-                        style={{ 
-                          backgroundColor: env.isActive ? colors.selected : 'transparent',
-                          color: env.isActive ? colors.primary : colors.text
-                        }}
-                      >
-                        <div className="w-2 h-2 rounded-full" style={{ 
-                          backgroundColor: env.isActive ? colors.success : colors.textSecondary 
-                        }}></div>
-                        {env.name}
-                        {env.isActive && <Check size={14} className="ml-auto" />}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          <div className="w-px h-4" style={{ backgroundColor: colors.border }}></div>
-
-          {/* Code Panel Toggle */}
-          <button onClick={() => setShowCodePanel(!showCodePanel)} 
-            className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-            style={{ backgroundColor: showCodePanel ? colors.selected : colors.hover }}>
-            <Code size={14} style={{ color: showCodePanel ? colors.primary : colors.textSecondary }} />
-          </button>
-
-          {/* Publish Button */}
-          <button onClick={() => {
-            if (!selectedCollection) {
-              showToast('Please select a collection first', 'warning');
-              return;
-            }
-            setShowPublishModal(true);
-          }} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-            style={{ backgroundColor: colors.hover }}>
-            <ExternalLink size={14} style={{ color: colors.textSecondary }} />
-          </button>
+        <div className="flex items-center gap-1 -ml-7 text-nowrap">
+          <span className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift`}>API Documentation</span>
         </div>
       </div>
 
-      {/* MAIN CONTENT */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left Sidebar - Collections */}
-        {activeMainTab === 'Collections' && (
-          <div className="w-80 border-r flex flex-col" style={{ 
-            borderColor: colors.border
-          }}>
-            <div className="p-4 border-b" style={{ borderColor: colors.border }}>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Collections</h3>
-                <div className="flex gap-1">
-                  {renderDebugButton()}
-                  <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                    onClick={async () => {
-                      try {
-                        await fetchAPICollections();
-                        showToast('Collections refreshed', 'success');
-                      } catch (error) {
-                        showToast('Failed to refresh collections', 'error');
-                      }
-                    }}
-                    style={{ backgroundColor: colors.hover }}>
-                    <RefreshCw size={12} style={{ color: colors.textSecondary }} />
-                  </button>
+      <div className="flex items-center gap-2">
+        {/* Environment Selector */}
+        {environments.length > 0 && (
+          <div className="relative">
+            <button className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:bg-opacity-50 transition-colors hover-lift"
+              onClick={() => setShowEnvironmentMenu(!showEnvironmentMenu)}
+              style={{ backgroundColor: colors.hover }}>
+              <Globe size={12} style={{ color: colors.textSecondary }} />
+              <span style={{ color: colors.text }}>{environments.find(e => e.isActive)?.name || 'Select Env'}</span>
+              <ChevronDown size={12} style={{ color: colors.textSecondary }} />
+            </button>
+
+            {showEnvironmentMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowEnvironmentMenu(false)} />
+                <div className="absolute top-full right-0 mt-1 py-2 rounded shadow-lg z-50 border min-w-48"
+                  style={{ 
+                    backgroundColor: colors.bg,
+                    borderColor: colors.border
+                  }}>
+                  {environments.map(env => (
+                    <button
+                      key={env.id}
+                      onClick={() => handleEnvironmentChange(env.id)}
+                      className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors hover-lift"
+                      style={{ 
+                        backgroundColor: env.isActive ? colors.selected : 'transparent',
+                        color: env.isActive ? colors.primary : colors.text
+                      }}
+                    >
+                      <div className="w-2 h-2 rounded-full" style={{ 
+                        backgroundColor: env.isActive ? colors.success : colors.textSecondary 
+                      }}></div>
+                      {env.name}
+                      {env.isActive && <Check size={14} className="ml-auto" />}
+                    </button>
+                  ))}
                 </div>
-              </div>
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
-                <input 
-                  type="text" 
-                  placeholder="Search collections..."
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    if (e.target.value.trim()) {
-                      searchDocumentationAPI(e.target.value);
-                    } else {
-                      setSearchResults([]);
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="w-px h-4" style={{ backgroundColor: colors.border }}></div>
+
+        {/* Code Panel Toggle */}
+        <button onClick={() => setShowCodePanel(!showCodePanel)} 
+          className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+          style={{ backgroundColor: showCodePanel ? colors.selected : colors.hover }}>
+          <Code size={14} style={{ color: showCodePanel ? colors.primary : colors.textSecondary }} />
+        </button>
+
+        {/* Publish Button */}
+        <button onClick={() => {
+          if (!selectedCollection) {
+            showToast('Please select a collection first', 'warning');
+            return;
+          }
+          setShowPublishModal(true);
+        }} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+          style={{ backgroundColor: colors.hover }}>
+          <ExternalLink size={14} style={{ color: colors.textSecondary }} />
+        </button>
+      </div>
+    </div>
+
+    {/* MAIN CONTENT */}
+    <div className="flex flex-1 overflow-hidden">
+      {/* Left Sidebar - Collections */}
+      {activeMainTab === 'Collections' && (
+        <div className="w-80 border-r flex flex-col" style={{ 
+          borderColor: colors.border
+        }}>
+          <div className="p-4 border-b" style={{ borderColor: colors.border }}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Collections</h3>
+              <div className="flex gap-1">
+                {renderDebugButton()}
+                <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                  onClick={async () => {
+                    try {
+                      await fetchAPICollections();
+                      showToast('Collections refreshed', 'success');
+                    } catch (error) {
+                      showToast('Failed to refresh collections', 'error');
                     }
                   }}
-                  className="w-full pl-8 pr-3 py-2 rounded text-sm focus:outline-none hover-lift"
-                  style={{ 
-                    backgroundColor: colors.inputBg, 
-                    border: `1px solid ${colors.border}`, 
-                    color: colors.text 
-                  }} 
-                />
-                {searchQuery && (
-                  <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                    <button onClick={() => {
-                      setSearchQuery('');
-                      setSearchResults([]);
-                    }} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                      style={{ backgroundColor: colors.hover }}>
-                      <X size={12} style={{ color: colors.textSecondary }} />
-                    </button>
-                  </div>
-                )}
+                  style={{ backgroundColor: colors.hover }}>
+                  <RefreshCw size={12} style={{ color: colors.textSecondary }} />
+                </button>
               </div>
             </div>
-
-            <div className="flex-1 overflow-auto p-2">
-              {isLoading.collections && !isLoading.initialLoad ? (
-                <div className="text-center py-8" style={{ color: colors.textSecondary }}>
-                  <RefreshCw size={16} className="animate-spin mx-auto mb-2" />
-                  <p className="text-sm">Loading collections...</p>
-                </div>
-              ) : filteredCollections.length === 0 && !isLoading.initialLoad ? (
-                <div className="text-center p-4" style={{ color: colors.textSecondary }}>
-                  <Book size={20} className="mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No collections available</p>
-                  <button className="mt-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
-                    onClick={async () => {
-                      try {
-                        await fetchAPICollections();
-                      } catch (error) {
-                        showToast('Failed to load collections', 'error');
-                      }
-                    }}
-                    style={{ backgroundColor: colors.hover, color: colors.text }}>
-                    Load Collections
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
+              <input 
+                type="text" 
+                placeholder="Search collections..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  if (e.target.value.trim()) {
+                    searchDocumentationAPI(e.target.value);
+                  } else {
+                    setSearchResults([]);
+                  }
+                }}
+                className="w-full pl-8 pr-3 py-2 rounded text-sm focus:outline-none hover-lift"
+                style={{ 
+                  backgroundColor: colors.inputBg, 
+                  border: `1px solid ${colors.border}`, 
+                  color: colors.text 
+                }} 
+              />
+              {searchQuery && (
+                <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                  <button onClick={() => {
+                    setSearchQuery('');
+                    setSearchResults([]);
+                  }} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                    style={{ backgroundColor: colors.hover }}>
+                    <X size={12} style={{ color: colors.textSecondary }} />
                   </button>
                 </div>
-              ) : (
-                <>
-                  {filteredCollections.map(collection => (
-                    <div key={collection.id} className="mb-3">
-                      <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
-                        onClick={() => toggleCollection(collection.id)}
-                        style={{ backgroundColor: colors.hover }}>
-                        {expandedCollections.includes(collection.id) ? (
-                          <ChevronDown size={12} style={{ color: colors.textSecondary }} />
-                        ) : (
-                          <ChevronRight size={12} style={{ color: colors.textSecondary }} />
-                        )}
-                        <button onClick={(e) => {
-                          e.stopPropagation();
-                          const newCollections = collections.map(c => 
-                            c.id === collection.id ? { ...c, isFavorite: !c.isFavorite } : c
-                          );
-                          setCollections(newCollections);
-                          showToast(collection.isFavorite ? 'Removed from favorites' : 'Added to favorites', 'success');
-                        }}>
-                          {collection.isFavorite ? (
-                            <Star size={12} fill="#FFB300" style={{ color: '#FFB300' }} />
-                          ) : (
-                            <Star size={12} style={{ color: colors.textSecondary }} />
-                          )}
-                        </button>
-                        
-                        <span className="text-sm font-medium flex-1 truncate" style={{ color: colors.text }}>
-                          {collection.name}
-                        </span>
-                        
-                        {(!collection.folders || collection.folders.length === 0) && isLoading.folders && (
-                          <RefreshCw size={10} className="animate-spin" style={{ color: colors.textSecondary }} />
-                        )}
-                      </div>
+              )}
+            </div>
+          </div>
 
-                      {expandedCollections.includes(collection.id) && collection.folders && (
-                        <>
-                          {collection.folders.map(folder => (
+          <div className="flex-1 overflow-auto p-2">
+            {isLoading.collections && !isLoading.initialLoad ? (
+              <div className="text-center py-8" style={{ color: colors.textSecondary }}>
+                <RefreshCw size={16} className="animate-spin mx-auto mb-2" />
+                <p className="text-sm">Loading collections...</p>
+              </div>
+            ) : filteredCollections.length === 0 && !isLoading.initialLoad ? (
+              <div className="text-center p-4" style={{ color: colors.textSecondary }}>
+                <Book size={20} className="mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No collections available</p>
+                <button className="mt-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
+                  onClick={async () => {
+                    try {
+                      await fetchAPICollections();
+                    } catch (error) {
+                      showToast('Failed to load collections', 'error');
+                    }
+                  }}
+                  style={{ backgroundColor: colors.hover, color: colors.text }}>
+                  Load Collections
+                </button>
+              </div>
+            ) : (
+              <>
+                {filteredCollections.map(collection => (
+                  <div key={collection.id} className="mb-3">
+                    {/* Collection Header */}
+                    <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
+                      onClick={() => toggleCollection(collection.id)}
+                      style={{ backgroundColor: colors.hover }}>
+                      {expandedCollections.includes(collection.id) ? (
+                        <ChevronDown size={12} style={{ color: colors.textSecondary }} />
+                      ) : (
+                        <ChevronRight size={12} style={{ color: colors.textSecondary }} />
+                      )}
+                      <button onClick={(e) => {
+                        e.stopPropagation();
+                        const newCollections = collections.map(c => 
+                          c.id === collection.id ? { ...c, isFavorite: !c.isFavorite } : c
+                        );
+                        setCollections(newCollections);
+                        showToast(collection.isFavorite ? 'Removed from favorites' : 'Added to favorites', 'success');
+                      }}>
+                        {collection.isFavorite ? (
+                          <Star size={12} fill="#FFB300" style={{ color: '#FFB300' }} />
+                        ) : (
+                          <Star size={12} style={{ color: colors.textSecondary }} />
+                        )}
+                      </button>
+                      
+                      <span className="text-sm font-medium flex-1 truncate" style={{ color: colors.text }}>
+                        {collection.name}
+                      </span>
+                      
+                      {(!collection.folders || collection.folders.length === 0) && isLoading.folders && (
+                        <RefreshCw size={10} className="animate-spin" style={{ color: colors.textSecondary }} />
+                      )}
+                    </div>
+
+                    {/* Folders */}
+                    {expandedCollections.includes(collection.id) && collection.folders && collection.folders.length > 0 && (
+                      <>
+                        {collection.folders.map(folder => {
+                          // Debug log to see what's being rendered
+                          console.log(`🎯 Rendering folder: ${folder.name}`, {
+                            id: folder.id,
+                            requestsLength: folder.requests?.length,
+                            hasRequests: folder.hasRequests,
+                            requestCount: folder.requestCount,
+                            requests: folder.requests
+                          });
+                          
+                          return (
                             <div key={folder.id} className="ml-4 mb-2">
-                              <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
-                                onClick={() => toggleFolder(folder.id)}
-                                style={{ backgroundColor: colors.hover }}>
+                              {/* Folder Header */}
+                              <div 
+                                className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
+                                onClick={() => toggleFolder(folder.id, collection.id)}
+                                style={{ backgroundColor: colors.hover }}
+                              >
                                 {expandedFolders.includes(folder.id) ? (
                                   <ChevronDown size={11} style={{ color: colors.textSecondary }} />
                                 ) : (
@@ -2078,14 +2446,25 @@ req.end();`
                                   {folder.name}
                                 </span>
                                 
-                                {folder.isLoading && (
+                                {/* Show count badge if there are endpoints */}
+                                {folder.requests && folder.requests.length > 0 && (
+                                  <span className="text-xs px-1.5 py-0.5 rounded-full ml-1" style={{ 
+                                    backgroundColor: colors.primary,
+                                    color: 'white'
+                                  }}>
+                                    {folder.requests.length}
+                                  </span>
+                                )}
+                                
+                                {folderLoading[folder.id] && (
                                   <RefreshCw size={10} className="animate-spin" style={{ color: colors.textSecondary }} />
                                 )}
                               </div>
 
+                              {/* Endpoints - Show when folder is expanded */}
                               {expandedFolders.includes(folder.id) && (
-                                <div className="ml-6">
-                                  {folder.isLoading ? (
+                                <div className="ml-6 mt-1 space-y-1">
+                                  {folderLoading[folder.id] ? (
                                     <div className="py-2 text-center">
                                       <RefreshCw size={12} className="animate-spin mx-auto mb-1" style={{ color: colors.textSecondary }} />
                                       <p className="text-xs" style={{ color: colors.textTertiary }}>Loading endpoints...</p>
@@ -2101,139 +2480,156 @@ req.end();`
                                         Retry
                                       </button>
                                     </div>
-                                  ) : folder.requests && folder.requests.length > 0 ? (
+                                  ) : (
                                     <>
-                                      {folder.requests.map(request => (
-                                        <div key={request.id} className="flex items-center gap-2 mb-1.5 group">
-                                          <button
-                                            onClick={() => handleSelectRequest(request, collection.id, folder.id)}
-                                            className="flex items-center gap-2 text-sm text-left transition-colors flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
-                                            style={{ 
-                                              color: selectedRequest?.id === request.id ? colors.primary : colors.text,
-                                              backgroundColor: selectedRequest?.id === request.id ? colors.selected : 'transparent'
-                                            }}>
-                                            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
-                                              backgroundColor: colors.method[request.method] || colors.textSecondary
-                                            }} />
-                                            
-                                            <span className="truncate">{request.name}</span>
+                                      {/* DIRECTLY CHECK folder.requests - this should work based on your logs */}
+                                      {folder.requests && folder.requests.length > 0 ? (
+                                        folder.requests.map(request => {
+                                          console.log(`  📌 Rendering request: ${request.name} (${request.method})`);
+                                          return (
+                                            <div key={request.id} className="flex items-center gap-2 group">
+                                              <button
+                                                onClick={() => handleSelectRequest(request, collection.id, folder.id)}
+                                                className="flex items-center gap-2 text-sm text-left transition-colors flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
+                                                style={{ 
+                                                  color: selectedRequest?.id === request.id ? colors.primary : colors.text,
+                                                  backgroundColor: selectedRequest?.id === request.id ? colors.selected : 'transparent'
+                                                }}>
+                                                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
+                                                  backgroundColor: colors.method[request.method] || colors.textSecondary
+                                                }} />
+                                                
+                                                <span className="truncate">{request.name}</span>
+                                                <span className="text-xs ml-auto opacity-60" style={{ color: colors.textSecondary }}>
+                                                  {request.method}
+                                                </span>
+                                              </button>
+                                            </div>
+                                          );
+                                        })
+                                      ) : (
+                                        <div className="py-2 text-center">
+                                          <p className="text-xs" style={{ color: colors.textTertiary }}>No endpoints available</p>
+                                          <button 
+                                            className="text-xs mt-2 px-2 py-1 rounded hover:bg-opacity-50 transition-colors"
+                                            onClick={() => fetchAPIEndpoints(collection.id, folder.id)}
+                                            style={{ backgroundColor: colors.hover, color: colors.text }}
+                                          >
+                                            Refresh
                                           </button>
                                         </div>
-                                      ))}
+                                      )}
                                     </>
-                                  ) : (
-                                    <div className="py-2 text-center">
-                                      <p className="text-xs" style={{ color: colors.textTertiary }}>No endpoints available</p>
-                                    </div>
                                   )}
                                 </div>
                               )}
                             </div>
+                          );
+                        })}
+                      </>
+                    )}
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Documentation Tabs */}
+        <div className="flex items-center border-b h-9" style={{ 
+          backgroundColor: colors.card,
+          borderColor: colors.border
+        }}>
+          <div className="flex items-center px-2">
+            <button
+              onClick={() => setActiveTab('documentation')}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors hover-lift ${
+                activeTab === 'documentation' ? '' : 'hover:bg-opacity-50'
+              }`}
+              style={{ 
+                borderBottomColor: activeTab === 'documentation' ? colors.primary : 'transparent',
+                color: activeTab === 'documentation' ? colors.primary : colors.textSecondary,
+                backgroundColor: 'transparent'
+              }}>
+              Documentation
+            </button>
+            
+            <button
+              onClick={() => {
+                setActiveTab('changelog');
+                if (selectedCollection) {
+                  fetchChangelog(selectedCollection.id);
+                } else {
+                  showToast('Please select a collection first', 'warning');
+                }
+              }}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors hover-lift ${
+                activeTab === 'changelog' ? '' : 'hover:bg-opacity-50'
+              }`}
+              style={{ 
+                borderBottomColor: activeTab === 'changelog' ? colors.primary : 'transparent',
+                color: activeTab === 'changelog' ? colors.primary : colors.textSecondary,
+                backgroundColor: 'transparent'
+              }}>
+              Changelog
+            </button>
+          </div>
+        </div>
+
+        {/* Documentation Content */}
+        {activeTab === 'documentation' && renderDocumentationContent()}
+        
+        {activeTab === 'changelog' && (
+          <div className="flex-1 p-8">
+            <div className="max-w-4xl mx-auto">
+              <h2 className="text-2xl font-semibold mb-6" style={{ color: colors.text }}>API Changelog</h2>
+              {changelog.length === 0 ? (
+                <div className="text-center py-8" style={{ color: colors.textSecondary }}>
+                  <History size={48} className="mx-auto mb-4 opacity-50" />
+                  <p>No changelog entries available.</p>
+                  <p className="text-sm mt-2">Select a collection to view its changelog.</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {changelog.map((entry, index) => (
+                    <div key={index} className="border rounded p-6 hover:border-opacity-50 transition-colors hover-lift cursor-pointer"
+                      style={{ borderColor: colors.border }}
+                      onClick={() => showToast(`Viewing ${entry.version} release notes`, 'info')}>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-lg font-semibold" style={{ color: colors.text }}>Version {entry.version}</h3>
+                        <span className="text-sm" style={{ color: colors.textSecondary }}>{entry.date}</span>
+                      </div>
+                      <p className="text-sm mb-4" style={{ color: colors.textSecondary }}>{entry.description}</p>
+                      {entry.changes && Array.isArray(entry.changes) && (
+                        <ul className="space-y-2">
+                          {entry.changes.map((change, idx) => (
+                            <li key={idx} className="flex items-start gap-2 text-sm" style={{ color: colors.textSecondary }}>
+                              <Check size={12} className="mt-0.5 flex-shrink-0" style={{ color: colors.success }} />
+                              {change}
+                            </li>
                           ))}
-                        </>
+                        </ul>
                       )}
                     </div>
                   ))}
-                </>
+                </div>
               )}
             </div>
           </div>
         )}
-
-        {/* Main Content Area */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Documentation Tabs */}
-          <div className="flex items-center border-b h-9" style={{ 
-            backgroundColor: colors.card,
-            borderColor: colors.border
-          }}>
-            <div className="flex items-center px-2">
-              <button
-                onClick={() => setActiveTab('documentation')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors hover-lift ${
-                  activeTab === 'documentation' ? '' : 'hover:bg-opacity-50'
-                }`}
-                style={{ 
-                  borderBottomColor: activeTab === 'documentation' ? colors.primary : 'transparent',
-                  color: activeTab === 'documentation' ? colors.primary : colors.textSecondary,
-                  backgroundColor: 'transparent'
-                }}>
-                Documentation
-              </button>
-              
-              <button
-                onClick={() => {
-                  setActiveTab('changelog');
-                  if (selectedCollection) {
-                    fetchChangelog(selectedCollection.id);
-                  } else {
-                    showToast('Please select a collection first', 'warning');
-                  }
-                }}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors hover-lift ${
-                  activeTab === 'changelog' ? '' : 'hover:bg-opacity-50'
-                }`}
-                style={{ 
-                  borderBottomColor: activeTab === 'changelog' ? colors.primary : 'transparent',
-                  color: activeTab === 'changelog' ? colors.primary : colors.textSecondary,
-                  backgroundColor: 'transparent'
-                }}>
-                Changelog
-              </button>
-            </div>
-          </div>
-
-          {/* Documentation Content */}
-          {activeTab === 'documentation' && renderDocumentationContent()}
-          
-          {activeTab === 'changelog' && (
-            <div className="flex-1 p-8">
-              <div className="max-w-4xl mx-auto">
-                <h2 className="text-2xl font-semibold mb-6" style={{ color: colors.text }}>API Changelog</h2>
-                {changelog.length === 0 ? (
-                  <div className="text-center py-8" style={{ color: colors.textSecondary }}>
-                    <History size={48} className="mx-auto mb-4 opacity-50" />
-                    <p>No changelog entries available.</p>
-                    <p className="text-sm mt-2">Select a collection to view its changelog.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    {changelog.map((entry, index) => (
-                      <div key={index} className="border rounded p-6 hover:border-opacity-50 transition-colors hover-lift cursor-pointer"
-                        style={{ borderColor: colors.border }}
-                        onClick={() => showToast(`Viewing ${entry.version} release notes`, 'info')}>
-                        <div className="flex items-center justify-between mb-3">
-                          <h3 className="text-lg font-semibold" style={{ color: colors.text }}>Version {entry.version}</h3>
-                          <span className="text-sm" style={{ color: colors.textSecondary }}>{entry.date}</span>
-                        </div>
-                        <p className="text-sm mb-4" style={{ color: colors.textSecondary }}>{entry.description}</p>
-                        {entry.changes && Array.isArray(entry.changes) && (
-                          <ul className="space-y-2">
-                            {entry.changes.map((change, idx) => (
-                              <li key={idx} className="flex items-start gap-2 text-sm" style={{ color: colors.textSecondary }}>
-                                <Check size={12} className="mt-0.5 flex-shrink-0" style={{ color: colors.success }} />
-                                {change}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Right Code Panel */}
-        {showCodePanel && renderCodePanel()}
       </div>
 
-      {/* TOAST */}
-      {renderToast()}
+      {/* Right Code Panel */}
+      {showCodePanel && renderCodePanel()}
     </div>
-  );
+
+    {/* TOAST */}
+    {renderToast()}
+  </div>
+);
 };
 
 export default Documentation;

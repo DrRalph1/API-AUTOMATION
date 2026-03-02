@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -55,7 +56,7 @@ public class CodeBaseService {
     // ============================================================
     public CollectionsListResponse getCollectionsList(String requestId, String performedBy) {
         try {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Getting collections list for codebase");
 
             List<CollectionEntity> collectionEntities;
@@ -95,22 +96,29 @@ public class CodeBaseService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Error getting collections list: " + e.getMessage());
             throw e;
         }
     }
 
     // ============================================================
-    // 2. GET COLLECTION DETAILS
+    // 2. GET COLLECTION DETAILS (WITH FOLDERS AND THEIR REQUESTS)
     // ============================================================
     public CollectionDetailsResponse getCollectionDetails(String requestId, String performedBy, String collectionId) {
         try {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
-                    ", Getting collectionEntity details for: " + collectionId);
+            loggerUtil.log("codebase", "Request ID: " + requestId +
+                    ", Getting collection details for: " + collectionId);
 
             CollectionEntity collection = collectionRepository.findById(collectionId)
-                    .orElseThrow(() -> new RuntimeException("CollectionEntity not found: " + collectionId));
+                    .orElseThrow(() -> new RuntimeException("Collection not found: " + collectionId));
+
+            // Verify ownership
+            if (!collection.getOwner().equals(performedBy)) {
+                loggerUtil.log("codebase", "Request ID: " + requestId +
+                        ", User " + performedBy + " attempted to access collection " + collectionId + " owned by " + collection.getOwner());
+                throw new SecurityException("Access denied to collection: " + collectionId);
+            }
 
             CollectionDetailsResponse response = new CollectionDetailsResponse();
             response.setId(collection.getId());
@@ -123,46 +131,64 @@ public class CodeBaseService {
             response.setIsExpanded(collection.getIsExpanded());
             response.setIsFavorite(collection.getIsFavorite());
 
-            // Get folderEntities from database
+            // Get folders for this collection
             List<FolderEntity> folderEntities = folderRepository.findByCollectionId(collectionId);
-            List<CollectionFolder> folders = folderEntities.stream()
-                    .map(folder -> {
-                        CollectionFolder folderDto = new CollectionFolder();
-                        folderDto.setId(folder.getId());
-                        folderDto.setName(folder.getName());
-                        folderDto.setDescription(folder.getDescription());
-                        folderDto.setIsExpanded(folder.getIsExpanded());
+            List<CollectionFolder> folders = new ArrayList<>();
 
-                        int requestCount = requestRepository.findByCollectionIdAndFolderId(collectionId, folder.getId()).size();
-                        folderDto.setHasRequests(requestCount > 0);
-                        folderDto.setRequestCount(requestCount);
+            int totalRequests = 0;
 
-                        return folderDto;
-                    })
-                    .collect(Collectors.toList());
+            for (FolderEntity folder : folderEntities) {
+                CollectionFolder folderDto = new CollectionFolder();
+                folderDto.setId(folder.getId());
+                folderDto.setName(folder.getName());
+                folderDto.setDescription(folder.getDescription());
+                folderDto.setIsExpanded(folder.getIsExpanded());
+
+                // Get requests for this folder
+                List<RequestEntity> folderRequests = requestRepository.findByCollectionIdAndFolderId(collectionId, folder.getId());
+
+                // Convert requests to RequestItem DTOs
+                List<RequestItem> requestItems = folderRequests.stream()
+                        .map(req -> {
+                            RequestItem item = new RequestItem();
+                            item.setId(req.getId());
+                            item.setName(req.getName());
+                            item.setMethod(req.getMethod());
+                            item.setDescription(req.getDescription());
+                            item.setTags(req.getTags());
+                            item.setLastModified(formatDate(req.getUpdatedAt()));
+                            return item;
+                        })
+                        .collect(Collectors.toList());
+
+                folderDto.setRequests(requestItems);
+                folderDto.setHasRequests(!requestItems.isEmpty());
+                folderDto.setRequestCount(requestItems.size());
+
+                folders.add(folderDto);
+                totalRequests += requestItems.size();
+            }
+
             response.setFolders(folders);
-
-            // Calculate total requestEntities
-            int totalRequests = Math.toIntExact(requestRepository.countByCollectionId(collectionId));
             response.setTotalRequests(totalRequests);
 
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
-                    ", Error getting collectionEntity details: " + e.getMessage());
+            loggerUtil.log("codebase", "Request ID: " + requestId +
+                    ", Error getting collection details: " + e.getMessage());
             throw e;
         }
     }
 
     // ============================================================
-    // 3. GET FOLDER REQUESTS
+    // 3. GET FOLDER REQUESTS (SIMPLIFIED VERSION - NOT NEEDED FOR MAIN VIEW)
     // ============================================================
     public FolderRequestsResponse getFolderRequests(String requestId, String performedBy,
                                                     String collectionId, String folderId) {
         try {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
-                    ", Getting folderEntity requestEntities for folderEntity: " + folderId + " in collectionEntity: " + collectionId);
+            loggerUtil.log("codebase", "Request ID: " + requestId +
+                    ", Getting folder requests for folder: " + folderId + " in collection: " + collectionId);
 
             List<RequestEntity> requestEntities;
 
@@ -194,8 +220,8 @@ public class CodeBaseService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
-                    ", Error getting folderEntity requestEntities: " + e.getMessage());
+            loggerUtil.log("codebase", "Request ID: " + requestId +
+                    ", Error getting folder requests: " + e.getMessage());
             throw e;
         }
     }
@@ -206,15 +232,23 @@ public class CodeBaseService {
     public RequestDetailsResponse getRequestDetails(String requestId, String performedBy,
                                                     String collectionId, String requestIdParam) {
         try {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
-                    ", Getting requestEntity details for: " + requestIdParam);
+            loggerUtil.log("codebase", "Request ID: " + requestId +
+                    ", Getting request details for: " + requestIdParam);
 
             RequestEntity request = requestRepository.findById(requestIdParam)
-                    .orElseThrow(() -> new RuntimeException("RequestEntity not found: " + requestIdParam));
+                    .orElseThrow(() -> new RuntimeException("Request not found: " + requestIdParam));
 
-            // Verify collectionEntity matches
+            // Verify collection matches
             if (!request.getCollection().getId().equals(collectionId)) {
-                throw new RuntimeException("RequestEntity does not belong to the specified collectionEntity");
+                throw new RuntimeException("Request does not belong to the specified collection");
+            }
+
+            // Verify ownership
+            if (!request.getCollection().getOwner().equals(performedBy)) {
+                loggerUtil.log("codebase", "Request ID: " + requestId +
+                        ", User " + performedBy + " attempted to access request " + requestIdParam +
+                        " owned by " + request.getCollection().getOwner());
+                throw new SecurityException("Access denied to request: " + requestIdParam);
             }
 
             RequestDetailsResponse response = new RequestDetailsResponse();
@@ -228,7 +262,7 @@ public class CodeBaseService {
             response.setLastModified(formatDate(request.getUpdatedAt()));
             response.setTags(request.getTags());
 
-            // Convert headerEntities from JSON
+            // Convert headers from JSON
             if (request.getHeaders() != null) {
                 List<HeaderItem> headers = request.getHeaders().stream()
                         .map(headerMap -> {
@@ -264,7 +298,7 @@ public class CodeBaseService {
                 response.setPathParameters(pathParams);
             }
 
-            // Get implementationEntities from database
+            // Get implementations from database
             List<ImplementationEntity> implementations = implementationRepository.findByRequestId(requestIdParam);
             Map<String, Map<String, String>> implementationMap = new HashMap<>();
 
@@ -278,8 +312,8 @@ public class CodeBaseService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
-                    ", Error getting requestEntity details: " + e.getMessage());
+            loggerUtil.log("codebase", "Request ID: " + requestId +
+                    ", Error getting request details: " + e.getMessage());
             throw e;
         }
     }
@@ -291,8 +325,16 @@ public class CodeBaseService {
                                                            String collectionId, String requestIdParam,
                                                            String language, String component) {
         try {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Getting implementation for language: " + language + ", component: " + component);
+
+            // Verify request exists and user has access
+            RequestEntity request = requestRepository.findById(requestIdParam)
+                    .orElseThrow(() -> new RuntimeException("Request not found: " + requestIdParam));
+
+            if (!request.getCollection().getOwner().equals(performedBy)) {
+                throw new SecurityException("Access denied to request: " + requestIdParam);
+            }
 
             Optional<ImplementationEntity> implementationOpt = implementationRepository
                     .findByRequestIdAndLanguageAndComponent(requestIdParam, language, component);
@@ -317,7 +359,7 @@ public class CodeBaseService {
                 response.setFileSize(0L);
                 response.setLinesOfCode(0);
                 response.setGeneratedAt(new Date());
-                response.setNotFound(true); // You'd need to add this field to your DTO
+                response.setNotFound(true);
             }
 
             // Get language info from database or configuration
@@ -334,7 +376,7 @@ public class CodeBaseService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Error getting implementation details: " + e.getMessage());
             throw e;
         }
@@ -346,8 +388,16 @@ public class CodeBaseService {
     public AllImplementationsResponse getAllImplementations(String requestId, String performedBy,
                                                             String collectionId, String requestIdParam) {
         try {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
-                    ", Getting all implementationEntities for requestEntity: " + requestIdParam);
+            loggerUtil.log("codebase", "Request ID: " + requestId +
+                    ", Getting all implementations for request: " + requestIdParam);
+
+            // Verify request exists and user has access
+            RequestEntity request = requestRepository.findById(requestIdParam)
+                    .orElseThrow(() -> new RuntimeException("Request not found: " + requestIdParam));
+
+            if (!request.getCollection().getOwner().equals(performedBy)) {
+                throw new SecurityException("Access denied to request: " + requestIdParam);
+            }
 
             List<ImplementationEntity> implementations = implementationRepository.findByRequestId(requestIdParam);
 
@@ -368,8 +418,8 @@ public class CodeBaseService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
-                    ", Error getting all implementationEntities: " + e.getMessage());
+            loggerUtil.log("codebase", "Request ID: " + requestId +
+                    ", Error getting all implementations: " + e.getMessage());
             throw e;
         }
     }
@@ -381,22 +431,27 @@ public class CodeBaseService {
     public GenerateImplementationResponse generateImplementation(String requestId, String performedBy,
                                                                  GenerateImplementationRequest requestDto) {
         try {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
-                    ", Generating implementation for requestEntity: " + requestDto.getRequestId() +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
+                    ", Generating implementation for request: " + requestDto.getRequestId() +
                     ", language: " + requestDto.getLanguage());
 
             RequestEntity request = requestRepository.findById(requestDto.getRequestId())
-                    .orElseThrow(() -> new RuntimeException("RequestEntity not found: " + requestDto.getRequestId()));
+                    .orElseThrow(() -> new RuntimeException("Request not found: " + requestDto.getRequestId()));
 
-            // Delete existing implementationEntities for this language
+            // Verify ownership
+            if (!request.getCollection().getOwner().equals(performedBy)) {
+                throw new SecurityException("Access denied to request: " + requestDto.getRequestId());
+            }
+
+            // Delete existing implementations for this language
             List<ImplementationEntity> existingImpls = implementationRepository
                     .findByRequestIdAndLanguage(requestDto.getRequestId(), requestDto.getLanguage());
             implementationRepository.deleteAll(existingImpls);
 
-            // Generate code based on requestEntity details (this would be a service call in real implementation)
+            // Generate code based on request details
             Map<String, String> implementations = generateCodeForRequest(requestDto, request);
 
-            // Save implementationEntities to database
+            // Save implementations to database
             for (Map.Entry<String, String> entry : implementations.entrySet()) {
                 ImplementationEntity impl = ImplementationEntity.builder()
                         .language(requestDto.getLanguage())
@@ -434,7 +489,7 @@ public class CodeBaseService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Error generating implementation: " + e.getMessage());
             throw e;
         }
@@ -447,21 +502,37 @@ public class CodeBaseService {
     public ExportResponse exportImplementation(String requestId, String performedBy,
                                                ExportRequest exportRequest) {
         try {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Exporting implementation in format: " + exportRequest.getFormat());
 
-            // Get implementationEntities from database
+            // Get implementations from database
             List<ImplementationEntity> implementations;
             if (exportRequest.getRequestId() != null) {
+                // Verify access to request
+                RequestEntity request = requestRepository.findById(exportRequest.getRequestId())
+                        .orElseThrow(() -> new RuntimeException("Request not found: " + exportRequest.getRequestId()));
+
+                if (!request.getCollection().getOwner().equals(performedBy)) {
+                    throw new SecurityException("Access denied to request: " + exportRequest.getRequestId());
+                }
+
                 implementations = implementationRepository.findByRequestIdAndLanguage(
                         exportRequest.getRequestId(), exportRequest.getLanguage());
             } else if (exportRequest.getCollectionId() != null) {
+                // Verify access to collection
+                CollectionEntity collection = collectionRepository.findById(exportRequest.getCollectionId())
+                        .orElseThrow(() -> new RuntimeException("Collection not found: " + exportRequest.getCollectionId()));
+
+                if (!collection.getOwner().equals(performedBy)) {
+                    throw new SecurityException("Access denied to collection: " + exportRequest.getCollectionId());
+                }
+
                 implementations = implementationRepository.findByCollectionId(exportRequest.getCollectionId());
             } else {
                 throw new RuntimeException("Either requestId or collectionId must be provided");
             }
 
-            // Generate export data based on actual implementationEntities
+            // Generate export data based on actual implementations
             Map<String, Object> exportData = new HashMap<>();
             exportData.put("packageName", "api-implementation-" + exportRequest.getLanguage());
             exportData.put("version", "1.0.0");
@@ -474,9 +545,9 @@ public class CodeBaseService {
             exportData.put("downloadId", downloadId);
             exportData.put("expiresAt", new Date(System.currentTimeMillis() + 24 * 60 * 60 * 1000));
 
-            // Calculate total size (simplified - in reality you'd calculate actual size)
+            // Calculate total size
             long totalSize = implementations.stream()
-                    .mapToLong(impl -> impl.getCode().length())
+                    .mapToLong(impl -> impl.getCode().getBytes().length)
                     .sum();
             exportData.put("totalSize", String.format("%.1f KB", totalSize / 1024.0));
 
@@ -508,7 +579,7 @@ public class CodeBaseService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Error exporting implementation: " + e.getMessage());
             throw e;
         }
@@ -519,10 +590,10 @@ public class CodeBaseService {
     // ============================================================
     public LanguagesResponse getLanguages(String requestId, String performedBy) {
         try {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Getting available languages");
 
-            // Get distinct languages from implementationEntities table
+            // Get distinct languages from implementations table
             List<String> distinctLanguages = implementationRepository.findDistinctLanguages();
 
             List<LanguageInfo> languages = new ArrayList<>();
@@ -534,7 +605,7 @@ public class CodeBaseService {
                 info.setColor(getLanguageColor(lang));
                 info.setIcon(getLanguageIcon(lang));
 
-                // Get count of implementationEntities for this language
+                // Get count of implementations for this language
                 int count = Math.toIntExact(implementationRepository.countByLanguage(lang));
                 info.setImplementationCount(count);
                 info.setIsAvailable(true);
@@ -550,7 +621,7 @@ public class CodeBaseService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Error getting languages: " + e.getMessage());
             throw e;
         }
@@ -562,8 +633,8 @@ public class CodeBaseService {
     public SearchResponse searchImplementations(String requestId, String performedBy,
                                                 SearchRequest searchRequest) {
         try {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
-                    ", Searching implementationEntities for query: " + searchRequest.getQuery());
+            loggerUtil.log("codebase", "Request ID: " + requestId +
+                    ", Searching implementations for query: " + searchRequest.getQuery());
 
             // Save search history
             SearchHistoryEntity searchHistory = SearchHistoryEntity.builder()
@@ -583,6 +654,11 @@ public class CodeBaseService {
             List<SearchResult> results = new ArrayList<>();
 
             for (RequestEntity request : requestPage.getContent()) {
+                // Verify user has access to this request
+                if (!request.getCollection().getOwner().equals(performedBy)) {
+                    continue; // Skip if user doesn't have access
+                }
+
                 List<String> languages = implementationRepository.findLanguagesByRequestId(request.getId());
 
                 SearchResult result = new SearchResult();
@@ -613,8 +689,8 @@ public class CodeBaseService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
-                    ", Error searching implementationEntities: " + e.getMessage());
+            loggerUtil.log("codebase", "Request ID: " + requestId +
+                    ", Error searching implementations: " + e.getMessage());
             throw e;
         }
     }
@@ -626,7 +702,7 @@ public class CodeBaseService {
     public ImportSpecResponse importSpecification(String requestId, String performedBy,
                                                   ImportSpecRequest importRequest) {
         try {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Importing specification from source: " + importRequest.getSource());
 
             // Create import job
@@ -637,10 +713,10 @@ public class CodeBaseService {
                     .build();
             importJob = importJobRepository.save(importJob);
 
-            // Create new collectionEntity from import
+            // Create new collection from import
             CollectionEntity collection = CollectionEntity.builder()
                     .name(importRequest.getCollectionName() != null ?
-                            importRequest.getCollectionName() : "Imported CollectionEntity")
+                            importRequest.getCollectionName() : "Imported Collection")
                     .description(importRequest.getDescription())
                     .owner(performedBy)
                     .isFavorite(false)
@@ -660,19 +736,19 @@ public class CodeBaseService {
             int endpointsImported = 0;
             int implementationsGenerated = 0;
 
-            // If generate implementationEntities is true, create sample implementationEntities
+            // If generate implementations is true, create sample implementations
             if (importRequest.getGenerateImplementations() != null &&
                     importRequest.getGenerateImplementations()) {
 
                 if (importRequest.getTargetLanguages() != null) {
                     for (String language : importRequest.getTargetLanguages()) {
-                        // Create sample implementation (in reality, you'd parse and generate)
+                        // Create sample implementation
                         ImplementationEntity impl = ImplementationEntity.builder()
                                 .language(language)
                                 .component("controller")
                                 .code("// Generated from import")
                                 .linesOfCode(1)
-                                .request(null) // You'd link to actual requestEntities
+                                .request(null) // You'd link to actual requests
                                 .build();
                         implementationRepository.save(impl);
                         implementationsGenerated++;
@@ -703,7 +779,7 @@ public class CodeBaseService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Error importing specification: " + e.getMessage());
             throw e;
         }
@@ -715,7 +791,7 @@ public class CodeBaseService {
     public ValidationResponse validateImplementation(String requestId, String performedBy,
                                                      ValidateImplementationRequest validationRequest) {
         try {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Validating implementation for language: " + validationRequest.getLanguage());
 
             ValidationResponse response = new ValidationResponse();
@@ -767,6 +843,14 @@ public class CodeBaseService {
             if (validationRequest.getRequestId() != null &&
                     validationRequest.getComponent() != null) {
 
+                // Verify access to request
+                RequestEntity request = requestRepository.findById(validationRequest.getRequestId())
+                        .orElseThrow(() -> new RuntimeException("Request not found: " + validationRequest.getRequestId()));
+
+                if (!request.getCollection().getOwner().equals(performedBy)) {
+                    throw new SecurityException("Access denied to request: " + validationRequest.getRequestId());
+                }
+
                 Optional<ImplementationEntity> existingImpl = implementationRepository
                         .findByRequestIdAndLanguageAndComponent(
                                 validationRequest.getRequestId(),
@@ -783,7 +867,7 @@ public class CodeBaseService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Error validating implementation: " + e.getMessage());
             throw e;
         }
@@ -796,10 +880,18 @@ public class CodeBaseService {
     public TestResponse testImplementation(String requestId, String performedBy,
                                            TestImplementationRequest testRequest) {
         try {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
-                    ", Testing implementation for requestEntity: " + testRequest.getRequestId());
+            loggerUtil.log("codebase", "Request ID: " + requestId +
+                    ", Testing implementation for request: " + testRequest.getRequestId());
 
-            // Get implementationEntities to test
+            // Verify access to request
+            RequestEntity request = requestRepository.findById(testRequest.getRequestId())
+                    .orElseThrow(() -> new RuntimeException("Request not found: " + testRequest.getRequestId()));
+
+            if (!request.getCollection().getOwner().equals(performedBy)) {
+                throw new SecurityException("Access denied to request: " + testRequest.getRequestId());
+            }
+
+            // Get implementations to test
             List<ImplementationEntity> implementations;
             if (testRequest.getComponents() != null && !testRequest.getComponents().isEmpty()) {
                 implementations = new ArrayList<>();
@@ -876,7 +968,7 @@ public class CodeBaseService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Error testing implementation: " + e.getMessage());
             throw e;
         }
@@ -887,7 +979,7 @@ public class CodeBaseService {
     // ============================================================
     public Map<String, Object> getSupportedProgrammingLanguages(String requestId, String performedBy) {
         try {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Getting supported programming languages");
 
             // Get languages from database with implementation counts
@@ -916,7 +1008,7 @@ public class CodeBaseService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Error getting supported programming languages: " + e.getMessage());
             throw e;
         }
@@ -927,7 +1019,7 @@ public class CodeBaseService {
     // ============================================================
     public Map<String, Object> getQuickStartGuide(String requestId, String performedBy, String language) {
         try {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Getting quick start guide for language: " + language);
 
             // Get guide from database or generate based on language
@@ -935,7 +1027,7 @@ public class CodeBaseService {
             guide.put("language", language);
             guide.put("generatedAt", new Date());
 
-            // Get sample implementationEntities for this language to generate guide
+            // Get sample implementations for this language to generate guide
             List<ImplementationEntity> samples = implementationRepository.findTopByLanguage(language, PageRequest.of(0, 1));
 
             if (!samples.isEmpty()) {
@@ -951,20 +1043,20 @@ public class CodeBaseService {
             return guide;
 
         } catch (Exception e) {
-            loggerUtil.log("codebase", "RequestEntity ID: " + requestId +
+            loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Error getting quick start guide: " + e.getMessage());
             throw e;
         }
     }
 
     // ============================================================
-    // HELPER METHODS - All database-driven
+    // HELPER METHODS
     // ============================================================
 
     private String formatDate(LocalDateTime dateTime) {
         if (dateTime == null) return "";
-        java.time.format.DateTimeFormatter formatter =
-                java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy 'at' h:mm a");
+        DateTimeFormatter formatter =
+                DateTimeFormatter.ofPattern("MMM d, yyyy 'at' h:mm a");
         return dateTime.format(formatter);
     }
 
@@ -1003,7 +1095,7 @@ public class CodeBaseService {
         String ext = extensions.getOrDefault(language, ".txt");
 
         // Capitalize first letter for class files
-        if ("java".equals(language) || "csharp".equals(language)) {
+        if ("java".equals(language) || "csharp".equals(language) || "kotlin".equals(language)) {
             baseName = baseName.substring(0, 1).toUpperCase() + baseName.substring(1);
         }
 
@@ -1049,7 +1141,7 @@ public class CodeBaseService {
         info.put("command", getRunCommand(language));
         info.put("packageManager", getPackageManager(language));
 
-        // Get count of implementationEntities in this language
+        // Get count of implementations in this language
         info.put("implementationCount", implementationRepository.countByLanguage(language));
 
         return info;
@@ -1186,7 +1278,7 @@ public class CodeBaseService {
                 code.append("import org.springframework.stereotype.Component;\n\n");
                 code.append("@Component\n");
                 code.append("public class ").append(capitalize(component)).append(" {\n\n");
-                code.append("    // Generated for requestEntity: ").append(request.getName()).append("\n");
+                code.append("    // Generated for request: ").append(request.getName()).append("\n");
                 code.append("    // Method: ").append(request.getMethod()).append("\n");
                 code.append("    // URL: ").append(request.getUrl()).append("\n\n");
                 code.append("    public void execute() {\n");
@@ -1197,7 +1289,7 @@ public class CodeBaseService {
 
             case "javascript":
                 code.append("// ").append(component).append(".js\n\n");
-                code.append("// Generated for requestEntity: ").append(request.getName()).append("\n");
+                code.append("// Generated for request: ").append(request.getName()).append("\n");
                 code.append("// Method: ").append(request.getMethod()).append("\n");
                 code.append("// URL: ").append(request.getUrl()).append("\n\n");
                 code.append("module.exports = {\n");
@@ -1208,7 +1300,7 @@ public class CodeBaseService {
                 break;
 
             default:
-                code.append("# Generated for requestEntity: ").append(request.getName()).append("\n");
+                code.append("# Generated for request: ").append(request.getName()).append("\n");
                 code.append("# Method: ").append(request.getMethod()).append("\n");
                 code.append("# URL: ").append(request.getUrl()).append("\n");
                 code.append("def execute():\n");

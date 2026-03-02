@@ -430,6 +430,7 @@ useEffect(() => {
 }, [selectedCollection]);
 
 // Load collection details - FINAL FIX with ref
+// Load collection details - MODIFIED to extract requests directly from folders
 const fetchCollectionDetails = useCallback(async (collectionId) => {
   console.log(`📡 [CodeBase] Fetching details for collection ${collectionId}`);
   
@@ -448,17 +449,22 @@ const fetchCollectionDetails = useCallback(async (collectionId) => {
     console.log('📊 [CodeBase] Extracted collection details:', details);
     
     if (details) {
-      // CRITICAL: Force ALL folders to have null counts
-      const foldersWithNullCounts = (details.folders || []).map(folder => ({
+      // Process folders and their requests
+      const foldersWithRequests = (details.folders || []).map(folder => ({
         id: folder.id || folder.folderId,
         name: folder.name || folder.folderName,
         description: folder.description,
-        hasRequests: null,
-        requestCount: null,
+        hasRequests: folder.requests ? folder.requests.length > 0 : false,
+        requestCount: folder.requests ? folder.requests.length : 0,
         subfolders: folder.subfolders || []
       }));
       
-      console.log('📁 [CodeBase] Creating folders with null counts:', foldersWithNullCounts.map(f => f.name));
+      console.log('📁 [CodeBase] Creating folders with requests:', 
+        foldersWithRequests.map(f => ({ 
+          name: f.name, 
+          requestCount: f.requestCount,
+          hasRequests: f.hasRequests 
+        })));
       
       // Update collections state
       setCollections(prevCollections => {
@@ -467,13 +473,31 @@ const fetchCollectionDetails = useCallback(async (collectionId) => {
             return { 
               ...collection, 
               ...details,
-              folders: foldersWithNullCounts
+              folders: foldersWithRequests
             };
           }
           return collection;
         });
         return updated;
       });
+      
+      // CRITICAL: Store the requests from the folders in folderRequests state
+      if (details.folders) {
+        const folderRequestsMap = {};
+        details.folders.forEach(folder => {
+          if (folder.requests && folder.requests.length > 0) {
+            folderRequestsMap[folder.id] = folder.requests;
+            console.log(`📦 [CodeBase] Storing ${folder.requests.length} requests for folder ${folder.id}`);
+          }
+        });
+        
+        if (Object.keys(folderRequestsMap).length > 0) {
+          setFolderRequests(prev => ({
+            ...prev,
+            ...folderRequestsMap
+          }));
+        }
+      }
       
       // CRITICAL: Update selectedCollection using the ref to get the latest value
       if (selectedCollectionRef.current?.id === collectionId) {
@@ -490,11 +514,14 @@ const fetchCollectionDetails = useCallback(async (collectionId) => {
             const updatedCollection = {
               ...currentSelected,
               ...details,
-              folders: [...foldersWithNullCounts] // New array reference
+              folders: [...foldersWithRequests] // New array reference
             };
             
             console.log('📁 [CodeBase] Setting selectedCollection with folders:', 
-              updatedCollection.folders.map(f => f.name));
+              updatedCollection.folders.map(f => ({ 
+                name: f.name, 
+                requestCount: f.requestCount 
+              })));
             
             setSelectedCollection(updatedCollection);
           }
@@ -506,15 +533,34 @@ const fetchCollectionDetails = useCallback(async (collectionId) => {
     console.error('❌ [CodeBase] Error loading collection details:', error);
     showToast(`Failed to load collection details: ${error.message}`, 'error');
   }
-}, [authToken]); // Remove selectedCollection from deps, use ref instead
+}, [authToken]);
 
-  // Load requests for a specific folder - FIXED to update from null to actual count
+// Load requests for a specific folder - MODIFIED to avoid duplicate API calls
 const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
   console.log(`📡 [CodeBase] Fetching requests for folder ${folderId} in collection ${collectionId}`);
   
   if (!authToken || !collectionId || !folderId) {
     console.log('Missing params for fetchFolderRequests');
     return [];
+  }
+
+  // Check if we already have requests for this folder
+  if (folderRequests[folderId] && folderRequests[folderId].length > 0) {
+    console.log(`✅ [CodeBase] Using cached requests for folder ${folderId}: ${folderRequests[folderId].length} requests`);
+    return folderRequests[folderId];
+  }
+
+  // Check if the folder in selectedCollection already has requests
+  if (selectedCollection?.folders) {
+    const folder = selectedCollection.folders.find(f => f.id === folderId);
+    if (folder && folder.requests && folder.requests.length > 0) {
+      console.log(`✅ [CodeBase] Using requests from collection for folder ${folderId}: ${folder.requests.length} requests`);
+      setFolderRequests(prev => ({
+        ...prev,
+        [folderId]: folder.requests
+      }));
+      return folder.requests;
+    }
   }
 
   // Set loading state for this specific folder
@@ -545,7 +591,7 @@ const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
       
       console.log(`📊 [CodeBase] Loaded ${requests.length} requests for folder ${folderId}`);
       
-      // CRITICAL: Update the folder with ACTUAL count (replacing null)
+      // Update the folder with actual count
       setCollections(prevCollections => 
         prevCollections.map(collection => {
           if (collection.id === collectionId) {
@@ -555,8 +601,9 @@ const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
                 folder.id === folderId 
                   ? { 
                       ...folder, 
-                      requestCount: requests.length, // Now show actual count
-                      hasRequests: requests.length > 0 // Now show badge if has requests
+                      requestCount: requests.length,
+                      hasRequests: requests.length > 0,
+                      requests: requests // Store requests directly in folder
                     }
                   : folder
               ) || []
@@ -575,7 +622,8 @@ const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
               ? { 
                   ...folder, 
                   requestCount: requests.length,
-                  hasRequests: requests.length > 0
+                  hasRequests: requests.length > 0,
+                  requests: requests // Store requests directly in folder
                 }
               : folder
           ) || []
@@ -593,27 +641,6 @@ const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
       [folderId]: []
     }));
     
-    // Update with zero count on error (still replacing null)
-    setCollections(prevCollections => 
-      prevCollections.map(collection => {
-        if (collection.id === collectionId) {
-          return {
-            ...collection,
-            folders: collection.folders?.map(folder => 
-              folder.id === folderId 
-                ? { 
-                    ...folder, 
-                    requestCount: 0,
-                    hasRequests: false
-                  }
-                : folder
-            ) || []
-          };
-        }
-        return collection;
-      })
-    );
-    
   } finally {
     // Clear loading state for this folder
     setIsLoading(prev => ({ 
@@ -623,7 +650,7 @@ const fetchFolderRequests = useCallback(async (collectionId, folderId) => {
   }
   
   return requests;
-}, [authToken, selectedCollection]);
+}, [authToken, selectedCollection, folderRequests]);
 
   // Load request details
   const fetchRequestDetails = useCallback(async (collectionId, requestId) => {

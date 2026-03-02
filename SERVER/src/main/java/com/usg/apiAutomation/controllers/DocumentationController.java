@@ -627,4 +627,52 @@ public class DocumentationController {
     }
 
 
+
+    @GetMapping("/collections/{collectionId}/with-endpoints")
+    @Operation(summary = "Get collection details with endpoints",
+            description = "Retrieve collection details including all folders and their endpoints in a single call")
+    public ResponseEntity<?> getCollectionDetailsWithEndpoints(
+            @PathVariable String collectionId,
+            HttpServletRequest req) {
+
+        String requestId = UUID.randomUUID().toString();
+
+        // Validate authorization
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting collection details with endpoints");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("documentation", "Request ID: " + requestId +
+                    ", Getting collection details with endpoints for collection: " + collectionId);
+
+            CollectionDetailsWithEndpointsDTO details = documentationService.getCollectionDetailsWithEndpoints(
+                    requestId, collectionId, performedBy);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("responseCode", 200);
+            response.put("message", "Collection details with endpoints retrieved successfully");
+            response.put("data", details);
+            response.put("requestId", requestId);
+
+            loggerUtil.log("documentation", "Request ID: " + requestId +
+                    ", Collection details with endpoints retrieved successfully for collection: " + collectionId);
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            loggerUtil.log("documentation", "Request ID: " + requestId +
+                    ", Error getting collection details with endpoints: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting collection details with endpoints: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+
 }
