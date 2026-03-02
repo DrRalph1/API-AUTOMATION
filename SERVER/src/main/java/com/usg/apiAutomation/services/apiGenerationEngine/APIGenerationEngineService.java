@@ -5815,49 +5815,70 @@ public class APIGenerationEngineService {
         curl.append("#!/bin/bash\n\n");
         curl.append("# Auto-generated functional cURL script for ").append(api.getApiName()).append("\n\n");
 
-        // Load environment variables
-        curl.append("# Load environment variables\n");
-        curl.append("source .env 2>/dev/null || true\n\n");
+        // Build actual URL with parameters if needed
+        String actualUrl = fullUrl;
+
+        // Add query parameters to URL
+        if (api.getParameters() != null) {
+            List<String> queryParams = new ArrayList<>();
+            for (ApiParameterEntity param : api.getParameters()) {
+                if ("query".equals(param.getParameterType()) && param.getExample() != null) {
+                    queryParams.add(param.getKey() + "=" + param.getExample());
+                }
+            }
+            if (!queryParams.isEmpty()) {
+                actualUrl += (actualUrl.contains("?") ? "&" : "?") + String.join("&", queryParams);
+            }
+        }
 
         curl.append("curl -X ").append(api.getHttpMethod() != null ? api.getHttpMethod() : "GET").append(" \\\n");
-        curl.append("  '").append(fullUrl).append("'");
+        curl.append("  '").append(actualUrl).append("'");
 
-        // Add headers with environment variables
+        // Add actual headers with values
         curl.append(" \\\n  -H 'Content-Type: application/json'");
         curl.append(" \\\n  -H 'Accept: application/json'");
 
+        // Add auth headers with actual values
         if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
             curl.append(" \\\n");
             switch (api.getAuthConfig().getAuthType()) {
                 case "API_KEY":
                     String header = api.getAuthConfig().getApiKeyHeader() != null ?
                             api.getAuthConfig().getApiKeyHeader() : "X-API-Key";
-                    curl.append("  -H '").append(header).append(": ${API_KEY}'");
+                    String value = api.getAuthConfig().getApiKeyValue() != null ?
+                            api.getAuthConfig().getApiKeyValue() : "test-api-key";
+                    curl.append("  -H '").append(header).append(": ").append(value).append("'");
                     break;
                 case "BEARER":
                 case "JWT":
-                    curl.append("  -H 'Authorization: Bearer ${JWT_TOKEN}'");
+                    curl.append("  -H 'Authorization: Bearer ").append(
+                            api.getAuthConfig().getJwtSecret() != null ?
+                                    api.getAuthConfig().getJwtSecret() : "test-jwt-token"
+                    ).append("'");
                     break;
                 case "BASIC":
-                    curl.append("  -u '${API_USERNAME}:${API_PASSWORD}'");
-                    break;
-                case "ORACLE_ROLES":
-                    curl.append("  -H 'X-Oracle-Session: ${ORACLE_SESSION_ID}'");
+                    String username = api.getAuthConfig().getBasicUsername() != null ?
+                            api.getAuthConfig().getBasicUsername() : "testuser";
+                    String password = api.getAuthConfig().getBasicPassword() != null ?
+                            api.getAuthConfig().getBasicPassword() : "testpass";
+                    curl.append("  -u '").append(username).append(":").append(password).append("'");
                     break;
             }
         }
 
-        // Add custom headers
+        // Add custom headers with actual values
         if (api.getHeaders() != null) {
             for (ApiHeaderEntity header : api.getHeaders()) {
                 if (Boolean.TRUE.equals(header.getIsRequestHeader()) && header.getKey() != null) {
                     curl.append(" \\\n");
-                    curl.append("  -H '").append(header.getKey()).append(": ${").append(header.getKey().toUpperCase().replace("-", "_")).append("}'");
+                    curl.append("  -H '").append(header.getKey()).append(": ").append(
+                            header.getValue() != null ? header.getValue() : ""
+                    ).append("'");
                 }
             }
         }
 
-        // Add body for non-GET requests
+        // Add body for non-GET requests with actual sample data
         if (!"GET".equals(api.getHttpMethod()) && api.getRequestConfig() != null &&
                 api.getRequestConfig().getSample() != null) {
             curl.append(" \\\n");
@@ -5875,49 +5896,56 @@ public class APIGenerationEngineService {
         StringBuilder js = new StringBuilder();
         js.append("// Auto-generated functional JavaScript code for ").append(api.getApiName()).append("\n\n");
 
-        js.append("/**\n");
-        js.append(" * Execute ").append(api.getApiName()).append(" API\n");
-        js.append(" * @param {Object} params - API parameters\n");
-        js.append(" * @returns {Promise<Object>} API response\n");
-        js.append(" */\n");
-        js.append("async function callApi(params = {}) {\n");
-        js.append("  const url = '").append(fullUrl).append("';\n");
-        js.append("  \n");
-        js.append("  // Build query string\n");
-        js.append("  const queryParams = new URLSearchParams();\n");
+        String serverUrl = "http://localhost:8080"; // Get from config
+        String baseUrl = serverUrl + fullUrl;
+
+        // Build URL with query parameters
+        js.append("// Base URL\n");
+        js.append("const baseUrl = '").append(baseUrl).append("';\n\n");
 
         if (api.getParameters() != null) {
+            List<String> queryParams = new ArrayList<>();
             for (ApiParameterEntity param : api.getParameters()) {
-                if ("query".equals(param.getParameterType())) {
-                    js.append("  if (params.").append(param.getKey()).append(") {\n");
-                    js.append("    queryParams.append('").append(param.getKey()).append("', params.").append(param.getKey()).append(");\n");
-                    js.append("  }\n");
+                if ("query".equals(param.getParameterType()) && param.getExample() != null) {
+                    queryParams.add(param.getKey() + "=" + param.getExample());
                 }
             }
+            if (!queryParams.isEmpty()) {
+                js.append("// Build URL with query parameters\n");
+                js.append("const queryParams = new URLSearchParams({\n");
+                for (ApiParameterEntity param : api.getParameters()) {
+                    if ("query".equals(param.getParameterType()) && param.getExample() != null) {
+                        js.append("  '").append(param.getKey()).append("': '").append(param.getExample()).append("',\n");
+                    }
+                }
+                js.append("});\n");
+                js.append("const url = `${baseUrl}?${queryParams.toString()}`;\n\n");
+            } else {
+                js.append("const url = baseUrl;\n\n");
+            }
+        } else {
+            js.append("const url = baseUrl;\n\n");
         }
 
-        js.append("  \n");
-        js.append("  const finalUrl = queryParams.toString() ? `${url}?${queryParams}` : url;\n");
-        js.append("  \n");
-        js.append("  // Build headers\n");
-        js.append("  const headers = {\n");
-        js.append("    'Content-Type': 'application/json',\n");
-        js.append("    'Accept': 'application/json',\n");
+        js.append("// Headers with actual values\n");
+        js.append("const headers = {\n");
+        js.append("  'Content-Type': 'application/json',\n");
+        js.append("  'Accept': 'application/json',\n");
 
+        // Add auth headers
         if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
             switch (api.getAuthConfig().getAuthType()) {
                 case "API_KEY":
-                    js.append("    '").append(api.getAuthConfig().getApiKeyHeader() != null ?
-                            api.getAuthConfig().getApiKeyHeader() : "X-API-Key").append("': process.env.API_KEY || params.apiKey,\n");
+                    js.append("  '").append(api.getAuthConfig().getApiKeyHeader() != null ?
+                            api.getAuthConfig().getApiKeyHeader() : "X-API-Key").append("': '");
+                    js.append(api.getAuthConfig().getApiKeyValue() != null ?
+                            api.getAuthConfig().getApiKeyValue() : "").append("',\n");
                     break;
                 case "BEARER":
                 case "JWT":
-                    js.append("    'Authorization': `Bearer ${process.env.JWT_TOKEN || params.jwtToken}`,\n");
-                    break;
-                case "BASIC":
-                    js.append("    'Authorization': `Basic ${Buffer.from(\n");
-                    js.append("      `${process.env.API_USERNAME || params.username}:${process.env.API_PASSWORD || params.password}`\n");
-                    js.append("    ).toString('base64')}`,\n");
+                    js.append("  'Authorization': 'Bearer ");
+                    js.append(api.getAuthConfig().getJwtSecret() != null ?
+                            api.getAuthConfig().getJwtSecret() : "").append("',\n");
                     break;
             }
         }
@@ -5925,59 +5953,41 @@ public class APIGenerationEngineService {
         // Add custom headers
         if (api.getHeaders() != null) {
             for (ApiHeaderEntity header : api.getHeaders()) {
-                if (Boolean.TRUE.equals(header.getIsRequestHeader()) && header.getKey() != null) {
-                    js.append("    '").append(header.getKey()).append("': params.").append(header.getKey().toLowerCase()).append(",\n");
+                if (Boolean.TRUE.equals(header.getIsRequestHeader()) &&
+                        header.getKey() != null && header.getValue() != null) {
+                    js.append("  '").append(header.getKey()).append("': '");
+                    js.append(header.getValue()).append("',\n");
                 }
             }
         }
 
-        js.append("  };\n");
-        js.append("  \n");
-        js.append("  // Build request options\n");
-        js.append("  const options = {\n");
-        js.append("    method: '").append(api.getHttpMethod() != null ? api.getHttpMethod() : "GET").append("',\n");
-        js.append("    headers,\n");
+        js.append("};\n\n");
 
-        if (!"GET".equals(api.getHttpMethod())) {
-            js.append("    body: JSON.stringify(params.body || {}),\n");
+        js.append("// Request options\n");
+        js.append("const options = {\n");
+        js.append("  method: '").append(api.getHttpMethod()).append("',\n");
+        js.append("  headers,\n");
+
+        if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
+            js.append("  body: JSON.stringify(").append(api.getRequestConfig().getSample()).append(")\n");
         }
 
-        js.append("  };\n");
-        js.append("  \n");
-        js.append("  try {\n");
-        js.append("    const response = await fetch(finalUrl, options);\n");
-        js.append("    \n");
-        js.append("    if (!response.ok) {\n");
-        js.append("      const error = await response.json().catch(() => ({}));\n");
-        js.append("      throw new Error(error.message || `HTTP error ${response.status}`);\n");
-        js.append("    }\n");
-        js.append("    \n");
+        js.append("};\n\n");
+
+        js.append("console.log('Making request to:', url);\n");
+        js.append("console.log('With headers:', headers);\n\n");
+
+        js.append("fetch(url, options)\n");
+        js.append("  .then(async response => {\n");
+        js.append("    console.log('Status:', response.status);\n");
         js.append("    const data = await response.json();\n");
-        js.append("    return data;\n");
-        js.append("  } catch (error) {\n");
-        js.append("    console.error('API call failed:', error);\n");
-        js.append("    throw error;\n");
-        js.append("  }\n");
-        js.append("}\n\n");
-
-        // Add example usage
-        js.append("// Example usage:\n");
-        js.append("/*\n");
-        js.append("callApi({\n");
-
-        if (api.getParameters() != null) {
-            for (ApiParameterEntity param : api.getParameters()) {
-                if (param.getExample() != null) {
-                    js.append("  ").append(param.getKey()).append(": '").append(param.getExample()).append("',\n");
-                }
-            }
-        }
-
-        js.append("  body: { /* request body */ }\n");
-        js.append("})\n");
-        js.append("  .then(data => console.log('Success:', data))\n");
-        js.append("  .catch(error => console.error('Error:', error));\n");
-        js.append("*/\n");
+        js.append("    if (response.ok) {\n");
+        js.append("      console.log('Success:', data);\n");
+        js.append("    } else {\n");
+        js.append("      console.error('Error:', data);\n");
+        js.append("    }\n");
+        js.append("  })\n");
+        js.append("  .catch(error => console.error('Network error:', error));\n");
 
         return js.toString();
     }
@@ -6107,113 +6117,97 @@ public class APIGenerationEngineService {
     private String generateFunctionalPythonCode(GeneratedApiEntity api, String fullUrl) {
         StringBuilder py = new StringBuilder();
         py.append("# Auto-generated functional Python code for ").append(api.getApiName()).append("\n\n");
-        py.append("import os\n");
         py.append("import requests\n");
         py.append("import json\n");
-        py.append("from typing import Optional, Dict, Any\n");
-        py.append("from dotenv import load_dotenv\n\n");
-        py.append("# Load environment variables\n");
-        py.append("load_dotenv()\n\n");
+        py.append("from urllib.parse import urlencode\n\n");
 
-        // Generate function
-        py.append("def call_").append(api.getApiCode().toLowerCase()).append("(\n");
+        // Get the actual server URL
+        String serverUrl = "http://localhost:8080"; // Get from config
+        String baseUrl = serverUrl + fullUrl;
 
-        if (api.getParameters() != null && !api.getParameters().isEmpty()) {
-            List<String> params = new ArrayList<>();
-            for (ApiParameterEntity param : api.getParameters()) {
-                String type = mapToPythonType(param.getApiType());
-                params.add("    " + param.getKey() + ": Optional[" + type + "] = None");
-            }
-            py.append(String.join(",\n", params));
-            if (!api.getParameters().isEmpty()) {
-                py.append(",\n");
-            }
-        }
+        py.append("base_url = \"").append(baseUrl).append("\"\n\n");
 
-        py.append("    body: Optional[Dict[str, Any]] = None\n");
-        py.append(") -> Dict[str, Any]:\n");
-        py.append("    \"\"\"\n");
-        py.append("    Call ").append(api.getApiName()).append(" API\n");
-        py.append("    \"\"\"\n");
-        py.append("    url = \"").append(fullUrl).append("\"\n");
-        py.append("    \n");
-        py.append("    # Build query parameters\n");
-        py.append("    params = {}\n");
-
+        // Build query parameters with actual example values
         if (api.getParameters() != null) {
+            List<String> queryParams = new ArrayList<>();
             for (ApiParameterEntity param : api.getParameters()) {
-                if ("query".equals(param.getParameterType())) {
-                    py.append("    if ").append(param.getKey()).append(" is not None:\n");
-                    py.append("        params['").append(param.getKey()).append("'] = ").append(param.getKey()).append("\n");
+                if ("query".equals(param.getParameterType()) && param.getExample() != null) {
+                    queryParams.add("    '" + param.getKey() + "': '" + param.getExample() + "'");
                 }
             }
+            if (!queryParams.isEmpty()) {
+                py.append("# Query parameters with example values\n");
+                py.append("query_params = {\n");
+                py.append(String.join(",\n", queryParams));
+                py.append("\n}\n");
+                py.append("url = base_url + '?' + urlencode(query_params)\n");
+            } else {
+                py.append("url = base_url\n");
+            }
+        } else {
+            py.append("url = base_url\n");
         }
+        py.append("\n");
 
-        py.append("    \n");
-        py.append("    # Build headers\n");
-        py.append("    headers = {\n");
-        py.append("        'Content-Type': 'application/json',\n");
-        py.append("        'Accept': 'application/json',\n");
+        // Headers with actual values
+        py.append("headers = {\n");
+        py.append("    'Content-Type': 'application/json',\n");
+        py.append("    'Accept': 'application/json',\n");
 
+        // Add auth headers with actual values
         if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
             switch (api.getAuthConfig().getAuthType()) {
                 case "API_KEY":
-                    py.append("        '").append(api.getAuthConfig().getApiKeyHeader() != null ?
-                            api.getAuthConfig().getApiKeyHeader() : "X-API-Key").append("': os.getenv('API_KEY', ''),\n");
+                    py.append("    '").append(api.getAuthConfig().getApiKeyHeader() != null ?
+                            api.getAuthConfig().getApiKeyHeader() : "X-API-Key").append("': '");
+                    py.append(api.getAuthConfig().getApiKeyValue() != null ?
+                            api.getAuthConfig().getApiKeyValue() : "").append("',\n");
                     break;
                 case "BEARER":
                 case "JWT":
-                    py.append("        'Authorization': f'Bearer {os.getenv(\"JWT_TOKEN\", \"\")}',\n");
-                    break;
-                case "BASIC":
-                    py.append("        'Authorization': requests.auth.HTTPBasicAuth(\n");
-                    py.append("            os.getenv('API_USERNAME', ''),\n");
-                    py.append("            os.getenv('API_PASSWORD', '')\n");
-                    py.append("        ),\n");
+                    py.append("    'Authorization': 'Bearer ");
+                    py.append(api.getAuthConfig().getJwtSecret() != null ?
+                            api.getAuthConfig().getJwtSecret() : "").append("',\n");
                     break;
             }
         }
 
-        py.append("    }\n");
-        py.append("    \n");
-        py.append("    try:\n");
-        py.append("        response = requests.request(\n");
-        py.append("            method='").append(api.getHttpMethod() != null ? api.getHttpMethod() : "GET").append("',\n");
-        py.append("            url=url,\n");
-        py.append("            params=params,\n");
-        py.append("            headers=headers,\n");
-
-        if (!"GET".equals(api.getHttpMethod())) {
-            py.append("            json=body or {},\n");
-        }
-
-        py.append("            timeout=30\n");
-        py.append("        )\n");
-        py.append("        \n");
-        py.append("        response.raise_for_status()\n");
-        py.append("        return response.json()\n");
-        py.append("        \n");
-        py.append("    except requests.exceptions.RequestException as e:\n");
-        py.append("        print(f\"API call failed: {e}\")\n");
-        py.append("        if hasattr(e.response, 'text'):\n");
-        py.append("            print(f\"Response: {e.response.text}\")\n");
-        py.append("        raise\n\n");
-
-        // Add example usage
-        py.append("# Example usage:\n");
-        py.append("if __name__ == \"__main__\":\n");
-        py.append("    result = call_").append(api.getApiCode().toLowerCase()).append("(\n");
-
-        if (api.getParameters() != null) {
-            for (ApiParameterEntity param : api.getParameters()) {
-                if (param.getExample() != null) {
-                    py.append("        ").append(param.getKey()).append("='").append(param.getExample()).append("',\n");
+        // Add custom headers with actual values
+        if (api.getHeaders() != null) {
+            for (ApiHeaderEntity header : api.getHeaders()) {
+                if (Boolean.TRUE.equals(header.getIsRequestHeader()) &&
+                        header.getKey() != null && header.getValue() != null) {
+                    py.append("    '").append(header.getKey()).append("': '");
+                    py.append(header.getValue()).append("',\n");
                 }
             }
         }
 
-        py.append("    )\n");
-        py.append("    print(json.dumps(result, indent=2))\n");
+        py.append("}\n\n");
+
+        // Request body
+        if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
+            py.append("# Request body\n");
+            py.append("data = ").append(api.getRequestConfig().getSample()).append("\n\n");
+        }
+
+        // Make request
+        py.append("print(f\"Making ").append(api.getHttpMethod()).append(" request to: {url}\")\n");
+        py.append("response = requests.").append(api.getHttpMethod() != null ? api.getHttpMethod().toLowerCase() : "get");
+        py.append("(url, headers=headers");
+
+        if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
+            py.append(", json=data");
+        }
+
+        py.append(")\n\n");
+        py.append("print(f\"Status Code: {response.status_code}\")\n");
+        py.append("print(\"Response Headers:\", response.headers)\n");
+        py.append("print(\"Response Body:\")\n");
+        py.append("try:\n");
+        py.append("    print(json.dumps(response.json(), indent=2))\n");
+        py.append("except:\n");
+        py.append("    print(response.text)\n");
 
         return py.toString();
     }
@@ -6232,17 +6226,34 @@ public class APIGenerationEngineService {
         java.append("import java.time.Duration;\n");
         java.append("import java.util.HashMap;\n");
         java.append("import java.util.Map;\n");
+        java.append("import java.util.ArrayList;\n");
+        java.append("import java.util.List;\n");
+        java.append("import java.net.URLEncoder;\n");
+        java.append("import java.nio.charset.StandardCharsets;\n");
         java.append("import com.fasterxml.jackson.databind.ObjectMapper;\n");
         java.append("import com.fasterxml.jackson.core.type.TypeReference;\n\n");
 
+        // Get the actual server URL from configuration
+        String serverUrl = "http://localhost:8080"; // You should get this from config
+        String fullEndpoint = serverUrl + fullUrl;
+
         java.append("public class ").append(api.getApiCode()).append("Client {\n\n");
-        java.append("    private static final String BASE_URL = \"").append(fullUrl).append("\";\n");
+        java.append("    private static final String BASE_URL = \"").append(fullEndpoint).append("\";\n");
         java.append("    private final HttpClient httpClient;\n");
         java.append("    private final ObjectMapper objectMapper;\n");
 
-        if (api.getAuthConfig() != null) {
-            java.append("    private final String apiKey;\n");
-            java.append("    private final String apiSecret;\n");
+        // Add auth fields with actual values
+        if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
+            if (api.getAuthConfig().getApiKeyValue() != null) {
+                java.append("    private final String API_KEY = \"").append(api.getAuthConfig().getApiKeyValue()).append("\";\n");
+            }
+            if (api.getAuthConfig().getJwtSecret() != null) {
+                java.append("    private final String JWT_TOKEN = \"").append(api.getAuthConfig().getJwtSecret()).append("\";\n");
+            }
+            if (api.getAuthConfig().getBasicUsername() != null) {
+                java.append("    private final String USERNAME = \"").append(api.getAuthConfig().getBasicUsername()).append("\";\n");
+                java.append("    private final String PASSWORD = \"").append(api.getAuthConfig().getBasicPassword()).append("\";\n");
+            }
         }
 
         java.append("\n");
@@ -6251,15 +6262,9 @@ public class APIGenerationEngineService {
         java.append("                .connectTimeout(Duration.ofSeconds(30))\n");
         java.append("                .build();\n");
         java.append("        this.objectMapper = new ObjectMapper();\n");
-
-        if (api.getAuthConfig() != null) {
-            java.append("        this.apiKey = System.getenv(\"API_KEY\");\n");
-            java.append("        this.apiSecret = System.getenv(\"API_SECRET\");\n");
-        }
-
         java.append("    }\n\n");
 
-        // Generate parameter class
+        // Generate parameter class with actual example values as defaults
         java.append("    public static class RequestParams {\n");
 
         if (api.getParameters() != null) {
@@ -6271,89 +6276,82 @@ public class APIGenerationEngineService {
 
         java.append("        private Map<String, Object> body;\n\n");
 
-        // Getters and setters
+        java.append("        public RequestParams() {\n");
+        // Set default values from examples
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if (param.getExample() != null && !param.getExample().isEmpty()) {
+                    String value = param.getExample();
+                    if ("String".equals(mapToJavaType(param.getApiType()))) {
+                        value = "\"" + value + "\"";
+                    }
+                    java.append("            this.").append(param.getKey()).append(" = ").append(value).append(";\n");
+                }
+            }
+        }
+        java.append("        }\n\n");
+
+        // After the RequestParams constructor, add:
         if (api.getParameters() != null) {
             for (ApiParameterEntity param : api.getParameters()) {
                 String type = mapToJavaType(param.getApiType());
                 String key = param.getKey();
                 String capitalized = key.substring(0, 1).toUpperCase() + key.substring(1);
 
+                // Getter
                 java.append("        public ").append(type).append(" get").append(capitalized).append("() {\n");
                 java.append("            return ").append(key).append(";\n");
                 java.append("        }\n\n");
 
+                // Setter
                 java.append("        public void set").append(capitalized).append("(").append(type).append(" ").append(key).append(") {\n");
                 java.append("            this.").append(key).append(" = ").append(key).append(";\n");
                 java.append("        }\n\n");
             }
         }
 
-        java.append("        public Map<String, Object> getBody() {\n");
-        java.append("            return body;\n");
-        java.append("        }\n\n");
-        java.append("        public void setBody(Map<String, Object> body) {\n");
-        java.append("            this.body = body;\n");
-        java.append("        }\n");
         java.append("    }\n\n");
 
         // Generate response class
         java.append("    public static class ApiResponse {\n");
-
         if (api.getResponseMappings() != null) {
             for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
                 if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
                     String type = mapToJavaType(mapping.getApiType());
                     java.append("        private ").append(type).append(" ").append(mapping.getApiField()).append(";\n");
+                    // Add getters and setters
+                    String capitalized = mapping.getApiField().substring(0, 1).toUpperCase() +
+                            mapping.getApiField().substring(1);
+                    java.append("        public ").append(type).append(" get").append(capitalized).append("() { return ").append(mapping.getApiField()).append("; }\n");
+                    java.append("        public void set").append(capitalized).append("(").append(type).append(" ").append(mapping.getApiField()).append(") { this.").append(mapping.getApiField()).append(" = ").append(mapping.getApiField()).append("; }\n");
                 }
             }
         }
-
-        java.append("\n");
-
-        // Getters and setters for response
-        if (api.getResponseMappings() != null) {
-            for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
-                if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
-                    String type = mapToJavaType(mapping.getApiType());
-                    String field = mapping.getApiField();
-                    String capitalized = field.substring(0, 1).toUpperCase() + field.substring(1);
-
-                    java.append("        public ").append(type).append(" get").append(capitalized).append("() {\n");
-                    java.append("            return ").append(field).append(";\n");
-                    java.append("        }\n\n");
-
-                    java.append("        public void set").append(capitalized).append("(").append(type).append(" ").append(field).append(") {\n");
-                    java.append("            this.").append(field).append(" = ").append(field).append(";\n");
-                    java.append("        }\n\n");
-                }
-            }
-        }
-
         java.append("    }\n\n");
 
-        // Generate main API method
+        // Main API method with proper query parameter handling
         java.append("    public ApiResponse callApi(RequestParams params) throws Exception {\n");
         java.append("        // Build URL with query parameters\n");
         java.append("        StringBuilder urlBuilder = new StringBuilder(BASE_URL);\n");
         java.append("        \n");
         java.append("        // Add query parameters\n");
-        java.append("        StringBuilder queryString = new StringBuilder();\n");
+        java.append("        List<String> queryParams = new ArrayList<>();\n");
 
         if (api.getParameters() != null) {
             for (ApiParameterEntity param : api.getParameters()) {
                 if ("query".equals(param.getParameterType())) {
                     java.append("        if (params.get").append(capitalize(param.getKey())).append("() != null) {\n");
-                    java.append("            if (queryString.length() > 0) queryString.append(\"&\");\n");
-                    java.append("            queryString.append(\"").append(param.getKey()).append("=\")\n");
-                    java.append("                    .append(params.get").append(capitalize(param.getKey())).append("());\n");
+                    java.append("            queryParams.add(\"").append(param.getKey()).append("=\" + \n");
+                    java.append("                URLEncoder.encode(params.get").append(capitalize(param.getKey())).append("().toString(), \n");
+                    java.append("                StandardCharsets.UTF_8.toString()));\n");
                     java.append("        }\n");
                 }
             }
         }
 
         java.append("        \n");
-        java.append("        if (queryString.length() > 0) {\n");
-        java.append("            urlBuilder.append(\"?\").append(queryString);\n");
+        java.append("        if (!queryParams.isEmpty()) {\n");
+        java.append("            urlBuilder.append(\"?\").append(String.join(\"&\", queryParams));\n");
         java.append("        }\n");
         java.append("        \n");
         java.append("        // Build request\n");
@@ -6363,24 +6361,41 @@ public class APIGenerationEngineService {
         java.append("                .header(\"Content-Type\", \"application/json\")\n");
         java.append("                .header(\"Accept\", \"application/json\");\n");
 
-        // Add auth headers
+        // Add auth headers with actual values
         if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
             switch (api.getAuthConfig().getAuthType()) {
                 case "API_KEY":
-                    java.append("        if (apiKey != null) {\n");
+                    java.append("        if (API_KEY != null) {\n");
                     java.append("            requestBuilder.header(\"")
                             .append(api.getAuthConfig().getApiKeyHeader() != null ?
                                     api.getAuthConfig().getApiKeyHeader() : "X-API-Key")
-                            .append("\", apiKey);\n");
+                            .append("\", API_KEY);\n");
                     java.append("        }\n");
                     break;
                 case "BEARER":
                 case "JWT":
-                    java.append("        if (System.getenv(\"JWT_TOKEN\") != null) {\n");
-                    java.append("            requestBuilder.header(\"Authorization\", \n");
-                    java.append("                    \"Bearer \" + System.getenv(\"JWT_TOKEN\"));\n");
+                    java.append("        if (JWT_TOKEN != null) {\n");
+                    java.append("            requestBuilder.header(\"Authorization\", \"Bearer \" + JWT_TOKEN);\n");
                     java.append("        }\n");
                     break;
+                case "BASIC":
+                    java.append("        if (USERNAME != null && PASSWORD != null) {\n");
+                    java.append("            String auth = USERNAME + \":\" + PASSWORD;\n");
+                    java.append("            String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes());\n");
+                    java.append("            requestBuilder.header(\"Authorization\", \"Basic \" + encodedAuth);\n");
+                    java.append("        }\n");
+                    break;
+            }
+        }
+
+        // Add custom headers
+        if (api.getHeaders() != null) {
+            for (ApiHeaderEntity header : api.getHeaders()) {
+                if (Boolean.TRUE.equals(header.getIsRequestHeader()) &&
+                        header.getKey() != null && header.getValue() != null) {
+                    java.append("        requestBuilder.header(\"").append(header.getKey())
+                            .append("\", \"").append(header.getValue()).append("\");\n");
+                }
             }
         }
 
@@ -6397,10 +6412,14 @@ public class APIGenerationEngineService {
 
         java.append("        \n");
         java.append("        HttpRequest request = requestBuilder.build();\n");
+        java.append("        System.out.println(\"Request URL: \" + request.uri());\n");
         java.append("        \n");
         java.append("        // Send request\n");
         java.append("        HttpResponse<String> response = httpClient.send(request,\n");
         java.append("                HttpResponse.BodyHandlers.ofString());\n");
+        java.append("        \n");
+        java.append("        System.out.println(\"Response Status: \" + response.statusCode());\n");
+        java.append("        System.out.println(\"Response Body: \" + response.body());\n");
         java.append("        \n");
         java.append("        // Parse response\n");
         java.append("        if (response.statusCode() >= 200 && response.statusCode() < 300) {\n");
@@ -6411,30 +6430,18 @@ public class APIGenerationEngineService {
         java.append("        }\n");
         java.append("    }\n\n");
 
-        // Main method example
+        // Main method with actual execution
         java.append("    public static void main(String[] args) {\n");
         java.append("        try {\n");
         java.append("            ").append(api.getApiCode()).append("Client client = new ").append(api.getApiCode()).append("Client();\n");
         java.append("            RequestParams params = new RequestParams();\n");
-
-        if (api.getParameters() != null) {
-            for (ApiParameterEntity param : api.getParameters()) {
-                if (param.getExample() != null) {
-                    String type = mapToJavaType(param.getApiType());
-                    String value = param.getExample();
-                    if ("string".equals(type)) {
-                        value = "\"" + value + "\"";
-                    }
-                    java.append("            params.set").append(capitalize(param.getKey())).append("(").append(value).append(");\n");
-                }
-            }
-        }
-
         java.append("            \n");
         java.append("            ApiResponse response = client.callApi(params);\n");
+        java.append("            System.out.println(\"Success! Response: \");\n");
         java.append("            System.out.println(objectMapper.writerWithDefaultPrettyPrinter()\n");
         java.append("                    .writeValueAsString(response));\n");
         java.append("        } catch (Exception e) {\n");
+        java.append("            System.err.println(\"Error calling API: \" + e.getMessage());\n");
         java.append("            e.printStackTrace();\n");
         java.append("        }\n");
         java.append("    }\n");
