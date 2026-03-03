@@ -10,6 +10,7 @@
    * Global overflow and layout utilities
    */
 
+   
   /* In globals.css or tailwind.css */
   .no-scrollbar::-webkit-scrollbar {
     display: none;

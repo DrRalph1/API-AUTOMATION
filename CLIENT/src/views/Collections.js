@@ -140,52 +140,154 @@ import {
 
 // Syntax highlighter component
 const SyntaxHighlighter = ({ language, code }) => {
-  const highlightSyntax = (code, lang) => {
-    if (lang === 'json') {
-      return code
-        .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, (match) => {
-          let cls = 'text-blue-400';
-          if (/^"/.test(match)) {
-            if (/:$/.test(match)) {
-              cls = 'text-purple-400';
-            } else {
-              cls = 'text-green-400';
-            }
-          } else if (/true|false/.test(match)) {
-            cls = 'text-orange-400';
-          } else if (/null/.test(match)) {
-            cls = 'text-red-400';
-          }
-          return `<span class="${cls}">${match}</span>`;
+  if (!code) return <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed">// No code available</pre>;
+  
+  // Simple syntax highlighting using spans
+  const highlightCode = (code, lang) => {
+    const lines = String(code).split('\n');
+    
+    return lines.map((line, lineIndex) => {
+      // First escape HTML entities to prevent injection
+      let highlightedLine = line
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      
+      if (lang === 'java') {
+        // Handle multi-line comment boundaries
+        if (highlightedLine.includes('/*') || highlightedLine.includes('*/')) {
+          // For lines with comment markers, highlight the whole line as comment
+          // to avoid breaking the HTML structure
+          return (
+            <div key={lineIndex} className="text-gray-500">
+              {highlightedLine}
+            </div>
+          );
+        }
+        
+        // Highlight strings (double quotes) - do this first
+        highlightedLine = highlightedLine.replace(/"([^"\\]*(\\.[^"\\]*)*)"/g, 
+          '<span class="text-green-400">"$1"</span>');
+        
+        // Highlight characters (single quotes)
+        highlightedLine = highlightedLine.replace(/'([^'\\]*(\\.[^'\\]*)*)'/g, 
+          '<span class="text-green-400">\'$1\'</span>');
+        
+        // Highlight single-line comments (but not inside strings)
+        // Only apply if the line doesn't contain a string that might have //
+        if (!highlightedLine.includes('class="text-green-400"')) {
+          highlightedLine = highlightedLine.replace(/(\/\/.*)/g, 
+            '<span class="text-gray-500">$1</span>');
+        }
+        
+        // Highlight annotations
+        highlightedLine = highlightedLine.replace(/(@\w+)/g, 
+          '<span class="text-blue-400">$1</span>');
+        
+        // Highlight keywords - expanded list
+        const keywords = [
+          'public', 'private', 'protected', 'class', 'interface', 
+          'extends', 'implements', 'static', 'final', 'void', 
+          'return', 'new', 'if', 'else', 'for', 'while', 
+          'switch', 'case', 'break', 'continue', 'throw', 
+          'throws', 'try', 'catch', 'finally', 'import', 
+          'package', 'abstract', 'assert', 'boolean', 'byte',
+          'char', 'double', 'enum', 'float', 'int', 'long',
+          'short', 'super', 'synchronized', 'this', 'transient',
+          'volatile', 'instanceof', 'true', 'false', 'null'
+        ];
+        
+        keywords.forEach(keyword => {
+          // Use negative lookbehind to avoid matching inside existing spans
+          // But since not all browsers support lookbehind, we'll use a simpler approach
+          // Only replace if not inside an HTML tag
+          const keywordRegex = new RegExp('\\b(' + keyword + ')\\b(?!([^<]*>|[^>]*<\\/))', 'g');
+          highlightedLine = highlightedLine.replace(keywordRegex, 
+            '<span class="text-purple-400">$1</span>');
         });
-    }
-    
-    if (lang === 'javascript' || lang === 'nodejs') {
-      return code
-        .replace(/(\b(?:function|const|let|var|if|else|for|while|return|class|import|export|from|default|async|await|try|catch|finally|throw|new|this)\b)/g, '<span class="text-purple-400">$1</span>')
-        .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"|'(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\'])*')/g, '<span class="text-green-400">$1</span>')
-        .replace(/(\/\/.*)/g, '<span class="text-gray-500">$1</span>')
-        .replace(/(\b\d+\b)/g, '<span class="text-blue-400">$1</span>');
-    }
-    
-    if (lang === 'python') {
-      return code
-        .replace(/(\b(?:def|class|import|from|if|elif|else|for|while|try|except|finally|with|as|return|yield|async|await|lambda|in|is|not|and|or|True|False|None)\b)/g, '<span class="text-purple-400">$1</span>')
-        .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"|'(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\'])*')/g, '<span class="text-green-400">$1</span>')
-        .replace(/(#.*)/g, '<span class="text-gray-500">$1</span>');
-    }
-    
-    return code;
+        
+        // Highlight numbers - FIXED: Don't apply to numbers that are part of class names like "400"
+        if (!highlightedLine.includes('class="text-green-400"') && 
+            !highlightedLine.includes('class="text-gray-500"')) {
+          // Only highlight numbers that are standalone and not part of a class attribute
+          highlightedLine = highlightedLine.replace(/\b(\d+[lLfFdD]?)\b(?![^<]*>|[^>]*<\/)/g, 
+            '<span class="text-blue-400">$1</span>');
+        }
+        
+        // Fix any malformed spans - CRITICAL FIX
+        // This cleans up any incorrectly formatted span tags
+        highlightedLine = highlightedLine.replace(/class="([^"]*)"([^>]*?)>/g, 'class="$1"$2>');
+        
+      } else if (lang === 'javascript' || lang === 'nodejs') {
+        // JavaScript highlighting
+        highlightedLine = highlightedLine.replace(/("([^"\\]*(\\.[^"\\]*)*)"|'([^'\\]*(\\.[^'\\]*)*)')/g, 
+          '<span class="text-green-400">$1</span>');
+        
+        // Comments
+        if (!highlightedLine.includes('class="text-green-400"')) {
+          highlightedLine = highlightedLine.replace(/(\/\/.*)/g, 
+            '<span class="text-gray-500">$1</span>');
+        }
+        
+        // Keywords
+        const jsKeywords = [
+          'function', 'const', 'let', 'var', 'if', 'else', 
+          'for', 'while', 'return', 'class', 'import', 
+          'export', 'from', 'default', 'async', 'await', 
+          'try', 'catch', 'finally', 'throw', 'new', 'this',
+          'true', 'false', 'null', 'undefined', 'typeof',
+          'instanceof', 'in', 'of', 'yield', 'delete'
+        ];
+        
+        jsKeywords.forEach(keyword => {
+          const keywordRegex = new RegExp('\\b(' + keyword + ')\\b(?!([^<]*>|[^>]*<\\/))', 'g');
+          highlightedLine = highlightedLine.replace(keywordRegex, 
+            '<span class="text-purple-400">$1</span>');
+        });
+      } else if (lang === 'python') {
+        // Python highlighting
+        highlightedLine = highlightedLine.replace(/("([^"\\]*(\\.[^"\\]*)*)"|'([^'\\]*(\\.[^'\\]*)*)')/g, 
+          '<span class="text-green-400">$1</span>');
+        
+        if (!highlightedLine.includes('class="text-green-400"')) {
+          highlightedLine = highlightedLine.replace(/(#.*)/g, 
+            '<span class="text-gray-500">$1</span>');
+        }
+        
+        const pythonKeywords = [
+          'def', 'class', 'import', 'from', 'if', 'elif', 
+          'else', 'for', 'while', 'try', 'except', 'finally', 
+          'with', 'as', 'return', 'yield', 'async', 'await', 
+          'lambda', 'in', 'is', 'not', 'and', 'or', 'True', 
+          'False', 'None', 'pass', 'break', 'continue', 'raise'
+        ];
+        
+        pythonKeywords.forEach(keyword => {
+          const keywordRegex = new RegExp('\\b(' + keyword + ')\\b(?!([^<]*>|[^>]*<\\/))', 'g');
+          highlightedLine = highlightedLine.replace(keywordRegex, 
+            '<span class="text-purple-400">$1</span>');
+        });
+      }
+      
+      return (
+        <div 
+          key={lineIndex} 
+          dangerouslySetInnerHTML={{ 
+            __html: highlightedLine || '&nbsp;' 
+          }} 
+        />
+      );
+    });
   };
 
   return (
-    <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed" 
-      dangerouslySetInnerHTML={{ __html: highlightSyntax(code, language) }} />
+    <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed">
+      {highlightCode(code, language)}
+    </pre>
   );
 };
 
 // Code Panel Component - Extracted to prevent re-renders
-// Code Panel Component - Only generates on demand or language change
 const CodePanel = React.memo(({ 
   selectedLanguage, 
   setSelectedLanguage, 
@@ -200,15 +302,14 @@ const CodePanel = React.memo(({
   setLoading,
   showToast,
   colors,
-  setShowCodePanel
+  setShowCodePanel,
+  selectedRequest // Add this prop
 }) => {
   const [codeSnippet, setCodeSnippet] = useState('');
-  const [lastGeneratedUrl, setLastGeneratedUrl] = useState('');
-  const [lastGeneratedMethod, setLastGeneratedMethod] = useState('');
   const abortControllerRef = useRef(null);
   const isMounted = useRef(true);
   
-  console.log('🎨 CodePanel rendered with language:', selectedLanguage);
+  console.log('🎨 CodePanel rendered with language:', selectedLanguage, 'and request:', selectedRequest?.id);
 
   const languages = [
     { id: 'curl', name: 'cURL', icon: <Terminal size={14} /> },
@@ -234,7 +335,7 @@ const CodePanel = React.memo(({
     };
   }, []);
 
-  // Generate code snippet on demand
+  // Generate code snippet when request changes OR language changes
   const generateSnippet = useCallback(async () => {
     // Cancel any ongoing request
     if (abortControllerRef.current) {
@@ -250,7 +351,8 @@ const CodePanel = React.memo(({
     console.log(`📝 [CodePanel] Generating snippet for request ${requestId}`, {
       language: selectedLanguage,
       method: requestMethod,
-      url: requestUrl
+      url: requestUrl,
+      requestId: selectedRequest?.id
     });
 
     if (!requestUrl) {
@@ -304,8 +406,6 @@ const CodePanel = React.memo(({
       if (isMounted.current) {
         if (snippetResults && snippetResults.code) {
           setCodeSnippet(snippetResults.code);
-          setLastGeneratedUrl(requestUrl);
-          setLastGeneratedMethod(requestMethod);
         } else {
           setCodeSnippet('// Unable to generate code snippet');
         }
@@ -327,17 +427,18 @@ const CodePanel = React.memo(({
         setLoading(prev => ({ ...prev, generateSnippet: false }));
       }
     }
-  }, [selectedLanguage, requestMethod, requestUrl, requestHeaders, requestBody, authToken, showToast, setLoading]);
+  }, [selectedLanguage, requestMethod, requestUrl, requestHeaders, requestBody, authToken, showToast, setLoading, selectedRequest?.id]);
 
-  // Generate initial snippet when component mounts or language changes
+  // Auto-generate when request changes OR language changes
   useEffect(() => {
-    // Only auto-generate if we have a URL and either:
-    // 1. It's the first load with no snippet, OR
-    // 2. The language changed and we have a valid URL
-    if (requestUrl && (!codeSnippet || codeSnippet.includes('Enter a URL') || codeSnippet.includes('Authentication required'))) {
+    // Only auto-generate if we have a URL
+    if (requestUrl) {
       generateSnippet();
+    } else {
+      // Clear snippet if no URL
+      setCodeSnippet('');
     }
-  }, [selectedLanguage, requestUrl, generateSnippet, codeSnippet]); // Added codeSnippet to dependencies
+  }, [selectedLanguage, requestUrl, generateSnippet, selectedRequest?.id]); // Added selectedRequest?.id as dependency
 
   // Get placeholder text based on language
   const getPlaceholderSnippet = () => {
@@ -407,7 +508,7 @@ try (Response response = client.newCall(request).execute()) {
 
   return (
     <div className="w-80 border-l flex flex-col" style={{ 
-      backgroundColor: colors.sidebar,
+      backgroundColor: colors.sidebar, // Changed from colors.bg to colors.sidebar
       borderColor: colors.border
     }}>
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: colors.border }}>
@@ -548,12 +649,15 @@ try (Response response = client.newCall(request).execute()) {
   );
 }, (prevProps, nextProps) => {
   // Custom comparison - only re-render when these change
+  // IMPORTANT: Now includes colors to ensure theme changes trigger re-render
   return (
     prevProps.selectedLanguage === nextProps.selectedLanguage &&
     prevProps.showLanguageDropdown === nextProps.showLanguageDropdown &&
     prevProps.requestMethod === nextProps.requestMethod &&
     prevProps.requestUrl === nextProps.requestUrl &&
     prevProps.authToken === nextProps.authToken &&
+    prevProps.selectedRequest?.id === nextProps.selectedRequest?.id &&
+    prevProps.colors === nextProps.colors && // ADD THIS LINE - crucial for theme changes
     JSON.stringify(prevProps.requestHeaders) === JSON.stringify(nextProps.requestHeaders) &&
     prevProps.requestBody === nextProps.requestBody
   );
@@ -731,7 +835,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   const [showAPIs, setShowAPIs] = useState(false);
   
   // Code panel state
-  const [selectedLanguage, setSelectedLanguage] = useState('curl');
+  const [selectedLanguage, setSelectedLanguage] = useState('java');
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   
   const [environments, setEnvironments] = useState([]);
@@ -3641,15 +3745,16 @@ const separateParamsAndHeaders = (items) => {
           showToast={memoizedShowToast}
           colors={colors}
           setShowCodePanel={memoizedSetShowCodePanel}
+          selectedRequest={selectedRequest} // Add this line
         />
       );
     }
-      if (showAPIs) return renderAPIsPanel();
-      if (showEnvironments) return renderEnvironmentsPanel();
-      if (showMockServers) return renderMockServersPanel();
-      if (showMonitors) return renderMonitorsPanel();
-      return null;
-    };
+    if (showAPIs) return renderAPIsPanel();
+    if (showEnvironments) return renderEnvironmentsPanel();
+    if (showMockServers) return renderMockServersPanel();
+    if (showMonitors) return renderMonitorsPanel();
+    return null;
+  };
 
   const renderMockServersPanel = () => (
     <div className="w-80 border-l flex flex-col" style={{ 
@@ -4340,7 +4445,78 @@ const separateParamsAndHeaders = (items) => {
         .gradient-bg {
           background: linear-gradient(135deg, ${colors.primary}20 0%, ${colors.info}20 50%, ${colors.warning}20 100%);
         }
-      `}</style>
+
+       /* Custom scrollbar styles */
+      .scrollbar-thin::-webkit-scrollbar {
+        height: 4px;
+        width: 4px;
+      }
+      
+      .scrollbar-thin::-webkit-scrollbar-track {
+        background: ${colors.border};
+        border-radius: 4px;
+      }
+      
+      .scrollbar-thin::-webkit-scrollbar-thumb {
+        background: ${colors.textTertiary};
+        border-radius: 4px;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+      
+      .scrollbar-thin:hover::-webkit-scrollbar-thumb,
+      .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+        background: ${colors.textSecondary};
+      }
+      
+      .hover\\:scrollbar-thumb-visible:hover::-webkit-scrollbar-thumb {
+        opacity: 1;
+      }
+      
+      /* Hide scrollbar by default, show on hover */
+      .scrollbar-thin::-webkit-scrollbar-thumb {
+        opacity: 0;
+      }
+      
+      .scrollbar-thin:hover::-webkit-scrollbar-thumb {
+        opacity: 1;
+      }
+      
+      /* For Firefox */
+      .scrollbar-thin {
+        scrollbar-width: thin;
+        scrollbar-color: transparent ${colors.border};
+      }
+      
+      .scrollbar-thin:hover {
+        scrollbar-color: ${colors.textTertiary} ${colors.border};
+      }
+    
+     /* Ensure flex containers can shrink properly */
+      .min-w-0 {
+        min-width: 0;
+      }
+      
+      .min-h-0 {
+        min-height: 0;
+      }
+      
+      /* Improve scrollbar behavior */
+      .overflow-x-auto {
+        -webkit-overflow-scrolling: touch;
+        scroll-behavior: smooth;
+      }
+      
+      /* Hide scrollbar when not hovering on Firefox */
+      .scrollbar-thin {
+        scrollbar-width: thin;
+        scrollbar-color: transparent ${colors.border};
+      }
+      
+      .scrollbar-thin:hover {
+        scrollbar-color: ${colors.textTertiary} ${colors.border};
+      }
+    `}</style>
 
       {/* Loading Overlay */}
       <LoadingOverlay />
@@ -4450,20 +4626,29 @@ const separateParamsAndHeaders = (items) => {
         {/* MAIN WORKSPACE */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* REQUEST TABS */}
-          <div className="flex items-center border-b h-9" style={{ 
+          <div className="flex items-center border-b shrink-0" style={{ 
             backgroundColor: colors.card,
-            borderColor: colors.border
+            borderColor: colors.border,
+            height: '36px' /* Fixed height to ensure consistency */
           }}>
-            <div className="flex items-center flex-1 overflow-x-auto px-2">
+            <div className="flex items-center flex-1 min-w-0 h-full overflow-x-auto scrollbar-thin hover:scrollbar-thumb-visible" 
+                style={{ 
+                  scrollbarWidth: 'thin',
+                  scrollbarColor: `${colors.textTertiary} ${colors.border}`,
+                  WebkitOverflowScrolling: 'touch'
+                }}>
               {requestTabs.map(tab => (
                 <div key={tab.id}
-                  className={`flex items-center gap-2 px-3 py-2 border-r cursor-pointer min-w-32 max-w-48 hover-lift ${
+                  className={`flex items-center gap-2 px-3 py-1.5 border-r cursor-pointer whitespace-nowrap flex-shrink-0 hover-lift ${
                     tab.isActive ? '' : 'hover:bg-opacity-50 transition-colors'
                   }`}
                   style={{ 
                     backgroundColor: tab.isActive ? colors.card : colors.sidebar,
                     borderRightColor: colors.border,
-                    borderTop: tab.isActive ? `2px solid ${colors.primary}` : '2px solid transparent'
+                    borderTop: tab.isActive ? `2px solid ${colors.primary}` : '2px solid transparent',
+                    minWidth: '100px',
+                    maxWidth: '180px',
+                    height: '100%'
                   }}
                   onClick={() => {
                     const collection = collections.find(c => c.id === tab.collectionId);
@@ -4502,7 +4687,7 @@ const separateParamsAndHeaders = (items) => {
                     } else {
                       showToast('Cannot close the last tab', 'error');
                     }
-                  }} className="p-0.5 rounded opacity-0 hover:opacity-100 hover:bg-opacity-50 transition-colors hover-lift"
+                  }} className="p-0.5 rounded opacity-0 hover:opacity-100 hover:bg-opacity-50 transition-colors hover-lift flex-shrink-0"
                     style={{ backgroundColor: colors.hover }}>
                     <X size={12} style={{ color: colors.textSecondary }} />
                   </button>
@@ -4530,7 +4715,7 @@ const separateParamsAndHeaders = (items) => {
                   };
                   handleSelectRequest(newRequest, '', '');
                 }}
-                className="px-3 py-2 border-r hover:bg-opacity-50 transition-colors hover-lift"
+                className="px-3 py-1.5 border-r hover:bg-opacity-50 transition-colors hover-lift flex-shrink-0"
                 style={{ borderRightColor: colors.border, backgroundColor: colors.hover }}>
                 <Plus size={12} style={{ color: colors.textSecondary }} />
               </button>

@@ -191,47 +191,150 @@ import { apiCall } from "@/helpers/APIHelper.js";
 
 // SyntaxHighlighter Component
 const SyntaxHighlighter = ({ language, code }) => {
-  const highlightSyntax = (code, lang) => {
-    if (lang === 'json') {
-      return code
-        .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, (match) => {
-          let cls = 'text-blue-400';
-          if (/^"/.test(match)) {
-            if (/:$/.test(match)) {
-              cls = 'text-purple-400';
-            } else {
-              cls = 'text-green-400';
-            }
-          } else if (/true|false/.test(match)) {
-            cls = 'text-orange-400';
-          } else if (/null/.test(match)) {
-            cls = 'text-red-400';
-          }
-          return `<span class="${cls}">${match}</span>`;
+  if (!code) return <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed">// No code available</pre>;
+  
+  // Simple syntax highlighting using spans
+  const highlightCode = (code, lang) => {
+    const lines = String(code).split('\n');
+    
+    return lines.map((line, lineIndex) => {
+      // First escape HTML entities to prevent injection
+      let highlightedLine = line
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      
+      if (lang === 'java') {
+        // Handle multi-line comment boundaries
+        if (highlightedLine.includes('/*') || highlightedLine.includes('*/')) {
+          // For lines with comment markers, highlight the whole line as comment
+          // to avoid breaking the HTML structure
+          return (
+            <div key={lineIndex} className="text-gray-500">
+              {highlightedLine}
+            </div>
+          );
+        }
+        
+        // Highlight strings (double quotes) - do this first
+        highlightedLine = highlightedLine.replace(/"([^"\\]*(\\.[^"\\]*)*)"/g, 
+          '<span class="text-green-400">"$1"</span>');
+        
+        // Highlight characters (single quotes)
+        highlightedLine = highlightedLine.replace(/'([^'\\]*(\\.[^'\\]*)*)'/g, 
+          '<span class="text-green-400">\'$1\'</span>');
+        
+        // Highlight single-line comments (but not inside strings)
+        // Only apply if the line doesn't contain a string that might have //
+        if (!highlightedLine.includes('class="text-green-400"')) {
+          highlightedLine = highlightedLine.replace(/(\/\/.*)/g, 
+            '<span class="text-gray-500">$1</span>');
+        }
+        
+        // Highlight annotations
+        highlightedLine = highlightedLine.replace(/(@\w+)/g, 
+          '<span class="text-blue-400">$1</span>');
+        
+        // Highlight keywords - expanded list
+        const keywords = [
+          'public', 'private', 'protected', 'class', 'interface', 
+          'extends', 'implements', 'static', 'final', 'void', 
+          'return', 'new', 'if', 'else', 'for', 'while', 
+          'switch', 'case', 'break', 'continue', 'throw', 
+          'throws', 'try', 'catch', 'finally', 'import', 
+          'package', 'abstract', 'assert', 'boolean', 'byte',
+          'char', 'double', 'enum', 'float', 'int', 'long',
+          'short', 'super', 'synchronized', 'this', 'transient',
+          'volatile', 'instanceof', 'true', 'false', 'null'
+        ];
+        
+        keywords.forEach(keyword => {
+          // Use negative lookbehind to avoid matching inside existing spans
+          // But since not all browsers support lookbehind, we'll use a simpler approach
+          // Only replace if not inside an HTML tag
+          const keywordRegex = new RegExp('\\b(' + keyword + ')\\b(?!([^<]*>|[^>]*<\\/))', 'g');
+          highlightedLine = highlightedLine.replace(keywordRegex, 
+            '<span class="text-purple-400">$1</span>');
         });
-    }
-    
-    if (lang === 'javascript' || lang === 'nodejs') {
-      return code
-        .replace(/(\b(?:function|const|let|var|if|else|for|while|return|class|import|export|from|default|async|await|try|catch|finally|throw|new|this)\b)/g, '<span class="text-purple-400">$1</span>')
-        .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"|'(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\'])*')/g, '<span class="text-green-400">$1</span>')
-        .replace(/(\/\/.*)/g, '<span class="text-gray-500">$1</span>')
-        .replace(/(\b\d+\b)/g, '<span class="text-blue-400">$1</span>');
-    }
-    
-    if (lang === 'python') {
-      return code
-        .replace(/(\b(?:def|class|import|from|if|elif|else|for|while|try|except|finally|with|as|return|yield|async|await|lambda|in|is|not|and|or|True|False|None)\b)/g, '<span class="text-purple-400">$1</span>')
-        .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"|'(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\'])*')/g, '<span class="text-green-400">$1</span>')
-        .replace(/(#.*)/g, '<span class="text-gray-500">$1</span>');
-    }
-    
-    return code;
+        
+        // Highlight numbers - FIXED: Don't apply to numbers that are part of class names like "400"
+        if (!highlightedLine.includes('class="text-green-400"') && 
+            !highlightedLine.includes('class="text-gray-500"')) {
+          // Only highlight numbers that are standalone and not part of a class attribute
+          highlightedLine = highlightedLine.replace(/\b(\d+[lLfFdD]?)\b(?![^<]*>|[^>]*<\/)/g, 
+            '<span class="text-blue-400">$1</span>');
+        }
+        
+        // Fix any malformed spans - CRITICAL FIX
+        // This cleans up any incorrectly formatted span tags
+        highlightedLine = highlightedLine.replace(/class="([^"]*)"([^>]*?)>/g, 'class="$1"$2>');
+        
+      } else if (lang === 'javascript' || lang === 'nodejs') {
+        // JavaScript highlighting
+        highlightedLine = highlightedLine.replace(/("([^"\\]*(\\.[^"\\]*)*)"|'([^'\\]*(\\.[^'\\]*)*)')/g, 
+          '<span class="text-green-400">$1</span>');
+        
+        // Comments
+        if (!highlightedLine.includes('class="text-green-400"')) {
+          highlightedLine = highlightedLine.replace(/(\/\/.*)/g, 
+            '<span class="text-gray-500">$1</span>');
+        }
+        
+        // Keywords
+        const jsKeywords = [
+          'function', 'const', 'let', 'var', 'if', 'else', 
+          'for', 'while', 'return', 'class', 'import', 
+          'export', 'from', 'default', 'async', 'await', 
+          'try', 'catch', 'finally', 'throw', 'new', 'this',
+          'true', 'false', 'null', 'undefined', 'typeof',
+          'instanceof', 'in', 'of', 'yield', 'delete'
+        ];
+        
+        jsKeywords.forEach(keyword => {
+          const keywordRegex = new RegExp('\\b(' + keyword + ')\\b(?!([^<]*>|[^>]*<\\/))', 'g');
+          highlightedLine = highlightedLine.replace(keywordRegex, 
+            '<span class="text-purple-400">$1</span>');
+        });
+      } else if (lang === 'python') {
+        // Python highlighting
+        highlightedLine = highlightedLine.replace(/("([^"\\]*(\\.[^"\\]*)*)"|'([^'\\]*(\\.[^'\\]*)*)')/g, 
+          '<span class="text-green-400">$1</span>');
+        
+        if (!highlightedLine.includes('class="text-green-400"')) {
+          highlightedLine = highlightedLine.replace(/(#.*)/g, 
+            '<span class="text-gray-500">$1</span>');
+        }
+        
+        const pythonKeywords = [
+          'def', 'class', 'import', 'from', 'if', 'elif', 
+          'else', 'for', 'while', 'try', 'except', 'finally', 
+          'with', 'as', 'return', 'yield', 'async', 'await', 
+          'lambda', 'in', 'is', 'not', 'and', 'or', 'True', 
+          'False', 'None', 'pass', 'break', 'continue', 'raise'
+        ];
+        
+        pythonKeywords.forEach(keyword => {
+          const keywordRegex = new RegExp('\\b(' + keyword + ')\\b(?!([^<]*>|[^>]*<\\/))', 'g');
+          highlightedLine = highlightedLine.replace(keywordRegex, 
+            '<span class="text-purple-400">$1</span>');
+        });
+      }
+      
+      return (
+        <div 
+          key={lineIndex} 
+          dangerouslySetInnerHTML={{ 
+            __html: highlightedLine || '&nbsp;' 
+          }} 
+        />
+      );
+    });
   };
 
   return (
-    <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed" 
-      dangerouslySetInnerHTML={{ __html: highlightSyntax(code, language) }} />
+    <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed">
+      {highlightCode(code, language)}
+    </pre>
   );
 };
 
