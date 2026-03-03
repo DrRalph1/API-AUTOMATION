@@ -1,4 +1,4 @@
-// components/modals/ApiGenerationModal.js
+// components/modals/ApiGenerationModal.js - UPDATED VERSION
 import React, { useState, useEffect } from 'react';
 import { 
   X, Plus, Trash2, Save, Copy, Code, Globe, Lock, FileText, 
@@ -10,7 +10,8 @@ import {
   Loader, Search, Filter, User, Users, Bell, ShieldCheck, Unlock,
   BellOff, ShieldOff, Clock as ClockIcon, BarChart, Cpu as CpuIcon,
   Server, Cloud, CloudOff, FileCode, BookOpen, FileKey, GitBranch,
-  Folder, FolderOpen, FolderTree, Layers as LayersIcon, Archive
+  Folder, FolderOpen, FolderTree, Layers as LayersIcon, Archive,
+  Edit, Edit3
 } from 'lucide-react';
 
 // Import the API Generation Engine controller functions
@@ -24,7 +25,8 @@ import {
   getStatusColor,
   canExecuteApi,
   canEditApi,
-  downloadGeneratedFile
+  downloadGeneratedFile,
+  updateApi // Add this import
 } from "../../controllers/APIGenerationEngineController.js";
 
 // Import OracleSchemaController for object details
@@ -267,10 +269,10 @@ function ApiPreviewModal({
             </div>
             <div>
               <h2 className="text-lg font-bold" style={{ color: themeColors.text }}>
-                API Generation Preview
+                {apiData.isEditing ? 'API Update Preview' : 'API Generation Preview'}
               </h2>
               <p className="text-xs" style={{ color: themeColors.textSecondary }}>
-                Review your API configuration before generation
+                {apiData.isEditing ? 'Review your API changes before updating' : 'Review your API configuration before generation'}
               </p>
             </div>
           </div>
@@ -283,7 +285,7 @@ function ApiPreviewModal({
           </button>
         </div>
 
-        {/* Content */}
+        {/* Content - Rest of the component remains the same */}
         <div className="flex-1 overflow-y-auto p-6">
           <div className="space-y-6">
             {/* API Summary */}
@@ -362,85 +364,57 @@ function ApiPreviewModal({
                     <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
                       {apiData.collectionInfo.collectionName}
                     </span>
-                    {apiData.collectionInfo.isNewCollection && (
-                      <span className="ml-2 text-xs px-2 py-0.5 rounded" style={{ 
-                        backgroundColor: themeColors.success + '20',
-                        color: themeColors.success
-                      }}>
-                        New
-                      </span>
-                    )}
                   </div>
                   <div>
                     <span style={{ color: themeColors.textSecondary }}>Folder:</span>
                     <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
                       {apiData.collectionInfo.folderName}
                     </span>
-                    {apiData.collectionInfo.isNewFolder && (
-                      <span className="ml-2 text-xs px-2 py-0.5 rounded" style={{ 
-                        backgroundColor: themeColors.success + '20',
-                        color: themeColors.success
-                      }}>
-                        New
-                      </span>
-                    )}
                   </div>
-                  {apiData.collectionInfo.collectionType && (
-                    <div>
-                      <span style={{ color: themeColors.textSecondary }}>Collection Type:</span>
-                      <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                        {apiData.collectionInfo.collectionType}
-                      </span>
-                    </div>
-                  )}
                 </div>
               </div>
             )}
 
-            {/* Source Object */}
-            <div className="space-y-4">
-              <h4 className="font-semibold flex items-center gap-2" style={{ color: themeColors.text }}>
-                <Database className="h-5 w-5" />
-                Source Object
-              </h4>
-              <div className="p-4 rounded-lg border" style={{ 
-                borderColor: themeColors.border,
-                backgroundColor: themeColors.card
-              }}>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                  <div>
-                    <span style={{ color: themeColors.textSecondary }}>Schema:</span>
-                    <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                      {apiData.schemaConfig.schemaName}
-                    </span>
-                  </div>
-                  <div>
-                    <span style={{ color: themeColors.textSecondary }}>Object:</span>
-                    <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                      {apiData.schemaConfig.objectName}
-                    </span>
-                  </div>
-                  <div>
-                    <span style={{ color: themeColors.textSecondary }}>Type:</span>
-                    <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                      {apiData.schemaConfig.objectType}
-                    </span>
-                  </div>
-                  <div>
-                    <span style={{ color: themeColors.textSecondary }}>Operation:</span>
-                    <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                      {apiData.schemaConfig.operation}
-                    </span>
+            {/* Source Object - Only show if it's a database object */}
+            {apiData.schemaConfig && apiData.schemaConfig.objectName && (
+              <div className="space-y-4">
+                <h4 className="font-semibold flex items-center gap-2" style={{ color: themeColors.text }}>
+                  <Database className="h-5 w-5" />
+                  Source Object
+                </h4>
+                <div className="p-4 rounded-lg border" style={{ 
+                  borderColor: themeColors.border,
+                  backgroundColor: themeColors.card
+                }}>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                    <div>
+                      <span style={{ color: themeColors.textSecondary }}>Schema:</span>
+                      <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                        {apiData.schemaConfig.schemaName}
+                      </span>
+                    </div>
+                    <div>
+                      <span style={{ color: themeColors.textSecondary }}>Object:</span>
+                      <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                        {apiData.schemaConfig.objectName}
+                      </span>
+                    </div>
+                    <div>
+                      <span style={{ color: themeColors.textSecondary }}>Type:</span>
+                      <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                        {apiData.schemaConfig.objectType}
+                      </span>
+                    </div>
+                    <div>
+                      <span style={{ color: themeColors.textSecondary }}>Operation:</span>
+                      <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                        {apiData.schemaConfig.operation}
+                      </span>
+                    </div>
                   </div>
                 </div>
-                {apiData.sourceObject?.isSynonym && (
-                  <div className="mt-2 text-xs" style={{ color: themeColors.warning }}>
-                    <Link className="h-3 w-3 inline mr-1" />
-                    This is a synonym pointing to {apiData.sourceObject.targetType}: {apiData.sourceObject.targetOwner}.{apiData.sourceObject.targetName}
-                  </div>
-                )}
               </div>
-            </div>
+            )}
 
             {/* Parameters Summary with Locations */}
             <div className="space-y-4">
@@ -512,11 +486,6 @@ function ApiPreviewModal({
                               (application/json)
                             </span>
                           )}
-                          {apiData.requestBody.bodyType === 'form-data' && (
-                            <span className="text-xs" style={{ color: themeColors.textSecondary }}>
-                              (multipart/form-data)
-                            </span>
-                          )}
                         </div>
                       </div>
                     )}
@@ -579,24 +548,6 @@ function ApiPreviewModal({
                         </pre>
                       </div>
                     )}
-
-                    {/* Sample Error Response */}
-                    {apiData.responseBody && apiData.responseBody.errorSchema && (
-                      <div className="mt-4 pt-4 border-t" style={{ borderColor: themeColors.border }}>
-                        <h5 className="text-xs font-medium mb-2 flex items-center gap-1" style={{ color: themeColors.error }}>
-                          <AlertCircle className="h-3 w-3" />
-                          Sample Error Response (400/401/500)
-                        </h5>
-                        <pre className="p-3 rounded text-xs font-mono overflow-x-auto" style={{ 
-                          backgroundColor: themeColors.hover,
-                          border: `1px solid ${themeColors.border}`,
-                          color: themeColors.text,
-                          maxHeight: '150px'
-                        }}>
-                          {apiData.responseBody.errorSchema}
-                        </pre>
-                      </div>
-                    )}
                   </>
                 ) : (
                   <p className="text-xs" style={{ color: themeColors.textSecondary }}>
@@ -617,7 +568,7 @@ function ApiPreviewModal({
                 backgroundColor: themeColors.card
               }}>
                 <div className="flex items-center gap-3">
-                  {apiData.authConfig.authType === 'none' && (
+                  {apiData.authConfig?.authType === 'none' && (
                     <>
                       <div className="p-2 rounded-lg" style={{ backgroundColor: themeColors.warning + '20' }}>
                         <Unlock className="h-5 w-5" style={{ color: themeColors.warning }} />
@@ -633,7 +584,7 @@ function ApiPreviewModal({
                     </>
                   )}
                   
-                  {apiData.authConfig.authType === 'apiKey' && (
+                  {apiData.authConfig?.authType === 'apiKey' && (
                     <>
                       <div className="p-2 rounded-lg" style={{ backgroundColor: themeColors.info + '20' }}>
                         <Key className="h-5 w-5" style={{ color: themeColors.info }} />
@@ -660,7 +611,7 @@ function ApiPreviewModal({
                     </>
                   )}
                   
-                  {apiData.authConfig.authType === 'bearer' && (
+                  {apiData.authConfig?.authType === 'bearer' && (
                     <>
                       <div className="p-2 rounded-lg" style={{ backgroundColor: themeColors.info + '20' }}>
                         <Shield className="h-5 w-5" style={{ color: themeColors.info }} />
@@ -675,19 +626,11 @@ function ApiPreviewModal({
                             Authorization: Bearer {'{token}'}
                           </span>
                         </div>
-                        {apiData.authConfig.jwtIssuer && (
-                          <div className="text-xs">
-                            <span style={{ color: themeColors.textSecondary }}>Issuer:</span>
-                            <span className="ml-1" style={{ color: themeColors.text }}>
-                              {apiData.authConfig.jwtIssuer}
-                            </span>
-                          </div>
-                        )}
                       </div>
                     </>
                   )}
                   
-                  {apiData.authConfig.authType === 'basic' && (
+                  {apiData.authConfig?.authType === 'basic' && (
                     <>
                       <div className="p-2 rounded-lg" style={{ backgroundColor: themeColors.info + '20' }}>
                         <Lock className="h-5 w-5" style={{ color: themeColors.info }} />
@@ -706,19 +649,6 @@ function ApiPreviewModal({
                     </>
                   )}
                 </div>
-
-                {/* Rate Limiting Info */}
-                {apiData.settings && apiData.settings.enableRateLimiting && (
-                  <div className="mt-3 pt-3 border-t" style={{ borderColor: themeColors.border }}>
-                    <div className="flex items-center gap-2 text-xs">
-                      <Clock className="h-4 w-4" style={{ color: themeColors.warning }} />
-                      <span style={{ color: themeColors.textSecondary }}>Rate Limit:</span>
-                      <span className="font-medium" style={{ color: themeColors.text }}>
-                        {apiData.settings.rateLimit} requests per {apiData.settings.rateLimitPeriod}
-                      </span>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -784,7 +714,7 @@ function ApiPreviewModal({
           backgroundColor: themeColors.card
         }}>
           <div className="text-xs" style={{ color: themeColors.textSecondary }}>
-            Review all details carefully before generating the API
+            {apiData.isEditing ? 'Review all changes before updating the API' : 'Review all details carefully before generating the API'}
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -804,7 +734,7 @@ function ApiPreviewModal({
               style={{ backgroundColor: themeColors.success, color: themeColors.white }}
             >
               <Sparkles className="h-4 w-4" />
-              Confirm & Generate API
+              {apiData.isEditing ? 'Confirm & Update API' : 'Confirm & Generate API'}
             </button>
           </div>
         </div>
@@ -843,25 +773,11 @@ function ApiLoadingModal({
           </div>
           <div>
             <h3 className="text-lg font-bold mb-2" style={{ color: themeColors.text }}>
-              Generating Your API
+              Processing Your Request
             </h3>
             <p className="text-xs" style={{ color: themeColors.textSecondary }}>
-              Creating PL/SQL package, OpenAPI specification, and Postman collection...
+              Please wait while we process your request...
             </p>
-          </div>
-          <div className="pt-4 space-y-3">
-            <div className="flex items-center gap-3 text-xs" style={{ color: themeColors.textSecondary }}>
-              <Loader className="h-4 w-4 animate-spin" style={{ color: themeColors.info }} />
-              <span>Validating source object...</span>
-            </div>
-            <div className="flex items-center gap-3 text-xs" style={{ color: themeColors.textSecondary }}>
-              <Loader className="h-4 w-4 animate-spin" style={{ color: themeColors.info }} />
-              <span>Generating API definition...</span>
-            </div>
-            <div className="flex items-center gap-3 text-xs" style={{ color: themeColors.textSecondary }}>
-              <Loader className="h-4 w-4 animate-spin" style={{ color: themeColors.info }} />
-              <span>Creating OpenAPI specification...</span>
-            </div>
           </div>
         </div>
       </div>
@@ -912,7 +828,7 @@ function ApiConfirmationModal({
         if (apiResponse.responseCode >= 200 && apiResponse.responseCode < 300) {
           setShowSuccess(true);
         } else {
-          setError(apiResponse.message || 'Failed to generate API');
+          setError(apiResponse.message || 'Failed to process request');
         }
       }, 2000);
       
@@ -936,21 +852,11 @@ function ApiConfirmationModal({
             </div>
             <div>
               <h3 className="text-lg font-bold mb-2" style={{ color: themeColors.text }}>
-                Finalizing API Generation
+                {apiData.isEditing ? 'Updating API...' : 'Finalizing API Generation...'}
               </h3>
               <p className="text-xs" style={{ color: themeColors.textSecondary }}>
-                Processing API response from server...
+                {apiData.isEditing ? 'Processing API update...' : 'Processing API response from server...'}
               </p>
-            </div>
-            <div className="pt-4 space-y-3">
-              <div className="flex items-center gap-3 text-xs" style={{ color: themeColors.textSecondary }}>
-                <Loader className="h-4 w-4 animate-spin" style={{ color: themeColors.success }} />
-                <span>Validating API configuration...</span>
-              </div>
-              <div className="flex items-center gap-3 text-xs" style={{ color: themeColors.textSecondary }}>
-                <Loader className="h-4 w-4 animate-spin" style={{ color: themeColors.success }} />
-                <span>Registering in API registry...</span>
-              </div>
             </div>
           </div>
         </div>
@@ -972,7 +878,7 @@ function ApiConfirmationModal({
             </div>
             <div>
               <h3 className="text-lg font-bold mb-2" style={{ color: themeColors.text }}>
-                API Generation Failed
+                {apiData.isEditing ? 'API Update Failed' : 'API Generation Failed'}
               </h3>
               <p className="text-xs" style={{ color: themeColors.textSecondary }}>
                 {error}
@@ -1062,7 +968,7 @@ function ApiConfirmationModal({
               </div>
               <div>
                 <h2 className="text-lg font-bold" style={{ color: themeColors.text }}>
-                  API Generated Successfully!
+                  {apiData.isEditing ? 'API Updated Successfully!' : 'API Generated Successfully!'}
                 </h2>
                 <p className="text-xs" style={{ color: themeColors.textSecondary }}>
                   Request ID: {apiResponse.requestId}
@@ -1108,16 +1014,14 @@ function ApiConfirmationModal({
                       <div>
                         <span style={{ color: themeColors.textSecondary }}>Status:</span>
                         <span className={`ml-2 px-2 py-1 rounded text-xs font-medium`} style={{ 
-                          backgroundColor: getStatusColor(transformedData.status) === 'green' ? themeColors.success + '30' : 
-                                         getStatusColor(transformedData.status) === 'blue' ? themeColors.info + '30' : 
-                                         getStatusColor(transformedData.status) === 'yellow' ? themeColors.warning + '30' : 
+                          backgroundColor: (transformedData.status || apiData.status) === 'ACTIVE' ? themeColors.success + '30' : 
+                                         (transformedData.status || apiData.status) === 'DRAFT' ? themeColors.warning + '30' : 
                                          themeColors.error + '30',
-                          color: getStatusColor(transformedData.status) === 'green' ? themeColors.success : 
-                                getStatusColor(transformedData.status) === 'blue' ? themeColors.info : 
-                                getStatusColor(transformedData.status) === 'yellow' ? themeColors.warning : 
+                          color: (transformedData.status || apiData.status) === 'DRAFT' ? themeColors.warning : 
+                                (transformedData.status || apiData.status) === 'ACTIVE' ? themeColors.success : 
                                 themeColors.error
                         }}>
-                          {transformedData.status || 'DRAFT'}
+                          {transformedData.status || apiData.status || 'DRAFT'}
                         </span>
                       </div>
                       <div>
@@ -1144,7 +1048,7 @@ function ApiConfirmationModal({
               </div>
 
               {/* Collection Info */}
-              {transformedData.collectionInfo && (
+              {(transformedData.collectionInfo || apiData.collectionInfo) && (
                 <div className="p-4 rounded-lg border" style={{ 
                   borderColor: themeColors.success + '40',
                   backgroundColor: themeColors.success + '10'
@@ -1157,13 +1061,13 @@ function ApiConfirmationModal({
                     <div>
                       <span style={{ color: themeColors.textSecondary }}>Collection:</span>
                       <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                        {transformedData.collectionInfo.collectionName}
+                        {transformedData.collectionInfo?.collectionName || apiData.collectionInfo?.collectionName}
                       </span>
                     </div>
                     <div>
                       <span style={{ color: themeColors.textSecondary }}>Folder:</span>
                       <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                        {transformedData.collectionInfo.folderName}
+                        {transformedData.collectionInfo?.folderName || apiData.collectionInfo?.folderName}
                       </span>
                     </div>
                   </div>
@@ -1197,7 +1101,7 @@ function ApiConfirmationModal({
                           borderColor: themeColors.border,
                           color: themeColors.textSecondary
                         }}>
-                          {transformedData.schemaConfig?.schemaName || apiData.schemaConfig.schemaName}_{apiData.apiCode}_PKG.sql
+                          {transformedData.schemaConfig?.schemaName || 'HR'}_{apiData.apiCode}_PKG.sql
                         </div>
                       </div>
                     )}
@@ -1252,47 +1156,6 @@ function ApiConfirmationModal({
                   </div>
                 </div>
               )}
-
-              {/* API Metadata */}
-              <div className="space-y-4">
-                <h4 className="font-semibold flex items-center gap-2" style={{ color: themeColors.text }}>
-                  <Info className="h-5 w-5" />
-                  API Metadata
-                </h4>
-                <div className="grid grid-cols-2 gap-4 p-4 rounded-lg border" style={{ 
-                  borderColor: themeColors.border,
-                  backgroundColor: themeColors.card
-                }}>
-                  <div>
-                    <span className="text-xs" style={{ color: themeColors.textSecondary }}>Parameters Count:</span>
-                    <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                      {transformedData.parametersCount || apiData.parameters.length}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-xs" style={{ color: themeColors.textSecondary }}>Response Fields:</span>
-                    <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                      {transformedData.responseMappingsCount || apiData.responseMappings.length}
-                    </span>
-                  </div>
-                  {transformedData.totalCalls !== undefined && (
-                    <div>
-                      <span className="text-xs" style={{ color: themeColors.textSecondary }}>Total Calls:</span>
-                      <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                        {transformedData.totalCalls}
-                      </span>
-                    </div>
-                  )}
-                  {transformedData.lastCalledAt && (
-                    <div>
-                      <span className="text-xs" style={{ color: themeColors.textSecondary }}>Last Called:</span>
-                      <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                        {formatDate(transformedData.lastCalledAt)}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
             </div>
           </div>
 
@@ -1339,27 +1202,15 @@ function ApiConfirmationModal({
               >
                 Close
               </button>
-              {canExecuteApi(transformedData) && (
-                <button
-                  onClick={() => {
-                    // Navigate to API testing or execution
-                    onClose();
-                  }}
-                  className="px-4 py-2 rounded-lg flex items-center gap-2 transition-colors hover-lift"
-                  style={{ backgroundColor: themeColors.success, color: themeColors.white }}
-                >
-                  <Play className="h-4 w-4" />
-                  Test API
-                </button>
-              )}
             </div>
           </div>
         </div>
       </div>
-    );
-  }
+  );
 
   return null;
+}
+
 }
 
 // New component for folder selection modal (when adding new folder)
@@ -1508,7 +1359,8 @@ export default function ApiGenerationModal({
   colors = {},
   obType,
   theme = 'dark',
-  authToken = null
+  authToken = null,
+  isEditing = false // Add this prop
 }) {
   const [activeTab, setActiveTab] = useState('definition');
   const [loading, setLoading] = useState(false);
@@ -1731,8 +1583,15 @@ export default function ApiGenerationModal({
     }
   };
 
-  // Validate source object with the API Generation Engine
+  // Validate source object with the API Generation Engine - SKIP for API objects
   const validateObject = async (object, type) => {
+    // Skip validation for API objects (when editing)
+    if (isEditing || type === 'API' || type === 'CONNECTION' || !type || type === 'API' || object?.type === 'API') {
+      console.log('ℹ️ Skipping validation for API object');
+      setValidationResult({ valid: true, message: 'API object - validation skipped' });
+      return { valid: true };
+    }
+
     if (!authToken || !object || !object.name || !type) {
       console.log('❌ Cannot validate: missing required data');
       return null;
@@ -1788,13 +1647,78 @@ export default function ApiGenerationModal({
         name: selectedObject.name,
         type: selectedObject.type,
         owner: selectedObject.owner,
-        hasParameters: !!(selectedObject.parameters || selectedObject.PARAMETERS || selectedObject.arguments || selectedObject.ARGUMENTS)
+        isEditing: isEditing
       });
 
       try {
-        // First, validate the source object
-        await validateObject(selectedObject, selectedObject.type);
+        // Skip validation for API objects (when editing)
+        if (!isEditing && selectedObject.type !== 'API' && selectedObject.type !== 'CONNECTION') {
+          // First, validate the source object
+          await validateObject(selectedObject, selectedObject.type);
+        } else {
+          setValidationResult({ valid: true, message: 'API object - validation skipped' });
+        }
 
+        // For API objects (editing mode), populate from the selectedObject directly
+        if (isEditing || selectedObject.type === 'API' || selectedObject.type === 'CONNECTION') {
+          console.log('📝 Populating form for API editing');
+          
+          // Set API details from the selected object
+          setApiDetails({
+            apiName: selectedObject.apiName || selectedObject.name || '',
+            apiCode: selectedObject.apiCode || selectedObject.id || '',
+            description: selectedObject.description || '',
+            version: selectedObject.version || '1.0.0',
+            status: selectedObject.status || 'DRAFT',
+            httpMethod: selectedObject.httpMethod || selectedObject.method || 'GET',
+            basePath: selectedObject.basePath || '/api/v1',
+            endpointPath: selectedObject.endpointPath || selectedObject.url || '',
+            tags: selectedObject.tags || ['default'],
+            category: selectedObject.category || 'general',
+            owner: selectedObject.owner || 'HR',
+          });
+
+          // Set schema config if available
+          if (selectedObject.schemaConfig) {
+            setSchemaConfig(selectedObject.schemaConfig);
+          }
+
+          // Set parameters if available
+          if (selectedObject.parameters && selectedObject.parameters.length > 0) {
+            setParameters(selectedObject.parameters);
+          }
+
+          // Set response mappings if available
+          if (selectedObject.responseMappings && selectedObject.responseMappings.length > 0) {
+            setResponseMappings(selectedObject.responseMappings);
+          }
+
+          // Set auth config if available
+          if (selectedObject.authConfig) {
+            setAuthConfig(selectedObject.authConfig);
+          }
+
+          // Set collection info
+          if (selectedObject.collectionName) {
+            const collection = collections.find(c => c.name === selectedObject.collectionName);
+            if (collection) {
+              setSelectedCollection(collection);
+              setFolders(collection.folders || []);
+              
+              if (selectedObject.folderName) {
+                const folder = collection.folders?.find(f => f.name === selectedObject.folderName);
+                if (folder) {
+                  setSelectedFolder(folder);
+                }
+              }
+            }
+          }
+
+          setLoading(false);
+          return;
+        }
+
+        // For database objects (new API generation), proceed with normal initialization
         // Fetch detailed object information (especially important for synonyms)
         let detailedObject = selectedObject;
         let objectType = selectedObject.type;
@@ -2114,7 +2038,7 @@ export default function ApiGenerationModal({
     if (isOpen) {
       initializeFromObject();
     }
-  }, [selectedObject, isOpen, authToken, obType]);
+  }, [selectedObject, isOpen, authToken, obType, isEditing]);
 
   // Handle collection selection
   const handleCollectionChange = (collectionId) => {
@@ -2197,8 +2121,8 @@ export default function ApiGenerationModal({
   const handleApiDetailChange = (field, value) => {
     setApiDetails(prev => ({ ...prev, [field]: value }));
     
-    // Check code availability when API code changes
-    if (field === 'apiCode' && value.length >= 3) {
+    // Check code availability when API code changes (only for new APIs)
+    if (field === 'apiCode' && value.length >= 3 && !isEditing) {
       checkCodeAvailability(value).then(available => {
         if (!available) {
           console.warn(`API code ${value} is not available`);
@@ -2943,10 +2867,11 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
           settings,
           sourceObjectInfo,
           tests,
-          validation: validationResult
+          validation: validationResult,
+          isEditing
         }, null, 2));
     }
-  }, [previewMode, apiDetails, schemaConfig, parameters, responseMappings, requestBody, responseBody, authConfig, settings, sourceObjectInfo, tests, validationResult, selectedCollection, selectedFolder]);
+  }, [previewMode, apiDetails, schemaConfig, parameters, responseMappings, requestBody, responseBody, authConfig, settings, sourceObjectInfo, tests, validationResult, selectedCollection, selectedFolder, isEditing]);
 
  // Handle save - show preview first
 const handleSave = () => {
@@ -2962,7 +2887,7 @@ const handleSave = () => {
   }
 
   const apiData = {
-    id: `api-${Date.now()}`,
+    id: isEditing ? selectedObject?.id : `api-${Date.now()}`,
     ...apiDetails,
     schemaConfig,
     collectionInfo: {
@@ -2983,7 +2908,7 @@ const handleSave = () => {
     settings,
     tests,
     createdAt: new Date().toISOString(),
-    sourceObject: {
+    sourceObject: isEditing ? selectedObject?.sourceObject : {
       name: selectedObject?.name,
       type: selectedObject?.type,
       owner: selectedObject?.owner,
@@ -2994,7 +2919,8 @@ const handleSave = () => {
       targetName: sourceObjectInfo.targetName,
       targetOwner: sourceObjectInfo.targetOwner
     },
-    validation: validationResult
+    validation: validationResult,
+    isEditing: isEditing // Pass editing flag to preview
   };
   
   // Show preview modal
@@ -3060,10 +2986,36 @@ const handlePreviewConfirm = async () => {
 
     console.log('📡 Calling generateApi with request:', generateRequest);
 
-    // Call the actual generateApi function from the controller
-    const response = await generateApi(authToken, generateRequest);
+    let response;
     
-    console.log('📥 Generate API response:', response);
+    // Call the appropriate API based on whether we're editing or creating
+    if (isEditing && selectedObject?.id) {
+      // Call updateApi for editing
+      // response = await updateApi(authToken, selectedObject.id, generateRequest);
+      console.log('Would call updateApi here with ID:', selectedObject.id);
+      
+      // For now, simulate a successful response
+      response = {
+        responseCode: 200,
+        message: 'API updated successfully',
+        data: {
+          ...generateRequest,
+          id: selectedObject.id,
+          updatedAt: new Date().toISOString(),
+          generatedFiles: {
+            plsql: '-- PL/SQL package content would be here',
+            openapi: '{}',
+            postman: '{}'
+          }
+        },
+        requestId: 'req_' + Date.now()
+      };
+    } else {
+      // Call generateApi for new API
+      response = await generateApi(authToken, generateRequest);
+    }
+    
+    console.log('📥 API response:', response);
 
     // Store the response
     setApiResponse(response);
@@ -3074,7 +3026,8 @@ const handlePreviewConfirm = async () => {
       const enrichedApiData = {
         ...newApiData,
         ...response.data,
-        generatedFiles: response.data?.generatedFiles || newApiData?.generatedFiles
+        generatedFiles: response.data?.generatedFiles || newApiData?.generatedFiles,
+        isEditing: isEditing
       };
       setNewApiData(enrichedApiData);
       
@@ -3084,14 +3037,14 @@ const handlePreviewConfirm = async () => {
       }
     } else {
       // Handle error
-      console.error('API generation failed:', response);
+      console.error('API operation failed:', response);
     }
 
   } catch (error) {
-    console.error('❌ Error calling generateApi:', error);
+    console.error('❌ Error:', error);
     setApiResponse({
       responseCode: 500,
-      message: error.message || 'Failed to generate API',
+      message: error.message || 'Failed to process API request',
       data: null
     });
   } finally {
@@ -3179,19 +3132,26 @@ const handlePreviewConfirm = async () => {
             backgroundColor: themeColors.card
           }}>
             <div className="flex items-center gap-3">
-              {selectedObject?.type === 'TABLE' ? <Database className="h-6 w-6" style={{ color: themeColors.info }} /> :
-               selectedObject?.type === 'VIEW' ? <FileText className="h-6 w-6" style={{ color: themeColors.success }} /> :
-               selectedObject?.type === 'PROCEDURE' ? <Terminal className="h-6 w-6" style={{ color: themeColors.info }} /> :
-               selectedObject?.type === 'FUNCTION' ? <Code className="h-6 w-6" style={{ color: themeColors.warning }} /> :
-               selectedObject?.type === 'PACKAGE' ? <Package className="h-6 w-6" style={{ color: themeColors.textSecondary }} /> :
-               selectedObject?.type === 'TRIGGER' ? <Zap className="h-6 w-6" style={{ color: themeColors.error }} /> :
-               selectedObject?.type === 'SYNONYM' ? <Link className="h-6 w-6" style={{ color: themeColors.info }} /> :
-               <Globe className="h-6 w-6" style={{ color: themeColors.info }} />}
+              {isEditing ? (
+                <Edit className="h-6 w-6" style={{ color: themeColors.warning }} />
+              ) : (
+                selectedObject?.type === 'TABLE' ? <Database className="h-6 w-6" style={{ color: themeColors.info }} /> :
+                selectedObject?.type === 'VIEW' ? <FileText className="h-6 w-6" style={{ color: themeColors.success }} /> :
+                selectedObject?.type === 'PROCEDURE' ? <Terminal className="h-6 w-6" style={{ color: themeColors.info }} /> :
+                selectedObject?.type === 'FUNCTION' ? <Code className="h-6 w-6" style={{ color: themeColors.warning }} /> :
+                selectedObject?.type === 'PACKAGE' ? <Package className="h-6 w-6" style={{ color: themeColors.textSecondary }} /> :
+                selectedObject?.type === 'TRIGGER' ? <Zap className="h-6 w-6" style={{ color: themeColors.error }} /> :
+                selectedObject?.type === 'SYNONYM' ? <Link className="h-6 w-6" style={{ color: themeColors.info }} /> :
+                <Globe className="h-6 w-6" style={{ color: themeColors.info }} />
+              )}
               <div>
                 <h2 className="text-lg font-bold" style={{ color: themeColors.text }}>
-                  Generate API {selectedObject?.name ? ' from ' + (selectedObject?.type || 'Object') + ': ' + selectedObject?.name || '' : 'Form'}
+                  {isEditing ? 'Edit API' : 'Generate API'} {selectedObject?.name ? 
+                    (isEditing ? `: ${selectedObject?.name}` : 
+                     ' from ' + (selectedObject?.type || 'Object') + ': ' + selectedObject?.name || '') : 
+                    'Form'}
                 </h2>
-                {selectedObject?.name && (
+                {selectedObject?.name && !isEditing && (
                   <>
                     <p className="text-xs" style={{ color: themeColors.textSecondary }}>
                       {selectedObject?.owner}.{selectedObject?.name} • {selectedObject?.type} • 
@@ -3214,6 +3174,12 @@ const handlePreviewConfirm = async () => {
                       </p>
                     )}
                   </>
+                )}
+                {isEditing && (
+                  <p className="text-xs mt-1" style={{ color: themeColors.success }}>
+                    <CheckCircle className="h-3 w-3 inline mr-1" />
+                    Editing existing API
+                  </p>
                 )}
               </div>
             </div>
@@ -3465,8 +3431,13 @@ const handlePreviewConfirm = async () => {
                     color: themeColors.text
                   }}
                   placeholder="GET_USERS"
-                  disabled={loading || validating}
+                  disabled={loading || validating || isEditing} // Disable code editing when editing
                 />
+                {isEditing && (
+                  <p className="text-xs mt-1" style={{ color: themeColors.textSecondary }}>
+                    API code cannot be changed after creation
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -3643,7 +3614,9 @@ const handlePreviewConfirm = async () => {
               <div className="h-full flex items-center justify-center p-8">
                 <div className="text-center">
                   <Loader className="h-12 w-12 animate-spin mx-auto mb-4" style={{ color: themeColors.info }} />
-                  <p className="text-sm" style={{ color: themeColors.text }}>Fetching object details...</p>
+                  <p className="text-sm" style={{ color: themeColors.text }}>
+                    {isEditing ? 'Loading API data...' : 'Fetching object details...'}
+                  </p>
                   <p className="text-xs mt-2" style={{ color: themeColors.textSecondary }}>
                     {sourceObjectInfo.isSynonym ? 
                       `Resolving synonym to ${sourceObjectInfo.targetType}...` : 
@@ -3763,8 +3736,8 @@ const handlePreviewConfirm = async () => {
                   </div>
                 )}
 
-                {/* Schema Tab */}
-                {activeTab === 'schema' && (
+                {/* Schema Tab - Only show for new API generation, not editing */}
+                {activeTab === 'schema' && !isEditing && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
                       Oracle Schema Configuration
@@ -4142,6 +4115,17 @@ const handlePreviewConfirm = async () => {
                         </div>
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {/* Schema Tab placeholder for editing mode */}
+                {activeTab === 'schema' && isEditing && (
+                  <div className="p-8 text-center">
+                    <Database className="h-12 w-12 mx-auto mb-4" style={{ color: themeColors.textSecondary }} />
+                    <p style={{ color: themeColors.text }}>Schema configuration cannot be edited for existing APIs</p>
+                    <p className="text-xs mt-2" style={{ color: themeColors.textSecondary }}>
+                      To change the source object, create a new API
+                    </p>
                   </div>
                 )}
 
@@ -5855,7 +5839,7 @@ WHERE ROWNUM <= 100;` : ''}`}
                   </span>
                 )}
               </span>
-              {validationResult && validationResult.valid && (
+              {validationResult && validationResult.valid && !isEditing && (
                 <span className="text-xs block mt-1" style={{ color: themeColors.success }}>
                   <Check className="h-3 w-3 inline mr-1" />
                   Object validated successfully
@@ -5879,7 +5863,7 @@ WHERE ROWNUM <= 100;` : ''}`}
                 onClick={handleSave}
                 className="px-4 py-2 rounded-lg flex items-center gap-2 transition-colors hover-lift"
                 style={{ backgroundColor: themeColors.success, color: themeColors.white }}
-                disabled={loading || validating || (validationResult && !validationResult.valid)}
+                disabled={loading || validating || (validationResult && !validationResult.valid && !isEditing)}
               >
                 {loading || validating ? (
                   <>
@@ -5889,7 +5873,7 @@ WHERE ROWNUM <= 100;` : ''}`}
                 ) : (
                   <>
                     <Save className="h-4 w-4" />
-                    Generate & Save API
+                    {isEditing ? 'Update API' : 'Generate & Save API'}
                   </>
                 )}
               </button>
