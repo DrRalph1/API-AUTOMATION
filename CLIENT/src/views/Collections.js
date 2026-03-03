@@ -4580,320 +4580,329 @@ const separateParamsAndHeaders = (items) => {
       </div>
 
       {/* MAIN CONTENT */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* LEFT SIDEBAR - Collections */}
-        <div className="w-80 border-r flex flex-col" style={{ 
-          borderColor: colors.border
-        }}>
-          <div className="p-3 border-b" style={{ borderColor: colors.border }}>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Collections</h3>
-              <div className="flex gap-1">
-                <button type="button" onClick={() => setShowCreateModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.hover }}>
-                  <Plus size={12} style={{ color: colors.textSecondary }} />
-                </button>
-                <button type="button" onClick={() => setShowImportModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.hover }}>
-                  <Upload size={12} style={{ color: colors.textSecondary }} />
-                </button>
-              </div>
-            </div>
-            <div className="relative mb-3">
-              <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
-              <input 
-                type="text" 
-                placeholder="Search collections"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-3 py-2 rounded text-sm focus:outline-none hover-lift"
-                style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }} 
-              />
-              {searchQuery && (
-                <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                  <button type="button" onClick={() => setSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                    style={{ backgroundColor: colors.hover }}>
-                    <X size={12} style={{ color: colors.textSecondary }} />
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {renderCollectionsTree()}
+<div className="flex flex-1 overflow-hidden">
+  {/* LEFT SIDEBAR - Collections */}
+  <div className="w-80 border-r flex flex-col" style={{ 
+    borderColor: colors.border
+  }}>
+    <div className="p-3 border-b" style={{ borderColor: colors.border }}>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Collections</h3>
+        <div className="flex gap-1">
+          <button type="button" onClick={() => setShowCreateModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+            style={{ backgroundColor: colors.hover }}>
+            <Plus size={12} style={{ color: colors.textSecondary }} />
+          </button>
+          <button type="button" onClick={() => setShowImportModal(true)} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+            style={{ backgroundColor: colors.hover }}>
+            <Upload size={12} style={{ color: colors.textSecondary }} />
+          </button>
         </div>
-
-        {/* MAIN WORKSPACE */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* REQUEST TABS */}
-          <div className="flex items-center border-b shrink-0" style={{ 
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-            height: '36px' /* Fixed height to ensure consistency */
-          }}>
-            <div className="flex items-center flex-1 min-w-0 h-full overflow-x-auto scrollbar-thin hover:scrollbar-thumb-visible" 
-                style={{ 
-                  scrollbarWidth: 'thin',
-                  scrollbarColor: `${colors.textTertiary} ${colors.border}`,
-                  WebkitOverflowScrolling: 'touch'
-                }}>
-              {requestTabs.map(tab => (
-                <div key={tab.id}
-                  className={`flex items-center gap-2 px-3 py-1.5 border-r cursor-pointer whitespace-nowrap flex-shrink-0 hover-lift ${
-                    tab.isActive ? '' : 'hover:bg-opacity-50 transition-colors'
-                  }`}
-                  style={{ 
-                    backgroundColor: tab.isActive ? colors.card : colors.sidebar,
-                    borderRightColor: colors.border,
-                    borderTop: tab.isActive ? `2px solid ${colors.primary}` : '2px solid transparent',
-                    minWidth: '100px',
-                    maxWidth: '180px',
-                    height: '100%'
-                  }}
-                  onClick={() => {
-                    const collection = collections.find(c => c.id === tab.collectionId);
-                    const folder = collection?.folders?.find(f => f.id === tab.folderId);
-                    const request = folder?.requests?.find(r => r.id === tab.id);
-                    if (request) {
-                      handleSelectRequest(request, tab.collectionId, tab.folderId);
-                    }
-                  }}>
-                  <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ 
-                      backgroundColor: getMethodColor(tab.method)
-                    }} />
-                    <span className="text-sm truncate" style={{ 
-                      color: tab.isActive ? colors.text : colors.textSecondary
-                    }}>
-                      {tab.name}
-                    </span>
-                  </div>
-                  <button type="button" onClick={(e) => {
-                    e.stopPropagation();
-                    if (requestTabs.length > 1) {
-                      setRequestTabs(tabs => tabs.filter(t => t.id !== tab.id));
-                      if (tab.isActive) {
-                        const remainingTabs = requestTabs.filter(t => t.id !== tab.id);
-                        if (remainingTabs.length > 0) {
-                          const nextTab = remainingTabs[0];
-                          const collection = collections.find(c => c.id === nextTab.collectionId);
-                          const folder = collection?.folders?.find(f => f.id === nextTab.folderId);
-                          const request = folder?.requests?.find(r => r.id === nextTab.id);
-                          if (request) {
-                            handleSelectRequest(request, nextTab.collectionId, nextTab.folderId);
-                          }
-                        }
-                      }
-                    } else {
-                      showToast('Cannot close the last tab', 'error');
-                    }
-                  }} className="p-0.5 rounded opacity-0 hover:opacity-100 hover:bg-opacity-50 transition-colors hover-lift flex-shrink-0"
-                    style={{ backgroundColor: colors.hover }}>
-                    <X size={12} style={{ color: colors.textSecondary }} />
-                  </button>
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={() => {
-                  const newRequest = {
-                    id: `req-${Date.now()}`,
-                    name: 'New Request',
-                    method: 'GET',
-                    url: '',
-                    description: '',
-                    status: 'unsaved',
-                    lastModified: new Date().toISOString(),
-                    authType: 'noauth',
-                    authConfig: { type: 'noauth' },
-                    params: [],
-                    headers: [],
-                    body: '',
-                    tests: '',
-                    preRequestScript: '',
-                    isSaved: false
-                  };
-                  handleSelectRequest(newRequest, '', '');
-                }}
-                className="px-3 py-1.5 border-r hover:bg-opacity-50 transition-colors hover-lift flex-shrink-0"
-                style={{ borderRightColor: colors.border, backgroundColor: colors.hover }}>
-                <Plus size={12} style={{ color: colors.textSecondary }} />
-              </button>
-            </div>
-          </div>
-
-          {/* REQUEST BUILDER */}
-          <div className="flex-1 overflow-hidden flex flex-col">
-            {/* URL BAR */}
-            <div className="flex items-center gap-2 p-4" style={{ 
-              backgroundColor: colors.card
-            }}>
-              <select 
-                value={requestMethod} 
-                onChange={(e) => setRequestMethod(e.target.value)}
-                className="px-3 py-2 rounded text-sm font-medium focus:outline-none hover-lift"
-                style={{ 
-                  backgroundColor: colors.inputBg,
-                  color: getMethodColor(requestMethod),
-                  border: `1px solid ${colors.inputborder}`, // Changed from inputBorder to inputborder
-                  width: '100px'
-                }}>
-                {['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].map(method => (
-                  <option key={method} value={method}>{method}</option>
-                ))}
-              </select>
-              
-              {/* Fixed URL input - no form wrapper, just a div */}
-              <div className="flex-1 flex items-center rounded overflow-hidden hover-lift" style={{ 
-                border: `1px solid ${colors.inputborder}` // Changed from inputBorder to inputborder
-              }}>
-                <input 
-                  type="text" 
-                  value={requestUrl} 
-                  onChange={handleUrlChange}
-                  onPaste={handleUrlPaste}
-                  className="flex-1 px-3 py-2 text-sm focus:outline-none min-w-0"
-                  style={{ backgroundColor: colors.inputBg, color: colors.text }}
-                  placeholder="Enter request URL" 
-                />
-              </div>
-              
-              <button 
-                type="button"
-                onClick={handleExecuteRequest} 
-                disabled={isSending || !requestUrl || loading.execute}
-                className={`px-4 py-2 rounded text-sm font-medium flex items-center gap-2 transition-colors min-w-32 hover-lift ${
-                  isSending || !requestUrl || loading.execute ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'
-                }`}
-                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
-                {loading.execute ? (
-                  <>
-                    <RefreshCw size={12} className="animate-spin" />
-                    Sending...
-                  </>
-                ) : (
-                  <>
-                    <Send size={12} />
-                    Send
-                  </>
-                )}
-              </button>
-              
-              <button 
-                type="button"
-                className="px-3 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-                style={{ 
-                  backgroundColor: colors.primaryDark, 
-                  color: colors.white,
-                  opacity: loading.save ? 0.7 : 1
-                }}
-                onClick={handleSaveRequest}
-                disabled={!selectedRequest || loading.save}>
-                {loading.save ? (
-                  <div className="flex items-center gap-2">
-                    <RefreshCw size={12} className="animate-spin" />
-                    Saving...
-                  </div>
-                ) : (
-                  'Save'
-                )}
-              </button>
-            </div>
-
-            {/* REQUEST TABS */}
-            <div className="flex items-center border-t border-b" style={{ 
-              backgroundColor: colors.card,
-              borderColor: colors.border
-            }}>
-              {['Params', 'Authorization', 'Headers', 'Body', 'Pre-request Script', 'Tests', 'Settings'].map(tab => {
-                const tabId = tab.toLowerCase().replace(' ', '-');
-                return (
-                  <button 
-                    key={tabId} 
-                    type="button"
-                    onClick={() => setActiveTab(tabId)}
-                    className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors hover-lift ${
-                      activeTab === tabId ? '' : 'hover:bg-opacity-50'
-                    }`}
-                    style={{ 
-                      borderBottomColor: activeTab === tabId ? colors.primary : 'transparent',
-                      color: activeTab === tabId ? colors.primary : colors.textSecondary,
-                      backgroundColor: 'transparent'
-                    }}>
-                    {tab}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* REQUEST CONTENT */}
-            <div className="flex-1 overflow-auto" style={{ backgroundColor: colors.card }}>
-              {activeTab === 'params' && renderParamsTab()}
-              {activeTab === 'authorization' && renderAuthTab()}
-              {activeTab === 'headers' && renderHeadersTab()}
-              {activeTab === 'body' && renderBodyTab()}
-              {activeTab === 'tests' && (
-                <div className="p-4">
-                  <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Tests</h3>
-                  <textarea 
-                    className="w-full h-64 font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
-                    style={{ 
-                      backgroundColor: colors.inputBg,
-                      borderColor: colors.border,
-                      color: colors.text
-                    }}
-                    placeholder={selectedRequest?.tests || '// Write test scripts here'}
-                    value={selectedRequest?.tests || ''}
-                    onChange={(e) => {
-                      setSelectedRequest(prev => ({ ...prev, tests: e.target.value }));
-                    }}
-                  />
-                </div>
-              )}
-              {activeTab === 'settings' && (
-                <div className="p-4">
-                  <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Settings</h3>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm" style={{ color: colors.text }}>Follow redirects</span>
-                      <input type="checkbox" className="rounded hover-lift" />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm" style={{ color: colors.text }}>Request timeout (ms)</span>
-                      <input type="number" className="w-24 px-2 py-1 border rounded text-sm focus:outline-none hover-lift"
-                        style={{ backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }}
-                        placeholder="0" />
-                    </div>
-                  </div>
-                </div>
-              )}
-              {activeTab === 'pre-request-script' && (
-                <div className="p-4">
-                  <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Pre-request Script</h3>
-                  <textarea className="w-full h-64 font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
-                    style={{ 
-                      backgroundColor: colors.inputBg,
-                      borderColor: colors.border,
-                      color: colors.text
-                    }}
-                    placeholder={selectedRequest?.preRequestScript || '// Write pre-request script here'}
-                    value={selectedRequest?.preRequestScript || ''}
-                    onChange={(e) => {
-                      setSelectedRequest(prev => ({ ...prev, preRequestScript: e.target.value }));
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* RESIZABLE RESPONSE PANEL */}
-          {renderResponsePanel()}
-        </div>
-
-        {/* RIGHT PANELS */}
-        {renderRightPanel()}
       </div>
+      <div className="relative mb-3">
+        <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
+        <input 
+          type="text" 
+          placeholder="Search collections"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full pl-8 pr-3 py-2 rounded text-sm focus:outline-none hover-lift"
+          style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }} 
+        />
+        {searchQuery && (
+          <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+            <button type="button" onClick={() => setSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+              style={{ backgroundColor: colors.hover }}>
+              <X size={12} style={{ color: colors.textSecondary }} />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+
+    {renderCollectionsTree()}
+  </div>
+
+  {/* MAIN WORKSPACE */}
+  <div className="flex-1 flex flex-col min-w-0" style={{ 
+    backgroundColor: colors.card,
+    minWidth: 0,
+    width: 0  // Force the container to respect flex constraints
+  }}>
+    {/* REQUEST TABS - Fixed scrolling container */}
+    <div className="flex items-center border-b shrink-0" style={{ 
+      backgroundColor: colors.card,
+      borderColor: colors.border,
+      height: '36px',
+      width: '100%',
+      minWidth: 0
+    }}>
+      <div className="flex items-center h-full overflow-x-auto overflow-y-hidden scrollbar-thin hover:scrollbar-thumb-visible" 
+          style={{ 
+            scrollbarWidth: 'thin',
+            scrollbarColor: `${colors.textTertiary} ${colors.border}`,
+            WebkitOverflowScrolling: 'touch',
+            minWidth: 0,
+            flex: 1,
+            whiteSpace: 'nowrap',
+            width: '100%'
+          }}>
+        {requestTabs.map(tab => (
+          <div key={tab.id}
+            className="inline-flex items-center gap-2 px-3 py-1.5 border-r cursor-pointer hover-lift flex-shrink-0"
+            style={{ 
+              backgroundColor: tab.isActive ? colors.card : colors.sidebar,
+              borderRightColor: colors.border,
+              borderTop: tab.isActive ? `2px solid ${colors.primary}` : '2px solid transparent',
+              minWidth: '100px',
+              maxWidth: '180px',
+              height: '100%'
+            }}
+            onClick={() => {
+              const collection = collections.find(c => c.id === tab.collectionId);
+              const folder = collection?.folders?.find(f => f.id === tab.folderId);
+              const request = folder?.requests?.find(r => r.id === tab.id);
+              if (request) {
+                handleSelectRequest(request, tab.collectionId, tab.folderId);
+              }
+            }}>
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ 
+                backgroundColor: getMethodColor(tab.method)
+              }} />
+              <span className="text-sm truncate" style={{ 
+                color: tab.isActive ? colors.text : colors.textSecondary
+              }}>
+                {tab.name}
+              </span>
+            </div>
+            <button type="button" onClick={(e) => {
+              e.stopPropagation();
+              if (requestTabs.length > 1) {
+                setRequestTabs(tabs => tabs.filter(t => t.id !== tab.id));
+                if (tab.isActive) {
+                  const remainingTabs = requestTabs.filter(t => t.id !== tab.id);
+                  if (remainingTabs.length > 0) {
+                    const nextTab = remainingTabs[0];
+                    const collection = collections.find(c => c.id === nextTab.collectionId);
+                    const folder = collection?.folders?.find(f => f.id === nextTab.folderId);
+                    const request = folder?.requests?.find(r => r.id === nextTab.id);
+                    if (request) {
+                      handleSelectRequest(request, nextTab.collectionId, nextTab.folderId);
+                    }
+                  }
+                }
+              } else {
+                showToast('Cannot close the last tab', 'error');
+              }
+            }} className="p-0.5 rounded opacity-0 hover:opacity-100 hover:bg-opacity-50 transition-colors hover-lift flex-shrink-0"
+              style={{ backgroundColor: colors.hover }}>
+              <X size={12} style={{ color: colors.textSecondary }} />
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => {
+            const newRequest = {
+              id: `req-${Date.now()}`,
+              name: 'New Request',
+              method: 'GET',
+              url: '',
+              description: '',
+              status: 'unsaved',
+              lastModified: new Date().toISOString(),
+              authType: 'noauth',
+              authConfig: { type: 'noauth' },
+              params: [],
+              headers: [],
+              body: '',
+              tests: '',
+              preRequestScript: '',
+              isSaved: false
+            };
+            handleSelectRequest(newRequest, '', '');
+          }}
+          className="inline-flex items-center px-3 py-1.5 border-r hover:bg-opacity-50 transition-colors hover-lift flex-shrink-0"
+          style={{ borderRightColor: colors.border, backgroundColor: colors.hover }}>
+          <Plus size={12} style={{ color: colors.textSecondary }} />
+        </button>
+      </div>
+    </div>
+
+    {/* REQUEST BUILDER */}
+    <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+      {/* URL BAR */}
+      <div className="flex items-center gap-2 p-4 shrink-0" style={{ 
+        backgroundColor: colors.card
+      }}>
+        <select 
+          value={requestMethod} 
+          onChange={(e) => setRequestMethod(e.target.value)}
+          className="px-3 py-2 rounded text-sm font-medium focus:outline-none hover-lift shrink-0"
+          style={{ 
+            backgroundColor: colors.inputBg,
+            color: getMethodColor(requestMethod),
+            border: `1px solid ${colors.inputborder}`,
+            width: '100px'
+          }}>
+          {['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].map(method => (
+            <option key={method} value={method}>{method}</option>
+          ))}
+        </select>
+        
+        {/* URL input */}
+        <div className="flex-1 flex items-center rounded overflow-hidden hover-lift min-w-0" style={{ 
+          border: `1px solid ${colors.inputborder}`
+        }}>
+          <input 
+            type="text" 
+            value={requestUrl} 
+            onChange={handleUrlChange}
+            onPaste={handleUrlPaste}
+            className="flex-1 px-3 py-2 text-sm focus:outline-none min-w-0"
+            style={{ backgroundColor: colors.inputBg, color: colors.text }}
+            placeholder="Enter request URL" 
+          />
+        </div>
+        
+        <button 
+          type="button"
+          onClick={handleExecuteRequest} 
+          disabled={isSending || !requestUrl || loading.execute}
+          className={`px-4 py-2 rounded text-sm font-medium flex items-center gap-2 transition-colors hover-lift shrink-0 ${
+            isSending || !requestUrl || loading.execute ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'
+          }`}
+          style={{ backgroundColor: colors.primaryDark, color: colors.white, minWidth: '80px' }}>
+          {loading.execute ? (
+            <>
+              <RefreshCw size={12} className="animate-spin" />
+              <span>Sending...</span>
+            </>
+          ) : (
+            <>
+              <Send size={12} />
+              <span>Send</span>
+            </>
+          )}
+        </button>
+        
+        <button 
+          type="button"
+          className="px-3 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift shrink-0"
+          style={{ 
+            backgroundColor: colors.primaryDark, 
+            color: colors.white,
+            opacity: loading.save ? 0.7 : 1,
+            minWidth: '60px'
+          }}
+          onClick={handleSaveRequest}
+          disabled={!selectedRequest || loading.save}>
+          {loading.save ? (
+            <div className="flex items-center gap-2">
+              <RefreshCw size={12} className="animate-spin" />
+              <span>Saving...</span>
+            </div>
+          ) : (
+            'Save'
+          )}
+        </button>
+      </div>
+
+      {/* REQUEST TABS (Params, Auth, Headers, etc.) */}
+      <div className="flex items-center border-t border-b shrink-0" style={{ 
+        backgroundColor: colors.card,
+        borderColor: colors.border
+      }}>
+        {['Params', 'Authorization', 'Headers', 'Body', 'Pre-request Script', 'Tests', 'Settings'].map(tab => {
+          const tabId = tab.toLowerCase().replace(' ', '-');
+          return (
+            <button 
+              key={tabId} 
+              type="button"
+              onClick={() => setActiveTab(tabId)}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors hover-lift shrink-0 ${
+                activeTab === tabId ? '' : 'hover:bg-opacity-50'
+              }`}
+              style={{ 
+                borderBottomColor: activeTab === tabId ? colors.primary : 'transparent',
+                color: activeTab === tabId ? colors.primary : colors.textSecondary,
+                backgroundColor: 'transparent'
+              }}>
+              {tab}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* REQUEST CONTENT */}
+      <div className="flex-1 overflow-auto min-h-0" style={{ backgroundColor: colors.card }}>
+        {activeTab === 'params' && renderParamsTab()}
+        {activeTab === 'authorization' && renderAuthTab()}
+        {activeTab === 'headers' && renderHeadersTab()}
+        {activeTab === 'body' && renderBodyTab()}
+        {activeTab === 'tests' && (
+          <div className="p-4">
+            <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Tests</h3>
+            <textarea 
+              className="w-full h-64 font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                borderColor: colors.border,
+                color: colors.text
+              }}
+              placeholder={selectedRequest?.tests || '// Write test scripts here'}
+              value={selectedRequest?.tests || ''}
+              onChange={(e) => {
+                setSelectedRequest(prev => ({ ...prev, tests: e.target.value }));
+              }}
+            />
+          </div>
+        )}
+        {activeTab === 'settings' && (
+          <div className="p-4">
+            <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Settings</h3>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm" style={{ color: colors.text }}>Follow redirects</span>
+                <input type="checkbox" className="rounded hover-lift" />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm" style={{ color: colors.text }}>Request timeout (ms)</span>
+                <input type="number" className="w-24 px-2 py-1 border rounded text-sm focus:outline-none hover-lift"
+                  style={{ backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }}
+                  placeholder="0" />
+              </div>
+            </div>
+          </div>
+        )}
+        {activeTab === 'pre-request-script' && (
+          <div className="p-4">
+            <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Pre-request Script</h3>
+            <textarea className="w-full h-64 font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                borderColor: colors.border,
+                color: colors.text
+              }}
+              placeholder={selectedRequest?.preRequestScript || '// Write pre-request script here'}
+              value={selectedRequest?.preRequestScript || ''}
+              onChange={(e) => {
+                setSelectedRequest(prev => ({ ...prev, preRequestScript: e.target.value }));
+              }}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+
+    {/* RESIZABLE RESPONSE PANEL */}
+    {renderResponsePanel()}
+  </div>
+
+  {/* RIGHT PANELS */}
+  {renderRightPanel()}
+</div>
 
       {/* TOAST */}
       {renderToast()}
