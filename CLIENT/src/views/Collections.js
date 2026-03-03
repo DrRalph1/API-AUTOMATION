@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { 
   ChevronRight, 
   ChevronDown,
@@ -184,7 +184,426 @@ const SyntaxHighlighter = ({ language, code }) => {
   );
 };
 
+// Code Panel Component - Extracted to prevent re-renders
+// Code Panel Component - Only generates on demand or language change
+const CodePanel = React.memo(({ 
+  selectedLanguage, 
+  setSelectedLanguage, 
+  showLanguageDropdown, 
+  setShowLanguageDropdown,
+  requestMethod,
+  requestUrl,
+  requestHeaders,
+  requestBody,
+  authToken,
+  loading,
+  setLoading,
+  showToast,
+  colors,
+  setShowCodePanel
+}) => {
+  const [codeSnippet, setCodeSnippet] = useState('');
+  const [lastGeneratedUrl, setLastGeneratedUrl] = useState('');
+  const [lastGeneratedMethod, setLastGeneratedMethod] = useState('');
+  const abortControllerRef = useRef(null);
+  const isMounted = useRef(true);
+  
+  console.log('🎨 CodePanel rendered with language:', selectedLanguage);
+
+  const languages = [
+    { id: 'curl', name: 'cURL', icon: <Terminal size={14} /> },
+    { id: 'javascript', name: 'JavaScript', icon: <FileCode size={14} /> },
+    { id: 'python', name: 'Python', icon: <Code size={14} /> },
+    { id: 'nodejs', name: 'Node.js', icon: <Server size={14} /> },
+    { id: 'php', name: 'PHP', icon: <Box size={14} /> },
+    { id: 'ruby', name: 'Ruby', icon: <Package size={14} /> },
+    { id: 'java', name: 'Java', icon: <Coffee size={14} /> }
+  ];
+
+  const currentLanguage = languages.find(lang => lang.id === selectedLanguage);
+
+  // Add mount/unmount handling
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      console.log('💀 CodePanel UNMOUNTED');
+      isMounted.current = false;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  // Generate code snippet on demand
+  const generateSnippet = useCallback(async () => {
+    // Cancel any ongoing request
+    if (abortControllerRef.current) {
+      console.log('🛑 Cancelling previous snippet request');
+      abortControllerRef.current.abort();
+    }
+
+    // Create new abort controller
+    abortControllerRef.current = new AbortController();
+
+    const requestId = Date.now();
+    
+    console.log(`📝 [CodePanel] Generating snippet for request ${requestId}`, {
+      language: selectedLanguage,
+      method: requestMethod,
+      url: requestUrl
+    });
+
+    if (!requestUrl) {
+      if (isMounted.current) {
+        setCodeSnippet('// Enter a URL to generate code snippet');
+      }
+      return;
+    }
+
+    if (!authToken) {
+      if (isMounted.current) {
+        setCodeSnippet('// Authentication required. Please login.');
+      }
+      return;
+    }
+
+    setLoading(prev => ({ ...prev, generateSnippet: true }));
+
+    try {
+      // SAFETY FIX: Ensure requestHeaders exists and is an array
+      const safeHeaders = Array.isArray(requestHeaders) ? requestHeaders : [];
+      
+      const snippetRequest = {
+        language: selectedLanguage,
+        method: requestMethod,
+        url: requestUrl,
+        headers: safeHeaders
+          .filter(h => h && h.enabled)
+          .map(h => ({
+            key: h?.key || '',
+            value: h?.value || '',
+            enabled: true
+          })),
+        body: requestBody || ''
+      };
+
+      console.log(`📡 [CodePanel] Making API call for request ${requestId}`);
+      const response = await generateCodeSnippet(authToken, snippetRequest);
+      
+      // Check if component is still mounted
+      if (!isMounted.current) {
+        console.log(`⏭️ Response for ${requestId} ignored - unmounted`);
+        return;
+      }
+
+      const processedResponse = handleCollectionsResponse(response);
+      const snippetResults = extractCodeSnippetResults(processedResponse);
+      
+      console.log(`✅ [CodePanel] Snippet loaded for request ${requestId}`);
+      
+      if (isMounted.current) {
+        if (snippetResults && snippetResults.code) {
+          setCodeSnippet(snippetResults.code);
+          setLastGeneratedUrl(requestUrl);
+          setLastGeneratedMethod(requestMethod);
+        } else {
+          setCodeSnippet('// Unable to generate code snippet');
+        }
+      }
+    } catch (error) {
+      // Don't show error for aborted requests
+      if (error.name === 'AbortError' || error.message === 'canceled') {
+        console.log('Snippet request cancelled');
+        return;
+      }
+      
+      console.error('Error loading code snippet:', error);
+      if (isMounted.current) {
+        setCodeSnippet(`// Error loading code snippet: ${error.message}`);
+        showToast(`Failed to generate snippet: ${error.message}`, 'error');
+      }
+    } finally {
+      if (isMounted.current) {
+        setLoading(prev => ({ ...prev, generateSnippet: false }));
+      }
+    }
+  }, [selectedLanguage, requestMethod, requestUrl, requestHeaders, requestBody, authToken, showToast, setLoading]);
+
+  // Generate initial snippet when component mounts or language changes
+  useEffect(() => {
+    // Only auto-generate if we have a URL and either:
+    // 1. It's the first load with no snippet, OR
+    // 2. The language changed and we have a valid URL
+    if (requestUrl && (!codeSnippet || codeSnippet.includes('Enter a URL') || codeSnippet.includes('Authentication required'))) {
+      generateSnippet();
+    }
+  }, [selectedLanguage, requestUrl, generateSnippet, codeSnippet]); // Added codeSnippet to dependencies
+
+  // Get placeholder text based on language
+  const getPlaceholderSnippet = () => {
+    const placeholders = {
+      curl: `# Example cURL command
+curl -X GET "https://api.example.com/users" \\
+  -H "Content-Type: application/json"`,
+      javascript: `// Example JavaScript (Fetch API)
+fetch('https://api.example.com/users', {
+  method: 'GET',
+  headers: {
+    'Content-Type': 'application/json'
+  }
+})
+.then(response => response.json())
+.then(data => console.log(data));`,
+      python: `# Example Python (requests)
+import requests
+
+response = requests.get(
+    'https://api.example.com/users',
+    headers={'Content-Type': 'application/json'}
+)
+print(response.json())`,
+      nodejs: `// Example Node.js (axios)
+const axios = require('axios');
+
+axios.get('https://api.example.com/users', {
+  headers: {
+    'Content-Type': 'application/json'
+  }
+})
+.then(response => console.log(response.data))
+.catch(error => console.error(error));`,
+      php: `<?php
+// Example PHP (cURL)
+$ch = curl_init('https://api.example.com/users');
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    'Content-Type: application/json'
+]);
+$response = curl_exec($ch);
+curl_close($ch);
+echo $response;
+?>`,
+      ruby: `# Example Ruby (net/http)
+require 'net/http'
+require 'json'
+
+uri = URI('https://api.example.com/users')
+response = Net::HTTP.get(uri)
+puts JSON.parse(response)`,
+      java: `// Example Java (OkHttp)
+OkHttpClient client = new OkHttpClient();
+
+Request request = new Request.Builder()
+    .url("https://api.example.com/users")
+    .addHeader("Content-Type", "application/json")
+    .build();
+
+try (Response response = client.newCall(request).execute()) {
+    System.out.println(response.body().string());
+}`
+    };
+    return placeholders[selectedLanguage] || placeholders.curl;
+  };
+
+  return (
+    <div className="w-80 border-l flex flex-col" style={{ 
+      backgroundColor: colors.sidebar,
+      borderColor: colors.border
+    }}>
+      <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: colors.border }}>
+        <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Code</h3>
+        <button type="button" onClick={() => setShowCodePanel(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+          style={{ backgroundColor: colors.hover }}>
+          <X size={14} style={{ color: colors.textSecondary }} />
+        </button>
+      </div>
+
+      <div className="relative px-4 py-3 border-b space-y-2" style={{ borderColor: colors.border }}>
+        <button
+          type="button"
+          onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
+          className="w-full px-3 py-2 rounded text-sm font-medium flex items-center justify-between hover:bg-opacity-50 transition-colors hover-lift"
+          style={{ backgroundColor: colors.hover, color: colors.text }}
+        >
+          <div className="flex items-center gap-2">
+            {currentLanguage?.icon}
+            <span>{currentLanguage?.name}</span>
+          </div>
+          <ChevronDown size={14} style={{ color: colors.textSecondary }} />
+        </button>
+
+        {/* Generate Button */}
+        <button
+          type="button"
+          onClick={generateSnippet}
+          disabled={!requestUrl || loading.generateSnippet}
+          className="w-full px-3 py-2 rounded text-sm font-medium flex items-center justify-center gap-2 hover:opacity-90 transition-colors hover-lift"
+          style={{ 
+            backgroundColor: colors.primaryDark, 
+            color: colors.white,
+            opacity: (!requestUrl || loading.generateSnippet) ? 0.5 : 1
+          }}
+        >
+          {loading.generateSnippet ? (
+            <>
+              <RefreshCw size={12} className="animate-spin" />
+              Generating...
+            </>
+          ) : (
+            <>
+              <Zap size={12} />
+              Generate Code
+            </>
+          )}
+        </button>
+
+        {showLanguageDropdown && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setShowLanguageDropdown(false)} />
+            <div className="absolute left-4 right-4 top-full mt-1 py-2 rounded shadow-lg z-50 border"
+              style={{ 
+                backgroundColor: colors.bg,
+                borderColor: colors.border,
+                maxHeight: '300px',
+                overflowY: 'auto'
+              }}>
+              {languages.map(lang => (
+                <button
+                  key={lang.id}
+                  type="button"
+                  onClick={() => {
+                    console.log(`🔤 Language changed to: ${lang.id}`);
+                    setSelectedLanguage(lang.id);
+                    setShowLanguageDropdown(false);
+                  }}
+                  className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors hover-lift"
+                  style={{ 
+                    backgroundColor: selectedLanguage === lang.id ? colors.selected : 'transparent',
+                    color: selectedLanguage === lang.id ? colors.primary : colors.text
+                  }}
+                >
+                  {lang.icon}
+                  {lang.name}
+                  {selectedLanguage === lang.id && <Check size={14} className="ml-auto" />}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-auto p-4">
+        {loading.generateSnippet ? (
+          <div className="flex items-center justify-center h-full">
+            <RefreshCw className="animate-spin" size={16} style={{ color: colors.textSecondary }} />
+          </div>
+        ) : (
+          <>
+            {codeSnippet && !codeSnippet.includes('Enter a URL') && !codeSnippet.includes('Authentication required') ? (
+              <SyntaxHighlighter 
+                language={selectedLanguage === 'curl' ? 'bash' : selectedLanguage}
+                code={codeSnippet}
+              />
+            ) : (
+              <div className="text-center py-8">
+                <Code size={32} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
+                <p className="text-sm mb-2" style={{ color: colors.text }}>No code generated yet</p>
+                <p className="text-xs" style={{ color: colors.textSecondary }}>
+                  {requestUrl 
+                    ? 'Click "Generate Code" to create a snippet' 
+                    : 'Enter a URL and click Generate'}
+                </p>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="p-4 border-t space-y-2" style={{ borderColor: colors.border }}>
+        {codeSnippet && !codeSnippet.includes('Enter a URL') && !codeSnippet.includes('Authentication required') && (
+          <button 
+            type="button"
+            className="w-full py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center justify-center gap-2 hover-lift"
+            onClick={() => {
+              navigator.clipboard.writeText(codeSnippet);
+              showToast('Copied to clipboard!', 'success');
+            }}
+            disabled={loading.generateSnippet}
+            style={{ backgroundColor: colors.primaryDark, color: colors.white, opacity: loading.generateSnippet ? 0.5 : 1 }}>
+            <Copy size={12} />
+            Copy to Clipboard
+          </button>
+        )}
+        
+        {/* Show a nice default template when no code is generated */}
+        {(!codeSnippet || codeSnippet.includes('Enter a URL') || codeSnippet.includes('Authentication required')) && !loading.generateSnippet && (
+          <div className="text-xs p-3 rounded" style={{ backgroundColor: colors.codeBg, color: colors.textSecondary }}>
+            <pre className="whitespace-pre-wrap font-mono">
+              {getPlaceholderSnippet()}
+            </pre>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  // Custom comparison - only re-render when these change
+  return (
+    prevProps.selectedLanguage === nextProps.selectedLanguage &&
+    prevProps.showLanguageDropdown === nextProps.showLanguageDropdown &&
+    prevProps.requestMethod === nextProps.requestMethod &&
+    prevProps.requestUrl === nextProps.requestUrl &&
+    prevProps.authToken === nextProps.authToken &&
+    JSON.stringify(prevProps.requestHeaders) === JSON.stringify(nextProps.requestHeaders) &&
+    prevProps.requestBody === nextProps.requestBody
+  );
+});
+
 const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
+  // Add refs to track mount state and previous authToken
+  const isMounted = useRef(true);
+  const prevAuthTokenRef = useRef(authToken);
+  const initialDataLoaded = useRef(false);
+  const fetchInProgressRef = useRef(false);
+
+  // Add these memoized callbacks near the top of the Collections component
+  const memoizedSetSelectedLanguage = useCallback((lang) => {
+    setSelectedLanguage(lang);
+  }, []);
+
+  const memoizedSetShowLanguageDropdown = useCallback((show) => {
+    setShowLanguageDropdown(show);
+  }, []);
+
+  const memoizedSetLoading = useCallback((updater) => {
+    setLoading(updater);
+  }, []);
+
+  const memoizedShowToast = useCallback((message, type) => {
+    showToast(message, type);
+  }, []);
+
+  const memoizedSetShowCodePanel = useCallback((show) => {
+    setShowCodePanel(show);
+  }, []);
+
+  // Also memoize the requestHeaders to prevent unnecessary re-renders
+  const memoizedRequestHeaders = useMemo(() => requestHeaders, [JSON.stringify(requestHeaders)]);
+
+  // Debugging refs
+  useEffect(() => {
+    console.log('🔥 Collections MOUNTED');
+    isMounted.current = true;
+    return () => {
+      console.log('💀 Collections UNMOUNTED');
+      isMounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    console.log('📝 authToken changed:', authToken ? 'present' : 'missing');
+  }, [authToken]);
+
   // Matching the exact color scheme from the second component
   const colors = isDark ? {
     bg: 'rgb(1 14 35)',
@@ -402,22 +821,42 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   }, []);
 
   // Handle URL change with parameter parsing
-  const handleUrlChange = useCallback((e) => {
-    const newUrl = e.target.value;
-    setRequestUrl(newUrl);
-    
-    // Parse and update params when URL changes
-    if (newUrl.includes('?')) {
-      const parsedParams = parseUrlParams(newUrl);
-      if (parsedParams.length > 0) {
-        // Replace existing params with new parsed ones
-        setRequestParams(parsedParams);
-      }
-    } else {
-      // Clear params if no query string
-      setRequestParams([]);
+  // Handle URL change with parameter parsing - MODIFIED to preserve existing params
+const handleUrlChange = useCallback((e) => {
+  const newUrl = e.target.value;
+  setRequestUrl(newUrl);
+  
+  // Only update params if the query string actually changed
+  if (newUrl.includes('?')) {
+    const parsedParams = parseUrlParams(newUrl);
+    if (parsedParams.length > 0) {
+      // Instead of replacing all params, merge with existing ones
+      setRequestParams(prevParams => {
+        // Create a map of existing params by key for quick lookup
+        const existingParamsMap = new Map(
+          prevParams.filter(p => p.key).map(p => [p.key, p])
+        );
+        
+        // Merge parsed params with existing ones
+        const mergedParams = parsedParams.map(parsedParam => {
+          const existing = existingParamsMap.get(parsedParam.key);
+          if (existing) {
+            // Preserve existing param data (description, enabled state, etc.)
+            return {
+              ...existing,
+              value: parsedParam.value, // Update value from URL
+              key: parsedParam.key
+            };
+          }
+          return parsedParam;
+        });
+        
+        return mergedParams;
+      });
     }
-  }, [parseUrlParams]);
+  }
+  // Don't clear params if no query string - they might be manually added
+}, [parseUrlParams]);
 
   // Handle paste event for URL
   const handleUrlPaste = useCallback((e) => {
@@ -436,89 +875,134 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   // ==================== API METHODS ====================
 
   // Transform API data to match UI structure based on backend DTOs
-  const transformCollectionsData = (apiData) => {
-    console.log('🔄 [Transform] Input:', apiData);
-    
-    if (!apiData) {
-      console.warn('⚠️ [Transform] No data provided');
-      return [];
-    }
-    
-    let collectionsArray = [];
-    
-    if (Array.isArray(apiData)) {
-      collectionsArray = apiData;
-    } else if (apiData.collections && Array.isArray(apiData.collections)) {
-      collectionsArray = apiData.collections;
-    } else {
-      console.warn('⚠️ [Transform] Unknown data structure:', apiData);
-      return [];
-    }
-    
-    console.log(`📊 [Transform] Processing ${collectionsArray.length} collections`);
-    
-    return collectionsArray.map((collection, index) => {
-      return {
-        id: collection.id || `col-${index + 1}`,
-        name: collection.name || `Collection ${index + 1}`,
-        description: collection.description || '',
-        isExpanded: index === 0,
-        isFavorite: collection.favorite || false,
-        isEditing: false,
-        createdAt: collection.createdAt || new Date().toISOString(),
-        requestsCount: collection.requestsCount || 0,
-        folderCount: collection.folderCount || 0,
-        variables: (collection.variables || []).map(v => ({
-          id: v.id || `var-${Date.now()}`,
-          key: v.key,
-          value: v.value,
-          type: v.type || 'text',
-          enabled: v.enabled !== false
-        })),
-        folders: (collection.folders || []).map(folder => ({
-          id: folder.id || `folder-${Date.now()}`,
-          name: folder.name || 'New Folder',
-          description: folder.description || '',
-          isExpanded: false,
+  // Transform API data to match UI structure based on backend DTOs
+const transformCollectionsData = (apiData) => {
+  console.log('🔄 [Transform] Input:', apiData);
+  
+  if (!apiData) {
+    console.warn('⚠️ [Transform] No data provided');
+    return [];
+  }
+  
+  let collectionsArray = [];
+  
+  if (Array.isArray(apiData)) {
+    collectionsArray = apiData;
+  } else if (apiData.collections && Array.isArray(apiData.collections)) {
+    collectionsArray = apiData.collections;
+  } else {
+    console.warn('⚠️ [Transform] Unknown data structure:', apiData);
+    return [];
+  }
+  
+  console.log(`📊 [Transform] Processing ${collectionsArray.length} collections`);
+  
+  return collectionsArray.map((collection, collectionIndex) => {
+    // Process folders and their requests
+    const folders = (collection.folders || []).map((folder, folderIndex) => {
+      // Process requests within folder
+      const requests = (folder.requests || []).map((request, requestIndex) => {
+        // Create a Map to deduplicate parameters and headers by key
+        const uniqueParams = new Map();
+        const uniqueHeaders = new Map();
+        
+        // Process parameters first
+        (request.parameters || []).forEach((param, paramIdx) => {
+          if (param && param.key) {
+            const paramId = param.id || `param-${Date.now()}-${Math.random()}-${paramIdx}`;
+            uniqueParams.set(param.key, {
+              id: paramId,
+              key: param.key,
+              value: param.value || '',
+              description: param.description || '',
+              enabled: param.enabled !== false
+            });
+          }
+        });
+        
+        // Process headers - only add if key doesn't exist in params
+        (request.headers || []).forEach((header, headerIdx) => {
+          if (header && header.key) {
+            // Skip if this key was already processed as a parameter
+            if (!uniqueParams.has(header.key)) {
+              const headerId = header.id || `header-${Date.now()}-${Math.random()}-${headerIdx}`;
+              uniqueHeaders.set(header.key, {
+                id: headerId,
+                key: header.key,
+                value: header.value || '',
+                description: header.description || '',
+                enabled: header.enabled !== false
+              });
+            } else {
+              console.log(`⚠️ [Transform] Skipping duplicate header key: ${header.key} (already exists as param)`);
+            }
+          }
+        });
+        
+        // Convert Maps to arrays
+        const paramsArray = Array.from(uniqueParams.values());
+        const headersArray = Array.from(uniqueHeaders.values());
+        
+        console.log(`📋 [Transform] Request "${request.name || 'Unnamed'}" - Params: ${paramsArray.length}, Headers: ${headersArray.length}`);
+        
+        return {
+          id: request.id || `req-${Date.now()}-${Math.random()}-${requestIndex}`,
+          name: request.name || 'New Request',
+          method: request.method || 'GET',
+          url: request.url || '',
+          description: request.description || '',
           isEditing: false,
-          requestCount: folder.requestCount || 0,
-          requests: (folder.requests || []).map(request => ({
-            id: request.id || `req-${Date.now()}`,
-            name: request.name || 'New Request',
-            method: request.method || 'GET',
-            url: request.url || '',
-            description: request.description || '',
-            isEditing: false,
-            status: request.status || 'saved',
-            lastModified: request.lastModified || new Date().toISOString(),
-            auth: request.auth || { type: 'noauth' },
-            authType: request.authType || 'noauth',
-            authConfig: request.authConfig || {},
-            headers: (request.headers || []).map(h => ({
-              id: h.id || `header-${Date.now()}`,
-              key: h.key,
-              value: h.value,
-              description: h.description || '',
-              enabled: h.enabled !== false
-            })),
-            params: (request.params || []).map(p => ({
-              id: p.id || `param-${Date.now()}`,
-              key: p.key,
-              value: p.value,
-              description: p.description || '',
-              enabled: p.enabled !== false
-            })),
-            body: request.body || '',
-            tests: request.tests || '',
-            preRequestScript: request.preRequestScript || '',
-            isSaved: request.saved !== false,
-            collectionId: request.collectionId || collection.id,
-            folderId: request.folderId || folder.id
-          }))
-        }))
+          status: request.status || 'saved',
+          lastModified: request.lastModified || new Date().toISOString(),
+          auth: request.auth || { type: 'noauth' },
+          authType: request.authType || 'noauth',
+          authConfig: request.authConfig || {},
+          headers: headersArray,
+          params: paramsArray,
+          body: request.body || '',
+          tests: request.tests || '',
+          preRequestScript: request.preRequestScript || '',
+          isSaved: request.saved !== false,
+          collectionId: request.collectionId || collection.id,
+          folderId: request.folderId || folder.id
+        };
+      });
+
+      return {
+        id: folder.id || `folder-${Date.now()}-${Math.random()}-${folderIndex}`,
+        name: folder.name || 'New Folder',
+        description: folder.description || '',
+        isExpanded: false,
+        isEditing: false,
+        requestCount: folder.requestCount || requests.length,
+        requests: requests
       };
     });
-  };
+
+    // Calculate total requests count
+    const totalRequests = folders.reduce((sum, folder) => sum + (folder.requests?.length || 0), 0);
+
+    return {
+      id: collection.id || `col-${Date.now()}-${Math.random()}-${collectionIndex}`,
+      name: collection.name || `Collection ${collectionIndex + 1}`,
+      description: collection.description || '',
+      isExpanded: collectionIndex === 0, // Only expand first collection by default
+      isFavorite: collection.favorite || false,
+      isEditing: false,
+      createdAt: collection.createdAt || new Date().toISOString(),
+      requestsCount: totalRequests,
+      folderCount: folders.length,
+      variables: (collection.variables || []).map((v, varIndex) => ({
+        id: v.id || `var-${Date.now()}-${Math.random()}-${varIndex}`,
+        key: v.key,
+        value: v.value,
+        type: v.type || 'text',
+        enabled: v.enabled !== false
+      })),
+      folders: folders
+    };
+  });
+};
 
   const transformEnvironmentsData = (apiData) => {
   console.log('🔄 [Transform Environments] Input:', apiData);
@@ -558,6 +1042,30 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   }));
 };
 
+
+const cleanHeaders = (headers) => {
+  if (!Array.isArray(headers)) return [];
+  
+  return headers.filter(h => {
+    // Skip if no key
+    if (!h || !h.key) return false;
+    
+    const key = h.key.toLowerCase();
+    
+    // Skip if it looks like a query parameter
+    if (key.includes('?') || 
+        key.includes('=') || 
+        key.startsWith('param') ||
+        key === 'query' ||
+        key === 'parameter') {
+      console.log('🧹 Filtering out param-looking header:', h.key);
+      return false;
+    }
+    
+    return true;
+  });
+};
+
   const fetchCollections = useCallback(async () => {
     console.log('🔥 [Collections] fetchCollections called');
     
@@ -568,12 +1076,29 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       return;
     }
 
+    // Prevent concurrent fetches
+    if (fetchInProgressRef.current) {
+      console.log('⏭️ Fetch already in progress, skipping');
+      return;
+    }
+
+    // Check if component is still mounted
+    if (!isMounted.current) {
+      console.log('Component unmounted, aborting fetch');
+      return;
+    }
+
+    fetchInProgressRef.current = true;
     setLoading(prev => ({ ...prev, initialLoad: true, collections: true }));
     setError(null);
     console.log('📡 [Collections] Fetching from API...');
 
     try {
       const response = await getCollectionsList(authToken);
+      
+      // Check if component is still mounted
+      if (!isMounted.current) return;
+      
       console.log('📦 [Collections] API response:', response);
       
       if (!response) {
@@ -590,6 +1115,10 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         basicCollections.map(async (collection) => {
           try {
             const detailsResponse = await getCollectionDetails(authToken, collection.id);
+            
+            // Check if component is still mounted
+            if (!isMounted.current) return collection;
+            
             const processedDetails = handleCollectionsResponse(detailsResponse);
             const collectionDetails = extractCollectionDetails(processedDetails);
             
@@ -609,6 +1138,9 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
           }
         })
       );
+
+      // Check if component is still mounted
+      if (!isMounted.current) return;
 
       console.log('📊 [Collections] Final collections with details:', collectionsWithDetails);
       
@@ -650,14 +1182,19 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
 
     } catch (error) {
       console.error('❌ [Collections] Error fetching collections:', error);
-      setError(`Failed to load collections: ${error.message}`);
-      setCollections([]);
-      showToast(`Error loading collections: ${error.message}`, 'error');
+      if (isMounted.current) {
+        setError(`Failed to load collections: ${error.message}`);
+        setCollections([]);
+        showToast(`Error loading collections: ${error.message}`, 'error');
+      }
     } finally {
-      setLoading(prev => ({ ...prev, initialLoad: false, collections: false }));
+      if (isMounted.current) {
+        setLoading(prev => ({ ...prev, initialLoad: false, collections: false }));
+      }
+      fetchInProgressRef.current = false;
       console.log('🏁 [Collections] fetchCollections completed');
     }
-  }, [authToken]);
+  }, [authToken, selectedRequest, handleSelectRequest]);
 
   const fetchEnvironments = useCallback(async () => {
   console.log('🔥 [Environments] fetchEnvironments called');
@@ -669,11 +1206,21 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     return;
   }
 
+  // Check if component is still mounted
+  if (!isMounted.current) {
+    console.log('Component unmounted, aborting fetch');
+    return;
+  }
+
   setLoading(prev => ({ ...prev, environments: true }));
   console.log('📡 [Environments] Fetching from API...');
 
   try {
     const response = await getEnvironments(authToken);
+    
+    // Check if component is still mounted
+    if (!isMounted.current) return;
+    
     console.log('📦 [Environments] Raw API response:', response);
     
     const processedResponse = handleCollectionsResponse(response);
@@ -709,24 +1256,118 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     
   } catch (error) {
     console.error('❌ [Environments] Error fetching environments:', error);
-    setEnvironments([]);
-    setActiveEnvironment(null);
-    showToast(`Failed to load environments: ${error.message}`, 'error');
+    if (isMounted.current) {
+      setEnvironments([]);
+      setActiveEnvironment(null);
+      showToast(`Failed to load environments: ${error.message}`, 'error');
+    }
   } finally {
-    setLoading(prev => ({ ...prev, environments: false }));
+    if (isMounted.current) {
+      setLoading(prev => ({ ...prev, environments: false }));
+    }
     console.log('🏁 [Environments] fetchEnvironments completed');
   }
 }, [authToken]);
 
-  const handleSelectRequest = useCallback(async (request, collectionId, folderId) => {
-    const requestWithContext = { ...request, collectionId, folderId };
-    setSelectedRequest(requestWithContext);
+
+
+// Utility function to intelligently separate params and headers
+const separateParamsAndHeaders = (items) => {
+  if (!Array.isArray(items)) return { params: [], headers: [] };
+  
+  const params = [];
+  const headers = [];
+  
+  // Common patterns
+  const queryParamPatterns = [
+    /^[?&]/,
+    /=/,
+    /^(page|limit|offset|sort|order|filter|search|q|id|userId|_id)$/i,
+    /^[a-z]+_[a-z]+$/i  // snake_case often indicates params
+  ];
+  
+  const headerPatterns = [
+    /^content-/i,
+    /^accept/i,
+    /^authorization/i,
+    /^x-/i,
+    /^cookie/i,
+    /^user-agent/i,
+    /^host$/i,
+    /^origin$/i,
+    /^referer$/i
+  ];
+  
+  items.forEach(item => {
+    if (!item || !item.key) return;
     
-    setRequestMethod(request.method || 'GET');
-    setRequestUrl(request.url || '');
-    setRequestBody(request.body || '');
-    setRequestParams(request.params || []);
-    setRequestHeaders(request.headers || []);
+    const key = item.key;
+    const value = item.value || '';
+    const desc = (item.description || '').toLowerCase();
+    
+    // Check if it's clearly a query parameter
+    let isParam = queryParamPatterns.some(pattern => 
+      pattern.test(key) || pattern.test(value) || desc.includes('query') || desc.includes('parameter')
+    );
+    
+    // Check if it's clearly a header
+    let isHeader = headerPatterns.some(pattern => 
+      pattern.test(key) || desc.includes('header')
+    );
+    
+    // If both are true, use description as tiebreaker
+    if (isParam && isHeader) {
+      if (desc.includes('query') || desc.includes('parameter')) {
+        isHeader = false;
+      } else if (desc.includes('header')) {
+        isParam = false;
+      }
+    }
+    
+    if (isParam) {
+      params.push(item);
+      console.log('📌 Param:', key);
+    } else if (isHeader) {
+      headers.push(item);
+      console.log('📌 Header:', key);
+    } else {
+      // Default: if it has a value that looks like a URL parameter, put in params
+      if (value.includes('?') || value.includes('=') || key.match(/^[a-z_]+$/i)) {
+        params.push(item);
+        console.log('📌 Default param:', key);
+      } else {
+        headers.push(item);
+        console.log('📌 Default header:', key);
+      }
+    }
+  });
+  
+  return { params, headers };
+};
+
+
+
+  const handleSelectRequest = useCallback(async (request, collectionId, folderId) => {
+  const requestWithContext = { ...request, collectionId, folderId };
+  setSelectedRequest(requestWithContext);
+  
+  setRequestMethod(request.method || 'GET');
+  setRequestUrl(request.url || '');
+  setRequestBody(request.body || '');
+  
+  // Log what we're getting from the request object
+  console.log('📥 [Request] Raw request data:', {
+    name: request.name,
+    paramsFromRequest: request.params,
+    headersFromRequest: request.headers,
+    paramsType: Array.isArray(request.params) ? 'array' : typeof request.params,
+    headersType: Array.isArray(request.headers) ? 'array' : typeof request.headers
+  });
+  
+  // Ensure params and headers are properly separated
+  setRequestParams(request.params || []);  // Should only contain query params
+  setRequestHeaders(request.headers || []); // Should only contain HTTP headers
+    
     setAuthType(request.authType || 'noauth');
     setAuthConfig(request.authConfig || { type: request.authType || 'noauth' });
     setResponse(null);
@@ -752,9 +1393,12 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
       setLoading(prev => ({ ...prev, request: true }));
       try {
         const response = await getRequestDetails(authToken, collectionId, request.id);
+        if (!isMounted.current) return;
+        
         const processedResponse = handleCollectionsResponse(response);
         const details = extractRequestDetails(processedResponse);
         
+        // In handleSelectRequest, after getting details from API
         if (details) {
           const requestWithDetails = { ...request, ...details };
           setSelectedRequest(requestWithDetails);
@@ -768,15 +1412,118 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
               setRequestBody(details.body);
             }
           }
-          if (details.parameters) setRequestParams(details.parameters);
-          if (details.headers) setRequestHeaders(details.headers);
+          
+          // FIX: Properly separate params and headers based on content
+         if (details.parameters || details.headers) {
+            // Create a Map to deduplicate by key
+            const uniqueItems = new Map();
+            
+            // Process parameters first
+            (details.parameters || []).forEach(item => {
+              if (item && item.key) {
+                // Mark as coming from parameters
+                uniqueItems.set(item.key, { ...item, source: 'param' });
+              }
+            });
+            
+            // Process headers - only add if key doesn't exist
+            (details.headers || []).forEach(item => {
+              if (item && item.key) {
+                if (!uniqueItems.has(item.key)) {
+                  uniqueItems.set(item.key, { ...item, source: 'header' });
+                } else {
+                  console.log(`⚠️ Duplicate key "${item.key}" skipped in headers`);
+                }
+              }
+            });
+            
+            const params = [];
+            const headers = [];
+            
+            // Convert Map to array and separate
+            uniqueItems.forEach((item, key) => {
+              console.log(`📋 Processing "${key}" from source: ${item.source}`);
+              
+              // Determine if it's a query parameter or header
+              const isQueryParam = 
+                key.includes('?') || 
+                key.includes('=') ||
+                item.value?.includes('?') ||
+                item.value?.includes('=') ||
+                key.startsWith('param') ||
+                key.includes('query') ||
+                item.description?.toLowerCase().includes('query') ||
+                // Common query parameter names
+                ['page', 'limit', 'offset', 'sort', 'order', 'filter', 'search', 'q', 'id', 'userid', 
+                'acct_link_v', 'amt', 'narration', 'doc_ref', 'batch_no', 'post_by', 'app_by', 
+                'post_terminal', 'cust_tel', 'trans_by', 'trans_type', 'db_acct_link', 'channel_code', 
+                'api_secret_v'].includes(key.toLowerCase());
+              
+              const isHeader = 
+                key.startsWith('content-') ||
+                key.startsWith('accept') ||
+                key.startsWith('authorization') ||
+                key.startsWith('x-') ||
+                // Common header names
+                ['content-type', 'content-length', 'user-agent', 'host', 'origin', 'referer', 
+                'cookie', 'set-cookie', 'cache-control', 'pragma', 'expires'].includes(key.toLowerCase());
+              
+              // Create the item object
+              const newItem = {
+                id: item.id || `${key}-${Date.now()}-${Math.random()}`,
+                key: item.key,
+                value: item.value || '',
+                description: item.description || '',
+                enabled: item.enabled !== false
+              };
+              
+              if (isQueryParam && !isHeader) {
+                params.push(newItem);
+                console.log('✅ Added as param:', key);
+              } else if (isHeader && !isQueryParam) {
+                headers.push(newItem);
+                console.log('✅ Added as header:', key);
+              } else {
+                // If ambiguous, check source
+                if (item.source === 'param') {
+                  params.push(newItem);
+                  console.log('✅ Added as param (by source):', key);
+                } else {
+                  // Default to param for these types of keys (they look like data fields)
+                  if (['acct_link_v', 'amt', 'narration', 'doc_ref', 'batch_no', 'post_by', 
+                      'app_by', 'post_terminal', 'cust_tel', 'trans_by', 'trans_type', 
+                      'db_acct_link', 'channel_code', 'api_secret_v'].includes(key)) {
+                    params.push(newItem);
+                    console.log('✅ Added as param (data field):', key);
+                  } else {
+                    headers.push(newItem);
+                    console.log('✅ Added as header (default):', key);
+                  }
+                }
+              }
+            });
+            
+            setRequestParams(params);
+            setRequestHeaders(headers);
+            
+            console.log('🔧 [Final Separation]', {
+              totalUnique: uniqueItems.size,
+              params: params.length,
+              headers: headers.length,
+              paramKeys: params.map(p => p.key),
+              headerKeys: headers.map(h => h.key)
+            });
+          }
+          
           if (details.authType) setAuthType(details.authType);
           if (details.authConfig) setAuthConfig(details.authConfig);
         }
       } catch (apiError) {
         console.error('Error fetching request details from API:', apiError);
       } finally {
-        setLoading(prev => ({ ...prev, request: false }));
+        if (isMounted.current) {
+          setLoading(prev => ({ ...prev, request: false }));
+        }
       }
     }
   }, [authToken]);
@@ -982,12 +1729,14 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
         language: selectedLanguage,
         method: requestMethod,
         url: requestUrl,
-        headers: requestHeaders.filter(h => h.enabled).map(h => ({
-          key: h.key,
-          value: h.value,
-          enabled: true
-        })),
-        body: requestBody
+        headers: requestHeaders && requestHeaders.length > 0 
+          ? requestHeaders.filter(h => h && h.enabled).map(h => ({
+              key: h?.key || '',
+              value: h?.value || '',
+              enabled: true
+            }))
+          : [],  // Provide empty array as fallback
+        body: requestBody || ''
       };
 
       const response = await generateCodeSnippet(authToken, snippetRequest);
@@ -1113,18 +1862,46 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
     }
   }, [authToken, requestMethod, requestUrl, requestHeaders, requestBody, requestParams, authType, authConfig]);
 
-  // Initialize data
+  // Initialize data - with check for authToken changes
   useEffect(() => {
-    console.log('🚀 [Collections] Component mounted, fetching data...');
+    console.log('🚀 [Collections] useEffect triggered with authToken');
     
-    if (authToken) {
+    // Check if authToken actually changed or if this is first mount
+    const tokenChanged = prevAuthTokenRef.current !== authToken;
+    const shouldFetch = !initialDataLoaded.current || (authToken && tokenChanged);
+    
+    console.log('📊 Auth token check:', {
+      prevToken: prevAuthTokenRef.current ? 'present' : 'missing',
+      currentToken: authToken ? 'present' : 'missing',
+      tokenChanged,
+      initialDataLoaded: initialDataLoaded.current,
+      shouldFetch
+    });
+    
+    if (authToken && shouldFetch) {
+      console.log('📡 Fetching data due to:', tokenChanged ? 'token change' : 'initial load');
+      
       fetchCollections().catch(error => {
         console.error('Error in fetchCollections:', error);
       });
       fetchEnvironments();
+      
+      initialDataLoaded.current = true;
+    } else if (!authToken) {
+      console.log('🔒 No auth token, skipping fetch');
+      // Clear data when logged out
+      setCollections([]);
+      setEnvironments([]);
+      setActiveEnvironment(null);
+      setSelectedRequest(null);
+      setRequestTabs([]);
     } else {
-      console.log('🔒 [Collections] No auth token, skipping fetch');
+      console.log('⏭️ Skipping fetch - data already loaded with same token');
     }
+    
+    // Update ref
+    prevAuthTokenRef.current = authToken;
+    
   }, [authToken, fetchCollections, fetchEnvironments]);
 
   // Handle mouse move for resizing
@@ -1465,135 +2242,6 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   };
 
   // ==================== UI COMPONENTS ====================
-
-  // Render Code panel with API integration
-  const renderCodePanel = () => {
-    const languages = [
-      { id: 'curl', name: 'cURL', icon: <Terminal size={14} /> },
-      { id: 'javascript', name: 'JavaScript', icon: <FileCode size={14} /> },
-      { id: 'python', name: 'Python', icon: <Code size={14} /> },
-      { id: 'nodejs', name: 'Node.js', icon: <Server size={14} /> },
-      { id: 'php', name: 'PHP', icon: <Box size={14} /> },
-      { id: 'ruby', name: 'Ruby', icon: <Package size={14} /> },
-      { id: 'java', name: 'Java', icon: <Coffee size={14} /> }
-    ];
-
-    const currentLanguage = languages.find(lang => lang.id === selectedLanguage);
-    const [codeSnippet, setCodeSnippet] = useState('');
-    
-    useEffect(() => {
-      const loadCodeSnippet = async () => {
-        try {
-          const snippet = await handleGenerateCodeSnippet();
-          if (snippet && snippet.code) {
-            setCodeSnippet(snippet.code);
-          } else {
-            setCodeSnippet('// Unable to generate code snippet');
-          }
-        } catch (error) {
-          console.error('Error loading code snippet:', error);
-          setCodeSnippet('// Error loading code snippet');
-        }
-      };
-      
-      if (requestUrl) {
-        loadCodeSnippet();
-      } else {
-        setCodeSnippet('// Enter a URL to generate code snippet');
-      }
-    }, [selectedLanguage, requestMethod, requestUrl, requestHeaders, requestBody]);
-
-    return (
-      <div className="w-80 border-l flex flex-col" style={{ 
-        backgroundColor: colors.sidebar,
-        borderColor: colors.border
-      }}>
-        <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: colors.border }}>
-          <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Code</h3>
-          <button type="button" onClick={() => setShowCodePanel(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-            style={{ backgroundColor: colors.hover }}>
-            <X size={14} style={{ color: colors.textSecondary }} />
-          </button>
-        </div>
-
-        <div className="relative px-4 py-3 border-b" style={{ borderColor: colors.border }}>
-          <button
-            type="button"
-            onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
-            className="w-full px-3 py-2 rounded text-sm font-medium flex items-center justify-between hover:bg-opacity-50 transition-colors hover-lift"
-            style={{ backgroundColor: colors.hover, color: colors.text }}
-          >
-            <div className="flex items-center gap-2">
-              {currentLanguage?.icon}
-              <span>{currentLanguage?.name}</span>
-            </div>
-            <ChevronDown size={14} style={{ color: colors.textSecondary }} />
-          </button>
-
-          {showLanguageDropdown && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setShowLanguageDropdown(false)} />
-              <div className="absolute left-4 right-4 top-full mt-1 py-2 rounded shadow-lg z-50 border"
-                style={{ 
-                  backgroundColor: colors.bg,
-                  borderColor: colors.border,
-                  maxHeight: '300px',
-                  overflowY: 'auto'
-                }}>
-                {languages.map(lang => (
-                  <button
-                    key={lang.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedLanguage(lang.id);
-                      setShowLanguageDropdown(false);
-                    }}
-                    className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors hover-lift"
-                    style={{ 
-                      backgroundColor: selectedLanguage === lang.id ? colors.selected : 'transparent',
-                      color: selectedLanguage === lang.id ? colors.primary : colors.text
-                    }}
-                  >
-                    {lang.icon}
-                    {lang.name}
-                    {selectedLanguage === lang.id && <Check size={14} className="ml-auto" />}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="flex-1 overflow-auto p-4">
-          {loading.generateSnippet ? (
-            <div className="flex items-center justify-center h-full">
-              <RefreshCw className="animate-spin" size={16} style={{ color: colors.textSecondary }} />
-            </div>
-          ) : (
-            <SyntaxHighlighter 
-              language={selectedLanguage === 'curl' ? 'bash' : selectedLanguage}
-              code={codeSnippet}
-            />
-          )}
-        </div>
-
-        <div className="p-4 border-t" style={{ borderColor: colors.border }}>
-          <button 
-            type="button"
-            className="w-full py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center justify-center gap-2 hover-lift"
-            onClick={() => {
-              navigator.clipboard.writeText(codeSnippet);
-              showToast('Copied to clipboard!', 'success');
-            }}
-            disabled={loading.generateSnippet}
-            style={{ backgroundColor: colors.primaryDark, color: colors.white, opacity: loading.generateSnippet ? 0.5 : 1 }}>
-            <Copy size={12} />
-            Copy to Clipboard
-          </button>
-        </div>
-      </div>
-    );
-  };
 
   // Render Authorization Tab
   const renderAuthTab = () => {
@@ -2976,13 +3624,32 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
 
   // Determine which right panel to show
   const renderRightPanel = () => {
-    if (showCodePanel) return renderCodePanel();
-    if (showAPIs) return renderAPIsPanel();
-    if (showEnvironments) return renderEnvironmentsPanel();
-    if (showMockServers) return renderMockServersPanel();
-    if (showMonitors) return renderMonitorsPanel();
-    return null;
-  };
+    if (showCodePanel) {
+      return (
+        <CodePanel 
+          selectedLanguage={selectedLanguage}
+          setSelectedLanguage={memoizedSetSelectedLanguage}
+          showLanguageDropdown={showLanguageDropdown}
+          setShowLanguageDropdown={memoizedSetShowLanguageDropdown}
+          requestMethod={requestMethod}
+          requestUrl={requestUrl}
+          requestHeaders={memoizedRequestHeaders}
+          requestBody={requestBody}
+          authToken={authToken}
+          loading={loading}
+          setLoading={memoizedSetLoading}
+          showToast={memoizedShowToast}
+          colors={colors}
+          setShowCodePanel={memoizedSetShowCodePanel}
+        />
+      );
+    }
+      if (showAPIs) return renderAPIsPanel();
+      if (showEnvironments) return renderEnvironmentsPanel();
+      if (showMockServers) return renderMockServersPanel();
+      if (showMonitors) return renderMonitorsPanel();
+      return null;
+    };
 
   const renderMockServersPanel = () => (
     <div className="w-80 border-l flex flex-col" style={{ 
@@ -3891,6 +4558,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
                 ))}
               </select>
               
+              {/* Fixed URL input - no form wrapper, just a div */}
               <div className="flex-1 flex items-center rounded overflow-hidden hover-lift" style={{ 
                 border: `1px solid ${colors.inputBorder}`
               }}>
@@ -4054,4 +4722,9 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   );
 };
 
-export default Collections;
+// Add React.memo with custom comparison
+export default React.memo(Collections, (prevProps, nextProps) => {
+  // Only re-render if authToken actually changed
+  return prevProps.authToken === nextProps.authToken && 
+         prevProps.isDark === nextProps.isDark;
+});

@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -191,10 +192,11 @@ public class CollectionsController {
 
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "executing API requestEntity");
-        if (authValidation != null) {
-            return authValidation;
-        }
+        // REMOVE THIS - Don't validate JWT for API execution
+        // ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "executing API requestEntity");
+        // if (authValidation != null) {
+        //     return authValidation;
+        // }
 
         try {
             if (bindingResult.hasErrors()) {
@@ -209,31 +211,38 @@ public class CollectionsController {
                 return ResponseEntity.badRequest().body(errorResponse);
             }
 
-            String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
-                    ", Executing requestEntity for user: " + performedBy);
+            // Extract performedBy for logging only - it's optional
+            String performedBy = "anonymous";
+            try {
+                performedBy = jwtHelper.extractPerformedBy(req);
+            } catch (Exception e) {
+                // Ignore - user may not be authenticated
+            }
+
+            loggerUtil.log("collections", "Request ID: " + requestId +
+                    ", Executing request for user: " + performedBy);
 
             ExecuteRequestResponseDTO response = collectionsService.executeRequest(
                     requestId, req, performedBy, requestDto);
 
             Map<String, Object> apiResponse = new HashMap<>();
             apiResponse.put("responseCode", 200);
-            apiResponse.put("message", "RequestEntity executed successfully");
+            apiResponse.put("message", "Request executed successfully");
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
-                    ", RequestEntity executed successfully");
+            loggerUtil.log("collections", "Request ID: " + requestId +
+                    ", Request executed successfully");
 
             return ResponseEntity.ok(apiResponse);
 
         } catch (Exception e) {
-            loggerUtil.log("collections", "RequestEntity ID: " + requestId +
-                    ", Error executing requestEntity: " + e.getMessage());
+            loggerUtil.log("collections", "Request ID: " + requestId +
+                    ", Error executing request: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while executing requestEntity: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while executing request: " + e.getMessage());
             errorResponse.put("requestId", requestId);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }

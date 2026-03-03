@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Database, FileCode, Activity, Zap, Settings,
   Search, RefreshCw, Plus, CheckCircle, AlertCircle, Users,
-  Shield, Download, Edit, Trash2, X, AlertTriangle,
+  Shield, Download, Edit, Trash2, X, AlertTriangle, Edit2, Copy,
   Table, Code, Loader, BookOpen, UserCog, Rocket,
   Home, ChevronLeft, ChevronRight as ChevronRightIcon, ChevronRight,
   LayoutDashboard, Sliders, Sparkles, Wand2, Zap as ZapIcon,
@@ -87,46 +87,141 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
   }, []);
 
   // Handle edit API
-  const handleEditApi = useCallback((api) => {
-    const apiForEditing = {
-      id: api.id,
-      name: api.name,
-      type: 'API',
-      method: api.method,
-      description: api.description,
-      url: api.url,
+  // Handle edit API
+const handleEditApi = useCallback((api) => {
+  const apiForEditing = {
+    id: api.id,
+    name: api.name,
+    type: 'API',
+    method: api.method,
+    description: api.description,
+    url: api.url,
+    collectionName: api.collectionName,
+    collectionId: api.collectionId,
+    folderName: api.folderName,
+    
+    // Parameters and response mappings
+    parameters: api.parameters || [],
+    responseMappings: api.responseMappings || [],
+    
+    // API details
+    apiName: api.name,
+    apiCode: api.id || `API_${api.name.replace(/\s+/g, '_').toUpperCase()}`,
+    httpMethod: api.method,
+    endpointPath: api.url,
+    version: api.version || '1.0.0',
+    status: api.status?.toUpperCase() === 'ACTIVE' ? 'ACTIVE' : 'DRAFT',
+    owner: api.owner || 'HR',
+    tags: api.tags || ['default'],
+    
+    // Request/Response configs
+    requestBody: api.requestBody || {
+      bodyType: 'json',
+      sample: '{\n  "success": true,\n  "data": {}\n}',
+      requiredFields: [],
+      validateSchema: true,
+      maxSize: 1048576,
+      allowedMediaTypes: ['application/json']
+    },
+    
+    responseBody: api.responseBody || {
+      successSchema: '{\n  "success": true,\n  "data": {},\n  "message": "Request processed successfully"\n}',
+      errorSchema: '{\n  "success": false,\n  "error": {\n    "code": "ERROR_CODE",\n    "message": "Error description",\n    "details": {}\n  }\n}',
+      includeMetadata: true,
+      metadataFields: ['timestamp', 'apiVersion', 'requestId'],
+      contentType: 'application/json',
+      compression: 'gzip'
+    },
+    
+    // Auth config
+    authConfig: api.authConfig || {
+      authType: 'none',
+      apiKeyHeader: 'X-API-Key',
+      apiSecretHeader: 'X-API-Secret',
+      jwtIssuer: 'api.example.com',
+      rateLimitRequests: 100,
+      rateLimitPeriod: 'minute',
+      enableRateLimiting: false,
+      corsOrigins: ['*'],
+      auditLevel: 'standard'
+    },
+    
+    // Headers
+    headers: api.headers || [
+      { id: '1', key: 'Content-Type', value: 'application/json', required: true, description: 'Response content type' },
+      { id: '2', key: 'Cache-Control', value: 'no-cache', required: false, description: 'Cache control header' }
+    ],
+    
+    // Tests
+    tests: api.tests || {
+      testConnection: true,
+      testObjectAccess: true,
+      testPrivileges: true,
+      testDataTypes: true,
+      testNullConstraints: true,
+      testUniqueConstraints: false,
+      testForeignKeyReferences: false,
+      testQueryPerformance: true,
+      performanceThreshold: 1000,
+      testWithSampleData: true,
+      sampleDataRows: 10,
+      testProcedureExecution: true,
+      testFunctionReturn: true,
+      testExceptionHandling: true,
+      testSQLInjection: true,
+      testAuthentication: true,
+      testAuthorization: true,
+      testData: '',
+      testQueries: []
+    },
+    
+    // Settings
+    settings: api.settings || {
+      timeout: 30000,
+      maxRecords: 1000,
+      enableLogging: true,
+      logLevel: 'INFO',
+      enableCaching: false,
+      cacheTtl: 300,
+      generateSwagger: true,
+      generatePostman: true,
+      generateClientSDK: true,
+      enableMonitoring: true,
+      enableAlerts: false,
+      alertEmail: '',
+      enableTracing: false,
+      corsEnabled: true
+    },
+    
+    // Collection info
+    collectionInfo: {
       collectionName: api.collectionName,
       collectionId: api.collectionId,
-      folderName: api.folderName,
-      parameters: api.parameters || [],
-      responseMappings: api.responseMappings || [],
-      apiName: api.name,
-      apiCode: api.id || `API_${api.name.replace(/\s+/g, '_').toUpperCase()}`,
-      httpMethod: api.method,
-      endpointPath: api.url,
-      version: api.version || '1.0.0',
-      status: api.status?.toUpperCase() === 'ACTIVE' ? 'ACTIVE' : 'DRAFT',
-      owner: api.owner || 'HR',
-      tags: api.tags || ['default'],
-      collectionInfo: {
-        collectionName: api.collectionName,
-        collectionId: api.collectionId,
-        folderName: api.folderName
-      },
-      schemaConfig: api.schemaConfig || {
-        schemaName: 'HR',
-        objectType: 'TABLE',
-        objectName: api.name?.replace(/\s+/g, '_').toUpperCase() || 'OBJECT',
-        operation: api.method === 'GET' ? 'SELECT' : 
-                  api.method === 'POST' ? 'INSERT' :
-                  api.method === 'PUT' ? 'UPDATE' :
-                  api.method === 'DELETE' ? 'DELETE' : 'SELECT'
-      }
-    };
+      folderName: api.folderName
+    },
+    
+    // Schema config
+    schemaConfig: api.schemaConfig || {
+      schemaName: 'HR',
+      objectType: 'TABLE',
+      objectName: api.name?.replace(/\s+/g, '_').toUpperCase() || 'OBJECT',
+      operation: api.method === 'GET' ? 'SELECT' : 
+                api.method === 'POST' ? 'INSERT' :
+                api.method === 'PUT' ? 'UPDATE' :
+                api.method === 'DELETE' ? 'DELETE' : 'SELECT',
+      primaryKeyColumn: '',
+      sequenceName: '',
+      enablePagination: true,
+      pageSize: 10,
+      enableSorting: true,
+      defaultSortColumn: '',
+      defaultSortDirection: 'ASC'
+    }
+  };
 
-    setSelectedForApiGeneration(apiForEditing);
-    setShowApiModal(true);
-  }, []);
+  setSelectedForApiGeneration(apiForEditing);
+  setShowApiModal(true);
+}, []);
 
   // Handle generate from modal
   const handleGenerateAPIFromModal = useCallback(async () => {
@@ -535,11 +630,11 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
           <p className="text-sm mb-2" style={{ color: colors.textSecondary }}>
             Please wait while we prepare your dashboard data
           </p>
-          <p className="text-xs" style={{ color: colors.textTertiary }}>
+          {/* <p className="text-xs" style={{ color: colors.textTertiary }}>
             {loading.initialLoad 
               ? 'Fetching API collections, endpoints, and system metrics...' 
               : 'Updating dashboard with latest information...'}
-          </p>
+          </p> */}
         </div>
       </div>
     );
@@ -620,51 +715,46 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
   };
 
   // API Endpoint Item
-  const ApiEndpointItem = ({ api }) => {
-    return (
-      <div 
-        className="p-3 hover:bg-opacity-50 cursor-pointer transition-colors border-b last:border-b-0"
-        onClick={() => handleEditApi(api)}
-        style={{ borderColor: colors.border }}
-      >
-        <div className="flex items-start justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <span className="px-1.5 py-0.5 text-xs font-mono rounded" style={{
-              backgroundColor: api.method === 'GET' ? colors.success + '20' :
-                            api.method === 'POST' ? colors.info + '20' :
-                            api.method === 'PUT' ? colors.warning + '20' :
-                            colors.error + '20',
-              color: api.method === 'GET' ? colors.success :
-                    api.method === 'POST' ? colors.info :
-                    api.method === 'PUT' ? colors.warning :
-                    colors.error
-            }}>
-              {api.method}
-            </span>
-            <span className="text-xs font-medium truncate" style={{ color: colors.text }}>
+const ApiEndpointItem = ({ api }) => {
+  const methodColors = {
+    GET: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30 dark:text-emerald-400',
+    POST: 'text-blue-600 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-400',
+    PUT: 'text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400',
+    DELETE: 'text-rose-600 bg-rose-50 dark:bg-rose-950/30 dark:text-rose-400'
+  };
+
+  return (
+    <div 
+      className="group p-3 cursor-pointer transition-all hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-lg"
+      onClick={() => handleEditApi(api)}
+    >
+      <div className="flex items-start gap-3">
+        <span className={`px-2 py-1 text-xs font-mono rounded-md ${methodColors[api.method] || methodColors.GET}`}>
+          {api.method}
+        </span>
+        
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-medium truncate" style={{ color: colors.text }}>
               {api.name}
+            </h4>
+            <span className="text-xs ml-2" style={{ color: colors.textTertiary }}>
+              {api.folderName}
             </span>
           </div>
-          <span className="text-xs" style={{ color: colors.textSecondary }}>
-            {api.timeAgo}
-          </span>
-        </div>
-        
-        <div className="text-xs mb-2" style={{ color: colors.textSecondary }}>
-          {api.description || api.url}
-        </div>
-        
-        <div className="flex items-center gap-3 text-xs">
-          <span style={{ color: colors.textSecondary }}>
-            Collection: <span style={{ color: colors.text }}>{api.collectionName}</span>
-          </span>
-          <span style={{ color: colors.textSecondary }}>
-            Calls: <span style={{ color: colors.text }}>{api.calls.toLocaleString()}</span>
-          </span>
+          
+          <p className="text-xs mt-0.5 truncate" style={{ color: colors.textSecondary }}>
+            {api.description || api.url}
+          </p>
+          
+          <div className="text-xs mt-1.5" style={{ color: colors.textTertiary }}>
+            {api.collectionName}
+          </div>
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   // API Generation Card - IMPROVED DESIGN - Positioned on left side only
   const ApiGenerationCard = () => {
@@ -672,14 +762,14 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
       <div className="mb-2 w-full lg:w-full">
         <div 
           className="relative overflow-hidden border rounded-xl cursor-pointer group transition-all duration-200 hover-lift"
-          onClick={handleApiGeneration}
+          onClick={handleNavigateToSchemaBrowser}
           style={{ 
             borderColor: colors.border,
-            backgroundColor: colors.card,
+            backgroundColor: colors.bg,
           }}
         >
-          {/* Simple gradient background */}
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-purple-500/5"></div>
+          {/* Simple gradient background - adjusted for light/dark mode */}
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-purple-500/5 dark:from-blue-500/10 dark:to-purple-500/10"></div>
           
           {/* Content */}
           <div className="relative p-4 flex items-center justify-between">
@@ -1059,7 +1149,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
                               setApiPage(1);
                             }}
                             className="text-xs px-2 py-1 rounded border bg-transparent"
-                            style={{ borderColor: colors.border, color: colors.text }}
+                            style={{ borderColor: colors.border, background: colors.bg, color: colors.text }}
                           >
                             <option value={5}>5 per page</option>
                             <option value={8}>8 per page</option>

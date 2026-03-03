@@ -123,7 +123,7 @@ const SidebarSkeleton = ({ colors }) => (
   </div>
 );
 
-// FilterInput Component
+// FilterInput Component - Updated
 const FilterInput = React.memo(({ 
   filterQuery, 
   selectedOwner, 
@@ -131,12 +131,14 @@ const FilterInput = React.memo(({
   onFilterChange,
   onOwnerChange, 
   onClearFilters,
+  onSearch,
+  onCancelSearch,
   colors,
-  loading 
+  loading,
+  isSearching
 }) => {
   const searchInputRef = useRef(null);
   const [localFilterValue, setLocalFilterValue] = useState(filterQuery);
-  const debounceTimerRef = useRef(null);
 
   // Update local value when prop changes
   useEffect(() => {
@@ -146,16 +148,8 @@ const FilterInput = React.memo(({
   const handleFilterChange = useCallback((e) => {
     const value = e.target.value;
     setLocalFilterValue(value);
-    
-    // Clear any existing timer
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-    
-    // Set new timer for debounced filter
-    debounceTimerRef.current = setTimeout(() => {
-      onFilterChange(value);
-    }, 300);
+    // Still call onFilterChange to update parent state for the input value
+    onFilterChange(value);
   }, [onFilterChange]);
 
   const handleOwnerChange = useCallback((e) => {
@@ -176,45 +170,69 @@ const FilterInput = React.memo(({
     setTimeout(() => searchInputRef.current?.focus(), 10);
   }, [onFilterChange, onOwnerChange, onClearFilters]);
 
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-    };
-  }, []);
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'Enter' && localFilterValue && localFilterValue.length >= 2) {
+      e.preventDefault();
+      onSearch(localFilterValue);
+    }
+  }, [localFilterValue, onSearch]);
 
   return (
     <>
       <div className="p-3 border-b" style={{ borderColor: colors.border }}>
         <div className="space-y-2">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2" size={14} style={{ color: colors.textSecondary }} />
             <input
               ref={searchInputRef}
               type="text"
               placeholder={loading ? "Loading..." : "Filter objects..."}
               value={localFilterValue}
               onChange={handleFilterChange}
-              disabled={loading}
-              className="w-full pl-10 pr-3 py-2.5 rounded text-sm focus:outline-none"
+              onKeyDown={handleKeyDown}
+              disabled={loading || isSearching}
+              className="w-full pl-3 pr-20 py-2.5 rounded text-sm focus:outline-none"
               style={{ 
                 backgroundColor: colors.inputBg,
                 border: `1px solid ${colors.inputBorder}`,
                 color: colors.text,
-                opacity: loading ? 0.6 : 1
+                opacity: (loading || isSearching) ? 0.6 : 1
               }}
             />
-            {localFilterValue && !loading && (
-              <button 
-                onClick={handleClearFilter}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 p-0.5 rounded"
-                style={{ backgroundColor: colors.hover }}
-              >
-                <X size={12} style={{ color: colors.textSecondary }} />
-              </button>
-            )}
+            <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex gap-1">
+              {localFilterValue && !loading && !isSearching && (
+                <button 
+                  onClick={handleClearFilter}
+                  className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                  style={{ backgroundColor: colors.hover }}
+                  title="Clear filter"
+                >
+                  <X size={14} style={{ color: colors.textSecondary }} />
+                </button>
+              )}
+              {isSearching ? (
+                <button 
+                  onClick={onCancelSearch}
+                  className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                  style={{ backgroundColor: colors.error + '20', color: colors.error }}
+                  title="Cancel search"
+                >
+                  <X size={16} />
+                </button>
+              ) : (
+                <button 
+                  onClick={() => onSearch(localFilterValue)}
+                  disabled={!localFilterValue || localFilterValue.length < 2 || loading}
+                  className="p-1 rounded hover:bg-opacity-50 transition-colors disabled:opacity-50"
+                  style={{ 
+                    backgroundColor: colors.primary + '20',
+                    color: colors.primary
+                  }}
+                  title="Search"
+                >
+                  <Search size={16} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -487,6 +505,8 @@ const LeftSidebar = React.memo(({
   handleFilterChange,
   handleOwnerChange,
   handleClearFilters,
+  handleSearch,           
+  handleCancelSearch,     
   colors,
   objectTree,
   handleToggleSection,
@@ -513,35 +533,28 @@ const LeftSidebar = React.memo(({
     setIsLeftSidebarVisible(false);
   }, [setIsLeftSidebarVisible]);
 
-  // Helper function to filter objects
+  // Helper function to filter objects - UPDATED
   const filterObjects = useCallback((objects, type) => {
+    // If we have search results (after clicking search), show them
     if (hasActiveFilter && filteredResults && filteredResults[type]) {
       return filteredResults[type] || [];
     }
     
-    if (!filterQuery && selectedOwner === 'ALL') {
+    // If there's no active filter, show all objects
+    if (!hasActiveFilter) {
       return objects || [];
     }
     
-    const searchLower = filterQuery?.toLowerCase() || '';
-    
-    return (objects || []).filter(obj => {
-      const ownerMatch = selectedOwner === 'ALL' || obj.owner === selectedOwner;
-      if (!ownerMatch) return false;
-      if (!filterQuery) return true;
-      
-      return (
-        (obj.name && obj.name.toLowerCase().includes(searchLower)) ||
-        (obj.owner && obj.owner.toLowerCase().includes(searchLower))
-      );
-    });
-  }, [filterQuery, selectedOwner, hasActiveFilter, filteredResults]);
+    // If we get here, there's an active filter but no results for this type
+    return [];
+  }, [hasActiveFilter, filteredResults]);
 
-  // Helper function to get the appropriate count for display
+  // Helper function to get the appropriate count for display - UPDATED
   const getDisplayCount = useCallback((type, totalCount) => {
     if (hasActiveFilter && filteredResults && filteredResults[type]) {
       return filteredResults[type].length;
     }
+    // When not filtering, show the actual total count
     return totalCount;
   }, [hasActiveFilter, filteredResults]);
 
@@ -682,8 +695,11 @@ const LeftSidebar = React.memo(({
         onFilterChange={handleFilterChange}
         onOwnerChange={handleOwnerChange}
         onClearFilters={handleClearFilters}
+        onSearch={handleSearch}
+        onCancelSearch={handleCancelSearch}
         colors={colors}
-        loading={loading || isFiltering}
+        loading={loading}
+        isSearching={isFiltering}
       />
 
       {/* Filter Stats when active */}
@@ -1299,7 +1315,49 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [ddlLoading, setDdlLoading] = useState(false);
   const [hasActiveFilter, setHasActiveFilter] = useState(false);
+  // Add a new state to track if search has been performed
+const [searchPerformed, setSearchPerformed] = useState(false);
   const [obType, setObType] = useState("");
+
+  const searchAbortController = useRef(null);
+
+  // Handle search button click or enter key
+const handleSearch = useCallback((searchTerm) => {
+  if (searchTerm && searchTerm.length >= 2) {
+    // Cancel any ongoing search first
+    if (isFiltering) {
+      handleCancelSearch();
+    }
+    // Set search performed to true
+    setSearchPerformed(true);
+    // Start new search
+    searchObjects(searchTerm, selectedOwner);
+  }
+}, [searchObjects, selectedOwner, isFiltering]);
+
+// Handle cancel search
+const handleCancelSearch = useCallback(() => {
+  // Clear the abort controller for ongoing requests
+  if (searchAbortController.current) {
+    searchAbortController.current.abort();
+    searchAbortController.current = null;
+  }
+  
+  // Reset filtering state
+  setIsFiltering(false);
+  setFilteredResults({});
+  setSearchPerformed(false); // Reset search performed state
+  
+  // Clear any ongoing search requests from the map
+  const requestKeys = Array.from(ongoingRequests.keys());
+  requestKeys.forEach(key => {
+    if (key.startsWith('search_')) {
+      ongoingRequests.delete(key);
+    }
+  });
+  
+  Logger.info('SchemaBrowser', 'handleCancelSearch', 'Search cancelled');
+}, []);
 
 // Update your usedByData state
 const [usedByData, setUsedByData] = useState({
@@ -1415,10 +1473,10 @@ const [usedByData, setUsedByData] = useState({
     sortDirection: 'ASC'
   });
 
-  // Update hasActiveFilter when filter changes
   useEffect(() => {
-    setHasActiveFilter(!!filterQuery || selectedOwner !== 'ALL');
-  }, [filterQuery, selectedOwner]);
+  // hasActiveFilter is now controlled by searchPerformed state
+  setHasActiveFilter(searchPerformed);
+}, [searchPerformed]);
 
   // Get Object Icon
   const getObjectIcon = useCallback((type) => {
@@ -2057,10 +2115,19 @@ const handleUsedByPageSizeChange = useCallback((newSize) => {
   const searchObjects = useCallback(async (searchTerm, owner) => {
     if (!authToken || !searchTerm || searchTerm.length < 2) {
       setFilteredResults({});
+      setSearchPerformed(false);
       return;
     }
 
     const requestKey = `search_${searchTerm}_${owner}`;
+    
+    // Cancel any previous search
+    if (searchAbortController.current) {
+      searchAbortController.current.abort();
+    }
+    
+    // Create new abort controller
+    searchAbortController.current = new AbortController();
     
     if (ongoingRequests.has(requestKey)) {
       Logger.debug('SchemaBrowser', 'searchObjects', `Already searching for "${searchTerm}", skipping`);
@@ -2083,7 +2150,15 @@ const handleUsedByPageSizeChange = useCallback((newSize) => {
         params.owner = owner;
       }
 
-      const response = await searchObjectsPaginated(authToken, params);
+      // Pass the abort signal to the API call
+      const response = await searchObjectsPaginated(authToken, params, {
+        signal: searchAbortController.current.signal
+      });
+      
+      // Check if this was aborted
+      if (searchAbortController.current.signal.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
       
       const groupedResults = {
         procedures: [],
@@ -2173,7 +2248,14 @@ const handleUsedByPageSizeChange = useCallback((newSize) => {
         }
       });
       
+      // Check again if aborted before setting state
+      if (searchAbortController.current?.signal.aborted) {
+        return;
+      }
+      
+      // Set search results and mark search as performed
       setFilteredResults(groupedResults);
+      setSearchPerformed(true);
       
       setObjectTree(prev => ({
         ...prev,
@@ -2192,11 +2274,19 @@ const handleUsedByPageSizeChange = useCallback((newSize) => {
       Logger.info('SchemaBrowser', 'searchObjects', `Found ${totalResults} results`);
 
     } catch (err) {
+      // Don't log aborted errors as errors
+      if (err.name === 'AbortError' || err.message === 'Aborted') {
+        Logger.info('SchemaBrowser', 'searchObjects', 'Search was cancelled');
+        setSearchPerformed(false);
+        return;
+      }
       Logger.error('SchemaBrowser', 'searchObjects', 'Error searching objects', err);
       setFilteredResults({});
+      setSearchPerformed(false);
     } finally {
       setIsFiltering(false);
       ongoingRequests.delete(requestKey);
+      searchAbortController.current = null;
     }
   }, [authToken]);
 
@@ -2204,51 +2294,35 @@ const handleUsedByPageSizeChange = useCallback((newSize) => {
   const handleFilterChange = useCallback((value) => {
     setFilterQuery(value);
     setFilterSearchTerm(value);
+    // Remove any automatic search logic from here
   }, []);
-
-  // Trigger search when filterQuery changes
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (filterQuery && filterQuery.length >= 2) {
-        searchObjects(filterQuery, selectedOwner);
-      } else if (filterQuery && filterQuery.length < 2) {
-        setFilteredResults({});
-      } else if (!filterQuery) {
-        setFilteredResults({});
-      }
-    }, 1500);
-
-    return () => clearTimeout(timer);
-  }, [filterQuery, selectedOwner, searchObjects]);
 
   // Handle owner change
   const handleOwnerChange = useCallback((value) => {
     setSelectedOwner(value);
-    
-    if (filterQuery && filterQuery.length >= 2) {
-      searchObjects(filterQuery, value);
-    }
-  }, [filterQuery, searchObjects]);
+    // Remove the automatic search call
+  }, []);
 
   // Handle clear filters
   const handleClearFilters = useCallback(() => {
-    setFilterQuery('');
-    setSelectedOwner('ALL');
-    setFilteredResults({});
-    setFilterSearchTerm('');
-    
-    setObjectTree({
-      procedures: true,
-      views: false,
-      functions: false,
-      tables: false,
-      packages: false,
-      sequences: false,
-      synonyms: false,
-      types: false,
-      triggers: false
-    });
-  }, []);
+  setFilterQuery('');
+  setSelectedOwner('ALL');
+  setFilteredResults({});
+  setFilterSearchTerm('');
+  setSearchPerformed(false); // Reset search performed state
+  
+  setObjectTree({
+    procedures: true,
+    views: false,
+    functions: false,
+    tables: false,
+    packages: false,
+    sequences: false,
+    synonyms: false,
+    types: false,
+    triggers: false
+  });
+}, []);
 
   // Handle refresh
   const handleRefresh = useCallback(async () => {
@@ -3388,7 +3462,7 @@ useEffect(() => {
                   <div className="text-sm truncate" style={{ color: colors.text }}>{details.SYNONYM_NAME || details.name || '-'}</div>
                 </div>
                 <div className="space-y-1">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Owner</div>
+                  <div className="text-xs" style={{ color: colors.textSecondary }}>Synonym Owner</div>
                   <div className="text-sm truncate" style={{ color: colors.text }}>{details.owner || '-'}</div>
                 </div>
                 <div className="space-y-1">
@@ -3766,6 +3840,8 @@ useEffect(() => {
           handleFilterChange={handleFilterChange}
           handleOwnerChange={handleOwnerChange}
           handleClearFilters={handleClearFilters}
+          handleSearch={handleSearch}
+          handleCancelSearch={handleCancelSearch}
           colors={colors}
           objectTree={objectTree}
           handleToggleSection={handleToggleSection}
@@ -3784,9 +3860,10 @@ useEffect(() => {
           loadedSections={loadedSections}
           pagination={pagination}
           isInitialLoad={isInitialLoad}
-          hasActiveFilter={hasActiveFilter}
+          hasActiveFilter={hasActiveFilter}  // This will now only be true after search
           isFiltering={isFiltering}
         />
+        
 
         {/* Main Area */}
         <div className="flex-1 flex flex-col overflow-hidden" style={{ backgroundColor: colors.main }}>

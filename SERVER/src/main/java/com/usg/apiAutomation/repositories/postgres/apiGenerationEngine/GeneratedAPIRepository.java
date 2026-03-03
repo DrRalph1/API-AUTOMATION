@@ -44,5 +44,8 @@ public interface GeneratedAPIRepository extends JpaRepository<GeneratedApiEntity
     @Query("SELECT a.status, COUNT(a) FROM GeneratedApiEntity a GROUP BY a.status")
     List<Object[]> getApiStatsByStatus();
 
+    @Query("SELECT g FROM GeneratedApiEntity g WHERE g.endpointPath = :endpointPath")
+    Optional<GeneratedApiEntity> findByEndpointPath(@Param("endpointPath") String endpointPath);
+
     boolean existsByApiCode(String apiCode);
 }

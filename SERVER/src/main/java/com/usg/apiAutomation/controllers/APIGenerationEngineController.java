@@ -101,13 +101,14 @@ public class APIGenerationEngineController {
         String requestId = executeRequest.getRequestId() != null ?
                 executeRequest.getRequestId() : UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "executing API");
-        if (authValidation != null) {
-            return authValidation;
-        }
+        // REMOVE THIS - Don't validate JWT for API execution
+        // ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "executing API");
+        // if (authValidation != null) {
+        //     return authValidation;
+        // }
 
         try {
-            String performedBy = jwtHelper.extractPerformedBy(req);
+            String performedBy = jwtHelper.extractPerformedBy(req); // This will still extract if available
             String clientIp = req.getRemoteAddr();
             String userAgent = req.getHeader("User-Agent");
 
@@ -136,6 +137,7 @@ public class APIGenerationEngineController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
+
 
     @PostMapping("/{apiId}/test")
     @Operation(summary = "Test API", description = "Test a generated API with sample data")

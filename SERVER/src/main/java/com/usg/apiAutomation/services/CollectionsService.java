@@ -1,8 +1,10 @@
 package com.usg.apiAutomation.services;
 
 import com.usg.apiAutomation.dtos.collections.*;
+import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
 import com.usg.apiAutomation.entities.postgres.collections.*;
 import com.usg.apiAutomation.entities.postgres.collections.RequestEntity;
+import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.GeneratedAPIRepository;
 import com.usg.apiAutomation.repositories.postgres.collections.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import jakarta.annotation.PostConstruct;
@@ -39,6 +41,8 @@ public class CollectionsService {
     private final ParameterRepository parameterRepository;
     private final VariableRepository variableRepository;
     private final EnvironmentRepository environmentRepository;
+    // Add this repository
+    private final GeneratedAPIRepository generatedAPIRepository;
 
     // Add RestTemplate as a dependency
     private final RestTemplate restTemplate;
@@ -248,12 +252,139 @@ public class CollectionsService {
         loggerUtil.log("collections",
                 "Request ID: " + requestId + ", Executing request: " + requestDto.getMethod() + " " + requestDto.getUrl());
 
+        // Try to find the API by its URL pattern
+        String url = requestDto.getUrl();
+        String endpointPath = extractEndpointPath(url);
+
+        // Look up the API by endpoint path
+        Optional<GeneratedApiEntity> apiOpt = generatedAPIRepository.findByEndpointPath(endpointPath);
+
+        if (apiOpt.isPresent()) {
+            GeneratedApiEntity api = apiOpt.get();
+            log.info("Request ID: {}, Found API configuration for endpoint: {}", requestId, endpointPath);
+
+            // Apply the API's authentication configuration
+            applyApiAuthentication(requestDto, api);
+        } else {
+            log.debug("Request ID: {}, No API configuration found for endpoint: {}, falling back to passthrough",
+                    requestId, endpointPath);
+
+            // Fallback to passthrough authentication
+            passthroughAuthentication(requestDto, req);
+        }
+
         ExecuteRequestResponseDTO response = executeActualRequest(requestDto);
 
         log.info("Request ID: {}, Request executed successfully, status: {}",
                 requestId, response.getStatusCode());
 
         return response;
+    }
+
+    private String extractEndpointPath(String url) {
+        try {
+            // Remove protocol and domain
+            String withoutProtocol = url.replaceAll("^https?://[^/]+", "");
+            // Remove query parameters
+            return withoutProtocol.replaceAll("\\?.*$", "");
+        } catch (Exception e) {
+            return url;
+        }
+    }
+
+
+    private void passthroughAuthentication(ExecuteRequestDTO requestDto, HttpServletRequest req) {
+        if (req == null) return;
+
+        if (requestDto.getHeaders() == null) {
+            requestDto.setHeaders(new ArrayList<>());
+        }
+
+        // Pass through Authorization header
+        String authHeader = req.getHeader("Authorization");
+        if (authHeader != null && !authHeader.isEmpty()) {
+            boolean hasAuth = requestDto.getHeaders().stream()
+                    .anyMatch(h -> "Authorization".equalsIgnoreCase(h.getKey()));
+
+            if (!hasAuth) {
+                HeaderDTO header = new HeaderDTO();
+                header.setKey("Authorization");
+                header.setValue(authHeader);
+                header.setEnabled(true);
+                requestDto.getHeaders().add(header);
+                log.info("Added passthrough Authorization header");
+            }
+        }
+
+        // Pass through Cookie header
+        String cookieHeader = req.getHeader("Cookie");
+        if (cookieHeader != null && !cookieHeader.isEmpty()) {
+            boolean hasCookie = requestDto.getHeaders().stream()
+                    .anyMatch(h -> "Cookie".equalsIgnoreCase(h.getKey()));
+
+            if (!hasCookie) {
+                HeaderDTO header = new HeaderDTO();
+                header.setKey("Cookie");
+                header.setValue(cookieHeader);
+                header.setEnabled(true);
+                requestDto.getHeaders().add(header);
+                log.info("Added passthrough Cookie header");
+            }
+        }
+    }
+
+
+
+    private void applyApiAuthentication(ExecuteRequestDTO requestDto, GeneratedApiEntity api) {
+        if (api.getAuthConfig() == null || "NONE".equals(api.getAuthConfig().getAuthType())) {
+            return; // No authentication needed
+        }
+
+        if (requestDto.getHeaders() == null) {
+            requestDto.setHeaders(new ArrayList<>());
+        }
+
+        switch (api.getAuthConfig().getAuthType()) {
+            case "API_KEY":
+                String headerName = api.getAuthConfig().getApiKeyHeader() != null ?
+                        api.getAuthConfig().getApiKeyHeader() : "X-API-Key";
+                String headerValue = api.getAuthConfig().getApiKeyValue() != null ?
+                        api.getAuthConfig().getApiKeyValue() : "";
+
+                HeaderDTO apiKeyHeader = new HeaderDTO();
+                apiKeyHeader.setKey(headerName);
+                apiKeyHeader.setValue(headerValue);
+                apiKeyHeader.setEnabled(true);
+                requestDto.getHeaders().add(apiKeyHeader);
+                break;
+
+            case "BEARER":
+            case "JWT":
+                String token = api.getAuthConfig().getJwtSecret() != null ?
+                        api.getAuthConfig().getJwtSecret() : "";
+
+                HeaderDTO bearerHeader = new HeaderDTO();
+                bearerHeader.setKey("Authorization");
+                bearerHeader.setValue("Bearer " + token);
+                bearerHeader.setEnabled(true);
+                requestDto.getHeaders().add(bearerHeader);
+                break;
+
+            case "BASIC":
+                String username = api.getAuthConfig().getBasicUsername() != null ?
+                        api.getAuthConfig().getBasicUsername() : "";
+                String password = api.getAuthConfig().getBasicPassword() != null ?
+                        api.getAuthConfig().getBasicPassword() : "";
+                String basicAuth = "Basic " + Base64.getEncoder().encodeToString(
+                        (username + ":" + password).getBytes(StandardCharsets.UTF_8));
+
+                HeaderDTO basicHeader = new HeaderDTO();
+                basicHeader.setKey("Authorization");
+                basicHeader.setValue(basicAuth);
+                basicHeader.setEnabled(true);
+                requestDto.getHeaders().add(basicHeader);
+                break;
+        }
     }
 
 
