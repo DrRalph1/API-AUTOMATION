@@ -4735,7 +4735,7 @@ const separateParamsAndHeaders = (items) => {
                 style={{ 
                   backgroundColor: colors.inputBg,
                   color: getMethodColor(requestMethod),
-                  border: `1px solid ${colors.inputBorder}`,
+                  border: `1px solid ${colors.inputborder}`, // Changed from inputBorder to inputborder
                   width: '100px'
                 }}>
                 {['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].map(method => (
@@ -4745,7 +4745,7 @@ const separateParamsAndHeaders = (items) => {
               
               {/* Fixed URL input - no form wrapper, just a div */}
               <div className="flex-1 flex items-center rounded overflow-hidden hover-lift" style={{ 
-                border: `1px solid ${colors.inputBorder}`
+                border: `1px solid ${colors.inputborder}` // Changed from inputBorder to inputborder
               }}>
                 <input 
                   type="text" 
