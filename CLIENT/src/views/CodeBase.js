@@ -90,7 +90,6 @@ import {
 } from "../controllers/CodeBaseController.js";
 
 // Enhanced SyntaxHighlighter Component with safe handling
-// Alternative approach using a simpler syntax highlighter
 const SyntaxHighlighter = ({ language, code }) => {
   if (!code) return <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed">// No code available</pre>;
   
@@ -106,17 +105,10 @@ const SyntaxHighlighter = ({ language, code }) => {
         .replace(/>/g, '&gt;');
       
       if (lang === 'java') {
-        // Check if this is a comment line
-        if (highlightedLine.trim().startsWith('//')) {
-          return (
-            <div key={lineIndex} className="text-gray-500">
-              {highlightedLine}
-            </div>
-          );
-        }
-        
-        // Check if this line contains a multi-line comment
+        // Handle multi-line comment boundaries
         if (highlightedLine.includes('/*') || highlightedLine.includes('*/')) {
+          // For lines with comment markers, highlight the whole line as comment
+          // to avoid breaking the HTML structure
           return (
             <div key={lineIndex} className="text-gray-500">
               {highlightedLine}
@@ -124,65 +116,26 @@ const SyntaxHighlighter = ({ language, code }) => {
           );
         }
         
-        // Handle strings (double quotes) - do this carefully to avoid breaking HTML
-        let processedLine = '';
-        let inString = false;
-        let inChar = false;
-        let currentSegment = '';
+        // Highlight strings (double quotes) - do this first
+        highlightedLine = highlightedLine.replace(/"([^"\\]*(\\.[^"\\]*)*)"/g, 
+          '<span class="text-green-400">"$1"</span>');
         
-        for (let i = 0; i < highlightedLine.length; i++) {
-          const char = highlightedLine[i];
-          const nextChar = highlightedLine[i + 1];
-          
-          // Check for string start/end
-          if (char === '"' && !inChar && (i === 0 || highlightedLine[i-1] !== '\\')) {
-            if (!inString) {
-              // Start of string - add any accumulated text, then start string span
-              if (currentSegment) {
-                processedLine += currentSegment;
-                currentSegment = '';
-              }
-              processedLine += '<span class="text-green-400">"';
-              inString = true;
-            } else {
-              // End of string - close the span
-              processedLine += '"</span>';
-              inString = false;
-            }
-          }
-          // Check for character literal start/end
-          else if (char === "'" && !inString && (i === 0 || highlightedLine[i-1] !== '\\')) {
-            if (!inChar) {
-              // Start of char
-              if (currentSegment) {
-                processedLine += currentSegment;
-                currentSegment = '';
-              }
-              processedLine += '<span class="text-green-400">\'';
-              inChar = true;
-            } else {
-              // End of char
-              processedLine += '\'</span>';
-              inChar = false;
-            }
-          } else {
-            currentSegment += char;
-          }
+        // Highlight characters (single quotes)
+        highlightedLine = highlightedLine.replace(/'([^'\\]*(\\.[^'\\]*)*)'/g, 
+          '<span class="text-green-400">\'$1\'</span>');
+        
+        // Highlight single-line comments (but not inside strings)
+        // Only apply if the line doesn't contain a string that might have //
+        if (!highlightedLine.includes('class="text-green-400"')) {
+          highlightedLine = highlightedLine.replace(/(\/\/.*)/g, 
+            '<span class="text-gray-500">$1</span>');
         }
         
-        // Add any remaining text
-        if (currentSegment) {
-          processedLine += currentSegment;
-        }
+        // Highlight annotations
+        highlightedLine = highlightedLine.replace(/(@\w+)/g, 
+          '<span class="text-blue-400">$1</span>');
         
-        // If we didn't process any strings, use the original line
-        if (!processedLine) {
-          processedLine = highlightedLine;
-        }
-        
-        // Now apply keyword highlighting to the processed line
-        // But be careful not to modify inside spans
-        const keywordSpans = [];
+        // Highlight keywords - expanded list
         const keywords = [
           'public', 'private', 'protected', 'class', 'interface', 
           'extends', 'implements', 'static', 'final', 'void', 
@@ -195,128 +148,77 @@ const SyntaxHighlighter = ({ language, code }) => {
           'volatile', 'instanceof', 'true', 'false', 'null'
         ];
         
-        // Split the line by spans and process each part
-        const parts = processedLine.split(/(<span class="[^"]*">.*?<\/span>)/g);
-        
-        const processedParts = parts.map((part, idx) => {
-          // If this part is already a span, leave it alone
-          if (part.startsWith('<span')) {
-            return part;
-          }
-          
-          // Apply keyword highlighting to text parts
-          keywords.forEach(keyword => {
-            const keywordRegex = new RegExp('\\b(' + keyword + ')\\b', 'g');
-            part = part.replace(keywordRegex, '<span class="text-purple-400">$1</span>');
-          });
-          
-          // Apply number highlighting
-          part = part.replace(/\b(\d+[lLfFdD]?)\b/g, '<span class="text-blue-400">$1</span>');
-          
-          // Apply annotation highlighting
-          part = part.replace(/(@\w+)/g, '<span class="text-blue-400">$1</span>');
-          
-          return part;
+        keywords.forEach(keyword => {
+          // Use negative lookbehind to avoid matching inside existing spans
+          // But since not all browsers support lookbehind, we'll use a simpler approach
+          // Only replace if not inside an HTML tag
+          const keywordRegex = new RegExp('\\b(' + keyword + ')\\b(?!([^<]*>|[^>]*<\\/))', 'g');
+          highlightedLine = highlightedLine.replace(keywordRegex, 
+            '<span class="text-purple-400">$1</span>');
         });
         
-        highlightedLine = processedParts.join('');
-        
-      } else if (lang === 'javascript' || lang === 'nodejs' || lang === 'csharp' || 
-                 lang === 'python' || lang === 'go' || lang === 'ruby' || 
-                 lang === 'php' || lang === 'curl') {
-        
-        // Handle comments first
-        if (highlightedLine.trim().startsWith('//') || 
-            highlightedLine.trim().startsWith('#') || 
-            highlightedLine.trim().startsWith('/*')) {
-          return (
-            <div key={lineIndex} className="text-gray-500">
-              {highlightedLine}
-            </div>
-          );
+        // Highlight numbers - FIXED: Don't apply to numbers that are part of class names like "400"
+        if (!highlightedLine.includes('class="text-green-400"') && 
+            !highlightedLine.includes('class="text-gray-500"')) {
+          // Only highlight numbers that are standalone and not part of a class attribute
+          highlightedLine = highlightedLine.replace(/\b(\d+[lLfFdD]?)\b(?![^<]*>|[^>]*<\/)/g, 
+            '<span class="text-blue-400">$1</span>');
         }
         
-        // Handle strings with a simpler approach for non-Java languages
-        let processedLine = '';
-        let inString = false;
-        let currentSegment = '';
+        // Fix any malformed spans - CRITICAL FIX
+        // This cleans up any incorrectly formatted span tags
+        highlightedLine = highlightedLine.replace(/class="([^"]*)"([^>]*?)>/g, 'class="$1"$2>');
         
-        for (let i = 0; i < highlightedLine.length; i++) {
-          const char = highlightedLine[i];
-          
-          if (char === '"' || char === "'") {
-            if (!inString) {
-              if (currentSegment) {
-                processedLine += currentSegment;
-                currentSegment = '';
-              }
-              processedLine += '<span class="text-green-400">' + char;
-              inString = true;
-            } else {
-              processedLine += char + '</span>';
-              inString = false;
-            }
-          } else {
-            currentSegment += char;
-          }
+      } else if (lang === 'javascript' || lang === 'nodejs') {
+        // JavaScript highlighting
+        highlightedLine = highlightedLine.replace(/("([^"\\]*(\\.[^"\\]*)*)"|'([^'\\]*(\\.[^'\\]*)*)')/g, 
+          '<span class="text-green-400">$1</span>');
+        
+        // Comments
+        if (!highlightedLine.includes('class="text-green-400"')) {
+          highlightedLine = highlightedLine.replace(/(\/\/.*)/g, 
+            '<span class="text-gray-500">$1</span>');
         }
         
-        if (currentSegment) {
-          processedLine += currentSegment;
-        }
+        // Keywords
+        const jsKeywords = [
+          'function', 'const', 'let', 'var', 'if', 'else', 
+          'for', 'while', 'return', 'class', 'import', 
+          'export', 'from', 'default', 'async', 'await', 
+          'try', 'catch', 'finally', 'throw', 'new', 'this',
+          'true', 'false', 'null', 'undefined', 'typeof',
+          'instanceof', 'in', 'of', 'yield', 'delete'
+        ];
         
-        if (!processedLine) {
-          processedLine = highlightedLine;
-        }
-        
-        // Apply language-specific keyword highlighting
-        const parts = processedLine.split(/(<span class="[^"]*">.*?<\/span>)/g);
-        
-        const processedParts = parts.map((part, idx) => {
-          if (part.startsWith('<span')) {
-            return part;
-          }
-          
-          if (lang === 'javascript' || lang === 'nodejs') {
-            const jsKeywords = [
-              'function', 'const', 'let', 'var', 'if', 'else', 
-              'for', 'while', 'return', 'class', 'import', 
-              'export', 'from', 'default', 'async', 'await', 
-              'try', 'catch', 'finally', 'throw', 'new', 'this',
-              'true', 'false', 'null', 'undefined', 'typeof',
-              'instanceof', 'in', 'of', 'yield', 'delete'
-            ];
-            
-            jsKeywords.forEach(keyword => {
-              const keywordRegex = new RegExp('\\b(' + keyword + ')\\b', 'g');
-              part = part.replace(keywordRegex, '<span class="text-purple-400">$1</span>');
-            });
-          } else if (lang === 'python') {
-            const pythonKeywords = [
-              'def', 'class', 'import', 'from', 'if', 'elif', 
-              'else', 'for', 'while', 'try', 'except', 'finally', 
-              'with', 'as', 'return', 'yield', 'async', 'await', 
-              'lambda', 'in', 'is', 'not', 'and', 'or', 'True', 
-              'False', 'None', 'pass', 'break', 'continue', 'raise'
-            ];
-            
-            pythonKeywords.forEach(keyword => {
-              const keywordRegex = new RegExp('\\b(' + keyword + ')\\b', 'g');
-              part = part.replace(keywordRegex, '<span class="text-purple-400">$1</span>');
-            });
-          }
-          
-          return part;
+        jsKeywords.forEach(keyword => {
+          const keywordRegex = new RegExp('\\b(' + keyword + ')\\b(?!([^<]*>|[^>]*<\\/))', 'g');
+          highlightedLine = highlightedLine.replace(keywordRegex, 
+            '<span class="text-purple-400">$1</span>');
         });
+      } else if (lang === 'python') {
+        // Python highlighting
+        highlightedLine = highlightedLine.replace(/("([^"\\]*(\\.[^"\\]*)*)"|'([^'\\]*(\\.[^'\\]*)*)')/g, 
+          '<span class="text-green-400">$1</span>');
         
-        highlightedLine = processedParts.join('');
+        if (!highlightedLine.includes('class="text-green-400"')) {
+          highlightedLine = highlightedLine.replace(/(#.*)/g, 
+            '<span class="text-gray-500">$1</span>');
+        }
+        
+        const pythonKeywords = [
+          'def', 'class', 'import', 'from', 'if', 'elif', 
+          'else', 'for', 'while', 'try', 'except', 'finally', 
+          'with', 'as', 'return', 'yield', 'async', 'await', 
+          'lambda', 'in', 'is', 'not', 'and', 'or', 'True', 
+          'False', 'None', 'pass', 'break', 'continue', 'raise'
+        ];
+        
+        pythonKeywords.forEach(keyword => {
+          const keywordRegex = new RegExp('\\b(' + keyword + ')\\b(?!([^<]*>|[^>]*<\\/))', 'g');
+          highlightedLine = highlightedLine.replace(keywordRegex, 
+            '<span class="text-purple-400">$1</span>');
+        });
       }
-      
-      // Final cleanup - remove any stray empty spans or malformed HTML
-      highlightedLine = highlightedLine
-        .replace(/<span class="[^"]*"><\/span>/g, '')
-        .replace(/""/g, '"')
-        .replace(/''/g, "'");
       
       return (
         <div 

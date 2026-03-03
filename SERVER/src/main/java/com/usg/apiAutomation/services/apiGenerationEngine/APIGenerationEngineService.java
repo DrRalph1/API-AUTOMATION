@@ -5901,25 +5901,35 @@ public class APIGenerationEngineService {
 
         // Build URL with query parameters
         js.append("// Base URL\n");
-        js.append("const baseUrl = '").append(baseUrl).append("';\n\n");
+        js.append("const baseUrl = '").append(escapeJavaScriptString(baseUrl)).append("';\n\n");
 
-        if (api.getParameters() != null) {
-            List<String> queryParams = new ArrayList<>();
+        if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+            List<ApiParameterEntity> queryParams = new ArrayList<>();
             for (ApiParameterEntity param : api.getParameters()) {
-                if ("query".equals(param.getParameterType()) && param.getExample() != null) {
-                    queryParams.add(param.getKey() + "=" + param.getExample());
+                if ("query".equals(param.getParameterType())) {
+                    queryParams.add(param);
                 }
             }
+
             if (!queryParams.isEmpty()) {
                 js.append("// Build URL with query parameters\n");
-                js.append("const queryParams = new URLSearchParams({\n");
-                for (ApiParameterEntity param : api.getParameters()) {
-                    if ("query".equals(param.getParameterType()) && param.getExample() != null) {
-                        js.append("  '").append(param.getKey()).append("': '").append(param.getExample()).append("',\n");
+                js.append("const queryParams = new URLSearchParams();\n");
+
+                for (ApiParameterEntity param : queryParams) {
+                    if (param.getExample() != null) {
+                        js.append("queryParams.append('").append(escapeJavaScriptString(param.getKey()))
+                                .append("', '").append(escapeJavaScriptString(param.getExample())).append("');\n");
+                    } else {
+                        js.append("// Optional parameter: ").append(param.getKey()).append("\n");
+                        js.append("if (params && params.").append(param.getKey()).append(") {\n");
+                        js.append("  queryParams.append('").append(escapeJavaScriptString(param.getKey()))
+                                .append("', params.").append(param.getKey()).append(");\n");
+                        js.append("}\n");
                     }
                 }
-                js.append("});\n");
-                js.append("const url = `${baseUrl}?${queryParams.toString()}`;\n\n");
+
+                js.append("const url = queryParams.toString() ? \n");
+                js.append("  `${baseUrl}?${queryParams.toString()}` : baseUrl;\n\n");
             } else {
                 js.append("const url = baseUrl;\n\n");
             }
@@ -5936,16 +5946,27 @@ public class APIGenerationEngineService {
         if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
             switch (api.getAuthConfig().getAuthType()) {
                 case "API_KEY":
-                    js.append("  '").append(api.getAuthConfig().getApiKeyHeader() != null ?
-                            api.getAuthConfig().getApiKeyHeader() : "X-API-Key").append("': '");
-                    js.append(api.getAuthConfig().getApiKeyValue() != null ?
-                            api.getAuthConfig().getApiKeyValue() : "").append("',\n");
+                    js.append("  '").append(escapeJavaScriptString(
+                                    api.getAuthConfig().getApiKeyHeader() != null ?
+                                            api.getAuthConfig().getApiKeyHeader() : "X-API-Key"))
+                            .append("': '").append(escapeJavaScriptString(
+                                    api.getAuthConfig().getApiKeyValue() != null ?
+                                            api.getAuthConfig().getApiKeyValue() : "")).append("',\n");
                     break;
                 case "BEARER":
                 case "JWT":
-                    js.append("  'Authorization': 'Bearer ");
-                    js.append(api.getAuthConfig().getJwtSecret() != null ?
-                            api.getAuthConfig().getJwtSecret() : "").append("',\n");
+                    js.append("  'Authorization': 'Bearer ").append(escapeJavaScriptString(
+                            api.getAuthConfig().getJwtSecret() != null ?
+                                    api.getAuthConfig().getJwtSecret() : "")).append("',\n");
+                    break;
+                case "BASIC":
+                    js.append("  'Authorization': 'Basic ' + btoa(");
+                    js.append("'").append(escapeJavaScriptString(
+                            api.getAuthConfig().getBasicUsername() != null ?
+                                    api.getAuthConfig().getBasicUsername() : "")).append(":' + ");
+                    js.append("'").append(escapeJavaScriptString(
+                            api.getAuthConfig().getBasicPassword() != null ?
+                                    api.getAuthConfig().getBasicPassword() : "")).append("'),\n");
                     break;
             }
         }
@@ -5955,41 +5976,105 @@ public class APIGenerationEngineService {
             for (ApiHeaderEntity header : api.getHeaders()) {
                 if (Boolean.TRUE.equals(header.getIsRequestHeader()) &&
                         header.getKey() != null && header.getValue() != null) {
-                    js.append("  '").append(header.getKey()).append("': '");
-                    js.append(header.getValue()).append("',\n");
+                    js.append("  '").append(escapeJavaScriptString(header.getKey()))
+                            .append("': '").append(escapeJavaScriptString(header.getValue())).append("',\n");
                 }
             }
         }
 
         js.append("};\n\n");
 
-        js.append("// Request options\n");
-        js.append("const options = {\n");
-        js.append("  method: '").append(api.getHttpMethod()).append("',\n");
-        js.append("  headers,\n");
+        // Add function wrapper for reusability
+        js.append("/**\n");
+        js.append(" * Call the ").append(api.getApiName()).append(" API\n");
+        js.append(" * @param {Object} params - Request parameters\n");
+        js.append(" * @returns {Promise<Object>} API response\n");
+        js.append(" */\n");
+        js.append("async function callApi(params = {}) {\n");
 
-        if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
-            js.append("  body: JSON.stringify(").append(api.getRequestConfig().getSample()).append(")\n");
+        // Build request body
+        if (!"GET".equals(api.getHttpMethod()) && api.getRequestConfig() != null &&
+                api.getRequestConfig().getSample() != null) {
+            js.append("  const requestBody = params.body || ").append(api.getRequestConfig().getSample()).append(";\n");
+            js.append("  \n");
         }
 
-        js.append("};\n\n");
+        js.append("  const options = {\n");
+        js.append("    method: '").append(api.getHttpMethod()).append("',\n");
+        js.append("    headers,\n");
 
-        js.append("console.log('Making request to:', url);\n");
-        js.append("console.log('With headers:', headers);\n\n");
+        if (!"GET".equals(api.getHttpMethod())) {
+            if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
+                js.append("    body: JSON.stringify(requestBody)\n");
+            } else {
+                js.append("    body: params.body ? JSON.stringify(params.body) : undefined\n");
+            }
+        }
 
-        js.append("fetch(url, options)\n");
-        js.append("  .then(async response => {\n");
+        js.append("  };\n\n");
+
+        js.append("  console.log('Making request to:', url);\n");
+        js.append("  console.log('With headers:', headers);\n\n");
+
+        js.append("  try {\n");
+        js.append("    const response = await fetch(url, options);\n");
         js.append("    console.log('Status:', response.status);\n");
+        js.append("    \n");
         js.append("    const data = await response.json();\n");
+        js.append("    \n");
         js.append("    if (response.ok) {\n");
         js.append("      console.log('Success:', data);\n");
+        js.append("      return data;\n");
         js.append("    } else {\n");
         js.append("      console.error('Error:', data);\n");
+        js.append("      throw new Error(data.message || `HTTP error ${response.status}`);\n");
         js.append("    }\n");
-        js.append("  })\n");
-        js.append("  .catch(error => console.error('Network error:', error));\n");
+        js.append("  } catch (error) {\n");
+        js.append("    console.error('Network error:', error);\n");
+        js.append("    throw error;\n");
+        js.append("  }\n");
+        js.append("}\n\n");
+
+        // Example usage with actual values
+        js.append("// Example usage with actual values:\n");
+        js.append("/*\n");
+        js.append("callApi({\n");
+
+        // Add parameter examples
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity param : api.getParameters()) {
+                if (param.getExample() != null) {
+                    js.append("  ").append(param.getKey()).append(": '")
+                            .append(escapeJavaScriptString(param.getExample())).append("',\n");
+                }
+            }
+        }
+
+        // Add body example
+        if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
+            js.append("  body: ").append(api.getRequestConfig().getSample()).append("\n");
+        }
+
+        js.append("})\n");
+        js.append("  .then(data => console.log('Success:', data))\n");
+        js.append("  .catch(error => console.error('Error:', error));\n");
+        js.append("*/\n");
 
         return js.toString();
+    }
+
+    // Helper method to escape JavaScript strings
+    private String escapeJavaScriptString(String input) {
+        if (input == null) return "";
+        return input
+                .replace("\\", "\\\\")
+                .replace("'", "\\'")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
+                .replace("\b", "\\b")
+                .replace("\f", "\\f");
     }
 
     /**
@@ -6217,7 +6302,7 @@ public class APIGenerationEngineService {
      */
     private String generateFunctionalJavaCode(GeneratedApiEntity api, String fullUrl) {
         StringBuilder java = new StringBuilder();
-        java.append("// Auto-generated functional Java code for ").append(api.getApiName()).append("\n\n");
+        java.append("// Auto-generated functional Java code for ").append(escapeJavaString(api.getApiName())).append("\n\n");
         java.append("package com.example.api;\n\n");
         java.append("import java.net.URI;\n");
         java.append("import java.net.http.HttpClient;\n");
@@ -6230,6 +6315,7 @@ public class APIGenerationEngineService {
         java.append("import java.util.List;\n");
         java.append("import java.net.URLEncoder;\n");
         java.append("import java.nio.charset.StandardCharsets;\n");
+        java.append("import java.util.Base64;\n");
         java.append("import com.fasterxml.jackson.databind.ObjectMapper;\n");
         java.append("import com.fasterxml.jackson.core.type.TypeReference;\n\n");
 
@@ -6238,21 +6324,23 @@ public class APIGenerationEngineService {
         String fullEndpoint = serverUrl + fullUrl;
 
         java.append("public class ").append(api.getApiCode()).append("Client {\n\n");
-        java.append("    private static final String BASE_URL = \"").append(fullEndpoint).append("\";\n");
+        java.append("    private static final String BASE_URL = \"").append(escapeJavaString(fullEndpoint)).append("\";\n");
         java.append("    private final HttpClient httpClient;\n");
         java.append("    private final ObjectMapper objectMapper;\n");
 
         // Add auth fields with actual values
         if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
             if (api.getAuthConfig().getApiKeyValue() != null) {
-                java.append("    private final String API_KEY = \"").append(api.getAuthConfig().getApiKeyValue()).append("\";\n");
+                java.append("    private final String API_KEY = \"").append(escapeJavaString(api.getAuthConfig().getApiKeyValue())).append("\";\n");
             }
             if (api.getAuthConfig().getJwtSecret() != null) {
-                java.append("    private final String JWT_TOKEN = \"").append(api.getAuthConfig().getJwtSecret()).append("\";\n");
+                java.append("    private final String JWT_TOKEN = \"").append(escapeJavaString(api.getAuthConfig().getJwtSecret())).append("\";\n");
             }
             if (api.getAuthConfig().getBasicUsername() != null) {
-                java.append("    private final String USERNAME = \"").append(api.getAuthConfig().getBasicUsername()).append("\";\n");
-                java.append("    private final String PASSWORD = \"").append(api.getAuthConfig().getBasicPassword()).append("\";\n");
+                java.append("    private final String USERNAME = \"").append(escapeJavaString(api.getAuthConfig().getBasicUsername())).append("\";\n");
+            }
+            if (api.getAuthConfig().getBasicPassword() != null) {
+                java.append("    private final String PASSWORD = \"").append(escapeJavaString(api.getAuthConfig().getBasicPassword())).append("\";\n");
             }
         }
 
@@ -6283,7 +6371,10 @@ public class APIGenerationEngineService {
                 if (param.getExample() != null && !param.getExample().isEmpty()) {
                     String value = param.getExample();
                     if ("String".equals(mapToJavaType(param.getApiType()))) {
-                        value = "\"" + value + "\"";
+                        value = "\"" + escapeJavaString(value) + "\"";
+                    } else {
+                        // For non-string types, just use the value as is
+                        value = value;
                     }
                     java.append("            this.").append(param.getKey()).append(" = ").append(value).append(";\n");
                 }
@@ -6291,7 +6382,7 @@ public class APIGenerationEngineService {
         }
         java.append("        }\n\n");
 
-        // After the RequestParams constructor, add:
+        // Getters and setters for parameters
         if (api.getParameters() != null) {
             for (ApiParameterEntity param : api.getParameters()) {
                 String type = mapToJavaType(param.getApiType());
@@ -6310,6 +6401,13 @@ public class APIGenerationEngineService {
             }
         }
 
+        // Body getter and setter
+        java.append("        public Map<String, Object> getBody() {\n");
+        java.append("            return body;\n");
+        java.append("        }\n\n");
+        java.append("        public void setBody(Map<String, Object> body) {\n");
+        java.append("            this.body = body;\n");
+        java.append("        }\n");
         java.append("    }\n\n");
 
         // Generate response class
@@ -6319,18 +6417,31 @@ public class APIGenerationEngineService {
                 if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
                     String type = mapToJavaType(mapping.getApiType());
                     java.append("        private ").append(type).append(" ").append(mapping.getApiField()).append(";\n");
-                    // Add getters and setters
-                    String capitalized = mapping.getApiField().substring(0, 1).toUpperCase() +
-                            mapping.getApiField().substring(1);
-                    java.append("        public ").append(type).append(" get").append(capitalized).append("() { return ").append(mapping.getApiField()).append("; }\n");
-                    java.append("        public void set").append(capitalized).append("(").append(type).append(" ").append(mapping.getApiField()).append(") { this.").append(mapping.getApiField()).append(" = ").append(mapping.getApiField()).append("; }\n");
+                }
+            }
+            java.append("\n");
+            for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
+                if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
+                    String type = mapToJavaType(mapping.getApiType());
+                    String field = mapping.getApiField();
+                    String capitalized = field.substring(0, 1).toUpperCase() + field.substring(1);
+
+                    // Getter
+                    java.append("        public ").append(type).append(" get").append(capitalized).append("() {\n");
+                    java.append("            return ").append(field).append(";\n");
+                    java.append("        }\n\n");
+
+                    // Setter
+                    java.append("        public void set").append(capitalized).append("(").append(type).append(" ").append(field).append(") {\n");
+                    java.append("            this.").append(field).append(" = ").append(field).append(";\n");
+                    java.append("        }\n\n");
                 }
             }
         }
         java.append("    }\n\n");
 
         // Main API method with proper query parameter handling
-        java.append("    public ApiResponse callApi(RequestParams params) throws Exception {\n");
+        java.append("    public ApiResponse callApi(RequestParams params) throws Exception, IOException, InterruptedException {\n");
         java.append("        // Build URL with query parameters\n");
         java.append("        StringBuilder urlBuilder = new StringBuilder(BASE_URL);\n");
         java.append("        \n");
@@ -6343,7 +6454,7 @@ public class APIGenerationEngineService {
                     java.append("        if (params.get").append(capitalize(param.getKey())).append("() != null) {\n");
                     java.append("            queryParams.add(\"").append(param.getKey()).append("=\" + \n");
                     java.append("                URLEncoder.encode(params.get").append(capitalize(param.getKey())).append("().toString(), \n");
-                    java.append("                StandardCharsets.UTF_8.toString()));\n");
+                    java.append("                StandardCharsets.UTF_8.name()));\n");
                     java.append("        }\n");
                 }
             }
@@ -6365,23 +6476,24 @@ public class APIGenerationEngineService {
         if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
             switch (api.getAuthConfig().getAuthType()) {
                 case "API_KEY":
-                    java.append("        if (API_KEY != null) {\n");
+                    java.append("        if (API_KEY != null && !API_KEY.isEmpty()) {\n");
                     java.append("            requestBuilder.header(\"")
-                            .append(api.getAuthConfig().getApiKeyHeader() != null ?
-                                    api.getAuthConfig().getApiKeyHeader() : "X-API-Key")
+                            .append(escapeJavaString(api.getAuthConfig().getApiKeyHeader() != null ?
+                                    api.getAuthConfig().getApiKeyHeader() : "X-API-Key"))
                             .append("\", API_KEY);\n");
                     java.append("        }\n");
                     break;
                 case "BEARER":
                 case "JWT":
-                    java.append("        if (JWT_TOKEN != null) {\n");
+                    java.append("        if (JWT_TOKEN != null && !JWT_TOKEN.isEmpty()) {\n");
                     java.append("            requestBuilder.header(\"Authorization\", \"Bearer \" + JWT_TOKEN);\n");
                     java.append("        }\n");
                     break;
                 case "BASIC":
-                    java.append("        if (USERNAME != null && PASSWORD != null) {\n");
+                    java.append("        if (USERNAME != null && PASSWORD != null && \n");
+                    java.append("            !USERNAME.isEmpty() && !PASSWORD.isEmpty()) {\n");
                     java.append("            String auth = USERNAME + \":\" + PASSWORD;\n");
-                    java.append("            String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes());\n");
+                    java.append("            String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes(StandardCharsets.UTF_8));\n");
                     java.append("            requestBuilder.header(\"Authorization\", \"Basic \" + encodedAuth);\n");
                     java.append("        }\n");
                     break;
@@ -6393,8 +6505,8 @@ public class APIGenerationEngineService {
             for (ApiHeaderEntity header : api.getHeaders()) {
                 if (Boolean.TRUE.equals(header.getIsRequestHeader()) &&
                         header.getKey() != null && header.getValue() != null) {
-                    java.append("        requestBuilder.header(\"").append(header.getKey())
-                            .append("\", \"").append(header.getValue()).append("\");\n");
+                    java.append("        requestBuilder.header(\"").append(escapeJavaString(header.getKey()))
+                            .append("\", \"").append(escapeJavaString(header.getValue())).append("\");\n");
                 }
             }
         }
@@ -6412,14 +6524,10 @@ public class APIGenerationEngineService {
 
         java.append("        \n");
         java.append("        HttpRequest request = requestBuilder.build();\n");
-        java.append("        System.out.println(\"Request URL: \" + request.uri());\n");
         java.append("        \n");
         java.append("        // Send request\n");
         java.append("        HttpResponse<String> response = httpClient.send(request,\n");
         java.append("                HttpResponse.BodyHandlers.ofString());\n");
-        java.append("        \n");
-        java.append("        System.out.println(\"Response Status: \" + response.statusCode());\n");
-        java.append("        System.out.println(\"Response Body: \" + response.body());\n");
         java.append("        \n");
         java.append("        // Parse response\n");
         java.append("        if (response.statusCode() >= 200 && response.statusCode() < 300) {\n");
@@ -6438,7 +6546,7 @@ public class APIGenerationEngineService {
         java.append("            \n");
         java.append("            ApiResponse response = client.callApi(params);\n");
         java.append("            System.out.println(\"Success! Response: \");\n");
-        java.append("            System.out.println(objectMapper.writerWithDefaultPrettyPrinter()\n");
+        java.append("            System.out.println(new ObjectMapper().writerWithDefaultPrettyPrinter()\n");
         java.append("                    .writeValueAsString(response));\n");
         java.append("        } catch (Exception e) {\n");
         java.append("            System.err.println(\"Error calling API: \" + e.getMessage());\n");
@@ -6448,6 +6556,20 @@ public class APIGenerationEngineService {
         java.append("}\n");
 
         return java.toString();
+    }
+
+
+    // Helper method to escape Java strings
+    private String escapeJavaString(String input) {
+        if (input == null) return "";
+        return input
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
+                .replace("\b", "\\b")
+                .replace("\f", "\\f");
     }
 
     /**
