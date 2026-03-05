@@ -1498,6 +1498,7 @@ const deletePathParam = (id) => {
     });
   };
 
+// Update the handleSelectRequest function to handle new requests properly
 const handleSelectRequest = useCallback(async (request, collectionId, folderId) => {
   console.log('🎯 [handleSelectRequest] Selected request:', {
     id: request.id,
@@ -1507,6 +1508,61 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     queryParams: request.queryParams
   });
 
+  // Check if this is a new/empty request (no id starting with 'req-' or missing required fields)
+  const isNewRequest = request.id?.startsWith('req-') || !request.url;
+  
+  if (isNewRequest) {
+    console.log('🆕 New request detected - resetting all form fields');
+    
+    // Reset all form states to empty
+    setRequestMethod('GET');
+    setRequestUrl('');
+    setRequestBody('');
+    setRequestParams([]);
+    setRequestHeaders([]);
+    setRequestPathParams([]);
+    setFormData([]);
+    setUrlEncodedData([]);
+    setBinaryFile(null);
+    setGraphqlQuery('');
+    setGraphqlVariables('');
+    setAuthType('noauth');
+    setAuthConfig({ type: 'noauth', token: '', username: '', password: '', key: '', value: '', addTo: 'header', tokenType: 'Bearer' });
+    setResponse(null);
+    
+    // Reset body type to default
+    setRequestBodyType('raw');
+    setRawBodyType('json');
+    
+    // Set the selected request
+    const newRequestWithContext = { ...request, collectionId, folderId };
+    setSelectedRequest(newRequestWithContext);
+    
+    // Update tabs
+    setRequestTabs(tabs => {
+      const existingTab = tabs.find(t => t.id === request.id);
+      if (existingTab) {
+        return tabs.map(t => ({ ...t, isActive: t.id === request.id }));
+      } else {
+        return tabs.map(t => ({ ...t, isActive: false }))
+          .concat({ 
+            id: request.id, 
+            name: request.name || 'New Request', 
+            method: 'GET', 
+            collectionId, 
+            folderId, 
+            isActive: true 
+          });
+      }
+    });
+    
+    // Set active tab to path params by default for new requests
+    setActiveTab('path-params');
+    
+    return;
+  }
+
+  // Existing code for existing requests (non-new)
   const requestWithContext = { ...request, collectionId, folderId };
   setSelectedRequest(requestWithContext);
   
@@ -1831,6 +1887,46 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     }
   }
 }, [authToken, requestUrl, requestBodyType, determineActiveTab]);
+
+// Update the addNewRequest function to properly create a new request
+const addNewRequest = (collectionId, folderId) => {
+  const newRequest = {
+    id: `req-${Date.now()}`,
+    name: 'New Request',
+    method: 'GET',
+    url: '',
+    description: '',
+    isEditing: false,
+    status: 'unsaved',
+    lastModified: new Date().toISOString(),
+    authType: 'noauth',
+    authConfig: { type: 'noauth' },
+    params: [],
+    headers: [],
+    body: '',
+    tests: '',
+    preRequestScript: '',
+    isSaved: false,
+    collectionId,
+    folderId
+  };
+  
+  setCollections(collections.map(col => 
+    col.id === collectionId ? {
+      ...col,
+      folders: (col.folders || []).map(folder =>
+        folder.id === folderId ? { 
+          ...folder, 
+          requests: [...(folder.requests || []), newRequest] 
+        } : folder
+      )
+    } : col
+  ));
+  
+  // Pass the new request to handleSelectRequest - it will detect it's new and reset everything
+  handleSelectRequest(newRequest, collectionId, folderId);
+  showToast('Request added', 'success');
+};
 
 
   const transformEnvironmentsData = (apiData) => {
@@ -2675,44 +2771,6 @@ const separateParamsAndHeaders = (items) => {
     showToast('Folder added', 'success');
   };
 
-  // Add new request
-  const addNewRequest = (collectionId, folderId) => {
-    const newRequest = {
-      id: `req-${Date.now()}`,
-      name: 'New Request',
-      method: 'GET',
-      url: '',
-      description: '',
-      isEditing: false,
-      status: 'unsaved',
-      lastModified: new Date().toISOString(),
-      authType: 'noauth',
-      authConfig: { type: 'noauth' },
-      params: [],
-      headers: [],
-      body: '',
-      tests: '',
-      preRequestScript: '',
-      isSaved: false,
-      collectionId,
-      folderId
-    };
-    
-    setCollections(collections.map(col => 
-      col.id === collectionId ? {
-        ...col,
-        folders: (col.folders || []).map(folder =>
-          folder.id === folderId ? { 
-            ...folder, 
-            requests: [...(folder.requests || []), newRequest] 
-          } : folder
-        )
-      } : col
-    ));
-    
-    handleSelectRequest(newRequest, collectionId, folderId);
-    showToast('Request added', 'success');
-  };
 
   // Update collection name
   const updateCollectionName = (collectionId, newName) => {
