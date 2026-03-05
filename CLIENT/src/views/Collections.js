@@ -919,6 +919,158 @@ const addPathParam = () => {
 
 
 
+
+// Add these functions with your other CRUD operations (around line 400)
+// Add query param
+const addQueryParam = () => {
+  const newParam = { 
+    id: `query-${Date.now()}`, 
+    key: '', 
+    value: '', 
+    description: '', 
+    enabled: true 
+  };
+  setRequestParams([...requestParams, newParam]);
+};
+
+// Update query param and URL automatically
+const updateQueryParam = (id, field, value) => {
+  console.log('🟢 updateQueryParam called:', { id, field, value });
+  
+  // First update the state with the new value
+  setRequestParams(params => {
+    console.log('📦 Current query params before update:', params);
+    
+    const updatedParams = params.map(param => 
+      param.id === id ? { ...param, [field]: value } : param
+    );
+    
+    console.log('📦 Updated query params after update:', updatedParams);
+    
+    // Then update URL with all query params
+    if (field === 'value' || field === 'key' || field === 'enabled') {
+      console.log('🔍 Field is value/key/enabled, proceeding with URL update');
+      
+      // Get base URL without query string
+      const baseUrl = requestUrl.split('?')[0];
+      
+      // Build query string from enabled params with keys and values
+      const queryParams = updatedParams
+        .filter(p => p.enabled && p.key && p.key.trim() !== '')
+        .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value || '')}`)
+        .join('&');
+      
+      // Construct new URL
+      const newUrl = queryParams ? `${baseUrl}?${queryParams}` : baseUrl;
+      
+      console.log('✅ Final new URL:', newUrl);
+      
+      // Update URL immediately
+      setRequestUrl(newUrl);
+    }
+    
+    return updatedParams;
+  });
+};
+
+// Delete query param and update URL
+const deleteQueryParam = (id) => {
+  setRequestParams(params => {
+    const remainingParams = params.filter(param => param.id !== id);
+    
+    // Update URL after deletion
+    const baseUrl = requestUrl.split('?')[0];
+    const queryParams = remainingParams
+      .filter(p => p.enabled && p.key && p.key.trim() !== '')
+      .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value || '')}`)
+      .join('&');
+    
+    const newUrl = queryParams ? `${baseUrl}?${queryParams}` : baseUrl;
+    setRequestUrl(newUrl);
+    
+    return remainingParams;
+  });
+};
+
+// Parse URL and update query params
+const parseUrlAndUpdateQueryParams = (url) => {
+  try {
+    const urlObj = new URL(url);
+    const params = [];
+    
+    // Parse query parameters
+    urlObj.searchParams.forEach((value, key) => {
+      params.push({
+        id: `query-${Date.now()}-${Math.random()}`,
+        key: key,
+        value: value,
+        description: '',
+        enabled: true
+      });
+    });
+    
+    return params;
+  } catch (e) {
+    // Not a valid URL or no query string
+    return [];
+  }
+};
+
+// Handle URL change with parameter parsing
+const handleUrlChange = useCallback((e) => {
+  const newUrl = e.target.value;
+  setRequestUrl(newUrl);
+  
+  // Parse and update query params from URL
+  if (newUrl.includes('?')) {
+    const parsedParams = parseUrlAndUpdateQueryParams(newUrl);
+    if (parsedParams.length > 0) {
+      // Merge with existing params
+      setRequestParams(prevParams => {
+        // Create a map of existing params by key for quick lookup
+        const existingParamsMap = new Map(
+          prevParams.filter(p => p.key).map(p => [p.key, p])
+        );
+        
+        // Merge parsed params with existing ones
+        const mergedParams = parsedParams.map(parsedParam => {
+          const existing = existingParamsMap.get(parsedParam.key);
+          if (existing) {
+            // Preserve existing param data (description, enabled state, etc.)
+            return {
+              ...existing,
+              value: parsedParam.value, // Update value from URL
+              key: parsedParam.key
+            };
+          }
+          return parsedParam;
+        });
+        
+        return mergedParams;
+      });
+    }
+  } else {
+    // Clear query params if no query string in URL
+    setRequestParams([]);
+  }
+}, []);
+
+// Handle paste event for URL
+const handleUrlPaste = useCallback((e) => {
+  // Let the paste happen naturally, then parse
+  setTimeout(() => {
+    if (requestUrl.includes('?')) {
+      const parsedParams = parseUrlAndUpdateQueryParams(requestUrl);
+      if (parsedParams.length > 0) {
+        setRequestParams(parsedParams);
+        showToast(`Parsed ${parsedParams.length} query parameters`, 'success');
+      }
+    }
+  }, 0);
+}, [requestUrl]);
+
+
+
 const updatePathParam = (id, field, value) => {
   console.log('🟢 updatePathParam called:', { id, field, value });
   
@@ -948,6 +1100,11 @@ const updatePathParam = (id, field, value) => {
           console.log('🌐 Previous URL:', prevUrl);
           if (!prevUrl) return prevUrl;
           
+          // Extract query string if it exists
+          const [baseUrlWithoutQuery, queryString] = prevUrl.split('?');
+          console.log('🔍 Base URL without query:', baseUrlWithoutQuery);
+          console.log('🔍 Query string:', queryString);
+          
           // Get the template URL - try multiple sources
           let templateUrl = '';
           
@@ -957,7 +1114,7 @@ const updatePathParam = (id, field, value) => {
           } else {
             // Try to reconstruct template from the current URL structure
             // We need the ORIGINAL template with placeholders, not the current values
-            const urlParts = prevUrl.split('/');
+            const urlParts = baseUrlWithoutQuery.split('/');
             
             // Find where the path params should be by looking at the order of params
             // The last N parts of the URL (where N = number of path params) should be the params
@@ -981,24 +1138,26 @@ const updatePathParam = (id, field, value) => {
           }
           
           // Now build the new URL by replacing placeholders with values
-          let newUrl = templateUrl;
-          console.log('🏁 Starting to build new URL from template:', newUrl);
+          let newBaseUrl = templateUrl;
+          console.log('🏁 Starting to build new URL from template:', newBaseUrl);
           
           // Replace each placeholder with its current value
           updatedParams.forEach((p, index) => {
             const placeholder = `{${p.key}}`;
             const replacementValue = p.value && p.value.trim() !== '' ? p.value : placeholder;
             
-            if (newUrl.includes(placeholder)) {
-              newUrl = newUrl.replace(placeholder, replacementValue);
+            if (newBaseUrl.includes(placeholder)) {
+              newBaseUrl = newBaseUrl.replace(placeholder, replacementValue);
               console.log(`  🔄 Replaced ${placeholder} with ${replacementValue}`);
             } else {
               console.log(`  ⚠️ Placeholder ${placeholder} not found in URL`);
             }
           });
           
-          console.log('✅ Final new URL:', newUrl);
-          return newUrl;
+          // Reattach query string if it exists
+          const finalUrl = queryString ? `${newBaseUrl}?${queryString}` : newBaseUrl;
+          console.log('✅ Final new URL with preserved query params:', finalUrl);
+          return finalUrl;
         });
       } else {
         console.log('❌ Updated param missing key, skipping URL update');
@@ -1010,6 +1169,7 @@ const updatePathParam = (id, field, value) => {
     return updatedParams;
   });
 };
+
 
 // Fix 2: Update the determineActiveTab function to be more robust
 const determineActiveTab = useCallback(() => {
@@ -1159,57 +1319,7 @@ const deletePathParam = (id) => {
     }
   }, []);
 
-  // Handle URL change with parameter parsing
-  // Handle URL change with parameter parsing - MODIFIED to preserve existing params
-const handleUrlChange = useCallback((e) => {
-  const newUrl = e.target.value;
-  setRequestUrl(newUrl);
   
-  // Only update params if the query string actually changed
-  if (newUrl.includes('?')) {
-    const parsedParams = parseUrlParams(newUrl);
-    if (parsedParams.length > 0) {
-      // Instead of replacing all params, merge with existing ones
-      setRequestParams(prevParams => {
-        // Create a map of existing params by key for quick lookup
-        const existingParamsMap = new Map(
-          prevParams.filter(p => p.key).map(p => [p.key, p])
-        );
-        
-        // Merge parsed params with existing ones
-        const mergedParams = parsedParams.map(parsedParam => {
-          const existing = existingParamsMap.get(parsedParam.key);
-          if (existing) {
-            // Preserve existing param data (description, enabled state, etc.)
-            return {
-              ...existing,
-              value: parsedParam.value, // Update value from URL
-              key: parsedParam.key
-            };
-          }
-          return parsedParam;
-        });
-        
-        return mergedParams;
-      });
-    }
-  }
-  // Don't clear params if no query string - they might be manually added
-}, [parseUrlParams]);
-
-  // Handle paste event for URL
-  const handleUrlPaste = useCallback((e) => {
-    // Let the paste happen naturally, then parse
-    setTimeout(() => {
-      if (requestUrl.includes('?')) {
-        const parsedParams = parseUrlParams(requestUrl);
-        if (parsedParams.length > 0) {
-          setRequestParams(parsedParams);
-          showToast(`Parsed ${parsedParams.length} query parameters`, 'success');
-        }
-      }
-    }, 0);
-  }, [requestUrl, parseUrlParams]);
 
   // ==================== API METHODS ====================
 
@@ -1517,10 +1627,12 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
           const headerParams = [];
           const bodyParams = [];
           
+          console.log('📊 Processing parameters from API:', details.parameters.length);
+          
           details.parameters.forEach(param => {
             if (param && param.key) {
               const paramObject = {
-                id: param.id || `${param.key}-${Date.now()}`,
+                id: param.id || `${param.key}-${Date.now()}-${Math.random()}`,
                 key: param.key,
                 value: param.value || '',
                 description: param.description || '',
@@ -1533,18 +1645,24 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
               switch(param.parameterLocation?.toLowerCase()) {
                 case 'query':
                   queryParams.push(paramObject);
+                  console.log(`📌 Query param: ${param.key} = ${param.value || ''}`);
                   break;
                 case 'path':
                   pathParams.push(paramObject);
+                  console.log(`🛣️ Path param: ${param.key} = ${param.value || ''}`);
                   break;
                 case 'header':
                   headerParams.push(paramObject);
+                  console.log(`📌 Header param: ${param.key} = ${param.value || ''}`);
                   break;
                 case 'body':
                   bodyParams.push(paramObject);
+                  console.log(`📦 Body param: ${param.key} = ${param.value || ''}`);
                   break;
                 default:
+                  // Default to query if location not specified
                   queryParams.push(paramObject);
+                  console.log(`📌 Defaulting to query param: ${param.key}`);
               }
             }
           });
@@ -1559,9 +1677,20 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
           // Set query params in state
           setRequestParams(queryParams);
           
+          // Build URL with query params
+          const baseUrlWithoutQuery = details.url ? details.url.split('?')[0] : (baseUrl.split('?')[0] || baseUrl);
+          
+          // Build query string from enabled params with keys and values
+          const queryString = queryParams
+            .filter(p => p.enabled && p.key && p.key.trim() !== '')
+            .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value || '')}`)
+            .join('&');
+          
+          console.log('🔍 Built query string:', queryString);
+          
           // Handle headers
           const allHeaders = [...(details.headers || []), ...headerParams];
-          setRequestHeaders(allHeaders);
+          setRequestHeaders(cleanHeaders(allHeaders));
           
           // Handle body params
           if (bodyParams.length > 0) {
@@ -1602,7 +1731,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
             setRequestPathParams(newPathParams);
             
             // Build the URL with path params
-            let updatedUrl = details.url || baseUrl;
+            let updatedUrl = baseUrlWithoutQuery;
             console.log('🔗 Building URL with path params. Base:', updatedUrl);
             
             // First, check if the URL already has placeholders
@@ -1648,10 +1777,17 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
               });
             }
             
-            console.log('✅ Final URL with path params:', updatedUrl);
-            setRequestUrl(updatedUrl);
+            // Add query string to the URL with path params
+            const finalUrl = queryString ? `${updatedUrl}?${queryString}` : updatedUrl;
+            console.log('✅ Final URL with path and query params:', finalUrl);
+            setRequestUrl(finalUrl);
+            
           } else {
             setRequestPathParams([]);
+            // Add only query string if no path params
+            const finalUrl = queryString ? `${baseUrlWithoutQuery}?${queryString}` : baseUrlWithoutQuery;
+            console.log('✅ Final URL with query params only:', finalUrl);
+            setRequestUrl(finalUrl);
           }
         }
         
@@ -3210,54 +3346,90 @@ const separateParamsAndHeaders = (items) => {
   );
 };
 
-  // Render Params Tab
-  const renderQueryParamsTab = () => {
-    const hasParams = requestParams.length > 0;
-    
-    return (
-      <div className="flex flex-col h-full">
-        <div className="flex justify-between items-center p-4">
-          <div className="flex items-center gap-4">
-            <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Query Parameters</h3>
-            {hasParams && (
-              <div className="flex items-center gap-2">
-                <button type="button" className="text-xs px-2 py-1 rounded hover-lift" style={{ 
-                  backgroundColor: colors.hover,
-                  color: colors.textSecondary
-                }}
-                onClick={() => {
-                  const text = requestParams.map(p => `${p.key}=${p.value}`).join('\n');
-                  navigator.clipboard.writeText(text);
-                  showToast('Parameters copied as text', 'success');
-                }}>
-                  Bulk Edit
-                </button>
-              </div>
-            )}
-          </div>
-          <button type="button" onClick={addParam} className="px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2 hover:opacity-90 transition-colors hover-lift"
-            style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
-            <Plus size={12} />
-            Add
-          </button>
+  // Render Query Params Tab - Updated version
+const renderQueryParamsTab = () => {
+  const hasParams = requestParams.length > 0;
+  
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex justify-between items-center p-4">
+        <div className="flex items-center gap-4">
+          <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Query Parameters</h3>
+          {hasParams && (
+            <div className="flex items-center gap-2">
+              <button type="button" className="text-xs px-2 py-1 rounded hover-lift" style={{ 
+                backgroundColor: colors.hover,
+                color: colors.textSecondary
+              }}
+              onClick={() => {
+                const text = requestParams.map(p => `${p.key}=${p.value}`).join('\n');
+                navigator.clipboard.writeText(text);
+                showToast('Parameters copied as text', 'success');
+              }}>
+                Bulk Edit
+              </button>
+            </div>
+          )}
         </div>
+        <button type="button" onClick={addQueryParam} className="px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2 hover:opacity-90 transition-colors hover-lift"
+          style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
+          <Plus size={12} />
+          Add
+        </button>
+      </div>
 
-        <div className="flex-1 overflow-hidden">
-          {hasParams ? (
-            <div className="h-full overflow-auto">
-              <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-                <thead style={{ backgroundColor: colors.tableHeader, position: 'sticky', top: 0 }}>
-                  <tr>
-                    <th className="w-12 p-0">
+      <div className="flex-1 overflow-hidden">
+        {hasParams ? (
+          <div className="h-full overflow-auto">
+            <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+              <thead style={{ backgroundColor: colors.tableHeader, position: 'sticky', top: 0 }}>
+                <tr>
+                  <th className="w-12 p-0">
+                    <div className="p-3">
+                      <input 
+                        type="checkbox" 
+                        className="rounded-sm hover-lift"
+                        checked={requestParams.every(p => p.enabled)}
+                        onChange={() => {
+                          const allEnabled = requestParams.every(p => p.enabled);
+                          const updatedParams = requestParams.map(p => ({ ...p, enabled: !allEnabled }));
+                          setRequestParams(updatedParams);
+                          
+                          // Update URL after toggling all
+                          const baseUrl = requestUrl.split('?')[0];
+                          const queryParams = updatedParams
+                            .filter(p => p.enabled && p.key && p.key.trim() !== '')
+                            .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value || '')}`)
+                            .join('&');
+                          
+                          const newUrl = queryParams ? `${baseUrl}?${queryParams}` : baseUrl;
+                          setRequestUrl(newUrl);
+                        }}
+                        style={{ 
+                          borderColor: colors.border,
+                          backgroundColor: colors.card,
+                          cursor: 'pointer'
+                        }}
+                      />
+                    </div>
+                  </th>
+                  <th className="text-left p-3 text-sm font-medium" style={{ color: colors.textSecondary }}>KEY</th>
+                  <th className="text-left p-3 text-sm font-medium" style={{ color: colors.textSecondary }}>VALUE</th>
+                  <th className="text-left p-3 text-sm font-medium" style={{ color: colors.textSecondary }}>DESCRIPTION</th>
+                  <th className="w-16 p-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {requestParams.map(param => (
+                  <tr key={param.id} className="hover:bg-opacity-50 transition-colors hover-lift" 
+                    style={{ backgroundColor: colors.tableRow }}>
+                    <td className="p-0">
                       <div className="p-3">
-                        <input 
-                          type="checkbox" 
+                        <input
+                          type="checkbox"
+                          checked={param.enabled}
+                          onChange={() => updateQueryParam(param.id, 'enabled', !param.enabled)}
                           className="rounded-sm hover-lift"
-                          checked={requestParams.every(p => p.enabled)}
-                          onChange={() => {
-                            const allEnabled = requestParams.every(p => p.enabled);
-                            setRequestParams(requestParams.map(p => ({ ...p, enabled: !allEnabled })));
-                          }}
                           style={{ 
                             borderColor: colors.border,
                             backgroundColor: colors.card,
@@ -3265,109 +3437,84 @@ const separateParamsAndHeaders = (items) => {
                           }}
                         />
                       </div>
-                    </th>
-                    <th className="text-left p-3 text-sm font-medium" style={{ color: colors.textSecondary }}>KEY</th>
-                    <th className="text-left p-3 text-sm font-medium" style={{ color: colors.textSecondary }}>VALUE</th>
-                    <th className="text-left p-3 text-sm font-medium" style={{ color: colors.textSecondary }}>DESCRIPTION</th>
-                    <th className="w-16 p-3"></th>
+                    </td>
+                    <td className="p-3">
+                      <input
+                        type="text"
+                        value={param.key}
+                        onChange={(e) => updateQueryParam(param.id, 'key', e.target.value)}
+                        className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
+                        style={{ 
+                          borderColor: colors.border,
+                          color: colors.text,
+                          backgroundColor: colors.inputBg
+                        }}
+                        placeholder="Key"
+                      />
+                    </td>
+                    <td className="p-3">
+                      <input
+                        type="text"
+                        value={param.value}
+                        onChange={(e) => updateQueryParam(param.id, 'value', e.target.value)}
+                        className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
+                        style={{ 
+                          borderColor: colors.border,
+                          color: colors.text,
+                          backgroundColor: colors.inputBg
+                        }}
+                        placeholder="Value"
+                      />
+                    </td>
+                    <td className="p-3">
+                      <input
+                        type="text"
+                        value={param.description || ''}
+                        onChange={(e) => updateQueryParam(param.id, 'description', e.target.value)}
+                        className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
+                        style={{ 
+                          borderColor: colors.border,
+                          color: colors.text,
+                          backgroundColor: colors.inputBg
+                        }}
+                        placeholder="Description"
+                      />
+                    </td>
+                    <td className="p-3">
+                      <button
+                        type="button"
+                        onClick={() => deleteQueryParam(param.id)}
+                        className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                        style={{ backgroundColor: colors.hover }}>
+                        <Trash2 size={13} style={{ color: colors.textSecondary }} />
+                      </button>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {requestParams.map(param => (
-                    <tr key={param.id} className="hover:bg-opacity-50 transition-colors hover-lift" 
-                      style={{ backgroundColor: colors.tableRow }}>
-                      <td className="p-0">
-                        <div className="p-3">
-                          <input
-                            type="checkbox"
-                            checked={param.enabled}
-                            onChange={() => updateParam(param.id, 'enabled', !param.enabled)}
-                            className="rounded-sm hover-lift"
-                            style={{ 
-                              borderColor: colors.border,
-                              backgroundColor: colors.card,
-                              cursor: 'pointer'
-                            }}
-                          />
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <input
-                          type="text"
-                          value={param.key}
-                          onChange={(e) => updateParam(param.id, 'key', e.target.value)}
-                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
-                          style={{ 
-                            borderColor: colors.border,
-                            color: colors.text,
-                            backgroundColor: colors.inputBg
-                          }}
-                          placeholder="Key"
-                        />
-                      </td>
-                      <td className="p-3">
-                        <input
-                          type="text"
-                          value={param.value}
-                          onChange={(e) => updateParam(param.id, 'value', e.target.value)}
-                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
-                          style={{ 
-                            borderColor: colors.border,
-                            color: colors.text,
-                            backgroundColor: colors.inputBg
-                          }}
-                          placeholder="Value"
-                        />
-                      </td>
-                      <td className="p-3">
-                        <input
-                          type="text"
-                          value={param.description || ''}
-                          onChange={(e) => updateParam(param.id, 'description', e.target.value)}
-                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
-                          style={{ 
-                            borderColor: colors.border,
-                            color: colors.text,
-                            backgroundColor: colors.inputBg
-                          }}
-                          placeholder="Description"
-                        />
-                      </td>
-                      <td className="p-3">
-                        <button
-                          type="button"
-                          onClick={() => deleteParam(param.id)}
-                          className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                          style={{ backgroundColor: colors.hover }}>
-                          <Trash2 size={13} style={{ color: colors.textSecondary }} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full p-8 text-center">
-              <Hash size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mb-4" />
-              <h3 className="text-sm font-semibold mb-2" style={{ color: colors.text }}>No Query Parameters</h3>
-              <p className="text-sm mb-4 max-w-sm" style={{ color: colors.textSecondary }}>
-                Query parameters are appended to the URL in the form of key=value pairs, separated by &.
-              </p>
-              <button
-                type="button"
-                onClick={addParam}
-                className="px-3 py-1.5 text-sm font-medium rounded flex items-center gap-2 hover:opacity-90 transition-colors hover-lift"
-                style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
-                <Plus size={13} />
-                Add Parameter
-              </button>
-            </div>
-          )}
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+            <Hash size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mb-4" />
+            <h3 className="text-sm font-semibold mb-2" style={{ color: colors.text }}>No Query Parameters</h3>
+            <p className="text-sm mb-4 max-w-sm" style={{ color: colors.textSecondary }}>
+              Query parameters are appended to the URL after a ? in the form of key=value pairs, separated by &.
+            </p>
+            <button
+              type="button"
+              onClick={addQueryParam}
+              className="px-3 py-1.5 text-sm font-medium rounded flex items-center gap-2 hover:opacity-90 transition-colors hover-lift"
+              style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
+              <Plus size={13} />
+              Add Parameter
+            </button>
+          </div>
+        )}
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   // Render Headers Tab
   const renderHeadersTab = () => {
