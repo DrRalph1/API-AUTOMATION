@@ -1090,9 +1090,9 @@ const ApiEndpointItem = ({ api }) => {
                 <p className="text-sm" style={{ color: colors.textSecondary }}>Overview of your API platform</p>
               </div>
               <div className="flex items-center gap-3">
-                <button onClick={handleRefresh} className="p-2 rounded-lg" style={{ backgroundColor: colors.hover }} disabled={loading.refresh}>
+                {/* <button onClick={handleRefresh} className="p-2 rounded-lg" style={{ backgroundColor: colors.hover }} disabled={loading.refresh}>
                   <RefreshCw size={16} className={loading.refresh ? 'animate-spin' : ''} style={{ color: colors.text }} />
-                </button>
+                </button> */}
                 <button onClick={handleNavigateToSchemaBrowser} className="px-3 py-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded text-sm font-medium text-white hover-lift">
                   Schema Browser
                 </button>

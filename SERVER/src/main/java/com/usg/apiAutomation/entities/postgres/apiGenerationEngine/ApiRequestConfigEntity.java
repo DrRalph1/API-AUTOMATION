@@ -30,6 +30,9 @@ public class ApiRequestConfigEntity {
     @Column(name = "schema_type")
     private String schemaType;
 
+    @Column(name = "body_type") // json, xml, form-data, urlencoded, raw
+    private String bodyType;
+
     @Column(name = "sample", columnDefinition = "text")
     private String sample;
 

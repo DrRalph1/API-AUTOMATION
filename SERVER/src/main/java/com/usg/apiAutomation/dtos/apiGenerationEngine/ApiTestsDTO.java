@@ -13,12 +13,42 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ApiTestsDTO {
+
     private String unitTests;           // JSON string containing unit tests
     private String integrationTests;     // JSON string containing integration tests
-    private String testData;             // JSON string containing test data
     private List<String> assertions;     // List of assertion strings
-    private Integer performanceThreshold; // Performance threshold in ms
     private String testEnvironment;       // Test environment (DEV, QA, PROD)
     private Integer testUsers;            // Number of test users for load testing
     private Integer testIterations;       // Number of test iterations
+
+    // Database connectivity tests
+    private Boolean testConnection;
+    private Boolean testObjectAccess;
+    private Boolean testPrivileges;
+
+    // Data validation tests
+    private Boolean testDataTypes;
+    private Boolean testNullConstraints;
+    private Boolean testUniqueConstraints;
+    private Boolean testForeignKeyReferences;
+
+    // Performance tests
+    private Boolean testQueryPerformance;
+    private Integer performanceThreshold;
+    private Boolean testWithSampleData;
+    private Integer sampleDataRows;
+
+    // PL/SQL specific tests
+    private Boolean testProcedureExecution;
+    private Boolean testFunctionReturn;
+    private Boolean testExceptionHandling;
+
+    // Security tests
+    private Boolean testSQLInjection;
+    private Boolean testAuthentication;
+    private Boolean testAuthorization;
+
+    // Test data
+    private Map<String, Object> testData;
+    private List<String> testQueries;
 }

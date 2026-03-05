@@ -1,9 +1,12 @@
 package com.usg.apiAutomation.entities.postgres.apiGenerationEngine;
 
+import com.vladmihalcea.hibernate.type.json.JsonType;
 import lombok.*;
 import org.hibernate.annotations.GenericGenerator;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.Type;
+
 import java.util.List;
 import java.util.Objects;
 

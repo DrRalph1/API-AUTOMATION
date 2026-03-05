@@ -1,5 +1,6 @@
 package com.usg.apiAutomation.controllers;
 
+import com.usg.apiAutomation.dtos.apiGenerationEngine.GenerateApiRequestDTO;
 import com.usg.apiAutomation.dtos.collections.*;
 import com.usg.apiAutomation.helpers.JwtHelper;
 import com.usg.apiAutomation.services.CollectionsService;
@@ -8,6 +9,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.persistence.EntityNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +19,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
@@ -136,7 +139,7 @@ public class CollectionsController {
     // 3. GET REQUEST DETAILS
     // ============================================================
     @GetMapping("/{collectionId}/requests/{requestId}")
-    @Operation(summary = "Get requestEntity details", description = "Retrieve details for a specific API requestEntity")
+    @Operation(summary = "Get request details", description = "Retrieve details for a specific API request in the format used by API Generation Engine")
     public ResponseEntity<?> getRequestDetails(
             @PathVariable String collectionId,
             @PathVariable String requestId,
@@ -144,37 +147,68 @@ public class CollectionsController {
 
         String requestIdParam = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting requestEntity details");
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting request details");
         if (authValidation != null) {
             return authValidation;
         }
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("collections", "RequestEntity ID: " + requestIdParam +
-                    ", Getting requestEntity details for: " + requestId);
+            loggerUtil.log("collections", "Request ID: " + requestIdParam +
+                    ", Getting request details for: " + requestId);
 
-            RequestDetailsResponseDTO details = collectionsService.getRequestDetails(
+            // This now returns GenerateApiRequestDTO which matches the sample structure
+            GenerateApiRequestDTO details = collectionsService.getRequestDetails(
                     requestIdParam, req, performedBy, collectionId, requestId);
 
+            // Create response in the same format as your API generation engine
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
-            response.put("message", "RequestEntity details retrieved successfully");
+            response.put("message", "Request details retrieved successfully");
             response.put("data", details);
             response.put("requestId", requestIdParam);
 
-            loggerUtil.log("collections", "RequestEntity ID: " + requestIdParam +
-                    ", RequestEntity details retrieved successfully");
+            // Add metadata if needed (optional - matches your generateApi response pattern)
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put("parametersCount", details.getParameters() != null ? details.getParameters().size() : 0);
+            metadata.put("headersCount", details.getHeaders() != null ? details.getHeaders().size() : 0);
+            metadata.put("retrievedAt", LocalDateTime.now().toString());
+            metadata.put("collectionId", collectionId);
+            metadata.put("requestId", requestId);
+            response.put("metadata", metadata);
+
+            loggerUtil.log("collections", "Request ID: " + requestIdParam +
+                    ", Request details retrieved successfully");
 
             return ResponseEntity.ok(response);
 
+        } catch (EntityNotFoundException e) {
+            loggerUtil.log("collections", "Request ID: " + requestIdParam +
+                    ", Request not found: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 404);
+            errorResponse.put("message", "Request not found: " + e.getMessage());
+            errorResponse.put("requestId", requestIdParam);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+
+        } catch (SecurityException e) {
+            loggerUtil.log("collections", "Request ID: " + requestIdParam +
+                    ", Security error: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 403);
+            errorResponse.put("message", "Access denied: " + e.getMessage());
+            errorResponse.put("requestId", requestIdParam);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
+
         } catch (Exception e) {
-            loggerUtil.log("collections", "RequestEntity ID: " + requestIdParam +
-                    ", Error getting requestEntity details: " + e.getMessage());
+            loggerUtil.log("collections", "Request ID: " + requestIdParam +
+                    ", Error getting request details: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting requestEntity details: " + e.getMessage());
+            errorResponse.put("message", "An error occurred while getting request details: " + e.getMessage());
             errorResponse.put("requestId", requestIdParam);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }

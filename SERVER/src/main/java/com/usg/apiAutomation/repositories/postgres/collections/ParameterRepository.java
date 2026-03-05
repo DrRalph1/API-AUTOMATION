@@ -3,6 +3,7 @@ package com.usg.apiAutomation.repositories.postgres.collections;
 import com.usg.apiAutomation.dtos.collections.ParameterDTO;
 import com.usg.apiAutomation.entities.postgres.collections.ParameterEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -19,5 +20,7 @@ public interface ParameterRepository extends JpaRepository<ParameterEntity, Stri
             "FROM ParametersEntityCollections p WHERE p.request.id = :requestId")
     List<ParameterDTO> findParameterDTOsByRequestId(@Param("requestId") String requestId);
 
-    void deleteByRequestId(String requestId);
+    @Modifying
+    @Query("DELETE FROM ParametersEntityCollections p WHERE p.request.id = :requestId")
+    void deleteByRequestId(@Param("requestId") String requestId);
 }

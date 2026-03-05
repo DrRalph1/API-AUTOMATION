@@ -1,6 +1,8 @@
 package com.usg.apiAutomation.repositories.postgres.collections;
 
+import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiParameterEntity;
 import com.usg.apiAutomation.entities.postgres.collections.CollectionEntity;
+import com.usg.apiAutomation.entities.postgres.collections.ParameterEntity;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -17,6 +19,9 @@ public interface CollectionRepository extends JpaRepository<CollectionEntity, St
     List<CollectionEntity> findByOwner(String owner);
 
     List<CollectionEntity> findByOwnerAndIsFavoriteTrue(String owner);
+
+    @Query(value = "SELECT * FROM tb_col_parameters WHERE request_id = :requestId", nativeQuery = true)
+    List<ParameterEntity> findParametersByRequestId(@Param("requestId") String requestId);
 
     @Query("SELECT c FROM CollectionEntityCollections c LEFT JOIN FETCH c.variables WHERE c.id = :id")
     Optional<CollectionEntity> findByIdWithVariables(@Param("id") String id);

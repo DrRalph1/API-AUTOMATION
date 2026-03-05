@@ -8,8 +8,7 @@ import org.hibernate.annotations.Type;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 
 @Entity
 @Table(name = "tb_eng_tests")
@@ -28,15 +27,87 @@ public class ApiTestEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "api_id")
     @ToString.Exclude
-    @EqualsAndHashCode.Exclude
     private GeneratedApiEntity generatedApi;
 
     @Column(name = "test_name")
     private String testName;
 
-    @Column(name = "test_type")
-    private String testType;
+    // =============================
+    // Database connectivity tests
+    // =============================
+    @Column(name = "test_connection")
+    private Boolean testConnection;
 
+    @Column(name = "test_object_access")
+    private Boolean testObjectAccess;
+
+    @Column(name = "test_privileges")
+    private Boolean testPrivileges;
+
+    // =============================
+    // Data validation tests
+    // =============================
+    @Column(name = "test_data_types")
+    private Boolean testDataTypes;
+
+    @Column(name = "test_null_constraints")
+    private Boolean testNullConstraints;
+
+    @Column(name = "test_unique_constraints")
+    private Boolean testUniqueConstraints;
+
+    @Column(name = "test_foreign_key_refs")
+    private Boolean testForeignKeyReferences;
+
+    // =============================
+    // Performance tests
+    // =============================
+    @Column(name = "test_query_performance")
+    private Boolean testQueryPerformance;
+
+    @Column(name = "performance_threshold")
+    private Integer performanceThreshold;
+
+    @Column(name = "test_with_sample_data")
+    private Boolean testWithSampleData;
+
+    @Column(name = "sample_data_rows")
+    private Integer sampleDataRows;
+
+    // =============================
+    // PL/SQL specific tests
+    // =============================
+    @Column(name = "test_procedure_execution")
+    private Boolean testProcedureExecution;
+
+    @Column(name = "test_function_return")
+    private Boolean testFunctionReturn;
+
+    @Column(name = "test_exception_handling")
+    private Boolean testExceptionHandling;
+
+    // =============================
+    // Security tests
+    // =============================
+    @Column(name = "test_sql_injection")
+    private Boolean testSQLInjection;
+
+    @Column(name = "test_authentication")
+    private Boolean testAuthentication;
+
+    @Column(name = "test_authorization")
+    private Boolean testAuthorization;
+
+    // =============================
+    // Query Storage
+    // =============================
+    @Type(JsonType.class)
+    @Column(name = "test_queries", columnDefinition = "jsonb")
+    private List<String> testQueries;
+
+    // =============================
+    // Test Data & Responses
+    // =============================
     @Type(JsonType.class)
     @Column(name = "test_data", columnDefinition = "jsonb")
     private Map<String, Object> testData;
@@ -49,6 +120,13 @@ public class ApiTestEntity {
     @Column(name = "actual_response", columnDefinition = "jsonb")
     private Map<String, Object> actualResponse;
 
+    @Type(JsonType.class)
+    @Column(name = "execution_results", columnDefinition = "jsonb")
+    private Map<String, Object> executionResults;
+
+    // =============================
+    // Execution Metadata
+    // =============================
     @Column(name = "status")
     private String status;
 
@@ -61,11 +139,18 @@ public class ApiTestEntity {
     @Column(name = "executed_by")
     private String executedBy;
 
+    @Column(name = "test_type")
+    private String testType;
+
+    // =====================================================
+    // equals & hashCode
+    // =====================================================
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        ApiTestEntity that = (ApiTestEntity) o;
+        if (!(o instanceof ApiTestEntity that)) return false;
+
         return Objects.equals(id, that.id) &&
                 Objects.equals(testName, that.testName) &&
                 Objects.equals(testType, that.testType) &&
@@ -76,16 +161,25 @@ public class ApiTestEntity {
                 Objects.equals(executionTimeMs, that.executionTimeMs) &&
                 Objects.equals(executedAt, that.executedAt) &&
                 Objects.equals(executedBy, that.executedBy) &&
-                Objects.equals(generatedApi != null ? generatedApi.getId() : null,
-                        that.generatedApi != null ? that.generatedApi.getId() : null);
+                Objects.equals(
+                        generatedApi != null ? generatedApi.getId() : null,
+                        that.generatedApi != null ? that.generatedApi.getId() : null
+                );
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, testName, testType, testData, expectedResponse,
-                actualResponse, status, executionTimeMs, executedAt, executedBy,
-                generatedApi != null ? generatedApi.getId() : null);
+        return Objects.hash(
+                id, testName, testType, testData,
+                expectedResponse, actualResponse,
+                status, executionTimeMs, executedAt, executedBy,
+                generatedApi != null ? generatedApi.getId() : null
+        );
     }
+
+    // =====================================================
+    // Utility Methods
+    // =====================================================
 
     @Override
     public String toString() {
@@ -94,9 +188,9 @@ public class ApiTestEntity {
                 ", apiId='" + (generatedApi != null ? generatedApi.getId() : null) + '\'' +
                 ", testName='" + testName + '\'' +
                 ", testType='" + testType + '\'' +
-                ", testData=" + summarizeJson(testData) + '\'' +
-                ", expectedResponse=" + summarizeJson(expectedResponse) + '\'' +
-                ", actualResponse=" + summarizeJson(actualResponse) + '\'' +
+                ", testData=" + summarizeJson(testData) +
+                ", expectedResponse=" + summarizeJson(expectedResponse) +
+                ", actualResponse=" + summarizeJson(actualResponse) +
                 ", status='" + status + '\'' +
                 ", executionTimeMs=" + executionTimeMs +
                 ", executedAt=" + formatDateTime(executedAt) +
@@ -104,88 +198,59 @@ public class ApiTestEntity {
                 '}';
     }
 
-    /**
-     * Helper method to summarize JSON in toString()
-     */
     private String summarizeJson(Map<String, Object> json) {
         if (json == null) return null;
         if (json.isEmpty()) return "{}";
         return "{size=" + json.size() + ", keys=" + json.keySet() + "}";
     }
 
-    /**
-     * Helper method to format datetime in toString()
-     */
     private String formatDateTime(LocalDateTime dateTime) {
-        if (dateTime == null) return null;
-        return dateTime.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        return dateTime == null ? null :
+                dateTime.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
     }
 
-    /**
-     * Checks if the test passed
-     */
     public boolean isPassed() {
         return "PASSED".equalsIgnoreCase(status);
     }
 
-    /**
-     * Checks if the test failed
-     */
     public boolean isFailed() {
         return "FAILED".equalsIgnoreCase(status);
     }
 
-    /**
-     * Checks if the test is pending
-     */
     public boolean isPending() {
-        return "PENDING".equalsIgnoreCase(status) || status == null;
+        return status == null || "PENDING".equalsIgnoreCase(status);
     }
 
-    /**
-     * Checks if the test is in progress
-     */
     public boolean isInProgress() {
         return "IN_PROGRESS".equalsIgnoreCase(status);
     }
 
-    /**
-     * Gets the test execution duration in a readable format
-     */
+    public boolean isExecutionSuccessful() {
+        return !"ERROR".equalsIgnoreCase(status)
+                && !"FAILED".equalsIgnoreCase(status);
+    }
+
     public String getFormattedExecutionTime() {
         if (executionTimeMs == null) return "N/A";
-
-        if (executionTimeMs < 1000) {
-            return executionTimeMs + " ms";
-        } else if (executionTimeMs < 60000) {
+        if (executionTimeMs < 1000) return executionTimeMs + " ms";
+        if (executionTimeMs < 60000)
             return String.format("%.2f seconds", executionTimeMs / 1000.0);
-        } else {
-            return String.format("%.2f minutes", executionTimeMs / 60000.0);
-        }
+        return String.format("%.2f minutes", executionTimeMs / 60000.0);
     }
 
-    /**
-     * Validates if the actual response matches the expected response
-     */
     public boolean validateResponse() {
-        if (actualResponse == null || expectedResponse == null) {
-            return false;
-        }
-        return actualResponse.equals(expectedResponse);
+        return actualResponse != null
+                && expectedResponse != null
+                && actualResponse.equals(expectedResponse);
     }
 
-    /**
-     * Gets the difference between actual and expected response
-     * Returns a map of fields that differ
-     */
     public Map<String, Object> getResponseDifferences() {
         if (actualResponse == null || expectedResponse == null) {
             return Map.of("error", "Cannot compare null responses");
         }
 
-        Map<String, Object> differences = new java.util.HashMap<>();
+        Map<String, Object> differences = new HashMap<>();
 
-        // Check for fields in expected but not in actual
         for (Map.Entry<String, Object> entry : expectedResponse.entrySet()) {
             String key = entry.getKey();
             Object expectedValue = entry.getValue();
@@ -201,7 +266,6 @@ public class ApiTestEntity {
             }
         }
 
-        // Check for extra fields in actual response
         for (String key : actualResponse.keySet()) {
             if (!expectedResponse.containsKey(key)) {
                 differences.put(key, "Unexpected field in actual response");
@@ -211,43 +275,12 @@ public class ApiTestEntity {
         return differences;
     }
 
-    /**
-     * Gets the test data value for a specific key
-     */
-    public Object getTestDataValue(String key) {
-        if (testData == null) return null;
-        return testData.get(key);
-    }
+    // =====================================================
+    // Builder defaults
+    // =====================================================
 
-    /**
-     * Gets the expected response value for a specific key
-     */
-    public Object getExpectedValue(String key) {
-        if (expectedResponse == null) return null;
-        return expectedResponse.get(key);
-    }
-
-    /**
-     * Gets the actual response value for a specific key
-     */
-    public Object getActualValue(String key) {
-        if (actualResponse == null) return null;
-        return actualResponse.get(key);
-    }
-
-    /**
-     * Checks if the test execution was successful (no errors)
-     */
-    public boolean isExecutionSuccessful() {
-        return !"ERROR".equalsIgnoreCase(status) &&
-                !"FAILED".equalsIgnoreCase(status);
-    }
-
-    /**
-     * Builder with defaults
-     */
     public static class ApiTestEntityBuilder {
-        private String status = "PENDING"; // Default status
-        private String testType = "UNIT"; // Default test type
+        private String status = "PENDING";
+        private String testType = "UNIT";
     }
 }

@@ -239,14 +239,16 @@ const FilterInput = React.memo(({
 
       {(localFilterValue || selectedOwner !== 'ALL') && !loading && (
         <div className="px-3 py-2 border-b" style={{ borderColor: colors.border, backgroundColor: colors.hover }}>
-          <div className="flex items-center justify-between">
-            <span className="text-xs" style={{ color: colors.textSecondary }}>
-              Filtering {localFilterValue && `by: "${localFilterValue}"`} {localFilterValue && selectedOwner !== 'ALL' && ' • '} 
-              {selectedOwner !== 'ALL' && `Owner: ${selectedOwner}`}
-            </span>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 min-w-0 overflow-x-auto scrollbar-hide">
+              <span className="text-xs whitespace-nowrap" style={{ color: colors.textSecondary }}>
+                Filtering {localFilterValue && `by: "${localFilterValue}"`} {localFilterValue && selectedOwner !== 'ALL' && ' • '} 
+                {selectedOwner !== 'ALL' && `Owner: ${selectedOwner}`}
+              </span>
+            </div>
             <button 
               onClick={handleClearAllFilters}
-              className="text-xs px-2 py-1 rounded"
+              className="text-xs px-2 py-1 rounded flex-shrink-0"
               style={{ backgroundColor: colors.border, color: colors.text }}
             >
               Clear All

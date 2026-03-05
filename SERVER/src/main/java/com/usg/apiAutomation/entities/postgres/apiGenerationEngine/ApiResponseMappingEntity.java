@@ -50,6 +50,9 @@ public class ApiResponseMappingEntity {
     @Column(name = "include_in_response")
     private Boolean includeInResponse;
 
+    @Column(name = "in_response")
+    private Boolean inResponse;
+
     @Column(name = "position")
     private Integer position;
 

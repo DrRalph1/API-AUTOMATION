@@ -17,5 +17,6 @@ public class ApiRequestConfigDTO {
     private Long maxSize;
     private Boolean validateSchema;
     private List<String> allowedMediaTypes;
+    private String bodyType;
     private List<String> requiredFields;
 }

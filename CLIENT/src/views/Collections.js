@@ -899,6 +899,241 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   const [newCollectionName, setNewCollectionName] = useState('');
   const [newCollectionDescription, setNewCollectionDescription] = useState('');
 
+
+  // Add this to your state declarations (around line 400)
+const [requestPathParams, setRequestPathParams] = useState([]);
+
+// Add these functions with your other CRUD operations (around line 900)
+// Add path param
+const addPathParam = () => {
+  const newParam = { 
+    id: `path-${Date.now()}`, 
+    key: '', 
+    value: '', 
+    description: '', 
+    enabled: true,
+    required: false
+  };
+  setRequestPathParams([...requestPathParams, newParam]);
+};
+
+
+
+const updatePathParam = (id, field, value) => {
+  console.log('🟢 updatePathParam called:', { id, field, value });
+  
+  // First update the state with the new value
+  setRequestPathParams(params => {
+    console.log('📦 Current path params before update:', params);
+    
+    const updatedParams = params.map(param => 
+      param.id === id ? { ...param, [field]: value } : param
+    );
+    
+    console.log('📦 Updated path params after update:', updatedParams);
+    
+    // Then update URL, but only for value changes
+    if (field === 'value') {
+      console.log('🔍 Field is "value", proceeding with URL update');
+      
+      // Find the updated param from the new array
+      const updatedParam = updatedParams.find(p => p.id === id);
+      console.log('🔍 Updated param found:', updatedParam);
+      
+      if (updatedParam && updatedParam.key) {
+        console.log('✅ Updated param has key, updating URL');
+        
+        // Update URL immediately for this specific parameter
+        setRequestUrl(prevUrl => {
+          console.log('🌐 Previous URL:', prevUrl);
+          if (!prevUrl) return prevUrl;
+          
+          // Get the template URL - try multiple sources
+          let templateUrl = '';
+          
+          if (selectedRequest && selectedRequest.url) {
+            templateUrl = selectedRequest.url;
+            console.log('📋 Using selectedRequest.url as template:', templateUrl);
+          } else {
+            // Try to reconstruct template from the current URL structure
+            // We need the ORIGINAL template with placeholders, not the current values
+            const urlParts = prevUrl.split('/');
+            
+            // Find where the path params should be by looking at the order of params
+            // The last N parts of the URL (where N = number of path params) should be the params
+            const paramCount = updatedParams.length;
+            const staticParts = urlParts.slice(0, urlParts.length - paramCount);
+            const paramParts = urlParts.slice(urlParts.length - paramCount);
+            
+            console.log('🔪 Static parts:', staticParts);
+            console.log('🔪 Current param values:', paramParts);
+            
+            // Rebuild template with placeholders
+            const templateParts = [...staticParts];
+            
+            // Add each param placeholder in order
+            updatedParams.forEach((p, index) => {
+              templateParts.push(`{${p.key}}`);
+            });
+            
+            templateUrl = templateParts.join('/');
+            console.log('📋 Reconstructed template URL:', templateUrl);
+          }
+          
+          // Now build the new URL by replacing placeholders with values
+          let newUrl = templateUrl;
+          console.log('🏁 Starting to build new URL from template:', newUrl);
+          
+          // Replace each placeholder with its current value
+          updatedParams.forEach((p, index) => {
+            const placeholder = `{${p.key}}`;
+            const replacementValue = p.value && p.value.trim() !== '' ? p.value : placeholder;
+            
+            if (newUrl.includes(placeholder)) {
+              newUrl = newUrl.replace(placeholder, replacementValue);
+              console.log(`  🔄 Replaced ${placeholder} with ${replacementValue}`);
+            } else {
+              console.log(`  ⚠️ Placeholder ${placeholder} not found in URL`);
+            }
+          });
+          
+          console.log('✅ Final new URL:', newUrl);
+          return newUrl;
+        });
+      } else {
+        console.log('❌ Updated param missing key, skipping URL update');
+      }
+    } else {
+      console.log('⏭️ Field is not "value", skipping URL update');
+    }
+    
+    return updatedParams;
+  });
+};
+
+// Fix 2: Update the determineActiveTab function to be more robust
+const determineActiveTab = useCallback(() => {
+  // Check each tab in order of preference
+  if (requestPathParams && requestPathParams.length > 0) {
+    return 'path-params';
+  }
+  if (requestParams && requestParams.length > 0) {
+    return 'query-params';
+  }
+  // Check if body has actual content (not just empty object or whitespace)
+  if (requestBody && requestBody.trim() !== '' && 
+      requestBody !== '{}' && 
+      requestBody !== '{\n  \n}' && 
+      requestBody !== '{\n  \n}') {
+    return 'body';
+  }
+  if (requestHeaders && requestHeaders.length > 0) {
+    return 'headers';
+  }
+  if (authType && authType !== 'noauth') {
+    return 'authorization';
+  }
+  // Default to path params if nothing has content
+  return 'path-params';
+}, [requestPathParams, requestParams, requestBody, requestHeaders, authType]);
+
+// Fix 3: Update the URL update function to handle the URL correctly
+const updateUrlWithPathParam = (key, value) => {
+  setRequestUrl(prevUrl => {
+    if (!prevUrl) return prevUrl;
+    
+    // Check if the parameter exists in the URL as a placeholder
+    const hasPlaceholder = prevUrl.includes(`{${key}}`) || prevUrl.includes(`:${key}`);
+    
+    if (hasPlaceholder) {
+      // Replace placeholder with value or keep placeholder if empty
+      const placeholderPatterns = [
+        new RegExp(`{${key}}`, 'g'),
+        new RegExp(`:${key}`, 'g')
+      ];
+      
+      let newUrl = prevUrl;
+      placeholderPatterns.forEach(pattern => {
+        if (pattern.test(newUrl)) {
+          const replacementValue = value && value.trim() !== '' ? value : `{${key}}`;
+          newUrl = newUrl.replace(pattern, replacementValue);
+        }
+      });
+      return newUrl;
+    }
+    return prevUrl;
+  });
+};
+
+// Fix 4: Add effect to update URL when path params change (as a backup)
+useEffect(() => {
+  if (selectedRequest && requestPathParams.length > 0) {
+    // This will run after all path param updates are complete
+    // It ensures the URL stays in sync with the path params
+    let updatedUrl = requestUrl;
+    requestPathParams.forEach(param => {
+      if (param.key) {
+        updatedUrl = updateUrlWithPathParamSync(updatedUrl, param.key, param.value);
+      }
+    });
+    if (updatedUrl !== requestUrl) {
+      setRequestUrl(updatedUrl);
+    }
+  }
+}, [requestPathParams.map(p => `${p.key}:${p.value}`).join('|')]); // Only run when key:value pairs change
+
+// Helper function for sync URL update
+const updateUrlWithPathParamSync = (url, key, value) => {
+  if (!url) return url;
+  
+  const hasPlaceholder = url.includes(`{${key}}`) || url.includes(`:${key}`);
+  
+  if (hasPlaceholder) {
+    const placeholderPatterns = [
+      new RegExp(`{${key}}`, 'g'),
+      new RegExp(`:${key}`, 'g')
+    ];
+    
+    let newUrl = url;
+    placeholderPatterns.forEach(pattern => {
+      if (pattern.test(newUrl)) {
+        const replacementValue = value && value.trim() !== '' ? value : `{${key}}`;
+        newUrl = newUrl.replace(pattern, replacementValue);
+      }
+    });
+    return newUrl;
+  }
+  return url;
+};
+
+
+
+// Delete path param
+const deletePathParam = (id) => {
+  setRequestPathParams(params => {
+    const remainingParams = params.filter(param => param.id !== id);
+    
+    // Rebuild URL with remaining params
+    setRequestUrl(prevUrl => {
+      if (!prevUrl) return prevUrl;
+      
+      // Extract base URL (everything before the first path param)
+      const baseUrl = prevUrl.split('/').slice(0, 3).join('/'); // Assumes format: protocol://domain/base
+      
+      // Rebuild URL with remaining params
+      let newUrl = baseUrl;
+      remainingParams.forEach((param, index) => {
+        const value = param.value && param.value.trim() !== '' ? param.value : `{${param.key}}`;
+        newUrl = newUrl + '/' + value;
+      });
+      
+      return newUrl;
+    });
+    
+    return remainingParams;
+  });
+};
+
   // Add URL parsing function
   const parseUrlParams = useCallback((url) => {
     try {
@@ -978,135 +1213,489 @@ const handleUrlChange = useCallback((e) => {
 
   // ==================== API METHODS ====================
 
-  // Transform API data to match UI structure based on backend DTOs
-  // Transform API data to match UI structure based on backend DTOs
-const transformCollectionsData = (apiData) => {
-  console.log('🔄 [Transform] Input:', apiData);
-  
-  if (!apiData) {
-    console.warn('⚠️ [Transform] No data provided');
-    return [];
-  }
-  
-  let collectionsArray = [];
-  
-  if (Array.isArray(apiData)) {
-    collectionsArray = apiData;
-  } else if (apiData.collections && Array.isArray(apiData.collections)) {
-    collectionsArray = apiData.collections;
-  } else {
-    console.warn('⚠️ [Transform] Unknown data structure:', apiData);
-    return [];
-  }
-  
-  console.log(`📊 [Transform] Processing ${collectionsArray.length} collections`);
-  
-  return collectionsArray.map((collection, collectionIndex) => {
-    // Process folders and their requests
-    const folders = (collection.folders || []).map((folder, folderIndex) => {
-      // Process requests within folder
-      const requests = (folder.requests || []).map((request, requestIndex) => {
-        // Create a Map to deduplicate parameters and headers by key
-        const uniqueParams = new Map();
-        const uniqueHeaders = new Map();
-        
-        // Process parameters first
-        (request.parameters || []).forEach((param, paramIdx) => {
-          if (param && param.key) {
-            const paramId = param.id || `param-${Date.now()}-${Math.random()}-${paramIdx}`;
-            uniqueParams.set(param.key, {
-              id: paramId,
-              key: param.key,
-              value: param.value || '',
-              description: param.description || '',
-              enabled: param.enabled !== false
-            });
-          }
-        });
-        
-        // Process headers - only add if key doesn't exist in params
-        (request.headers || []).forEach((header, headerIdx) => {
-          if (header && header.key) {
-            // Skip if this key was already processed as a parameter
-            if (!uniqueParams.has(header.key)) {
-              const headerId = header.id || `header-${Date.now()}-${Math.random()}-${headerIdx}`;
-              uniqueHeaders.set(header.key, {
-                id: headerId,
-                key: header.key,
-                value: header.value || '',
-                description: header.description || '',
-                enabled: header.enabled !== false
-              });
-            } else {
-              console.log(`⚠️ [Transform] Skipping duplicate header key: ${header.key} (already exists as param)`);
+  // First, update the transformCollectionsData function to ensure pathParams are properly populated
+  const transformCollectionsData = (apiData) => {
+    console.log('🔄 [Transform] Input:', apiData);
+    
+    if (!apiData) {
+      console.warn('⚠️ [Transform] No data provided');
+      return [];
+    }
+    
+    let collectionsArray = [];
+    
+    if (Array.isArray(apiData)) {
+      collectionsArray = apiData;
+    } else if (apiData.collections && Array.isArray(apiData.collections)) {
+      collectionsArray = apiData.collections;
+    } else {
+      console.warn('⚠️ [Transform] Unknown data structure:', apiData);
+      return [];
+    }
+    
+    console.log(`📊 [Transform] Processing ${collectionsArray.length} collections`);
+    
+    return collectionsArray.map((collection, collectionIndex) => {
+      // Process folders and their requests
+      const folders = (collection.folders || []).map((folder, folderIndex) => {
+        // Process requests within folder
+        const requests = (folder.requests || []).map((request, requestIndex) => {
+          // Separate parameters based on parameterLocation
+          const queryParams = [];
+          const pathParams = [];
+          const headerParams = [];
+          const bodyParams = [];
+          
+          console.log(`📋 [Transform] Processing request: ${request.name || 'Unnamed'}`, {
+            parameters: request.parameters?.length || 0
+          });
+          
+          // Process parameters with location info
+          (request.parameters || []).forEach((param, paramIdx) => {
+            if (param && param.key) {
+              const paramId = param.id || `param-${Date.now()}-${Math.random()}-${paramIdx}`;
+              const paramObject = {
+                id: paramId,
+                key: param.key,
+                value: param.value || '',
+                description: param.description || '',
+                enabled: param.enabled !== false,
+                required: param.required || false,
+                type: param.type || 'string',
+                parameterLocation: param.parameterLocation || 'query',
+                paramMode: param.paramMode || 'IN',
+                dbColumn: param.dbColumn || null,
+                oracleType: param.oracleType || null,
+                validationPattern: param.validationPattern || '',
+                defaultValue: param.defaultValue || '',
+                example: param.example || null,
+                bodyFormat: param.bodyFormat || null
+              };
+              
+              console.log(`📍 [Transform] Parameter ${param.key}: location = ${param.parameterLocation}`);
+              
+              // Sort by location
+              switch(param.parameterLocation?.toLowerCase()) {
+                case 'query':
+                  queryParams.push(paramObject);
+                  break;
+                case 'path':
+                  pathParams.push(paramObject);
+                  break;
+                case 'header':
+                  headerParams.push(paramObject);
+                  break;
+                case 'body':
+                  bodyParams.push(paramObject);
+                  break;
+                default:
+                  // Default to query if location not specified
+                  queryParams.push(paramObject);
+              }
             }
+          });
+          
+          // Process headers separately (these are HTTP headers, not params)
+          const headers = (request.headers || []).map((header, headerIdx) => ({
+            id: header.id || `header-${Date.now()}-${Math.random()}-${headerIdx}`,
+            key: header.key,
+            value: header.value || '',
+            description: header.description || '',
+            enabled: header.enabled !== false,
+            required: header.required || false
+          }));
+          
+          // Add header parameters to headers array
+          headerParams.forEach(headerParam => {
+            headers.push({
+              id: headerParam.id,
+              key: headerParam.key,
+              value: headerParam.value || '',
+              description: headerParam.description || '',
+              enabled: headerParam.enabled,
+              required: headerParam.required
+            });
+          });
+          
+          console.log(`📊 [Transform] Request "${request.name || 'Unnamed'}" - Query: ${queryParams.length}, Path: ${pathParams.length}, Header Params: ${headerParams.length}, Body: ${bodyParams.length}`);
+          
+          // Log path params specifically
+          if (pathParams.length > 0) {
+            console.log(`🛣️ [Transform] Path params for ${request.name}:`, pathParams.map(p => ({ key: p.key, value: p.value })));
           }
+          
+          return {
+            id: request.id || `req-${Date.now()}-${Math.random()}-${requestIndex}`,
+            name: request.name || 'New Request',
+            method: request.method || 'GET',
+            url: request.url || '',
+            description: request.description || '',
+            isEditing: false,
+            status: request.status || 'saved',
+            lastModified: request.lastModified || new Date().toISOString(),
+            auth: request.auth || { type: 'noauth' },
+            authType: request.authType || 'noauth',
+            authConfig: request.authConfig || {},
+            headers: headers,
+            queryParams: queryParams,
+            pathParams: pathParams,
+            bodyParams: bodyParams,
+            allParams: request.parameters || [],
+            body: request.body || '',
+            requestBody: request.requestBody || null,
+            tests: request.tests || '',
+            preRequestScript: request.preRequestScript || '',
+            isSaved: request.saved !== false,
+            collectionId: request.collectionId || collection.id,
+            folderId: request.folderId || folder.id,
+            apiCode: request.apiCode || null,
+            apiName: request.apiName || null
+          };
         });
-        
-        // Convert Maps to arrays
-        const paramsArray = Array.from(uniqueParams.values());
-        const headersArray = Array.from(uniqueHeaders.values());
-        
-        console.log(`📋 [Transform] Request "${request.name || 'Unnamed'}" - Params: ${paramsArray.length}, Headers: ${headersArray.length}`);
-        
+
         return {
-          id: request.id || `req-${Date.now()}-${Math.random()}-${requestIndex}`,
-          name: request.name || 'New Request',
-          method: request.method || 'GET',
-          url: request.url || '',
-          description: request.description || '',
+          id: folder.id || `folder-${Date.now()}-${Math.random()}-${folderIndex}`,
+          name: folder.name || 'New Folder',
+          description: folder.description || '',
+          isExpanded: false,
           isEditing: false,
-          status: request.status || 'saved',
-          lastModified: request.lastModified || new Date().toISOString(),
-          auth: request.auth || { type: 'noauth' },
-          authType: request.authType || 'noauth',
-          authConfig: request.authConfig || {},
-          headers: headersArray,
-          params: paramsArray,
-          body: request.body || '',
-          tests: request.tests || '',
-          preRequestScript: request.preRequestScript || '',
-          isSaved: request.saved !== false,
-          collectionId: request.collectionId || collection.id,
-          folderId: request.folderId || folder.id
+          requestCount: folder.requestCount || requests.length,
+          requests: requests
         };
       });
 
+      const totalRequests = folders.reduce((sum, folder) => sum + (folder.requests?.length || 0), 0);
+
       return {
-        id: folder.id || `folder-${Date.now()}-${Math.random()}-${folderIndex}`,
-        name: folder.name || 'New Folder',
-        description: folder.description || '',
-        isExpanded: false,
+        id: collection.id || `col-${Date.now()}-${Math.random()}-${collectionIndex}`,
+        name: collection.name || `Collection ${collectionIndex + 1}`,
+        description: collection.description || '',
+        isExpanded: collectionIndex === 0,
+        isFavorite: collection.favorite || false,
         isEditing: false,
-        requestCount: folder.requestCount || requests.length,
-        requests: requests
+        createdAt: collection.createdAt || new Date().toISOString(),
+        requestsCount: totalRequests,
+        folderCount: folders.length,
+        variables: (collection.variables || []).map((v, varIndex) => ({
+          id: v.id || `var-${Date.now()}-${Math.random()}-${varIndex}`,
+          key: v.key,
+          value: v.value,
+          type: v.type || 'text',
+          enabled: v.enabled !== false
+        })),
+        folders: folders
       };
     });
+  };
 
-    // Calculate total requests count
-    const totalRequests = folders.reduce((sum, folder) => sum + (folder.requests?.length || 0), 0);
-
-    return {
-      id: collection.id || `col-${Date.now()}-${Math.random()}-${collectionIndex}`,
-      name: collection.name || `Collection ${collectionIndex + 1}`,
-      description: collection.description || '',
-      isExpanded: collectionIndex === 0, // Only expand first collection by default
-      isFavorite: collection.favorite || false,
-      isEditing: false,
-      createdAt: collection.createdAt || new Date().toISOString(),
-      requestsCount: totalRequests,
-      folderCount: folders.length,
-      variables: (collection.variables || []).map((v, varIndex) => ({
-        id: v.id || `var-${Date.now()}-${Math.random()}-${varIndex}`,
-        key: v.key,
-        value: v.value,
-        type: v.type || 'text',
-        enabled: v.enabled !== false
-      })),
-      folders: folders
-    };
+const handleSelectRequest = useCallback(async (request, collectionId, folderId) => {
+  console.log('🎯 [handleSelectRequest] Selected request:', {
+    id: request.id,
+    name: request.name,
+    url: request.url,
+    pathParams: request.pathParams,
+    queryParams: request.queryParams
   });
-};
+
+  const requestWithContext = { ...request, collectionId, folderId };
+  setSelectedRequest(requestWithContext);
+  
+  setRequestMethod(request.method || 'GET');
+  
+  // Store the base URL template
+  const baseUrl = request.url || '';
+  console.log('🔗 Base URL:', baseUrl);
+  
+  setRequestBody(request.body || '');
+  
+  // Log what we're getting from the request object
+  console.log('📥 [Request] Raw request data:', {
+    name: request.name,
+    url: baseUrl,
+    pathParams: request.pathParams,
+    queryParams: request.queryParams,
+    headers: request.headers
+  });
+  
+  // Set parameters based on location
+  setRequestParams(request.queryParams || []);
+  setRequestHeaders(request.headers || []);
+  
+  // Set initial URL without path params (they'll be added after API call)
+  setRequestUrl(baseUrl);
+  
+  // Handle body parameters based on requestBody config
+  if (request.requestBody && request.requestBody.bodyType) {
+    const bodyType = request.requestBody.bodyType;
+    const allowedMediaTypes = request.requestBody.allowedMediaTypes || ['application/json'];
+    
+    if (bodyType === 'json' || allowedMediaTypes.includes('application/json')) {
+      setRequestBodyType('raw');
+      setRawBodyType('json');
+    } else if (bodyType === 'form-data' || allowedMediaTypes.includes('multipart/form-data')) {
+      setRequestBodyType('form-data');
+    } else if (bodyType === 'x-www-form-urlencoded' || allowedMediaTypes.includes('application/x-www-form-urlencoded')) {
+      setRequestBodyType('x-www-form-urlencoded');
+    } else if (bodyType === 'binary') {
+      setRequestBodyType('binary');
+    } else if (bodyType === 'graphql') {
+      setRequestBodyType('graphql');
+    } else {
+      setRequestBodyType('raw');
+      setRawBodyType(bodyType || 'json');
+    }
+  }
+  
+  // Handle body parameters
+  if (request.bodyParams && request.bodyParams.length > 0) {
+    const bodyObject = {};
+    request.bodyParams.forEach(param => {
+      if (param.enabled) {
+        bodyObject[param.key] = param.value || '';
+      }
+    });
+    
+    if (request.body) {
+      try {
+        const existingBody = JSON.parse(request.body);
+        setRequestBody(JSON.stringify({ ...existingBody, ...bodyObject }, null, 2));
+      } catch {
+        setRequestBody(JSON.stringify(bodyObject, null, 2));
+      }
+    } else {
+      setRequestBody(JSON.stringify(bodyObject, null, 2));
+    }
+    
+    if (requestBodyType === 'none') {
+      setRequestBodyType('raw');
+      setRawBodyType('json');
+    }
+  }
+  
+  setAuthType(request.authType || 'noauth');
+  setAuthConfig(request.authConfig || { type: request.authType || 'noauth' });
+  setResponse(null);
+  
+  setRequestTabs(tabs => {
+    const existingTab = tabs.find(t => t.id === request.id);
+    if (existingTab) {
+      return tabs.map(t => ({ ...t, isActive: t.id === request.id }));
+    } else {
+      return tabs.map(t => ({ ...t, isActive: false }))
+        .concat({ 
+          id: request.id, 
+          name: request.name, 
+          method: request.method, 
+          collectionId, 
+          folderId, 
+          isActive: true 
+        });
+    }
+  });
+  
+  if (authToken && request.id && collectionId) {
+    setLoading(prev => ({ ...prev, request: true }));
+    try {
+      const response = await getRequestDetails(authToken, collectionId, request.id);
+      if (!isMounted.current) return;
+      
+      const processedResponse = handleCollectionsResponse(response);
+      const details = extractRequestDetails(processedResponse);
+      
+      if (details) {
+        console.log('📦 [API Details] Received:', details);
+        
+        const requestWithDetails = { ...request, ...details };
+        setSelectedRequest(requestWithDetails);
+        
+        if (details.method) setRequestMethod(details.method);
+        
+        // Separate parameters based on location
+        if (details.parameters) {
+          const queryParams = [];
+          const pathParams = [];
+          const headerParams = [];
+          const bodyParams = [];
+          
+          details.parameters.forEach(param => {
+            if (param && param.key) {
+              const paramObject = {
+                id: param.id || `${param.key}-${Date.now()}`,
+                key: param.key,
+                value: param.value || '',
+                description: param.description || '',
+                enabled: param.enabled !== false,
+                required: param.required || false,
+                parameterLocation: param.parameterLocation || 'query',
+                bodyFormat: param.bodyFormat || null
+              };
+              
+              switch(param.parameterLocation?.toLowerCase()) {
+                case 'query':
+                  queryParams.push(paramObject);
+                  break;
+                case 'path':
+                  pathParams.push(paramObject);
+                  break;
+                case 'header':
+                  headerParams.push(paramObject);
+                  break;
+                case 'body':
+                  bodyParams.push(paramObject);
+                  break;
+                default:
+                  queryParams.push(paramObject);
+              }
+            }
+          });
+          
+          console.log('📊 [Separated Parameters]', {
+            query: queryParams.length,
+            path: pathParams.length,
+            header: headerParams.length,
+            body: bodyParams.length
+          });
+          
+          // Set query params in state
+          setRequestParams(queryParams);
+          
+          // Handle headers
+          const allHeaders = [...(details.headers || []), ...headerParams];
+          setRequestHeaders(allHeaders);
+          
+          // Handle body params
+          if (bodyParams.length > 0) {
+            const bodyObject = {};
+            bodyParams.forEach(param => {
+              if (param.enabled) {
+                bodyObject[param.key] = param.value || '';
+              }
+            });
+            
+            const hasJsonBodyFormat = bodyParams.some(p => p.bodyFormat === 'json');
+            
+            if (hasJsonBodyFormat) {
+              setRequestBody(JSON.stringify(bodyObject, null, 2));
+              setRequestBodyType('raw');
+              setRawBodyType('json');
+            } else {
+              setRequestBody(JSON.stringify(bodyObject, null, 2));
+              setRequestBodyType('raw');
+              setRawBodyType('json');
+            }
+          }
+          
+          // Handle path params
+          if (pathParams.length > 0) {
+            console.log('🛣️ Path params from API:', pathParams);
+            
+            // Set the path params state
+            const newPathParams = pathParams.map(param => ({
+              id: param.id || `path-${Date.now()}-${Math.random()}`,
+              key: param.key,
+              value: param.value || '',
+              description: param.description || '',
+              enabled: param.enabled !== false,
+              required: param.required || false
+            }));
+            
+            setRequestPathParams(newPathParams);
+            
+            // Build the URL with path params
+            let updatedUrl = details.url || baseUrl;
+            console.log('🔗 Building URL with path params. Base:', updatedUrl);
+            
+            // First, check if the URL already has placeholders
+            const hasAnyPlaceholder = pathParams.some(param => 
+              updatedUrl.includes(`{${param.key}}`) || updatedUrl.includes(`:${param.key}`)
+            );
+            
+            if (hasAnyPlaceholder) {
+              // Replace placeholders with values
+              pathParams.forEach(param => {
+                const hasPlaceholder = updatedUrl.includes(`{${param.key}}`) || updatedUrl.includes(`:${param.key}`);
+                const hasValue = param.value && param.value.trim() !== '';
+                
+                if (hasPlaceholder) {
+                  const placeholderPatterns = [
+                    new RegExp(`{${param.key}}`, 'g'),
+                    new RegExp(`:${param.key}`, 'g')
+                  ];
+                  
+                  placeholderPatterns.forEach(pattern => {
+                    if (pattern.test(updatedUrl)) {
+                      const replacementValue = hasValue ? param.value : `{${param.key}}`;
+                      console.log(`🔄 Replacing ${pattern} with ${replacementValue}`);
+                      updatedUrl = updatedUrl.replace(pattern, replacementValue);
+                    }
+                  });
+                }
+              });
+            } else {
+              // No placeholders found, append all path params in order
+              // Remove any trailing slash
+              updatedUrl = updatedUrl.replace(/\/$/, '');
+              
+              // Append each path param
+              newPathParams.forEach((param) => {
+                const hasValue = param.value && param.value.trim() !== '';
+                
+                if (hasValue) {
+                  updatedUrl = updatedUrl + '/' + param.value;
+                } else {
+                  updatedUrl = updatedUrl + '/{' + param.key + '}';
+                }
+              });
+            }
+            
+            console.log('✅ Final URL with path params:', updatedUrl);
+            setRequestUrl(updatedUrl);
+          } else {
+            setRequestPathParams([]);
+          }
+        }
+        
+        if (details.requestBody) {
+          const bodyType = details.requestBody.bodyType;
+          if (bodyType === 'json') {
+            setRequestBodyType('raw');
+            setRawBodyType('json');
+          } else if (bodyType === 'form-data') {
+            setRequestBodyType('form-data');
+          } else if (bodyType === 'x-www-form-urlencoded') {
+            setRequestBodyType('x-www-form-urlencoded');
+          } else if (bodyType === 'binary') {
+            setRequestBodyType('binary');
+          } else if (bodyType === 'graphql') {
+            setRequestBodyType('graphql');
+          }
+        }
+        
+        if (details.body) {
+          if (typeof details.body === 'object' && details.body.content) {
+            setRequestBody(details.body.content);
+          } else if (typeof details.body === 'string') {
+            setRequestBody(details.body);
+          }
+        }
+        
+        if (details.authType) setAuthType(details.authType);
+        if (details.authConfig) setAuthConfig(details.authConfig);
+        
+        // Determine which tab should be active based on content
+        const newActiveTab = determineActiveTab();
+        setActiveTab(newActiveTab);
+      }
+    } catch (apiError) {
+      console.error('Error fetching request details from API:', apiError);
+    } finally {
+      if (isMounted.current) {
+        setLoading(prev => ({ ...prev, request: false }));
+      }
+    }
+  }
+}, [authToken, requestUrl, requestBodyType, determineActiveTab]);
+
 
   const transformEnvironmentsData = (apiData) => {
   console.log('🔄 [Transform Environments] Input:', apiData);
@@ -1450,187 +2039,6 @@ const separateParamsAndHeaders = (items) => {
 };
 
 
-
-  const handleSelectRequest = useCallback(async (request, collectionId, folderId) => {
-  const requestWithContext = { ...request, collectionId, folderId };
-  setSelectedRequest(requestWithContext);
-  
-  setRequestMethod(request.method || 'GET');
-  setRequestUrl(request.url || '');
-  setRequestBody(request.body || '');
-  
-  // Log what we're getting from the request object
-  console.log('📥 [Request] Raw request data:', {
-    name: request.name,
-    paramsFromRequest: request.params,
-    headersFromRequest: request.headers,
-    paramsType: Array.isArray(request.params) ? 'array' : typeof request.params,
-    headersType: Array.isArray(request.headers) ? 'array' : typeof request.headers
-  });
-  
-  // Ensure params and headers are properly separated
-  setRequestParams(request.params || []);  // Should only contain query params
-  setRequestHeaders(request.headers || []); // Should only contain HTTP headers
-    
-    setAuthType(request.authType || 'noauth');
-    setAuthConfig(request.authConfig || { type: request.authType || 'noauth' });
-    setResponse(null);
-    
-    setRequestTabs(tabs => {
-      const existingTab = tabs.find(t => t.id === request.id);
-      if (existingTab) {
-        return tabs.map(t => ({ ...t, isActive: t.id === request.id }));
-      } else {
-        return tabs.map(t => ({ ...t, isActive: false }))
-          .concat({ 
-            id: request.id, 
-            name: request.name, 
-            method: request.method, 
-            collectionId, 
-            folderId, 
-            isActive: true 
-          });
-      }
-    });
-    
-    if (authToken && request.id && collectionId) {
-      setLoading(prev => ({ ...prev, request: true }));
-      try {
-        const response = await getRequestDetails(authToken, collectionId, request.id);
-        if (!isMounted.current) return;
-        
-        const processedResponse = handleCollectionsResponse(response);
-        const details = extractRequestDetails(processedResponse);
-        
-        // In handleSelectRequest, after getting details from API
-        if (details) {
-          const requestWithDetails = { ...request, ...details };
-          setSelectedRequest(requestWithDetails);
-          
-          if (details.method) setRequestMethod(details.method);
-          if (details.url) setRequestUrl(details.url);
-          if (details.body) {
-            if (typeof details.body === 'object' && details.body.content) {
-              setRequestBody(details.body.content);
-            } else if (typeof details.body === 'string') {
-              setRequestBody(details.body);
-            }
-          }
-          
-          // FIX: Properly separate params and headers based on content
-         if (details.parameters || details.headers) {
-            // Create a Map to deduplicate by key
-            const uniqueItems = new Map();
-            
-            // Process parameters first
-            (details.parameters || []).forEach(item => {
-              if (item && item.key) {
-                // Mark as coming from parameters
-                uniqueItems.set(item.key, { ...item, source: 'param' });
-              }
-            });
-            
-            // Process headers - only add if key doesn't exist
-            (details.headers || []).forEach(item => {
-              if (item && item.key) {
-                if (!uniqueItems.has(item.key)) {
-                  uniqueItems.set(item.key, { ...item, source: 'header' });
-                } else {
-                  console.log(`⚠️ Duplicate key "${item.key}" skipped in headers`);
-                }
-              }
-            });
-            
-            const params = [];
-            const headers = [];
-            
-            // Convert Map to array and separate
-            uniqueItems.forEach((item, key) => {
-              console.log(`📋 Processing "${key}" from source: ${item.source}`);
-              
-              // Determine if it's a query parameter or header
-              const isQueryParam = 
-                key.includes('?') || 
-                key.includes('=') ||
-                item.value?.includes('?') ||
-                item.value?.includes('=') ||
-                key.startsWith('param') ||
-                key.includes('query') ||
-                item.description?.toLowerCase().includes('query') ||
-                // Common query parameter names
-                ['page', 'limit', 'offset', 'sort', 'order', 'filter', 'search', 'q', 'id', 'userid', 
-                'acct_link_v', 'amt', 'narration', 'doc_ref', 'batch_no', 'post_by', 'app_by', 
-                'post_terminal', 'cust_tel', 'trans_by', 'trans_type', 'db_acct_link', 'channel_code', 
-                'api_secret_v'].includes(key.toLowerCase());
-              
-              const isHeader = 
-                key.startsWith('content-') ||
-                key.startsWith('accept') ||
-                key.startsWith('authorization') ||
-                key.startsWith('x-') ||
-                // Common header names
-                ['content-type', 'content-length', 'user-agent', 'host', 'origin', 'referer', 
-                'cookie', 'set-cookie', 'cache-control', 'pragma', 'expires'].includes(key.toLowerCase());
-              
-              // Create the item object
-              const newItem = {
-                id: item.id || `${key}-${Date.now()}-${Math.random()}`,
-                key: item.key,
-                value: item.value || '',
-                description: item.description || '',
-                enabled: item.enabled !== false
-              };
-              
-              if (isQueryParam && !isHeader) {
-                params.push(newItem);
-                console.log('✅ Added as param:', key);
-              } else if (isHeader && !isQueryParam) {
-                headers.push(newItem);
-                console.log('✅ Added as header:', key);
-              } else {
-                // If ambiguous, check source
-                if (item.source === 'param') {
-                  params.push(newItem);
-                  console.log('✅ Added as param (by source):', key);
-                } else {
-                  // Default to param for these types of keys (they look like data fields)
-                  if (['acct_link_v', 'amt', 'narration', 'doc_ref', 'batch_no', 'post_by', 
-                      'app_by', 'post_terminal', 'cust_tel', 'trans_by', 'trans_type', 
-                      'db_acct_link', 'channel_code', 'api_secret_v'].includes(key)) {
-                    params.push(newItem);
-                    console.log('✅ Added as param (data field):', key);
-                  } else {
-                    headers.push(newItem);
-                    console.log('✅ Added as header (default):', key);
-                  }
-                }
-              }
-            });
-            
-            setRequestParams(params);
-            setRequestHeaders(headers);
-            
-            console.log('🔧 [Final Separation]', {
-              totalUnique: uniqueItems.size,
-              params: params.length,
-              headers: headers.length,
-              paramKeys: params.map(p => p.key),
-              headerKeys: headers.map(h => h.key)
-            });
-          }
-          
-          if (details.authType) setAuthType(details.authType);
-          if (details.authConfig) setAuthConfig(details.authConfig);
-        }
-      } catch (apiError) {
-        console.error('Error fetching request details from API:', apiError);
-      } finally {
-        if (isMounted.current) {
-          setLoading(prev => ({ ...prev, request: false }));
-        }
-      }
-    }
-  }, [authToken]);
 
   const handleSaveRequest = useCallback(async () => {
     if (!selectedRequest) {
@@ -2642,8 +3050,168 @@ const separateParamsAndHeaders = (items) => {
     );
   };
 
+
+  const renderPathParamsTab = () => {
+  const hasParams = requestPathParams.length > 0;
+  
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex justify-between items-center p-4">
+        <div className="flex items-center gap-4">
+          <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Path Parameters</h3>
+          {hasParams && (
+            <div className="flex items-center gap-2">
+              <button type="button" className="text-xs px-2 py-1 rounded hover-lift" style={{ 
+                backgroundColor: colors.hover,
+                color: colors.textSecondary
+              }}
+              onClick={() => {
+                const text = requestPathParams.map(p => `${p.key}=${p.value}`).join('\n');
+                navigator.clipboard.writeText(text);
+                showToast('Parameters copied as text', 'success');
+              }}>
+                Bulk Edit
+              </button>
+            </div>
+          )}
+        </div>
+        <button type="button" onClick={addPathParam} className="px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2 hover:opacity-90 transition-colors hover-lift"
+          style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
+          <Plus size={12} />
+          Add
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-hidden">
+        {hasParams ? (
+          <div className="h-full overflow-auto">
+            <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+              <thead style={{ backgroundColor: colors.tableHeader, position: 'sticky', top: 0 }}>
+                <tr>
+                  <th className="w-12 p-0">
+                    <div className="p-3">
+                      <input 
+                        type="checkbox" 
+                        className="rounded-sm hover-lift"
+                        checked={requestPathParams.every(p => p.enabled)}
+                        onChange={() => {
+                          const allEnabled = requestPathParams.every(p => p.enabled);
+                          setRequestPathParams(requestPathParams.map(p => ({ ...p, enabled: !allEnabled })));
+                        }}
+                        style={{ 
+                          borderColor: colors.border,
+                          backgroundColor: colors.card,
+                          cursor: 'pointer'
+                        }}
+                      />
+                    </div>
+                  </th>
+                  <th className="text-left p-3 text-sm font-medium" style={{ color: colors.textSecondary }}>KEY</th>
+                  <th className="text-left p-3 text-sm font-medium" style={{ color: colors.textSecondary }}>VALUE</th>
+                  <th className="text-left p-3 text-sm font-medium" style={{ color: colors.textSecondary }}>DESCRIPTION</th>
+                  <th className="w-16 p-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {requestPathParams.map(param => (
+                  <tr key={param.id} className="hover:bg-opacity-50 transition-colors hover-lift" 
+                    style={{ backgroundColor: colors.tableRow }}>
+                    <td className="p-0">
+                      <div className="p-3">
+                        <input
+                          type="checkbox"
+                          checked={param.enabled}
+                          onChange={() => updatePathParam(param.id, 'enabled', !param.enabled)}
+                          className="rounded-sm hover-lift"
+                          style={{ 
+                            borderColor: colors.border,
+                            backgroundColor: colors.card,
+                            cursor: 'pointer'
+                          }}
+                        />
+                      </div>
+                    </td>
+                    <td className="p-3">
+                      <input
+                        type="text"
+                        value={param.key}
+                        onChange={(e) => updatePathParam(param.id, 'key', e.target.value)}
+                        className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
+                        style={{ 
+                          borderColor: colors.border,
+                          color: colors.text,
+                          backgroundColor: colors.inputBg
+                        }}
+                        placeholder="Key"
+                        readOnly // Usually path param keys shouldn't be editable
+                      />
+                    </td>
+                    <td className="p-3">
+                      <input
+                        type="text"
+                        value={param.value}
+                        onChange={(e) => updatePathParam(param.id, 'value', e.target.value)}
+                        className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
+                        style={{ 
+                          borderColor: colors.border,
+                          color: colors.text,
+                          backgroundColor: colors.inputBg
+                        }}
+                        placeholder="Enter value"
+                      />
+                    </td>
+                    <td className="p-3">
+                      <input
+                        type="text"
+                        value={param.description || ''}
+                        onChange={(e) => updatePathParam(param.id, 'description', e.target.value)}
+                        className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
+                        style={{ 
+                          borderColor: colors.border,
+                          color: colors.text,
+                          backgroundColor: colors.inputBg
+                        }}
+                        placeholder="Description"
+                      />
+                    </td>
+                    <td className="p-3">
+                      <button
+                        type="button"
+                        onClick={() => deletePathParam(param.id)}
+                        className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                        style={{ backgroundColor: colors.hover }}>
+                        <Trash2 size={13} style={{ color: colors.textSecondary }} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+            <Link size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mb-4" />
+            <h3 className="text-sm font-semibold mb-2" style={{ color: colors.text }}>No Path Parameters</h3>
+            <p className="text-sm mb-4 max-w-sm" style={{ color: colors.textSecondary }}>
+              Path parameters are variable parts of the URL path, denoted by curly braces &#123;&#125; or colon : prefix.
+            </p>
+            <button
+              type="button"
+              onClick={addPathParam}
+              className="px-3 py-1.5 text-sm font-medium rounded flex items-center gap-2 hover:opacity-90 transition-colors hover-lift"
+              style={{ backgroundColor: colors.primaryDark, color: colors.white }}>
+              <Plus size={13} />
+              Add Path Parameter
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
   // Render Params Tab
-  const renderParamsTab = () => {
+  const renderQueryParamsTab = () => {
     const hasParams = requestParams.length > 0;
     
     return (
@@ -4814,8 +5382,8 @@ const separateParamsAndHeaders = (items) => {
               backgroundColor: colors.card,
               borderColor: colors.border
             }}>
-              {['Params', 'Authorization', 'Headers', 'Body', 'Pre-request Script', 'Tests', 'Settings'].map(tab => {
-                const tabId = tab.toLowerCase().replace(' ', '-');
+              {['Path Params', 'Query Params', 'Authorization', 'Headers', 'Body', 'Pre-request Script', 'Tests', 'Settings'].map(tab => {
+                const tabId = tab.toLowerCase().replace(' ', '-').replace('path-params', 'path-params');
                 return (
                   <button 
                     key={tabId} 
@@ -4837,7 +5405,8 @@ const separateParamsAndHeaders = (items) => {
 
             {/* REQUEST CONTENT */}
             <div className="flex-1 overflow-auto min-h-0" style={{ backgroundColor: colors.card }}>
-              {activeTab === 'params' && renderParamsTab()}
+              {activeTab === 'path-params' && renderPathParamsTab()}
+              {activeTab === 'query-params' && renderQueryParamsTab()}
               {activeTab === 'authorization' && renderAuthTab()}
               {activeTab === 'headers' && renderHeadersTab()}
               {activeTab === 'body' && renderBodyTab()}

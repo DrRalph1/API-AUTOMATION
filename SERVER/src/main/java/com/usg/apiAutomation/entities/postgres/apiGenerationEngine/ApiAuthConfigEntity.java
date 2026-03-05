@@ -40,6 +40,12 @@ public class ApiAuthConfigEntity {
     @Column(name = "api_key_secret")
     private String apiKeySecret;
 
+    @Column(name = "api_secret_header")
+    private String apiSecretHeader;
+
+    @Column(name = "api_secret_value")
+    private String apiSecretValue;
+
     @Column(name = "api_key_location")
     private String apiKeyLocation;
 
@@ -57,6 +63,9 @@ public class ApiAuthConfigEntity {
     private String basicRealm;
 
     // JWT fields
+    @Column(name = "jwt_token", length = 4000)
+    private String jwtToken;
+
     @Column(name = "jwt_secret")
     private String jwtSecret;
 
@@ -114,6 +123,9 @@ public class ApiAuthConfigEntity {
 
     @Column(name = "rate_limit_period")
     private String rateLimitPeriod;
+
+    @Column(name = "enable_rate_limiting")
+    private Boolean enableRateLimiting;
 
     @Column(name = "audit_level")
     private String auditLevel;

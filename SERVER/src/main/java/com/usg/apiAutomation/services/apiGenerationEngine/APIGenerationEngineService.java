@@ -136,37 +136,46 @@ public class APIGenerationEngineService {
                     .collectionInfo(objectMapper.convertValue(collectionInfo, Map.class))
                     .build();
 
-            // Save schema config (Oracle object mapping)
+            // ============= USE THE NEW MAPPING METHODS HERE =============
+
+            // Save schema config
             if (request.getSchemaConfig() != null) {
                 ApiSchemaConfigEntity schemaConfig = mapToSchemaConfigEntity(request.getSchemaConfig(), api);
                 api.setSchemaConfig(schemaConfig);
             }
 
-            // Save auth config
+            // Save auth config - USING UPDATED METHOD
             if (request.getAuthConfig() != null) {
                 ApiAuthConfigEntity authConfig = mapToAuthConfigEntity(request.getAuthConfig(), api);
                 api.setAuthConfig(authConfig);
             }
 
-            // Save request config
+            // Save request config - USING UPDATED METHOD
             if (request.getRequestBody() != null) {
                 ApiRequestConfigEntity requestConfig = mapToRequestConfigEntity(request.getRequestBody(), api);
                 api.setRequestConfig(requestConfig);
             }
 
-            // Save response config
+            // Save response config - USING UPDATED METHOD
             if (request.getResponseBody() != null) {
                 ApiResponseConfigEntity responseConfig = mapToResponseConfigEntity(request.getResponseBody(), api);
                 api.setResponseConfig(responseConfig);
             }
 
-            // Save settings
+            // Save settings - USING UPDATED METHOD
             if (request.getSettings() != null) {
                 ApiSettingsEntity settings = mapToSettingsEntity(request.getSettings(), api);
                 api.setSettings(settings);
             }
 
-            // Save parameters from UI
+            // Save tests
+            if (request.getTests() != null) {
+                // Use createTestEntities which returns List<ApiTestEntity> (consistent with updateApi)
+                List<ApiTestEntity> tests = createTestEntities(request.getTests(), api);
+                api.setTests(tests);
+            }
+
+            // Save parameters from UI - USING UPDATED METHOD
             if (request.getParameters() != null && !request.getParameters().isEmpty()) {
                 List<ApiParameterEntity> parameters = new ArrayList<>();
                 for (int i = 0; i < request.getParameters().size(); i++) {
@@ -180,11 +189,9 @@ public class APIGenerationEngineService {
                 // Auto-generate parameters from source object (fallback)
                 List<ApiParameterEntity> parameters = generateParametersFromSource(sourceObjectDTO, api);
                 api.setParameters(parameters);
-            } else {
-                api.setParameters(new ArrayList<>());
             }
 
-            // Save response mappings from UI
+            // Save response mappings from UI - USING UPDATED METHOD
             if (request.getResponseMappings() != null && !request.getResponseMappings().isEmpty()) {
                 List<ApiResponseMappingEntity> mappings = new ArrayList<>();
                 for (int i = 0; i < request.getResponseMappings().size(); i++) {
@@ -198,8 +205,6 @@ public class APIGenerationEngineService {
                 // Auto-generate response mappings from source object (fallback)
                 List<ApiResponseMappingEntity> mappings = generateResponseMappingsFromSource(sourceObjectDTO, api);
                 api.setResponseMappings(mappings);
-            } else {
-                api.setResponseMappings(new ArrayList<>());
             }
 
             // Save headers
@@ -208,25 +213,17 @@ public class APIGenerationEngineService {
                         .map(headerDto -> mapToHeaderEntity(headerDto, api))
                         .collect(Collectors.toList());
                 api.setHeaders(headers);
-            } else {
-                api.setHeaders(new ArrayList<>());
             }
 
-            // Save tests
-            if (request.getTests() != null) {
-                List<ApiTestEntity> tests = createTestEntities(request.getTests(), api);
-                api.setTests(tests);
-            } else {
-                api.setTests(new ArrayList<>());
-            }
+            // ============================================================
 
             // Save to database
             GeneratedApiEntity savedApi = generatedAPIRepository.save(api);
 
-            // Generate code and documentation using the collection info from frontend
+            // Generate code and documentation
             Map<String, String> generatedFiles = generateApiCode(savedApi);
 
-            // Use the collection info from frontend instead of generating new ones
+            // Generate related components
             String codeBaseRequestId = generateCodeBase(savedApi, performedBy, request, collectionInfo);
             String collectionId = generateCollections(savedApi, performedBy, request, collectionInfo);
             String docCollectionId = generateDocumentation(savedApi, performedBy, request, codeBaseRequestId, collectionId, collectionInfo);
@@ -235,7 +232,7 @@ public class APIGenerationEngineService {
             GeneratedApiResponseDTO response = mapToResponse(savedApi);
             response.setGeneratedFiles(generatedFiles);
 
-            // Add metadata with references to generated components and collection info
+            // Add metadata
             Map<String, Object> metadata = new HashMap<>();
             metadata.put("parametersCount", savedApi.getParameters() != null ? savedApi.getParameters().size() : 0);
             metadata.put("responseMappingsCount", savedApi.getResponseMappings() != null ? savedApi.getResponseMappings().size() : 0);
@@ -263,9 +260,7 @@ public class APIGenerationEngineService {
             response.setMetadata(metadata);
 
             loggerUtil.log("apiGeneration", "Request ID: " + requestId +
-                    ", API generated successfully with ID: " + savedApi.getId() +
-                    ", Collection: " + collectionInfo.getCollectionName() +
-                    ", Folder: " + collectionInfo.getFolderName());
+                    ", API generated successfully with ID: " + savedApi.getId());
 
             return response;
 
@@ -684,7 +679,7 @@ public class APIGenerationEngineService {
                 .auditLevel(entity.getAuditLevel())
                 .generateSwagger(entity.getGenerateSwagger())
                 .generatePostman(entity.getGeneratePostman())
-                .generateClientSdk(entity.getGenerateClientSdk())
+                .generateClientSDK(entity.getGenerateClientSDK())
                 .enableMonitoring(entity.getEnableMonitoring())
                 .enableAlerts(entity.getEnableAlerts())
                 .alertEmail(entity.getAlertEmail())
@@ -1271,15 +1266,44 @@ public class APIGenerationEngineService {
             com.usg.apiAutomation.entities.postgres.collections.RequestEntity requestEntity,
             GeneratedApiEntity api) {
 
-        if (api.getParameters() != null) {
+        // Ensure params list is initialized
+        if (requestEntity.getParams() == null) {
+            requestEntity.setParams(new ArrayList<>());
+        }
+
+        // Add new parameters (don't try to clear anything since this is a new request)
+        if (api.getParameters() != null && !api.getParameters().isEmpty()) {
             for (ApiParameterEntity apiParam : api.getParameters()) {
                 ParameterEntity param = new ParameterEntity();
+
+                // Generate new ID
                 param.setId(UUID.randomUUID().toString());
+
+                // Basic fields
                 param.setKey(apiParam.getKey() != null ? apiParam.getKey() : "");
                 param.setValue(apiParam.getExample() != null ? apiParam.getExample() : "");
                 param.setDescription(apiParam.getDescription() != null ? apiParam.getDescription() : "");
                 param.setEnabled(apiParam.getRequired() != null ? apiParam.getRequired() : true);
+
+                // Additional fields
+                param.setDbColumn(apiParam.getDbColumn());
+                param.setDbParameter(apiParam.getDbParameter());
+                param.setParameterType(apiParam.getParameterType());
+                param.setOracleType(apiParam.getOracleType());
+                param.setApiType(apiParam.getApiType());
+                param.setParameterLocation(apiParam.getParameterLocation());
+                param.setRequired(apiParam.getRequired());
+                param.setValidationPattern(apiParam.getValidationPattern());
+                param.setDefaultValue(apiParam.getDefaultValue());
+                param.setInBody(apiParam.getInBody());
+                param.setIsPrimaryKey(apiParam.getIsPrimaryKey());
+                param.setParamMode(apiParam.getParamMode() != null ? apiParam.getParamMode() : "IN");
+                param.setPosition(apiParam.getPosition() != null ? apiParam.getPosition() : 0);
+
+                // Set relationship to the managed request entity
                 param.setRequest(requestEntity);
+
+                // Add to request's params collection
                 requestEntity.getParams().add(param);
             }
         }
@@ -1294,7 +1318,6 @@ public class APIGenerationEngineService {
         }
     }
 
-    // Update Collections
     /**
      * Update collections with collection info from frontend
      */
@@ -1345,7 +1368,6 @@ public class APIGenerationEngineService {
 
                 // Update collection type if provided
                 if (collectionInfo != null && collectionInfo.getCollectionType() != null) {
-                    // You might want to store this in a separate field or as metadata
                     Map<String, Object> metadata = collection.getMetadata() != null ?
                             collection.getMetadata() : new HashMap<>();
                     metadata.put("collectionType", collectionInfo.getCollectionType());
@@ -1355,70 +1377,6 @@ public class APIGenerationEngineService {
                 // Update folder if collectionInfo has folder info
                 if (collectionInfo != null && collectionInfo.getFolderId() != null) {
                     updateCollectionsFolder(collection, collectionInfo, performedBy);
-                }
-
-                // Find and update the request in this collection
-                List<com.usg.apiAutomation.entities.postgres.collections.RequestEntity> requests =
-                        collectionsRequestRepository.findByCollectionId(collectionId);
-
-                com.usg.apiAutomation.entities.postgres.collections.RequestEntity requestEntity;
-
-                if (!requests.isEmpty()) {
-                    requestEntity = requests.get(0);
-                    log.info("Found existing request in collection: {}", requestEntity.getId());
-
-                    // Clear existing collections properly before updating
-                    if (requestEntity.getHeaders() != null) {
-                        requestEntity.getHeaders().clear();
-                    }
-                    if (requestEntity.getParams() != null) {
-                        requestEntity.getParams().clear();
-                    }
-                } else {
-                    // Create new request if none exists
-                    requestEntity = new com.usg.apiAutomation.entities.postgres.collections.RequestEntity();
-                    requestEntity.setId(UUID.randomUUID().toString()); // Generate ID for new request
-                    requestEntity.setCollection(collection);
-                    requestEntity.setHeaders(new ArrayList<>());
-                    requestEntity.setParams(new ArrayList<>());
-
-                    // Set folder if available
-                    if (collectionInfo != null && collectionInfo.getFolderId() != null) {
-                        Optional<FolderEntity> folder = collectionsFolderRepository.findById(collectionInfo.getFolderId());
-                        folder.ifPresent(requestEntity::setFolder);
-                    }
-
-                    log.info("Creating new request for collection: {}", collectionId);
-                }
-
-                // Update request with API details
-                requestEntity.setName(api.getApiName() + " - " + api.getHttpMethod());
-                requestEntity.setMethod(api.getHttpMethod());
-                requestEntity.setUrl("{{baseUrl}}" + (api.getEndpointPath() != null ? api.getEndpointPath() : ""));
-                requestEntity.setDescription(api.getDescription());
-                requestEntity.setLastModified(LocalDateTime.now());
-                requestEntity.setSaved(true);
-
-                // Update auth config
-                updateCollectionsAuthConfig(requestEntity, api);
-
-                // Update headers
-                updateCollectionsHeaders(requestEntity, api);
-
-                // Update parameters
-                updateCollectionsParameters(requestEntity, api);
-
-                // Update body
-                updateCollectionsBody(requestEntity, api);
-
-                // Save request
-                com.usg.apiAutomation.entities.postgres.collections.RequestEntity savedRequest =
-                        collectionsRequestRepository.save(requestEntity);
-                collectionsRequestRepository.flush();
-
-                // Update folder request count if needed
-                if (collectionInfo != null && collectionInfo.getFolderId() != null) {
-                    updateFolderRequestCount(collectionInfo.getFolderId());
                 }
 
                 // Save collection
@@ -1440,6 +1398,7 @@ public class APIGenerationEngineService {
 
         } catch (Exception e) {
             log.error("Failed to update collections: {}", e.getMessage(), e);
+            // Don't throw here - we don't want to fail the whole update if collections update fails
         }
     }
 
@@ -4680,6 +4639,9 @@ public class APIGenerationEngineService {
 
     /**
      * Generate collections using the provided collection info
+     * - Uses existing collections/folders if they exist
+     * - ALWAYS creates a NEW request with NEW parameters for each API generation
+     * - Never updates or reuses existing requests
      */
     private String generateCollections(GeneratedApiEntity api, String performedBy,
                                        GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo) {
@@ -4687,7 +4649,7 @@ public class APIGenerationEngineService {
             log.info("Generating Collections for API: {} using collection: {}",
                     api.getApiCode(), collectionInfo.getCollectionName());
 
-            // STEP 1: Handle Collection
+            // ==================== STEP 1: Handle Collection (use existing or create new) ====================
             CollectionEntity collection;
             Optional<CollectionEntity> existingCollection = collectionsCollectionRepository
                     .findById(collectionInfo.getCollectionId());
@@ -4696,7 +4658,7 @@ public class APIGenerationEngineService {
                 collection = existingCollection.get();
                 log.info("Found existing collection: {}", collection.getId());
 
-                // Update collection details
+                // Update collection details if needed
                 boolean needsUpdate = false;
 
                 if (!collectionInfo.getCollectionName().equals(collection.getName())) {
@@ -4738,7 +4700,7 @@ public class APIGenerationEngineService {
             } else {
                 // Create new collection
                 collection = new CollectionEntity();
-                collection.setId(collectionInfo.getCollectionId());
+                collection.setId(collectionInfo.getCollectionId()); // Use the provided ID for new collections
                 collection.setName(collectionInfo.getCollectionName());
                 collection.setDescription(api.getDescription() != null ? api.getDescription() :
                         "Collection for " + collectionInfo.getCollectionName());
@@ -4748,6 +4710,8 @@ public class APIGenerationEngineService {
                 collection.setFavorite(false);
                 collection.setLastActivity(LocalDateTime.now());
                 collection.setColor(getRandomColor());
+                collection.setCreatedAt(LocalDateTime.now());
+                collection.setUpdatedAt(LocalDateTime.now());
 
                 if (collectionInfo.getCollectionType() != null) {
                     Map<String, Object> metadata = new HashMap<>();
@@ -4783,11 +4747,11 @@ public class APIGenerationEngineService {
                     }
                 }
 
-                // For collections, we use {{baseUrl}} placeholder that will be replaced with actual IP:port at runtime
+                // For collections, we use {{baseUrl}} placeholder
                 VariableEntity baseUrlVar = new VariableEntity();
                 baseUrlVar.setId(UUID.randomUUID().toString());
                 baseUrlVar.setKey("baseUrl");
-                baseUrlVar.setValue(""); // Empty default - will be populated by the user's IP and port
+                baseUrlVar.setValue("");
                 baseUrlVar.setType("string");
                 baseUrlVar.setEnabled(true);
                 variables.add(baseUrlVar);
@@ -4802,7 +4766,7 @@ public class APIGenerationEngineService {
             CollectionEntity savedCollection = collectionsCollectionRepository.save(collection);
             collectionsCollectionRepository.flush();
 
-            // STEP 2: Handle Folder
+            // ==================== STEP 2: Handle Folder (use existing or create new) ====================
             FolderEntity folder;
             Optional<FolderEntity> existingFolder = collectionsFolderRepository
                     .findById(collectionInfo.getFolderId());
@@ -4825,18 +4789,22 @@ public class APIGenerationEngineService {
                 }
 
                 if (folderNeedsUpdate) {
+                    folder.setUpdatedAt(LocalDateTime.now());
                     folder = collectionsFolderRepository.save(folder);
                     log.debug("Updated folder: {}", folder.getId());
                 }
             } else {
+                // Create new folder
                 folder = new FolderEntity();
-                folder.setId(collectionInfo.getFolderId());
+                folder.setId(collectionInfo.getFolderId()); // Use the provided ID for new folders
                 folder.setName(collectionInfo.getFolderName());
                 folder.setDescription("Folder for " + collectionInfo.getFolderName());
                 folder.setExpanded(false);
                 folder.setEditing(false);
                 folder.setRequestCount(0);
                 folder.setCollection(savedCollection);
+                folder.setCreatedAt(LocalDateTime.now());
+                folder.setUpdatedAt(LocalDateTime.now());
 
                 log.info("Created new folder: {}", folder.getId());
             }
@@ -4844,83 +4812,171 @@ public class APIGenerationEngineService {
             FolderEntity savedFolder = collectionsFolderRepository.save(folder);
             collectionsFolderRepository.flush();
 
-            // STEP 3: Build the full endpoint URL with basePath and endpointPath
-            // This will create something like: /api/v1/tb-tparty-trans-log
+            // ==================== STEP 3: Build the full endpoint URL ====================
             String fullEndpoint = (api.getBasePath() != null ? api.getBasePath() : "") +
                     (api.getEndpointPath() != null ? api.getEndpointPath() : "");
 
-            // Remove any double slashes if basePath ends with / and endpointPath starts with /
+            // Remove any double slashes
             if (fullEndpoint.contains("//")) {
                 fullEndpoint = fullEndpoint.replaceAll("/+", "/");
             }
 
-            // For collections, we add the {{baseUrl}} placeholder which will be replaced with http://{ip}:{port}
+            // For collections, we add the {{baseUrl}} placeholder
             String endpointUrl = "{{baseUrl}}" + fullEndpoint;
 
             log.info("Built endpoint URL for collections: {}", endpointUrl);
 
-            // STEP 4: Handle Request - Create a NEW request for each API
+            // ==================== STEP 4: ALWAYS create a NEW request with NEW parameters ====================
             String requestName = api.getApiName() + " - " + api.getHttpMethod();
 
-            // Check if a request with this name already exists in the folder
-            List<com.usg.apiAutomation.entities.postgres.collections.RequestEntity> existingRequestsByName =
-                    collectionsRequestRepository.findByFolderIdAndName(savedFolder.getId(), requestName);
+            // CRITICAL: Always create a new request - never try to find or update existing ones
+            com.usg.apiAutomation.entities.postgres.collections.RequestEntity requestEntity =
+                    new com.usg.apiAutomation.entities.postgres.collections.RequestEntity();
 
-            com.usg.apiAutomation.entities.postgres.collections.RequestEntity requestEntity;
-
-            if (!existingRequestsByName.isEmpty()) {
-                // Update existing request with the same name
-                requestEntity = existingRequestsByName.get(0);
-                log.info("Updating existing request with name: {} in folder: {}", requestName, savedFolder.getName());
-
-                // Clear existing collections by removing all elements
-                if (requestEntity.getHeaders() != null) {
-                    requestEntity.getHeaders().clear();
-                }
-                if (requestEntity.getParams() != null) {
-                    requestEntity.getParams().clear();
-                }
-                if (requestEntity.getAuthConfig() != null) {
-                    requestEntity.setAuthConfig(null);
-                }
-            } else {
-                // Create new request
-                requestEntity = new com.usg.apiAutomation.entities.postgres.collections.RequestEntity();
-                requestEntity.setId(UUID.randomUUID().toString());
-                requestEntity.setCollection(savedCollection);
-                requestEntity.setFolder(savedFolder);
-                requestEntity.setHeaders(new ArrayList<>());
-                requestEntity.setParams(new ArrayList<>());
-
-                log.info("Creating new request in folder: {} with name: {}", savedFolder.getName(), requestName);
-            }
-
-            // Update request with API details
+            requestEntity.setId(UUID.randomUUID().toString()); // Generate new ID
             requestEntity.setName(requestName);
             requestEntity.setMethod(api.getHttpMethod());
-            requestEntity.setUrl(endpointUrl); // This will be like: {{baseUrl}}/api/v1/tb-tparty-trans-log
+            requestEntity.setUrl(endpointUrl);
             requestEntity.setDescription(api.getDescription());
             requestEntity.setLastModified(LocalDateTime.now());
             requestEntity.setSaved(true);
+            requestEntity.setCollection(savedCollection);
+            requestEntity.setFolder(savedFolder);
 
-            // Update auth config
-            updateCollectionsAuthConfig(requestEntity, api);
+            // IMPORTANT: Initialize empty collections
+            requestEntity.setHeaders(new ArrayList<>());
+            requestEntity.setParams(new ArrayList<>());
+            requestEntity.setAuthConfig(null);
 
-            // Update headers - add to existing collection
-            updateCollectionsHeaders(requestEntity, api);
+            requestEntity.setCreatedAt(LocalDateTime.now());
+            requestEntity.setUpdatedAt(LocalDateTime.now());
 
-            // Update parameters - add to existing collection
-            updateCollectionsParameters(requestEntity, api);
+            log.info("Creating new request in folder: {} with name: {}", savedFolder.getName(), requestName);
 
-            // Update body
-            updateCollectionsBody(requestEntity, api);
-
-            // Save the request
+            // ==================== STEP 5: Save the request FIRST to make it managed ====================
+            // This save should NOT cascade to parameters/headers because they're empty
             com.usg.apiAutomation.entities.postgres.collections.RequestEntity savedRequest =
                     collectionsRequestRepository.save(requestEntity);
             collectionsRequestRepository.flush();
 
-            // Update folder request count
+            log.info("Saved new request entity with ID: {}", savedRequest.getId());
+
+            // ==================== STEP 6: Add auth config (if any) - Save separately ====================
+            if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
+                AuthConfigEntity authConfig = new AuthConfigEntity();
+                authConfig.setId(UUID.randomUUID().toString());
+                authConfig.setRequest(savedRequest);
+                authConfig.setType(api.getAuthConfig().getAuthType());
+
+                switch (api.getAuthConfig().getAuthType()) {
+                    case "API_KEY":
+                        authConfig.setKey(api.getAuthConfig().getApiKeyHeader() != null ?
+                                api.getAuthConfig().getApiKeyHeader() : "X-API-Key");
+                        authConfig.setValue(api.getAuthConfig().getApiKeyValue() != null ?
+                                api.getAuthConfig().getApiKeyValue() : "{{apiKey}}");
+                        authConfig.setAddTo("header");
+                        break;
+                    case "BEARER":
+                    case "JWT":
+                        authConfig.setType("bearer");
+                        authConfig.setToken("{{jwtToken}}");
+                        break;
+                    case "BASIC":
+                        authConfig.setUsername("{{username}}");
+                        authConfig.setPassword("{{password}}");
+                        break;
+                    case "ORACLE_ROLES":
+                        authConfig.setType("oracle-roles");
+                        authConfig.setKey("X-Oracle-Session");
+                        authConfig.setValue("{{oracleSessionId}}");
+                        authConfig.setAddTo("header");
+                        break;
+                }
+
+                // Save auth config separately
+                collectionsAuthConfigRepository.save(authConfig);
+
+                // Update the request with the auth config
+                savedRequest.setAuthConfig(authConfig);
+                savedRequest = collectionsRequestRepository.save(savedRequest);
+
+                log.debug("Added auth config to request");
+            }
+
+            // ==================== STEP 7: Add headers - Save each separately ====================
+            if (api.getHeaders() != null) {
+                for (ApiHeaderEntity apiHeader : api.getHeaders()) {
+                    if (Boolean.TRUE.equals(apiHeader.getIsRequestHeader())) {
+                        HeaderEntity header = new HeaderEntity();
+                        header.setId(UUID.randomUUID().toString());
+                        header.setKey(apiHeader.getKey() != null ? apiHeader.getKey() : "");
+                        header.setValue(apiHeader.getValue() != null ? apiHeader.getValue() : "");
+                        header.setDescription(apiHeader.getDescription() != null ? apiHeader.getDescription() : "");
+                        header.setEnabled(apiHeader.getRequired() != null ? apiHeader.getRequired() : true);
+                        header.setRequest(savedRequest);
+
+                        // Save header separately
+                        collectionsHeaderRepository.save(header);
+
+                        // Add to request's collection
+                        savedRequest.getHeaders().add(header);
+                    }
+                }
+                // Save request to update the headers collection
+                savedRequest = collectionsRequestRepository.save(savedRequest);
+                log.debug("Added {} headers to request", savedRequest.getHeaders().size());
+            }
+
+            // ==================== STEP 8: Add NEW parameters - Save each separately ====================
+            if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+                for (ApiParameterEntity apiParam : api.getParameters()) {
+                    ParameterEntity param = new ParameterEntity();
+
+                    param.setId(UUID.randomUUID().toString()); // Generate new ID
+                    param.setKey(apiParam.getKey() != null ? apiParam.getKey() : "");
+                    param.setValue(apiParam.getExample() != null ? apiParam.getExample() : "");
+                    param.setDescription(apiParam.getDescription() != null ? apiParam.getDescription() : "");
+                    param.setEnabled(apiParam.getRequired() != null ? apiParam.getRequired() : true);
+
+                    // Additional fields
+                    param.setDbColumn(apiParam.getDbColumn());
+                    param.setDbParameter(apiParam.getDbParameter());
+                    param.setParameterType(apiParam.getParameterType());
+                    param.setOracleType(apiParam.getOracleType());
+                    param.setApiType(apiParam.getApiType());
+                    param.setParameterLocation(apiParam.getParameterLocation());
+                    param.setRequired(apiParam.getRequired());
+                    param.setValidationPattern(apiParam.getValidationPattern());
+                    param.setDefaultValue(apiParam.getDefaultValue());
+                    param.setInBody(apiParam.getInBody());
+                    param.setIsPrimaryKey(apiParam.getIsPrimaryKey());
+                    param.setParamMode(apiParam.getParamMode() != null ? apiParam.getParamMode() : "IN");
+                    param.setPosition(apiParam.getPosition() != null ? apiParam.getPosition() : 0);
+
+                    // Set relationship to the managed request entity
+                    param.setRequest(savedRequest);
+
+                    // Save parameter separately
+                    collectionsParameterRepository.save(param);
+
+                    // Add to request's params collection
+                    savedRequest.getParams().add(param);
+                }
+                // Save request to update the params collection
+                savedRequest = collectionsRequestRepository.save(savedRequest);
+                log.debug("Added {} parameters to request", savedRequest.getParams().size());
+            }
+
+            // ==================== STEP 9: Add body ====================
+            if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
+                savedRequest.setBody(api.getRequestConfig().getSample());
+                savedRequest = collectionsRequestRepository.save(savedRequest);
+            }
+
+            // ==================== STEP 10: Final flush to ensure everything is persisted ====================
+            collectionsRequestRepository.flush();
+
+            // ==================== STEP 11: Update folder request count ====================
             long requestCount = collectionsRequestRepository.countByFolderId(savedFolder.getId());
             savedFolder.setRequestCount((int) requestCount);
             collectionsFolderRepository.save(savedFolder);
@@ -4937,9 +4993,6 @@ public class APIGenerationEngineService {
         }
     }
 
-    /**
-     * Generate documentation using the provided collection info
-     */
     /**
      * Generate documentation using the provided collection info
      */
@@ -7325,53 +7378,36 @@ public class APIGenerationEngineService {
                 .authType(dto.getAuthType())
                 .apiKeyHeader(dto.getApiKeyHeader())
                 .apiKeyValue(dto.getApiKeyValue())
-                .apiKeySecret(dto.getApiKeySecret())
-                .apiKeyLocation(dto.getApiKeyLocation())
-                .apiKeyPrefix(dto.getApiKeyPrefix())
+                .apiSecretHeader(dto.getApiSecretHeader())
+                .apiSecretValue(dto.getApiSecretValue())
+                .jwtToken(dto.getJwtToken())
+                .jwtIssuer(dto.getJwtIssuer())
                 .basicUsername(dto.getBasicUsername())
                 .basicPassword(dto.getBasicPassword())
-                .basicRealm(dto.getBasicRealm())
-                .jwtSecret(dto.getJwtSecret())
-                .jwtIssuer(dto.getJwtIssuer())
-                .jwtAudience(dto.getJwtAudience())
-                .jwtExpiration(dto.getJwtExpiration())
-                .jwtAlgorithm(dto.getJwtAlgorithm())
-                .oauthClientId(dto.getOauthClientId())
-                .oauthClientSecret(dto.getOauthClientSecret())
-                .oauthTokenUrl(dto.getOauthTokenUrl())
-                .oauthAuthUrl(dto.getOauthAuthUrl())
-                .oauthScopes(dto.getOauthScopes() != null ? dto.getOauthScopes() : new ArrayList<>())
-                .requiredRoles(dto.getRequiredRoles() != null ? dto.getRequiredRoles() : new ArrayList<>())
-                .customAuthFunction(dto.getCustomAuthFunction())
-                .validateSession(dto.getValidateSession())
-                .checkObjectPrivileges(dto.getCheckObjectPrivileges())
                 .ipWhitelist(dto.getIpWhitelist())
                 .rateLimitRequests(dto.getRateLimitRequests())
                 .rateLimitPeriod(dto.getRateLimitPeriod())
-                .auditLevel(dto.getAuditLevel())
+                .enableRateLimiting(dto.getEnableRateLimiting())
                 .corsOrigins(dto.getCorsOrigins().toString())
-                .corsCredentials(dto.getCorsCredentials())
+                .auditLevel(dto.getAuditLevel())
                 .build();
     }
 
     private ApiRequestConfigEntity mapToRequestConfigEntity(ApiRequestConfigDTO dto, GeneratedApiEntity api) {
         if (dto == null) return null;
 
-        try {
-            return ApiRequestConfigEntity.builder()
-                    .generatedApi(api)
-                    .schemaType(dto.getSchemaType())
-                    .sample(dto.getSample())
-                    .maxSize(dto.getMaxSize())
-                    .validateSchema(dto.getValidateSchema())
-                    .allowedMediaTypes(dto.getAllowedMediaTypes() != null && !dto.getAllowedMediaTypes().isEmpty() ?
-                            String.join(",", dto.getAllowedMediaTypes()) : null)
-                    .requiredFields(dto.getRequiredFields() != null ? dto.getRequiredFields() : new ArrayList<>())
-                    .build();
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to map request config: " + e.getMessage());
-        }
+        return ApiRequestConfigEntity.builder()
+                .generatedApi(api)
+                .bodyType(dto.getBodyType())
+                .sample(dto.getSample())
+                .maxSize(dto.getMaxSize())
+                .validateSchema(dto.getValidateSchema())
+                .allowedMediaTypes(String.valueOf(dto.getAllowedMediaTypes()))
+                .requiredFields(dto.getRequiredFields())
+                .build();
     }
+
+
 
     private ApiResponseConfigEntity mapToResponseConfigEntity(ApiResponseConfigDTO dto, GeneratedApiEntity api) {
         if (dto == null) return null;
@@ -7381,43 +7417,62 @@ public class APIGenerationEngineService {
                 .successSchema(dto.getSuccessSchema())
                 .errorSchema(dto.getErrorSchema())
                 .includeMetadata(dto.getIncludeMetadata())
-                .metadataFields(dto.getMetadataFields() != null ? dto.getMetadataFields() : new ArrayList<>())
+                .metadataFields(dto.getMetadataFields())
                 .contentType(dto.getContentType())
                 .compression(dto.getCompression())
                 .build();
     }
 
+
+    private ApiTestEntity mapToTestEntity(ApiTestsDTO dto, GeneratedApiEntity api) {
+        if (dto == null) return null;
+
+        return ApiTestEntity.builder()
+                .generatedApi(api)
+                .testConnection(dto.getTestConnection())
+                .testObjectAccess(dto.getTestObjectAccess())
+                .testPrivileges(dto.getTestPrivileges())
+                .testDataTypes(dto.getTestDataTypes())
+                .testNullConstraints(dto.getTestNullConstraints())
+                .testUniqueConstraints(dto.getTestUniqueConstraints())
+                .testForeignKeyReferences(dto.getTestForeignKeyReferences())
+                .testQueryPerformance(dto.getTestQueryPerformance())
+                .performanceThreshold(dto.getPerformanceThreshold())
+                .testWithSampleData(dto.getTestWithSampleData())
+                .sampleDataRows(dto.getSampleDataRows())
+                .testProcedureExecution(dto.getTestProcedureExecution())
+                .testFunctionReturn(dto.getTestFunctionReturn())
+                .testExceptionHandling(dto.getTestExceptionHandling())
+                .testSQLInjection(dto.getTestSQLInjection())
+                .testAuthentication(dto.getTestAuthentication())
+                .testAuthorization(dto.getTestAuthorization())
+                .testData(dto.getTestData())
+                .testQueries(dto.getTestQueries())
+                .build();
+    }
+
+
+
     private ApiSettingsEntity mapToSettingsEntity(ApiSettingsDTO dto, GeneratedApiEntity api) {
         if (dto == null) return null;
 
-        try {
-            return ApiSettingsEntity.builder()
-                    .generatedApi(api)
-                    .timeout(dto.getTimeout())
-                    .maxRecords(dto.getMaxRecords())
-                    .enableLogging(dto.getEnableLogging())
-                    .logLevel(dto.getLogLevel())
-                    .enableCaching(dto.getEnableCaching())
-                    .cacheTtl(dto.getCacheTtl())
-                    .enableRateLimiting(dto.getEnableRateLimiting())
-                    .rateLimit(dto.getRateLimit())
-                    .rateLimitPeriod(dto.getRateLimitPeriod())
-                    .enableAudit(dto.getEnableAudit())
-                    .auditLevel(dto.getAuditLevel())
-                    .generateSwagger(dto.getGenerateSwagger())
-                    .generatePostman(dto.getGeneratePostman())
-                    .generateClientSdk(dto.getGenerateClientSdk())
-                    .enableMonitoring(dto.getEnableMonitoring())
-                    .enableAlerts(dto.getEnableAlerts())
-                    .alertEmail(dto.getAlertEmail())
-                    .enableTracing(dto.getEnableTracing())
-                    .corsEnabled(dto.getCorsEnabled())
-                    .corsOrigins(dto.getCorsOrigins() != null && !dto.getCorsOrigins().isEmpty() ?
-                            String.join(",", dto.getCorsOrigins()) : null)
-                    .build();
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to map settings: " + e.getMessage());
-        }
+        return ApiSettingsEntity.builder()
+                .generatedApi(api)
+                .timeout(dto.getTimeout())
+                .maxRecords(dto.getMaxRecords())
+                .enableLogging(dto.getEnableLogging())
+                .logLevel(dto.getLogLevel())
+                .enableCaching(dto.getEnableCaching())
+                .cacheTtl(dto.getCacheTtl())
+                .generateSwagger(dto.getGenerateSwagger())
+                .generatePostman(dto.getGeneratePostman())
+                .generateClientSDK(dto.getGenerateClientSDK())
+                .enableMonitoring(dto.getEnableMonitoring())
+                .enableAlerts(dto.getEnableAlerts())
+                .alertEmail(dto.getAlertEmail())
+                .enableTracing(dto.getEnableTracing())
+                .corsEnabled(dto.getCorsEnabled())
+                .build();
     }
 
     private ApiParameterEntity mapToParameterEntity(ApiParameterDTO dto, GeneratedApiEntity api) {
@@ -7427,15 +7482,17 @@ public class APIGenerationEngineService {
                 .generatedApi(api)
                 .key(dto.getKey())
                 .dbColumn(dto.getDbColumn())
-                .dbParameter(dto.getDbParameter())
                 .oracleType(dto.getOracleType())
                 .apiType(dto.getApiType())
-                .parameterType(dto.getParameterType())
+                .parameterLocation(dto.getParameterLocation())
                 .required(dto.getRequired())
                 .description(dto.getDescription())
                 .example(dto.getExample())
                 .validationPattern(dto.getValidationPattern())
                 .defaultValue(dto.getDefaultValue())
+                .inBody(dto.getInBody())
+                .isPrimaryKey(dto.getIsPrimaryKey())
+                .paramMode(dto.getParamMode())
                 .position(dto.getPosition() != null ? dto.getPosition() : 0)
                 .build();
     }
@@ -7453,6 +7510,7 @@ public class APIGenerationEngineService {
                 .nullable(dto.getNullable())
                 .isPrimaryKey(dto.getIsPrimaryKey())
                 .includeInResponse(dto.getIncludeInResponse())
+                .inResponse(dto.getInResponse())
                 .position(dto.getPosition() != null ? dto.getPosition() : 0)
                 .build();
     }
@@ -7572,9 +7630,8 @@ public class APIGenerationEngineService {
                 Map<String, Object> testDataMap = new HashMap<>();
 
                 // Try to parse as JSON if it's a JSON string
-                if (dto.getTestData().trim().startsWith("{") || dto.getTestData().trim().startsWith("[")) {
-                    Object parsed = objectMapper.readValue(dto.getTestData(), Object.class);
-                    testDataMap.put("data", parsed);
+                if (dto.getTestData() != null) {
+                    testDataMap.putAll(dto.getTestData());
                 } else {
                     // If it's not JSON, store as plain text
                     testDataMap.put("data", dto.getTestData());

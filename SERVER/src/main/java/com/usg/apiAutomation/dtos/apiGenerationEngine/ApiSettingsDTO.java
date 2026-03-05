@@ -25,11 +25,11 @@ public class ApiSettingsDTO {
     private String auditLevel;
     private Boolean generateSwagger;
     private Boolean generatePostman;
-    private Boolean generateClientSdk;
     private Boolean enableMonitoring;
     private Boolean enableAlerts;
     private String alertEmail;
     private Boolean enableTracing;
     private Boolean corsEnabled;
     private List<String> corsOrigins;
+    private Boolean generateClientSDK;
 }

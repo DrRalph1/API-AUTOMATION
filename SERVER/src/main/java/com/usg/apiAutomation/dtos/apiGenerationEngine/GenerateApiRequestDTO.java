@@ -13,62 +13,56 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class GenerateApiRequestDTO {
+    // API Details Tab
     private String apiName;
     private String apiCode;
     private String description;
     private String version;
-    private String status;
-    private String httpMethod;
+    private String status; // DRAFT, ACTIVE, DEPRECATED, ARCHIVED
+    private String httpMethod; // GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS
     private String basePath;
     private String endpointPath;
     private String category;
     private String owner;
+    private Map<String, Object> validation;
+    private Map<String, Object> responseExamples;
+    private String apiDetails;
     private List<String> tags;
+
+    // Collection & Folder Info
+    private CollectionInfoDTO collectionInfo;
 
     // Schema Configuration
     private ApiSchemaConfigDTO schemaConfig;
 
-    // Parameters
+    // Parameters Tab
     private List<ApiParameterDTO> parameters;
 
-    // Response Mappings
+    // Response Mappings Tab
     private List<ApiResponseMappingDTO> responseMappings;
 
-    // Authentication
+    // Authentication Tab
     private ApiAuthConfigDTO authConfig;
 
-    // Headers
-    private List<ApiHeaderDTO> headers;
-
-    // Request Body
+    // Request Tab
     private ApiRequestConfigDTO requestBody;
 
-    // Response Body
+    // Response Tab
     private ApiResponseConfigDTO responseBody;
 
-    // Tests
+    // Headers (part of Request/Response)
+    private List<ApiHeaderDTO> headers;
+
+    // Database Tests Tab
     private ApiTestsDTO tests;
 
-    // Settings
+    // Settings Tab
     private ApiSettingsDTO settings;
 
     // Source Object Info
     private Map<String, Object> sourceObject;
 
-    // Add this field for regeneration control
-    private Boolean regenerateComponents;  // Flag to control component regeneration
-
-    // New field for collection information
-    private CollectionInfoDTO collectionInfo;
-
-    // Lombok's @Data will generate the getter automatically,
-    // but if you want a custom getter, remove this method or implement it properly:
-
-    // public Boolean getRegenerateComponents() {
-    //     return regenerateComponents;
-    // }
-
-    // public void setRegenerateComponents(Boolean regenerateComponents) {
-    //     this.regenerateComponents = regenerateComponents;
-    // }
+    // Control flags
+    private Boolean regenerateComponents;
+    private Boolean isEditing;
 }

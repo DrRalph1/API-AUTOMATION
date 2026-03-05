@@ -124,6 +124,13 @@ const MOCK_COLLECTIONS = [
 // Parameter location types with detailed options
 const PARAMETER_LOCATIONS = [
   { 
+    value: 'none', 
+    label: 'Not in Request (OUT only)', 
+    icon: <XCircle className="h-4 w-4" />,
+    description: 'Parameter is not sent in request (OUT parameter)',
+    example: 'Only appears in response'
+  },
+  { 
     value: 'query', 
     label: 'Query Parameter', 
     icon: <Hash className="h-4 w-4" />,
@@ -785,7 +792,7 @@ function ApiLoadingModal({
   );
 }
 
-// Updated confirmation modal that shows the actual API generation result
+// Updated ApiConfirmationModal with full API details, request/response samples, and security info
 function ApiConfirmationModal({ 
   isOpen, 
   onClose, 
@@ -797,6 +804,7 @@ function ApiConfirmationModal({
   const [showLoader, setShowLoader] = useState(true);
   const [showSuccess, setShowSuccess] = useState(false);
   const [error, setError] = useState(null);
+  const [activeSampleTab, setActiveSampleTab] = useState('request');
 
   const themeColors = colors || {
     bg: theme === 'dark' ? 'rgb(1 14 35)' : '#f8fafc',
@@ -822,7 +830,6 @@ function ApiConfirmationModal({
       setShowSuccess(false);
       setError(null);
       
-      // Check if the API generation was successful
       const timer = setTimeout(() => {
         setShowLoader(false);
         if (apiResponse.responseCode >= 200 && apiResponse.responseCode < 300) {
@@ -897,7 +904,7 @@ function ApiConfirmationModal({
     );
   }
 
-  // Show success with actual API response data
+  // Show success with full API details
   if (showSuccess) {
     const transformedData = apiResponse.data || {};
     
@@ -915,40 +922,120 @@ function ApiConfirmationModal({
         const files = apiResponse.data.generatedFiles;
         
         if (files.plsql) {
-          downloadGeneratedFile(
-            files.plsql, 
-            `${apiData.apiCode}_package.sql`, 
-            'text/plain'
-          );
+          const blob = new Blob([files.plsql], { type: 'text/plain' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${apiData.apiCode}_package.sql`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
         }
         
         if (files.openapi) {
-          downloadGeneratedFile(
-            files.openapi, 
-            `${apiData.apiCode}_openapi.json`, 
-            'application/json'
-          );
+          const blob = new Blob([files.openapi], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${apiData.apiCode}_openapi.json`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
         }
         
         if (files.postman) {
-          downloadGeneratedFile(
-            files.postman, 
-            `${apiData.apiCode}_postman.json`, 
-            'application/json'
-          );
+          const blob = new Blob([files.postman], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${apiData.apiCode}_postman.json`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
         }
-      } else {
-        // Fallback to JSON config
-        const blob = new Blob([JSON.stringify(apiResponse, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${apiData.apiCode || 'api'}_response.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
       }
+    };
+
+    // Get the full endpoint URL
+    const fullEndpoint = transformedData.fullEndpoint || 
+                        `${apiData.basePath}${apiData.endpointPath}`;
+
+    // Group parameters by location for display
+    const pathParams = apiData.parameters?.filter(p => p.parameterLocation === 'path') || [];
+    const queryParams = apiData.parameters?.filter(p => p.parameterLocation === 'query') || [];
+    const headerParams = apiData.parameters?.filter(p => p.parameterLocation === 'header') || [];
+    const bodyParams = apiData.parameters?.filter(p => p.parameterLocation === 'body') || [];
+
+    // Get the body type for display
+    const bodyType = apiData.requestBody?.bodyType || 'json';
+
+    // Build sample request body based on parameters
+    const buildSampleRequest = () => {
+      if (bodyParams.length === 0) return '{}';
+      
+      const sample = {};
+      bodyParams.forEach(p => {
+        if (p.apiType === 'integer' || p.oracleType === 'NUMBER') {
+          sample[p.key] = p.example ? parseInt(p.example) : 123;
+        } else if (p.apiType === 'boolean') {
+          sample[p.key] = true;
+        } else if (p.apiType === 'number') {
+          sample[p.key] = p.example ? parseFloat(p.example) : 123.45;
+        } else {
+          sample[p.key] = p.example || 'sample';
+        }
+      });
+      return JSON.stringify(sample, null, 2);
+    };
+
+    // Build sample response body from mappings
+    const buildSampleResponse = () => {
+      if (!apiData.responseMappings || apiData.responseMappings.length === 0) {
+        return apiData.responseBody?.successSchema || '{}';
+      }
+      
+      const sampleData = {};
+      apiData.responseMappings.forEach(m => {
+        if (m.apiType === 'integer' || m.oracleType === 'NUMBER') {
+          sampleData[m.apiField] = m.isPrimaryKey ? 1 : 123;
+        } else if (m.apiType === 'boolean') {
+          sampleData[m.apiField] = true;
+        } else if (m.apiType === 'number') {
+          sampleData[m.apiField] = 123.45;
+        } else if (m.apiType === 'string') {
+          if (m.format === 'date-time' || m.oracleType === 'DATE' || m.oracleType === 'TIMESTAMP') {
+            sampleData[m.apiField] = '2024-01-01T00:00:00Z';
+          } else if (m.apiField.toLowerCase().includes('id') || m.dbColumn?.toUpperCase().includes('ID')) {
+            sampleData[m.apiField] = 'ID001';
+          } else if (m.apiField.toLowerCase().includes('name')) {
+            sampleData[m.apiField] = 'Sample Name';
+          } else if (m.apiField.toLowerCase().includes('code')) {
+            sampleData[m.apiField] = 'SMP001';
+          } else if (m.apiField.toLowerCase().includes('status')) {
+            sampleData[m.apiField] = 'ACTIVE';
+          } else {
+            sampleData[m.apiField] = 'sample';
+          }
+        } else {
+          sampleData[m.apiField] = null;
+        }
+      });
+      
+      const responseObj = {
+        success: true,
+        data: sampleData,
+        message: 'Request processed successfully',
+        metadata: {
+          timestamp: new Date().toISOString(),
+          apiVersion: apiData.version,
+          requestId: apiResponse.requestId || 'req_' + Date.now()
+        }
+      };
+      
+      return JSON.stringify(responseObj, null, 2);
     };
 
     return (
@@ -970,8 +1057,10 @@ function ApiConfirmationModal({
                 <h2 className="text-lg font-bold" style={{ color: themeColors.text }}>
                   {apiData.isEditing ? 'API Updated Successfully!' : 'API Generated Successfully!'}
                 </h2>
-                <p className="text-xs" style={{ color: themeColors.textSecondary }}>
-                  Request ID: {apiResponse.requestId}
+                <p className="text-xs flex items-center gap-2" style={{ color: themeColors.textSecondary }}>
+                  <span>Request ID: {apiResponse.requestId || 'N/A'}</span>
+                  <span>•</span>
+                  <span>Generated: {new Date().toLocaleTimeString()}</span>
                 </p>
               </div>
             </div>
@@ -984,173 +1073,494 @@ function ApiConfirmationModal({
             </button>
           </div>
 
-          {/* Content */}
+          {/* Content with full API details */}
           <div className="flex-1 overflow-y-auto p-6">
             <div className="space-y-6">
-              {/* API Summary */}
-              <div className="p-4 rounded-lg border" style={{ 
-                borderColor: themeColors.success + '40',
-                backgroundColor: themeColors.success + '10'
+              {/* API Endpoint Card - Prominently displayed */}
+              <div className="p-5 rounded-lg border-2" style={{ 
+                borderColor: themeColors.info,
+                backgroundColor: themeColors.info + '10'
               }}>
-                <div className="flex items-start justify-between">
-                  <div className="space-y-2">
-                    <h3 className="font-semibold flex items-center gap-2" style={{ color: themeColors.success }}>
-                      <Sparkles className="h-5 w-5" />
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold flex items-center gap-2" style={{ color: themeColors.info }}>
+                    <Globe className="h-5 w-5" />
+                    API Endpoint
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1 rounded-full text-xs font-bold" style={{ 
+                      backgroundColor: getHttpMethodColor(apiData.httpMethod, themeColors),
+                      color: '#ffffff'
+                    }}>
+                      {apiData.httpMethod}
+                    </span>
+                    <span className="px-3 py-1 rounded-full text-xs" style={{ 
+                      backgroundColor: apiData.status === 'ACTIVE' ? themeColors.success + '20' : 
+                                     apiData.status === 'DRAFT' ? themeColors.warning + '20' : 
+                                     themeColors.error + '20',
+                      color: apiData.status === 'ACTIVE' ? themeColors.success : 
+                            apiData.status === 'DRAFT' ? themeColors.warning : 
+                            themeColors.error
+                    }}>
+                      {apiData.status}
+                    </span>
+                  </div>
+                </div>
+                
+                <div className="font-mono text-sm p-3 rounded border flex items-center justify-between" style={{ 
+                  backgroundColor: themeColors.card,
+                  borderColor: themeColors.border
+                }}>
+                  <code style={{ color: themeColors.text }}>
+                    {apiData.basePath}{apiData.endpointPath}
+                    {pathParams.map(p => `/{${p.key}}`).join('')}
+                  </code>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(`${apiData.basePath}${apiData.endpointPath}`)}
+                    className="p-1.5 rounded hover-lift"
+                    style={{ backgroundColor: themeColors.hover }}
+                  >
+                    <Copy className="h-4 w-4" style={{ color: themeColors.textSecondary }} />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4 mt-3 text-xs">
+                  <div>
+                    <span style={{ color: themeColors.textSecondary }}>API Name:</span>
+                    <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
                       {transformedData.apiName || apiData.apiName}
-                    </h3>
-                    <div className="grid grid-cols-2 gap-4 text-xs">
-                      <div>
-                        <span style={{ color: themeColors.textSecondary }}>API Code:</span>
-                        <span className="ml-2 font-medium font-mono" style={{ color: themeColors.text }}>
-                          {transformedData.apiCode || apiData.apiCode}
-                        </span>
-                      </div>
-                      <div>
-                        <span style={{ color: themeColors.textSecondary }}>Version:</span>
-                        <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                          {transformedData.version || apiData.version}
-                        </span>
-                      </div>
-                      <div>
-                        <span style={{ color: themeColors.textSecondary }}>Status:</span>
-                        <span className={`ml-2 px-2 py-1 rounded text-xs font-medium`} style={{ 
-                          backgroundColor: (transformedData.status || apiData.status) === 'ACTIVE' ? themeColors.success + '30' : 
-                                         (transformedData.status || apiData.status) === 'DRAFT' ? themeColors.warning + '30' : 
-                                         themeColors.error + '30',
-                          color: (transformedData.status || apiData.status) === 'DRAFT' ? themeColors.warning : 
-                                (transformedData.status || apiData.status) === 'ACTIVE' ? themeColors.success : 
-                                themeColors.error
-                        }}>
-                          {transformedData.status || apiData.status || 'DRAFT'}
-                        </span>
-                      </div>
-                      <div>
-                        <span style={{ color: themeColors.textSecondary }}>Created:</span>
-                        <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                          {formatDate(transformedData.createdAt)}
-                        </span>
-                      </div>
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: themeColors.textSecondary }}>API Code:</span>
+                    <span className="ml-2 font-mono font-medium" style={{ color: themeColors.text }}>
+                      {transformedData.apiCode || apiData.apiCode}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: themeColors.textSecondary }}>Version:</span>
+                    <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
+                      {transformedData.version || apiData.version}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Collection & Database Source */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-lg border" style={{ 
+                  borderColor: themeColors.border,
+                  backgroundColor: themeColors.card
+                }}>
+                  <h4 className="text-sm font-medium mb-3 flex items-center gap-2" style={{ color: themeColors.text }}>
+                    <Layers className="h-4 w-4" style={{ color: themeColors.info }} />
+                    API Organization
+                  </h4>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span style={{ color: themeColors.textSecondary }}>Collection:</span>
+                      <span className="font-medium" style={{ color: themeColors.text }}>
+                        {apiData.collectionInfo?.collectionName}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span style={{ color: themeColors.textSecondary }}>Folder:</span>
+                      <span className="font-medium" style={{ color: themeColors.text }}>
+                        {apiData.collectionInfo?.folderName}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span style={{ color: themeColors.textSecondary }}>Collection Type:</span>
+                      <span className="px-2 py-0.5 rounded" style={{ 
+                        backgroundColor: themeColors.info + '20',
+                        color: themeColors.info
+                      }}>
+                        {apiData.collectionInfo?.collectionType}
+                      </span>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium" style={{ 
-                      backgroundColor: themeColors.info + '20',
-                      color: themeColors.info
-                    }}>
-                      <Globe className="h-4 w-4 mr-1" />
-                      API Endpoint
+                </div>
+
+                <div className="p-4 rounded-lg border" style={{ 
+                  borderColor: themeColors.border,
+                  backgroundColor: themeColors.card
+                }}>
+                  <h4 className="text-sm font-medium mb-3 flex items-center gap-2" style={{ color: themeColors.text }}>
+                    <Database className="h-4 w-4" style={{ color: themeColors.success }} />
+                    Database Source
+                  </h4>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span style={{ color: themeColors.textSecondary }}>Schema:</span>
+                      <span className="font-mono font-medium" style={{ color: themeColors.text }}>
+                        {apiData.schemaConfig?.schemaName}
+                      </span>
                     </div>
-                    <div className="mt-2 font-mono text-xs" style={{ color: themeColors.text }}>
-                      {transformedData.httpMethod || apiData.httpMethod} {transformedData.fullEndpoint || `${apiData.basePath}${apiData.endpointPath}`}
+                    <div className="flex items-center justify-between text-xs">
+                      <span style={{ color: themeColors.textSecondary }}>Object:</span>
+                      <span className="font-mono font-medium" style={{ color: themeColors.text }}>
+                        {apiData.schemaConfig?.objectName}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span style={{ color: themeColors.textSecondary }}>Type/Operation:</span>
+                      <span className="flex gap-1">
+                        <span className="px-2 py-0.5 rounded" style={{ 
+                          backgroundColor: themeColors.warning + '20',
+                          color: themeColors.warning
+                        }}>
+                          {apiData.schemaConfig?.objectType}
+                        </span>
+                        <span className="px-2 py-0.5 rounded" style={{ 
+                          backgroundColor: themeColors.success + '20',
+                          color: themeColors.success
+                        }}>
+                          {apiData.schemaConfig?.operation}
+                        </span>
+                      </span>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Collection Info */}
-              {(transformedData.collectionInfo || apiData.collectionInfo) && (
-                <div className="p-4 rounded-lg border" style={{ 
-                  borderColor: themeColors.success + '40',
-                  backgroundColor: themeColors.success + '10'
-                }}>
-                  <h4 className="font-semibold flex items-center gap-2 mb-3" style={{ color: themeColors.success }}>
-                    <Layers className="h-5 w-5" />
-                    API Organization
-                  </h4>
-                  <div className="grid grid-cols-2 gap-4 text-xs">
-                    <div>
-                      <span style={{ color: themeColors.textSecondary }}>Collection:</span>
-                      <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                        {transformedData.collectionInfo?.collectionName || apiData.collectionInfo?.collectionName}
-                      </span>
+              {/* Security & Authentication */}
+              <div className="p-4 rounded-lg border" style={{ 
+                borderColor: themeColors.border,
+                backgroundColor: themeColors.card
+              }}>
+                <h4 className="text-sm font-medium mb-3 flex items-center gap-2" style={{ color: themeColors.text }}>
+                  <Lock className="h-4 w-4" style={{ color: themeColors.info }} />
+                  Security & Authentication
+                </h4>
+                
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      {apiData.authConfig?.authType === 'none' && (
+                        <>
+                          <Unlock className="h-4 w-4" style={{ color: themeColors.warning }} />
+                          <span className="text-sm font-medium" style={{ color: themeColors.warning }}>
+                            Public API - No Authentication
+                          </span>
+                        </>
+                      )}
+                      {apiData.authConfig?.authType === 'apiKey' && (
+                        <>
+                          <Key className="h-4 w-4" style={{ color: themeColors.info }} />
+                          <span className="text-sm font-medium" style={{ color: themeColors.info }}>
+                            API Key + Secret
+                          </span>
+                        </>
+                      )}
+                      {apiData.authConfig?.authType === 'bearer' && (
+                        <>
+                          <Shield className="h-4 w-4" style={{ color: themeColors.info }} />
+                          <span className="text-sm font-medium" style={{ color: themeColors.info }}>
+                            Bearer Token (JWT)
+                          </span>
+                        </>
+                      )}
+                      {apiData.authConfig?.authType === 'basic' && (
+                        <>
+                          <Lock className="h-4 w-4" style={{ color: themeColors.info }} />
+                          <span className="text-sm font-medium" style={{ color: themeColors.info }}>
+                            Basic Authentication
+                          </span>
+                        </>
+                      )}
                     </div>
-                    <div>
-                      <span style={{ color: themeColors.textSecondary }}>Folder:</span>
-                      <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                        {transformedData.collectionInfo?.folderName || apiData.collectionInfo?.folderName}
+
+                    {apiData.authConfig?.authType === 'apiKey' && (
+                      <div className="text-xs space-y-1">
+                        <div><span style={{ color: themeColors.textSecondary }}>Key Header:</span> <span className="font-mono" style={{ color: themeColors.text }}>{apiData.authConfig.apiKeyHeader}</span></div>
+                        <div><span style={{ color: themeColors.textSecondary }}>Secret Header:</span> <span className="font-mono" style={{ color: themeColors.text }}>{apiData.authConfig.apiSecretHeader}</span></div>
+                      </div>
+                    )}
+
+                    {apiData.authConfig?.authType === 'bearer' && (
+                      <div className="text-xs">
+                        <span style={{ color: themeColors.textSecondary }}>Header:</span> <span className="font-mono" style={{ color: themeColors.text }}>Authorization: Bearer {'{token}'}</span>
+                      </div>
+                    )}
+
+                    {apiData.authConfig?.authType === 'basic' && (
+                      <div className="text-xs">
+                        <span style={{ color: themeColors.textSecondary }}>Header:</span> <span className="font-mono" style={{ color: themeColors.text }}>Authorization: Basic base64(username:password)</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    {apiData.authConfig?.enableRateLimiting && (
+                      <div className="text-xs">
+                        <span style={{ color: themeColors.textSecondary }}>Rate Limit:</span>
+                        <span className="ml-2" style={{ color: themeColors.text }}>
+                          {apiData.authConfig.rateLimitRequests} requests per {apiData.authConfig.rateLimitPeriod}
+                        </span>
+                      </div>
+                    )}
+                    
+                    {apiData.authConfig?.corsOrigins && (
+                      <div className="text-xs">
+                        <span style={{ color: themeColors.textSecondary }}>CORS Origins:</span>
+                        <span className="ml-2" style={{ color: themeColors.text }}>
+                          {apiData.authConfig.corsOrigins.join(', ')}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="text-xs">
+                      <span style={{ color: themeColors.textSecondary }}>Audit Level:</span>
+                      <span className="ml-2" style={{ color: themeColors.text }}>
+                        {apiData.authConfig?.auditLevel || 'standard'}
                       </span>
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* Parameters Summary */}
+              {(pathParams.length > 0 || queryParams.length > 0 || headerParams.length > 0 || bodyParams.length > 0) && (
+                <div className="p-4 rounded-lg border" style={{ 
+                  borderColor: themeColors.border,
+                  backgroundColor: themeColors.card
+                }}>
+                  <h4 className="text-sm font-medium mb-3 flex items-center gap-2" style={{ color: themeColors.text }}>
+                    <Hash className="h-4 w-4" style={{ color: themeColors.info }} />
+                    Parameters ({apiData.parameters.length})
+                  </h4>
+
+                  <div className="space-y-4">
+                    {pathParams.length > 0 && (
+                      <div>
+                        <h5 className="text-xs font-medium mb-2 flex items-center gap-1" style={{ color: themeColors.warning }}>
+                          <Link className="h-3 w-3" />
+                          Path Parameters ({pathParams.length})
+                        </h5>
+                        <div className="grid grid-cols-2 gap-2">
+                          {pathParams.map((p, idx) => (
+                            <div key={idx} className="text-xs p-2 rounded" style={{ backgroundColor: themeColors.hover }}>
+                              <div className="font-medium" style={{ color: themeColors.warning }}>{p.key}</div>
+                              <div className="flex justify-between mt-1">
+                                <span style={{ color: themeColors.textSecondary }}>{p.oracleType}</span>
+                                <span style={{ color: p.required ? themeColors.error : themeColors.textSecondary }}>
+                                  {p.required ? 'Required' : 'Optional'}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {queryParams.length > 0 && (
+                      <div>
+                        <h5 className="text-xs font-medium mb-2 flex items-center gap-1" style={{ color: themeColors.info }}>
+                          <Hash className="h-3 w-3" />
+                          Query Parameters ({queryParams.length})
+                        </h5>
+                        <div className="grid grid-cols-2 gap-2">
+                          {queryParams.map((p, idx) => (
+                            <div key={idx} className="text-xs p-2 rounded" style={{ backgroundColor: themeColors.hover }}>
+                              <div className="font-medium" style={{ color: themeColors.info }}>{p.key}</div>
+                              <div className="flex justify-between mt-1">
+                                <span style={{ color: themeColors.textSecondary }}>{p.oracleType}</span>
+                                <span style={{ color: p.required ? themeColors.error : themeColors.textSecondary }}>
+                                  {p.required ? 'Required' : 'Optional'}
+                                </span>
+                              </div>
+                              {p.example && (
+                                <div className="mt-1 text-xs" style={{ color: themeColors.textSecondary }}>
+                                  Example: {p.example}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {headerParams.length > 0 && (
+                      <div>
+                        <h5 className="text-xs font-medium mb-2 flex items-center gap-1" style={{ color: themeColors.textSecondary }}>
+                          <Bookmark className="h-3 w-3" />
+                          Header Parameters ({headerParams.length})
+                        </h5>
+                        <div className="grid grid-cols-2 gap-2">
+                          {headerParams.map((p, idx) => (
+                            <div key={idx} className="text-xs p-2 rounded" style={{ backgroundColor: themeColors.hover }}>
+                              <div className="font-medium" style={{ color: themeColors.text }}>{p.key}</div>
+                              <div className="text-xs" style={{ color: themeColors.textSecondary }}>{p.description}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {bodyParams.length > 0 && (
+                      <div>
+                        <h5 className="text-xs font-medium mb-2 flex items-center gap-1" style={{ color: themeColors.success }}>
+                          <FileText className="h-3 w-3" />
+                          Body Parameters ({bodyParams.length}) - {bodyType.toUpperCase()}
+                        </h5>
+                        <div className="grid grid-cols-2 gap-2">
+                          {bodyParams.map((p, idx) => (
+                            <div key={idx} className="text-xs p-2 rounded" style={{ backgroundColor: themeColors.hover }}>
+                              <div className="font-medium" style={{ color: themeColors.success }}>{p.key}</div>
+                              <div className="flex justify-between mt-1">
+                                <span style={{ color: themeColors.textSecondary }}>{p.apiType}</span>
+                                <span style={{ color: p.required ? themeColors.error : themeColors.textSecondary }}>
+                                  {p.required ? 'Required' : 'Optional'}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
+
+              {/* Request/Response Samples */}
+              <div className="p-4 rounded-lg border" style={{ 
+                borderColor: themeColors.border,
+                backgroundColor: themeColors.card
+              }}>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-medium flex items-center gap-2" style={{ color: themeColors.text }}>
+                    <FileJson className="h-4 w-4" style={{ color: themeColors.info }} />
+                    Request/Response Samples
+                  </h4>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => setActiveSampleTab('request')}
+                      className={`px-3 py-1 text-xs rounded-l-lg transition-colors ${activeSampleTab === 'request' ? 'font-medium' : ''}`}
+                      style={{ 
+                        backgroundColor: activeSampleTab === 'request' ? themeColors.info : themeColors.hover,
+                        color: activeSampleTab === 'request' ? '#ffffff' : themeColors.text
+                      }}
+                    >
+                      Request
+                    </button>
+                    <button
+                      onClick={() => setActiveSampleTab('response')}
+                      className={`px-3 py-1 text-xs rounded-r-lg transition-colors ${activeSampleTab === 'response' ? 'font-medium' : ''}`}
+                      style={{ 
+                        backgroundColor: activeSampleTab === 'response' ? themeColors.success : themeColors.hover,
+                        color: activeSampleTab === 'response' ? '#ffffff' : themeColors.text
+                      }}
+                    >
+                      Response
+                    </button>
+                  </div>
+                </div>
+
+                <div className="border rounded-lg overflow-hidden" style={{ borderColor: themeColors.border }}>
+                  <div className="px-3 py-2 border-b flex items-center justify-between" style={{ 
+                    borderColor: themeColors.border,
+                    backgroundColor: themeColors.hover
+                  }}>
+                    <span className="text-xs font-mono" style={{ color: themeColors.textSecondary }}>
+                      {activeSampleTab === 'request' ? `${apiData.httpMethod} ${fullEndpoint}` : '200 OK - Success Response'}
+                    </span>
+                    <button
+                      onClick={() => {
+                        const content = activeSampleTab === 'request' 
+                          ? buildSampleRequest() 
+                          : buildSampleResponse();
+                        navigator.clipboard.writeText(content);
+                      }}
+                      className="p-1 rounded hover-lift"
+                      style={{ backgroundColor: themeColors.card }}
+                    >
+                      <Copy className="h-3 w-3" style={{ color: themeColors.textSecondary }} />
+                    </button>
+                  </div>
+                  <pre className="p-4 text-xs font-mono overflow-x-auto max-h-60" style={{ 
+                    backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
+                    color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
+                  }}>
+                    {activeSampleTab === 'request' ? buildSampleRequest() : buildSampleResponse()}
+                  </pre>
+                </div>
+
+                {activeSampleTab === 'request' && bodyParams.length > 0 && (
+                  <div className="mt-2 text-xs" style={{ color: themeColors.textSecondary }}>
+                    Content-Type: {bodyType === 'json' ? 'application/json' : 
+                                 bodyType === 'xml' ? 'application/xml' :
+                                 bodyType === 'form-data' ? 'multipart/form-data' :
+                                 bodyType === 'urlencoded' ? 'application/x-www-form-urlencoded' :
+                                 'text/plain'}
+                  </div>
+                )}
+              </div>
 
               {/* Generated Files */}
               {transformedData.generatedFiles && (
-                <div className="space-y-4">
-                  <h4 className="font-semibold flex items-center gap-2" style={{ color: themeColors.text }}>
-                    <Layers className="h-5 w-5" />
-                    Generated Files
+                <div className="p-4 rounded-lg border" style={{ 
+                  borderColor: themeColors.border,
+                  backgroundColor: themeColors.card
+                }}>
+                  <h4 className="text-sm font-medium mb-3 flex items-center gap-2" style={{ color: themeColors.text }}>
+                    <FileCode className="h-4 w-4" style={{ color: themeColors.info }} />
+                    Generated Artifacts
                   </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-3 gap-3">
                     {transformedData.generatedFiles.plsql && (
-                      <div className="p-4 rounded-lg border" style={{ 
-                        borderColor: themeColors.border,
-                        backgroundColor: themeColors.card
+                      <div className="p-3 rounded-lg border text-center" style={{ 
+                        borderColor: themeColors.info + '40',
+                        backgroundColor: themeColors.info + '10'
                       }}>
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="p-2 rounded-lg" style={{ backgroundColor: themeColors.info + '20' }}>
-                            <Code className="h-5 w-5" style={{ color: themeColors.info }} />
-                          </div>
-                          <div>
-                            <h5 className="font-medium" style={{ color: themeColors.text }}>PL/SQL Package</h5>
-                            <p className="text-xs" style={{ color: themeColors.textSecondary }}>Oracle Database</p>
-                          </div>
+                        <Code className="h-6 w-6 mx-auto mb-2" style={{ color: themeColors.info }} />
+                        <div className="text-xs font-medium truncate" style={{ color: themeColors.text }}>PL/SQL Package</div>
+                        <div className="text-[10px] font-mono truncate mt-1" style={{ color: themeColors.textSecondary }}>
+                          {apiData.schemaConfig?.schemaName || 'HR'}_{apiData.apiCode}_PKG.sql
                         </div>
-                        <div className="text-xs font-mono p-2 rounded border" style={{ 
-                          backgroundColor: themeColors.hover,
-                          borderColor: themeColors.border,
-                          color: themeColors.textSecondary
-                        }}>
-                          {transformedData.schemaConfig?.schemaName || 'HR'}_{apiData.apiCode}_PKG.sql
-                        </div>
+                        <button
+                          onClick={() => downloadGeneratedFiles()}
+                          className="mt-2 px-2 py-1 text-[10px] rounded w-full"
+                          style={{ backgroundColor: themeColors.info, color: '#ffffff' }}
+                        >
+                          Download
+                        </button>
                       </div>
                     )}
-
                     {transformedData.generatedFiles.openapi && (
-                      <div className="p-4 rounded-lg border" style={{ 
-                        borderColor: themeColors.border,
-                        backgroundColor: themeColors.card
+                      <div className="p-3 rounded-lg border text-center" style={{ 
+                        borderColor: themeColors.success + '40',
+                        backgroundColor: themeColors.success + '10'
                       }}>
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="p-2 rounded-lg" style={{ backgroundColor: themeColors.success + '20' }}>
-                            <FileJson className="h-5 w-5" style={{ color: themeColors.success }} />
-                          </div>
-                          <div>
-                            <h5 className="font-medium" style={{ color: themeColors.text }}>OpenAPI Spec</h5>
-                            <p className="text-xs" style={{ color: themeColors.textSecondary }}>API Documentation</p>
-                          </div>
-                        </div>
-                        <div className="text-xs font-mono p-2 rounded border" style={{ 
-                          backgroundColor: themeColors.hover,
-                          borderColor: themeColors.border,
-                          color: themeColors.textSecondary
-                        }}>
+                        <FileJson className="h-6 w-6 mx-auto mb-2" style={{ color: themeColors.success }} />
+                        <div className="text-xs font-medium truncate" style={{ color: themeColors.text }}>OpenAPI Spec</div>
+                        <div className="text-[10px] font-mono truncate mt-1" style={{ color: themeColors.textSecondary }}>
                           {apiData.apiCode}_openapi.json
                         </div>
+                        <button
+                          onClick={() => downloadGeneratedFiles()}
+                          className="mt-2 px-2 py-1 text-[10px] rounded w-full"
+                          style={{ backgroundColor: themeColors.success, color: '#ffffff' }}
+                        >
+                          Download
+                        </button>
                       </div>
                     )}
-
                     {transformedData.generatedFiles.postman && (
-                      <div className="p-4 rounded-lg border" style={{ 
-                        borderColor: themeColors.border,
-                        backgroundColor: themeColors.card
+                      <div className="p-3 rounded-lg border text-center" style={{ 
+                        borderColor: themeColors.warning + '40',
+                        backgroundColor: themeColors.warning + '10'
                       }}>
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="p-2 rounded-lg" style={{ backgroundColor: themeColors.warning + '20' }}>
-                            <Database className="h-5 w-5" style={{ color: themeColors.warning }} />
-                          </div>
-                          <div>
-                            <h5 className="font-medium" style={{ color: themeColors.text }}>Postman Collection</h5>
-                            <p className="text-xs" style={{ color: themeColors.textSecondary }}>API Testing</p>
-                          </div>
-                        </div>
-                        <div className="text-xs font-mono p-2 rounded border" style={{ 
-                          backgroundColor: themeColors.hover,
-                          borderColor: themeColors.border,
-                          color: themeColors.textSecondary
-                        }}>
+                        <Database className="h-6 w-6 mx-auto mb-2" style={{ color: themeColors.warning }} />
+                        <div className="text-xs font-medium truncate" style={{ color: themeColors.text }}>Postman Collection</div>
+                        <div className="text-[10px] font-mono truncate mt-1" style={{ color: themeColors.textSecondary }}>
                           {apiData.apiCode}_postman.json
                         </div>
+                        <button
+                          onClick={() => downloadGeneratedFiles()}
+                          className="mt-2 px-2 py-1 text-[10px] rounded w-full"
+                          style={{ backgroundColor: themeColors.warning, color: '#ffffff' }}
+                        >
+                          Download
+                        </button>
                       </div>
                     )}
                   </div>
@@ -1167,7 +1577,7 @@ function ApiConfirmationModal({
             <div className="flex items-center gap-3">
               <button
                 onClick={copyApiDetails}
-                className="px-3 py-2 border rounded-lg flex items-center gap-2 transition-colors hover-lift"
+                className="px-3 py-2 border rounded-lg flex items-center gap-2 text-xs transition-colors hover-lift"
                 style={{ 
                   backgroundColor: themeColors.hover,
                   borderColor: themeColors.border,
@@ -1175,11 +1585,11 @@ function ApiConfirmationModal({
                 }}
               >
                 <Copy className="h-4 w-4" />
-                Copy Details
+                Copy Full Details
               </button>
               <button
                 onClick={downloadGeneratedFiles}
-                className="px-3 py-2 border rounded-lg flex items-center gap-2 transition-colors hover-lift"
+                className="px-3 py-2 border rounded-lg flex items-center gap-2 text-xs transition-colors hover-lift"
                 style={{ 
                   backgroundColor: themeColors.info,
                   borderColor: themeColors.info,
@@ -1187,30 +1597,26 @@ function ApiConfirmationModal({
                 }}
               >
                 <Download className="h-4 w-4" />
-                Download Files
+                Download All Files
               </button>
             </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={onClose}
-                className="px-4 py-2 border rounded-lg transition-colors hover-lift"
-                style={{ 
-                  backgroundColor: themeColors.hover,
-                  borderColor: themeColors.border,
-                  color: themeColors.text
-                }}
-              >
-                Close
-              </button>
-            </div>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg text-xs transition-colors hover-lift"
+              style={{ 
+                backgroundColor: themeColors.success,
+                color: themeColors.white
+              }}
+            >
+              Done
+            </button>
           </div>
         </div>
       </div>
-  );
+    );
+  }
 
   return null;
-}
-
 }
 
 // New component for folder selection modal (when adding new folder)
@@ -1498,9 +1904,9 @@ export default function ApiGenerationModal({
     testAuthentication: true,
     testAuthorization: true,
     
-    // Test data
-    testData: '',
-    testQueries: []
+    // Test data - FIX: Make this an object, not a string
+    testData: {}, // Changed from '' to {}
+    testQueries: [] // Ensure this is an array
   });
 
   const [settings, setSettings] = useState({
@@ -2006,6 +2412,8 @@ useEffect(() => {
       }
 
       if (parametersArray && parametersArray.length > 0) {
+        console.log('📝 Processing procedure/function parameters:', parametersArray.length);
+        
         // Generate parameters from procedure/function
         parametersArray.forEach((param, index) => {
           const paramName = param.ARGUMENT_NAME || param.argument_name || param.name || param.NAME || `param_${index + 1}`;
@@ -2020,52 +2428,73 @@ useEffect(() => {
             cleanKey = `param_${index + 1}`;
           }
           
-          // Determine parameter location based on mode
-          let parameterLocation = 'query';
-          if (paramMode === 'IN' && (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH')) {
-            parameterLocation = 'body';
-          } else if (paramMode === 'IN' && httpMethod === 'GET') {
-            parameterLocation = 'query';
+          console.log(`📝 Parameter ${index + 1}: ${paramName} (${paramMode}) - cleanKey: ${cleanKey}`);
+          
+          // ============================================================
+          // FIXED: Proper parameter location based on mode and HTTP method
+          // ============================================================
+          let parameterLocation = 'none'; // Default for OUT parameters (not in request)
+          
+          if (paramMode === 'IN') {
+            // IN parameters go to request
+            if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
+              parameterLocation = 'body';  // POST/PUT/PATCH use body
+            } else if (httpMethod === 'GET' || httpMethod === 'DELETE') {
+              parameterLocation = 'query'; // GET/DELETE use query params
+            }
           } else if (paramMode === 'IN OUT') {
+            // IN OUT parameters go to request body (and also in response)
             parameterLocation = 'body';
           }
+          // OUT parameters remain 'none' - they are NOT in request
           
-          newParameters.push({
-            id: `proc-param-${Date.now()}-${index}`,
-            key: cleanKey,
-            dbColumn: paramName,
-            oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
-                       paramType.includes('NUMBER') ? 'NUMBER' :
-                       paramType.includes('DATE') ? 'DATE' : 
-                       paramType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
-            apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
-            parameterLocation: parameterLocation,
-            required: paramMode === 'IN' || paramMode === 'IN OUT',
-            description: `${paramName} (${paramMode})`,
-            example: paramType.includes('NUMBER') ? '1' : 
-                    paramType.includes('DATE') ? '2024-01-01' : '',
-            validationPattern: '',
-            defaultValue: param.DATA_DEFAULT || param.defaultValue || '',
-            inBody: parameterLocation === 'body',
-            isPrimaryKey: false,
-            paramMode: paramMode
-          });
+          // ============================================================
+          // ADD TO PARAMETERS TAB (REQUEST SIDE) - FOR IN AND IN OUT
+          // ============================================================
+          if (paramMode === 'IN' || paramMode === 'IN OUT') {
+            console.log(`📝 Adding to parameters (request): ${cleanKey} (${paramMode}) - location: ${parameterLocation}`);
+            newParameters.push({
+              id: `proc-param-${Date.now()}-${index}`,
+              key: cleanKey,
+              dbColumn: paramName,
+              oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
+                        paramType.includes('NUMBER') ? 'NUMBER' :
+                        paramType.includes('DATE') ? 'DATE' : 
+                        paramType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
+              apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
+              parameterLocation: parameterLocation,
+              bodyFormat: parameterLocation === 'body' ? requestBody.bodyType : null,
+              required: paramMode === 'IN' || paramMode === 'IN OUT',
+              description: `${paramName} (${paramMode})`,
+              example: paramType.includes('NUMBER') ? '1' : 
+                      paramType.includes('DATE') ? '2024-01-01' : '',
+              validationPattern: '',
+              defaultValue: param.DATA_DEFAULT || param.defaultValue || '',
+              inBody: parameterLocation === 'body',
+              isPrimaryKey: false,
+              paramMode: paramMode
+            });
+          }
 
-          // Add to response mappings for OUT parameters
+          // ============================================================
+          // ADD TO MAPPING TAB (RESPONSE SIDE) - FOR OUT AND IN OUT
+          // ============================================================
           if (paramMode === 'OUT' || paramMode === 'IN OUT') {
+            console.log(`📝 Adding to responseMappings (response): ${cleanKey} (${paramMode})`);
             newMappings.push({
               id: `mapping-${Date.now()}-out-${index}`,
               apiField: cleanKey,
               dbColumn: paramName,
               oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
-                         paramType.includes('NUMBER') ? 'NUMBER' :
-                         paramType.includes('DATE') ? 'DATE' : 'VARCHAR2',
+                        paramType.includes('NUMBER') ? 'NUMBER' :
+                        paramType.includes('DATE') ? 'DATE' : 'VARCHAR2',
               apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
               format: paramType.includes('DATE') ? 'date-time' : '',
               nullable: true,
               isPrimaryKey: false,
               includeInResponse: true,
-              inResponse: true
+              inResponse: true,
+              source: paramMode === 'OUT' ? 'procedure_out' : 'procedure_inout'
             });
           }
         });
@@ -2073,21 +2502,37 @@ useEffect(() => {
         // If there's a return type for functions, add it to mappings
         const returnType = effectiveObject.RETURN_TYPE || effectiveObject.return_type || effectiveObject.returnType;
         if (returnType && normalizedType === 'FUNCTION') {
+          console.log('📝 Adding function return to responseMappings');
           newMappings.push({
             id: `mapping-${Date.now()}-return`,
             apiField: 'result',
             dbColumn: 'RETURN_VALUE',
             oracleType: returnType.includes('VARCHAR') ? 'VARCHAR2' : 
-                       returnType.includes('NUMBER') ? 'NUMBER' :
-                       returnType.includes('DATE') ? 'DATE' : 'VARCHAR2',
+                      returnType.includes('NUMBER') ? 'NUMBER' :
+                      returnType.includes('DATE') ? 'DATE' : 'VARCHAR2',
             apiType: returnType.includes('NUMBER') ? 'integer' : 'string',
             format: '',
             nullable: false,
             isPrimaryKey: false,
             includeInResponse: true,
-            inResponse: true
+            inResponse: true,
+            source: 'function_return'
           });
         }
+        
+        console.log('📊 Parameter counts:', {
+          parameters: newParameters.length,
+          responseMappings: newMappings.length,
+          parametersByMode: newParameters.reduce((acc, p) => {
+            acc[p.paramMode] = (acc[p.paramMode] || 0) + 1;
+            return acc;
+          }, {}),
+          mappingsBySource: newMappings.reduce((acc, m) => {
+            acc[m.source] = (acc[m.source] || 0) + 1;
+            return acc;
+          }, {})
+        });
+        
       } else {
         // Check for columns (tables/views)
         let columnsArray = null;
@@ -2099,6 +2544,8 @@ useEffect(() => {
         }
 
         if (columnsArray && columnsArray.length > 0) {
+          console.log('📝 Processing table/view columns:', columnsArray.length);
+          
           columnsArray.forEach((col, index) => {
             const colName = col.name || col.COLUMN_NAME || col.column_name;
             const colType = col.type || col.DATA_TYPE || col.data_type || 'VARCHAR2';
@@ -2109,13 +2556,20 @@ useEffect(() => {
               // Clean up column name for API key
               const cleanKey = typeof colName === 'string' ? colName.toLowerCase() : `column_${index + 1}`;
               
-              // Determine parameter location
-              let parameterLocation = 'query';
-              if (isPrimaryKey && (httpMethod === 'GET' || httpMethod === 'PUT' || httpMethod === 'DELETE')) {
-                parameterLocation = 'path';
-              } else if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
-                parameterLocation = 'body';
+              // ============================================================
+              // FIXED: Proper parameter location for table columns
+              // ============================================================
+              let parameterLocation = 'query'; // Default for GET
+              
+              if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
+                parameterLocation = 'body'; // POST/PUT/PATCH use body
+              } else if (isPrimaryKey && (httpMethod === 'GET' || httpMethod === 'PUT' || httpMethod === 'DELETE')) {
+                parameterLocation = 'path'; // Primary keys as path params
               }
+              
+              // For tables/views, all columns can be used in WHERE clauses (parameters)
+              // and all columns appear in SELECT (response)
+              console.log(`📝 Adding column ${colName} to parameters (${parameterLocation}) and responseMappings`);
               
               newParameters.push({
                 id: `param-${Date.now()}-${index}`,
@@ -2150,7 +2604,8 @@ useEffect(() => {
                 nullable: colNullable === 'Y',
                 isPrimaryKey: isPrimaryKey,
                 includeInResponse: true,
-                inResponse: true
+                inResponse: true,
+                source: 'column'
               });
             }
           });
@@ -2160,56 +2615,147 @@ useEffect(() => {
       setParameters(newParameters);
       setResponseMappings(newMappings);
       
-      // Generate sample response based on mappings
+      // Generate sample response based on mappings - FIXED VERSION
       if (newMappings.length > 0) {
         const sampleData = {};
-        newMappings.slice(0, 5).forEach(mapping => {
-          if (mapping.apiType === 'integer') {
-            sampleData[mapping.apiField] = 123;
-          } else if (mapping.apiType === 'string') {
-            if (mapping.format === 'date-time') {
-              sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
+        
+        // Use ALL mappings, not just first 5
+        newMappings.forEach(mapping => {
+          // Determine appropriate sample based on data type and field name
+          if (mapping.apiType === 'integer' || mapping.oracleType === 'NUMBER') {
+            // Check if it might be an ID field
+            if (mapping.apiField.toLowerCase().includes('id') || 
+                mapping.dbColumn?.toUpperCase().includes('ID') ||
+                mapping.apiField.toLowerCase().includes('no') ||
+                mapping.apiField.toLowerCase().includes('num')) {
+              sampleData[mapping.apiField] = 1;
             } else {
-              sampleData[mapping.apiField] = mapping.apiField === 'id' ? 1 : 'sample';
+              sampleData[mapping.apiField] = 123;
+            }
+          } else if (mapping.apiType === 'string' || mapping.oracleType?.includes('VARCHAR') || mapping.oracleType?.includes('CHAR')) {
+            // Check for date/time fields
+            if (mapping.format === 'date-time' || 
+                mapping.oracleType === 'DATE' || 
+                mapping.oracleType === 'TIMESTAMP' ||
+                mapping.apiField.toLowerCase().includes('date') ||
+                mapping.apiField.toLowerCase().includes('time') ||
+                mapping.apiField.toLowerCase().includes('created') ||
+                mapping.apiField.toLowerCase().includes('updated')) {
+              sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
+            } 
+            // Check for ID fields
+            else if (mapping.apiField.toLowerCase().includes('id') || 
+                    mapping.dbColumn?.toUpperCase().includes('ID')) {
+              sampleData[mapping.apiField] = 'ID001';
+            }
+            // Check for name fields
+            else if (mapping.apiField.toLowerCase().includes('name')) {
+              sampleData[mapping.apiField] = 'Sample Name';
+            }
+            // Check for code fields
+            else if (mapping.apiField.toLowerCase().includes('code')) {
+              sampleData[mapping.apiField] = 'SMP001';
+            }
+            // Check for status fields
+            else if (mapping.apiField.toLowerCase().includes('status')) {
+              sampleData[mapping.apiField] = 'ACTIVE';
+            }
+            // Check for email fields
+            else if (mapping.apiField.toLowerCase().includes('email')) {
+              sampleData[mapping.apiField] = 'sample@example.com';
+            }
+            // Check for phone fields
+            else if (mapping.apiField.toLowerCase().includes('phone') || 
+                    mapping.apiField.toLowerCase().includes('mobile')) {
+              sampleData[mapping.apiField] = '+1234567890';
+            }
+            // Check for address fields
+            else if (mapping.apiField.toLowerCase().includes('address')) {
+              sampleData[mapping.apiField] = '123 Main St';
+            }
+            // Check for description fields
+            else if (mapping.apiField.toLowerCase().includes('description') || 
+                    mapping.apiField.toLowerCase().includes('desc')) {
+              sampleData[mapping.apiField] = 'Sample description';
+            }
+            // Check for type fields
+            else if (mapping.apiField.toLowerCase().includes('type')) {
+              sampleData[mapping.apiField] = 'STANDARD';
+            }
+            // Default string sample
+            else {
+              sampleData[mapping.apiField] = 'sample';
             }
           } else if (mapping.apiType === 'boolean') {
             sampleData[mapping.apiField] = true;
+          } else if (mapping.apiType === 'number') {
+            sampleData[mapping.apiField] = 123.45;
+          } else if (mapping.apiType === 'array') {
+            sampleData[mapping.apiField] = [];
+          } else if (mapping.apiType === 'object') {
+            sampleData[mapping.apiField] = {};
           }
         });
         
-        const successSchema = JSON.stringify({
+        // Build success schema
+        const successSchemaObj = {
           success: true,
           data: sampleData,
           message: 'Request processed successfully',
           metadata: {
             timestamp: '{{timestamp}}',
-            apiVersion: apiDetails.version,
+            apiVersion: apiDetails.version || '1.0.0',
             requestId: '{{requestId}}'
           }
-        }, null, 2);
+        };
         
-        const errorSchema = JSON.stringify({
+        // Only include data if there are fields
+        if (Object.keys(sampleData).length === 0) {
+          delete successSchemaObj.data;
+        }
+        
+        const successSchema = JSON.stringify(successSchemaObj, null, 2);
+        
+        // Build error schema based on mappings
+        const errorSchemaObj = {
           success: false,
           error: {
             code: 'ERR_001',
             message: 'Error processing request',
-            details: {
-              field: 'field_name',
-              reason: 'Invalid value'
-            }
+            details: {}
           }
-        }, null, 2);
+        };
+        
+        // Add field-specific error if there are mappings
+        if (newMappings.length > 0) {
+          const firstField = newMappings[0].apiField;
+          errorSchemaObj.error.details = {
+            field: firstField,
+            reason: 'Invalid value provided',
+            expectedType: newMappings[0].apiType,
+            providedValue: null
+          };
+        }
+        
+        const errorSchema = JSON.stringify(errorSchemaObj, null, 2);
         
         setResponseBody(prev => ({
           ...prev,
           successSchema,
           errorSchema
         }));
+        
+        console.log('✅ Generated response samples from', newMappings.length, 'mappings');
       }
       
       console.log('✅ ApiGenerationModal - Initialization complete:', {
         parametersCount: newParameters.length,
-        mappingsCount: newMappings.length
+        mappingsCount: newMappings.length,
+        parameters: newParameters.map(p => ({
+          key: p.key,
+          location: p.parameterLocation,
+          mode: p.paramMode
+        }))
       });
 
     } catch (error) {
@@ -2341,23 +2887,36 @@ useEffect(() => {
     setParameters([...parameters, newParam]);
   };
 
-  const handleParameterChange = (id, field, value) => {
-  setParameters(prevParams => {
-    // First, update the parameter
-    const updatedParams = prevParams.map(param => 
-      param.id === id ? { ...param, [field]: value } : param
-    );
-    
-    // If changing location to/from body, update inBody flag for that parameter
-    if (field === 'parameterLocation') {
-      return updatedParams.map(param => 
-        param.id === id ? { ...param, inBody: value === 'body' } : param
+    const handleParameterChange = (id, field, value) => {
+    setParameters(prevParams => {
+      // First, update the parameter
+      const updatedParams = prevParams.map(param => 
+        param.id === id ? { ...param, [field]: value } : param
       );
-    }
-    
-    return updatedParams;
-  });
-};
+      
+      // If changing location to/from body, update inBody flag and bodyFormat
+      if (field === 'parameterLocation') {
+        return updatedParams.map(param => 
+          param.id === id ? { 
+            ...param, 
+            inBody: value === 'body',
+            bodyFormat: value === 'body' ? requestBody.bodyType : null // Track format
+          } : param
+        );
+      }
+      
+      return updatedParams;
+    });
+  };
+
+  // Also update when bodyType changes to update all body parameters
+  useEffect(() => {
+    setParameters(prevParams => 
+      prevParams.map(param => 
+        param.inBody ? { ...param, bodyFormat: requestBody.bodyType } : param
+      )
+    );
+  }, [requestBody.bodyType]);
 
   const handleRemoveParameter = (id) => {
     setParameters(parameters.filter(param => param.id !== id));
@@ -2428,9 +2987,32 @@ useEffect(() => {
   };
 
   // Handle tests configuration
-  const handleTestsChange = (field, value) => {
+const handleTestsChange = (field, value) => {
+  if (field === 'testData') {
+    // If it's a string that looks like JSON, try to parse it
+    if (typeof value === 'string' && value.trim() !== '') {
+      try {
+        if (value.trim().startsWith('{') || value.trim().startsWith('[')) {
+          setTests(prev => ({ ...prev, [field]: JSON.parse(value) }));
+        } else {
+          // If it's a plain string, store as object
+          setTests(prev => ({ ...prev, [field]: { value } }));
+        }
+      } catch (e) {
+        // If parsing fails, store as object
+        setTests(prev => ({ ...prev, [field]: { value } }));
+      }
+    } else if (value === '') {
+      // Empty string becomes empty object
+      setTests(prev => ({ ...prev, [field]: {} }));
+    } else {
+      // Already an object or other type
+      setTests(prev => ({ ...prev, [field]: value }));
+    }
+  } else {
     setTests(prev => ({ ...prev, [field]: value }));
-  };
+  }
+};
 
   // Handle settings configuration
   const handleSettingsChange = (field, value) => {
@@ -2536,526 +3118,783 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
   };
 
   // Generate OpenAPI specification (for preview only)
-  const generateOpenAPISpec = () => {
-    // Group parameters by location
-    const pathParams = parameters.filter(p => p.parameterLocation === 'path');
-    const queryParams = parameters.filter(p => p.parameterLocation === 'query');
-    const headerParams = parameters.filter(p => p.parameterLocation === 'header');
-    const bodyParams = parameters.filter(p => p.parameterLocation === 'body');
-    
-    const spec = {
-      openapi: '3.0.0',
-      info: {
-        title: apiDetails.apiName,
-        description: apiDetails.description,
-        version: apiDetails.version,
-        contact: {
-          name: apiDetails.owner,
-          email: `${apiDetails.owner.toLowerCase()}@example.com`
-        },
-        'x-collection': selectedCollection ? {
-          name: selectedCollection.name,
-          id: selectedCollection.id,
-          type: selectedCollection.type
-        } : undefined,
-        'x-folder': selectedFolder ? {
-          name: selectedFolder.name,
-          id: selectedFolder.id
-        } : undefined
-      },
-      servers: [
-        {
-          url: '{baseUrl}' + apiDetails.basePath,
-          variables: {
-            baseUrl: {
-              default: 'https://api.example.com',
-            },
-          },
-        },
-      ],
-      tags: [
-        {
-          name: selectedCollection?.name || 'General',
-          description: selectedCollection?.description || 'General APIs'
-        }
-      ],
-      paths: {
-        [apiDetails.endpointPath + (pathParams.length > 0 ? pathParams.map(p => `/{${p.key}}`).join('') : '')]: {
-          [apiDetails.httpMethod.toLowerCase()]: {
-            summary: apiDetails.apiName,
-            description: apiDetails.description,
-            tags: [selectedCollection?.name || 'General'],
-            operationId: apiDetails.apiCode.toLowerCase(),
-            parameters: [
-              ...pathParams.map(p => ({
-                name: p.key,
-                in: 'path',
-                description: p.description,
-                required: true,
-                schema: {
-                  type: p.apiType,
-                  example: p.example,
-                  pattern: p.validationPattern,
-                  default: p.defaultValue,
-                },
-              })),
-              ...queryParams.map(p => ({
-                name: p.key,
-                in: 'query',
-                description: p.description,
-                required: p.required,
-                schema: {
-                  type: p.apiType,
-                  example: p.example,
-                  pattern: p.validationPattern,
-                  default: p.defaultValue,
-                },
-              })),
-              ...headerParams.map(p => ({
-                name: p.key,
-                in: 'header',
-                description: p.description,
-                required: p.required,
-                schema: {
-                  type: p.apiType,
-                  example: p.example,
-                  pattern: p.validationPattern,
-                  default: p.defaultValue,
-                },
-              })),
-            ],
-            ...(bodyParams.length > 0 && {
-              requestBody: {
-                description: 'Request body parameters',
-                required: bodyParams.some(p => p.required),
-                content: {
-                  [requestBody.bodyType === 'json' ? 'application/json' : 
-                    requestBody.bodyType === 'xml' ? 'application/xml' :
-                    requestBody.bodyType === 'form-data' ? 'multipart/form-data' :
-                    'application/x-www-form-urlencoded']: {
-                    schema: {
-                      type: 'object',
-                      properties: bodyParams.reduce((acc, p) => ({
-                        ...acc,
-                        [p.key]: {
-                          type: p.apiType,
-                          description: p.description,
-                          nullable: !p.required,
-                          example: p.example,
-                        }
-                      }), {}),
-                      required: bodyParams.filter(p => p.required).map(p => p.key)
-                    }
-                  }
-                }
-              }
-            }),
-            responses: {
-              '200': {
-                description: 'Successful response',
-                content: {
-                  'application/json': {
-                    schema: {
-                      type: 'object',
-                      properties: {
-                        success: { type: 'boolean', example: true },
-                        data: {
-                          type: 'object',
-                          properties: responseMappings.reduce((acc, mapping) => ({
-                            ...acc,
-                            [mapping.apiField]: {
-                              type: mapping.apiType,
-                              description: `Maps to ${mapping.dbColumn} (${mapping.oracleType})`,
-                              nullable: mapping.nullable,
-                              format: mapping.format,
-                            },
-                          }), {}),
-                        },
-                        message: { type: 'string', example: 'Request processed successfully' },
-                        metadata: {
-                          type: 'object',
-                          properties: {
-                            timestamp: { type: 'string', format: 'date-time' },
-                            apiVersion: { type: 'string' },
-                            requestId: { type: 'string' }
-                          }
-                        }
-                      },
-                    },
-                    example: JSON.parse(responseBody.successSchema)
-                  },
-                },
-              },
-              '400': {
-                description: 'Bad Request',
-                content: {
-                  'application/json': {
-                    schema: {
-                      type: 'object',
-                      properties: {
-                        success: { type: 'boolean', example: false },
-                        error: {
-                          type: 'object',
-                          properties: {
-                            code: { type: 'string' },
-                            message: { type: 'string' },
-                            details: { type: 'object' }
-                          }
-                        }
-                      }
-                    },
-                    example: JSON.parse(responseBody.errorSchema)
-                  }
-                }
-              },
-              '401': {
-                description: 'Unauthorized',
-                content: {
-                  'application/json': {
-                    schema: {
-                      type: 'object',
-                      properties: {
-                        success: { type: 'boolean', example: false },
-                        error: {
-                          type: 'object',
-                          properties: {
-                            code: { type: 'string', example: 'UNAUTHORIZED' },
-                            message: { type: 'string', example: 'Authentication required' }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              },
-              '500': {
-                description: 'Internal Server Error'
-              }
-            },
-            security: authConfig.authType !== 'none' ? [{ [authConfig.authType]: [] }] : [],
-          },
-        },
-      },
-      components: {
-        securitySchemes: {
-          apiKey: {
-            type: 'apiKey',
-            name: authConfig.apiKeyHeader || 'X-API-Key',
-            in: 'header',
-            description: 'API Key authentication'
-          },
-          bearer: {
-            type: 'http',
-            scheme: 'bearer',
-            bearerFormat: 'JWT',
-            description: 'JWT Bearer token authentication'
-          },
-          basic: {
-            type: 'http',
-            scheme: 'basic',
-            description: 'Basic authentication'
+const generateOpenAPISpec = () => {
+  // Only IN and IN OUT parameters appear in request
+  const requestParams = parameters.filter(p => p.paramMode === 'IN' || p.paramMode === 'IN OUT');
+  
+  // Group parameters by location
+  const pathParams = requestParams.filter(p => p.parameterLocation === 'path');
+  const queryParams = requestParams.filter(p => p.parameterLocation === 'query');
+  const headerParams = requestParams.filter(p => p.parameterLocation === 'header');
+  const bodyParams = requestParams.filter(p => p.parameterLocation === 'body');
+  
+  // Determine content type based on body format
+  let contentType = 'application/json';
+  let schemaType = 'object';
+  
+  if (requestBody.bodyType === 'json') {
+    contentType = 'application/json';
+    schemaType = 'object';
+  } else if (requestBody.bodyType === 'xml') {
+    contentType = 'application/xml';
+    schemaType = 'object';
+  } else if (requestBody.bodyType === 'form-data') {
+    contentType = 'multipart/form-data';
+    schemaType = 'object';
+  } else if (requestBody.bodyType === 'urlencoded') {
+    contentType = 'application/x-www-form-urlencoded';
+    schemaType = 'object';
+  } else if (requestBody.bodyType === 'raw') {
+    contentType = 'text/plain';
+    schemaType = 'string';
+  }
+  
+  // Build request body schema based on format
+  let requestBodySchema = {};
+  
+  if (bodyParams.length > 0) {
+    if (requestBody.bodyType === 'form-data' || requestBody.bodyType === 'urlencoded') {
+      // For form-data and urlencoded, each field is a separate property
+      requestBodySchema = {
+        type: 'object',
+        properties: bodyParams.reduce((acc, p) => ({
+          ...acc,
+          [p.key]: {
+            type: p.apiType,
+            description: p.description,
+            nullable: !p.required,
+            example: p.example,
+            format: p.apiType === 'string' && p.oracleType === 'DATE' ? 'date' : undefined
           }
+        }), {}),
+        required: bodyParams.filter(p => p.required).map(p => p.key)
+      };
+    } else if (requestBody.bodyType === 'json') {
+      // For JSON, nest all body params in a single object
+      requestBodySchema = {
+        type: 'object',
+        properties: bodyParams.reduce((acc, p) => ({
+          ...acc,
+          [p.key]: {
+            type: p.apiType,
+            description: p.description,
+            nullable: !p.required,
+            example: p.example
+          }
+        }), {}),
+        required: bodyParams.filter(p => p.required).map(p => p.key)
+      };
+    } else if (requestBody.bodyType === 'raw') {
+      // For raw text, just a string
+      requestBodySchema = {
+        type: 'string',
+        example: bodyParams[0]?.example || 'Sample text'
+      };
+    }
+  }
+  
+  const spec = {
+    openapi: '3.0.0',
+    info: {
+      title: apiDetails.apiName,
+      description: apiDetails.description,
+      version: apiDetails.version,
+      contact: {
+        name: apiDetails.owner,
+        email: `${apiDetails.owner.toLowerCase()}@example.com`
+      },
+      'x-collection': selectedCollection ? {
+        name: selectedCollection.name,
+        id: selectedCollection.id,
+        type: selectedCollection.type
+      } : undefined,
+      'x-folder': selectedFolder ? {
+        name: selectedFolder.name,
+        id: selectedFolder.id
+      } : undefined
+    },
+    servers: [
+      {
+        url: '{baseUrl}' + apiDetails.basePath,
+        variables: {
+          baseUrl: {
+            default: 'https://api.example.com',
+          },
+        },
+      },
+    ],
+    tags: [
+      {
+        name: selectedCollection?.name || 'General',
+        description: selectedCollection?.description || 'General APIs'
+      }
+    ],
+    paths: {
+      [apiDetails.endpointPath + (pathParams.length > 0 ? pathParams.map(p => `/{${p.key}}`).join('') : '')]: {
+        [apiDetails.httpMethod.toLowerCase()]: {
+          summary: apiDetails.apiName,
+          description: apiDetails.description,
+          tags: [selectedCollection?.name || 'General'],
+          operationId: apiDetails.apiCode.toLowerCase(),
+          parameters: [
+            ...pathParams.map(p => ({
+              name: p.key,
+              in: 'path',
+              description: p.description,
+              required: true,
+              schema: {
+                type: p.apiType,
+                example: p.example,
+                pattern: p.validationPattern,
+                default: p.defaultValue,
+              },
+            })),
+            ...queryParams.map(p => ({
+              name: p.key,
+              in: 'query',
+              description: p.description,
+              required: p.required,
+              schema: {
+                type: p.apiType,
+                example: p.example,
+                pattern: p.validationPattern,
+                default: p.defaultValue,
+              },
+            })),
+            ...headerParams.map(p => ({
+              name: p.key,
+              in: 'header',
+              description: p.description,
+              required: p.required,
+              schema: {
+                type: p.apiType,
+                example: p.example,
+                pattern: p.validationPattern,
+                default: p.defaultValue,
+              },
+            })),
+          ],
+          ...(bodyParams.length > 0 && {
+            requestBody: {
+              description: `Request body (${requestBody.bodyType})`,
+              required: bodyParams.some(p => p.required),
+              content: {
+                [contentType]: {
+                  schema: requestBodySchema,
+                  examples: {
+                    example1: {
+                      summary: 'Sample request',
+                      value: requestBody.bodyType === 'json' 
+                        ? JSON.parse(requestBody.sample || '{}')
+                        : requestBody.bodyType === 'form-data'
+                        ? bodyParams.reduce((acc, p) => ({ ...acc, [p.key]: p.example }), {})
+                        : requestBody.sample
+                    }
+                  }
+                }
+              }
+            }
+          }),
+          responses: {
+            '200': {
+              description: 'Successful response',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean', example: true },
+                      data: {
+                        type: 'object',
+                        properties: responseMappings.reduce((acc, mapping) => ({
+                          ...acc,
+                          [mapping.apiField]: {
+                            type: mapping.apiType,
+                            description: `Maps to ${mapping.dbColumn} (${mapping.oracleType})`,
+                            nullable: mapping.nullable,
+                            format: mapping.format,
+                          },
+                        }), {}),
+                      },
+                      message: { type: 'string', example: 'Request processed successfully' },
+                      metadata: {
+                        type: 'object',
+                        properties: {
+                          timestamp: { type: 'string', format: 'date-time' },
+                          apiVersion: { type: 'string' },
+                          requestId: { type: 'string' }
+                        }
+                      }
+                    },
+                  },
+                  example: JSON.parse(responseBody.successSchema)
+                },
+              },
+            },
+            '400': {
+              description: 'Bad Request',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean', example: false },
+                      error: {
+                        type: 'object',
+                        properties: {
+                          code: { type: 'string' },
+                          message: { type: 'string' },
+                          details: { type: 'object' }
+                        }
+                      }
+                    }
+                  },
+                  example: JSON.parse(responseBody.errorSchema)
+                }
+              }
+            },
+            '401': {
+              description: 'Unauthorized',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean', example: false },
+                      error: {
+                        type: 'object',
+                        properties: {
+                          code: { type: 'string', example: 'UNAUTHORIZED' },
+                          message: { type: 'string', example: 'Authentication required' }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            '500': {
+              description: 'Internal Server Error'
+            }
+          },
+          security: authConfig.authType !== 'none' ? [{ [authConfig.authType]: [] }] : [],
+        },
+      },
+    },
+    components: {
+      securitySchemes: {
+        apiKey: {
+          type: 'apiKey',
+          name: authConfig.apiKeyHeader || 'X-API-Key',
+          in: 'header',
+          description: 'API Key authentication'
+        },
+        bearer: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'JWT Bearer token authentication'
+        },
+        basic: {
+          type: 'http',
+          scheme: 'basic',
+          description: 'Basic authentication'
         }
       }
-    };
-    
-    return JSON.stringify(spec, null, 2);
-  };
-
-  // Generate Postman collection (for preview only)
-  const generatePostmanCollection = () => {
-    // Group parameters by location
-    const pathParams = parameters.filter(p => p.parameterLocation === 'path');
-    const queryParams = parameters.filter(p => p.parameterLocation === 'query');
-    const headerParams = parameters.filter(p => p.parameterLocation === 'header');
-    const bodyParams = parameters.filter(p => p.parameterLocation === 'body');
-    
-    // Build URL with path parameters
-    let urlPath = apiDetails.endpointPath;
-    if (pathParams.length > 0) {
-      pathParams.forEach(p => {
-        urlPath = urlPath.replace(`{${p.key}}`, `:${p.key}`);
-      });
     }
-    
-    // Build request body if there are body parameters
-    let body = null;
-    if (bodyParams.length > 0) {
+  };
+  
+  return JSON.stringify(spec, null, 2);
+};
+
+
+const generatePostmanCollection = () => {
+  // Only IN and IN OUT parameters appear in request
+  const requestParams = parameters.filter(p => p.paramMode === 'IN' || p.paramMode === 'IN OUT');
+  
+  // Group parameters by location
+  const pathParams = requestParams.filter(p => p.parameterLocation === 'path');
+  const queryParams = requestParams.filter(p => p.parameterLocation === 'query');
+  const headerParams = requestParams.filter(p => p.parameterLocation === 'header');
+  const bodyParams = requestParams.filter(p => p.parameterLocation === 'body');
+  
+  // Build URL with path parameters
+  let urlPath = apiDetails.endpointPath;
+  if (pathParams.length > 0) {
+    pathParams.forEach(p => {
+      urlPath = urlPath.replace(`{${p.key}}`, `:${p.key}`);
+    });
+  }
+  
+  // Build request body based on format
+  let body = null;
+  if (bodyParams.length > 0) {
+    if (requestBody.bodyType === 'json') {
+      // JSON format - single JSON object with all params
       const bodyObject = {};
       bodyParams.forEach(p => {
         bodyObject[p.key] = p.example || (p.apiType === 'integer' ? 123 : 'sample');
       });
       
       body = {
-        mode: requestBody.bodyType === 'json' ? 'raw' : 
-              requestBody.bodyType === 'form-data' ? 'formdata' :
-              requestBody.bodyType === 'urlencoded' ? 'urlencoded' : 'raw',
-        raw: requestBody.bodyType === 'json' ? JSON.stringify(bodyObject, null, 2) : JSON.stringify(bodyObject),
+        mode: 'raw',
+        raw: JSON.stringify(bodyObject, null, 2),
         options: {
           raw: {
-            language: requestBody.bodyType === 'json' ? 'json' : 'text'
+            language: 'json'
           }
         }
       };
-      
-      if (requestBody.bodyType === 'form-data') {
-        body.formdata = bodyParams.map(p => ({
+    } else if (requestBody.bodyType === 'form-data') {
+      // Form-data format - multipart form
+      body = {
+        mode: 'formdata',
+        formdata: bodyParams.map(p => ({
           key: p.key,
           value: p.example || '',
-          type: 'text',
-          description: p.description
-        }));
-      } else if (requestBody.bodyType === 'urlencoded') {
-        body.urlencoded = bodyParams.map(p => ({
+          type: p.apiType === 'file' ? 'file' : 'text',
+          description: p.description,
+          ...(p.apiType === 'file' && { src: [] })
+        }))
+      };
+    } else if (requestBody.bodyType === 'urlencoded') {
+      // URL-encoded format
+      body = {
+        mode: 'urlencoded',
+        urlencoded: bodyParams.map(p => ({
           key: p.key,
           value: p.example || '',
           description: p.description
-        }));
-      }
-    }
-    
-    // Build auth based on selected type
-    let auth = null;
-    if (authConfig.authType === 'apiKey') {
-      auth = {
-        type: 'apikey',
-        apikey: [
-          {
-            key: 'key',
-            value: authConfig.apiKeyHeader,
-            type: 'string'
-          },
-          {
-            key: 'value',
-            value: authConfig.apiKeyValue || '{{apiKey}}',
-            type: 'string'
-          },
-          {
-            key: 'in',
-            value: 'header',
-            type: 'string'
-          }
-        ]
+        }))
       };
+    } else if (requestBody.bodyType === 'xml') {
+      // XML format
+      const xmlObject = bodyParams.reduce((acc, p) => ({
+        ...acc,
+        [p.key]: p.example || ''
+      }), {});
       
-      // Add secret as additional header if provided
-      if (authConfig.apiSecretHeader && authConfig.apiSecretValue) {
-        headers.push({
-          key: authConfig.apiSecretHeader,
-          value: authConfig.apiSecretValue || '{{apiSecret}}',
-          description: 'API Secret'
-        });
-      }
-    } else if (authConfig.authType === 'bearer') {
-      auth = {
-        type: 'bearer',
-        bearer: [
-          {
-            key: 'token',
-            value: authConfig.jwtToken || '{{jwtToken}}',
-            type: 'string'
+      body = {
+        mode: 'raw',
+        raw: convertToXML(xmlObject, 'request'), // You'd need to implement this
+        options: {
+          raw: {
+            language: 'xml'
           }
-        ]
+        }
       };
-    } else if (authConfig.authType === 'basic') {
-      auth = {
-        type: 'basic',
-        basic: [
-          {
-            key: 'username',
-            value: authConfig.basicUsername || '{{username}}',
-            type: 'string'
-          },
-          {
-            key: 'password',
-            value: authConfig.basicPassword || '{{password}}',
-            type: 'string'
+    } else if (requestBody.bodyType === 'raw') {
+      // Raw text
+      body = {
+        mode: 'raw',
+        raw: bodyParams[0]?.example || 'Sample text',
+        options: {
+          raw: {
+            language: 'text'
           }
-        ]
+        }
       };
     }
-    
-    const collection = {
-      info: {
-        name: apiDetails.apiName,
-        description: apiDetails.description,
-        schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
-      },
-      item: [
+  }
+  
+  // Build auth based on selected type
+  let auth = null;
+  if (authConfig.authType === 'apiKey') {
+    auth = {
+      type: 'apikey',
+      apikey: [
         {
-          name: apiDetails.apiName,
-          request: {
-            method: apiDetails.httpMethod,
-            header: [
-              ...headers.map(h => ({
-                key: h.key,
-                value: h.value,
-                description: h.description,
-              })),
-              ...headerParams.map(p => ({
-                key: p.key,
-                value: p.example || '',
-                description: p.description,
-              }))
-            ],
-            url: {
-              raw: `{{baseUrl}}${apiDetails.basePath}${urlPath}`,
-              host: ['{{baseUrl}}'],
-              path: urlPath.split('/').filter(Boolean),
-              query: queryParams.map(p => ({
-                key: p.key,
-                value: p.example || '',
-                description: p.description,
-              })),
-              variable: pathParams.map(p => ({
-                key: p.key,
-                value: p.example || '',
-                description: p.description,
-              }))
-            },
-            ...(body && { body }),
-            ...(auth && { auth }),
-            description: apiDetails.description,
-          },
-          response: [
-            {
-              name: 'Success Response',
-              originalRequest: {
-                method: apiDetails.httpMethod,
-                header: [],
-                url: {
-                  raw: `{{baseUrl}}${apiDetails.basePath}${urlPath}`
-                }
-              },
-              status: 'OK',
-              code: 200,
-              header: [
-                {
-                  key: 'Content-Type',
-                  value: 'application/json'
-                }
-              ],
-              body: responseBody.successSchema
-            },
-            {
-              name: 'Error Response',
-              originalRequest: {
-                method: apiDetails.httpMethod,
-                header: [],
-                url: {
-                  raw: `{{baseUrl}}${apiDetails.basePath}${urlPath}`
-                }
-              },
-              status: 'Bad Request',
-              code: 400,
-              header: [
-                {
-                  key: 'Content-Type',
-                  value: 'application/json'
-                }
-              ],
-              body: responseBody.errorSchema
-            }
-          ]
+          key: 'key',
+          value: authConfig.apiKeyHeader,
+          type: 'string'
         },
-      ],
-      variable: [
         {
-          key: 'baseUrl',
-          value: 'https://api.example.com',
-          type: 'string',
+          key: 'value',
+          value: authConfig.apiKeyValue || '{{apiKey}}',
+          type: 'string'
         },
-        ...(authConfig.authType === 'apiKey' ? [
-          {
-            key: 'apiKey',
-            value: authConfig.apiKeyValue || 'your-api-key',
-            type: 'string'
-          },
-          {
-            key: 'apiSecret',
-            value: authConfig.apiSecretValue || 'your-api-secret',
-            type: 'string'
-          }
-        ] : []),
-        ...(authConfig.authType === 'bearer' ? [
-          {
-            key: 'jwtToken',
-            value: authConfig.jwtToken || 'your-jwt-token',
-            type: 'string'
-          }
-        ] : []),
-        ...(authConfig.authType === 'basic' ? [
-          {
-            key: 'username',
-            value: authConfig.basicUsername || 'username',
-            type: 'string'
-          },
-          {
-            key: 'password',
-            value: authConfig.basicPassword || 'password',
-            type: 'string'
-          }
-        ] : [])
-      ],
+        {
+          key: 'in',
+          value: 'header',
+          type: 'string'
+        }
+      ]
     };
     
-    return JSON.stringify(collection, null, 2);
-  };
-
-  // Update preview based on mode
-  useEffect(() => {
-    switch(previewMode) {
-      case 'plsql':
-        setGeneratedCode(generatePLSQLCode());
-        break;
-      case 'openapi':
-        setGeneratedCode(generateOpenAPISpec());
-        break;
-      case 'postman':
-        setGeneratedCode(generatePostmanCollection());
-        break;
-      default:
-        setGeneratedCode(JSON.stringify({
-          apiDetails,
-          schemaConfig,
-          collectionInfo: {
-            collectionId: selectedCollection?.id,
-            collectionName: selectedCollection?.name,
-            collectionType: selectedCollection?.type,
-            folderId: selectedFolder?.id,
-            folderName: selectedFolder?.name
-          },
-          parameters: parameters.map(p => ({
-            key: p.key,
-            dbColumn: p.dbColumn,
-            type: p.apiType,
-            oracleType: p.oracleType,
-            required: p.required,
-            parameterLocation: p.parameterLocation,
-            description: p.description,
-            example: p.example,
-            defaultValue: p.defaultValue,
-            isPrimaryKey: p.isPrimaryKey
-          })),
-          responseMappings: responseMappings.map(m => ({
-            apiField: m.apiField,
-            dbColumn: m.dbColumn,
-            oracleType: m.oracleType,
-            apiType: m.apiType,
-            nullable: m.nullable,
-            isPrimaryKey: m.isPrimaryKey
-          })),
-          requestBody,
-          responseBody,
-          authConfig,
-          settings,
-          sourceObjectInfo,
-          tests,
-          validation: validationResult,
-          isEditing
-        }, null, 2));
+    // Add secret as additional header if provided
+    if (authConfig.apiSecretHeader && authConfig.apiSecretValue) {
+      headers.push({
+        key: authConfig.apiSecretHeader,
+        value: authConfig.apiSecretValue || '{{apiSecret}}',
+        description: 'API Secret'
+      });
     }
-  }, [previewMode, apiDetails, schemaConfig, parameters, responseMappings, requestBody, responseBody, authConfig, settings, sourceObjectInfo, tests, validationResult, selectedCollection, selectedFolder, isEditing]);
+  } else if (authConfig.authType === 'bearer') {
+    auth = {
+      type: 'bearer',
+      bearer: [
+        {
+          key: 'token',
+          value: authConfig.jwtToken || '{{jwtToken}}',
+          type: 'string'
+        }
+      ]
+    };
+  } else if (authConfig.authType === 'basic') {
+    auth = {
+      type: 'basic',
+      basic: [
+        {
+          key: 'username',
+          value: authConfig.basicUsername || '{{username}}',
+          type: 'string'
+        },
+        {
+          key: 'password',
+          value: authConfig.basicPassword || '{{password}}',
+          type: 'string'
+        }
+      ]
+    };
+  }
+  
+  // Build response example from ALL mappings
+  const responseExample = {};
+  responseMappings.forEach(m => {
+    if (m.apiType === 'integer' || m.oracleType === 'NUMBER') {
+      responseExample[m.apiField] = 123;
+    } else if (m.apiType === 'string' || m.oracleType?.includes('VARCHAR')) {
+      if (m.format === 'date-time' || m.oracleType === 'DATE' || m.oracleType === 'TIMESTAMP') {
+        responseExample[m.apiField] = '2024-01-01T00:00:00Z';
+      } else if (m.apiField.toLowerCase().includes('id')) {
+        responseExample[m.apiField] = 'ID001';
+      } else if (m.apiField.toLowerCase().includes('name')) {
+        responseExample[m.apiField] = 'Sample Name';
+      } else if (m.apiField.toLowerCase().includes('code')) {
+        responseExample[m.apiField] = 'SMP001';
+      } else if (m.apiField.toLowerCase().includes('status')) {
+        responseExample[m.apiField] = 'ACTIVE';
+      } else {
+        responseExample[m.apiField] = 'sample';
+      }
+    } else if (m.apiType === 'boolean') {
+      responseExample[m.apiField] = true;
+    } else if (m.apiType === 'number') {
+      responseExample[m.apiField] = 123.45;
+    }
+  });
+  
+  const collection = {
+    info: {
+      name: apiDetails.apiName,
+      description: apiDetails.description,
+      schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+    },
+    item: [
+      {
+        name: apiDetails.apiName,
+        request: {
+          method: apiDetails.httpMethod,
+          header: [
+            ...headers.map(h => ({
+              key: h.key,
+              value: h.value,
+              description: h.description,
+            })),
+            ...headerParams.map(p => ({
+              key: p.key,
+              value: p.example || '',
+              description: p.description,
+            })),
+            // Add Content-Type header based on body format
+            ...(bodyParams.length > 0 ? [{
+              key: 'Content-Type',
+              value: requestBody.bodyType === 'json' ? 'application/json' :
+                     requestBody.bodyType === 'xml' ? 'application/xml' :
+                     requestBody.bodyType === 'form-data' ? 'multipart/form-data' :
+                     requestBody.bodyType === 'urlencoded' ? 'application/x-www-form-urlencoded' :
+                     'text/plain',
+              description: 'Request content type'
+            }] : [])
+          ],
+          url: {
+            raw: `{{baseUrl}}${apiDetails.basePath}${urlPath}${queryParams.length > 0 ? '?' + queryParams.map(q => q.key + '={{' + q.key + '}}').join('&') : ''}`,
+            host: ['{{baseUrl}}'],
+            path: urlPath.split('/').filter(Boolean),
+            query: queryParams.map(p => ({
+              key: p.key,
+              value: p.example || '',
+              description: p.description,
+            })),
+            variable: pathParams.map(p => ({
+              key: p.key,
+              value: p.example || '',
+              description: p.description,
+            }))
+          },
+          ...(body && { body }),
+          ...(auth && { auth }),
+          description: apiDetails.description,
+        },
+        response: [
+          {
+            name: 'Success Response',
+            originalRequest: {
+              method: apiDetails.httpMethod,
+              header: [],
+              url: {
+                raw: `{{baseUrl}}${apiDetails.basePath}${urlPath}`
+              }
+            },
+            status: 'OK',
+            code: 200,
+            header: [
+              {
+                key: 'Content-Type',
+                value: 'application/json'
+              }
+            ],
+            body: JSON.stringify({
+              success: true,
+              data: responseExample,
+              message: 'Request processed successfully',
+              metadata: {
+                timestamp: '2024-01-01T00:00:00Z',
+                apiVersion: apiDetails.version,
+                requestId: 'req_123456'
+              }
+            }, null, 2)
+          },
+          {
+            name: 'Error Response',
+            originalRequest: {
+              method: apiDetails.httpMethod,
+              header: [],
+              url: {
+                raw: `{{baseUrl}}${apiDetails.basePath}${urlPath}`
+              }
+            },
+            status: 'Bad Request',
+            code: 400,
+            header: [
+              {
+                key: 'Content-Type',
+                value: 'application/json'
+              }
+            ],
+            body: responseBody.errorSchema
+          }
+        ]
+      },
+    ],
+    variable: [
+      {
+        key: 'baseUrl',
+        value: 'https://api.example.com',
+        type: 'string',
+      },
+      ...pathParams.map(p => ({
+        key: p.key,
+        value: p.example || '',
+        type: 'string'
+      })),
+      ...queryParams.map(p => ({
+        key: p.key,
+        value: p.example || '',
+        type: 'string'
+      })),
+      ...(authConfig.authType === 'apiKey' ? [
+        {
+          key: 'apiKey',
+          value: authConfig.apiKeyValue || 'your-api-key',
+          type: 'string'
+        },
+        {
+          key: 'apiSecret',
+          value: authConfig.apiSecretValue || 'your-api-secret',
+          type: 'string'
+        }
+      ] : []),
+      ...(authConfig.authType === 'bearer' ? [
+        {
+          key: 'jwtToken',
+          value: authConfig.jwtToken || 'your-jwt-token',
+          type: 'string'
+        }
+      ] : []),
+      ...(authConfig.authType === 'basic' ? [
+        {
+          key: 'username',
+          value: authConfig.basicUsername || 'username',
+          type: 'string'
+        },
+        {
+          key: 'password',
+          value: authConfig.basicPassword || 'password',
+          type: 'string'
+        }
+      ] : [])
+    ],
+  };
+  
+  return JSON.stringify(collection, null, 2);
+};
+
+// Helper function to convert object to XML (simplified)
+function convertToXML(obj, rootName) {
+  let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<${rootName}>\n`;
+  
+  Object.entries(obj).forEach(([key, value]) => {
+    xml += `  <${key}>${value}</${key}>\n`;
+  });
+  
+  xml += `</${rootName}>`;
+  return xml;
+}
+
+  // In the useEffect that updates generatedCode based on previewMode
+useEffect(() => {
+  switch(previewMode) {
+    case 'plsql':
+      setGeneratedCode(generatePLSQLCode());
+      break;
+    case 'openapi':
+      setGeneratedCode(generateOpenAPISpec());
+      break;
+    case 'postman':
+      setGeneratedCode(generatePostmanCollection());
+      break;
+    case 'json':
+  setGeneratedCode(JSON.stringify({
+    apiDetails,
+    schemaConfig,
+    collectionInfo: {
+      collectionId: selectedCollection?.id,
+      collectionName: selectedCollection?.name,
+      collectionType: selectedCollection?.type,
+      folderId: selectedFolder?.id,
+      folderName: selectedFolder?.name
+    },
+    // Request parameters (IN and IN OUT only)
+    requestParameters: parameters
+      .filter(p => p.paramMode === 'IN' || p.paramMode === 'IN OUT')
+      .map(p => ({
+        key: p.key,
+        dbColumn: p.dbColumn,
+        type: p.apiType,
+        oracleType: p.oracleType,
+        required: p.required,
+        parameterLocation: p.parameterLocation,
+        bodyFormat: p.bodyFormat,
+        description: p.description,
+        example: p.example,
+        defaultValue: p.defaultValue,
+        isPrimaryKey: p.isPrimaryKey,
+        paramMode: p.paramMode
+      })),
+    // Response fields (ALL mappings - these are the OUT and IN OUT parameters)
+    responseFields: responseMappings.map(m => ({
+      apiField: m.apiField,
+      dbColumn: m.dbColumn,
+      oracleType: m.oracleType,
+      apiType: m.apiType,
+      nullable: m.nullable,
+      isPrimaryKey: m.isPrimaryKey,
+      source: m.source || 'column',
+      format: m.format
+    })),
+    // Sample responses based on mappings
+    responseExamples: {
+      success: responseBody.successSchema ? JSON.parse(responseBody.successSchema) : {
+        success: true,
+        data: responseMappings.reduce((acc, m) => {
+          acc[m.apiField] = m.apiType === 'integer' ? 123 : 
+                           m.apiType === 'boolean' ? true : 
+                           m.format === 'date-time' ? '2024-01-01T00:00:00Z' : 'sample';
+          return acc;
+        }, {}),
+        message: 'Request processed successfully',
+        metadata: {
+          timestamp: '2024-01-01T00:00:00Z',
+          apiVersion: apiDetails.version,
+          requestId: 'req_123456'
+        }
+      },
+      error: responseBody.errorSchema ? JSON.parse(responseBody.errorSchema) : {
+        success: false,
+        error: {
+          code: 'ERR_001',
+          message: 'Error processing request',
+          details: {
+            field: responseMappings[0]?.apiField || 'field',
+            reason: 'Invalid value'
+          }
+        }
+      }
+    },
+    requestBody,
+    responseBody,
+    authConfig,
+    settings,
+    sourceObjectInfo,
+    tests,
+    validation: validationResult,
+    isEditing
+  }, null, 2));
+  break;
+    default:
+      // JSON Configuration - properly separate IN/OUT parameters
+      const requestParams = parameters.filter(p => p.paramMode === 'IN' || p.paramMode === 'IN OUT');
+      const outParams = [...parameters.filter(p => p.paramMode === 'OUT' || p.paramMode === 'IN OUT'), 
+                         ...responseMappings.filter(m => m.source?.includes('out'))];
+      
+      setGeneratedCode(JSON.stringify({
+        apiDetails,
+        schemaConfig,
+        collectionInfo: {
+          collectionId: selectedCollection?.id,
+          collectionName: selectedCollection?.name,
+          collectionType: selectedCollection?.type,
+          folderId: selectedFolder?.id,
+          folderName: selectedFolder?.name
+        },
+        // Request parameters (IN and IN OUT only)
+        requestParameters: requestParams.map(p => ({
+          key: p.key,
+          dbColumn: p.dbColumn,
+          type: p.apiType,
+          oracleType: p.oracleType,
+          required: p.required,
+          parameterLocation: p.parameterLocation,
+          description: p.description,
+          example: p.example,
+          defaultValue: p.defaultValue,
+          isPrimaryKey: p.isPrimaryKey,
+          paramMode: p.paramMode
+        })),
+        // Response fields (all mappings including OUT and IN OUT)
+        responseFields: responseMappings.map(m => ({
+          apiField: m.apiField,
+          dbColumn: m.dbColumn,
+          oracleType: m.oracleType,
+          apiType: m.apiType,
+          nullable: m.nullable,
+          isPrimaryKey: m.isPrimaryKey,
+          source: m.source || 'column'
+        })),
+        // Full parameters for reference (including OUT)
+        allParameters: parameters,
+        requestBody,
+        responseBody,
+        authConfig,
+        settings,
+        sourceObjectInfo,
+        tests,
+        validation: validationResult,
+        isEditing
+      }, null, 2));
+  }
+}, [previewMode, apiDetails, schemaConfig, parameters, responseMappings, requestBody, responseBody, authConfig, settings, sourceObjectInfo, tests, validationResult, selectedCollection, selectedFolder, isEditing]);
 
  // Handle save - show preview first
 const handleSave = () => {
@@ -3157,43 +3996,69 @@ const handlePreviewConfirm = async () => {
         defaultSortDirection: schemaConfig.defaultSortDirection
       },
       schemaConfig: schemaConfig,
-      parameters: parameters,
+      parameters: parameters.map(p => ({
+        ...p,
+        // Ensure bodyFormat is included for body parameters
+        bodyFormat: p.parameterLocation === 'body' ? requestBody.bodyType : null
+      })),
       responseMappings: responseMappings,
-      requestBody: requestBody,
+      requestBody: {
+        ...requestBody,
+        // Add explicit content type
+        contentType: requestBody.bodyType === 'json' ? 'application/json' :
+                     requestBody.bodyType === 'xml' ? 'application/xml' :
+                     requestBody.bodyType === 'form-data' ? 'multipart/form-data' :
+                     requestBody.bodyType === 'urlencoded' ? 'application/x-www-form-urlencoded' :
+                     'text/plain',
+        // FIXED: Stringify JSON objects before sending
+        sample: requestBody.bodyType === 'json' 
+          ? (typeof requestBody.sample === 'object' 
+             ? JSON.stringify(requestBody.sample) 
+             : requestBody.sample)
+          : requestBody.bodyType === 'form-data' 
+            ? parameters
+                .filter(p => p.parameterLocation === 'body')
+                .reduce((acc, p) => ({ ...acc, [p.key]: p.example }), {})
+            : requestBody.sample
+      },
       responseBody: responseBody,
       authConfig: authConfig,
       headers: headers,
-      tests: tests,
+      tests: {
+        ...tests,
+        // FIX: Ensure testData is an object, not an empty string
+        testData: tests.testData && typeof tests.testData === 'string' && tests.testData.trim() !== '' 
+          ? (() => {
+              try {
+                // Try to parse as JSON if it looks like JSON
+                if (tests.testData.trim().startsWith('{') || tests.testData.trim().startsWith('[')) {
+                  return JSON.parse(tests.testData);
+                }
+                // Otherwise, return as object with a single property
+                return { value: tests.testData };
+              } catch (e) {
+                // If parsing fails, return as object
+                return { value: tests.testData };
+              }
+            })()
+          : {}, // Send empty object instead of empty string
+        // Ensure testQueries is always an array
+        testQueries: Array.isArray(tests.testQueries) ? tests.testQueries : []
+      },
       settings: settings,
       regenerateComponents: true
     };
 
-    console.log('📡 Calling generateApi with request:', generateRequest);
-
+    console.log('📡 Sending to backend with format:', requestBody.bodyType, generateRequest.requestBody.contentType);
+    console.log('📡 Request body sample type:', typeof generateRequest.requestBody.sample);
+    console.log('📡 Request body sample preview:', generateRequest.requestBody.sample.substring(0, 100) + '...');
+    
     let response;
     
     // Call the appropriate API based on whether we're editing or creating
     if (isEditing && selectedObject?.id) {
       // Call updateApi for editing
-      // response = await updateApi(authToken, selectedObject.id, generateRequest);
-      console.log('Would call updateApi here with ID:', selectedObject.id);
-      
-      // For now, simulate a successful response
-      response = {
-        responseCode: 200,
-        message: 'API updated successfully',
-        data: {
-          ...generateRequest,
-          id: selectedObject.id,
-          updatedAt: new Date().toISOString(),
-          generatedFiles: {
-            plsql: '-- PL/SQL package content would be here',
-            openapi: '{}',
-            postman: '{}'
-          }
-        },
-        requestId: 'req_' + Date.now()
-      };
+      response = await updateApi(authToken, selectedObject.id, generateRequest);
     } else {
       // Call generateApi for new API
       response = await generateApi(authToken, generateRequest);
@@ -5296,39 +6161,91 @@ const handlePreviewConfirm = async () => {
                     <div className="mt-4">
                       <button
                         onClick={() => {
+                          // Generate sample data from ALL response mappings
                           const sampleData = {};
-                          responseMappings.slice(0, 5).forEach(mapping => {
-                            if (mapping.apiType === 'integer') {
+                          
+                          // Use ALL response mappings, not just first 5
+                          responseMappings.forEach(mapping => {
+                            if (mapping.apiType === 'integer' || mapping.oracleType === 'NUMBER') {
                               sampleData[mapping.apiField] = 123;
-                            } else if (mapping.apiType === 'string') {
-                              if (mapping.format === 'date-time') {
+                            } else if (mapping.apiType === 'string' || mapping.oracleType?.includes('VARCHAR') || mapping.oracleType?.includes('CHAR')) {
+                              if (mapping.format === 'date-time' || mapping.oracleType === 'DATE' || mapping.oracleType === 'TIMESTAMP') {
                                 sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
+                              } else if (mapping.apiField.toLowerCase().includes('id') || mapping.dbColumn?.toUpperCase().includes('ID')) {
+                                sampleData[mapping.apiField] = 1;
+                              } else if (mapping.apiField.toLowerCase().includes('name') || mapping.dbColumn?.toUpperCase().includes('NAME')) {
+                                sampleData[mapping.apiField] = 'Sample Name';
+                              } else if (mapping.apiField.toLowerCase().includes('code') || mapping.dbColumn?.toUpperCase().includes('CODE')) {
+                                sampleData[mapping.apiField] = 'SMP001';
+                              } else if (mapping.apiField.toLowerCase().includes('status') || mapping.dbColumn?.toUpperCase().includes('STATUS')) {
+                                sampleData[mapping.apiField] = 'ACTIVE';
                               } else {
-                                sampleData[mapping.apiField] = mapping.apiField === 'id' ? 1 : 'sample';
+                                sampleData[mapping.apiField] = 'sample';
                               }
                             } else if (mapping.apiType === 'boolean') {
                               sampleData[mapping.apiField] = true;
+                            } else if (mapping.apiType === 'number') {
+                              sampleData[mapping.apiField] = 123.45;
+                            } else if (mapping.apiType === 'array') {
+                              sampleData[mapping.apiField] = [];
+                            } else if (mapping.apiType === 'object') {
+                              sampleData[mapping.apiField] = {};
                             }
                           });
                           
-                          const successSchema = JSON.stringify({
+                          // Build the complete success schema
+                          const successSchemaObj = {
                             success: true,
                             data: sampleData,
                             message: 'Request processed successfully',
                             metadata: {
                               timestamp: '{{timestamp}}',
-                              apiVersion: apiDetails.version,
+                              apiVersion: apiDetails.version || '1.0.0',
                               requestId: '{{requestId}}'
                             }
-                          }, null, 2);
+                          };
                           
+                          // If there are no data fields, remove the data object
+                          if (Object.keys(sampleData).length === 0) {
+                            delete successSchemaObj.data;
+                          }
+                          
+                          const successSchema = JSON.stringify(successSchemaObj, null, 2);
+                          
+                          // Update the response body
                           handleResponseBodyChange('successSchema', successSchema);
+                          
+                          // Also generate a proper error schema based on mappings
+                          const errorSchemaObj = {
+                            success: false,
+                            error: {
+                              code: 'ERR_001',
+                              message: 'Error processing request',
+                              details: {}
+                            }
+                          };
+                          
+                          // Add field-specific error if there are mappings
+                          if (responseMappings.length > 0) {
+                            const firstField = responseMappings[0].apiField;
+                            errorSchemaObj.error.details = {
+                              field: firstField,
+                              reason: 'Invalid value provided',
+                              expectedType: responseMappings[0].apiType
+                            };
+                          }
+                          
+                          const errorSchema = JSON.stringify(errorSchemaObj, null, 2);
+                          handleResponseBodyChange('errorSchema', errorSchema);
+                          
+                          // Show feedback (optional)
+                          console.log('✅ Generated success and error samples from', responseMappings.length, 'response mappings');
                         }}
                         className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs transition-colors hover-lift"
                         style={{ backgroundColor: themeColors.info, color: themeColors.white }}
                       >
                         <Sparkles className="h-4 w-4" />
-                        Generate Success Sample from Mappings
+                        Generate Success Sample from Mappings ({responseMappings.length} fields)
                       </button>
                     </div>
 
@@ -5635,6 +6552,142 @@ const handlePreviewConfirm = async () => {
                       </div>
                     </div>
 
+                    {/* ===== NEW: Test Data Section (JSON) ===== */}
+                    <div className="space-y-4 mt-4">
+                      <h4 className="font-semibold" style={{ color: themeColors.text }}>
+                        Test Data (JSON)
+                      </h4>
+                      <div className="border rounded-lg" style={{ 
+                        borderColor: themeColors.border,
+                        backgroundColor: themeColors.card
+                      }}>
+                        <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: themeColors.border }}>
+                          <span className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Test Data Object
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                // Clear test data (set to empty object)
+                                handleTestsChange('testData', {});
+                              }}
+                              className="px-2 py-1 text-xs rounded border transition-colors hover-lift"
+                              style={{ 
+                                backgroundColor: themeColors.hover,
+                                borderColor: themeColors.border,
+                                color: themeColors.text
+                              }}
+                            >
+                              Clear
+                            </button>
+                            <button
+                              onClick={() => {
+                                // Format the test data nicely
+                                if (tests.testData && typeof tests.testData === 'object') {
+                                  handleTestsChange('testData', JSON.stringify(tests.testData, null, 2));
+                                }
+                              }}
+                              className="px-2 py-1 text-xs rounded border transition-colors hover-lift"
+                              style={{ 
+                                backgroundColor: themeColors.hover,
+                                borderColor: themeColors.border,
+                                color: themeColors.text
+                              }}
+                            >
+                              Format JSON
+                            </button>
+                          </div>
+                        </div>
+                        <textarea
+                          value={typeof tests.testData === 'object' ? JSON.stringify(tests.testData, null, 2) : tests.testData}
+                          onChange={(e) => handleTestsChange('testData', e.target.value)}
+                          className="w-full h-32 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
+                          style={{ 
+                            backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
+                            color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
+                          }}
+                          placeholder='{"key": "value"}'
+                        />
+                        <div className="px-4 py-2 border-t text-xs" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>
+                          Enter JSON object for test data (will be sent as LinkedHashMap to backend)
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ===== NEW: Test Queries Section (Array) ===== */}
+                    <div className="space-y-4 mt-4">
+                      <h4 className="font-semibold" style={{ color: themeColors.text }}>
+                        Test Queries
+                      </h4>
+                      <div className="border rounded-lg" style={{ 
+                        borderColor: themeColors.border,
+                        backgroundColor: themeColors.card
+                      }}>
+                        <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: themeColors.border }}>
+                          <span className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Custom Test Queries (Array)
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                // Add a sample query
+                                const sampleQueries = [
+                                  ...(Array.isArray(tests.testQueries) ? tests.testQueries : []),
+                                  `SELECT * FROM ${schemaConfig.schemaName}.${schemaConfig.objectName} WHERE ROWNUM <= 10`
+                                ];
+                                handleTestsChange('testQueries', sampleQueries);
+                              }}
+                              className="px-2 py-1 text-xs rounded border transition-colors hover-lift"
+                              style={{ 
+                                backgroundColor: themeColors.hover,
+                                borderColor: themeColors.border,
+                                color: themeColors.text
+                              }}
+                            >
+                              Add Sample
+                            </button>
+                            <button
+                              onClick={() => {
+                                // Clear queries
+                                handleTestsChange('testQueries', []);
+                              }}
+                              className="px-2 py-1 text-xs rounded border transition-colors hover-lift"
+                              style={{ 
+                                backgroundColor: themeColors.hover,
+                                borderColor: themeColors.border,
+                                color: themeColors.text
+                              }}
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+                        <textarea
+                          value={Array.isArray(tests.testQueries) ? JSON.stringify(tests.testQueries, null, 2) : '[]'}
+                          onChange={(e) => {
+                            try {
+                              const parsed = JSON.parse(e.target.value);
+                              if (Array.isArray(parsed)) {
+                                handleTestsChange('testQueries', parsed);
+                              }
+                            } catch (error) {
+                              // If not valid JSON, don't update
+                              console.log('Invalid JSON for test queries');
+                            }
+                          }}
+                          className="w-full h-32 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
+                          style={{ 
+                            backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
+                            color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
+                          }}
+                          placeholder='["SELECT * FROM table", "SELECT COUNT(*) FROM table"]'
+                        />
+                        <div className="px-4 py-2 border-t text-xs" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>
+                          Enter array of SQL queries to execute during testing
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Test SQL Preview */}
                     <div className="space-y-4">
                       <h4 className="font-semibold" style={{ color: themeColors.text }}>
@@ -5653,41 +6706,45 @@ const handlePreviewConfirm = async () => {
                           backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
                           color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
                         }}>
-{`-- Database Object Tests for ${schemaConfig.schemaName}.${schemaConfig.objectName}
--- Generated: ${new Date().toISOString()}
+                {`-- Database Object Tests for ${schemaConfig.schemaName}.${schemaConfig.objectName}
+                -- Generated: ${new Date().toISOString()}
 
--- 1. Connection Test
-SELECT 'Database Connection Successful' AS test_result FROM DUAL;
+                -- 1. Connection Test
+                SELECT 'Database Connection Successful' AS test_result FROM DUAL;
 
--- 2. Object Access Test
-SELECT COUNT(*) AS object_exists 
-FROM ALL_OBJECTS 
-WHERE OWNER = '${schemaConfig.schemaName}' 
-  AND OBJECT_NAME = '${schemaConfig.objectName}'
-  AND OBJECT_TYPE = '${schemaConfig.objectType}';
+                -- 2. Object Access Test
+                SELECT COUNT(*) AS object_exists 
+                FROM ALL_OBJECTS 
+                WHERE OWNER = '${schemaConfig.schemaName}' 
+                  AND OBJECT_NAME = '${schemaConfig.objectName}'
+                  AND OBJECT_TYPE = '${schemaConfig.objectType}';
 
--- 3. ${schemaConfig.objectType} Structure Test
-${schemaConfig.objectType === 'TABLE' || schemaConfig.objectType === 'VIEW' ? 
-  `SELECT COLUMN_NAME, DATA_TYPE, NULLABLE 
-   FROM ALL_TAB_COLUMNS 
-   WHERE OWNER = '${schemaConfig.schemaName}' 
-     AND TABLE_NAME = '${schemaConfig.objectName}'
-   ORDER BY COLUMN_ID;` : 
-  `SELECT ARGUMENT_NAME, DATA_TYPE, IN_OUT 
-   FROM ALL_ARGUMENTS 
-   WHERE OWNER = '${schemaConfig.schemaName}' 
-     AND OBJECT_NAME = '${schemaConfig.objectName}'
-   ORDER BY POSITION;`}
+                -- 3. ${schemaConfig.objectType} Structure Test
+                ${schemaConfig.objectType === 'TABLE' || schemaConfig.objectType === 'VIEW' ? 
+                  `SELECT COLUMN_NAME, DATA_TYPE, NULLABLE 
+                  FROM ALL_TAB_COLUMNS 
+                  WHERE OWNER = '${schemaConfig.schemaName}' 
+                    AND TABLE_NAME = '${schemaConfig.objectName}'
+                  ORDER BY COLUMN_ID;` : 
+                  `SELECT ARGUMENT_NAME, DATA_TYPE, IN_OUT 
+                  FROM ALL_ARGUMENTS 
+                  WHERE OWNER = '${schemaConfig.schemaName}' 
+                    AND OBJECT_NAME = '${schemaConfig.objectName}'
+                  ORDER BY POSITION;`}
 
-${tests.testWithSampleData ? `-- 4. Sample Data Query
-SELECT * FROM ${schemaConfig.schemaName}.${schemaConfig.objectName} 
-WHERE ROWNUM <= ${tests.sampleDataRows};` : ''}
+                ${tests.testWithSampleData ? `-- 4. Sample Data Query
+                SELECT * FROM ${schemaConfig.schemaName}.${schemaConfig.objectName} 
+                WHERE ROWNUM <= ${tests.sampleDataRows};` : ''}
 
-${tests.testQueryPerformance ? `-- 5. Performance Test
-SET TIMING ON;
-SELECT /*+ GATHER_PLAN_STATISTICS */ * 
-FROM ${schemaConfig.schemaName}.${schemaConfig.objectName} 
-WHERE ROWNUM <= 100;` : ''}`}
+                ${tests.testQueryPerformance ? `-- 5. Performance Test
+                SET TIMING ON;
+                SELECT /*+ GATHER_PLAN_STATISTICS */ * 
+                FROM ${schemaConfig.schemaName}.${schemaConfig.objectName} 
+                WHERE ROWNUM <= 100;` : ''}
+
+                ${Array.isArray(tests.testQueries) && tests.testQueries.length > 0 ? `
+                -- 6. Custom Test Queries (${tests.testQueries.length})
+                ${tests.testQueries.map((q, i) => `-- Query ${i+1}:\n${q};`).join('\n\n')}` : ''}`}
                         </pre>
                       </div>
                     </div>
@@ -5989,8 +7046,8 @@ WHERE ROWNUM <= 100;` : ''}`}
                       <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: themeColors.border }}>
                         <span className="text-xs font-medium" style={{ color: themeColors.text }}>
                           {previewMode === 'plsql' ? 'PL/SQL Package' : 
-                           previewMode === 'openapi' ? 'OpenAPI Specification' :
-                           previewMode === 'postman' ? 'Postman Collection' : 'Configuration'}
+                          previewMode === 'openapi' ? 'OpenAPI Specification' :
+                          previewMode === 'postman' ? 'Postman Collection' : 'Configuration'}
                         </span>
                         <span className="text-xs font-mono" style={{ color: themeColors.textSecondary }}>
                           {previewMode === 'plsql' ? '.sql' : '.json'}

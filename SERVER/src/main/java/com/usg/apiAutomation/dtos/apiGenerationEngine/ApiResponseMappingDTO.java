@@ -19,5 +19,6 @@ public class ApiResponseMappingDTO {
     private Boolean nullable;
     private Boolean isPrimaryKey;
     private Boolean includeInResponse;
+    private Boolean inResponse;
     private Integer position;
 }

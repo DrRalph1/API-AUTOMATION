@@ -1,6 +1,6 @@
 package com.usg.apiAutomation.repositories.postgres.apiGenerationEngine;
 
-import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
+import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -48,4 +48,47 @@ public interface GeneratedAPIRepository extends JpaRepository<GeneratedApiEntity
     Optional<GeneratedApiEntity> findByEndpointPath(@Param("endpointPath") String endpointPath);
 
     boolean existsByApiCode(String apiCode);
+
+    // ============= CORRECTED JSONB QUERIES =============
+
+    @Query(value = "SELECT * FROM tb_eng_generated_apis WHERE source_object_info @> jsonb_build_object('requestId', :requestId)", nativeQuery = true)
+    Optional<GeneratedApiEntity> findBySourceObjectInfoRequestId(@Param("requestId") String requestId);
+
+    @Query(value = "SELECT * FROM tb_eng_generated_apis WHERE collection_info @> jsonb_build_object('requestId', :requestId)", nativeQuery = true)
+    Optional<GeneratedApiEntity> findByCollectionInfoRequestId(@Param("requestId") String requestId);
+
+    @Query(value = "SELECT * FROM tb_eng_generated_apis WHERE source_object_info @> jsonb_build_object('requestId', :requestId) OR collection_info @> jsonb_build_object('requestId', :requestId)", nativeQuery = true)
+    Optional<GeneratedApiEntity> findByRequestId(@Param("requestId") String requestId);
+
+    @Query(value = "SELECT * FROM tb_eng_generated_apis WHERE source_object_info @> jsonb_build_object('requestId', :requestId) OR collection_info @> jsonb_build_object('requestId', :requestId)", nativeQuery = true)
+    Optional<GeneratedApiEntity> findByGeneratedAPIId(@Param("requestId") String requestId);
+
+    // ============= METHODS TO FETCH RELATED ENTITIES =============
+
+    @Query(value = "SELECT * FROM tb_eng_parameters WHERE api_id = :apiId ORDER BY position ASC", nativeQuery = true)
+    List<ApiParameterEntity> findParametersByApiId(@Param("apiId") String apiId);
+
+    @Query("SELECT r FROM ApiResponseMappingEntity r WHERE r.generatedApi.id = :apiId ORDER BY r.position ASC")
+    List<ApiResponseMappingEntity> findResponseMappingsByApiId(@Param("apiId") String apiId);
+
+    @Query("SELECT h FROM ApiHeaderEntity h WHERE h.generatedApi.id = :apiId")
+    List<ApiHeaderEntity> findHeadersByApiId(@Param("apiId") String apiId);
+
+    @Query("SELECT t FROM ApiTestEntity t WHERE t.generatedApi.id = :apiId")
+    List<ApiTestEntity> findTestsByApiId(@Param("apiId") String apiId);
+
+    @Query("SELECT a FROM ApiAuthConfigEntity a WHERE a.generatedApi.id = :apiId")
+    Optional<ApiAuthConfigEntity> findAuthConfigByApiId(@Param("apiId") String apiId);
+
+    @Query("SELECT s FROM ApiSchemaConfigEntity s WHERE s.generatedApi.id = :apiId")
+    Optional<ApiSchemaConfigEntity> findSchemaConfigByApiId(@Param("apiId") String apiId);
+
+    @Query("SELECT r FROM ApiRequestConfigEntity r WHERE r.generatedApi.id = :apiId")
+    Optional<ApiRequestConfigEntity> findRequestConfigByApiId(@Param("apiId") String apiId);
+
+    @Query("SELECT r FROM ApiResponseConfigEntity r WHERE r.generatedApi.id = :apiId")
+    Optional<ApiResponseConfigEntity> findResponseConfigByApiId(@Param("apiId") String apiId);
+
+    @Query("SELECT s FROM ApiSettingsEntity s WHERE s.generatedApi.id = :apiId")
+    Optional<ApiSettingsEntity> findSettingsByApiId(@Param("apiId") String apiId);
 }

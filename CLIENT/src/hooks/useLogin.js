@@ -261,7 +261,7 @@ export const useLogin = () => {
       user_id: state.userId,
       password: state.password,
       entrySource: "web",
-      deviceIp: "192.168.1.119",
+      deviceIp: "192.168.0.127",
       channel: "browser",
       authToken: "",
       userName: state.userId,
