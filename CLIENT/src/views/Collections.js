@@ -1499,7 +1499,6 @@ const deletePathParam = (id) => {
   };
 
 // Update the handleSelectRequest function to properly initialize body content
-// Update the handleSelectRequest function to properly initialize body content and parameters
 const handleSelectRequest = useCallback(async (request, collectionId, folderId) => {
   console.log('🎯 [handleSelectRequest] Selected request:', {
     id: request.id,
@@ -1532,7 +1531,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     setResponse(null);
     
     // Reset body type to default
-    setRequestBodyType('none'); // Set to 'none' for new requests
+    setRequestBodyType('raw');
     setRawBodyType('json');
     
     // Set the selected request
@@ -1573,6 +1572,8 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
   const baseUrl = request.url || '';
   console.log('🔗 Base URL:', baseUrl);
   
+  setRequestBody(request.body || '');
+  
   // Log what we're getting from the request object
   console.log('📥 [Request] Raw request data:', {
     name: request.name,
@@ -1587,7 +1588,6 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
   // Set parameters based on location
   setRequestParams(request.queryParams || []);
   setRequestHeaders(request.headers || []);
-  setRequestPathParams(request.pathParams || []);
   
   // Set initial URL without path params (they'll be added after API call)
   setRequestUrl(baseUrl);
@@ -1602,52 +1602,34 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
       setRequestBodyType('raw');
       setRawBodyType('json');
       
-      // Check if there are body parameters that should be in the JSON
-      const bodyParams = request.bodyParams || 
-                         request.parameters?.filter(p => p.parameterLocation === 'body') || [];
-      
-      if (bodyParams.length > 0) {
-        // Build JSON object from body parameters
-        const bodyObject = {};
-        bodyParams.forEach(param => {
-          bodyObject[param.key] = param.value || param.defaultValue || '';
-        });
-        setRequestBody(JSON.stringify(bodyObject, null, 2));
-      } else if (request.body) {
-        // Use existing body if no body parameters
+      // If we have a body string, parse it and potentially extract form-data or urlencoded
+      if (request.body) {
         try {
           // Try to parse as JSON
           const parsedBody = JSON.parse(request.body);
           setRequestBody(JSON.stringify(parsedBody, null, 2));
+          
+          // If this looks like it might be form-data or urlencoded in JSON format,
+          // we can populate those states too
+          if (typeof parsedBody === 'object' && !Array.isArray(parsedBody)) {
+            // Check if it looks like form-data or urlencoded data
+            // You can add logic here to detect and populate formData or urlEncodedData
+          }
         } catch {
           // Not valid JSON, keep as string
           setRequestBody(request.body || '');
         }
-      } else {
-        setRequestBody('{\n  \n}');
       }
-      
     } else if (bodyType === 'form-data' || allowedMediaTypes.includes('multipart/form-data')) {
       setRequestBodyType('form-data');
       
-      // Parse body parameters into formData array
-      const bodyParams = request.bodyParams || 
-                         request.parameters?.filter(p => p.parameterLocation === 'body') || [];
-      
-      if (bodyParams.length > 0) {
-        const formDataArray = bodyParams.map(param => ({
-          id: `form-${Date.now()}-${Math.random()}`,
-          key: param.key,
-          value: param.value || '',
-          type: param.type === 'file' ? 'file' : 'text',
-          enabled: true
-        }));
-        setFormData(formDataArray);
-      } else if (request.body) {
-        // Try to parse existing body
+      // Parse body into formData array
+      if (request.body) {
         try {
+          // Try to parse as JSON first (if the body is stored as JSON string)
           const parsedBody = JSON.parse(request.body);
           if (typeof parsedBody === 'object' && !Array.isArray(parsedBody)) {
+            // Convert object to formData array
             const formDataArray = Object.entries(parsedBody).map(([key, value]) => ({
               id: `form-${Date.now()}-${Math.random()}`,
               key: key,
@@ -1658,7 +1640,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
             setFormData(formDataArray);
           }
         } catch {
-          // If not JSON, try to parse as query string format
+          // If not JSON, try to parse as query string format (key=value&key2=value2)
           if (request.body.includes('=')) {
             const pairs = request.body.split('&');
             const formDataArray = pairs.map(pair => {
@@ -1674,30 +1656,17 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
             setFormData(formDataArray);
           }
         }
-      } else {
-        setFormData([]);
       }
-      
     } else if (bodyType === 'x-www-form-urlencoded' || allowedMediaTypes.includes('application/x-www-form-urlencoded')) {
       setRequestBodyType('x-www-form-urlencoded');
       
-      // Parse body parameters into urlEncodedData array
-      const bodyParams = request.bodyParams || 
-                         request.parameters?.filter(p => p.parameterLocation === 'body') || [];
-      
-      if (bodyParams.length > 0) {
-        const urlEncodedArray = bodyParams.map(param => ({
-          id: `url-${Date.now()}-${Math.random()}`,
-          key: param.key,
-          value: param.value || '',
-          description: param.description || '',
-          enabled: true
-        }));
-        setUrlEncodedData(urlEncodedArray);
-      } else if (request.body) {
+      // Parse body into urlEncodedData array
+      if (request.body) {
         try {
+          // Try to parse as JSON first
           const parsedBody = JSON.parse(request.body);
           if (typeof parsedBody === 'object' && !Array.isArray(parsedBody)) {
+            // Convert object to urlEncodedData array
             const urlEncodedArray = Object.entries(parsedBody).map(([key, value]) => ({
               id: `url-${Date.now()}-${Math.random()}`,
               key: key,
@@ -1708,6 +1677,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
             setUrlEncodedData(urlEncodedArray);
           }
         } catch {
+          // If not JSON, try to parse as query string format (key=value&key2=value2)
           if (request.body.includes('=')) {
             const pairs = request.body.split('&');
             const urlEncodedArray = pairs.map(pair => {
@@ -1723,17 +1693,12 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
             setUrlEncodedData(urlEncodedArray);
           }
         }
-      } else {
-        setUrlEncodedData([]);
       }
-      
     } else if (bodyType === 'binary') {
       setRequestBodyType('binary');
-      setBinaryFile(null);
-      
+      // Binary file handling would need to be done separately
     } else if (bodyType === 'graphql') {
       setRequestBodyType('graphql');
-      
       // Parse GraphQL query and variables if present
       if (request.body) {
         try {
@@ -1747,37 +1712,18 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
         } catch {
           // Not valid JSON, treat entire body as query
           setGraphqlQuery(request.body);
-          setGraphqlVariables('');
         }
-      } else {
-        setGraphqlQuery('');
-        setGraphqlVariables('');
       }
     } else {
-      // Default to none if bodyType is unrecognized
-      setRequestBodyType('none');
-      setRequestBody('');
+      setRequestBodyType('raw');
+      setRawBodyType(bodyType || 'json');
+      setRequestBody(request.body || '');
     }
   } else {
-    // No requestBody config - check if there are any body parameters
-    const hasBodyParams = request.parameters?.some(p => p.parameterLocation === 'body') || false;
-    
-    if (hasBodyParams) {
-      // If there are body parameters but no bodyType specified, default to raw JSON
-      setRequestBodyType('raw');
-      setRawBodyType('json');
-      
-      const bodyParams = request.parameters?.filter(p => p.parameterLocation === 'body') || [];
-      const bodyObject = {};
-      bodyParams.forEach(param => {
-        bodyObject[param.key] = param.value || param.defaultValue || '';
-      });
-      setRequestBody(JSON.stringify(bodyObject, null, 2));
-    } else {
-      // No body parameters and no requestBody config, set to 'none'
-      setRequestBodyType('none');
-      setRequestBody('');
-    }
+    // Default handling if no body type specified
+    setRequestBodyType('raw');
+    setRawBodyType('json');
+    setRequestBody(request.body || '');
   }
   
   setAuthType(request.authType || 'noauth');
@@ -1875,56 +1821,6 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
           setRequestPathParams(pathParams);
           setRequestHeaders(cleanHeaders([...headerParams, ...(details.headers || [])]));
           
-          // Handle body parameters based on bodyType
-          if (details.requestBody && details.requestBody.bodyType) {
-            const bodyType = details.requestBody.bodyType;
-            
-            if (bodyType === 'json' && bodyParams.length > 0) {
-              setRequestBodyType('raw');
-              setRawBodyType('json');
-              
-              const bodyObject = {};
-              bodyParams.forEach(param => {
-                bodyObject[param.key] = param.value || '';
-              });
-              setRequestBody(JSON.stringify(bodyObject, null, 2));
-              
-            } else if (bodyType === 'form-data' && bodyParams.length > 0) {
-              setRequestBodyType('form-data');
-              
-              const formDataArray = bodyParams.map(param => ({
-                id: `form-${Date.now()}-${Math.random()}`,
-                key: param.key,
-                value: param.value || '',
-                type: param.type === 'file' ? 'file' : 'text',
-                enabled: true
-              }));
-              setFormData(formDataArray);
-              
-            } else if (bodyType === 'x-www-form-urlencoded' && bodyParams.length > 0) {
-              setRequestBodyType('x-www-form-urlencoded');
-              
-              const urlEncodedArray = bodyParams.map(param => ({
-                id: `url-${Date.now()}-${Math.random()}`,
-                key: param.key,
-                value: param.value || '',
-                description: param.description || '',
-                enabled: true
-              }));
-              setUrlEncodedData(urlEncodedArray);
-            }
-          } else if (bodyParams.length > 0) {
-            // Default to raw JSON if no bodyType specified but body params exist
-            setRequestBodyType('raw');
-            setRawBodyType('json');
-            
-            const bodyObject = {};
-            bodyParams.forEach(param => {
-              bodyObject[param.key] = param.value || '';
-            });
-            setRequestBody(JSON.stringify(bodyObject, null, 2));
-          }
-          
           // Build URL with path and query params
           const baseUrlWithoutQuery = details.url ? details.url.split('?')[0] : (baseUrl.split('?')[0] || baseUrl);
           
@@ -1949,8 +1845,8 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
           setRequestUrl(finalUrl);
         }
         
-        // Handle body from API details (if no body params were found)
-        if (details.requestBody && details.requestBody.bodyType && bodyParams.length === 0) {
+        // Handle body from API details
+        if (details.requestBody) {
           const bodyType = details.requestBody.bodyType;
           setRequestBodyType(bodyType);
           
@@ -1958,8 +1854,6 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
             setRawBodyType('json');
             if (details.body) {
               setRequestBody(details.body);
-            } else {
-              setRequestBody('');
             }
           } else if (bodyType === 'form-data') {
             setRequestBodyType('form-data');
@@ -1977,10 +1871,9 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
                   setFormData(formDataArray);
                 }
               } catch {
+                // If not JSON, leave formData empty
                 setFormData([]);
               }
-            } else {
-              setFormData([]);
             }
           } else if (bodyType === 'x-www-form-urlencoded') {
             setRequestBodyType('x-www-form-urlencoded');
@@ -2000,21 +1893,12 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
               } catch {
                 setUrlEncodedData([]);
               }
-            } else {
-              setUrlEncodedData([]);
             }
           } else if (bodyType === 'binary') {
             setRequestBodyType('binary');
           } else if (bodyType === 'graphql') {
             setRequestBodyType('graphql');
-          } else if (bodyType === 'none') {
-            setRequestBodyType('none');
           }
-        }
-        
-        // If no body type is specified and no body params exist, set to 'none'
-        if (!details.requestBody && bodyParams.length === 0) {
-          setRequestBodyType('none');
         }
         
         if (details.authType) setAuthType(details.authType);
