@@ -1554,27 +1554,186 @@ public class APIGenerationEngineService {
     }
 
     private void updateDocumentationParameters(APIEndpointEntity endpoint, GeneratedApiEntity api) {
-        // Delete existing parameters
-        List<com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity> existingParams =
-                docParameterRepository.findByEndpointId(endpoint.getId());
-        docParameterRepository.deleteAll(existingParams);
+        try {
+            log.info("Updating documentation parameters for endpoint: {}", endpoint.getId());
+            System.out.println("=== STARTING updateDocumentationParameters for endpoint: " + endpoint.getId() + " ===");
 
-        // Add new parameters
-        if (api.getParameters() != null) {
-            for (ApiParameterEntity apiParam : api.getParameters()) {
-                com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity param =
-                        new com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity();
-                param.setName(apiParam.getKey());
-                param.setIn(apiParam.getParameterType());
-                param.setType(apiParam.getApiType());
-                param.setRequired(apiParam.getRequired() != null ? apiParam.getRequired() : false);
-                param.setDescription(apiParam.getDescription());
-                param.setExample(apiParam.getExample());
-                param.setEndpoint(endpoint);
-                docParameterRepository.save(param);
+            // STEP 1: First, delete existing parameters
+            System.out.println("STEP 1: Fetching existing parameters for endpoint: " + endpoint.getId());
+            List<com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity> existingParams =
+                    docParameterRepository.findByEndpointId(endpoint.getId());
+            System.out.println("Fetched existing parameters, result size: " + (existingParams != null ? existingParams.size() : 0));
+
+            if (existingParams != null && !existingParams.isEmpty()) {
+                log.debug("Deleting {} existing parameters", existingParams.size());
+                System.out.println("Found " + existingParams.size() + " existing parameters to delete");
+
+                // Clear relationship before deletion
+                System.out.println("Clearing endpoint relationships for existing parameters");
+                for (com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity param : existingParams) {
+                    param.setEndpoint(null);
+                    System.out.println("Cleared endpoint for parameter ID: " + param.getId() + ", name: " + param.getName());
+                }
+
+                System.out.println("Deleting all existing parameters");
+                docParameterRepository.deleteAll(existingParams);
+                System.out.println("DeleteAll completed");
+
+                System.out.println("Flushing to force deletion");
+                docParameterRepository.flush();
+                System.out.println("Flush completed - parameters should be deleted");
+            } else {
+                System.out.println("No existing parameters found to delete");
             }
+
+            // STEP 2: Add new parameters (following collections pattern)
+            System.out.println("STEP 2: Processing new parameters");
+            if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+                int paramCount = 0;
+                int totalParams = api.getParameters().size();
+                System.out.println("Found " + totalParams + " parameters to process from api");
+
+                for (ApiParameterEntity apiParam : api.getParameters()) {
+                    System.out.println("\n--- Processing parameter " + (paramCount + 1) + " of " + totalParams + " ---");
+
+                    // Skip if key is null or empty
+                    if (apiParam.getKey() == null || apiParam.getKey().trim().isEmpty()) {
+                        log.warn("Skipping parameter with null or empty key");
+                        System.out.println("WARNING: Skipping parameter - key is null or empty");
+                        continue;
+                    }
+                    System.out.println("Parameter key: '" + apiParam.getKey() + "'");
+
+                    // Create new parameter entity with NEW ID (just like collections)
+                    System.out.println("Creating new ParameterEntity instance");
+                    com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity param =
+                            new com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity();
+
+                    // CRITICAL: Always generate a new ID - never reuse existing IDs
+                    String newId = UUID.randomUUID().toString();
+                    param.setId(newId);
+                    System.out.println("Generated new ID: " + newId);
+
+                    // Core identification fields
+                    param.setName(apiParam.getKey());
+                    System.out.println("Set name: " + apiParam.getKey());
+                    param.setKey(apiParam.getKey());
+                    System.out.println("Set key: " + apiParam.getKey());
+
+                    // Database mapping fields
+                    param.setDbColumn(apiParam.getDbColumn());
+                    System.out.println("Set dbColumn: " + apiParam.getDbColumn());
+                    param.setDbParameter(apiParam.getDbParameter());
+                    System.out.println("Set dbParameter: " + apiParam.getDbParameter());
+
+                    // Type fields
+                    String paramType = apiParam.getApiType() != null ? apiParam.getApiType() : "string";
+                    param.setParameterType(paramType);
+                    System.out.println("Set parameterType: " + paramType);
+                    param.setOracleType(apiParam.getOracleType());
+                    System.out.println("Set oracleType: " + apiParam.getOracleType());
+                    param.setApiType(apiParam.getApiType());
+                    System.out.println("Set apiType: " + apiParam.getApiType());
+
+                    // Location and requirement fields - CRITICAL for display
+                    String paramLocation = apiParam.getParameterType() != null ? apiParam.getParameterType() : "query";
+                    param.setParameterLocation(paramLocation);
+                    System.out.println("Set parameterLocation: " + paramLocation);
+                    boolean required = apiParam.getRequired() != null ? apiParam.getRequired() : false;
+                    param.setRequired(required);
+                    System.out.println("Set required: " + required);
+
+                    // Documentation fields
+                    String description = apiParam.getDescription() != null ? apiParam.getDescription() : "";
+                    param.setDescription(description);
+                    System.out.println("Set description: " + description);
+                    param.setDefaultValue(apiParam.getDefaultValue());
+                    System.out.println("Set defaultValue: " + apiParam.getDefaultValue());
+                    param.setExample(apiParam.getExample());
+                    System.out.println("Set example: " + apiParam.getExample());
+                    param.setValue(apiParam.getDefaultValue());
+                    System.out.println("Set value (from defaultValue): " + apiParam.getDefaultValue());
+
+                    // Format and validation
+                    param.setValidationPattern(apiParam.getValidationPattern());
+                    System.out.println("Set validationPattern: " + apiParam.getValidationPattern());
+
+                    // Special flags
+                    boolean inBody = apiParam.getInBody() != null ? apiParam.getInBody() : false;
+                    param.setInBody(inBody);
+                    System.out.println("Set inBody: " + inBody);
+                    boolean isPrimaryKey = apiParam.getIsPrimaryKey() != null ? apiParam.getIsPrimaryKey() : false;
+                    param.setIsPrimaryKey(isPrimaryKey);
+                    System.out.println("Set isPrimaryKey: " + isPrimaryKey);
+
+                    // Parameter mode (for stored procedures)
+                    String paramMode = apiParam.getParamMode() != null ? apiParam.getParamMode() : "IN";
+                    param.setParamMode(paramMode);
+                    System.out.println("Set paramMode: " + paramMode);
+
+                    // Status and ordering - CRITICAL: enabled must be true to display
+                    param.setEnabled(true);
+                    System.out.println("Set enabled: true");
+                    int position = apiParam.getPosition() != null ? apiParam.getPosition() : paramCount;
+                    param.setPosition(position);
+                    System.out.println("Set position: " + position);
+
+                    // CRITICAL: Set the relationship to endpoint
+                    param.setEndpoint(endpoint);
+                    System.out.println("Set endpoint relationship - endpoint ID: " + endpoint.getId());
+
+                    // Save the parameter immediately (just like collections pattern)
+                    System.out.println("Attempting to save parameter to database...");
+                    try {
+                        com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity saved =
+                                docParameterRepository.save(param);
+                        System.out.println("Save completed - received saved entity with ID: " + saved.getId());
+
+                        System.out.println("Flushing to ensure persistence...");
+                        docParameterRepository.flush();
+                        System.out.println("Flush completed");
+
+                        paramCount++;
+                        System.out.println("Parameter saved successfully. Total saved so far: " + paramCount);
+
+                        log.debug("Saved documentation parameter: {} with ID: {}",
+                                saved.getKey(), saved.getId());
+                        System.out.println("Log entry: Saved parameter " + saved.getKey() + " with ID " + saved.getId());
+
+                    } catch (Exception e) {
+                        log.error("Failed to save documentation parameter {}: {}",
+                                apiParam.getKey(), e.getMessage());
+                        System.out.println("ERROR: Failed to save parameter " + apiParam.getKey() +
+                                " - Exception: " + e.getClass().getSimpleName() +
+                                " - Message: " + e.getMessage());
+                        e.printStackTrace();
+                    }
+                }
+
+                // Force another flush after all saves
+                System.out.println("\n--- Final flush after processing all parameters ---");
+                docParameterRepository.flush();
+                System.out.println("Final flush completed");
+
+                log.info("Saved {} documentation parameters for endpoint: {}",
+                        paramCount, endpoint.getId());
+                System.out.println("SUMMARY: Saved " + paramCount + " documentation parameters for endpoint: " + endpoint.getId());
+
+            } else {
+                log.debug("No parameters to save for endpoint: {}", endpoint.getId());
+                System.out.println("No parameters to save - api.getParameters() is null or empty");
+            }
+
+            System.out.println("=== updateDocumentationParameters COMPLETED for endpoint: " + endpoint.getId() + " ===\n");
+
+        } catch (Exception e) {
+            log.error("Error updating documentation parameters: {}", e.getMessage(), e);
+            System.out.println("FATAL ERROR in updateDocumentationParameters: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed to update documentation parameters: " + e.getMessage(), e);
         }
     }
+
 
     private void updateDocumentationResponses(APIEndpointEntity endpoint, GeneratedApiEntity api) {
         // Delete existing responses
@@ -4995,6 +5154,7 @@ public class APIGenerationEngineService {
 
     /**
      * Generate documentation using the provided collection info
+     * Follows the same pattern as collections parameters - ALWAYS creates new parameters with new IDs
      */
     @Transactional
     String generateDocumentation(GeneratedApiEntity api, String performedBy,
@@ -5005,6 +5165,8 @@ public class APIGenerationEngineService {
         try {
             log.info("Generating Documentation for API: {} using collection: {}",
                     api.getApiCode(), collectionInfo.getCollectionName());
+
+            System.out.println("api::::::" + api);
 
             // ==================== STEP 1: Find or create collection ====================
             APICollectionEntity docCollection;
@@ -5084,7 +5246,6 @@ public class APIGenerationEngineService {
             docCollectionRepository.save(savedDocCollection);
 
             // ==================== STEP 3: Build the full endpoint URL with basePath and endpointPath ====================
-            // This will create something like: /api/v1/tb-tparty-trans-log
             String endpointUrl = (api.getBasePath() != null ? api.getBasePath() : "") +
                     (api.getEndpointPath() != null ? api.getEndpointPath() : "");
 
@@ -5096,7 +5257,7 @@ public class APIGenerationEngineService {
             log.info("Built endpoint URL for documentation: {}", endpointUrl);
 
             // ==================== STEP 4: Create endpoint ====================
-            // ALWAYS create a new endpoint for each API
+            // ALWAYS create a new endpoint for each API (just like collections creates new request)
             APIEndpointEntity endpoint = new APIEndpointEntity();
             endpoint.setId(UUID.randomUUID().toString()); // Generate a unique ID
             log.info("Creating new endpoint with ID: {} for API: {}", endpoint.getId(), api.getApiCode());
@@ -5111,22 +5272,7 @@ public class APIGenerationEngineService {
             endpoint.setRequiresAuth(api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType()));
             endpoint.setDeprecated(false);
             endpoint.setCategory(api.getCategory());
-            endpoint.setTags(api.getTags()); // Make sure to set tags
-            endpoint.setCreatedBy(performedBy);
-            endpoint.setUpdatedBy(performedBy);
-            endpoint.setLastModifiedBy(performedBy);
-
-            endpoint.setName(api.getApiName());
-            endpoint.setMethod(api.getHttpMethod());
-            endpoint.setUrl(endpointUrl); // This will be like: /api/v1/tb-tparty-trans-log (no {{baseUrl}} placeholder)
-            endpoint.setDescription(api.getDescription());
-            endpoint.setCollection(savedDocCollection);
-            endpoint.setFolder(savedDocFolder);
-            endpoint.setApiVersion(api.getVersion());
-            endpoint.setRequiresAuth(api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType()));
-            endpoint.setDeprecated(false);
-            endpoint.setCategory(api.getCategory());
-            endpoint.setTags(null);
+            endpoint.setTags(api.getTags() != null ? api.getTags() : new ArrayList<>());
             endpoint.setCreatedBy(performedBy);
             endpoint.setUpdatedBy(performedBy);
             endpoint.setLastModifiedBy(performedBy);
@@ -5154,69 +5300,60 @@ public class APIGenerationEngineService {
                 }
             }
 
-            // Save endpoint
+            // Save endpoint FIRST (just like collections saves request first)
             APIEndpointEntity savedEndpoint = endpointRepository.saveAndFlush(endpoint);
             log.debug("Saved endpoint with ID: {}", savedEndpoint.getId());
 
-            // Verify endpoint exists
-            Optional<APIEndpointEntity> verifyEndpoint = endpointRepository.findById(savedEndpoint.getId());
-            if (verifyEndpoint.isEmpty()) {
-                log.error("Endpoint not found in database after save!");
-                throw new RuntimeException("Failed to save endpoint");
-            }
-            log.debug("Endpoint verified in database");
+            // Force flush to ensure endpoint is in database before adding children
+            endpointRepository.flush();
 
-            // ==================== STEP 5: Add tags ====================
+            // ==================== STEP 5: Add tags (if any) ====================
             if (api.getTags() != null && !api.getTags().isEmpty()) {
-                String sql = "INSERT INTO tb_doc_endpoint_tags (endpoint_id, tag) VALUES (?, ?)";
-                int tagCount = 0;
                 for (String tag : api.getTags()) {
-                    try {
-                        int rowsAffected = oracleJdbcTemplate.update(sql, savedEndpoint.getId(), tag);
-                        if (rowsAffected > 0) {
-                            tagCount++;
+                    if (tag != null && !tag.trim().isEmpty()) {
+                        try {
+                            String sql = "INSERT INTO tb_doc_endpoint_tags (endpoint_id, tag) VALUES (?, ?)";
+                            oracleJdbcTemplate.update(sql, savedEndpoint.getId(), tag.trim());
                             log.debug("Inserted tag: {} for endpoint: {}", tag, savedEndpoint.getId());
+                        } catch (Exception e) {
+                            log.error("Failed to insert tag: {} - {}", tag, e.getMessage());
                         }
-                    } catch (Exception e) {
-                        log.error("Failed to insert tag: {} - {}", tag, e.getMessage());
                     }
                 }
-                log.debug("Inserted {} tags for endpoint", tagCount);
             }
 
-            // ==================== STEP 6: Add headers ====================
+            // ==================== STEP 6: Add headers (following collections pattern) ====================
             if (api.getHeaders() != null && !api.getHeaders().isEmpty()) {
                 int headerCount = 0;
                 for (ApiHeaderEntity apiHeader : api.getHeaders()) {
-                    if (Boolean.TRUE.equals(apiHeader.getIsRequestHeader())) {
+                    if (Boolean.TRUE.equals(apiHeader.getIsRequestHeader()) &&
+                            apiHeader.getKey() != null && !apiHeader.getKey().trim().isEmpty()) {
+
                         com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity header =
                                 new com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity();
+
+                        // ALWAYS generate new ID
                         header.setId(UUID.randomUUID().toString());
-
-                        // Ensure key is never null
-                        String key = apiHeader.getKey();
-                        if (key == null || key.trim().isEmpty()) {
-                            // Skip this header if key is null or empty
-                            log.warn("Skipping header with null or empty key");
-                            continue;
-                        }
-                        header.setKey(key);
-
+                        header.setKey(apiHeader.getKey().trim());
                         header.setValue(apiHeader.getValue() != null ? apiHeader.getValue() : "");
                         header.setDescription(apiHeader.getDescription() != null ? apiHeader.getDescription() : "");
                         header.setRequired(apiHeader.getRequired() != null ? apiHeader.getRequired() : false);
                         header.setEndpoint(savedEndpoint);
+
                         docHeaderRepository.save(header);
                         headerCount++;
                     }
                 }
+                docHeaderRepository.flush();
                 log.debug("Saved {} headers for endpoint", headerCount);
             }
 
-            // ==================== STEP 7: Add auth headers ====================
+            // ==================== STEP 7: Add auth headers (if any) ====================
             if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
                 com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity authHeader =
                         new com.usg.apiAutomation.entities.postgres.documentation.HeaderEntity();
+
+                // ALWAYS generate new ID
                 authHeader.setId(UUID.randomUUID().toString());
                 authHeader.setRequired(true);
                 authHeader.setEndpoint(savedEndpoint);
@@ -5250,36 +5387,126 @@ public class APIGenerationEngineService {
                         break;
                 }
 
-                // Only save if key is not null
                 if (key != null && !key.trim().isEmpty()) {
                     authHeader.setKey(key);
                     authHeader.setValue(value);
                     authHeader.setDescription(description);
                     docHeaderRepository.save(authHeader);
+                    docHeaderRepository.flush();
                     log.debug("Saved auth header for endpoint");
-                } else {
-                    log.warn("Skipping auth header with null key for auth type: {}", api.getAuthConfig().getAuthType());
                 }
             }
 
-            // ==================== STEP 8: Add parameters ====================
+            // ==================== STEP 8: Add parameters (FOLLOWING COLLECTIONS PATTERN) ====================
             if (api.getParameters() != null && !api.getParameters().isEmpty()) {
                 int paramCount = 0;
+                log.debug("Creating {} new parameters for endpoint", api.getParameters().size());
+
                 for (ApiParameterEntity apiParam : api.getParameters()) {
+
+                    // Skip if key is null or empty
+                    if (apiParam.getKey() == null || apiParam.getKey().trim().isEmpty()) {
+                        log.warn("Skipping parameter with null or empty key");
+                        continue;
+                    }
+
+                    System.out.println("apiParamTTT:::::" + apiParam);
+
+                    System.out.println("========== API PARAMETER DETAILS ==========");
+                    System.out.println("apiParamTTT:::::" + apiParam);
+                    System.out.println("--- Individual Fields ---");
+                    System.out.println("ID: " + apiParam.getId());
+                    System.out.println("API ID: " + apiParam.getId());
+                    System.out.println("Key: '" + apiParam.getKey() + "'");
+                    System.out.println("DB Column: " + apiParam.getDbColumn());
+                    System.out.println("Oracle Type: " + apiParam.getOracleType());
+                    System.out.println("API Type: " + apiParam.getApiType());
+                    System.out.println("Parameter Location: " + apiParam.getParameterLocation());
+                    System.out.println("Required: " + apiParam.getRequired());
+                    System.out.println("In Body: " + apiParam.getInBody());
+                    System.out.println("Is Primary Key: " + apiParam.getIsPrimaryKey());
+                    System.out.println("Param Mode: " + apiParam.getParamMode());
+                    System.out.println("Description: '" + apiParam.getDescription() + "'");
+                    System.out.println("Example: " + apiParam.getExample());
+                    System.out.println("Default Value: '" + apiParam.getDefaultValue() + "'");
+                    System.out.println("Position: " + apiParam.getPosition());
+                    System.out.println("Validation Pattern: " + apiParam.getValidationPattern());
+                    System.out.println("DB Parameter: " + apiParam.getDbParameter());
+                    System.out.println("==========================================");
+
+                    // Create new parameter entity with NEW ID (just like collections)
                     com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity param =
                             new com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity();
+
+                    // CRITICAL: Always generate a new ID - never reuse existing IDs
                     param.setId(UUID.randomUUID().toString());
-                    param.setName(apiParam.getKey() != null ? apiParam.getKey() : "");
-                    param.setIn(apiParam.getParameterType() != null ? apiParam.getParameterType() : "query");
-                    param.setType(apiParam.getApiType() != null ? apiParam.getApiType() : "string");
+
+                    // Core identification fields
+                    param.setName(apiParam.getKey().trim());
+                    param.setKey(apiParam.getKey().trim());
+
+                    // Database mapping fields
+                    param.setDbColumn(apiParam.getDbColumn());
+                    param.setDbParameter(apiParam.getDbParameter());
+
+                    // Type fields
+                    param.setParameterType(apiParam.getApiType() != null ?
+                            apiParam.getApiType() : "");
+                    param.setOracleType(apiParam.getOracleType());
+                    param.setApiType(apiParam.getApiType());
+
+                    // Location and requirement fields - CRITICAL for display
+                    param.setParameterLocation(apiParam.getParameterLocation() != null ?
+                            apiParam.getParameterLocation() : "query");
                     param.setRequired(apiParam.getRequired() != null ? apiParam.getRequired() : false);
-                    param.setDescription(apiParam.getDescription() != null ? apiParam.getDescription() : "");
+
+                    // Documentation fields
+                    param.setDescription(apiParam.getDescription() != null ?
+                            apiParam.getDescription() : "");
+                    param.setDefaultValue(apiParam.getDefaultValue());
                     param.setExample(apiParam.getExample());
+                    param.setValue(apiParam.getDefaultValue()); // Set value to defaultValue
+
+                    // Format and validation
+                    param.setValidationPattern(apiParam.getValidationPattern());
+
+                    // Special flags
+                    param.setInBody(apiParam.getInBody() != null ? apiParam.getInBody() : false);
+                    param.setIsPrimaryKey(apiParam.getIsPrimaryKey() != null ?
+                            apiParam.getIsPrimaryKey() : false);
+
+                    // Parameter mode (for stored procedures)
+                    param.setParamMode(apiParam.getParamMode() != null ?
+                            apiParam.getParamMode() : "IN");
+
+                    // Status and ordering - CRITICAL: enabled must be true to display
+                    param.setEnabled(true); // Always true for new parameters
+                    param.setPosition(apiParam.getPosition() != null ?
+                            apiParam.getPosition() : paramCount);
+
+                    // CRITICAL: Set the relationship to endpoint
                     param.setEndpoint(savedEndpoint);
-                    docParameterRepository.save(param);
-                    paramCount++;
+
+                    // Save the parameter immediately (just like collections pattern)
+                    try {
+                        System.out.println("paramENDD::::::" + param);
+                        com.usg.apiAutomation.entities.postgres.documentation.ParameterEntity saved =
+                                docParameterRepository.save(param);
+                        paramCount++;
+                        log.debug("Saved documentation parameter: {} with ID: {}",
+                                saved.getKey(), saved.getId());
+                    } catch (Exception e) {
+                        log.error("Failed to save documentation parameter {}: {}",
+                                apiParam.getKey(), e.getMessage());
+                    }
                 }
-                log.debug("Saved {} parameters for endpoint", paramCount);
+
+                // Force flush after all parameter saves
+                docParameterRepository.flush();
+                log.info("Saved {} documentation parameters for endpoint: {}",
+                        paramCount, savedEndpoint.getId());
+            } else {
+                log.debug("No parameters to save for endpoint: {}", savedEndpoint.getId());
             }
 
             // ==================== STEP 9: Add response examples ====================
@@ -5331,6 +5558,8 @@ public class APIGenerationEngineService {
                 log.debug("Saved error response example for endpoint");
             }
 
+            responseExampleRepository.flush();
+
             // ==================== STEP 10: Add code examples ====================
             generateDocumentationCodeExamples(api, savedEndpoint, codeBaseRequestId);
 
@@ -5351,18 +5580,17 @@ public class APIGenerationEngineService {
             changelog.setChanges(changes);
 
             changelogRepository.save(changelog);
+            changelogRepository.flush();
             log.debug("Saved changelog entry for collection");
 
             // ==================== STEP 12: Update endpoint count ====================
             savedDocCollection.setTotalEndpoints(1);
             docCollectionRepository.save(savedDocCollection);
-
-            // Force a final flush to ensure everything is committed
             docCollectionRepository.flush();
-            endpointRepository.flush();
 
             log.info("Documentation generated successfully with Collection ID: {} using Folder: {}",
                     savedDocCollection.getId(), collectionInfo.getFolderName());
+
             return savedDocCollection.getId();
 
         } catch (Exception e) {
@@ -7479,11 +7707,14 @@ public class APIGenerationEngineService {
         if (dto == null) return null;
 
         return ApiParameterEntity.builder()
+                .id(UUID.randomUUID().toString())  // ← CRITICAL: Set ID manually
                 .generatedApi(api)
                 .key(dto.getKey())
                 .dbColumn(dto.getDbColumn())
+                .dbParameter(dto.getDbParameter())
                 .oracleType(dto.getOracleType())
                 .apiType(dto.getApiType())
+                .parameterType(dto.getParameterType())
                 .parameterLocation(dto.getParameterLocation())
                 .required(dto.getRequired())
                 .description(dto.getDescription())

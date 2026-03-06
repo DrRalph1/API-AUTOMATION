@@ -1534,6 +1534,8 @@ public class DocumentationService {
         return dto;
     }
 
+
+
     private HeaderDTO convertToHeaderDTO(HeaderEntity entity) {
         return new HeaderDTO(
                 entity.getKey(),
@@ -1544,14 +1546,55 @@ public class DocumentationService {
     }
 
     private ParameterDTO convertToParameterDTO(ParameterEntity entity) {
-        return new ParameterDTO(
-                entity.getName(),
-                entity.getType(),
-                entity.getIn(),
-                entity.isRequired(),
-                entity.getDescription(),
-                entity.getExample()
-        );
+        if (entity == null) return null;
+
+        ParameterDTO dto = new ParameterDTO();
+
+        // Core fields
+        dto.setId(entity.getId());
+        dto.setName(entity.getName() != null ? entity.getName() : entity.getKey());
+        dto.setKey(entity.getKey());
+
+        // Database mapping fields
+        dto.setDbColumn(entity.getDbColumn());
+        dto.setDbParameter(entity.getDbParameter());
+
+        // Type fields
+        dto.setParameterType(entity.getParameterType());
+        dto.setOracleType(entity.getOracleType());
+        dto.setApiType(entity.getApiType());
+
+        // Location and requirement
+        dto.setParameterLocation(entity.getParameterLocation() != null ?
+                entity.getParameterLocation() : "query");
+        dto.setRequired(entity.getRequired() != null ? entity.getRequired() : false);
+
+        // Documentation fields
+        dto.setDescription(entity.getDescription() != null ? entity.getDescription() : "");
+        dto.setDefaultValue(entity.getDefaultValue());
+        dto.setExample(entity.getExample());
+        dto.setValue(entity.getValue());
+        dto.setFormat(entity.getFormat());
+        dto.setValidationPattern(entity.getValidationPattern());
+
+        // Special flags
+        dto.setInBody(entity.getInBody());
+        dto.setIsPrimaryKey(entity.getIsPrimaryKey());
+        dto.setParamMode(entity.getParamMode() != null ? entity.getParamMode() : "IN");
+
+        // Status and ordering
+        dto.setEnabled(entity.isEnabled());
+        dto.setPosition(entity.getPosition() != null ? entity.getPosition() : 0);
+
+        // Relationship
+        dto.setEndpointId(entity.getEndpoint() != null ? entity.getEndpoint().getId() : null);
+
+        // Legacy fields (derived)
+        dto.setType(entity.getApiType() != null ? entity.getApiType() :
+                (entity.getParameterType() != null ? entity.getParameterType() : "string"));
+        dto.setIn(entity.getParameterLocation() != null ? entity.getParameterLocation() : "query");
+
+        return dto;
     }
 
     private ResponseExampleDTO convertToResponseExampleDTO(ResponseExampleEntity entity) {

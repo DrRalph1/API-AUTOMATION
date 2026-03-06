@@ -49,9 +49,7 @@ public class ParameterEntity {
     @ToString.Include
     private String apiType;
 
-    @Column(name = "parameter_location")
-    @EqualsAndHashCode.Include
-    @ToString.Include
+    @Column(name = "parameter_location") // query, path, header, body
     private String parameterLocation;
 
     @Column(name = "required")

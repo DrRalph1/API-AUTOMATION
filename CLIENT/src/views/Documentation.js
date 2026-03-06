@@ -1227,7 +1227,7 @@ const fetchAPIEndpoints = useCallback(async (collectionId, folderId) => {
   }
 }, [authToken, selectedCollection, selectedRequest, fetchEndpointDetails]);
 
-  // Load endpoint details - FIXED VERSION
+  // Load endpoint details - FIXED VERSION with parameter grouping
 const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
   console.log(`📡 [Documentation] Fetching details for endpoint ${endpointId}`);
   
@@ -1261,7 +1261,59 @@ const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
     console.log('📊 [Documentation] Extracted endpoint data:', endpointData);
     
     if (endpointData) {
-      // Format the details for display
+      // Group parameters by location
+      const pathParams = [];
+      const queryParams = [];
+      const headerParams = [];
+      const bodyParams = [];
+      
+      // Process each parameter based on parameterLocation
+      if (endpointData.parameters && Array.isArray(endpointData.parameters)) {
+        endpointData.parameters.forEach(param => {
+          // Determine parameter location
+          const location = param.parameterLocation?.toLowerCase() || param.in?.toLowerCase() || 'query';
+          
+          const formattedParam = {
+            ...param,
+            id: param.id || param.name,
+            name: param.name || param.key || '',
+            key: param.key || param.name || '',
+            type: param.type || param.parameterType || param.apiType || 'string',
+            required: param.required || false,
+            requiredBadge: param.required ? 'Required' : 'Optional',
+            description: param.description || '',
+            defaultValue: param.defaultValue || '',
+            example: param.example || '',
+            format: param.format || null,
+            validationPattern: param.validationPattern || '',
+            position: param.position || 0,
+            in: location
+          };
+          
+          // Group by location
+          if (location === 'path') {
+            pathParams.push(formattedParam);
+          } else if (location === 'query') {
+            queryParams.push(formattedParam);
+          } else if (location === 'header') {
+            headerParams.push(formattedParam);
+          } else if (location === 'body') {
+            bodyParams.push(formattedParam);
+          } else {
+            // Default to query if location unknown
+            queryParams.push(formattedParam);
+          }
+        });
+      }
+      
+      // Sort parameters by position if available
+      const sortByPosition = (a, b) => (a.position || 0) - (b.position || 0);
+      pathParams.sort(sortByPosition);
+      queryParams.sort(sortByPosition);
+      headerParams.sort(sortByPosition);
+      bodyParams.sort(sortByPosition);
+      
+      // Format the details for display with grouped parameters
       const formattedDetails = {
         id: endpointData.endpointId || endpointData.id,
         name: endpointData.name || '',
@@ -1283,26 +1335,52 @@ const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
         formattedRateLimit: endpointData.formattedRateLimit || 
           (endpointData.rateLimit ? formatRateLimit(endpointData.rateLimit) : 'Not rate limited'),
         deprecated: endpointData.deprecated || false,
+        
+        // Grouped headers (separate from header parameters)
         headers: Array.isArray(endpointData.headers) ? endpointData.headers.map(header => ({
           ...header,
           requiredBadge: header.required ? 'Required' : 'Optional'
         })) : [],
-        parameters: Array.isArray(endpointData.parameters) ? endpointData.parameters.map(param => ({
-          ...param,
-          requiredBadge: param.required ? 'Required' : 'Optional'
-        })) : [],
+        
+        // Grouped parameters by location
+        pathParameters: pathParams,
+        queryParameters: queryParams,
+        headerParameters: headerParams,
+        bodyParameters: bodyParams,
+        
+        // Keep original parameters array for backward compatibility
+        parameters: endpointData.parameters || [],
+        
         responseExamples: Array.isArray(endpointData.responseExamples) ? 
           endpointData.responseExamples.map(example => ({
             ...example,
             statusBadge: getStatusCodeBadge(example.statusCode),
             formattedExample: example.example ? formatJsonExample(example.example) : '{}'
           })) : [],
-        requestBodyExample: endpointData.requestBodyExample || '{}',
+        
+        // Generate request body example from parameters or use provided example
+        requestBodyExample: endpointData.requestBodyExample || 
+          (bodyParams.length > 0 ? 
+            JSON.stringify(
+              bodyParams.reduce((acc, param) => {
+                acc[param.name] = param.example || param.defaultValue || '';
+                return acc;
+              }, {}), 
+              null, 2
+            ) : '{}'),
+        
         changelog: Array.isArray(endpointData.changelog) ? endpointData.changelog : [],
         rateLimitInfo: endpointData.rateLimitInfo || null
       };
       
-      console.log('📊 [Documentation] Formatted endpoint details:', formattedDetails);
+      console.log('📊 [Documentation] Formatted endpoint details with grouped parameters:', {
+        total: formattedDetails.parameters.length,
+        path: formattedDetails.pathParameters.length,
+        query: formattedDetails.queryParameters.length,
+        header: formattedDetails.headerParameters.length,
+        body: formattedDetails.bodyParameters.length
+      });
+      
       setEndpointDetails(formattedDetails);
       
       // Load changelog for this endpoint if available
@@ -1323,7 +1401,7 @@ const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
   } finally {
     setIsLoading(prev => ({ ...prev, endpointDetails: false }));
   }
-}, [authToken, selectedLanguage]);
+}, [authToken, selectedLanguage, fetchChangelog, fetchCodeExamples]);
 
   // Load code examples
   const fetchCodeExamples = useCallback(async (endpointId, language) => {
@@ -1972,228 +2050,459 @@ useEffect(() => {
   };
 
   const renderDocumentationContent = () => {
-    if (!selectedRequest || !endpointDetails) {
-      return (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center" style={{ color: colors.textSecondary }}>
-            <BookOpen size={48} className="mx-auto mb-4 opacity-50" />
-            <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>Select an API Endpoint</h3>
-            <p>Choose an endpoint from the left sidebar to view its documentation</p>
-          </div>
-        </div>
-      );
-    }
-    
-    const activeEnv = environments.find(e => e.id === activeEnvironment);
-    
+  if (!selectedRequest || !endpointDetails) {
     return (
-      <div className="flex-1 overflow-auto p-8">
-        <div className="max-w-6xl mx-auto">
-          {/* Header */}
-          <div className="mb-8">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="px-3 py-1 rounded text-sm font-medium" style={{ 
-                backgroundColor: getMethodColor(selectedRequest.method),
-                color: 'white'
-              }}>
-                {selectedRequest.method}
-              </div>
-              <code className="text-lg font-mono" style={{ color: colors.text }}>
-                {activeEnv?.baseUrl || ''}{selectedRequest.path || selectedRequest.url || ''}
-              </code>
-            </div>
-            <h1 className="text-2xl font-semibold mb-4" style={{ color: colors.text }}>
-              {selectedRequest.name}
-            </h1>
-            <p className="text-base mb-6" style={{ color: colors.textSecondary }}>
-              {selectedRequest.description || endpointDetails.description}
-            </p>
-            
-            <div className="flex flex-wrap items-center gap-4 text-sm mb-6">
-              <div style={{ color: colors.textTertiary }}>
-                <Folder size={12} className="inline mr-1" />
-                {selectedCollection?.name} › {selectedRequest.category || 'API'}
-              </div>
-              <div className="flex items-center gap-2">
-                {selectedRequest.formattedTags?.map((tag, index) => (
-                  <span key={index} className="text-xs px-2 py-1 rounded" style={{ 
-                    backgroundColor: `${tag.color}20`,
-                    color: tag.color
-                  }}>
-                    {tag.name}
-                  </span>
-                ))}
-              </div>
-              <div style={{ color: colors.textTertiary }}>
-                <Clock size={12} className="inline mr-1" />
-                Last updated: {selectedRequest.timeAgo || 'Unknown'}
-              </div>
-            </div>
-          </div>
-
-          {/* Request Details */}
-          <div className="space-y-8">
-            <section>
-              <h2 className="text-xl font-semibold mb-6 pb-2 border-b" style={{ 
-                color: colors.text,
-                borderColor: colors.border
-              }}>
-                Request Details
-              </h2>
-              
-              {endpointDetails.headers && endpointDetails.headers.length > 0 && (
-                <div className="mb-8">
-                  <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>Headers</h3>
-                  <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
-                    <table className="w-full">
-                      <thead style={{ backgroundColor: colors.tableHeader }}>
-                        <tr>
-                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Key</th>
-                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Value</th>
-                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Description</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {endpointDetails.headers.map((header, index) => (
-                          <tr key={index} className="border-b last:border-b-0" style={{ 
-                            borderColor: colors.borderLight,
-                            backgroundColor: colors.tableRow
-                          }}>
-                            <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>{header.key}</td>
-                            <td className="px-4 py-3 font-mono text-sm" style={{ color: colors.textSecondary }}>
-                              <code>{header.value}</code>
-                            </td>
-                            <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>
-                              {header.requiredBadge === 'Required' ? 'Required header' : 'Optional header'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {endpointDetails.parameters && endpointDetails.parameters.length > 0 && (
-                <div className="mb-8">
-                  <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>Parameters</h3>
-                  <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
-                    <table className="w-full">
-                      <thead style={{ backgroundColor: colors.tableHeader }}>
-                        <tr>
-                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Name</th>
-                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Type</th>
-                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Required</th>
-                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Description</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {endpointDetails.parameters.map((param, index) => (
-                          <tr key={index} className="border-b last:border-b-0" style={{ 
-                            borderColor: colors.borderLight,
-                            backgroundColor: colors.tableRow
-                          }}>
-                            <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>{param.name}</td>
-                            <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>{param.type}</td>
-                            <td className="px-4 py-3">
-                              <span className="text-xs px-2 py-1 rounded" style={{ 
-                                backgroundColor: param.required ? `${colors.error}20` : `${colors.success}20`,
-                                color: param.required ? colors.error : colors.success
-                              }}>
-                                {param.requiredBadge}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>{param.description}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>Description</h3>
-                <div className="prose max-w-none" style={{ color: colors.textSecondary }}>
-                  <p>
-                    {endpointDetails.description || 'No description available.'}
-                  </p>
-                  {endpointDetails.requiresAuthentication && (
-                    <p className="mt-3">
-                      <strong>Authentication Required:</strong> This endpoint requires authentication.
-                    </p>
-                  )}
-                  {endpointDetails.rateLimit && (
-                    <p className="mt-3">
-                      <strong>Rate Limits:</strong> {endpointDetails.formattedRateLimit}
-                    </p>
-                  )}
-                  {endpointDetails.deprecated && (
-                    <p className="mt-3">
-                      <strong>Deprecated:</strong> This endpoint is deprecated and may be removed in future versions.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </section>
-
-            {/* Response Examples */}
-            <section>
-              <h2 className="text-xl font-semibold mb-6 pb-2 border-b" style={{ 
-                color: colors.text,
-                borderColor: colors.border
-              }}>
-                Response Examples
-              </h2>
-              
-              <div className="space-y-6">
-                {endpointDetails.responseExamples && endpointDetails.responseExamples.length > 0 ? (
-                  endpointDetails.responseExamples.map((example, index) => (
-                    <div key={index}>
-                      <div className="flex items-center gap-3 mb-4">
-                        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-sm font-medium" style={{ 
-                          backgroundColor: example.statusCode >= 200 && example.statusCode < 300 ? `${colors.success}20` : `${colors.error}20`,
-                          color: example.statusCode >= 200 && example.statusCode < 300 ? colors.success : colors.error
-                        }}>
-                          {example.statusCode >= 200 && example.statusCode < 300 ? <CheckCircle size={12} /> : <XCircle size={12} />}
-                          {example.statusBadge?.text || `Response ${example.statusCode}`}
-                        </div>
-                      </div>
-                      
-                      <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
-                        <div className="p-4 border-b flex items-center justify-between" style={{ 
-                          backgroundColor: colors.tableHeader,
-                          borderColor: colors.border
-                        }}>
-                          <span className="text-sm font-medium" style={{ color: colors.text }}>JSON Response</span>
-                          <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
-                            style={{ backgroundColor: colors.hover }}
-                            onClick={() => copyToClipboard(example.formattedExample || example.example)}>
-                            <Copy size={12} style={{ color: colors.textSecondary }} />
-                          </button>
-                        </div>
-                        <div className="p-4" style={{ backgroundColor: colors.codeBg }}>
-                          <SyntaxHighlighter 
-                            language="json"
-                            code={example.formattedExample || example.example || '{}'}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8" style={{ color: colors.textSecondary }}>
-                    <Info size={24} className="mx-auto mb-4 opacity-50" />
-                    <p>No response examples available for this endpoint.</p>
-                  </div>
-                )}
-              </div>
-            </section>
-          </div>
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center" style={{ color: colors.textSecondary }}>
+          <BookOpen size={48} className="mx-auto mb-4 opacity-50" />
+          <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>Select an API Endpoint</h3>
+          <p>Choose an endpoint from the left sidebar to view its documentation</p>
         </div>
       </div>
     );
-  };
+  }
+  
+  const activeEnv = environments.find(e => e.id === activeEnvironment);
+  
+  return (
+    <div className="flex-1 overflow-auto p-8">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="px-3 py-1 rounded text-sm font-medium" style={{ 
+              backgroundColor: getMethodColor(selectedRequest.method),
+              color: 'white'
+            }}>
+              {selectedRequest.method}
+            </div>
+            <code className="text-lg font-mono" style={{ color: colors.text }}>
+              {activeEnv?.baseUrl || ''}{selectedRequest.path || selectedRequest.url || ''}
+            </code>
+          </div>
+          <h1 className="text-2xl font-semibold mb-4" style={{ color: colors.text }}>
+            {selectedRequest.name}
+          </h1>
+          <p className="text-base mb-6" style={{ color: colors.textSecondary }}>
+            {selectedRequest.description || endpointDetails.description}
+          </p>
+          
+          <div className="flex flex-wrap items-center gap-4 text-sm mb-6">
+            <div style={{ color: colors.textTertiary }}>
+              <Folder size={12} className="inline mr-1" />
+              {selectedCollection?.name} › {selectedRequest.category || 'API'}
+            </div>
+            <div className="flex items-center gap-2">
+              {endpointDetails.formattedTags?.map((tag, index) => (
+                <span key={index} className="text-xs px-2 py-1 rounded" style={{ 
+                  backgroundColor: `${tag.color}20`,
+                  color: tag.color
+                }}>
+                  {tag.name}
+                </span>
+              ))}
+            </div>
+            <div style={{ color: colors.textTertiary }}>
+              <Clock size={12} className="inline mr-1" />
+              Last updated: {endpointDetails.timeAgo || 'Unknown'}
+            </div>
+            {endpointDetails.requiresAuthentication && (
+              <div className="flex items-center gap-1 text-xs px-2 py-1 rounded" style={{ 
+                backgroundColor: `${colors.warning}20`,
+                color: colors.warning
+              }}>
+                <Lock size={10} />
+                Requires Auth
+              </div>
+            )}
+            {endpointDetails.deprecated && (
+              <div className="flex items-center gap-1 text-xs px-2 py-1 rounded" style={{ 
+                backgroundColor: `${colors.error}20`,
+                color: colors.error
+              }}>
+                <AlertCircle size={10} />
+                Deprecated
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Request Details */}
+        <div className="space-y-8">
+          <section>
+            <h2 className="text-xl font-semibold mb-6 pb-2 border-b" style={{ 
+              color: colors.text,
+              borderColor: colors.border
+            }}>
+              Request Details
+            </h2>
+            
+            {/* Headers Section */}
+            {endpointDetails.headers && endpointDetails.headers.length > 0 && (
+              <div className="mb-8">
+                <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>Headers</h3>
+                <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
+                  <table className="w-full">
+                    <thead style={{ backgroundColor: colors.tableHeader }}>
+                      <tr>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Key</th>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Value</th>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {endpointDetails.headers.map((header, index) => (
+                        <tr key={index} className="border-b last:border-b-0" style={{ 
+                          borderColor: colors.borderLight,
+                          backgroundColor: colors.tableRow
+                        }}>
+                          <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>{header.key}</td>
+                          <td className="px-4 py-3 font-mono text-sm" style={{ color: colors.textSecondary }}>
+                            <code>{header.value}</code>
+                          </td>
+                          <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>
+                            {header.requiredBadge === 'Required' ? 'Required header' : 'Optional header'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Path Parameters */}
+            {endpointDetails.pathParameters && endpointDetails.pathParameters.length > 0 && (
+              <div className="mb-8">
+                <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>
+                  Path Parameters
+                  <span className="ml-2 text-xs px-2 py-1 rounded" style={{ 
+                    backgroundColor: colors.primary,
+                    color: 'white'
+                  }}>
+                    {endpointDetails.pathParameters.length}
+                  </span>
+                </h3>
+                <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
+                  <table className="w-full">
+                    <thead style={{ backgroundColor: colors.tableHeader }}>
+                      <tr>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Name</th>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Type</th>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Required</th>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {endpointDetails.pathParameters.map((param, index) => (
+                        <tr key={param.id || index} className="border-b last:border-b-0" style={{ 
+                          borderColor: colors.borderLight,
+                          backgroundColor: colors.tableRow
+                        }}>
+                          <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>
+                            <code>{param.name}</code>
+                          </td>
+                          <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>{param.type}</td>
+                          <td className="px-4 py-3">
+                            <span className="text-xs px-2 py-1 rounded" style={{ 
+                              backgroundColor: param.required ? `${colors.error}20` : `${colors.success}20`,
+                              color: param.required ? colors.error : colors.success
+                            }}>
+                              {param.requiredBadge}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>
+                            {param.description}
+                            {param.example && (
+                              <span className="block mt-1 text-xs" style={{ color: colors.textTertiary }}>
+                                Example: <code>{param.example}</code>
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Query Parameters */}
+            {endpointDetails.queryParameters && endpointDetails.queryParameters.length > 0 && (
+              <div className="mb-8">
+                <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>
+                  Query Parameters
+                  <span className="ml-2 text-xs px-2 py-1 rounded" style={{ 
+                    backgroundColor: colors.primary,
+                    color: 'white'
+                  }}>
+                    {endpointDetails.queryParameters.length}
+                  </span>
+                </h3>
+                <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
+                  <table className="w-full">
+                    <thead style={{ backgroundColor: colors.tableHeader }}>
+                      <tr>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Name</th>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Type</th>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Required</th>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {endpointDetails.queryParameters.map((param, index) => (
+                        <tr key={param.id || index} className="border-b last:border-b-0" style={{ 
+                          borderColor: colors.borderLight,
+                          backgroundColor: colors.tableRow
+                        }}>
+                          <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>
+                            <code>{param.name}</code>
+                          </td>
+                          <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>{param.type}</td>
+                          <td className="px-4 py-3">
+                            <span className="text-xs px-2 py-1 rounded" style={{ 
+                              backgroundColor: param.required ? `${colors.error}20` : `${colors.success}20`,
+                              color: param.required ? colors.error : colors.success
+                            }}>
+                              {param.requiredBadge}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>
+                            {param.description}
+                            {param.defaultValue && (
+                              <span className="block mt-1 text-xs" style={{ color: colors.textTertiary }}>
+                                Default: <code>{param.defaultValue}</code>
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Header Parameters (from parameters list) */}
+            {endpointDetails.headerParameters && endpointDetails.headerParameters.length > 0 && (
+              <div className="mb-8">
+                <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>
+                  Header Parameters
+                  <span className="ml-2 text-xs px-2 py-1 rounded" style={{ 
+                    backgroundColor: colors.primary,
+                    color: 'white'
+                  }}>
+                    {endpointDetails.headerParameters.length}
+                  </span>
+                </h3>
+                <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
+                  <table className="w-full">
+                    <thead style={{ backgroundColor: colors.tableHeader }}>
+                      <tr>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Name</th>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Type</th>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Required</th>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {endpointDetails.headerParameters.map((param, index) => (
+                        <tr key={param.id || index} className="border-b last:border-b-0" style={{ 
+                          borderColor: colors.borderLight,
+                          backgroundColor: colors.tableRow
+                        }}>
+                          <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>
+                            <code>{param.name}</code>
+                          </td>
+                          <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>{param.type}</td>
+                          <td className="px-4 py-3">
+                            <span className="text-xs px-2 py-1 rounded" style={{ 
+                              backgroundColor: param.required ? `${colors.error}20` : `${colors.success}20`,
+                              color: param.required ? colors.error : colors.success
+                            }}>
+                              {param.requiredBadge}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>
+                            {param.description}
+                            {param.example && (
+                              <span className="block mt-1 text-xs" style={{ color: colors.textTertiary }}>
+                                Example: <code>{param.example}</code>
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Body Parameters */}
+            {endpointDetails.bodyParameters && endpointDetails.bodyParameters.length > 0 && (
+              <div className="mb-8">
+                <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>
+                  Request Body Parameters
+                  <span className="ml-2 text-xs px-2 py-1 rounded" style={{ 
+                    backgroundColor: colors.primary,
+                    color: 'white'
+                  }}>
+                    {endpointDetails.bodyParameters.length}
+                  </span>
+                </h3>
+                
+                {/* Table view for body parameters */}
+                <div className="border rounded overflow-hidden mb-4" style={{ borderColor: colors.border }}>
+                  <table className="w-full">
+                    <thead style={{ backgroundColor: colors.tableHeader }}>
+                      <tr>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Name</th>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Type</th>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Required</th>
+                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {endpointDetails.bodyParameters.map((param, index) => (
+                        <tr key={param.id || index} className="border-b last:border-b-0" style={{ 
+                          borderColor: colors.borderLight,
+                          backgroundColor: colors.tableRow
+                        }}>
+                          <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>
+                            <code>{param.name}</code>
+                          </td>
+                          <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>{param.type}</td>
+                          <td className="px-4 py-3">
+                            <span className="text-xs px-2 py-1 rounded" style={{ 
+                              backgroundColor: param.required ? `${colors.error}20` : `${colors.success}20`,
+                              color: param.required ? colors.error : colors.success
+                            }}>
+                              {param.requiredBadge}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>
+                            {param.description}
+                            {param.example && (
+                              <span className="block mt-1 text-xs" style={{ color: colors.textTertiary }}>
+                                Example: <code>{param.example}</code>
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Request Body Example */}
+                <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
+                  <div className="p-4 border-b flex items-center justify-between" style={{ 
+                    backgroundColor: colors.tableHeader,
+                    borderColor: colors.border
+                  }}>
+                    <span className="text-sm font-medium" style={{ color: colors.text }}>Request Body Example</span>
+                    <button 
+                      className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+                      style={{ backgroundColor: colors.hover }}
+                      onClick={() => copyToClipboard(endpointDetails.requestBodyExample)}
+                    >
+                      <Copy size={12} style={{ color: colors.textSecondary }} />
+                    </button>
+                  </div>
+                  <div className="p-4" style={{ backgroundColor: colors.codeBg }}>
+                    <SyntaxHighlighter 
+                      language="json"
+                      code={endpointDetails.requestBodyExample}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>Description</h3>
+              <div className="prose max-w-none" style={{ color: colors.textSecondary }}>
+                <p>
+                  {endpointDetails.description || 'No description available.'}
+                </p>
+                {endpointDetails.requiresAuthentication && (
+                  <p className="mt-3">
+                    <strong>Authentication Required:</strong> This endpoint requires authentication.
+                  </p>
+                )}
+                {endpointDetails.rateLimit && (
+                  <p className="mt-3">
+                    <strong>Rate Limits:</strong> {endpointDetails.formattedRateLimit}
+                  </p>
+                )}
+                {endpointDetails.deprecated && (
+                  <p className="mt-3">
+                    <strong>Deprecated:</strong> This endpoint is deprecated and may be removed in future versions.
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* Response Examples */}
+          <section>
+            <h2 className="text-xl font-semibold mb-6 pb-2 border-b" style={{ 
+              color: colors.text,
+              borderColor: colors.border
+            }}>
+              Response Examples
+            </h2>
+            
+            <div className="space-y-6">
+              {endpointDetails.responseExamples && endpointDetails.responseExamples.length > 0 ? (
+                endpointDetails.responseExamples.map((example, index) => (
+                  <div key={index}>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded text-sm font-medium" style={{ 
+                        backgroundColor: example.statusCode >= 200 && example.statusCode < 300 ? `${colors.success}20` : `${colors.error}20`,
+                        color: example.statusCode >= 200 && example.statusCode < 300 ? colors.success : colors.error
+                      }}>
+                        {example.statusCode >= 200 && example.statusCode < 300 ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                        {example.statusBadge?.text || `Response ${example.statusCode}`}
+                      </div>
+                      <span className="text-sm" style={{ color: colors.textSecondary }}>{example.description}</span>
+                    </div>
+                    
+                    <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
+                      <div className="p-4 border-b flex items-center justify-between" style={{ 
+                        backgroundColor: colors.tableHeader,
+                        borderColor: colors.border
+                      }}>
+                        <span className="text-sm font-medium" style={{ color: colors.text }}>JSON Response</span>
+                        <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+                          style={{ backgroundColor: colors.hover }}
+                          onClick={() => copyToClipboard(example.formattedExample || example.example)}>
+                          <Copy size={12} style={{ color: colors.textSecondary }} />
+                        </button>
+                      </div>
+                      <div className="p-4" style={{ backgroundColor: colors.codeBg }}>
+                        <SyntaxHighlighter 
+                          language="json"
+                          code={example.formattedExample || example.example || '{}'}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8" style={{ color: colors.textSecondary }}>
+                  <Info size={24} className="mx-auto mb-4 opacity-50" />
+                  <p>No response examples available for this endpoint.</p>
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+};
 
   const renderToast = () => {
     if (!toast) return null;
