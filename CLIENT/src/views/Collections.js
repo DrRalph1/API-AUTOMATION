@@ -1018,58 +1018,218 @@ const parseUrlAndUpdateQueryParams = (url) => {
   }
 };
 
+
+// Add this updated function near your other helper functions (around line 400)
+const parseUrlIntoTemplateAndParams = useCallback((url) => {
+  if (!url) return { templateUrl: '', pathParams: [], queryParams: [] };
+  
+  try {
+    // Parse the URL
+    let urlObj;
+    let baseUrl = '';
+    let path = '';
+    let search = '';
+    
+    try {
+      urlObj = new URL(url);
+      baseUrl = `${urlObj.protocol}//${urlObj.host}`;
+      path = urlObj.pathname;
+      search = urlObj.search;
+    } catch (e) {
+      // If it's not a valid full URL, it might be a template with environment variables
+      // Try to extract path and query parts
+      const [urlPath, queryString] = url.split('?');
+      path = urlPath;
+      search = queryString ? `?${queryString}` : '';
+      baseUrl = ''; // No base URL for templates
+    }
+    
+    // Extract path segments
+    const pathSegments = path.split('/').filter(segment => segment);
+    
+    // Detect path parameters (single curly braces) and environment variables (double curly braces)
+    const pathParams = [];
+    const templateSegments = [];
+    
+    pathSegments.forEach((segment, index) => {
+      // Check for environment variables (double curly braces) first
+      if (segment.startsWith('{{') && segment.endsWith('}}')) {
+        // This is an environment variable, keep it as-is in the template
+        // Do NOT add to pathParams
+        templateSegments.push(segment);
+      }
+      // Check for path parameters (single curly braces)
+      else if (segment.startsWith('{') && segment.endsWith('}')) {
+        // Make sure it's not actually a double curly brace that we missed
+        if (!segment.startsWith('{{')) {
+          // It's a path parameter, extract the key
+          const key = segment.substring(1, segment.length - 1);
+          pathParams.push({
+            id: `path-${Date.now()}-${index}-${Math.random()}`,
+            key: key,
+            value: '',
+            description: '',
+            enabled: true,
+            required: true
+          });
+          templateSegments.push(`{${key}}`);
+        } else {
+          // This shouldn't happen due to the first condition, but just in case
+          templateSegments.push(segment);
+        }
+      }
+      else if (segment.startsWith(':')) {
+        // Colon-style placeholder
+        const key = segment.substring(1);
+        pathParams.push({
+          id: `path-${Date.now()}-${index}-${Math.random()}`,
+          key: key,
+          value: '',
+          description: '',
+          enabled: true,
+          required: true
+        });
+        templateSegments.push(`{${key}}`);
+      }
+      else {
+        // Regular path segment
+        templateSegments.push(segment);
+      }
+    });
+    
+    // Rebuild template URL
+    let templateBase = baseUrl;
+    if (templateSegments.length > 0) {
+      if (templateBase && !templateBase.endsWith('/')) {
+        templateBase += '/';
+      }
+      templateBase += templateSegments.join('/');
+    }
+    
+    // Parse query parameters
+    const queryParams = [];
+    if (search) {
+      const queryString = search.startsWith('?') ? search.substring(1) : search;
+      if (queryString) {
+        queryString.split('&').forEach(pair => {
+          if (pair) {
+            const [key, value] = pair.split('=').map(decodeURIComponent);
+            queryParams.push({
+              id: `query-${Date.now()}-${key}-${Math.random()}`,
+              key: key || '',
+              value: value || '',
+              description: '',
+              enabled: true
+            });
+          }
+        });
+      }
+    }
+    
+    return {
+      templateUrl: templateBase || url,
+      pathParams: pathParams,
+      queryParams: queryParams
+    };
+  } catch (e) {
+    console.error('Error parsing URL:', e);
+    return { templateUrl: url, pathParams: [], queryParams: [] };
+  }
+}, []);
+
+
+
 // Handle URL change with parameter parsing
 const handleUrlChange = useCallback((e) => {
   const newUrl = e.target.value;
   setRequestUrl(newUrl);
   
-  // Parse and update query params from URL
-  if (newUrl.includes('?')) {
-    const parsedParams = parseUrlAndUpdateQueryParams(newUrl);
-    if (parsedParams.length > 0) {
-      // Merge with existing params
-      setRequestParams(prevParams => {
-        // Create a map of existing params by key for quick lookup
-        const existingParamsMap = new Map(
-          prevParams.filter(p => p.key).map(p => [p.key, p])
-        );
-        
-        // Merge parsed params with existing ones
-        const mergedParams = parsedParams.map(parsedParam => {
-          const existing = existingParamsMap.get(parsedParam.key);
-          if (existing) {
-            // Preserve existing param data (description, enabled state, etc.)
-            return {
-              ...existing,
-              value: parsedParam.value, // Update value from URL
-              key: parsedParam.key
-            };
-          }
-          return parsedParam;
-        });
-        
-        return mergedParams;
+  // Parse the URL to extract parameters
+  const parsed = parseUrlIntoTemplateAndParams(newUrl);
+  
+  // Update query params
+  if (parsed.queryParams.length > 0) {
+    setRequestParams(prevParams => {
+      const existingParamsMap = new Map(
+        prevParams.filter(p => p.key).map(p => [p.key, p])
+      );
+      
+      const mergedParams = parsed.queryParams.map(parsedParam => {
+        const existing = existingParamsMap.get(parsedParam.key);
+        if (existing) {
+          return {
+            ...existing,
+            value: parsedParam.value,
+            key: parsedParam.key
+          };
+        }
+        return parsedParam;
       });
-    }
+      
+      return mergedParams;
+    });
   } else {
-    // Clear query params if no query string in URL
-    setRequestParams([]);
+    setRequestParams(prev => prev.filter(p => p.key && p.value));
   }
-}, []);
+  
+  // Update path params - ONLY from the parsed result (which now correctly filters env vars)
+  if (parsed.pathParams.length > 0) {
+    setRequestPathParams(prevParams => {
+      const existingParamsMap = new Map(
+        prevParams.map(p => [p.key, p])
+      );
+      
+      const mergedParams = parsed.pathParams.map(parsedParam => {
+        const existing = existingParamsMap.get(parsedParam.key);
+        if (existing) {
+          return {
+            ...existing,
+            key: parsedParam.key,
+            value: existing.value || ''
+          };
+        }
+        return parsedParam;
+      });
+      
+      return mergedParams;
+    });
+    
+    setTemplateUrl(parsed.templateUrl);
+  } else {
+    setRequestPathParams(prev => prev.filter(p => p.key && p.value));
+  }
+  
+  console.log('📝 URL parsed:', {
+    original: newUrl,
+    template: parsed.templateUrl,
+    pathParams: parsed.pathParams,
+    queryParams: parsed.queryParams
+  });
+}, [parseUrlIntoTemplateAndParams]);
 
-// Handle paste event for URL
+
+// Replace your existing handleUrlPaste function
 const handleUrlPaste = useCallback((e) => {
   // Let the paste happen naturally, then parse
   setTimeout(() => {
-    if (requestUrl.includes('?')) {
-      const parsedParams = parseUrlAndUpdateQueryParams(requestUrl);
-      if (parsedParams.length > 0) {
-        setRequestParams(parsedParams);
-        showToast(`Parsed ${parsedParams.length} query parameters`, 'success');
+    if (requestUrl) {
+      const parsed = parseUrlIntoTemplateAndParams(requestUrl);
+      
+      let message = '';
+      if (parsed.queryParams.length > 0 && parsed.pathParams.length > 0) {
+        message = `Parsed ${parsed.pathParams.length} path param(s) and ${parsed.queryParams.length} query param(s)`;
+      } else if (parsed.queryParams.length > 0) {
+        message = `Parsed ${parsed.queryParams.length} query parameter(s)`;
+      } else if (parsed.pathParams.length > 0) {
+        message = `Parsed ${parsed.pathParams.length} path parameter(s)`;
+      }
+      
+      if (message) {
+        showToast(message, 'success');
       }
     }
-  }, 0);
-}, [requestUrl]);
+  }, 100);
+}, [requestUrl, parseUrlIntoTemplateAndParams]);
 
 
 // Fix 2: Update the determineActiveTab function to be more robust
@@ -1125,6 +1285,49 @@ const updateUrlWithPathParam = (key, value) => {
     return prevUrl;
   });
 };
+
+
+// Add this effect near your other useEffect hooks
+useEffect(() => {
+  // This effect rebuilds the URL when path params are updated via the UI
+  if (templateUrl && requestPathParams.length > 0) {
+    let updatedUrl = templateUrl;
+    
+    // Replace each placeholder with its current value
+    requestPathParams.forEach(param => {
+      if (param.key) {
+        const placeholder = `{${param.key}}`;
+        const replacementValue = param.value && param.value.trim() !== '' 
+          ? param.value 
+          : placeholder;
+        
+        if (updatedUrl.includes(placeholder)) {
+          updatedUrl = updatedUrl.replace(new RegExp(placeholder, 'g'), replacementValue);
+        } else {
+          // Try colon-style placeholder
+          const colonPlaceholder = `:${param.key}`;
+          if (updatedUrl.includes(colonPlaceholder)) {
+            updatedUrl = updatedUrl.replace(new RegExp(colonPlaceholder, 'g'), replacementValue);
+          }
+        }
+      }
+    });
+    
+    // Add query string if any query params exist
+    const queryString = requestParams
+      .filter(p => p.enabled && p.key && p.key.trim() !== '')
+      .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value || '')}`)
+      .join('&');
+    
+    const finalUrl = queryString ? `${updatedUrl}?${queryString}` : updatedUrl;
+    
+    // Only update if different from current URL
+    if (finalUrl !== requestUrl) {
+      setRequestUrl(finalUrl);
+    }
+  }
+}, [JSON.stringify(requestPathParams.map(p => ({ key: p.key, value: p.value, enabled: p.enabled })))]);
+
 
 // Fix 4: Add effect to update URL when path params change (as a backup)
 useEffect(() => {
@@ -1484,7 +1687,7 @@ const transformCollectionsData = (apiData) => {
   });
 };
 
-// Update the handleSelectRequest function to store the template URL
+// Complete updated handleSelectRequest function
 const handleSelectRequest = useCallback(async (request, collectionId, folderId) => {
   console.log('🎯 [handleSelectRequest] Selected request:', {
     id: request.id,
@@ -1634,6 +1837,23 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
         });
     }
   });
+  
+  // Parse the URL to extract parameters if it's a complete URL with values
+  if (request.url && request.url.includes('?')) {
+    const parsed = parseUrlIntoTemplateAndParams(request.url);
+    if (parsed.queryParams.length > 0) {
+      // Merge with existing query params
+      setRequestParams(prev => {
+        const merged = [...prev];
+        parsed.queryParams.forEach(p => {
+          if (!merged.some(m => m.key === p.key)) {
+            merged.push(p);
+          }
+        });
+        return merged;
+      });
+    }
+  }
   
   // Then fetch additional details from API
   if (authToken && request.id && collectionId) {
@@ -1815,7 +2035,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
             setRequestParams(queryParams);
           }
           
-          // In the handleSelectRequest function, find this section around line 1820
+          // Handle path params from API
           if (pathParams.length > 0) {
             console.log('🛣️ Setting path params:', pathParams);
             setRequestPathParams(pathParams);
@@ -2043,108 +2263,32 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
   }
 }, [authToken, determineActiveTab, requestUrl, authType, authConfig, activeTab, requestBodyType, formData.length, urlEncodedData.length]);
 
-// Update the updatePathParam function to properly preserve query parameters
+// Replace your existing updatePathParam function
 const updatePathParam = (id, field, value) => {
   console.log('🟢 updatePathParam called:', { id, field, value });
   
   // First update the state with the new value
   setRequestPathParams(params => {
-    console.log('📦 Current path params before update:', params);
-    
     const updatedParams = params.map(param => 
       param.id === id ? { ...param, [field]: value } : param
     );
     
-    console.log('📦 Updated path params after update:', updatedParams);
-    
-    // Then update URL, but only for value changes
-    if (field === 'value') {
-      console.log('🔍 Field is "value", proceeding with URL update');
-      
-      // Find the updated param from the new array
-      const updatedParam = updatedParams.find(p => p.id === id);
-      console.log('🔍 Updated param found:', updatedParam);
-      
-      if (updatedParam && updatedParam.key) {
-        console.log('✅ Updated param has key, updating URL');
-        
-        // Update URL immediately for this specific parameter
-        setRequestUrl(prevUrl => {
-          console.log('🌐 Previous URL:', prevUrl);
-          if (!prevUrl) return prevUrl;
-          
-          // Extract query string if it exists
-          const [baseUrlWithoutQuery, existingQueryString] = prevUrl.split('?');
-          
-          // CRITICAL FIX: Use the stored template URL, not the current URL
-          // The template URL always has the placeholders
-          let templateUrlToUse = templateUrl || baseUrlWithoutQuery;
-          console.log('📋 Using stored template URL:', templateUrlToUse);
-          
-          // Now build the new URL by replacing placeholders with current values
-          let newBaseUrl = templateUrlToUse;
-          console.log('🏁 Starting to build new URL from template:', newBaseUrl);
-          
-          // Replace each placeholder with its current value
-          updatedParams.forEach((p) => {
-            if (p.key) {
-              const placeholder = `{${p.key}}`;
-              const replacementValue = p.value && p.value.trim() !== '' ? p.value : placeholder;
-              
-              if (newBaseUrl.includes(placeholder)) {
-                newBaseUrl = newBaseUrl.replace(new RegExp(placeholder, 'g'), replacementValue);
-                console.log(`  🔄 Replaced ${placeholder} with ${replacementValue}`);
-              } else {
-                // Try colon-style placeholder
-                const colonPlaceholder = `:${p.key}`;
-                if (newBaseUrl.includes(colonPlaceholder)) {
-                  newBaseUrl = newBaseUrl.replace(new RegExp(colonPlaceholder, 'g'), replacementValue);
-                  console.log(`  🔄 Replaced ${colonPlaceholder} with ${replacementValue}`);
-                } else {
-                  console.log(`  ⚠️ Placeholder ${placeholder} not found in URL`);
-                }
-              }
-            }
-          });
-          
-          // Build query string from current requestParams - include ALL enabled params
-          // even if they have empty values (to show as key=)
-          const queryParams = requestParams
-            .filter(p => p.enabled && p.key && p.key.trim() !== '')
-            .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value || '')}`)
-            .join('&');
-          
-          // Use existing query string if available, otherwise build from requestParams
-          // If both are empty, don't add any query string
-          let finalUrl = newBaseUrl;
-          
-          if (queryParams) {
-            finalUrl = `${newBaseUrl}?${queryParams}`;
-          } else if (existingQueryString && requestParams.length > 0) {
-            // If we have requestParams but they're all disabled/empty, still preserve the structure
-            // by building a query string with empty values
-            const emptyQueryParams = requestParams
-              .filter(p => p.enabled && p.key && p.key.trim() !== '')
-              .map(p => `${encodeURIComponent(p.key)}=`)
-              .join('&');
-            
-            if (emptyQueryParams) {
-              finalUrl = `${newBaseUrl}?${emptyQueryParams}`;
-            }
-          }
-          
-          console.log('✅ Final new URL with preserved query params:', finalUrl);
-          return finalUrl;
-        });
-      } else {
-        console.log('❌ Updated param missing key, skipping URL update');
+    // If the key changed, update the template URL
+    if (field === 'key' && templateUrl) {
+      // Find the old param
+      const oldParam = params.find(p => p.id === id);
+      if (oldParam && oldParam.key && oldParam.key !== value) {
+        // Replace old placeholder with new placeholder in template URL
+        const oldPlaceholder = `{${oldParam.key}}`;
+        const newPlaceholder = `{${value}}`;
+        setTemplateUrl(prev => prev.replace(oldPlaceholder, newPlaceholder));
       }
-    } else {
-      console.log('⏭️ Field is not "value", skipping URL update');
     }
     
     return updatedParams;
   });
+  
+  // The URL will be updated by the useEffect above
 };
 
 
@@ -3597,7 +3741,7 @@ const separateParamsAndHeaders = (items) => {
                           backgroundColor: colors.inputBg
                         }}
                         placeholder="Key"
-                        readOnly // Usually path param keys shouldn't be editable
+                        // Remove the readOnly attribute
                       />
                     </td>
                     <td className="p-3">
