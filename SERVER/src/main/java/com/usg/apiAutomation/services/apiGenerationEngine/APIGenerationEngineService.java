@@ -5603,45 +5603,69 @@ public class APIGenerationEngineService {
     private void generateDocumentationCodeExamples(GeneratedApiEntity api, APIEndpointEntity endpoint,
                                                    String codeBaseRequestId) {
         try {
-            // Use the same languages as Collections
-            List<String> languages = Arrays.asList("curl", "javascript", "python", "java", "csharp", "php", "ruby", "go");
+            log.info("Generating documentation code examples for endpoint: {}", endpoint.getId());
 
-            // Delete existing code examples
+            // Use the SAME languages as Collections
+            List<String> languages = Arrays.asList("java", "javascript", "python", "curl", "csharp", "php", "ruby", "go");
+
+            // STEP 1: Delete existing code examples
             List<CodeExampleEntity> existingExamples = codeExampleRepository.findByEndpointId(endpoint.getId());
             if (existingExamples != null && !existingExamples.isEmpty()) {
+                log.debug("Deleting {} existing code examples", existingExamples.size());
+
+                // Clear relationship before deletion
+                for (CodeExampleEntity example : existingExamples) {
+                    example.setEndpoint(null);
+                }
+
                 codeExampleRepository.deleteAll(existingExamples);
                 codeExampleRepository.flush();
             }
 
-            // Generate new code examples using the SAME methods as Collections
+            // STEP 2: Generate new code examples using the SAME method as Collections
+            int exampleCount = 0;
+
             for (String language : languages) {
                 try {
-                    String code = generateCodeForLanguage(api, language); // This is the SAME method Collections uses
+                    System.out.println("api::::::" + api);
+                    System.out.println("language::::::" + language);
+                    // This is the SAME method Collections uses in generateImplementations()
+                    String code = generateCodeForLanguage(api, language);
 
-                    if (code != null && !code.isEmpty()) {
+                    if (code != null && !code.trim().isEmpty()) {
+                        // Create new code example with NEW ID
                         CodeExampleEntity codeExample = new CodeExampleEntity();
-                        codeExample.setId(UUID.randomUUID().toString());
+                        codeExample.setId(UUID.randomUUID().toString()); // Generate new ID
                         codeExample.setLanguage(language);
                         codeExample.setCode(code);
                         codeExample.setDescription("Auto-generated " + language + " code example");
                         codeExample.setEndpoint(endpoint);
 
-                        // Set as default based on language (like Collections might do)
+                        // Set as default based on language (same as Collections)
                         codeExample.setDefault(language.equals("curl") || language.equals("java"));
 
+                        // Save the code example
                         codeExampleRepository.save(codeExample);
-                        log.debug("Saved {} code example for endpoint", language);
+                        exampleCount++;
+
+                        log.debug("Saved {} code example for endpoint with ID: {}", language, codeExample.getId());
+                    } else {
+                        log.warn("Generated code for {} was null or empty", language);
                     }
+
                 } catch (Exception e) {
-                    log.warn("Failed to generate documentation code example for {}: {}", language, e.getMessage());
+                    log.error("Failed to generate documentation code example for {}: {}", language, e.getMessage(), e);
                 }
             }
 
+            // Force flush after all saves
             codeExampleRepository.flush();
-            log.info("Generated {} code examples for endpoint", languages.size());
+
+            log.info("Successfully generated {} code examples for endpoint: {}", exampleCount, endpoint.getId());
 
         } catch (Exception e) {
-            log.error("Failed to generate documentation code examples: {}", e.getMessage());
+            log.error("Failed to generate documentation code examples: {}", e.getMessage(), e);
+            // Don't throw - we don't want to fail the whole documentation generation
         }
     }
 
