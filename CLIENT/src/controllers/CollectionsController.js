@@ -407,31 +407,67 @@ export const extractCollectionDetails = (response) => {
  * @returns {Object} Request details
  */
 export const extractRequestDetails = (response) => {
-  if (!response || !response.data) return null;
+  console.log('🔍 [Extract] Extracting request details from:', response);
   
-  const details = response.data;
+  if (!response || !response.data) {
+    console.warn('⚠️ [Extract] No response data');
+    return null;
+  }
   
-  return {
-    id: details.id || details.requestId,
-    name: details.name || details.requestName,
-    method: details.method,
-    url: details.url,
-    description: details.description,
-    headers: details.headers || [],
-    parameters: details.parameters || [],
-    body: details.body || {},
-    authType: details.authType,
-    authConfig: details.authConfig || {},
-    preRequestScript: details.preRequestScript || '',
-    tests: details.tests || '',
-    saved: details.saved || false,
-    createdAt: details.createdAt,
-    updatedAt: details.updatedAt,
-    collectionId: details.collectionId,
-    folderId: details.folderId,
-    tags: details.tags || [],
-    metadata: details.metadata || {}
+  const data = response.data;
+  
+  // Check if there are body parameters
+  const bodyParams = (data.parameters || []).filter(p => 
+    p.parameterLocation?.toLowerCase() === 'body'
+  );
+  
+  // Construct requestBody from body parameters if not provided directly
+  let requestBody = data.requestBody;
+  if (!requestBody && bodyParams.length > 0) {
+    // Determine body type - you might need to get this from somewhere else
+    // For now, default to 'form-data' based on your sample
+    const bodyType = data.bodyType || 'form-data';
+    
+    requestBody = {
+      bodyType: bodyType,
+      allowedMediaTypes: data.allowedMediaTypes || ['application/json'],
+      sample: data.body || '',
+      maxSize: data.maxSize,
+      validateSchema: data.validateSchema,
+      requiredFields: data.requiredFields || []
+    };
+    
+    console.log(`📦 [Extract] Constructed requestBody from ${bodyParams.length} body parameters with type: ${bodyType}`);
+  }
+  
+  const extracted = {
+    id: data.id,
+    name: data.name,
+    method: data.method,
+    url: data.url,
+    description: data.description,
+    headers: data.headers || [],
+    parameters: data.parameters || [],
+    body: data.body,
+    requestBody: requestBody,
+    authType: data.authType,
+    authConfig: data.authConfig,
+    tests: data.tests,
+    preRequestScript: data.preRequestScript
   };
+  
+  console.log('✅ [Extract] Extracted request details:', {
+    id: extracted.id,
+    name: extracted.name,
+    method: extracted.method,
+    url: extracted.url,
+    hasRequestBody: !!extracted.requestBody,
+    requestBodyType: extracted.requestBody?.bodyType,
+    parametersCount: extracted.parameters?.length,
+    bodyParamsCount: bodyParams.length
+  });
+  
+  return extracted;
 };
 
 /**

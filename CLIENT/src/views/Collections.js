@@ -1450,7 +1450,7 @@ const deletePathParam = (id) => {
             queryParams: queryParams,
             pathParams: pathParams,
             bodyParams: bodyParams,
-            allParams: request.parameters || [],
+            allParams: request.parameters || [], // IMPORTANT: Keep the original parameters array
             body: request.body || '',
             requestBody: request.requestBody || null,
             tests: request.tests || '',
@@ -1505,7 +1505,11 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     name: request.name,
     url: request.url,
     pathParams: request.pathParams,
-    queryParams: request.queryParams
+    queryParams: request.queryParams,
+    hasRequestBody: !!request.requestBody,
+    requestBodyType: request.requestBody?.bodyType,
+    allParamsCount: request.allParams?.length,
+    parametersCount: request.parameters?.length
   });
 
   // Check if this is a new/empty request (no id starting with 'req-' or missing required fields)
@@ -1562,174 +1566,33 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     return;
   }
 
-  // Existing code for existing requests (non-new)
-  const requestWithContext = { ...request, collectionId, folderId };
-  setSelectedRequest(requestWithContext);
+  // First, set the initial request data from the tree
+  console.log('📥 Setting initial request data from tree');
   
   setRequestMethod(request.method || 'GET');
-  
-  // Store the base URL template
-  const baseUrl = request.url || '';
-  console.log('🔗 Base URL:', baseUrl);
-  
+  setRequestUrl(request.url || '');
   setRequestBody(request.body || '');
-  
-  // Log what we're getting from the request object
-  console.log('📥 [Request] Raw request data:', {
-    name: request.name,
-    url: baseUrl,
-    pathParams: request.pathParams,
-    queryParams: request.queryParams,
-    headers: request.headers,
-    body: request.body,
-    requestBody: request.requestBody
-  });
-  
-  // Set parameters based on location
   setRequestParams(request.queryParams || []);
   setRequestHeaders(request.headers || []);
+  setRequestPathParams(request.pathParams || []);
   
-  // Set initial URL without path params (they'll be added after API call)
-  setRequestUrl(baseUrl);
+  // Log what we have before processing body
+  console.log('📋 Initial state after setting basics:', {
+    requestBodyType: requestBodyType,
+    formDataLength: formData.length,
+    urlEncodedLength: urlEncodedData.length
+  });
   
-  // Handle body parameters based on requestBody config
-  if (request.requestBody && request.requestBody.bodyType) {
-    const bodyType = request.requestBody.bodyType;
-    const allowedMediaTypes = request.requestBody.allowedMediaTypes || ['application/json'];
-    
-    // Set the body type
-    if (bodyType === 'json' || allowedMediaTypes.includes('application/json')) {
-      setRequestBodyType('raw');
-      setRawBodyType('json');
-      
-      // If we have a body string, parse it and potentially extract form-data or urlencoded
-      if (request.body) {
-        try {
-          // Try to parse as JSON
-          const parsedBody = JSON.parse(request.body);
-          setRequestBody(JSON.stringify(parsedBody, null, 2));
-          
-          // If this looks like it might be form-data or urlencoded in JSON format,
-          // we can populate those states too
-          if (typeof parsedBody === 'object' && !Array.isArray(parsedBody)) {
-            // Check if it looks like form-data or urlencoded data
-            // You can add logic here to detect and populate formData or urlEncodedData
-          }
-        } catch {
-          // Not valid JSON, keep as string
-          setRequestBody(request.body || '');
-        }
-      }
-    } else if (bodyType === 'form-data' || allowedMediaTypes.includes('multipart/form-data')) {
-      setRequestBodyType('form-data');
-      
-      // Parse body into formData array
-      if (request.body) {
-        try {
-          // Try to parse as JSON first (if the body is stored as JSON string)
-          const parsedBody = JSON.parse(request.body);
-          if (typeof parsedBody === 'object' && !Array.isArray(parsedBody)) {
-            // Convert object to formData array
-            const formDataArray = Object.entries(parsedBody).map(([key, value]) => ({
-              id: `form-${Date.now()}-${Math.random()}`,
-              key: key,
-              value: value,
-              type: typeof value === 'string' && value.startsWith('file:') ? 'file' : 'text',
-              enabled: true
-            }));
-            setFormData(formDataArray);
-          }
-        } catch {
-          // If not JSON, try to parse as query string format (key=value&key2=value2)
-          if (request.body.includes('=')) {
-            const pairs = request.body.split('&');
-            const formDataArray = pairs.map(pair => {
-              const [key, value] = pair.split('=');
-              return {
-                id: `form-${Date.now()}-${Math.random()}`,
-                key: decodeURIComponent(key || ''),
-                value: decodeURIComponent(value || ''),
-                type: 'text',
-                enabled: true
-              };
-            });
-            setFormData(formDataArray);
-          }
-        }
-      }
-    } else if (bodyType === 'x-www-form-urlencoded' || allowedMediaTypes.includes('application/x-www-form-urlencoded')) {
-      setRequestBodyType('x-www-form-urlencoded');
-      
-      // Parse body into urlEncodedData array
-      if (request.body) {
-        try {
-          // Try to parse as JSON first
-          const parsedBody = JSON.parse(request.body);
-          if (typeof parsedBody === 'object' && !Array.isArray(parsedBody)) {
-            // Convert object to urlEncodedData array
-            const urlEncodedArray = Object.entries(parsedBody).map(([key, value]) => ({
-              id: `url-${Date.now()}-${Math.random()}`,
-              key: key,
-              value: value,
-              description: '',
-              enabled: true
-            }));
-            setUrlEncodedData(urlEncodedArray);
-          }
-        } catch {
-          // If not JSON, try to parse as query string format (key=value&key2=value2)
-          if (request.body.includes('=')) {
-            const pairs = request.body.split('&');
-            const urlEncodedArray = pairs.map(pair => {
-              const [key, value] = pair.split('=');
-              return {
-                id: `url-${Date.now()}-${Math.random()}`,
-                key: decodeURIComponent(key || ''),
-                value: decodeURIComponent(value || ''),
-                description: '',
-                enabled: true
-              };
-            });
-            setUrlEncodedData(urlEncodedArray);
-          }
-        }
-      }
-    } else if (bodyType === 'binary') {
-      setRequestBodyType('binary');
-      // Binary file handling would need to be done separately
-    } else if (bodyType === 'graphql') {
-      setRequestBodyType('graphql');
-      // Parse GraphQL query and variables if present
-      if (request.body) {
-        try {
-          const parsedBody = JSON.parse(request.body);
-          if (parsedBody.query) {
-            setGraphqlQuery(parsedBody.query);
-          }
-          if (parsedBody.variables) {
-            setGraphqlVariables(JSON.stringify(parsedBody.variables, null, 2));
-          }
-        } catch {
-          // Not valid JSON, treat entire body as query
-          setGraphqlQuery(request.body);
-        }
-      }
-    } else {
-      setRequestBodyType('raw');
-      setRawBodyType(bodyType || 'json');
-      setRequestBody(request.body || '');
-    }
-  } else {
-    // Default handling if no body type specified
-    setRequestBodyType('raw');
-    setRawBodyType('json');
-    setRequestBody(request.body || '');
-  }
-  
+  // Set auth
   setAuthType(request.authType || 'noauth');
   setAuthConfig(request.authConfig || { type: request.authType || 'noauth' });
   setResponse(null);
   
+  // Set the selected request FIRST before fetching details
+  const requestWithContext = { ...request, collectionId, folderId };
+  setSelectedRequest(requestWithContext);
+  
+  // Update tabs
   setRequestTabs(tabs => {
     const existingTab = tabs.find(t => t.id === request.id);
     if (existingTab) {
@@ -1747,6 +1610,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     }
   });
   
+  // Then fetch additional details from API
   if (authToken && request.id && collectionId) {
     setLoading(prev => ({ ...prev, request: true }));
     try {
@@ -1757,19 +1621,108 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
       const details = extractRequestDetails(processedResponse);
       
       if (details) {
-        console.log('📦 [API Details] Received:', details);
+        console.log('📦 [API Details] Received:', {
+          hasRequestBody: !!details.requestBody,
+          bodyType: details.requestBody?.bodyType,
+          parametersCount: details.parameters?.length,
+          requestBody: details.requestBody
+        });
         
-        const requestWithDetails = { ...request, ...details };
-        setSelectedRequest(requestWithDetails);
+        // Log body parameters specifically
+        const bodyParams = details.parameters?.filter(p => 
+          p.parameterLocation?.toLowerCase() === 'body'
+        ) || [];
+        console.log('📦 Body parameters found:', bodyParams.length, bodyParams);
         
-        if (details.method) setRequestMethod(details.method);
+        // IMPORTANT: Process body type and parameters from API details
+        if (details.requestBody && details.requestBody.bodyType) {
+          const bodyType = details.requestBody.bodyType;
+          console.log(`📦 Setting body type from API details: ${bodyType}`);
+          
+          // Get all body parameters
+          const bodyParams = details.parameters?.filter(p => 
+            p.parameterLocation?.toLowerCase() === 'body'
+          ) || [];
+          
+          console.log(`📦 Found ${bodyParams.length} body parameters for ${bodyType}`);
+          
+          if (bodyType === 'form-data') {
+            setRequestBodyType('form-data');
+            if (bodyParams.length > 0) {
+              const formDataArray = bodyParams.map((param, index) => ({
+                id: param.id || `form-${Date.now()}-${index}-${Math.random()}`,
+                key: param.key || '',
+                value: param.value || param.defaultValue || param.example || '',
+                type: param.bodyFormat === 'file' ? 'file' : 'text',
+                enabled: true,
+                description: param.description || '',
+                required: param.required || false
+              }));
+              setFormData(formDataArray);
+            }
+          } 
+          else if (bodyType === 'x-www-form-urlencoded' || bodyType === 'urlencoded') {
+            setRequestBodyType('x-www-form-urlencoded');
+            if (bodyParams.length > 0) {
+              const urlEncodedArray = bodyParams.map((param, index) => ({
+                id: param.id || `url-${Date.now()}-${index}-${Math.random()}`,
+                key: param.key || '',
+                value: param.value || param.defaultValue || param.example || '',
+                description: param.description || '',
+                enabled: true,
+                required: param.required || false
+              }));
+              setUrlEncodedData(urlEncodedArray);
+            }
+          } 
+          else if (bodyType === 'json' || bodyType === 'raw') {
+            setRequestBodyType('raw');
+            setRawBodyType('json');
+            
+            if (bodyParams.length > 0) {
+              // Build JSON object from body parameters
+              const jsonObject = {};
+              bodyParams.forEach(param => {
+                if (param.key) {
+                  // Try to parse value as proper JSON type
+                  let value = param.value || param.defaultValue || param.example || '';
+                  if (param.type === 'integer' || param.type === 'number') {
+                    // Try to convert to number
+                    const num = Number(value);
+                    if (!isNaN(num)) value = num;
+                  } else if (param.type === 'boolean') {
+                    value = value === 'true' || value === true;
+                  }
+                  jsonObject[param.key] = value;
+                }
+              });
+              
+              // If there's a sample body, try to merge with it
+              if (details.requestBody.sample) {
+                try {
+                  const existingBody = JSON.parse(details.requestBody.sample);
+                  setRequestBody(JSON.stringify({ ...existingBody, ...jsonObject }, null, 2));
+                } catch {
+                  setRequestBody(JSON.stringify(jsonObject, null, 2));
+                }
+              } else {
+                setRequestBody(JSON.stringify(jsonObject, null, 2));
+              }
+            } else if (details.requestBody.sample) {
+              setRequestBody(details.requestBody.sample);
+            }
+          }
+        }
+        
+        if (details.method && details.method !== request.method) {
+          setRequestMethod(details.method);
+        }
         
         // Separate parameters based on location
         if (details.parameters) {
           const queryParams = [];
           const pathParams = [];
           const headerParams = [];
-          const bodyParams = [];
           
           console.log('📊 Processing parameters from API:', details.parameters.length);
           
@@ -1786,6 +1739,11 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
                 bodyFormat: param.bodyFormat || null
               };
               
+              // Skip body parameters here - they're handled above
+              if (param.parameterLocation?.toLowerCase() === 'body') {
+                return;
+              }
+              
               switch(param.parameterLocation?.toLowerCase()) {
                 case 'query':
                   queryParams.push(paramObject);
@@ -1799,10 +1757,6 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
                   headerParams.push(paramObject);
                   console.log(`📌 Header param: ${param.key} = ${param.value || ''}`);
                   break;
-                case 'body':
-                  bodyParams.push(paramObject);
-                  console.log(`📦 Body param: ${param.key} = ${param.value || ''}`);
-                  break;
                 default:
                   queryParams.push(paramObject);
                   console.log(`📌 Defaulting to query param: ${param.key}`);
@@ -1813,16 +1767,16 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
           console.log('📊 [Separated Parameters]', {
             query: queryParams.length,
             path: pathParams.length,
-            header: headerParams.length,
-            body: bodyParams.length
+            header: headerParams.length
           });
           
-          setRequestParams(queryParams);
-          setRequestPathParams(pathParams);
-          setRequestHeaders(cleanHeaders([...headerParams, ...(details.headers || [])]));
+          // Only update if there are actual parameters
+          if (queryParams.length > 0) setRequestParams(queryParams);
+          if (pathParams.length > 0) setRequestPathParams(pathParams);
+          if (headerParams.length > 0) setRequestHeaders(cleanHeaders([...headerParams, ...(details.headers || [])]));
           
-          // Build URL with path and query params
-          const baseUrlWithoutQuery = details.url ? details.url.split('?')[0] : (baseUrl.split('?')[0] || baseUrl);
+          // Build URL with path and query params ONLY if they're different from current
+          const baseUrlWithoutQuery = details.url ? details.url.split('?')[0] : (request.url?.split('?')[0] || request.url || '');
           
           // Build URL with path params
           let urlWithPathParams = baseUrlWithoutQuery;
@@ -1842,71 +1796,26 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
             .join('&');
           
           const finalUrl = queryString ? `${urlWithPathParams}?${queryString}` : urlWithPathParams;
-          setRequestUrl(finalUrl);
-        }
-        
-        // Handle body from API details
-        if (details.requestBody) {
-          const bodyType = details.requestBody.bodyType;
-          setRequestBodyType(bodyType);
           
-          if (bodyType === 'json') {
-            setRawBodyType('json');
-            if (details.body) {
-              setRequestBody(details.body);
-            }
-          } else if (bodyType === 'form-data') {
-            setRequestBodyType('form-data');
-            if (details.body) {
-              try {
-                const parsedBody = JSON.parse(details.body);
-                if (typeof parsedBody === 'object') {
-                  const formDataArray = Object.entries(parsedBody).map(([key, value]) => ({
-                    id: `form-${Date.now()}-${Math.random()}`,
-                    key: key,
-                    value: value,
-                    type: 'text',
-                    enabled: true
-                  }));
-                  setFormData(formDataArray);
-                }
-              } catch {
-                // If not JSON, leave formData empty
-                setFormData([]);
-              }
-            }
-          } else if (bodyType === 'x-www-form-urlencoded') {
-            setRequestBodyType('x-www-form-urlencoded');
-            if (details.body) {
-              try {
-                const parsedBody = JSON.parse(details.body);
-                if (typeof parsedBody === 'object') {
-                  const urlEncodedArray = Object.entries(parsedBody).map(([key, value]) => ({
-                    id: `url-${Date.now()}-${Math.random()}`,
-                    key: key,
-                    value: value,
-                    description: '',
-                    enabled: true
-                  }));
-                  setUrlEncodedData(urlEncodedArray);
-                }
-              } catch {
-                setUrlEncodedData([]);
-              }
-            }
-          } else if (bodyType === 'binary') {
-            setRequestBodyType('binary');
-          } else if (bodyType === 'graphql') {
-            setRequestBodyType('graphql');
+          // Only update URL if it's different
+          if (finalUrl !== requestUrl) {
+            setRequestUrl(finalUrl);
           }
         }
         
-        if (details.authType) setAuthType(details.authType);
-        if (details.authConfig) setAuthConfig(details.authConfig);
+        // Update auth if available from details
+        if (details.authType && details.authType !== authType) {
+          setAuthType(details.authType);
+        }
+        if (details.authConfig && JSON.stringify(details.authConfig) !== JSON.stringify(authConfig)) {
+          setAuthConfig(details.authConfig);
+        }
         
         // Determine which tab should be active based on content
         const newActiveTab = determineActiveTab();
-        setActiveTab(newActiveTab);
+        if (newActiveTab !== activeTab) {
+          setActiveTab(newActiveTab);
+        }
       }
     } catch (apiError) {
       console.error('Error fetching request details from API:', apiError);
@@ -1916,7 +1825,8 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
       }
     }
   }
-}, [authToken, requestUrl, determineActiveTab]);
+}, [authToken, determineActiveTab, requestUrl, authType, authConfig, activeTab, requestBodyType, formData.length, urlEncodedData.length]);
+
 
 // Update the addNewRequest function to properly create a new request
 const addNewRequest = (collectionId, folderId) => {

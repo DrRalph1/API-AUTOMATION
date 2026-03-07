@@ -252,6 +252,16 @@ function ApiPreviewModal({
     }
   };
 
+  // Filter parameters to only show IN parameters (not OUT)
+  const inParameters = (apiData.parameters || []).filter(p => 
+    !p.paramMode || p.paramMode === 'IN' || p.paramMode === 'IN OUT'
+  );
+
+  // Filter response mappings to only show OUT parameters (and any other response fields)
+  const outMappings = (apiData.responseMappings || []).filter(m => 
+    (m.paramMode === 'OUT' || m.paramMode === 'IN OUT' || !m.paramMode)
+  );
+
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4" style={{ zIndex: 1002 }}>
       <div className="rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" style={{ 
@@ -285,7 +295,7 @@ function ApiPreviewModal({
           </button>
         </div>
 
-        {/* Content - Rest of the component remains the same */}
+        {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
           <div className="space-y-6">
             {/* API Summary */}
@@ -416,21 +426,21 @@ function ApiPreviewModal({
               </div>
             )}
 
-            {/* Parameters Summary with Locations */}
+            {/* Parameters Summary with Locations - ONLY SHOW IN PARAMETERS */}
             <div className="space-y-4">
               <h4 className="font-semibold flex items-center gap-2" style={{ color: themeColors.text }}>
                 <Hash className="h-5 w-5" />
-                Parameters ({apiData.parameters?.length || 0})
+                Input Parameters ({inParameters.length})
               </h4>
               <div className="p-4 rounded-lg border" style={{ 
                 borderColor: themeColors.border,
                 backgroundColor: themeColors.card
               }}>
-                {apiData.parameters && apiData.parameters.length > 0 ? (
+                {inParameters.length > 0 ? (
                   <div className="space-y-3">
                     {/* Group by location */}
                     {['query', 'path', 'header', 'body'].map(location => {
-                      const locationParams = apiData.parameters.filter(p => p.parameterLocation === location);
+                      const locationParams = inParameters.filter(p => p.parameterLocation === location);
                       if (locationParams.length === 0) return null;
                       
                       return (
@@ -460,6 +470,14 @@ function ApiPreviewModal({
                                       PK
                                     </span>
                                   )}
+                                  {param.paramMode && param.paramMode !== 'IN' && (
+                                    <span className="ml-2 text-xs px-2 py-0.5 rounded" style={{ 
+                                      backgroundColor: themeColors.warning + '20',
+                                      color: themeColors.warning
+                                    }}>
+                                      {param.paramMode}
+                                    </span>
+                                  )}
                                 </div>
                                 <div style={{ color: themeColors.textSecondary }}>
                                   {param.required ? 'Required' : 'Optional'} • {param.apiType}
@@ -473,7 +491,7 @@ function ApiPreviewModal({
                     })}
                     
                     {/* Body Type if any body parameters */}
-                    {apiData.requestBody && apiData.requestBody.bodyType && (
+                    {apiData.requestBody && apiData.requestBody.bodyType && inParameters.some(p => p.parameterLocation === 'body') && (
                       <div className="mt-3 pt-3 border-t" style={{ borderColor: themeColors.border }}>
                         <div className="flex items-center gap-2 text-xs">
                           <FileJson className="h-4 w-4" style={{ color: themeColors.success }} />
@@ -492,26 +510,26 @@ function ApiPreviewModal({
                   </div>
                 ) : (
                   <p className="text-xs" style={{ color: themeColors.textSecondary }}>
-                    No parameters defined
+                    No input parameters defined
                   </p>
                 )}
               </div>
             </div>
 
-            {/* Response Mappings with Sample Response */}
+            {/* Response Mappings with Sample Response - SHOW OUT PARAMETERS + OTHER MAPPINGS */}
             <div className="space-y-4">
               <h4 className="font-semibold flex items-center gap-2" style={{ color: themeColors.text }}>
                 <Map className="h-5 w-5" />
-                Response Fields ({apiData.responseMappings?.length || 0})
+                Response Fields ({outMappings.length})
               </h4>
               <div className="p-4 rounded-lg border" style={{ 
                 borderColor: themeColors.border,
                 backgroundColor: themeColors.card
               }}>
-                {apiData.responseMappings && apiData.responseMappings.length > 0 ? (
+                {outMappings.length > 0 ? (
                   <>
                     <div className="grid grid-cols-2 gap-4 text-xs mb-4">
-                      {apiData.responseMappings.slice(0, 6).map((mapping, index) => (
+                      {outMappings.slice(0, 6).map((mapping, index) => (
                         <div key={index}>
                           <div className="font-medium" style={{ color: themeColors.text }}>
                             {mapping.apiField}
@@ -519,13 +537,14 @@ function ApiPreviewModal({
                           <div className="text-xs" style={{ color: themeColors.textSecondary }}>
                             → {mapping.dbColumn} ({mapping.oracleType})
                             {mapping.nullable && <span className="ml-1">(nullable)</span>}
+                            {mapping.paramMode && <span className="ml-1">[{mapping.paramMode}]</span>}
                           </div>
                         </div>
                       ))}
-                      {apiData.responseMappings.length > 6 && (
+                      {outMappings.length > 6 && (
                         <div className="col-span-2 text-center pt-2">
                           <span className="text-xs" style={{ color: themeColors.textSecondary }}>
-                            + {apiData.responseMappings.length - 6} more fields
+                            + {outMappings.length - 6} more fields
                           </span>
                         </div>
                       )}
@@ -551,7 +570,7 @@ function ApiPreviewModal({
                   </>
                 ) : (
                   <p className="text-xs" style={{ color: themeColors.textSecondary }}>
-                    No response mappings defined
+                    No response fields defined
                   </p>
                 )}
               </div>
@@ -842,7 +861,7 @@ function ApiConfirmationModal({
   if (showLoader) {
     return (
       <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50" style={{ zIndex: 1001 }}>
-        <div className="rounded-xl shadow-2xl w-full max-w-md p-6" style={{ 
+        <div className="rounded-xl shadow-2xl w-4xl max-w-md p-6" style={{ 
           backgroundColor: themeColors.bg,
           border: `1px solid ${themeColors.modalBorder}`
         }}>
@@ -1141,7 +1160,7 @@ function ApiConfirmationModal({
                           </div>
                           <div>
                             <h5 className="font-medium" style={{ color: themeColors.text }}>Postman Collection</h5>
-                            <p className="text-xs" style={{ color: themeColors.textSecondary }}>API Testing</p>
+                            <p className="text-xs" style={{ color:themeColors.textSecondary }}>API Testing</p>
                           </div>
                         </div>
                         <div className="text-xs font-mono p-2 rounded border" style={{ 
@@ -1206,11 +1225,10 @@ function ApiConfirmationModal({
           </div>
         </div>
       </div>
-  );
+    );
+  }
 
   return null;
-}
-
 }
 
 // New component for folder selection modal (when adding new folder)
@@ -1360,7 +1378,7 @@ export default function ApiGenerationModal({
   obType,
   theme = 'dark',
   authToken = null,
-  isEditing = false // Add this prop
+  isEditing = false
 }) {
   const [activeTab, setActiveTab] = useState('definition');
   const [loading, setLoading] = useState(false);
@@ -1470,38 +1488,37 @@ export default function ApiGenerationModal({
   ]);
 
   // Database-focused test configuration
-const [tests, setTests] = useState({
-  // Database connectivity tests
-  testConnection: true,
-  testObjectAccess: true,
-  testPrivileges: true,
-  
-  // Data validation tests
-  testDataTypes: true,
-  testNullConstraints: true,
-  testUniqueConstraints: false,
-  testForeignKeyReferences: false,
-  
-  // Performance tests
-  testQueryPerformance: true,
-  performanceThreshold: 1000,
-  testWithSampleData: true,
-  sampleDataRows: 10,
-  
-  // PL/SQL specific tests (for procedures/functions)
-  testProcedureExecution: true,
-  testFunctionReturn: true,
-  testExceptionHandling: true,
-  
-  // Security tests
-  testSQLInjection: true,
-  testAuthentication: true,
-  testAuthorization: true,
-  
-  // FIXED: testData as empty object, NOT string
-  testData: {},  // ← Changed from '' to {}
-  testQueries: []
-});
+  const [tests, setTests] = useState({
+    // Database connectivity tests
+    testConnection: true,
+    testObjectAccess: true,
+    testPrivileges: true,
+    
+    // Data validation tests
+    testDataTypes: true,
+    testNullConstraints: true,
+    testUniqueConstraints: false,
+    testForeignKeyReferences: false,
+    
+    // Performance tests
+    testQueryPerformance: true,
+    performanceThreshold: 1000,
+    testWithSampleData: true,
+    sampleDataRows: 10,
+    
+    // PL/SQL specific tests (for procedures/functions)
+    testProcedureExecution: true,
+    testFunctionReturn: true,
+    testExceptionHandling: true,
+    
+    // Security tests
+    testSQLInjection: true,
+    testAuthentication: true,
+    testAuthorization: true,
+    
+    testData: {},
+    testQueries: []
+  });
 
   const [settings, setSettings] = useState({
     timeout: 30000,
@@ -1529,6 +1546,20 @@ const [tests, setTests] = useState({
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const [newApiData, setNewApiData] = useState(null);
   const [apiResponse, setApiResponse] = useState(null);
+
+  // Helper function to filter parameters to only show IN parameters
+  const getInParameters = () => {
+    return parameters.filter(p => 
+      !p.paramMode || p.paramMode === 'IN' || p.paramMode === 'IN OUT'
+    );
+  };
+
+  // Helper function to filter response mappings to only show OUT parameters and other mappings
+  const getOutMappings = () => {
+    return responseMappings.filter(m => 
+      (m.paramMode === 'OUT' || m.paramMode === 'IN OUT' || !m.paramMode)
+    );
+  };
 
   // Function to fetch object details for synonyms
   const fetchObjectDetails = async (object, type) => {
@@ -1635,594 +1666,572 @@ const [tests, setTests] = useState({
   };
 
   // Initialize parameters and mappings based on selected object
-  // Initialize parameters and mappings based on selected object
-useEffect(() => {
-  const initializeFromObject = async () => {
-    if (!selectedObject) {
-      console.log('ℹ️ ApiGenerationModal - No selected object provided, showing empty form');
-      return;
-    }
-
-    setLoading(true);
-    console.log('🔍 ApiGenerationModal - Initializing with selected object:', {
-      name: selectedObject.name,
-      type: selectedObject.type,
-      owner: selectedObject.owner,
-      isEditing: isEditing
-    });
-
-    try {
-      // Skip validation for API objects (when editing)
-      if (!isEditing && selectedObject.type !== 'API' && selectedObject.type !== 'CONNECTION') {
-        // First, validate the source object
-        await validateObject(selectedObject, selectedObject.type);
-      } else {
-        setValidationResult({ valid: true, message: 'API object - validation skipped' });
+  useEffect(() => {
+    const initializeFromObject = async () => {
+      if (!selectedObject) {
+        console.log('ℹ️ ApiGenerationModal - No selected object provided, showing empty form');
+        return;
       }
 
-      // For API objects (editing mode), populate from the selectedObject directly
-      if (isEditing || selectedObject.type === 'API' || selectedObject.type === 'CONNECTION') {
-        console.log('📝 Populating form for API editing');
-        
-        // ============================================================
-        // API DETAILS TAB
-        // ============================================================
-        setApiDetails({
-          apiName: selectedObject.apiName || selectedObject.name || '',
-          apiCode: selectedObject.apiCode || selectedObject.id || '',
-          description: selectedObject.description || '',
-          version: selectedObject.version || '1.0.0',
-          status: selectedObject.status || 'DRAFT',
-          httpMethod: selectedObject.httpMethod || selectedObject.method || 'GET',
-          basePath: selectedObject.basePath || '/api/v1',
-          endpointPath: selectedObject.endpointPath || selectedObject.url || '',
-          tags: selectedObject.tags || ['default'],
-          category: selectedObject.category || 'general',
-          owner: selectedObject.owner || 'HR',
-        });
+      setLoading(true);
+      console.log('🔍 ApiGenerationModal - Initializing with selected object:', {
+        name: selectedObject.name,
+        type: selectedObject.type,
+        owner: selectedObject.owner,
+        isEditing: isEditing
+      });
 
-        // ============================================================
-        // SCHEMA TAB
-        // ============================================================
-        if (selectedObject.schemaConfig) {
-          setSchemaConfig(selectedObject.schemaConfig);
+      try {
+        // Skip validation for API objects (when editing)
+        if (!isEditing && selectedObject.type !== 'API' && selectedObject.type !== 'CONNECTION') {
+          // First, validate the source object
+          await validateObject(selectedObject, selectedObject.type);
         } else {
-          // Default schema config if not provided
-          setSchemaConfig({
-            schemaName: 'HR',
-            objectType: 'TABLE',
-            objectName: selectedObject.name?.replace(/\s+/g, '_').toUpperCase() || 'OBJECT',
-            operation: selectedObject.method === 'GET' ? 'SELECT' : 
-                      selectedObject.method === 'POST' ? 'INSERT' :
-                      selectedObject.method === 'PUT' ? 'UPDATE' :
-                      selectedObject.method === 'DELETE' ? 'DELETE' : 'SELECT',
-            primaryKeyColumn: '',
-            sequenceName: '',
-            enablePagination: true,
-            pageSize: 10,
-            enableSorting: true,
-            defaultSortColumn: '',
-            defaultSortDirection: 'ASC'
-          });
+          setValidationResult({ valid: true, message: 'API object - validation skipped' });
         }
 
-        // ============================================================
-        // PARAMETERS TAB
-        // ============================================================
-        if (selectedObject.parameters && selectedObject.parameters.length > 0) {
-          setParameters(selectedObject.parameters);
-        } else {
-          // Initialize with empty array if no parameters
-          setParameters([]);
-        }
-
-        // ============================================================
-        // MAPPING TAB
-        // ============================================================
-        if (selectedObject.responseMappings && selectedObject.responseMappings.length > 0) {
-          setResponseMappings(selectedObject.responseMappings);
-        } else {
-          // Initialize with empty array if no response mappings
-          setResponseMappings([]);
-        }
-
-        // ============================================================
-        // AUTHENTICATION TAB
-        // ============================================================
-        if (selectedObject.authConfig) {
-          setAuthConfig(selectedObject.authConfig);
-        } else {
-          // Default auth config
-          setAuthConfig({
-            authType: 'none',
-            apiKeyHeader: 'X-API-Key',
-            apiKeyValue: '',
-            apiSecretHeader: 'X-API-Secret',
-            apiSecretValue: '',
-            jwtToken: '',
-            jwtIssuer: 'api.example.com',
-            basicUsername: '',
-            basicPassword: '',
-            ipWhitelist: '',
-            rateLimitRequests: 100,
-            rateLimitPeriod: 'minute',
-            enableRateLimiting: false,
-            corsOrigins: ['*'],
-            auditLevel: 'standard'
-          });
-        }
-
-        // ============================================================
-        // REQUEST TAB
-        // ============================================================
-        if (selectedObject.requestBody) {
-          setRequestBody(selectedObject.requestBody);
-        } else {
-          // Default request body
-          setRequestBody({
-            bodyType: 'json',
-            sample: JSON.stringify({
-              success: true,
-              data: {}
-            }, null, 2),
-            requiredFields: [],
-            validateSchema: true,
-            maxSize: 1048576,
-            allowedMediaTypes: ['application/json']
-          });
-        }
-
-        // ============================================================
-        // RESPONSE TAB
-        // ============================================================
-        if (selectedObject.responseBody) {
-          setResponseBody(selectedObject.responseBody);
-        } else {
-          // Default response body
-          setResponseBody({
-            successSchema: JSON.stringify({
-              success: true,
-              data: {},
-              message: "Request processed successfully",
-              metadata: {
-                timestamp: "{{timestamp}}",
-                apiVersion: "1.0.0",
-                requestId: "{{requestId}}"
-              }
-            }, null, 2),
-            errorSchema: JSON.stringify({
-              success: false,
-              error: {
-                code: "ERROR_CODE",
-                message: "Error description",
-                details: {}
-              }
-            }, null, 2),
-            includeMetadata: true,
-            metadataFields: ['timestamp', 'apiVersion', 'requestId'],
-            contentType: 'application/json',
-            compression: 'gzip'
-          });
-        }
-
-        // ============================================================
-        // HEADERS (part of Request/Response)
-        // ============================================================
-        if (selectedObject.headers && selectedObject.headers.length > 0) {
-          setHeaders(selectedObject.headers);
-        } else {
-          // Default headers
-          setHeaders([
-            { id: '1', key: 'Content-Type', value: 'application/json', required: true, description: 'Response content type' },
-            { id: '2', key: 'Cache-Control', value: 'no-cache', required: false, description: 'Cache control header' }
-          ]);
-        }
-
-        // ============================================================
-        // DATABASE TESTS TAB
-        // ============================================================
-        if (selectedObject.tests) {
-          setTests(selectedObject.tests);
-        } else {
-          // Default tests
-          setTests({
-            testConnection: true,
-            testObjectAccess: true,
-            testPrivileges: true,
-            testDataTypes: true,
-            testNullConstraints: true,
-            testUniqueConstraints: false,
-            testForeignKeyReferences: false,
-            testQueryPerformance: true,
-            performanceThreshold: 1000,
-            testWithSampleData: true,
-            sampleDataRows: 10,
-            testProcedureExecution: true,
-            testFunctionReturn: true,
-            testExceptionHandling: true,
-            testSQLInjection: true,
-            testAuthentication: true,
-            testAuthorization: true,
-            testData: '',
-            testQueries: []
-          });
-        }
-
-        // ============================================================
-        // SETTINGS TAB
-        // ============================================================
-        if (selectedObject.settings) {
-          setSettings(selectedObject.settings);
-        } else {
-          // Default settings
-          setSettings({
-            timeout: 30000,
-            maxRecords: 1000,
-            enableLogging: true,
-            logLevel: 'INFO',
-            enableCaching: false,
-            cacheTtl: 300,
-            generateSwagger: true,
-            generatePostman: true,
-            generateClientSDK: true,
-            enableMonitoring: true,
-            enableAlerts: false,
-            alertEmail: '',
-            enableTracing: false,
-            corsEnabled: true
-          });
-        }
-
-        // ============================================================
-        // COLLECTION & FOLDER INFO
-        // ============================================================
-        if (selectedObject.collectionName || selectedObject.collectionInfo) {
-          const collectionName = selectedObject.collectionName || selectedObject.collectionInfo?.collectionName;
-          const folderName = selectedObject.folderName || selectedObject.collectionInfo?.folderName;
+        // For API objects (editing mode), populate from the selectedObject directly
+        if (isEditing || selectedObject.type === 'API' || selectedObject.type === 'CONNECTION') {
+          console.log('📝 Populating form for API editing');
           
-          if (collectionName) {
-            const collection = collections.find(c => c.name === collectionName);
-            if (collection) {
-              setSelectedCollection(collection);
-              setFolders(collection.folders || []);
-              
-              if (folderName) {
-                const folder = collection.folders?.find(f => f.name === folderName);
-                if (folder) {
-                  setSelectedFolder(folder);
+          // API DETAILS TAB
+          setApiDetails({
+            apiName: selectedObject.apiName || selectedObject.name || '',
+            apiCode: selectedObject.apiCode || selectedObject.id || '',
+            description: selectedObject.description || '',
+            version: selectedObject.version || '1.0.0',
+            status: selectedObject.status || 'DRAFT',
+            httpMethod: selectedObject.httpMethod || selectedObject.method || 'GET',
+            basePath: selectedObject.basePath || '/api/v1',
+            endpointPath: selectedObject.endpointPath || selectedObject.url || '',
+            tags: selectedObject.tags || ['default'],
+            category: selectedObject.category || 'general',
+            owner: selectedObject.owner || 'HR',
+          });
+
+          // SCHEMA TAB
+          if (selectedObject.schemaConfig) {
+            setSchemaConfig(selectedObject.schemaConfig);
+          } else {
+            setSchemaConfig({
+              schemaName: 'HR',
+              objectType: 'TABLE',
+              objectName: selectedObject.name?.replace(/\s+/g, '_').toUpperCase() || 'OBJECT',
+              operation: selectedObject.method === 'GET' ? 'SELECT' : 
+                        selectedObject.method === 'POST' ? 'INSERT' :
+                        selectedObject.method === 'PUT' ? 'UPDATE' :
+                        selectedObject.method === 'DELETE' ? 'DELETE' : 'SELECT',
+              primaryKeyColumn: '',
+              sequenceName: '',
+              enablePagination: true,
+              pageSize: 10,
+              enableSorting: true,
+              defaultSortColumn: '',
+              defaultSortDirection: 'ASC'
+            });
+          }
+
+          // PARAMETERS TAB - only load parameters (should be IN parameters)
+          if (selectedObject.parameters && selectedObject.parameters.length > 0) {
+            // Filter to only show IN parameters in parameters tab
+            const inParams = selectedObject.parameters.filter(p => 
+              !p.paramMode || p.paramMode === 'IN' || p.paramMode === 'IN OUT'
+            );
+            setParameters(inParams);
+          } else {
+            setParameters([]);
+          }
+
+          // MAPPING TAB - load response mappings (should include OUT parameters)
+          if (selectedObject.responseMappings && selectedObject.responseMappings.length > 0) {
+            setResponseMappings(selectedObject.responseMappings);
+          } else {
+            setResponseMappings([]);
+          }
+
+          // AUTHENTICATION TAB
+          if (selectedObject.authConfig) {
+            setAuthConfig(selectedObject.authConfig);
+          } else {
+            setAuthConfig({
+              authType: 'none',
+              apiKeyHeader: 'X-API-Key',
+              apiKeyValue: '',
+              apiSecretHeader: 'X-API-Secret',
+              apiSecretValue: '',
+              jwtToken: '',
+              jwtIssuer: 'api.example.com',
+              basicUsername: '',
+              basicPassword: '',
+              ipWhitelist: '',
+              rateLimitRequests: 100,
+              rateLimitPeriod: 'minute',
+              enableRateLimiting: false,
+              corsOrigins: ['*'],
+              auditLevel: 'standard'
+            });
+          }
+
+          // REQUEST TAB
+          if (selectedObject.requestBody) {
+            setRequestBody(selectedObject.requestBody);
+          } else {
+            setRequestBody({
+              bodyType: 'json',
+              sample: JSON.stringify({
+                success: true,
+                data: {}
+              }, null, 2),
+              requiredFields: [],
+              validateSchema: true,
+              maxSize: 1048576,
+              allowedMediaTypes: ['application/json']
+            });
+          }
+
+          // RESPONSE TAB
+          if (selectedObject.responseBody) {
+            setResponseBody(selectedObject.responseBody);
+          } else {
+            setResponseBody({
+              successSchema: JSON.stringify({
+                success: true,
+                data: {},
+                message: "Request processed successfully",
+                metadata: {
+                  timestamp: "{{timestamp}}",
+                  apiVersion: "1.0.0",
+                  requestId: "{{requestId}}"
+                }
+              }, null, 2),
+              errorSchema: JSON.stringify({
+                success: false,
+                error: {
+                  code: "ERROR_CODE",
+                  message: "Error description",
+                  details: {}
+                }
+              }, null, 2),
+              includeMetadata: true,
+              metadataFields: ['timestamp', 'apiVersion', 'requestId'],
+              contentType: 'application/json',
+              compression: 'gzip'
+            });
+          }
+
+          // HEADERS
+          if (selectedObject.headers && selectedObject.headers.length > 0) {
+            setHeaders(selectedObject.headers);
+          } else {
+            setHeaders([
+              { id: '1', key: 'Content-Type', value: 'application/json', required: true, description: 'Response content type' },
+              { id: '2', key: 'Cache-Control', value: 'no-cache', required: false, description: 'Cache control header' }
+            ]);
+          }
+
+          // DATABASE TESTS TAB
+          if (selectedObject.tests) {
+            setTests(selectedObject.tests);
+          } else {
+            setTests({
+              testConnection: true,
+              testObjectAccess: true,
+              testPrivileges: true,
+              testDataTypes: true,
+              testNullConstraints: true,
+              testUniqueConstraints: false,
+              testForeignKeyReferences: false,
+              testQueryPerformance: true,
+              performanceThreshold: 1000,
+              testWithSampleData: true,
+              sampleDataRows: 10,
+              testProcedureExecution: true,
+              testFunctionReturn: true,
+              testExceptionHandling: true,
+              testSQLInjection: true,
+              testAuthentication: true,
+              testAuthorization: true,
+              testData: '',
+              testQueries: []
+            });
+          }
+
+          // SETTINGS TAB
+          if (selectedObject.settings) {
+            setSettings(selectedObject.settings);
+          } else {
+            setSettings({
+              timeout: 30000,
+              maxRecords: 1000,
+              enableLogging: true,
+              logLevel: 'INFO',
+              enableCaching: false,
+              cacheTtl: 300,
+              generateSwagger: true,
+              generatePostman: true,
+              generateClientSDK: true,
+              enableMonitoring: true,
+              enableAlerts: false,
+              alertEmail: '',
+              enableTracing: false,
+              corsEnabled: true
+            });
+          }
+
+          // COLLECTION & FOLDER INFO
+          if (selectedObject.collectionName || selectedObject.collectionInfo) {
+            const collectionName = selectedObject.collectionName || selectedObject.collectionInfo?.collectionName;
+            const folderName = selectedObject.folderName || selectedObject.collectionInfo?.folderName;
+            
+            if (collectionName) {
+              const collection = collections.find(c => c.name === collectionName);
+              if (collection) {
+                setSelectedCollection(collection);
+                setFolders(collection.folders || []);
+                
+                if (folderName) {
+                  const folder = collection.folders?.find(f => f.name === folderName);
+                  if (folder) {
+                    setSelectedFolder(folder);
+                  }
                 }
               }
             }
           }
+
+          setLoading(false);
+          return;
         }
 
-        setLoading(false);
-        return;
-      }
-
-      // ============================================================
-      // FOR DATABASE OBJECTS (NEW API GENERATION)
-      // ============================================================
-      
-      // Fetch detailed object information (especially important for synonyms)
-      let detailedObject = selectedObject;
-      let objectType = selectedObject.type;
-      let objectName = selectedObject.name;
-      let objectOwner = selectedObject.owner;
-      
-      // If we have authToken, try to fetch more details
-      if (authToken) {
-        const fetchedDetails = await fetchObjectDetails(selectedObject, selectedObject.type);
-        if (fetchedDetails) {
-          detailedObject = fetchedDetails;
-        }
-      }
-      
-      // For synonyms, use the targetDetails if available
-      let effectiveObject = detailedObject;
-      let effectiveType = objectType;
-      let effectiveName = objectName;
-      let effectiveOwner = objectOwner;
-      
-      if (detailedObject?.targetDetails) {
-        // This is a synonym with target details
-        effectiveObject = detailedObject.targetDetails;
-        effectiveType = detailedObject.targetDetails.OBJECT_TYPE || objectType;
-        effectiveName = detailedObject.targetDetails.OBJECT_NAME || objectName;
-        effectiveOwner = detailedObject.targetDetails.OWNER || objectOwner;
+        // FOR DATABASE OBJECTS (NEW API GENERATION)
         
-        console.log('🎯 Using target object:', {
-          type: effectiveType,
-          name: effectiveName,
-          owner: effectiveOwner,
-          hasParameters: !!(effectiveObject.parameters || effectiveObject.arguments || effectiveObject.PARAMETERS || effectiveObject.ARGUMENTS)
-        });
-      }
-
-      // Determine operation and HTTP method
-      let operation = 'SELECT';
-      let httpMethod = 'GET';
-      
-      const normalizedType = (effectiveType || '').toUpperCase();
-      
-      if (normalizedType === 'PROCEDURE' || normalizedType === 'FUNCTION') {
-        operation = 'EXECUTE';
-        httpMethod = 'POST';
-      } else if (normalizedType === 'PACKAGE') {
-        operation = 'EXECUTE';
-        httpMethod = 'POST';
-      } else if (normalizedType === 'VIEW') {
-        operation = 'SELECT';
-        httpMethod = 'GET';
-      } else if (normalizedType === 'TABLE') {
-        operation = 'SELECT';
-        httpMethod = 'GET';
-      } else if (normalizedType === 'SEQUENCE') {
-        operation = 'SELECT';
-        httpMethod = 'GET';
-      } else if (normalizedType === 'TRIGGER') {
-        operation = 'EXECUTE';
-        httpMethod = 'POST';
-      }
-
-      // Set API details
-      const baseName = effectiveName?.toLowerCase() || '';
-      const endpointPath = baseName ? `/${baseName.replace(/_/g, '-').toLowerCase()}` : '';
-      
-      setApiDetails(prev => ({
-        ...prev,
-        apiName: effectiveName ? `${effectiveName} API` : 'New API',
-        apiCode: normalizedType ? `${normalizedType.slice(0, 3)}_${effectiveName || 'API'}` : 'API',
-        description: selectedObject.comment || detailedObject?.COMMENTS || (effectiveName ? `API for ${effectiveName}` : ''),
-        endpointPath: endpointPath,
-        owner: effectiveOwner || 'HR',
-        httpMethod: httpMethod
-      }));
-
-      setSchemaConfig(prev => ({
-        ...prev,
-        schemaName: effectiveOwner || 'HR',
-        objectType: effectiveType || 'TABLE',
-        objectName: effectiveName || '',
-        operation: operation,
-        primaryKeyColumn: ''
-      }));
-
-      // Generate parameters and response mappings
-      const newParameters = [];
-      const newMappings = [];
-
-      // Check for parameters (procedures/functions)
-      let parametersArray = null;
-      
-      if (effectiveObject.parameters && Array.isArray(effectiveObject.parameters)) {
-        parametersArray = effectiveObject.parameters;
-      } else if (effectiveObject.PARAMETERS && Array.isArray(effectiveObject.PARAMETERS)) {
-        parametersArray = effectiveObject.PARAMETERS;
-      } else if (effectiveObject.arguments && Array.isArray(effectiveObject.arguments)) {
-        parametersArray = effectiveObject.arguments;
-      } else if (effectiveObject.ARGUMENTS && Array.isArray(effectiveObject.ARGUMENTS)) {
-        parametersArray = effectiveObject.ARGUMENTS;
-      }
-
-      if (parametersArray && parametersArray.length > 0) {
-        // Generate parameters from procedure/function
-        parametersArray.forEach((param, index) => {
-          const paramName = param.ARGUMENT_NAME || param.argument_name || param.name || param.NAME || `param_${index + 1}`;
-          const paramType = param.DATA_TYPE || param.data_type || param.type || param.TYPE || 'VARCHAR2';
-          const paramMode = param.IN_OUT || param.in_out || param.mode || param.MODE || 'IN';
-          
-          // Generate a clean key name
-          let cleanKey = paramName;
-          if (typeof paramName === 'string') {
-            cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
-          } else {
-            cleanKey = `param_${index + 1}`;
+        // Fetch detailed object information (especially important for synonyms)
+        let detailedObject = selectedObject;
+        let objectType = selectedObject.type;
+        let objectName = selectedObject.name;
+        let objectOwner = selectedObject.owner;
+        
+        // If we have authToken, try to fetch more details
+        if (authToken) {
+          const fetchedDetails = await fetchObjectDetails(selectedObject, selectedObject.type);
+          if (fetchedDetails) {
+            detailedObject = fetchedDetails;
           }
+        }
+        
+        // For synonyms, use the targetDetails if available
+        let effectiveObject = detailedObject;
+        let effectiveType = objectType;
+        let effectiveName = objectName;
+        let effectiveOwner = objectOwner;
+        
+        if (detailedObject?.targetDetails) {
+          // This is a synonym with target details
+          effectiveObject = detailedObject.targetDetails;
+          effectiveType = detailedObject.targetDetails.OBJECT_TYPE || objectType;
+          effectiveName = detailedObject.targetDetails.OBJECT_NAME || objectName;
+          effectiveOwner = detailedObject.targetDetails.OWNER || objectOwner;
           
-          // Determine parameter location based on mode
-          let parameterLocation = 'query';
-          if (paramMode === 'IN' && (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH')) {
-            parameterLocation = 'body';
-          } else if (paramMode === 'IN' && httpMethod === 'GET') {
-            parameterLocation = 'query';
-          } else if (paramMode === 'IN OUT') {
-            parameterLocation = 'body';
-          }
-          
-          newParameters.push({
-            id: `proc-param-${Date.now()}-${index}`,
-            key: cleanKey,
-            dbColumn: paramName,
-            oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
-                       paramType.includes('NUMBER') ? 'NUMBER' :
-                       paramType.includes('DATE') ? 'DATE' : 
-                       paramType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
-            apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
-            parameterLocation: parameterLocation,
-            required: paramMode === 'IN' || paramMode === 'IN OUT',
-            description: `${paramName} (${paramMode})`,
-            example: paramType.includes('NUMBER') ? '1' : 
-                    paramType.includes('DATE') ? '2024-01-01' : '',
-            validationPattern: '',
-            defaultValue: param.DATA_DEFAULT || param.defaultValue || '',
-            inBody: parameterLocation === 'body',
-            isPrimaryKey: false,
-            paramMode: paramMode
+          console.log('🎯 Using target object:', {
+            type: effectiveType,
+            name: effectiveName,
+            owner: effectiveOwner,
+            hasParameters: !!(effectiveObject.parameters || effectiveObject.arguments || effectiveObject.PARAMETERS || effectiveObject.ARGUMENTS)
           });
+        }
 
-          // Add to response mappings for OUT parameters
-          if (paramMode === 'OUT' || paramMode === 'IN OUT') {
+        // Determine operation and HTTP method
+        let operation = 'SELECT';
+        let httpMethod = 'GET';
+        
+        const normalizedType = (effectiveType || '').toUpperCase();
+        
+        if (normalizedType === 'PROCEDURE' || normalizedType === 'FUNCTION') {
+          operation = 'EXECUTE';
+          httpMethod = 'POST';
+        } else if (normalizedType === 'PACKAGE') {
+          operation = 'EXECUTE';
+          httpMethod = 'POST';
+        } else if (normalizedType === 'VIEW') {
+          operation = 'SELECT';
+          httpMethod = 'GET';
+        } else if (normalizedType === 'TABLE') {
+          operation = 'SELECT';
+          httpMethod = 'GET';
+        } else if (normalizedType === 'SEQUENCE') {
+          operation = 'SELECT';
+          httpMethod = 'GET';
+        } else if (normalizedType === 'TRIGGER') {
+          operation = 'EXECUTE';
+          httpMethod = 'POST';
+        }
+
+        // Set API details
+        const baseName = effectiveName?.toLowerCase() || '';
+        const endpointPath = baseName ? `/${baseName.replace(/_/g, '-').toLowerCase()}` : '';
+        
+        setApiDetails(prev => ({
+          ...prev,
+          apiName: effectiveName ? `${effectiveName} API` : 'New API',
+          apiCode: normalizedType ? `${normalizedType.slice(0, 3)}_${effectiveName || 'API'}` : 'API',
+          description: selectedObject.comment || detailedObject?.COMMENTS || (effectiveName ? `API for ${effectiveName}` : ''),
+          endpointPath: endpointPath,
+          owner: effectiveOwner || 'HR',
+          httpMethod: httpMethod
+        }));
+
+        setSchemaConfig(prev => ({
+          ...prev,
+          schemaName: effectiveOwner || 'HR',
+          objectType: effectiveType || 'TABLE',
+          objectName: effectiveName || '',
+          operation: operation,
+          primaryKeyColumn: ''
+        }));
+
+        // Generate parameters and response mappings with proper separation
+        const newParameters = [];
+        const newMappings = [];
+
+        // Check for parameters (procedures/functions)
+        let parametersArray = null;
+        
+        if (effectiveObject.parameters && Array.isArray(effectiveObject.parameters)) {
+          parametersArray = effectiveObject.parameters;
+        } else if (effectiveObject.PARAMETERS && Array.isArray(effectiveObject.PARAMETERS)) {
+          parametersArray = effectiveObject.PARAMETERS;
+        } else if (effectiveObject.arguments && Array.isArray(effectiveObject.arguments)) {
+          parametersArray = effectiveObject.arguments;
+        } else if (effectiveObject.ARGUMENTS && Array.isArray(effectiveObject.ARGUMENTS)) {
+          parametersArray = effectiveObject.ARGUMENTS;
+        }
+
+        if (parametersArray && parametersArray.length > 0) {
+          // Generate parameters from procedure/function
+          parametersArray.forEach((param, index) => {
+            const paramName = param.ARGUMENT_NAME || param.argument_name || param.name || param.NAME || `param_${index + 1}`;
+            const paramType = param.DATA_TYPE || param.data_type || param.type || param.TYPE || 'VARCHAR2';
+            const paramMode = param.IN_OUT || param.in_out || param.mode || param.MODE || 'IN';
+            
+            // Generate a clean key name
+            let cleanKey = paramName;
+            if (typeof paramName === 'string') {
+              cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
+            } else {
+              cleanKey = `param_${index + 1}`;
+            }
+            
+            // Determine parameter location based on mode
+            let parameterLocation = 'query';
+            if (paramMode === 'IN' && (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH')) {
+              parameterLocation = 'body';
+            } else if (paramMode === 'IN' && httpMethod === 'GET') {
+              parameterLocation = 'query';
+            } else if (paramMode === 'IN OUT') {
+              parameterLocation = 'body'; // IN OUT goes to body
+            }
+
+            // For OUT parameters, don't add to parameters list - only add to mappings
+            if (paramMode === 'IN' || paramMode === 'IN OUT') {
+              newParameters.push({
+                id: `proc-param-${Date.now()}-${index}`,
+                key: cleanKey,
+                dbColumn: paramName,
+                oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
+                           paramType.includes('NUMBER') ? 'NUMBER' :
+                           paramType.includes('DATE') ? 'DATE' : 
+                           paramType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
+                apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
+                parameterLocation: parameterLocation,
+                required: paramMode === 'IN' || paramMode === 'IN OUT',
+                description: `${paramName} (${paramMode})`,
+                example: paramType.includes('NUMBER') ? '1' : 
+                        paramType.includes('DATE') ? '2024-01-01' : '',
+                validationPattern: '',
+                defaultValue: param.DATA_DEFAULT || param.defaultValue || '',
+                inBody: parameterLocation === 'body',
+                isPrimaryKey: false,
+                paramMode: paramMode
+              });
+            }
+
+            // Add to response mappings for OUT parameters (and IN OUT parameters as they appear in both)
+            if (paramMode === 'OUT' || paramMode === 'IN OUT') {
+              newMappings.push({
+                id: `mapping-${Date.now()}-out-${index}`,
+                apiField: cleanKey,
+                dbColumn: paramName,
+                oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
+                           paramType.includes('NUMBER') ? 'NUMBER' :
+                           paramType.includes('DATE') ? 'DATE' : 'VARCHAR2',
+                apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
+                format: paramType.includes('DATE') ? 'date-time' : '',
+                nullable: true,
+                isPrimaryKey: false,
+                includeInResponse: true,
+                inResponse: true,
+                paramMode: paramMode
+              });
+            }
+          });
+          
+          // If there's a return type for functions, add it to mappings
+          const returnType = effectiveObject.RETURN_TYPE || effectiveObject.return_type || effectiveObject.returnType;
+          if (returnType && normalizedType === 'FUNCTION') {
             newMappings.push({
-              id: `mapping-${Date.now()}-out-${index}`,
-              apiField: cleanKey,
-              dbColumn: paramName,
-              oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
-                         paramType.includes('NUMBER') ? 'NUMBER' :
-                         paramType.includes('DATE') ? 'DATE' : 'VARCHAR2',
-              apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
-              format: paramType.includes('DATE') ? 'date-time' : '',
-              nullable: true,
+              id: `mapping-${Date.now()}-return`,
+              apiField: 'result',
+              dbColumn: 'RETURN_VALUE',
+              oracleType: returnType.includes('VARCHAR') ? 'VARCHAR2' : 
+                         returnType.includes('NUMBER') ? 'NUMBER' :
+                         returnType.includes('DATE') ? 'DATE' : 'VARCHAR2',
+              apiType: returnType.includes('NUMBER') ? 'integer' : 'string',
+              format: '',
+              nullable: false,
               isPrimaryKey: false,
               includeInResponse: true,
-              inResponse: true
+              inResponse: true,
+              paramMode: 'OUT'
             });
           }
-        });
-        
-        // If there's a return type for functions, add it to mappings
-        const returnType = effectiveObject.RETURN_TYPE || effectiveObject.return_type || effectiveObject.returnType;
-        if (returnType && normalizedType === 'FUNCTION') {
-          newMappings.push({
-            id: `mapping-${Date.now()}-return`,
-            apiField: 'result',
-            dbColumn: 'RETURN_VALUE',
-            oracleType: returnType.includes('VARCHAR') ? 'VARCHAR2' : 
-                       returnType.includes('NUMBER') ? 'NUMBER' :
-                       returnType.includes('DATE') ? 'DATE' : 'VARCHAR2',
-            apiType: returnType.includes('NUMBER') ? 'integer' : 'string',
-            format: '',
-            nullable: false,
-            isPrimaryKey: false,
-            includeInResponse: true,
-            inResponse: true
-          });
-        }
-      } else {
-        // Check for columns (tables/views)
-        let columnsArray = null;
-        
-        if (effectiveObject.columns && Array.isArray(effectiveObject.columns)) {
-          columnsArray = effectiveObject.columns;
-        } else if (effectiveObject.COLUMNS && Array.isArray(effectiveObject.COLUMNS)) {
-          columnsArray = effectiveObject.COLUMNS;
-        }
+        } else {
+          // Check for columns (tables/views)
+          let columnsArray = null;
+          
+          if (effectiveObject.columns && Array.isArray(effectiveObject.columns)) {
+            columnsArray = effectiveObject.columns;
+          } else if (effectiveObject.COLUMNS && Array.isArray(effectiveObject.COLUMNS)) {
+            columnsArray = effectiveObject.COLUMNS;
+          }
 
-        if (columnsArray && columnsArray.length > 0) {
-          columnsArray.forEach((col, index) => {
-            const colName = col.name || col.COLUMN_NAME || col.column_name;
-            const colType = col.type || col.DATA_TYPE || col.data_type || 'VARCHAR2';
-            const colNullable = col.nullable || col.NULLABLE || 'Y';
-            const isPrimaryKey = col.key === 'PK' || col.CONSTRAINT_TYPE === 'P' || col.isPrimaryKey;
-            
-            if (colName) {
-              // Clean up column name for API key
-              const cleanKey = typeof colName === 'string' ? colName.toLowerCase() : `column_${index + 1}`;
+          if (columnsArray && columnsArray.length > 0) {
+            columnsArray.forEach((col, index) => {
+              const colName = col.name || col.COLUMN_NAME || col.column_name;
+              const colType = col.type || col.DATA_TYPE || col.data_type || 'VARCHAR2';
+              const colNullable = col.nullable || col.NULLABLE || 'Y';
+              const isPrimaryKey = col.key === 'PK' || col.CONSTRAINT_TYPE === 'P' || col.isPrimaryKey;
               
-              // Determine parameter location
-              let parameterLocation = 'query';
-              if (isPrimaryKey && (httpMethod === 'GET' || httpMethod === 'PUT' || httpMethod === 'DELETE')) {
-                parameterLocation = 'path';
-              } else if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
-                parameterLocation = 'body';
+              if (colName) {
+                // Clean up column name for API key
+                const cleanKey = typeof colName === 'string' ? colName.toLowerCase() : `column_${index + 1}`;
+                
+                // Determine parameter location
+                let parameterLocation = 'query';
+                if (isPrimaryKey && (httpMethod === 'GET' || httpMethod === 'PUT' || httpMethod === 'DELETE')) {
+                  parameterLocation = 'path';
+                } else if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
+                  parameterLocation = 'body';
+                }
+                
+                // For tables/views, all columns go to both parameters and mappings
+                newParameters.push({
+                  id: `param-${Date.now()}-${index}`,
+                  key: cleanKey,
+                  dbColumn: colName,
+                  oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
+                            colType.includes('NUMBER') ? 'NUMBER' :
+                            colType.includes('DATE') ? 'DATE' : 
+                            colType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
+                  apiType: colType.includes('NUMBER') ? 'integer' : 'string',
+                  parameterLocation: parameterLocation,
+                  required: isPrimaryKey || colNullable === 'N',
+                  description: col.comment || col.COMMENTS || `From ${effectiveName}.${colName}`,
+                  example: colName.includes('ID') ? '1' : 
+                          colName.includes('DATE') ? '2024-01-01' :
+                          colName.includes('NAME') ? 'Sample' : '',
+                  validationPattern: '',
+                  defaultValue: col.DATA_DEFAULT || col.defaultValue || '',
+                  inBody: parameterLocation === 'body',
+                  isPrimaryKey: isPrimaryKey,
+                  paramMode: null
+                });
+
+                newMappings.push({
+                  id: `mapping-${Date.now()}-${index}`,
+                  apiField: cleanKey,
+                  dbColumn: colName,
+                  oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
+                            colType.includes('NUMBER') ? 'NUMBER' :
+                            colType.includes('DATE') ? 'DATE' : 'VARCHAR2',
+                  apiType: colType.includes('NUMBER') ? 'integer' : 'string',
+                  format: colType.includes('DATE') ? 'date-time' : '',
+                  nullable: colNullable === 'Y',
+                  isPrimaryKey: isPrimaryKey,
+                  includeInResponse: true,
+                  inResponse: true,
+                  paramMode: null
+                });
               }
-              
-              newParameters.push({
-                id: `param-${Date.now()}-${index}`,
-                key: cleanKey,
-                dbColumn: colName,
-                oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
-                          colType.includes('NUMBER') ? 'NUMBER' :
-                          colType.includes('DATE') ? 'DATE' : 
-                          colType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
-                apiType: colType.includes('NUMBER') ? 'integer' : 'string',
-                parameterLocation: parameterLocation,
-                required: isPrimaryKey || colNullable === 'N',
-                description: col.comment || col.COMMENTS || `From ${effectiveName}.${colName}`,
-                example: colName.includes('ID') ? '1' : 
-                        colName.includes('DATE') ? '2024-01-01' :
-                        colName.includes('NAME') ? 'Sample' : '',
-                validationPattern: '',
-                defaultValue: col.DATA_DEFAULT || col.defaultValue || '',
-                inBody: parameterLocation === 'body',
-                isPrimaryKey: isPrimaryKey
-              });
+            });
+          }
+        }
 
-              newMappings.push({
-                id: `mapping-${Date.now()}-${index}`,
-                apiField: cleanKey,
-                dbColumn: colName,
-                oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
-                          colType.includes('NUMBER') ? 'NUMBER' :
-                          colType.includes('DATE') ? 'DATE' : 'VARCHAR2',
-                apiType: colType.includes('NUMBER') ? 'integer' : 'string',
-                format: colType.includes('DATE') ? 'date-time' : '',
-                nullable: colNullable === 'Y',
-                isPrimaryKey: isPrimaryKey,
-                includeInResponse: true,
-                inResponse: true
-              });
+        setParameters(newParameters);
+        setResponseMappings(newMappings);
+        
+        // Generate sample response based on mappings
+        if (newMappings.length > 0) {
+          const sampleData = {};
+          newMappings.slice(0, 5).forEach(mapping => {
+            if (mapping.apiType === 'integer') {
+              sampleData[mapping.apiField] = 123;
+            } else if (mapping.apiType === 'string') {
+              if (mapping.format === 'date-time') {
+                sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
+              } else {
+                sampleData[mapping.apiField] = mapping.apiField === 'id' ? 1 : 'sample';
+              }
+            } else if (mapping.apiType === 'boolean') {
+              sampleData[mapping.apiField] = true;
             }
           });
+          
+          const successSchema = JSON.stringify({
+            success: true,
+            data: sampleData,
+            message: 'Request processed successfully',
+            metadata: {
+              timestamp: '{{timestamp}}',
+              apiVersion: apiDetails.version,
+              requestId: '{{requestId}}'
+            }
+          }, null, 2);
+          
+          const errorSchema = JSON.stringify({
+            success: false,
+            error: {
+              code: 'ERR_001',
+              message: 'Error processing request',
+              details: {
+                field: 'field_name',
+                reason: 'Invalid value'
+              }
+            }
+          }, null, 2);
+          
+          setResponseBody(prev => ({
+            ...prev,
+            successSchema,
+            errorSchema
+          }));
         }
-      }
-
-      setParameters(newParameters);
-      setResponseMappings(newMappings);
-      
-      // Generate sample response based on mappings
-      if (newMappings.length > 0) {
-        const sampleData = {};
-        newMappings.slice(0, 5).forEach(mapping => {
-          if (mapping.apiType === 'integer') {
-            sampleData[mapping.apiField] = 123;
-          } else if (mapping.apiType === 'string') {
-            if (mapping.format === 'date-time') {
-              sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
-            } else {
-              sampleData[mapping.apiField] = mapping.apiField === 'id' ? 1 : 'sample';
-            }
-          } else if (mapping.apiType === 'boolean') {
-            sampleData[mapping.apiField] = true;
-          }
+        
+        console.log('✅ ApiGenerationModal - Initialization complete:', {
+          inParametersCount: newParameters.length,
+          outMappingsCount: newMappings.length
         });
-        
-        const successSchema = JSON.stringify({
-          success: true,
-          data: sampleData,
-          message: 'Request processed successfully',
-          metadata: {
-            timestamp: '{{timestamp}}',
-            apiVersion: apiDetails.version,
-            requestId: '{{requestId}}'
-          }
-        }, null, 2);
-        
-        const errorSchema = JSON.stringify({
-          success: false,
-          error: {
-            code: 'ERR_001',
-            message: 'Error processing request',
-            details: {
-              field: 'field_name',
-              reason: 'Invalid value'
-            }
-          }
-        }, null, 2);
-        
-        setResponseBody(prev => ({
-          ...prev,
-          successSchema,
-          errorSchema
-        }));
+
+      } catch (error) {
+        console.error('❌ Error initializing modal:', error);
+      } finally {
+        setLoading(false);
       }
-      
-      console.log('✅ ApiGenerationModal - Initialization complete:', {
-        parametersCount: newParameters.length,
-        mappingsCount: newMappings.length
-      });
+    };
 
-    } catch (error) {
-      console.error('❌ Error initializing modal:', error);
-    } finally {
-      setLoading(false);
+    if (isOpen) {
+      initializeFromObject();
     }
-  };
-
-  if (isOpen) {
-    initializeFromObject();
-  }
-}, [selectedObject, isOpen, authToken, obType, isEditing, collections]);
+  }, [selectedObject, isOpen, authToken, obType, isEditing, collections]);
 
   // Handle collection selection
   const handleCollectionChange = (collectionId) => {
@@ -2336,28 +2345,29 @@ useEffect(() => {
       validationPattern: '',
       defaultValue: '',
       inBody: false,
-      isPrimaryKey: false
+      isPrimaryKey: false,
+      paramMode: 'IN' // Default to IN for new parameters
     };
     setParameters([...parameters, newParam]);
   };
 
   const handleParameterChange = (id, field, value) => {
-  setParameters(prevParams => {
-    // First, update the parameter
-    const updatedParams = prevParams.map(param => 
-      param.id === id ? { ...param, [field]: value } : param
-    );
-    
-    // If changing location to/from body, update inBody flag for that parameter
-    if (field === 'parameterLocation') {
-      return updatedParams.map(param => 
-        param.id === id ? { ...param, inBody: value === 'body' } : param
+    setParameters(prevParams => {
+      // First, update the parameter
+      const updatedParams = prevParams.map(param => 
+        param.id === id ? { ...param, [field]: value } : param
       );
-    }
-    
-    return updatedParams;
-  });
-};
+      
+      // If changing location to/from body, update inBody flag for that parameter
+      if (field === 'parameterLocation') {
+        return updatedParams.map(param => 
+          param.id === id ? { ...param, inBody: value === 'body' } : param
+        );
+      }
+      
+      return updatedParams;
+    });
+  };
 
   const handleRemoveParameter = (id) => {
     setParameters(parameters.filter(param => param.id !== id));
@@ -2375,7 +2385,8 @@ useEffect(() => {
       nullable: true,
       isPrimaryKey: false,
       includeInResponse: true,
-      inResponse: true
+      inResponse: true,
+      paramMode: 'OUT' // Default to OUT for new mappings
     };
     setResponseMappings([...responseMappings, newMapping]);
   };
@@ -2428,52 +2439,42 @@ useEffect(() => {
   };
 
   // Handle tests configuration
-const handleTestsChange = (field, value) => {
-  if (field === 'testData') {
-    // FIXED: Always store as object, never as string
-    if (value === '' || value === null || value === undefined) {
-      // Empty value becomes empty object
-      setTests(prev => ({ ...prev, [field]: {} }));
-    } else if (typeof value === 'string') {
-      // If it's a string that looks like JSON, try to parse it
-      const trimmed = value.trim();
-      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-        try {
-          const parsed = JSON.parse(value);
-          setTests(prev => ({ ...prev, [field]: parsed }));
-        } catch (e) {
-          // If parsing fails, wrap in object
+  const handleTestsChange = (field, value) => {
+    if (field === 'testData') {
+      if (value === '' || value === null || value === undefined) {
+        setTests(prev => ({ ...prev, [field]: {} }));
+      } else if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+          try {
+            const parsed = JSON.parse(value);
+            setTests(prev => ({ ...prev, [field]: parsed }));
+          } catch (e) {
+            setTests(prev => ({ ...prev, [field]: { value } }));
+          }
+        } else if (trimmed !== '') {
           setTests(prev => ({ ...prev, [field]: { value } }));
+        } else {
+          setTests(prev => ({ ...prev, [field]: {} }));
         }
-      } else if (trimmed !== '') {
-        // Plain string becomes wrapped in object
-        setTests(prev => ({ ...prev, [field]: { value } }));
+      } else if (typeof value === 'object' && value !== null) {
+        setTests(prev => ({ ...prev, [field]: value }));
       } else {
-        // Empty string becomes empty object
         setTests(prev => ({ ...prev, [field]: {} }));
       }
-    } else if (typeof value === 'object' && value !== null) {
-      // Already an object, use as is
-      setTests(prev => ({ ...prev, [field]: value }));
+    } else if (field === 'testQueries') {
+      if (Array.isArray(value)) {
+        setTests(prev => ({ ...prev, [field]: value }));
+      } else if (typeof value === 'string') {
+        const lines = value.split('\n').filter(line => line.trim() !== '');
+        setTests(prev => ({ ...prev, [field]: lines }));
+      } else {
+        setTests(prev => ({ ...prev, [field]: [] }));
+      }
     } else {
-      // Fallback for any other type
-      setTests(prev => ({ ...prev, [field]: {} }));
-    }
-  } else if (field === 'testQueries') {
-    // Ensure testQueries is always an array
-    if (Array.isArray(value)) {
       setTests(prev => ({ ...prev, [field]: value }));
-    } else if (typeof value === 'string') {
-      // Split by newlines to create array
-      const lines = value.split('\n').filter(line => line.trim() !== '');
-      setTests(prev => ({ ...prev, [field]: lines }));
-    } else {
-      setTests(prev => ({ ...prev, [field]: [] }));
     }
-  } else {
-    setTests(prev => ({ ...prev, [field]: value }));
-  }
-};
+  };
 
   // Handle settings configuration
   const handleSettingsChange = (field, value) => {
@@ -2482,11 +2483,14 @@ const handleTestsChange = (field, value) => {
 
   // Generate PL/SQL code (for preview only)
   const generatePLSQLCode = () => {
-    const paramList = parameters.map(p => 
+    const inParams = getInParameters();
+    const outMappings = getOutMappings();
+    
+    const paramList = inParams.map(p => 
       `${p.key} IN ${p.oracleType}${p.required ? ' NOT NULL' : ''} DEFAULT ${p.defaultValue || 'NULL'}`
     ).join(',\n    ');
     
-    const mappingList = responseMappings
+    const mappingList = outMappings
       .filter(m => m.includeInResponse)
       .map(m => m.dbColumn)
       .join(', ');
@@ -2580,11 +2584,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
   // Generate OpenAPI specification (for preview only)
   const generateOpenAPISpec = () => {
+    const inParams = getInParameters();
+    const outMappings = getOutMappings();
+    
     // Group parameters by location
-    const pathParams = parameters.filter(p => p.parameterLocation === 'path');
-    const queryParams = parameters.filter(p => p.parameterLocation === 'query');
-    const headerParams = parameters.filter(p => p.parameterLocation === 'header');
-    const bodyParams = parameters.filter(p => p.parameterLocation === 'body');
+    const pathParams = inParams.filter(p => p.parameterLocation === 'path');
+    const queryParams = inParams.filter(p => p.parameterLocation === 'query');
+    const headerParams = inParams.filter(p => p.parameterLocation === 'header');
+    const bodyParams = inParams.filter(p => p.parameterLocation === 'body');
     
     const spec = {
       openapi: '3.0.0',
@@ -2704,7 +2711,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                         success: { type: 'boolean', example: true },
                         data: {
                           type: 'object',
-                          properties: responseMappings.reduce((acc, mapping) => ({
+                          properties: outMappings.reduce((acc, mapping) => ({
                             ...acc,
                             [mapping.apiField]: {
                               type: mapping.apiType,
@@ -2807,11 +2814,14 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
   // Generate Postman collection (for preview only)
   const generatePostmanCollection = () => {
+    const inParams = getInParameters();
+    const outMappings = getOutMappings();
+    
     // Group parameters by location
-    const pathParams = parameters.filter(p => p.parameterLocation === 'path');
-    const queryParams = parameters.filter(p => p.parameterLocation === 'query');
-    const headerParams = parameters.filter(p => p.parameterLocation === 'header');
-    const bodyParams = parameters.filter(p => p.parameterLocation === 'body');
+    const pathParams = inParams.filter(p => p.parameterLocation === 'path');
+    const queryParams = inParams.filter(p => p.parameterLocation === 'query');
+    const headerParams = inParams.filter(p => p.parameterLocation === 'header');
+    const bodyParams = inParams.filter(p => p.parameterLocation === 'body');
     
     // Build URL with path parameters
     let urlPath = apiDetails.endpointPath;
@@ -3068,7 +3078,8 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
             folderId: selectedFolder?.id,
             folderName: selectedFolder?.name
           },
-          parameters: parameters.map(p => ({
+          // Only include IN parameters in the config
+          parameters: getInParameters().map(p => ({
             key: p.key,
             dbColumn: p.dbColumn,
             type: p.apiType,
@@ -3078,15 +3089,18 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
             description: p.description,
             example: p.example,
             defaultValue: p.defaultValue,
-            isPrimaryKey: p.isPrimaryKey
+            isPrimaryKey: p.isPrimaryKey,
+            paramMode: p.paramMode
           })),
-          responseMappings: responseMappings.map(m => ({
+          // Include all response mappings (including OUT parameters)
+          responseMappings: getOutMappings().map(m => ({
             apiField: m.apiField,
             dbColumn: m.dbColumn,
             oracleType: m.oracleType,
             apiType: m.apiType,
             nullable: m.nullable,
-            isPrimaryKey: m.isPrimaryKey
+            isPrimaryKey: m.isPrimaryKey,
+            paramMode: m.paramMode
           })),
           requestBody,
           responseBody,
@@ -3100,295 +3114,264 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
     }
   }, [previewMode, apiDetails, schemaConfig, parameters, responseMappings, requestBody, responseBody, authConfig, settings, sourceObjectInfo, tests, validationResult, selectedCollection, selectedFolder, isEditing]);
 
- // Handle save - show preview first
-const handleSave = () => {
-  // Validate collection and folder are selected
-  if (!selectedCollection) {
-    alert('Please select a collection');
-    return;
-  }
-  
-  if (!selectedFolder) {
-    alert('Please select a folder');
-    return;
-  }
-
-  const apiData = {
-    id: isEditing ? selectedObject?.id : `api-${Date.now()}`,
-    ...apiDetails,
-    schemaConfig,
-    collectionInfo: {
-      collectionId: selectedCollection.id,
-      collectionName: selectedCollection.name,
-      collectionType: selectedCollection.type,
-      isNewCollection: isAddingNewCollection,
-      folderId: selectedFolder.id,
-      folderName: selectedFolder.name,
-      isNewFolder: selectedFolder.id?.startsWith('new-folder-')
-    },
-    parameters,
-    responseMappings,
-    requestBody,
-    responseBody,
-    authConfig,
-    headers,
-    settings,
-    tests,
-    createdAt: new Date().toISOString(),
-    sourceObject: isEditing ? selectedObject?.sourceObject : {
-      name: selectedObject?.name,
-      type: selectedObject?.type,
-      owner: selectedObject?.owner,
-      columns: selectedObject?.columns?.length,
-      parameters: selectedObject?.parameters?.length,
-      isSynonym: sourceObjectInfo.isSynonym,
-      targetType: sourceObjectInfo.targetType,
-      targetName: sourceObjectInfo.targetName,
-      targetOwner: sourceObjectInfo.targetOwner
-    },
-    validation: validationResult,
-    isEditing: isEditing // Pass editing flag to preview
-  };
-  
-  // Show preview modal
-  setNewApiData(apiData);
-  setPreviewOpen(true);
-};
-
-  // Handle preview confirmation - actually call the generateApi function
-// Handle preview confirmation - actually call the generateApi function
-const handlePreviewConfirm = async () => {
-  setPreviewOpen(false);
-  setLoadingOpen(true);
-  
-  try {
-    // Double-check collection info exists
-    if (!selectedCollection || !selectedFolder) {
-      throw new Error('Collection and folder are required');
+  // Handle save - show preview first
+  const handleSave = () => {
+    // Validate collection and folder are selected
+    if (!selectedCollection) {
+      alert('Please select a collection');
+      return;
+    }
+    
+    if (!selectedFolder) {
+      alert('Please select a folder');
+      return;
     }
 
-    // Prepare the request object for the generateApi function
-    const generateRequest = {
-      apiName: apiDetails.apiName,
-      apiCode: apiDetails.apiCode,
-      description: apiDetails.description,
-      version: apiDetails.version,
-      httpMethod: apiDetails.httpMethod,
-      basePath: apiDetails.basePath,
-      endpointPath: apiDetails.endpointPath,
-      category: apiDetails.category,
-      owner: apiDetails.owner,
-      status: apiDetails.status,
-      tags: apiDetails.tags,
+    const apiData = {
+      id: isEditing ? selectedObject?.id : `api-${Date.now()}`,
+      ...apiDetails,
+      schemaConfig,
       collectionInfo: {
         collectionId: selectedCollection.id,
         collectionName: selectedCollection.name,
         collectionType: selectedCollection.type,
+        isNewCollection: isAddingNewCollection,
         folderId: selectedFolder.id,
-        folderName: selectedFolder.name
+        folderName: selectedFolder.name,
+        isNewFolder: selectedFolder.id?.startsWith('new-folder-')
       },
-      sourceObject: {
-        schemaName: schemaConfig.schemaName,
-        objectType: schemaConfig.objectType,
-        objectName: schemaConfig.objectName,
-        operation: schemaConfig.operation,
-        primaryKeyColumn: schemaConfig.primaryKeyColumn,
-        sequenceName: schemaConfig.sequenceName,
-        enablePagination: schemaConfig.enablePagination,
-        pageSize: schemaConfig.pageSize,
-        enableSorting: schemaConfig.enableSorting,
-        defaultSortColumn: schemaConfig.defaultSortColumn,
-        defaultSortDirection: schemaConfig.defaultSortDirection
+      // Only store IN parameters in parameters array
+      parameters: getInParameters(),
+      // Store all response mappings (including OUT parameters)
+      responseMappings: getOutMappings(),
+      requestBody,
+      responseBody,
+      authConfig,
+      headers,
+      settings,
+      tests,
+      createdAt: new Date().toISOString(),
+      sourceObject: isEditing ? selectedObject?.sourceObject : {
+        name: selectedObject?.name,
+        type: selectedObject?.type,
+        owner: selectedObject?.owner,
+        columns: selectedObject?.columns?.length,
+        parameters: selectedObject?.parameters?.length,
+        isSynonym: sourceObjectInfo.isSynonym,
+        targetType: sourceObjectInfo.targetType,
+        targetName: sourceObjectInfo.targetName,
+        targetOwner: sourceObjectInfo.targetOwner
       },
-      schemaConfig: schemaConfig,
-      parameters: parameters.map(p => ({
-        ...p,
-        // Ensure bodyFormat is included for body parameters
-        bodyFormat: p.parameterLocation === 'body' ? requestBody.bodyType : null
-      })),
-      responseMappings: responseMappings,
-      requestBody: {
-        ...requestBody,
-        // Add explicit content type
-        contentType: requestBody.bodyType === 'json' ? 'application/json' :
+      validation: validationResult,
+      isEditing: isEditing // Pass editing flag to preview
+    };
+    
+    // Show preview modal
+    setNewApiData(apiData);
+    setPreviewOpen(true);
+  };
+
+  // Handle preview confirmation - actually call the generateApi function
+  const handlePreviewConfirm = async () => {
+    setPreviewOpen(false);
+    setLoadingOpen(true);
+    
+    try {
+      // Double-check collection info exists
+      if (!selectedCollection || !selectedFolder) {
+        throw new Error('Collection and folder are required');
+      }
+
+      // Prepare the request object for the generateApi function
+      const generateRequest = {
+        apiName: apiDetails.apiName,
+        apiCode: apiDetails.apiCode,
+        description: apiDetails.description,
+        version: apiDetails.version,
+        httpMethod: apiDetails.httpMethod,
+        basePath: apiDetails.basePath,
+        endpointPath: apiDetails.endpointPath,
+        category: apiDetails.category,
+        owner: apiDetails.owner,
+        status: apiDetails.status,
+        tags: apiDetails.tags,
+        collectionInfo: {
+          collectionId: selectedCollection.id,
+          collectionName: selectedCollection.name,
+          collectionType: selectedCollection.type,
+          folderId: selectedFolder.id,
+          folderName: selectedFolder.name
+        },
+        sourceObject: {
+          schemaName: schemaConfig.schemaName,
+          objectType: schemaConfig.objectType,
+          objectName: schemaConfig.objectName,
+          operation: schemaConfig.operation,
+          primaryKeyColumn: schemaConfig.primaryKeyColumn,
+          sequenceName: schemaConfig.sequenceName,
+          enablePagination: schemaConfig.enablePagination,
+          pageSize: schemaConfig.pageSize,
+          enableSorting: schemaConfig.enableSorting,
+          defaultSortColumn: schemaConfig.defaultSortColumn,
+          defaultSortDirection: schemaConfig.defaultSortDirection
+        },
+        schemaConfig: schemaConfig,
+        // Only send IN parameters in parameters array
+        parameters: getInParameters().map(p => ({
+          ...p,
+          bodyFormat: p.parameterLocation === 'body' ? requestBody.bodyType : null
+        })),
+        // Send all response mappings (including OUT parameters)
+        responseMappings: getOutMappings(),
+        requestBody: {
+          ...requestBody,
+          contentType: requestBody.bodyType === 'json' ? 'application/json' :
                      requestBody.bodyType === 'xml' ? 'application/xml' :
                      requestBody.bodyType === 'form-data' ? 'multipart/form-data' :
                      requestBody.bodyType === 'urlencoded' ? 'application/x-www-form-urlencoded' :
                      'text/plain',
-        // FIXED: ALWAYS ensure sample is a string
-        sample: (() => {
-          // If it's already a string, use it
-          if (typeof requestBody.sample === 'string') {
-            return requestBody.sample;
-          }
-          // If it's an object, stringify it
-          if (requestBody.sample && typeof requestBody.sample === 'object') {
-            return JSON.stringify(requestBody.sample, null, 2);
-          }
-          // Default fallback
-          return requestBody.bodyType === 'json' ? '{}' : '';
-        })()
-      },
-      responseBody: {
-        ...responseBody,
-        // FIXED: ALWAYS ensure successSchema is a string
-        successSchema: (() => {
-          if (typeof responseBody.successSchema === 'string') {
-            return responseBody.successSchema;
-          }
-          if (responseBody.successSchema && typeof responseBody.successSchema === 'object') {
-            return JSON.stringify(responseBody.successSchema, null, 2);
-          }
-          return '{\n  "success": true,\n  "data": {},\n  "message": "Success"\n}';
-        })(),
-        // FIXED: ALWAYS ensure errorSchema is a string
-        errorSchema: (() => {
-          if (typeof responseBody.errorSchema === 'string') {
-            return responseBody.errorSchema;
-          }
-          if (responseBody.errorSchema && typeof responseBody.errorSchema === 'object') {
-            return JSON.stringify(responseBody.errorSchema, null, 2);
-          }
-          return '{\n  "success": false,\n  "error": {\n    "code": "ERROR",\n    "message": "Error"\n  }\n}';
-        })()
-      },
-      authConfig: authConfig,
-      headers: headers,
-      // FIXED: Tests section with proper testData handling
-      tests: {
-        // Include all test fields from the tests state
-        testConnection: tests.testConnection,
-        testObjectAccess: tests.testObjectAccess,
-        testPrivileges: tests.testPrivileges,
-        testDataTypes: tests.testDataTypes,
-        testNullConstraints: tests.testNullConstraints,
-        testUniqueConstraints: tests.testUniqueConstraints,
-        testForeignKeyReferences: tests.testForeignKeyReferences,
-        testQueryPerformance: tests.testQueryPerformance,
-        performanceThreshold: tests.performanceThreshold,
-        testWithSampleData: tests.testWithSampleData,
-        sampleDataRows: tests.sampleDataRows,
-        testProcedureExecution: tests.testProcedureExecution,
-        testFunctionReturn: tests.testFunctionReturn,
-        testExceptionHandling: tests.testExceptionHandling,
-        testSQLInjection: tests.testSQLInjection,
-        testAuthentication: tests.testAuthentication,
-        testAuthorization: tests.testAuthorization,
-        unitTests: tests.unitTests,
-        integrationTests: tests.integrationTests,
-        assertions: tests.assertions,
-        testEnvironment: tests.testEnvironment,
-        testUsers: tests.testUsers,
-        testIterations: tests.testIterations,
-        
-        // FIXED: CRITICAL - testData must ALWAYS be an object, NEVER a string
-        testData: (() => {
-          // Case 1: No test data - return empty object
-          if (!tests.testData) {
-            return {};
-          }
+          sample: (() => {
+            if (typeof requestBody.sample === 'string') {
+              return requestBody.sample;
+            }
+            if (requestBody.sample && typeof requestBody.sample === 'object') {
+              return JSON.stringify(requestBody.sample, null, 2);
+            }
+            return requestBody.bodyType === 'json' ? '{}' : '';
+          })()
+        },
+        responseBody: {
+          ...responseBody,
+          successSchema: (() => {
+            if (typeof responseBody.successSchema === 'string') {
+              return responseBody.successSchema;
+            }
+            if (responseBody.successSchema && typeof responseBody.successSchema === 'object') {
+              return JSON.stringify(responseBody.successSchema, null, 2);
+            }
+            return '{\n  "success": true,\n  "data": {},\n  "message": "Success"\n}';
+          })(),
+          errorSchema: (() => {
+            if (typeof responseBody.errorSchema === 'string') {
+              return responseBody.errorSchema;
+            }
+            if (responseBody.errorSchema && typeof responseBody.errorSchema === 'object') {
+              return JSON.stringify(responseBody.errorSchema, null, 2);
+            }
+            return '{\n  "success": false,\n  "error": {\n    "code": "ERROR",\n    "message": "Error"\n  }\n}';
+          })()
+        },
+        authConfig: authConfig,
+        headers: headers,
+        tests: {
+          testConnection: tests.testConnection,
+          testObjectAccess: tests.testObjectAccess,
+          testPrivileges: tests.testPrivileges,
+          testDataTypes: tests.testDataTypes,
+          testNullConstraints: tests.testNullConstraints,
+          testUniqueConstraints: tests.testUniqueConstraints,
+          testForeignKeyReferences: tests.testForeignKeyReferences,
+          testQueryPerformance: tests.testQueryPerformance,
+          performanceThreshold: tests.performanceThreshold,
+          testWithSampleData: tests.testWithSampleData,
+          sampleDataRows: tests.sampleDataRows,
+          testProcedureExecution: tests.testProcedureExecution,
+          testFunctionReturn: tests.testFunctionReturn,
+          testExceptionHandling: tests.testExceptionHandling,
+          testSQLInjection: tests.testSQLInjection,
+          testAuthentication: tests.testAuthentication,
+          testAuthorization: tests.testAuthorization,
+          unitTests: tests.unitTests,
+          integrationTests: tests.integrationTests,
+          assertions: tests.assertions,
+          testEnvironment: tests.testEnvironment,
+          testUsers: tests.testUsers,
+          testIterations: tests.testIterations,
           
-          // Case 2: Already an object - use it directly
-          if (typeof tests.testData === 'object' && tests.testData !== null) {
-            return tests.testData;
-          }
-          
-          // Case 3: It's a string - need to convert to object
-          if (typeof tests.testData === 'string') {
-            const trimmed = tests.testData.trim();
-            
-            // Empty string -> empty object
-            if (trimmed === '') {
+          testData: (() => {
+            if (!tests.testData) {
               return {};
             }
-            
-            // Try to parse as JSON if it looks like JSON
-            if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-              try {
-                return JSON.parse(trimmed);
-              } catch (e) {
-                // If parsing fails, wrap in object with 'value' property
-                console.warn('Failed to parse testData JSON, wrapping in object:', e);
-                return { value: trimmed };
-              }
+            if (typeof tests.testData === 'object' && tests.testData !== null) {
+              return tests.testData;
             }
-            
-            // Plain string - wrap in object with 'value' property
-            return { value: trimmed };
-          }
+            if (typeof tests.testData === 'string') {
+              const trimmed = tests.testData.trim();
+              if (trimmed === '') {
+                return {};
+              }
+              if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+                try {
+                  return JSON.parse(trimmed);
+                } catch (e) {
+                  console.warn('Failed to parse testData JSON, wrapping in object:', e);
+                  return { value: trimmed };
+                }
+              }
+              return { value: trimmed };
+            }
+            return { value: tests.testData };
+          })(),
           
-          // Case 4: Any other type (number, boolean, etc.) - wrap in object
-          return { value: tests.testData };
-        })(),
-        
-        // FIXED: Ensure testQueries is always an array
-        testQueries: Array.isArray(tests.testQueries) ? tests.testQueries : []
-      },
-      settings: settings,
-      regenerateComponents: true
-    };
-
-    console.log('📡 Sending to backend with format:', requestBody.bodyType, generateRequest.requestBody.contentType);
-    console.log('📡 Request body sample type:', typeof generateRequest.requestBody.sample);
-    console.log('📡 testData type:', typeof generateRequest.tests.testData);
-    console.log('📡 testData value:', generateRequest.tests.testData);
-    
-    // SAFE logging - check if sample is a string before calling substring
-    if (typeof generateRequest.requestBody.sample === 'string') {
-      console.log('📡 Request body sample preview:', generateRequest.requestBody.sample.substring(0, 100) + '...');
-    } else {
-      console.log('📡 Request body sample preview (object):', 
-        JSON.stringify(generateRequest.requestBody.sample).substring(0, 100) + '...');
-    }
-    
-    let response;
-    
-    // Call the appropriate API based on whether we're editing or creating
-    if (isEditing && selectedObject?.id) {
-      // Call updateApi for editing
-      response = await updateApi(authToken, selectedObject.id, generateRequest);
-    } else {
-      // Call generateApi for new API
-      response = await generateApi(authToken, generateRequest);
-    }
-    
-    console.log('📥 API response:', response);
-
-    // Store the response
-    setApiResponse(response);
-
-    // If the response is successful, we have the generated data
-    if (response.responseCode >= 200 && response.responseCode < 300) {
-      // Combine the original data with the response data
-      const enrichedApiData = {
-        ...newApiData,
-        ...response.data,
-        generatedFiles: response.data?.generatedFiles || newApiData?.generatedFiles,
-        isEditing: isEditing
+          testQueries: Array.isArray(tests.testQueries) ? tests.testQueries : []
+        },
+        settings: settings,
+        regenerateComponents: true
       };
-      setNewApiData(enrichedApiData);
-      
-      // Call the parent onSave if provided
-      if (onSave) {
-        onSave(enrichedApiData, response);
-      }
-    } else {
-      // Handle error
-      console.error('API operation failed:', response);
-    }
 
-  } catch (error) {
-    console.error('❌ Error:', error);
-    setApiResponse({
-      responseCode: 500,
-      message: error.message || 'Failed to process API request',
-      data: null
-    });
-  } finally {
-    setLoadingOpen(false);
-    setConfirmationOpen(true);
-  }
-};
+      console.log('📡 Sending to backend with format:', requestBody.bodyType, generateRequest.requestBody.contentType);
+      console.log('📡 Request body sample type:', typeof generateRequest.requestBody.sample);
+      console.log('📡 IN Parameters count:', generateRequest.parameters.length);
+      console.log('📡 Response Mappings count:', generateRequest.responseMappings.length);
+      
+      let response;
+      
+      // Call the appropriate API based on whether we're editing or creating
+      if (isEditing && selectedObject?.id) {
+        // Call updateApi for editing
+        response = await updateApi(authToken, selectedObject.id, generateRequest);
+      } else {
+        // Call generateApi for new API
+        response = await generateApi(authToken, generateRequest);
+      }
+      
+      console.log('📥 API response:', response);
+
+      // Store the response
+      setApiResponse(response);
+
+      // If the response is successful, we have the generated data
+      if (response.responseCode >= 200 && response.responseCode < 300) {
+        // Combine the original data with the response data
+        const enrichedApiData = {
+          ...newApiData,
+          ...response.data,
+          generatedFiles: response.data?.generatedFiles || newApiData?.generatedFiles,
+          isEditing: isEditing
+        };
+        setNewApiData(enrichedApiData);
+        
+        // Call the parent onSave if provided
+        if (onSave) {
+          onSave(enrichedApiData, response);
+        }
+      } else {
+        // Handle error
+        console.error('API operation failed:', response);
+      }
+
+    } catch (error) {
+      console.error('❌ Error:', error);
+      setApiResponse({
+        responseCode: 500,
+        message: error.message || 'Failed to process API request',
+        data: null
+      });
+    } finally {
+      setLoadingOpen(false);
+      setConfirmationOpen(true);
+    }
+  };
 
   // Handle confirmation modal close
   const handleConfirmationClose = () => {
@@ -3770,11 +3753,6 @@ const handlePreviewConfirm = async () => {
                   placeholder="GET_USERS"
                   disabled={loading || validating || isEditing} // Disable code editing when editing
                 />
-                {isEditing && (
-                  <p className="text-xs mt-1" style={{ color: themeColors.textSecondary }}>
-                    API code cannot be changed after creation
-                  </p>
-                )}
               </div>
 
               <div className="space-y-2">
@@ -4036,15 +4014,15 @@ const handlePreviewConfirm = async () => {
                         }}>
                           <div style={{ color: themeColors.textSecondary }}>
                             {apiDetails.httpMethod} {apiDetails.basePath}{apiDetails.endpointPath}
-                            {parameters.filter(p => p.parameterLocation === 'path').length > 0 && (
+                            {getInParameters().filter(p => p.parameterLocation === 'path').length > 0 && (
                               <span className="ml-1 text-yellow-500">
-                                {parameters.filter(p => p.parameterLocation === 'path').map(p => `/{${p.key}}`).join('')}
+                                {getInParameters().filter(p => p.parameterLocation === 'path').map(p => `/{${p.key}}`).join('')}
                               </span>
                             )}
                           </div>
-                          {parameters.filter(p => p.parameterLocation === 'query').length > 0 && (
+                          {getInParameters().filter(p => p.parameterLocation === 'query').length > 0 && (
                             <div className="mt-2 text-xs" style={{ color: themeColors.textSecondary }}>
-                              Query Parameters: {parameters.filter(p => p.parameterLocation === 'query').map(p => p.key).join(', ')}
+                              Query Parameters: {getInParameters().filter(p => p.parameterLocation === 'query').map(p => p.key).join(', ')}
                             </div>
                           )}
                           <div className="mt-2 text-xs" style={{ color: themeColors.textSecondary }}>
@@ -4129,42 +4107,60 @@ const handlePreviewConfirm = async () => {
                         )}
                       </div>
 
-                      {/* Show parameters from selected object */}
+                      {/* Show parameters from selected object - only show IN parameters in this preview */}
                       {selectedObject?.parameters && selectedObject.parameters.length > 0 && (
                         <div className="mt-4">
                           <h5 className="text-xs font-medium mb-2" style={{ color: themeColors.text }}>
-                            Object Parameters:
+                            Object Parameters (IN/IN OUT only):
                           </h5>
                           <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
-                            {selectedObject.parameters.map((param, index) => (
-                              <div key={index} className="flex items-center justify-between text-xs p-2 rounded" 
-                                style={{ backgroundColor: themeColors.hover }}>
-                                <div>
-                                  <span className="font-medium" style={{ color: themeColors.text }}>
-                                    {param.name || param.ARGUMENT_NAME}
-                                  </span>
-                                  <span className="ml-2 text-xs px-2 py-0.5 rounded" style={{ 
-                                    backgroundColor: (param.mode || param.IN_OUT || param.in_out) === 'IN' ? themeColors.info + '20' : 
-                                                  (param.mode || param.IN_OUT || param.in_out) === 'OUT' ? themeColors.success + '20' : 
-                                                  themeColors.warning + '20',
-                                    color: (param.mode || param.IN_OUT || param.in_out) === 'IN' ? themeColors.info : 
-                                          (param.mode || param.IN_OUT || param.in_out) === 'OUT' ? themeColors.success : 
-                                          themeColors.warning
-                                  }}>
-                                    {param.mode || param.IN_OUT || param.in_out || 'IN'}
-                                  </span>
-                                </div>
-                                <div style={{ color: themeColors.textSecondary }}>
-                                  {param.type || param.DATA_TYPE}
-                                  {(param.defaultValue || param.DATA_DEFAULT) && (
-                                    <span className="ml-2 text-xs">
-                                      (Default: {param.defaultValue || param.DATA_DEFAULT})
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
+                            {selectedObject.parameters
+                              .filter(p => {
+                                const mode = p.mode || p.IN_OUT || p.in_out;
+                                return !mode || mode === 'IN' || mode === 'IN OUT';
+                              })
+                              .map((param, index) => {
+                                const mode = param.mode || param.IN_OUT || param.in_out || 'IN';
+                                return (
+                                  <div key={index} className="flex items-center justify-between text-xs p-2 rounded" 
+                                    style={{ backgroundColor: themeColors.hover }}>
+                                    <div>
+                                      <span className="font-medium" style={{ color: themeColors.text }}>
+                                        {param.name || param.ARGUMENT_NAME}
+                                      </span>
+                                      <span className="ml-2 text-xs px-2 py-0.5 rounded" style={{ 
+                                        backgroundColor: mode === 'IN' ? themeColors.info + '20' : 
+                                                      mode === 'OUT' ? themeColors.success + '20' : 
+                                                      themeColors.warning + '20',
+                                        color: mode === 'IN' ? themeColors.info : 
+                                              mode === 'OUT' ? themeColors.success : 
+                                              themeColors.warning
+                                      }}>
+                                        {mode}
+                                      </span>
+                                    </div>
+                                    <div style={{ color: themeColors.textSecondary }}>
+                                      {param.type || param.DATA_TYPE}
+                                      {(param.defaultValue || param.DATA_DEFAULT) && (
+                                        <span className="ml-2 text-xs">
+                                          (Default: {param.defaultValue || param.DATA_DEFAULT})
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
                           </div>
+                          
+                          {/* Show OUT parameters separately in a note */}
+                          {selectedObject.parameters.some(p => {
+                            const mode = p.mode || p.IN_OUT || p.in_out;
+                            return mode === 'OUT' || mode === 'IN OUT';
+                          }) && (
+                            <p className="text-xs mt-2" style={{ color: themeColors.info }}>
+                              Note: OUT/IN OUT parameters will appear in the Response Mapping tab.
+                            </p>
+                          )}
                         </div>
                       )}
 
@@ -4466,12 +4462,12 @@ const handlePreviewConfirm = async () => {
                   </div>
                 )}
 
-                {/* Parameters Tab - Show auto-generated parameters with locations */}
+                {/* Parameters Tab - Show only IN parameters */}
                 {activeTab === 'parameters' && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                        API Parameters ({parameters.length})
+                        Input Parameters ({getInParameters().length})
                       </h3>
                       <button
                         onClick={handleAddParameter}
@@ -4483,15 +4479,20 @@ const handlePreviewConfirm = async () => {
                       </button>
                     </div>
 
-                    {parameters.length === 0 ? (
+                    {getInParameters().length === 0 ? (
                       <div className="text-center py-8 border rounded-lg" style={{ 
                         borderColor: themeColors.border,
                         backgroundColor: themeColors.card
                       }}>
                         <Code className="h-12 w-12 mx-auto mb-3" style={{ color: themeColors.textSecondary }} />
                         <p style={{ color: themeColors.textSecondary }}>
-                          No parameters defined. Add parameters or they will be auto-generated from the selected object.
+                          No input parameters defined. Add parameters or they will be auto-generated from the selected object.
                         </p>
+                        {parameters.some(p => p.paramMode === 'OUT') && (
+                          <p className="text-xs mt-2" style={{ color: themeColors.info }}>
+                            Note: OUT parameters are not shown here - they appear in the Mapping tab.
+                          </p>
+                        )}
                       </div>
                     ) : (
                       <div className="overflow-x-auto border rounded-lg" style={{ 
@@ -4532,11 +4533,15 @@ const handlePreviewConfirm = async () => {
                               <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
                                 borderColor: themeColors.border,
                                 color: themeColors.textSecondary
+                              }}>Mode</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ 
+                                borderColor: themeColors.border,
+                                color: themeColors.textSecondary
                               }}>Actions</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {parameters.map((param, index) => (
+                            {getInParameters().map((param, index) => (
                               <tr key={param.id} style={{ 
                                 backgroundColor: index % 2 === 0 ? themeColors.card : themeColors.hover,
                                 borderBottom: `1px solid ${themeColors.border}`
@@ -4641,6 +4646,21 @@ const handlePreviewConfirm = async () => {
                                   />
                                 </td>
                                 <td className="px-3 py-2">
+                                  <select
+                                    value={param.paramMode || 'IN'}
+                                    onChange={(e) => handleParameterChange(param.id, 'paramMode', e.target.value)}
+                                    className="w-full px-2 py-1 border rounded text-xs hover-lift"
+                                    style={{ 
+                                      backgroundColor: themeColors.bg,
+                                      borderColor: themeColors.border,
+                                      color: themeColors.text
+                                    }}
+                                  >
+                                    <option value="IN">IN</option>
+                                    <option value="IN OUT">IN OUT</option>
+                                  </select>
+                                </td>
+                                <td className="px-3 py-2">
                                   <button
                                     onClick={() => handleRemoveParameter(param.id)}
                                     className="p-1.5 rounded transition-colors hover-lift"
@@ -4659,12 +4679,12 @@ const handlePreviewConfirm = async () => {
                   </div>
                 )}
 
-                {/* Mapping Tab */}
+                {/* Mapping Tab - Show all response fields including OUT parameters */}
                 {activeTab === 'mapping' && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                        Response Field Mapping ({responseMappings.length})
+                        Response Field Mapping ({getOutMappings().length})
                       </h3>
                       <button
                         onClick={handleAddResponseMapping}
@@ -4676,14 +4696,14 @@ const handlePreviewConfirm = async () => {
                       </button>
                     </div>
 
-                    {responseMappings.length === 0 ? (
+                    {getOutMappings().length === 0 ? (
                       <div className="text-center py-8 border rounded-lg" style={{ 
                         borderColor: themeColors.border,
                         backgroundColor: themeColors.card
                       }}>
                         <Map className="h-12 w-12 mx-auto mb-3" style={{ color: themeColors.textSecondary }} />
                         <p style={{ color: themeColors.textSecondary }}>
-                          No response mappings defined. They will be auto-generated from the selected object's columns.
+                          No response fields defined. They will be auto-generated from the selected object's columns/OUT parameters.
                         </p>
                       </div>
                     ) : (
@@ -4700,11 +4720,12 @@ const handlePreviewConfirm = async () => {
                               <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>API Type</th>
                               <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Nullable</th>
                               <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>PK</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Mode</th>
                               <th className="px-3 py-2 text-left text-xs font-medium border-b" style={{ borderColor: themeColors.border, color: themeColors.textSecondary }}>Actions</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {responseMappings.map((mapping, index) => (
+                            {getOutMappings().map((mapping, index) => (
                               <tr key={mapping.id} style={{ 
                                 backgroundColor: index % 2 === 0 ? themeColors.card : themeColors.hover,
                                 borderBottom: `1px solid ${themeColors.border}`
@@ -4788,6 +4809,22 @@ const handlePreviewConfirm = async () => {
                                   />
                                 </td>
                                 <td className="px-3 py-2">
+                                  <select
+                                    value={mapping.paramMode || ''}
+                                    onChange={(e) => handleResponseMappingChange(mapping.id, 'paramMode', e.target.value)}
+                                    className="w-full px-2 py-1 border rounded text-xs hover-lift"
+                                    style={{ 
+                                      backgroundColor: themeColors.bg,
+                                      borderColor: themeColors.border,
+                                      color: themeColors.text
+                                    }}
+                                  >
+                                    <option value="">-</option>
+                                    <option value="OUT">OUT</option>
+                                    <option value="IN OUT">IN OUT</option>
+                                  </select>
+                                </td>
+                                <td className="px-3 py-2">
                                   <button
                                     onClick={() => handleRemoveResponseMapping(mapping.id)}
                                     className="p-1.5 rounded transition-colors hover-lift"
@@ -4802,6 +4839,13 @@ const handlePreviewConfirm = async () => {
                           </tbody>
                         </table>
                       </div>
+                    )}
+                    
+                    {/* Show note about IN parameters */}
+                    {getInParameters().length > 0 && (
+                      <p className="text-xs mt-2" style={{ color: themeColors.info }}>
+                        Note: Input parameters (IN/IN OUT) are shown in the Parameters tab.
+                      </p>
                     )}
                   </div>
                 )}
@@ -5324,7 +5368,7 @@ const handlePreviewConfirm = async () => {
                           <button
                             onClick={() => {
                               const sample = {};
-                              const bodyParams = parameters.filter(p => p.parameterLocation === 'body');
+                              const bodyParams = getInParameters().filter(p => p.parameterLocation === 'body');
                               bodyParams.forEach(p => {
                                 sample[p.key] = p.example || (p.apiType === 'integer' ? 123 : 'sample');
                               });
@@ -5450,7 +5494,7 @@ const handlePreviewConfirm = async () => {
                       <button
                         onClick={() => {
                           const sampleData = {};
-                          responseMappings.slice(0, 5).forEach(mapping => {
+                          getOutMappings().slice(0, 5).forEach(mapping => {
                             if (mapping.apiType === 'integer') {
                               sampleData[mapping.apiField] = 123;
                             } else if (mapping.apiType === 'string') {
@@ -6170,9 +6214,9 @@ WHERE ROWNUM <= 100;` : ''}`}
             <div className="text-xs" style={{ color: themeColors.textSecondary }}>
               Endpoint: <span className="font-mono font-medium" style={{ color: themeColors.text }}>
                 {apiDetails.httpMethod} {apiDetails.basePath}{apiDetails.endpointPath}
-                {parameters.filter(p => p.parameterLocation === 'path').length > 0 && (
+                {getInParameters().filter(p => p.parameterLocation === 'path').length > 0 && (
                   <span className="text-yellow-500">
-                    {parameters.filter(p => p.parameterLocation === 'path').map(p => `/{${p.key}}`).join('')}
+                    {getInParameters().filter(p => p.parameterLocation === 'path').map(p => `/{${p.key}}`).join('')}
                   </span>
                 )}
               </span>
@@ -6182,6 +6226,9 @@ WHERE ROWNUM <= 100;` : ''}`}
                   Object validated successfully
                 </span>
               )}
+              <span className="text-xs block mt-1" style={{ color: themeColors.info }}>
+                IN Parameters: {getInParameters().length} | Response Fields: {getOutMappings().length}
+              </span>
             </div>
             <div className="flex items-center gap-3">
               <button

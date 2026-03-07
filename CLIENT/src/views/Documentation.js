@@ -2177,7 +2177,7 @@ useEffect(() => {
                 <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>
                   Path Parameters
                   <span className="ml-2 text-xs px-2 py-1 rounded" style={{ 
-                    backgroundColor: colors.primary,
+                    backgroundColor: 'rgb(96 165 250)',
                     color: 'white'
                   }}>
                     {endpointDetails.pathParameters.length}
@@ -2233,7 +2233,7 @@ useEffect(() => {
                 <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>
                   Query Parameters
                   <span className="ml-2 text-xs px-2 py-1 rounded" style={{ 
-                    backgroundColor: colors.primary,
+                    backgroundColor: 'rgb(96 165 250)',
                     color: 'white'
                   }}>
                     {endpointDetails.queryParameters.length}
@@ -2289,7 +2289,7 @@ useEffect(() => {
                 <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>
                   Header Parameters
                   <span className="ml-2 text-xs px-2 py-1 rounded" style={{ 
-                    backgroundColor: colors.primary,
+                    backgroundColor: 'rgb(96 165 250)',
                     color: 'white'
                   }}>
                     {endpointDetails.headerParameters.length}
@@ -2345,7 +2345,7 @@ useEffect(() => {
                 <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>
                   Request Body Parameters
                   <span className="ml-2 text-xs px-2 py-1 rounded" style={{ 
-                    backgroundColor: colors.primary,
+                    backgroundColor: 'rgb(96 165 250)',
                     color: 'white'
                   }}>
                     {endpointDetails.bodyParameters.length}
@@ -2861,7 +2861,7 @@ useEffect(() => {
                                 {/* Show count badge if there are endpoints */}
                                 {folder.requests && folder.requests.length > 0 && (
                                   <span className="text-xs px-1.5 py-0.5 rounded-full ml-1" style={{ 
-                                    backgroundColor: colors.primary,
+                                    backgroundColor: 'rgb(96 165 250)',
                                     color: 'white'
                                   }}>
                                     {folder.requests.length}
