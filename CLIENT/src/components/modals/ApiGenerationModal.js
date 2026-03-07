@@ -2172,7 +2172,7 @@ export default function ApiGenerationModal({
         // Generate sample response based on mappings
         if (newMappings.length > 0) {
           const sampleData = {};
-          newMappings.slice(0, 5).forEach(mapping => {
+          newMappings.slice(0, 50).forEach(mapping => {
             if (mapping.apiType === 'integer') {
               sampleData[mapping.apiField] = 123;
             } else if (mapping.apiType === 'string') {

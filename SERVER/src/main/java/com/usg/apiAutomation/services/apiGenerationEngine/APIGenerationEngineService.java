@@ -134,6 +134,7 @@ public class APIGenerationEngineService {
                     .sourceObjectInfo(sourceObjectDTO != null ?
                             objectMapper.convertValue(sourceObjectDTO, Map.class) : null)
                     .collectionInfo(objectMapper.convertValue(collectionInfo, Map.class))
+                    .sourceRequestId(requestId)  // ← ADD THIS LINE
                     .build();
 
             // ============= USE THE NEW MAPPING METHODS HERE =============
@@ -5601,27 +5602,50 @@ public class APIGenerationEngineService {
 
     private void generateDocumentationCodeExamples(GeneratedApiEntity api, APIEndpointEntity endpoint,
                                                    String codeBaseRequestId) {
-        List<String> languages = Arrays.asList("curl", "javascript", "python", "java", "csharp", "php", "ruby", "go");
+        try {
+            // Use the same languages as Collections
+            List<String> languages = Arrays.asList("curl", "javascript", "python", "java", "csharp", "php", "ruby", "go");
 
-        for (String language : languages) {
-            try {
-                String code = generateCodeForLanguage(api, language);
-
-                CodeExampleEntity codeExample = new CodeExampleEntity();
-                codeExample.setId(UUID.randomUUID().toString());  // ← ADDED
-                codeExample.setLanguage(language);
-                codeExample.setCode(code);
-                codeExample.setDescription("Auto-generated " + language + " code example");
-                codeExample.setEndpoint(endpoint);
-                codeExample.setDefault(language.equals("curl"));
-
-                codeExampleRepository.save(codeExample);
-                log.debug("Saved {} code example for endpoint", language);
-            } catch (Exception e) {
-                log.warn("Failed to generate documentation code example for {}: {}", language, e.getMessage());
+            // Delete existing code examples
+            List<CodeExampleEntity> existingExamples = codeExampleRepository.findByEndpointId(endpoint.getId());
+            if (existingExamples != null && !existingExamples.isEmpty()) {
+                codeExampleRepository.deleteAll(existingExamples);
+                codeExampleRepository.flush();
             }
+
+            // Generate new code examples using the SAME methods as Collections
+            for (String language : languages) {
+                try {
+                    String code = generateCodeForLanguage(api, language); // This is the SAME method Collections uses
+
+                    if (code != null && !code.isEmpty()) {
+                        CodeExampleEntity codeExample = new CodeExampleEntity();
+                        codeExample.setId(UUID.randomUUID().toString());
+                        codeExample.setLanguage(language);
+                        codeExample.setCode(code);
+                        codeExample.setDescription("Auto-generated " + language + " code example");
+                        codeExample.setEndpoint(endpoint);
+
+                        // Set as default based on language (like Collections might do)
+                        codeExample.setDefault(language.equals("curl") || language.equals("java"));
+
+                        codeExampleRepository.save(codeExample);
+                        log.debug("Saved {} code example for endpoint", language);
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to generate documentation code example for {}: {}", language, e.getMessage());
+                }
+            }
+
+            codeExampleRepository.flush();
+            log.info("Generated {} code examples for endpoint", languages.size());
+
+        } catch (Exception e) {
+            log.error("Failed to generate documentation code examples: {}", e.getMessage());
         }
     }
+
+
 
     private String generateCodeForLanguage(GeneratedApiEntity api, String language) {
         String fullUrl = (api.getBasePath() != null ? api.getBasePath() : "") +

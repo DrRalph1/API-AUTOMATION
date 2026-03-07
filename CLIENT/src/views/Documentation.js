@@ -2396,7 +2396,7 @@ useEffect(() => {
                 </div>
 
                 {/* Request Body Example */}
-                <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
+                {/* <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
                   <div className="p-4 border-b flex items-center justify-between" style={{ 
                     backgroundColor: colors.tableHeader,
                     borderColor: colors.border
@@ -2416,7 +2416,7 @@ useEffect(() => {
                       code={endpointDetails.requestBodyExample}
                     />
                   </div>
-                </div>
+                </div> */}
               </div>
             )}
 

@@ -762,7 +762,10 @@ const ApiEndpointItem = ({ api }) => {
       <div className="mb-2 w-full lg:w-full">
         <div 
           className="relative overflow-hidden border rounded-xl cursor-pointer group transition-all duration-200 hover-lift"
-          onClick={handleNavigateToSchemaBrowser}
+          onClick={(e) => {
+                e.stopPropagation();
+                handleApiGeneration();
+              }}
           style={{ 
             borderColor: colors.border,
             backgroundColor: colors.bg,

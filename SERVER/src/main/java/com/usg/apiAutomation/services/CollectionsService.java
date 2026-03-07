@@ -193,8 +193,13 @@ public class CollectionsService {
             throw new SecurityException("Access denied to request: " + requestIdParam);
         }
 
+        System.out.println("collectionId:::::" + collectionId);
+        System.out.println("requestIdParam::::::" + requestIdParam);
+
         // Try to find the associated GeneratedApiEntity using the repository method
         Optional<GeneratedApiEntity> generatedApiOpt = generatedAPIRepository.findByRequestId(requestIdParam);
+
+        System.out.println("generatedApiOpt1111111111111::::" + generatedApiOpt);
 
         // Create GenerateApiRequestDTO - all fields are flattened in the DTO
         GenerateApiRequestDTO generateApiRequest = new GenerateApiRequestDTO();
@@ -373,8 +378,11 @@ public class CollectionsService {
         }
         generateApiRequest.setHeaders(headers.isEmpty() ? null : headers);
 
+        System.out.println("generatedApiOpt22222222:::::" + generatedApiOpt);
+
         // ============= 7. REQUEST BODY =============
         if (generatedApiOpt.isPresent()) {
+            System.out.println("adey here cool...");
             String apiId = generatedApiOpt.get().getId();
             Optional<ApiRequestConfigEntity> requestConfigOpt = generatedAPIRepository.findRequestConfigByApiId(apiId);
             if (requestConfigOpt.isPresent()) {
@@ -395,8 +403,14 @@ public class CollectionsService {
             }
         }
 
+        System.out.println("generateApiRequest:::::" + generateApiRequest);
+        System.out.println("generateApiRequest.getRequestBody() is: " + generateApiRequest.getRequestBody());
+        System.out.println("request.getBody() is: " + request.getBody());
+        System.out.println("request.getBody() empty? " + request.getBody().isEmpty());
+
         // If no request config from GeneratedApi, use request body from collections module
         if (generateApiRequest.getRequestBody() == null && request.getBody() != null && !request.getBody().isEmpty()) {
+            System.out.println("case eeiii...");
             ApiRequestConfigDTO requestBody = new ApiRequestConfigDTO();
             requestBody.setBodyType("json");
             requestBody.setSample(request.getBody());

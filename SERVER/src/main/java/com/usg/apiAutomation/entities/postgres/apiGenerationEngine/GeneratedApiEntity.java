@@ -28,6 +28,9 @@ public class GeneratedApiEntity {
     // Basic API Info
     // =====================================================
 
+    @Column(name = "source_request_id")
+    private String sourceRequestId;  // Store the original request ID
+
     @Column(name = "api_name", nullable = false)
     private String apiName;
 
