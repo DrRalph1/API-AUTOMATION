@@ -899,9 +899,11 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   const [newCollectionName, setNewCollectionName] = useState('');
   const [newCollectionDescription, setNewCollectionDescription] = useState('');
 
+  // Add a new state to store the template URL with placeholders
+  const [templateUrl, setTemplateUrl] = useState('');
 
   // Add this to your state declarations (around line 400)
-const [requestPathParams, setRequestPathParams] = useState([]);
+  const [requestPathParams, setRequestPathParams] = useState([]);
 
 // Add these functions with your other CRUD operations (around line 900)
 // Add path param
@@ -1070,107 +1072,6 @@ const handleUrlPaste = useCallback((e) => {
 }, [requestUrl]);
 
 
-
-const updatePathParam = (id, field, value) => {
-  console.log('🟢 updatePathParam called:', { id, field, value });
-  
-  // First update the state with the new value
-  setRequestPathParams(params => {
-    console.log('📦 Current path params before update:', params);
-    
-    const updatedParams = params.map(param => 
-      param.id === id ? { ...param, [field]: value } : param
-    );
-    
-    console.log('📦 Updated path params after update:', updatedParams);
-    
-    // Then update URL, but only for value changes
-    if (field === 'value') {
-      console.log('🔍 Field is "value", proceeding with URL update');
-      
-      // Find the updated param from the new array
-      const updatedParam = updatedParams.find(p => p.id === id);
-      console.log('🔍 Updated param found:', updatedParam);
-      
-      if (updatedParam && updatedParam.key) {
-        console.log('✅ Updated param has key, updating URL');
-        
-        // Update URL immediately for this specific parameter
-        setRequestUrl(prevUrl => {
-          console.log('🌐 Previous URL:', prevUrl);
-          if (!prevUrl) return prevUrl;
-          
-          // Extract query string if it exists
-          const [baseUrlWithoutQuery, queryString] = prevUrl.split('?');
-          console.log('🔍 Base URL without query:', baseUrlWithoutQuery);
-          console.log('🔍 Query string:', queryString);
-          
-          // Get the template URL - try multiple sources
-          let templateUrl = '';
-          
-          if (selectedRequest && selectedRequest.url) {
-            templateUrl = selectedRequest.url;
-            console.log('📋 Using selectedRequest.url as template:', templateUrl);
-          } else {
-            // Try to reconstruct template from the current URL structure
-            // We need the ORIGINAL template with placeholders, not the current values
-            const urlParts = baseUrlWithoutQuery.split('/');
-            
-            // Find where the path params should be by looking at the order of params
-            // The last N parts of the URL (where N = number of path params) should be the params
-            const paramCount = updatedParams.length;
-            const staticParts = urlParts.slice(0, urlParts.length - paramCount);
-            const paramParts = urlParts.slice(urlParts.length - paramCount);
-            
-            console.log('🔪 Static parts:', staticParts);
-            console.log('🔪 Current param values:', paramParts);
-            
-            // Rebuild template with placeholders
-            const templateParts = [...staticParts];
-            
-            // Add each param placeholder in order
-            updatedParams.forEach((p, index) => {
-              templateParts.push(`{${p.key}}`);
-            });
-            
-            templateUrl = templateParts.join('/');
-            console.log('📋 Reconstructed template URL:', templateUrl);
-          }
-          
-          // Now build the new URL by replacing placeholders with values
-          let newBaseUrl = templateUrl;
-          console.log('🏁 Starting to build new URL from template:', newBaseUrl);
-          
-          // Replace each placeholder with its current value
-          updatedParams.forEach((p, index) => {
-            const placeholder = `{${p.key}}`;
-            const replacementValue = p.value && p.value.trim() !== '' ? p.value : placeholder;
-            
-            if (newBaseUrl.includes(placeholder)) {
-              newBaseUrl = newBaseUrl.replace(placeholder, replacementValue);
-              console.log(`  🔄 Replaced ${placeholder} with ${replacementValue}`);
-            } else {
-              console.log(`  ⚠️ Placeholder ${placeholder} not found in URL`);
-            }
-          });
-          
-          // Reattach query string if it exists
-          const finalUrl = queryString ? `${newBaseUrl}?${queryString}` : newBaseUrl;
-          console.log('✅ Final new URL with preserved query params:', finalUrl);
-          return finalUrl;
-        });
-      } else {
-        console.log('❌ Updated param missing key, skipping URL update');
-      }
-    } else {
-      console.log('⏭️ Field is not "value", skipping URL update');
-    }
-    
-    return updatedParams;
-  });
-};
-
-
 // Fix 2: Update the determineActiveTab function to be more robust
 const determineActiveTab = useCallback(() => {
   // Check each tab in order of preference
@@ -1323,182 +1224,267 @@ const deletePathParam = (id) => {
 
   // ==================== API METHODS ====================
 
-  // First, update the transformCollectionsData function to ensure pathParams are properly populated
-  const transformCollectionsData = (apiData) => {
-    console.log('🔄 [Transform] Input:', apiData);
-    
-    if (!apiData) {
-      console.warn('⚠️ [Transform] No data provided');
-      return [];
-    }
-    
-    let collectionsArray = [];
-    
-    if (Array.isArray(apiData)) {
-      collectionsArray = apiData;
-    } else if (apiData.collections && Array.isArray(apiData.collections)) {
-      collectionsArray = apiData.collections;
-    } else {
-      console.warn('⚠️ [Transform] Unknown data structure:', apiData);
-      return [];
-    }
-    
-    console.log(`📊 [Transform] Processing ${collectionsArray.length} collections`);
-    
-    return collectionsArray.map((collection, collectionIndex) => {
-      // Process folders and their requests
-      const folders = (collection.folders || []).map((folder, folderIndex) => {
-        // Process requests within folder
-        const requests = (folder.requests || []).map((request, requestIndex) => {
-          // Separate parameters based on parameterLocation
-          const queryParams = [];
-          const pathParams = [];
-          const headerParams = [];
-          const bodyParams = [];
-          
-          console.log(`📋 [Transform] Processing request: ${request.name || 'Unnamed'}`, {
-            parameters: request.parameters?.length || 0
-          });
-          
-          // Process parameters with location info
-          (request.parameters || []).forEach((param, paramIdx) => {
-            if (param && param.key) {
-              const paramId = param.id || `param-${Date.now()}-${Math.random()}-${paramIdx}`;
-              const paramObject = {
-                id: paramId,
-                key: param.key,
-                value: param.value || '',
-                description: param.description || '',
-                enabled: param.enabled !== false,
-                required: param.required || false,
-                type: param.type || 'string',
-                parameterLocation: param.parameterLocation || 'query',
-                paramMode: param.paramMode || 'IN',
-                dbColumn: param.dbColumn || null,
-                oracleType: param.oracleType || null,
-                validationPattern: param.validationPattern || '',
-                defaultValue: param.defaultValue || '',
-                example: param.example || null,
-                bodyFormat: param.bodyFormat || null
-              };
-              
-              console.log(`📍 [Transform] Parameter ${param.key}: location = ${param.parameterLocation}`);
-              
-              // Sort by location
-              switch(param.parameterLocation?.toLowerCase()) {
-                case 'query':
-                  queryParams.push(paramObject);
-                  break;
-                case 'path':
-                  pathParams.push(paramObject);
-                  break;
-                case 'header':
-                  headerParams.push(paramObject);
-                  break;
-                case 'body':
-                  bodyParams.push(paramObject);
-                  break;
-                default:
-                  // Default to query if location not specified
-                  queryParams.push(paramObject);
-              }
-            }
-          });
-          
-          // Process headers separately (these are HTTP headers, not params)
-          const headers = (request.headers || []).map((header, headerIdx) => ({
-            id: header.id || `header-${Date.now()}-${Math.random()}-${headerIdx}`,
-            key: header.key,
-            value: header.value || '',
-            description: header.description || '',
-            enabled: header.enabled !== false,
-            required: header.required || false
-          }));
-          
-          // Add header parameters to headers array
-          headerParams.forEach(headerParam => {
-            headers.push({
-              id: headerParam.id,
-              key: headerParam.key,
-              value: headerParam.value || '',
-              description: headerParam.description || '',
-              enabled: headerParam.enabled,
-              required: headerParam.required
-            });
-          });
-          
-          console.log(`📊 [Transform] Request "${request.name || 'Unnamed'}" - Query: ${queryParams.length}, Path: ${pathParams.length}, Header Params: ${headerParams.length}, Body: ${bodyParams.length}`);
-          
-          // Log path params specifically
-          if (pathParams.length > 0) {
-            console.log(`🛣️ [Transform] Path params for ${request.name}:`, pathParams.map(p => ({ key: p.key, value: p.value })));
-          }
-          
-          return {
-            id: request.id || `req-${Date.now()}-${Math.random()}-${requestIndex}`,
-            name: request.name || 'New Request',
-            method: request.method || 'GET',
-            url: request.url || '',
-            description: request.description || '',
-            isEditing: false,
-            status: request.status || 'saved',
-            lastModified: request.lastModified || new Date().toISOString(),
-            auth: request.auth || { type: 'noauth' },
-            authType: request.authType || 'noauth',
-            authConfig: request.authConfig || {},
-            headers: headers,
-            queryParams: queryParams,
-            pathParams: pathParams,
-            bodyParams: bodyParams,
-            allParams: request.parameters || [], // IMPORTANT: Keep the original parameters array
-            body: request.body || '',
-            requestBody: request.requestBody || null,
-            tests: request.tests || '',
-            preRequestScript: request.preRequestScript || '',
-            isSaved: request.saved !== false,
-            collectionId: request.collectionId || collection.id,
-            folderId: request.folderId || folder.id,
-            apiCode: request.apiCode || null,
-            apiName: request.apiName || null
-          };
+  
+  // Update the transformCollectionsData function - find this around line 632
+const transformCollectionsData = (apiData) => {
+  console.log('🔄 [Transform] Input:', apiData);
+  
+  if (!apiData) {
+    console.warn('⚠️ [Transform] No data provided');
+    return [];
+  }
+  
+  let collectionsArray = [];
+  
+  if (Array.isArray(apiData)) {
+    collectionsArray = apiData;
+  } else if (apiData.collections && Array.isArray(apiData.collections)) {
+    collectionsArray = apiData.collections;
+  } else {
+    console.warn('⚠️ [Transform] Unknown data structure:', apiData);
+    return [];
+  }
+  
+  console.log(`📊 [Transform] Processing ${collectionsArray.length} collections`);
+  
+  return collectionsArray.map((collection, collectionIndex) => {
+    // Process folders and their requests
+    const folders = (collection.folders || []).map((folder, folderIndex) => {
+      // Process requests within folder
+      const requests = (folder.requests || []).map((request, requestIndex) => {
+        // Separate parameters based on parameterLocation
+        const queryParams = [];
+        const pathParams = [];
+        const headerParams = [];
+        const bodyParams = [];
+        
+        console.log(`📋 [Transform] Processing request: ${request.name || 'Unnamed'}`, {
+          parameters: request.parameters?.length || 0,
+          requestBody: request.requestBody ? 'present' : 'absent'
         });
+        
+        // Process parameters with location info
+        (request.parameters || []).forEach((param, paramIdx) => {
+          if (param && param.key) {
+            const paramId = param.id || `param-${Date.now()}-${Math.random()}-${paramIdx}`;
+            const paramObject = {
+              id: paramId,
+              key: param.key,
+              value: param.value || '',
+              description: param.description || '',
+              enabled: param.enabled !== false,
+              required: param.required || false,
+              type: param.type || 'string',
+              parameterLocation: param.parameterLocation || 'query',
+              paramMode: param.paramMode || 'IN',
+              dbColumn: param.dbColumn || null,
+              oracleType: param.oracleType || null,
+              validationPattern: param.validationPattern || '',
+              defaultValue: param.defaultValue || '',
+              example: param.example || null,
+              bodyFormat: param.bodyFormat || null
+            };
+            
+            console.log(`📍 [Transform] Parameter ${param.key}: location = ${param.parameterLocation}`);
+            
+            // Sort by location - CRITICAL for path params
+            switch(param.parameterLocation?.toLowerCase()) {
+              case 'query':
+                queryParams.push(paramObject);
+                break;
+              case 'path':
+                pathParams.push(paramObject);
+                console.log(`🛣️ [Transform] Added to PATH params: ${param.key} = ${param.value || ''}`);
+                break;
+              case 'header':
+                headerParams.push(paramObject);
+                console.log(`📌 [Transform] Added to HEADER params: ${param.key}`);
+                break;
+              case 'body':
+                bodyParams.push(paramObject);
+                console.log(`📦 [Transform] Added to BODY params: ${param.key}`);
+                break;
+              default:
+                // Default to query if location not specified
+                queryParams.push(paramObject);
+            }
+          }
+        });
+        
+        // Process headers separately (these are HTTP headers, NOT parameters)
+        const headers = (request.headers || []).map((header, headerIdx) => ({
+          id: header.id || `header-${Date.now()}-${Math.random()}-${headerIdx}`,
+          key: header.key,
+          value: header.value || '',
+          description: header.description || '',
+          enabled: header.enabled !== false,
+          required: header.required || false
+        }));
+        
+        console.log(`📊 [Transform] Request "${request.name || 'Unnamed'}" - Query: ${queryParams.length}, Path: ${pathParams.length}, Header Params: ${headerParams.length}, Body: ${bodyParams.length}, Regular Headers: ${headers.length}`);
+        
+        // Log path params specifically
+        if (pathParams.length > 0) {
+          console.log(`🛣️ [Transform] Path params for ${request.name}:`, 
+            pathParams.map(p => ({ key: p.key, value: p.value })));
+        }
+        
+        // Log body params specifically
+        if (bodyParams.length > 0) {
+          console.log(`📦 [Transform] Body params for ${request.name}:`, 
+            bodyParams.map(p => ({ key: p.key, value: p.value, bodyFormat: p.bodyFormat })));
+        }
+        
+        // Extract auth info
+        const authType = request.authType || request.auth?.type || 'noauth';
+        const authConfig = request.authConfig || request.auth || { type: authType };
+        
+        // Process body content
+        let bodyContent = request.body || '';
+        let requestBodyData = request.requestBody || null;
 
+        // If there's a requestBody object with sample, use that
+        if (requestBodyData && requestBodyData.sample) {
+          bodyContent = requestBodyData.sample;
+        }
+
+        // If there are body parameters and it's XML, try to build a sample XML
+        if (bodyParams.length > 0 && requestBodyData?.bodyType === 'xml') {
+          try {
+            const xmlParts = ['<?xml version="1.0" encoding="UTF-8"?>', '<request>'];
+            bodyParams.forEach(param => {
+              if (param.key) {
+                xmlParts.push(`  <${param.key}>${param.value || param.defaultValue || param.example || ''}</${param.key}>`);
+              }
+            });
+            xmlParts.push('</request>');
+            
+            // Only set if we have valid XML and no other body content
+            if (xmlParts.length > 2 && !bodyContent) {
+              bodyContent = xmlParts.join('\n');
+            }
+          } catch (e) {
+            console.warn('⚠️ [Transform] Error building XML from body params:', e);
+          }
+        }
+        
+        // CRITICAL FIX: Construct URL with path parameter placeholders
+        let requestUrl = request.url || '';
+        
+        // If we have path params, we need to ensure the URL has placeholders for them
+        if (pathParams.length > 0) {
+          console.log(`🛣️ [Transform] Building URL with ${pathParams.length} path params`);
+          
+          // Check if the URL already has placeholders
+          const hasPlaceholders = pathParams.some(p => 
+            requestUrl.includes(`{${p.key}}`) || requestUrl.includes(`:${p.key}`)
+          );
+          
+          if (!hasPlaceholders) {
+            // The URL doesn't have placeholders, so we need to add them
+            
+            // First, try to find if the URL already contains the values
+            // For example, if the URL is "{{baseUrl}}/api/v1/vrt-trans-posting-60" 
+            // and we have a path param "acct_link_v", we need to add "{acct_link_v}" at the end
+            
+            // Check if the URL ends with a slash
+            if (!requestUrl.endsWith('/')) {
+              requestUrl += '/';
+            }
+            
+            // Add each path param placeholder
+            pathParams.forEach((param, index) => {
+              if (index === 0) {
+                // For the first param, just add it
+                requestUrl += `{${param.key}}`;
+              } else {
+                // For subsequent params, add slash then placeholder
+                requestUrl += `/{${param.key}}`;
+              }
+            });
+            
+            console.log(`✅ [Transform] Added placeholders to URL: ${requestUrl}`);
+          } else {
+            console.log(`✅ [Transform] URL already has placeholders: ${requestUrl}`);
+          }
+        }
+        
         return {
-          id: folder.id || `folder-${Date.now()}-${Math.random()}-${folderIndex}`,
-          name: folder.name || 'New Folder',
-          description: folder.description || '',
-          isExpanded: false,
+          id: request.id || `req-${Date.now()}-${Math.random()}-${requestIndex}`,
+          name: request.name || 'New Request',
+          method: request.method || 'GET',
+          url: requestUrl,
+          description: request.description || '',
           isEditing: false,
-          requestCount: folder.requestCount || requests.length,
-          requests: requests
+          status: request.status || 'saved',
+          lastModified: request.lastModified || new Date().toISOString(),
+          auth: request.auth || { type: 'noauth' },
+          authType: authType,
+          authConfig: authConfig,
+          headers: cleanHeaders([
+            ...(request.headers || []),
+            ...headerParams.map(p => ({
+              id: p.id,
+              key: p.key,
+              value: p.value || '',
+              description: p.description || '',
+              enabled: p.enabled !== false,
+              required: p.required || false
+            }))
+          ]),
+          queryParams: queryParams,
+          pathParams: pathParams,
+          bodyParams: bodyParams,
+          headerParams: headerParams,
+          allParams: request.parameters || [],
+          body: bodyContent,
+          requestBody: requestBodyData,
+          tests: request.tests || '',
+          preRequestScript: request.preRequestScript || '',
+          isSaved: request.saved !== false,
+          collectionId: request.collectionId || collection.id,
+          folderId: request.folderId || folder.id,
+          apiCode: request.apiCode || null,
+          apiName: request.apiName || null
         };
       });
 
-      const totalRequests = folders.reduce((sum, folder) => sum + (folder.requests?.length || 0), 0);
-
       return {
-        id: collection.id || `col-${Date.now()}-${Math.random()}-${collectionIndex}`,
-        name: collection.name || `Collection ${collectionIndex + 1}`,
-        description: collection.description || '',
-        isExpanded: collectionIndex === 0,
-        isFavorite: collection.favorite || false,
+        id: folder.id || `folder-${Date.now()}-${Math.random()}-${folderIndex}`,
+        name: folder.name || 'New Folder',
+        description: folder.description || '',
+        isExpanded: false,
         isEditing: false,
-        createdAt: collection.createdAt || new Date().toISOString(),
-        requestsCount: totalRequests,
-        folderCount: folders.length,
-        variables: (collection.variables || []).map((v, varIndex) => ({
-          id: v.id || `var-${Date.now()}-${Math.random()}-${varIndex}`,
-          key: v.key,
-          value: v.value,
-          type: v.type || 'text',
-          enabled: v.enabled !== false
-        })),
-        folders: folders
+        requestCount: folder.requestCount || requests.length,
+        requests: requests
       };
     });
-  };
 
-// Update the handleSelectRequest function to properly initialize body content
+    const totalRequests = folders.reduce((sum, folder) => sum + (folder.requests?.length || 0), 0);
+
+    return {
+      id: collection.id || `col-${Date.now()}-${Math.random()}-${collectionIndex}`,
+      name: collection.name || `Collection ${collectionIndex + 1}`,
+      description: collection.description || '',
+      isExpanded: collectionIndex === 0,
+      isFavorite: collection.favorite || false,
+      isEditing: false,
+      createdAt: collection.createdAt || new Date().toISOString(),
+      requestsCount: totalRequests,
+      folderCount: folders.length,
+      variables: (collection.variables || []).map((v, varIndex) => ({
+        id: v.id || `var-${Date.now()}-${Math.random()}-${varIndex}`,
+        key: v.key,
+        value: v.value,
+        type: v.type || 'text',
+        enabled: v.enabled !== false
+      })),
+      folders: folders
+    };
+  });
+};
+
+// Update the handleSelectRequest function to store the template URL
 const handleSelectRequest = useCallback(async (request, collectionId, folderId) => {
   console.log('🎯 [handleSelectRequest] Selected request:', {
     id: request.id,
@@ -1521,6 +1507,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     // Reset all form states to empty
     setRequestMethod('GET');
     setRequestUrl('');
+    setTemplateUrl('');
     setRequestBody('');
     setRequestParams([]);
     setRequestHeaders([]);
@@ -1570,11 +1557,49 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
   console.log('📥 Setting initial request data from tree');
   
   setRequestMethod(request.method || 'GET');
-  setRequestUrl(request.url || '');
+  
+  // Store the template URL (with placeholders)
+  const initialTemplateUrl = request.url || '';
+  console.log('📋 Storing template URL:', initialTemplateUrl);
+  
+  setTemplateUrl(initialTemplateUrl);
+  setRequestUrl(initialTemplateUrl);
+  
+  // Set request body and other params
   setRequestBody(request.body || '');
   setRequestParams(request.queryParams || []);
   setRequestHeaders(request.headers || []);
-  setRequestPathParams(request.pathParams || []);
+  
+  // Set path params
+  const initialPathParams = request.pathParams || [];
+  setRequestPathParams(initialPathParams);
+  
+  // Process path params immediately to update URL with values
+  if (initialPathParams.length > 0 && initialTemplateUrl) {
+    console.log('🛣️ Processing path params for URL:', { initialTemplateUrl, initialPathParams });
+    
+    // Build URL by replacing placeholders with values
+    let updatedUrl = initialTemplateUrl;
+    initialPathParams.forEach(param => {
+      if (param.key && param.value && param.value.trim() !== '') {
+        const placeholder = `{${param.key}}`;
+        if (updatedUrl.includes(placeholder)) {
+          updatedUrl = updatedUrl.replace(new RegExp(placeholder, 'g'), param.value);
+          console.log(`  🔄 Replaced ${placeholder} with ${param.value}`);
+        } else {
+          // Try colon-style placeholder
+          const colonPlaceholder = `:${param.key}`;
+          if (updatedUrl.includes(colonPlaceholder)) {
+            updatedUrl = updatedUrl.replace(new RegExp(colonPlaceholder, 'g'), param.value);
+            console.log(`  🔄 Replaced ${colonPlaceholder} with ${param.value}`);
+          }
+        }
+      }
+    });
+    
+    console.log('✅ Updated URL with path params:', updatedUrl);
+    setRequestUrl(updatedUrl);
+  }
   
   // Log what we have before processing body
   console.log('📋 Initial state after setting basics:', {
@@ -1625,7 +1650,8 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
           hasRequestBody: !!details.requestBody,
           bodyType: details.requestBody?.bodyType,
           parametersCount: details.parameters?.length,
-          requestBody: details.requestBody
+          requestBody: details.requestBody,
+          url: details.url
         });
         
         // Log body parameters specifically
@@ -1723,6 +1749,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
           const queryParams = [];
           const pathParams = [];
           const headerParams = [];
+          const bodyParams = [];
           
           console.log('📊 Processing parameters from API:', details.parameters.length);
           
@@ -1736,30 +1763,41 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
                 enabled: param.enabled !== false,
                 required: param.required || false,
                 parameterLocation: param.parameterLocation || 'query',
-                bodyFormat: param.bodyFormat || null
+                bodyFormat: param.bodyFormat || null,
+                type: param.type || 'string',
+                defaultValue: param.defaultValue || '',
+                example: param.example || ''
               };
               
-              // Skip body parameters here - they're handled above
-              if (param.parameterLocation?.toLowerCase() === 'body') {
-                return;
-              }
+              console.log(`📍 [API] Parameter ${param.key}: location = ${param.parameterLocation}`);
               
-              switch(param.parameterLocation?.toLowerCase()) {
+              // Handle all parameter types separately
+              const location = (param.parameterLocation || '').toLowerCase();
+              switch(location) {
                 case 'query':
                   queryParams.push(paramObject);
-                  console.log(`📌 Query param: ${param.key} = ${param.value || ''}`);
                   break;
                 case 'path':
                   pathParams.push(paramObject);
-                  console.log(`🛣️ Path param: ${param.key} = ${param.value || ''}`);
+                  console.log(`🛣️ Added to PATH params: ${param.key}`);
                   break;
                 case 'header':
                   headerParams.push(paramObject);
-                  console.log(`📌 Header param: ${param.key} = ${param.value || ''}`);
+                  console.log(`📌 Header parameter: ${param.key}`);
+                  break;
+                case 'body':
+                  bodyParams.push(paramObject);
+                  console.log(`📦 Body parameter: ${param.key}`);
                   break;
                 default:
-                  queryParams.push(paramObject);
-                  console.log(`📌 Defaulting to query param: ${param.key}`);
+                  // If location not specified, check if it looks like a path param
+                  if (details.url && details.url.includes(`{${param.key}}`)) {
+                    pathParams.push(paramObject);
+                    console.log(`🛣️ Defaulted to PATH param: ${param.key}`);
+                  } else {
+                    queryParams.push(paramObject);
+                    console.log(`🔍 Defaulted to QUERY param: ${param.key}`);
+                  }
               }
             }
           });
@@ -1767,39 +1805,217 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
           console.log('📊 [Separated Parameters]', {
             query: queryParams.length,
             path: pathParams.length,
-            header: headerParams.length
+            header: headerParams.length,
+            body: bodyParams.length
           });
           
-          // Only update if there are actual parameters
-          if (queryParams.length > 0) setRequestParams(queryParams);
-          if (pathParams.length > 0) setRequestPathParams(pathParams);
-          if (headerParams.length > 0) setRequestHeaders(cleanHeaders([...headerParams, ...(details.headers || [])]));
-          
-          // Build URL with path and query params ONLY if they're different from current
-          const baseUrlWithoutQuery = details.url ? details.url.split('?')[0] : (request.url?.split('?')[0] || request.url || '');
-          
-          // Build URL with path params
-          let urlWithPathParams = baseUrlWithoutQuery;
-          if (pathParams.length > 0) {
-            pathParams.forEach(param => {
-              const placeholder = `{${param.key}}`;
-              if (urlWithPathParams.includes(placeholder)) {
-                urlWithPathParams = urlWithPathParams.replace(placeholder, param.value || placeholder);
-              }
-            });
+          // Update state with parameters
+          if (queryParams.length > 0) {
+            console.log('📝 Setting query params:', queryParams);
+            setRequestParams(queryParams);
           }
           
-          // Build query string
-          const queryString = queryParams
-            .filter(p => p.enabled && p.key && p.key.trim() !== '')
-            .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value || '')}`)
-            .join('&');
-          
-          const finalUrl = queryString ? `${urlWithPathParams}?${queryString}` : urlWithPathParams;
-          
-          // Only update URL if it's different
-          if (finalUrl !== requestUrl) {
+          // In the handleSelectRequest function, find this section around line 1820
+          if (pathParams.length > 0) {
+            console.log('🛣️ Setting path params:', pathParams);
+            setRequestPathParams(pathParams);
+            
+            // Update the template URL with placeholders from API
+            let newTemplateUrl = initialTemplateUrl;
+            
+            // If the template URL doesn't have placeholders, add them
+            const hasPlaceholders = pathParams.some(p => 
+              newTemplateUrl.includes(`{${p.key}}`) || newTemplateUrl.includes(`:${p.key}`)
+            );
+            
+            if (!hasPlaceholders && pathParams.length > 0) {
+              // Add placeholders to the URL
+              if (!newTemplateUrl.endsWith('/')) {
+                newTemplateUrl += '/';
+              }
+              pathParams.forEach((param, index) => {
+                if (index === 0) {
+                  newTemplateUrl += `{${param.key}}`;
+                } else {
+                  newTemplateUrl += `/{${param.key}}`;
+                }
+              });
+              console.log('🛣️ Added placeholders to template URL from API:', newTemplateUrl);
+              setTemplateUrl(newTemplateUrl);
+            }
+            
+            // Now replace placeholders with actual values to display
+            let updatedUrl = newTemplateUrl;
+            pathParams.forEach(param => {
+              if (param.key && param.value && param.value.trim() !== '') {
+                const placeholder = `{${param.key}}`;
+                if (updatedUrl.includes(placeholder)) {
+                  updatedUrl = updatedUrl.replace(new RegExp(placeholder, 'g'), param.value);
+                } else {
+                  const colonPlaceholder = `:${param.key}`;
+                  if (updatedUrl.includes(colonPlaceholder)) {
+                    updatedUrl = updatedUrl.replace(new RegExp(colonPlaceholder, 'g'), param.value);
+                  }
+                }
+              }
+            });
+            
+            // Build query string from queryParams
+            const queryString = queryParams
+              .filter(p => p.enabled && p.key && p.key.trim() !== '')
+              .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value || '')}`)
+              .join('&');
+            
+            // Add query string to URL
+            const finalUrl = queryString ? `${updatedUrl}?${queryString}` : updatedUrl;
+            
+            console.log('✅ Updated URL with API path params and query params:', finalUrl);
             setRequestUrl(finalUrl);
+          }
+          
+          // Handle header parameters - ADD THESE TO REQUEST HEADERS
+          if (headerParams.length > 0) {
+            console.log('📌 Adding header parameters to headers:', headerParams);
+            
+            // Convert header params to header format
+            const headerParamHeaders = headerParams.map(param => ({
+              id: param.id || `header-${Date.now()}-${Math.random()}`,
+              key: param.key,
+              value: param.value || '',
+              description: param.description || '',
+              enabled: param.enabled !== false,
+              required: param.required || false,
+              isParameter: true // Add flag to identify parameter headers
+            }));
+            
+            // Merge with existing headers from details.headers
+            setRequestHeaders(prevHeaders => {
+              // Get existing headers from API details
+              const apiHeaders = details.headers && details.headers.length > 0 
+                ? cleanHeaders(details.headers.map((header, idx) => ({
+                    id: header.id || `header-${Date.now()}-${idx}-${Math.random()}`,
+                    key: header.key,
+                    value: header.value || '',
+                    description: header.description || '',
+                    enabled: header.enabled !== false,
+                    required: header.required || false,
+                    isParameter: false
+                  })))
+                : [];
+              
+              // Combine and remove duplicates (by key)
+              const allHeaders = [...apiHeaders, ...headerParamHeaders];
+              const uniqueHeaders = allHeaders.reduce((acc, current) => {
+                const existingIndex = acc.findIndex(h => h.key.toLowerCase() === current.key.toLowerCase());
+                if (existingIndex === -1) {
+                  acc.push(current);
+                } else {
+                  // Prefer parameter headers if they have values
+                  if (current.isParameter && current.value && !acc[existingIndex].value) {
+                    acc[existingIndex] = current;
+                  }
+                }
+                return acc;
+              }, []);
+              
+              console.log('📌 Final headers after merge:', uniqueHeaders);
+              return uniqueHeaders;
+            });
+          } else {
+            // If no header parameters, just set the regular headers
+            if (details.headers && details.headers.length > 0) {
+              console.log('📌 Setting regular headers from details:', details.headers);
+              setRequestHeaders(cleanHeaders(details.headers.map((header, idx) => ({
+                id: header.id || `header-${Date.now()}-${idx}-${Math.random()}`,
+                key: header.key,
+                value: header.value || '',
+                description: header.description || '',
+                enabled: header.enabled !== false,
+                required: header.required || false
+              }))));
+            }
+          }
+          
+          // Handle body parameters
+          if (bodyParams.length > 0) {
+            console.log('📦 Body parameters found:', bodyParams);
+            
+            // Check if the body type is XML and build XML sample
+            if (details.requestBody && details.requestBody.bodyType === 'xml') {
+              setRequestBodyType('xml');
+              
+              // Build XML from body parameters
+              if (bodyParams.length > 0) {
+                const xmlBuilder = ['<?xml version="1.0" encoding="UTF-8"?>', '<request>'];
+                bodyParams.forEach(param => {
+                  if (param.key) {
+                    xmlBuilder.push(`  <${param.key}>${param.value || param.defaultValue || ''}</${param.key}>`);
+                  }
+                });
+                xmlBuilder.push('</request>');
+                setRequestBody(xmlBuilder.join('\n'));
+              } else if (details.requestBody.sample) {
+                setRequestBody(details.requestBody.sample);
+              }
+            }
+            // Check if body type is JSON and build JSON
+            else if (details.requestBody && details.requestBody.bodyType === 'json') {
+              setRequestBodyType('raw');
+              setRawBodyType('json');
+              
+              if (bodyParams.length > 0) {
+                const jsonObject = {};
+                bodyParams.forEach(param => {
+                  if (param.key) {
+                    let value = param.value || param.defaultValue || param.example || '';
+                    // Try to parse numbers and booleans
+                    if (param.type === 'integer' || param.type === 'number') {
+                      const num = Number(value);
+                      if (!isNaN(num)) value = num;
+                    } else if (param.type === 'boolean') {
+                      value = value === 'true' || value === true;
+                    }
+                    jsonObject[param.key] = value;
+                  }
+                });
+                
+                if (Object.keys(jsonObject).length > 0) {
+                  setRequestBody(JSON.stringify(jsonObject, null, 2));
+                } else if (details.requestBody.sample) {
+                  setRequestBody(details.requestBody.sample);
+                }
+              }
+            }
+            // Handle other body types
+            else if (details.requestBody && details.requestBody.bodyType === 'form-data') {
+              setRequestBodyType('form-data');
+              if (bodyParams.length > 0) {
+                const formDataArray = bodyParams.map((param, index) => ({
+                  id: param.id || `form-${Date.now()}-${index}-${Math.random()}`,
+                  key: param.key || '',
+                  value: param.value || param.defaultValue || param.example || '',
+                  type: param.bodyFormat === 'file' ? 'file' : 'text',
+                  enabled: true,
+                  description: param.description || '',
+                  required: param.required || false
+                }));
+                setFormData(formDataArray);
+              }
+            }
+            else if (details.requestBody && details.requestBody.bodyType === 'x-www-form-urlencoded') {
+              setRequestBodyType('x-www-form-urlencoded');
+              if (bodyParams.length > 0) {
+                const urlEncodedArray = bodyParams.map((param, index) => ({
+                  id: param.id || `url-${Date.now()}-${index}-${Math.random()}`,
+                  key: param.key || '',
+                  value: param.value || param.defaultValue || param.example || '',
+                  description: param.description || '',
+                  enabled: true,
+                  required: param.required || false
+                }));
+                setUrlEncodedData(urlEncodedArray);
+              }
+            }
           }
         }
         
@@ -1826,6 +2042,110 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     }
   }
 }, [authToken, determineActiveTab, requestUrl, authType, authConfig, activeTab, requestBodyType, formData.length, urlEncodedData.length]);
+
+// Update the updatePathParam function to properly preserve query parameters
+const updatePathParam = (id, field, value) => {
+  console.log('🟢 updatePathParam called:', { id, field, value });
+  
+  // First update the state with the new value
+  setRequestPathParams(params => {
+    console.log('📦 Current path params before update:', params);
+    
+    const updatedParams = params.map(param => 
+      param.id === id ? { ...param, [field]: value } : param
+    );
+    
+    console.log('📦 Updated path params after update:', updatedParams);
+    
+    // Then update URL, but only for value changes
+    if (field === 'value') {
+      console.log('🔍 Field is "value", proceeding with URL update');
+      
+      // Find the updated param from the new array
+      const updatedParam = updatedParams.find(p => p.id === id);
+      console.log('🔍 Updated param found:', updatedParam);
+      
+      if (updatedParam && updatedParam.key) {
+        console.log('✅ Updated param has key, updating URL');
+        
+        // Update URL immediately for this specific parameter
+        setRequestUrl(prevUrl => {
+          console.log('🌐 Previous URL:', prevUrl);
+          if (!prevUrl) return prevUrl;
+          
+          // Extract query string if it exists
+          const [baseUrlWithoutQuery, existingQueryString] = prevUrl.split('?');
+          
+          // CRITICAL FIX: Use the stored template URL, not the current URL
+          // The template URL always has the placeholders
+          let templateUrlToUse = templateUrl || baseUrlWithoutQuery;
+          console.log('📋 Using stored template URL:', templateUrlToUse);
+          
+          // Now build the new URL by replacing placeholders with current values
+          let newBaseUrl = templateUrlToUse;
+          console.log('🏁 Starting to build new URL from template:', newBaseUrl);
+          
+          // Replace each placeholder with its current value
+          updatedParams.forEach((p) => {
+            if (p.key) {
+              const placeholder = `{${p.key}}`;
+              const replacementValue = p.value && p.value.trim() !== '' ? p.value : placeholder;
+              
+              if (newBaseUrl.includes(placeholder)) {
+                newBaseUrl = newBaseUrl.replace(new RegExp(placeholder, 'g'), replacementValue);
+                console.log(`  🔄 Replaced ${placeholder} with ${replacementValue}`);
+              } else {
+                // Try colon-style placeholder
+                const colonPlaceholder = `:${p.key}`;
+                if (newBaseUrl.includes(colonPlaceholder)) {
+                  newBaseUrl = newBaseUrl.replace(new RegExp(colonPlaceholder, 'g'), replacementValue);
+                  console.log(`  🔄 Replaced ${colonPlaceholder} with ${replacementValue}`);
+                } else {
+                  console.log(`  ⚠️ Placeholder ${placeholder} not found in URL`);
+                }
+              }
+            }
+          });
+          
+          // Build query string from current requestParams - include ALL enabled params
+          // even if they have empty values (to show as key=)
+          const queryParams = requestParams
+            .filter(p => p.enabled && p.key && p.key.trim() !== '')
+            .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value || '')}`)
+            .join('&');
+          
+          // Use existing query string if available, otherwise build from requestParams
+          // If both are empty, don't add any query string
+          let finalUrl = newBaseUrl;
+          
+          if (queryParams) {
+            finalUrl = `${newBaseUrl}?${queryParams}`;
+          } else if (existingQueryString && requestParams.length > 0) {
+            // If we have requestParams but they're all disabled/empty, still preserve the structure
+            // by building a query string with empty values
+            const emptyQueryParams = requestParams
+              .filter(p => p.enabled && p.key && p.key.trim() !== '')
+              .map(p => `${encodeURIComponent(p.key)}=`)
+              .join('&');
+            
+            if (emptyQueryParams) {
+              finalUrl = `${newBaseUrl}?${emptyQueryParams}`;
+            }
+          }
+          
+          console.log('✅ Final new URL with preserved query params:', finalUrl);
+          return finalUrl;
+        });
+      } else {
+        console.log('❌ Updated param missing key, skipping URL update');
+      }
+    } else {
+      console.log('⏭️ Field is not "value", skipping URL update');
+    }
+    
+    return updatedParams;
+  });
+};
 
 
 // Update the addNewRequest function to properly create a new request
@@ -4038,6 +4358,78 @@ const renderQueryParamsTab = () => {
             </div>
           );
 
+        case 'xml':
+        return (
+          <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
+            <div className="flex items-center justify-between px-3 py-2 border-b" style={{ 
+              backgroundColor: colors.tableHeader,
+              borderColor: colors.border
+            }}>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium" style={{ color: colors.text }}>XML</span>
+                <button 
+                  type="button"
+                  className="px-2 py-1 text-sm rounded hover:bg-opacity-50 transition-colors hover-lift" 
+                  style={{ 
+                    backgroundColor: colors.hover,
+                    color: colors.textSecondary
+                  }}
+                  onClick={() => {
+                    try {
+                      // Simple XML beautification (indentation)
+                      const formatted = requestBody
+                        .replace(/>\s*</g, '>\n<')
+                        .split('\n')
+                        .map((line, i) => {
+                          const indent = line.match(/<\/?[^>]+>/g) ? 
+                            (line.startsWith('</') ? -1 : 0) : 0;
+                          return '  '.repeat(Math.max(0, i + indent)) + line;
+                        })
+                        .join('\n');
+                      setRequestBody(formatted);
+                      showToast('XML beautified!', 'success');
+                    } catch (e) {
+                      showToast('Invalid XML format', 'error');
+                    }
+                  }}>
+                  Beautify
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs" style={{ color: colors.textSecondary }}>
+                  {requestBody.length} characters
+                </span>
+                <button 
+                  type="button"
+                  className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift" 
+                  style={{ backgroundColor: colors.hover }}
+                  onClick={() => {
+                    navigator.clipboard.writeText(requestBody);
+                    showToast('Copied to clipboard!', 'success');
+                  }}>
+                  <Copy size={13} style={{ color: colors.textSecondary }} />
+                </button>
+              </div>
+            </div>
+            <textarea
+              value={requestBody}
+              onChange={(e) => setRequestBody(e.target.value)}
+              className="w-full h-64 font-mono text-sm p-4 resize-none focus:outline-none hover-lift"
+              style={{
+                backgroundColor: colors.card,
+                color: colors.text,
+                lineHeight: '1.5'
+              }}
+              placeholder={`<?xml version="1.0" encoding="UTF-8"?>
+      <request>
+        <field1>value1</field1>
+        <field2>value2</field2>
+      </request>`}
+              spellCheck="false"
+            />
+          </div>
+        );
+      
         case 'binary':
           return (
             <div className="border rounded p-8 text-center" style={{ borderColor: colors.border }}>
@@ -4141,7 +4533,7 @@ const renderQueryParamsTab = () => {
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Body</h3>
           <div className="flex gap-2">
-            {['none', 'form-data', 'x-www-form-urlencoded', 'raw', 'binary', 'graphql'].map(type => (
+            {['none', 'form-data', 'x-www-form-urlencoded', 'raw', 'xml', 'binary', 'graphql'].map(type => (
               <button
                 key={type}
                 type="button"
