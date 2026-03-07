@@ -1,4 +1,4 @@
-// components/modals/ApiGenerationModal.js - UPDATED VERSION
+// components/modals/ApiGenerationModal.js - UPDATED VERSION WITH REQUIRED FIELDS
 import React, { useState, useEffect } from 'react';
 import { 
   X, Plus, Trash2, Save, Copy, Code, Globe, Lock, FileText, 
@@ -11,7 +11,7 @@ import {
   BellOff, ShieldOff, Clock as ClockIcon, BarChart, Cpu as CpuIcon,
   Server, Cloud, CloudOff, FileCode, BookOpen, FileKey, GitBranch,
   Folder, FolderOpen, FolderTree, Layers as LayersIcon, Archive,
-  Edit, Edit3
+  Edit, Edit3, Asterisk
 } from 'lucide-react';
 
 // Import the API Generation Engine controller functions
@@ -211,6 +211,18 @@ const API_DATA_TYPES = [
 
 // Parameter Modes for procedures/functions
 const PARAMETER_MODES = ['IN', 'OUT', 'IN OUT'];
+
+// Required fields configuration
+const REQUIRED_FIELDS = {
+  apiDetails: ['apiName', 'apiCode', 'endpointPath'],
+  collection: ['collectionId', 'folderId'],
+  schemaConfig: ['schemaName', 'objectName'],
+  authConfig: {
+    apiKey: ['apiKeyHeader', 'apiSecretHeader'],
+    bearer: ['jwtIssuer'],
+    basic: ['basicUsername', 'basicPassword']
+  }
+};
 
 // New component for the preview modal
 function ApiPreviewModal({ 
@@ -621,7 +633,7 @@ function ApiPreviewModal({
                           </div>
                           <div>
                             <span style={{ color: themeColors.textSecondary }}>Secret Header:</span>
-                            <span className="ml-1 font-mono" style={{ color: themeColors.text }}>
+                            <span className="ml-1 font-mono" style={{ color:themeColors.text }}>
                               {apiData.authConfig.apiSecretHeader || 'X-API-Secret'}
                             </span>
                           </div>
@@ -773,7 +785,7 @@ function ApiLoadingModal({
     text: theme === 'dark' ? '#E8ECF1' : '#1e293b',
     textSecondary: theme === 'dark' ? 'rgb(168 178 192)' : '#64748b',
     modalBg: theme === 'dark' ? '#010e23' : '#ffffff',
-    modalBorder: theme === 'dark' ? 'rgb(61 73 92' : '#e2e8f0',
+    modalBorder: theme === 'dark' ? 'rgb(61 73 92)' : '#e2e8f0',
     info: theme === 'dark' ? 'rgb(59 130 246)' : '#3b82f6',
     white: '#ffffff'
   };
@@ -861,7 +873,7 @@ function ApiConfirmationModal({
   if (showLoader) {
     return (
       <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50" style={{ zIndex: 1001 }}>
-        <div className="rounded-xl shadow-2xl w-4xl max-w-md p-6" style={{ 
+        <div className="rounded-xl shadow-2xl w-full max-w-md p-6" style={{ 
           backgroundColor: themeColors.bg,
           border: `1px solid ${themeColors.modalBorder}`
         }}>
@@ -1160,7 +1172,7 @@ function ApiConfirmationModal({
                           </div>
                           <div>
                             <h5 className="font-medium" style={{ color: themeColors.text }}>Postman Collection</h5>
-                            <p className="text-xs" style={{ color:themeColors.textSecondary }}>API Testing</p>
+                            <p className="text-xs" style={{ color: themeColors.textSecondary }}>API Testing</p>
                           </div>
                         </div>
                         <div className="text-xs font-mono p-2 rounded border" style={{ 
@@ -1300,8 +1312,9 @@ function AddFolderModal({
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+            <label className="text-xs font-medium flex items-center gap-1" style={{ color: themeColors.text }}>
               Folder Name *
+              <Asterisk className="h-3 w-3" style={{ color: themeColors.error }} />
             </label>
             <input
               type="text"
@@ -1310,12 +1323,17 @@ function AddFolderModal({
               className="w-full px-3 py-2 border rounded-lg text-sm hover-lift"
               style={{ 
                 backgroundColor: themeColors.card,
-                borderColor: themeColors.border,
+                borderColor: folderName.trim() ? themeColors.success : themeColors.border,
                 color: themeColors.text
               }}
               placeholder="e.g., Loan Origination"
               autoFocus
             />
+            {!folderName.trim() && (
+              <p className="text-xs mt-1" style={{ color: themeColors.error }}>
+                Folder name is required
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -1395,6 +1413,9 @@ export default function ApiGenerationModal({
   const [newCollectionDescription, setNewCollectionDescription] = useState('');
   const [newCollectionType, setNewCollectionType] = useState('core');
   const [showAddFolderModal, setShowAddFolderModal] = useState(false);
+
+  // Validation errors state
+  const [validationErrors, setValidationErrors] = useState({});
 
   const [apiDetails, setApiDetails] = useState({
     apiName: '',
@@ -1546,6 +1567,83 @@ export default function ApiGenerationModal({
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const [newApiData, setNewApiData] = useState(null);
   const [apiResponse, setApiResponse] = useState(null);
+
+  // Validation function
+  const validateRequiredFields = () => {
+    const errors = {};
+
+    // Check collection and folder
+    if (!selectedCollection) {
+      errors.collection = 'API Collection is required';
+    }
+    if (!selectedFolder) {
+      errors.folder = 'API Folder is required';
+    }
+
+    // Check API details
+    if (!apiDetails.apiName?.trim()) {
+      errors.apiName = 'API Name is required';
+    }
+    if (!apiDetails.apiCode?.trim()) {
+      errors.apiCode = 'API Code is required';
+    }
+    if (!apiDetails.endpointPath?.trim()) {
+      errors.endpointPath = 'Endpoint Path is required';
+    } else if (!apiDetails.endpointPath.startsWith('/')) {
+      errors.endpointPath = 'Endpoint Path must start with /';
+    }
+
+    // For new APIs (not editing), check schema config
+    if (!isEditing) {
+      if (!schemaConfig.schemaName?.trim()) {
+        errors.schemaName = 'Schema Name is required';
+      }
+      if (!schemaConfig.objectName?.trim()) {
+        errors.objectName = 'Object Name is required';
+      }
+    }
+
+    // Check authentication specific required fields
+    if (authConfig.authType === 'apiKey') {
+      if (!authConfig.apiKeyHeader?.trim()) {
+        errors.apiKeyHeader = 'API Key Header is required';
+      }
+      if (!authConfig.apiSecretHeader?.trim()) {
+        errors.apiSecretHeader = 'API Secret Header is required';
+      }
+    } else if (authConfig.authType === 'bearer') {
+      if (!authConfig.jwtIssuer?.trim()) {
+        errors.jwtIssuer = 'JWT Issuer is required';
+      }
+    } else if (authConfig.authType === 'basic') {
+      if (!authConfig.basicUsername?.trim()) {
+        errors.basicUsername = 'Username is required';
+      }
+      if (!authConfig.basicPassword?.trim()) {
+        errors.basicPassword = 'Password is required';
+      }
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Helper function to check if a field is required
+  const isFieldRequired = (fieldName) => {
+    if (REQUIRED_FIELDS.apiDetails.includes(fieldName)) {
+      return true;
+    }
+    if (authConfig.authType === 'apiKey' && REQUIRED_FIELDS.authConfig.apiKey.includes(fieldName)) {
+      return true;
+    }
+    if (authConfig.authType === 'bearer' && REQUIRED_FIELDS.authConfig.bearer.includes(fieldName)) {
+      return true;
+    }
+    if (authConfig.authType === 'basic' && REQUIRED_FIELDS.authConfig.basic.includes(fieldName)) {
+      return true;
+    }
+    return false;
+  };
 
   // Helper function to filter parameters to only show IN parameters
   const getInParameters = () => {
@@ -2172,7 +2270,7 @@ export default function ApiGenerationModal({
         // Generate sample response based on mappings
         if (newMappings.length > 0) {
           const sampleData = {};
-          newMappings.slice(0, 50).forEach(mapping => {
+          newMappings.slice(0, 5).forEach(mapping => {
             if (mapping.apiType === 'integer') {
               sampleData[mapping.apiField] = 123;
             } else if (mapping.apiType === 'string') {
@@ -2247,6 +2345,8 @@ export default function ApiGenerationModal({
       setSelectedFolder(null);
       setIsAddingNewCollection(false);
     }
+    // Clear validation error for collection
+    setValidationErrors(prev => ({ ...prev, collection: null }));
   };
 
   // Handle folder selection
@@ -2260,6 +2360,8 @@ export default function ApiGenerationModal({
     } else {
       const folder = folders.find(f => f.id === folderId);
       setSelectedFolder(folder);
+      // Clear validation error for folder
+      setValidationErrors(prev => ({ ...prev, folder: null }));
     }
   };
 
@@ -2283,6 +2385,8 @@ export default function ApiGenerationModal({
     setNewCollectionName('');
     setNewCollectionDescription('');
     setNewCollectionType('core');
+    // Clear validation error for collection
+    setValidationErrors(prev => ({ ...prev, collection: null }));
   };
 
   // Handle adding new folder
@@ -2308,26 +2412,38 @@ export default function ApiGenerationModal({
     
     setSelectedFolder(newFolder);
     setShowAddFolderModal(false);
+    // Clear validation error for folder
+    setValidationErrors(prev => ({ ...prev, folder: null }));
   };
 
-  // Handle API details changes
+  // Handle API details changes with validation
   const handleApiDetailChange = (field, value) => {
     setApiDetails(prev => ({ ...prev, [field]: value }));
+    
+    // Clear validation error for this field
+    setValidationErrors(prev => ({ ...prev, [field]: null }));
     
     // Check code availability when API code changes (only for new APIs)
     if (field === 'apiCode' && value.length >= 3 && !isEditing) {
       checkCodeAvailability(value).then(available => {
         if (!available) {
           console.warn(`API code ${value} is not available`);
+          setValidationErrors(prev => ({ 
+            ...prev, 
+            apiCode: `API code "${value}" is not available` 
+          }));
         }
       });
     }
   };
 
-  // Handle schema configuration
+  // Handle schema configuration with validation
   const handleSchemaConfigChange = (field, value) => {
     const updatedConfig = { ...schemaConfig, [field]: value };
     setSchemaConfig(updatedConfig);
+    
+    // Clear validation error for this field
+    setValidationErrors(prev => ({ ...prev, [field]: null }));
   };
 
   // Handle parameter operations
@@ -2423,9 +2539,12 @@ export default function ApiGenerationModal({
     setHeaders(headers.filter(header => header.id !== id));
   };
 
-  // Handle auth configuration changes
+  // Handle auth configuration changes with validation
   const handleAuthConfigChange = (field, value) => {
     setAuthConfig(prev => ({ ...prev, [field]: value }));
+    
+    // Clear validation error for this field
+    setValidationErrors(prev => ({ ...prev, [field]: null }));
   };
 
   // Handle request body configuration
@@ -3116,14 +3235,21 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
   // Handle save - show preview first
   const handleSave = () => {
-    // Validate collection and folder are selected
-    if (!selectedCollection) {
-      alert('Please select a collection');
-      return;
-    }
-    
-    if (!selectedFolder) {
-      alert('Please select a folder');
+    // Validate all required fields
+    if (!validateRequiredFields()) {
+      // Show first tab with errors
+      if (validationErrors.collection || validationErrors.folder) {
+        setActiveTab('definition');
+      } else if (validationErrors.apiName || validationErrors.apiCode || validationErrors.endpointPath) {
+        setActiveTab('definition');
+      } else if (!isEditing && (validationErrors.schemaName || validationErrors.objectName)) {
+        setActiveTab('schema');
+      } else if (authConfig.authType !== 'none') {
+        setActiveTab('auth');
+      }
+      
+      // Show error message
+      alert('Please fill in all required fields marked with *');
       return;
     }
 
@@ -3439,6 +3565,39 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
     { id: 'preview', label: 'Preview', icon: <Eye className="h-4 w-4" /> },
   ];
 
+  // Render input field with required indicator
+  const renderRequiredInput = (field, label, value, onChange, placeholder, type = 'text', disabled = false) => {
+    const isRequired = isFieldRequired(field);
+    const hasError = validationErrors[field];
+    
+    return (
+      <div className="space-y-2">
+        <label className="text-xs font-medium flex items-center gap-1" style={{ color: themeColors.text }}>
+          {label}
+          {isRequired && <Asterisk className="h-3 w-3" style={{ color: themeColors.error }} />}
+        </label>
+        <input
+          type={type}
+          value={value}
+          onChange={(e) => onChange(field, e.target.value)}
+          className={`w-full px-3 py-2 border rounded-lg text-xs hover-lift ${hasError ? 'border-red-500' : ''}`}
+          style={{ 
+            backgroundColor: themeColors.card,
+            borderColor: hasError ? themeColors.error : (value && isRequired ? themeColors.success : themeColors.border),
+            color: themeColors.text
+          }}
+          placeholder={placeholder}
+          disabled={disabled || loading || validating}
+        />
+        {hasError && (
+          <p className="text-xs mt-1" style={{ color: themeColors.error }}>
+            {hasError}
+          </p>
+        )}
+      </div>
+    );
+  };
+
   return (
     <>
       <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4" style={{ zIndex: 1000 }}>
@@ -3526,15 +3685,16 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                 <label className="text-xs font-medium flex items-center gap-1" style={{ color: themeColors.text }}>
                   <Layers className="h-4 w-4" />
                   API Collection *
+                  <Asterisk className="h-3 w-3" style={{ color: themeColors.error }} />
                 </label>
                 <div className="flex gap-2">
                   <select
                     value={selectedCollection?.id || ''}
                     onChange={(e) => handleCollectionChange(e.target.value)}
-                    className="flex-1 px-3 py-2 border rounded-lg text-xs hover-lift"
+                    className={`flex-1 px-3 py-2 border rounded-lg text-xs hover-lift ${validationErrors.collection ? 'border-red-500' : ''}`}
                     style={{ 
                       backgroundColor: themeColors.bg,
-                      borderColor: themeColors.border,
+                      borderColor: validationErrors.collection ? themeColors.error : (selectedCollection ? themeColors.success : themeColors.border),
                       color: themeColors.text
                     }}
                   >
@@ -3562,6 +3722,11 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                     </button>
                   )}
                 </div>
+                {validationErrors.collection && (
+                  <p className="text-xs mt-1" style={{ color: themeColors.error }}>
+                    {validationErrors.collection}
+                  </p>
+                )}
 
                 {/* New Collection Input */}
                 {isAddingNewCollection && (
@@ -3570,8 +3735,9 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                     backgroundColor: themeColors.success + '10'
                   }}>
                     <div className="space-y-2">
-                      <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                      <label className="text-xs font-medium flex items-center gap-1" style={{ color: themeColors.text }}>
                         Collection Name *
+                        <Asterisk className="h-3 w-3" style={{ color: themeColors.error }} />
                       </label>
                       <input
                         type="text"
@@ -3580,7 +3746,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                         className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
                         style={{ 
                           backgroundColor: themeColors.card,
-                          borderColor: themeColors.border,
+                          borderColor: newCollectionName.trim() ? themeColors.success : themeColors.border,
                           color: themeColors.text
                         }}
                         placeholder="e.g., Core Banking API Collection"
@@ -3652,15 +3818,16 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                 <label className="text-xs font-medium flex items-center gap-1" style={{ color: themeColors.text }}>
                   <Folder className="h-4 w-4" />
                   API Folder *
+                  <Asterisk className="h-3 w-3" style={{ color: themeColors.error }} />
                 </label>
                 <div className="flex gap-2">
                   <select
                     value={selectedFolder?.id || ''}
                     onChange={(e) => handleFolderChange(e.target.value)}
-                    className="flex-1 px-3 py-2 border rounded-lg text-xs hover-lift"
+                    className={`flex-1 px-3 py-2 border rounded-lg text-xs hover-lift ${validationErrors.folder ? 'border-red-500' : ''}`}
                     style={{ 
                       backgroundColor: themeColors.bg,
-                      borderColor: themeColors.border,
+                      borderColor: validationErrors.folder ? themeColors.error : (selectedFolder ? themeColors.success : themeColors.border),
                       color: themeColors.text
                     }}
                     disabled={!selectedCollection && !isAddingNewCollection}
@@ -3691,6 +3858,11 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                     </button>
                   )}
                 </div>
+                {validationErrors.folder && (
+                  <p className="text-xs mt-1" style={{ color: themeColors.error }}>
+                    {validationErrors.folder}
+                  </p>
+                )}
 
                 {/* Selected Collection Info */}
                 {selectedCollection && !isAddingNewCollection && (
@@ -3717,43 +3889,23 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
             backgroundColor: themeColors.modalBg
           }}>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="space-y-2">
-                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                  API Name *
-                </label>
-                <input
-                  type="text"
-                  value={apiDetails.apiName}
-                  onChange={(e) => handleApiDetailChange('apiName', e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                  style={{ 
-                    backgroundColor: themeColors.card,
-                    borderColor: themeColors.border,
-                    color: themeColors.text
-                  }}
-                  placeholder="Users API"
-                  disabled={loading || validating}
-                />
-              </div>
+              {renderRequiredInput(
+                'apiName',
+                'API Name',
+                apiDetails.apiName,
+                (field, value) => handleApiDetailChange(field, value),
+                'Users API'
+              )}
 
-              <div className="space-y-2">
-                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                  API Code *
-                </label>
-                <input
-                  type="text"
-                  value={apiDetails.apiCode}
-                  onChange={(e) => handleApiDetailChange('apiCode', e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                  style={{ 
-                    backgroundColor: themeColors.card,
-                    borderColor: themeColors.border,
-                    color: themeColors.text
-                  }}
-                  placeholder="GET_USERS"
-                  disabled={loading || validating || isEditing} // Disable code editing when editing
-                />
-              </div>
+              {renderRequiredInput(
+                'apiCode',
+                'API Code',
+                apiDetails.apiCode,
+                (field, value) => handleApiDetailChange(field, value),
+                'GET_USERS',
+                'text',
+                isEditing // Disable code editing when editing
+              )}
 
               <div className="space-y-2">
                 <label className="text-xs font-medium" style={{ color: themeColors.text }}>
@@ -3817,24 +3969,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                 />
               </div>
 
-              <div className="space-y-2">
-                <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                  Endpoint Path *
-                </label>
-                <input
-                  type="text"
-                  value={apiDetails.endpointPath}
-                  onChange={(e) => handleApiDetailChange('endpointPath', e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                  style={{ 
-                    backgroundColor: themeColors.card,
-                    borderColor: themeColors.border,
-                    color: themeColors.text
-                  }}
-                  placeholder="/users"
-                  disabled={loading || validating}
-                />
-              </div>
+              {renderRequiredInput(
+                'endpointPath',
+                'Endpoint Path',
+                apiDetails.endpointPath,
+                (field, value) => handleApiDetailChange(field, value),
+                '/users'
+              )}
 
               <div className="space-y-2">
                 <label className="text-xs font-medium" style={{ color: themeColors.text }}>
@@ -4229,23 +4370,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-4">
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Schema Name *
-                          </label>
-                          <input
-                            type="text"
-                            value={schemaConfig.schemaName}
-                            onChange={(e) => handleSchemaConfigChange('schemaName', e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.card,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                            placeholder="HR"
-                          />
-                        </div>
+                        {renderRequiredInput(
+                          'schemaName',
+                          'Schema Name',
+                          schemaConfig.schemaName,
+                          handleSchemaConfigChange,
+                          'HR'
+                        )}
 
                         <div className="space-y-2">
                           <label className="text-xs font-medium" style={{ color: themeColors.text }}>
@@ -4273,23 +4404,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                           </select>
                         </div>
 
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Object Name *
-                          </label>
-                          <input
-                            type="text"
-                            value={schemaConfig.objectName}
-                            onChange={(e) => handleSchemaConfigChange('objectName', e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.card,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                            placeholder="EMPLOYEES"
-                          />
-                        </div>
+                        {renderRequiredInput(
+                          'objectName',
+                          'Object Name',
+                          schemaConfig.objectName,
+                          handleSchemaConfigChange,
+                          'EMPLOYEES'
+                        )}
 
                         <div className="space-y-2">
                           <label className="text-xs font-medium" style={{ color: themeColors.text }}>
@@ -4916,23 +5037,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                         </h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div className="space-y-4">
-                            <div className="space-y-2">
-                              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                                API Key Header *
-                              </label>
-                              <input
-                                type="text"
-                                value={authConfig.apiKeyHeader}
-                                onChange={(e) => handleAuthConfigChange('apiKeyHeader', e.target.value)}
-                                className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                                style={{ 
-                                  backgroundColor: themeColors.card,
-                                  borderColor: themeColors.border,
-                                  color: themeColors.text
-                                }}
-                                placeholder="X-API-Key"
-                              />
-                            </div>
+                            {renderRequiredInput(
+                              'apiKeyHeader',
+                              'API Key Header',
+                              authConfig.apiKeyHeader,
+                              handleAuthConfigChange,
+                              'X-API-Key'
+                            )}
                             <div className="space-y-2">
                               <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                                 API Key Value (for testing)
@@ -4955,23 +5066,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             </div>
                           </div>
                           <div className="space-y-4">
-                            <div className="space-y-2">
-                              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                                API Secret Header *
-                              </label>
-                              <input
-                                type="text"
-                                value={authConfig.apiSecretHeader}
-                                onChange={(e) => handleAuthConfigChange('apiSecretHeader', e.target.value)}
-                                className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                                style={{ 
-                                  backgroundColor: themeColors.card,
-                                  borderColor: themeColors.border,
-                                  color: themeColors.text
-                                }}
-                                placeholder="X-API-Secret"
-                              />
-                            </div>
+                            {renderRequiredInput(
+                              'apiSecretHeader',
+                              'API Secret Header',
+                              authConfig.apiSecretHeader,
+                              handleAuthConfigChange,
+                              'X-API-Secret'
+                            )}
                             <div className="space-y-2">
                               <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                                 API Secret Value (for testing)
@@ -5028,23 +5129,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             </div>
                           </div>
                           <div className="space-y-4">
-                            <div className="space-y-2">
-                              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                                JWT Issuer
-                              </label>
-                              <input
-                                type="text"
-                                value={authConfig.jwtIssuer}
-                                onChange={(e) => handleAuthConfigChange('jwtIssuer', e.target.value)}
-                                className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                                style={{ 
-                                  backgroundColor: themeColors.card,
-                                  borderColor: themeColors.border,
-                                  color: themeColors.text
-                                }}
-                                placeholder="api.example.com"
-                              />
-                            </div>
+                            {renderRequiredInput(
+                              'jwtIssuer',
+                              'JWT Issuer',
+                              authConfig.jwtIssuer,
+                              handleAuthConfigChange,
+                              'api.example.com'
+                            )}
                             <div className="text-xs p-3 rounded" style={{ backgroundColor: themeColors.hover }}>
                               <p style={{ color: themeColors.textSecondary }}>
                                 <strong>Header format:</strong> Authorization: Bearer {'{token}'}
@@ -5067,42 +5158,23 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                         </h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div className="space-y-4">
-                            <div className="space-y-2">
-                              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                                Username (for testing)
-                              </label>
-                              <input
-                                type="text"
-                                value={authConfig.basicUsername}
-                                onChange={(e) => handleAuthConfigChange('basicUsername', e.target.value)}
-                                className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                                style={{ 
-                                  backgroundColor: themeColors.card,
-                                  borderColor: themeColors.border,
-                                  color: themeColors.text
-                                }}
-                                placeholder="username"
-                              />
-                            </div>
+                            {renderRequiredInput(
+                              'basicUsername',
+                              'Username',
+                              authConfig.basicUsername,
+                              handleAuthConfigChange,
+                              'username'
+                            )}
                           </div>
                           <div className="space-y-4">
-                            <div className="space-y-2">
-                              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                                Password (for testing)
-                              </label>
-                              <input
-                                type="password"
-                                value={authConfig.basicPassword}
-                                onChange={(e) => handleAuthConfigChange('basicPassword', e.target.value)}
-                                className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                                style={{ 
-                                  backgroundColor: themeColors.card,
-                                  borderColor: themeColors.border,
-                                  color: themeColors.text
-                                }}
-                                placeholder="••••••••"
-                              />
-                            </div>
+                            {renderRequiredInput(
+                              'basicPassword',
+                              'Password',
+                              authConfig.basicPassword,
+                              handleAuthConfigChange,
+                              '••••••••',
+                              'password'
+                            )}
                           </div>
                         </div>
                         <div className="mt-4 p-3 rounded" style={{ backgroundColor: themeColors.hover }}>
@@ -6229,6 +6301,12 @@ WHERE ROWNUM <= 100;` : ''}`}
               <span className="text-xs block mt-1" style={{ color: themeColors.info }}>
                 IN Parameters: {getInParameters().length} | Response Fields: {getOutMappings().length}
               </span>
+              {Object.keys(validationErrors).length > 0 && (
+                <span className="text-xs block mt-1" style={{ color: themeColors.error }}>
+                  <AlertCircle className="h-3 w-3 inline mr-1" />
+                  {Object.keys(validationErrors).length} required field(s) missing
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-3">
               <button
