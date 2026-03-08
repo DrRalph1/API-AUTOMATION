@@ -156,12 +156,19 @@ public class DashboardService {
                         dto.setDescription(request.getDescription());
                         dto.setCollectionId(collection.getId());
                         dto.setCollectionName(collection.getName());
-                        dto.setFolderId(folder.getId());
-                        dto.setFolderName(folder.getName());
+                        dto.setFolderId(folder.getId()); // Make sure this is set
+                        dto.setFolderName(folder.getName()); // Make sure this is set
                         dto.setLastUpdated(request.getLastModified());
 
                         // Calculate time ago
                         dto.setTimeAgo(calculateTimeAgo(request.getLastModified()));
+
+                        // Set collectionInfo for easier access in UI
+                        Map<String, Object> collectionInfo = new HashMap<>();
+                        collectionInfo.put("collectionId", collection.getId());
+                        collectionInfo.put("collectionName", collection.getName());
+                        collectionInfo.put("folderId", folder.getId());
+                        collectionInfo.put("folderName", folder.getName());
 
                         // Get detailed request information from CollectionsService
                         try {
@@ -182,6 +189,8 @@ public class DashboardService {
                                     parameters.add(paramMap);
                                 }
                                 dto.setParameters(parameters);
+                            } else {
+                                dto.setParameters(new ArrayList<>());
                             }
 
                             // Set response mappings
@@ -198,11 +207,15 @@ public class DashboardService {
                                     responseMappings.add(mappingMap);
                                 }
                                 dto.setResponseMappings(responseMappings);
+                            } else {
+                                dto.setResponseMappings(new ArrayList<>());
                             }
 
                             // Set tags
                             if (request.getTags() != null) {
                                 dto.setTags(new ArrayList<>(Collections.singleton(request.getTags())));
+                            } else {
+                                dto.setTags(new ArrayList<>());
                             }
 
                             // Set status (default to "active" if not specified)
@@ -214,8 +227,12 @@ public class DashboardService {
                             // Set owner
                             dto.setOwner(collection.getOwner() != null ? collection.getOwner() : "System");
 
+                            // Set API code if available
+                            if (requestDetails.getApiCode() != null) {
+                                dto.setApiCode(requestDetails.getApiCode());
+                            }
+
                             // Set mock data for calls, latency, success rate, errors, avgResponseTime
-                            // These would ideally come from monitoring/analytics service
                             dto.setCalls(generateRandomCalls(request.getId()));
                             dto.setLatency("42ms");
                             dto.setSuccessRate("98.5%");

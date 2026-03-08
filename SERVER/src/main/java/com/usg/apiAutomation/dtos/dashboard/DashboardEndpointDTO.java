@@ -25,6 +25,7 @@ public class DashboardEndpointDTO {
     private String folderName;
     private String lastUpdated;
     private String timeAgo;
+    private String apiCode;
     private List<Map<String, Object>> parameters;
     private List<Map<String, Object>> responseMappings;
     private List<String> tags;

@@ -1772,6 +1772,8 @@ export default function ApiGenerationModal({
       return;
     }
 
+    console.log("selectedObject:::::::" + JSON.stringify(selectedObject));
+
     setLoading(true);
     console.log('🔍 ApiGenerationModal - Initializing with selected object:', {
       name: selectedObject.name,
@@ -2131,24 +2133,44 @@ export default function ApiGenerationModal({
         // COLLECTION & FOLDER INFO
         if (selectedObject.collectionInfo) {
           console.log('📁 Loading collection info:', selectedObject.collectionInfo);
-          const collectionId = selectedObject.collectionInfo.collectionId || 
-                              selectedObject.collectionInfo.id;
-          const folderId = selectedObject.collectionInfo.folderId;
+          const collectionId = selectedObject.collectionInfo.collectionId;
+          const folderName = selectedObject.collectionInfo.folderName;
           
           if (collectionId) {
-            const collection = collections.find(c => c.id === collectionId) || 
-                             collections.find(c => c.name === selectedObject.collectionInfo.collectionName);
+            // Find the collection by ID
+            const collection = collections.find(c => c.id === collectionId);
             if (collection) {
               setSelectedCollection(collection);
-              setFolders(collection.folders || []);
               
-              if (folderId) {
-                const folder = collection.folders?.find(f => f.id === folderId) ||
-                             collection.folders?.find(f => f.name === selectedObject.collectionInfo.folderName);
-                if (folder) {
-                  setSelectedFolder(folder);
+              // Get folders for this collection - this depends on how your collections are structured
+              // If folders are stored separately or in a different format, you might need to:
+              
+              // Option 1: If folders are part of the collection object
+              if (collection.folders && Array.isArray(collection.folders)) {
+                setFolders(collection.folders);
+                
+                // If we have a folder name, find the folder in the collection's folders array
+                if (folderName && collection.folders.length > 0) {
+                  const folder = collection.folders.find(f => 
+                    f.name === folderName || f.folderName === folderName
+                  );
+                  if (folder) {
+                    console.log('📁 Found folder:', folder);
+                    setSelectedFolder(folder);
+                  } else {
+                    console.log('📁 Folder not found in collection.folders:', folderName);
+                  }
                 }
+              } 
+              // Option 2: If folders are stored in a separate state/context
+              else {
+                // You might need to fetch folders for this collection
+                console.log('📁 Collection has no folders array, folders may need to be loaded separately');
+                // If you have a function to load folders by collection ID, call it here
+                // loadFoldersForCollection(collectionId);
               }
+            } else {
+              console.log('📁 Collection not found with ID:', collectionId);
             }
           }
         } else if (selectedObject.collectionName) {
@@ -2157,12 +2179,19 @@ export default function ApiGenerationModal({
           const collection = collections.find(c => c.name === selectedObject.collectionName);
           if (collection) {
             setSelectedCollection(collection);
-            setFolders(collection.folders || []);
             
-            if (selectedObject.folderName) {
-              const folder = collection.folders?.find(f => f.name === selectedObject.folderName);
-              if (folder) {
-                setSelectedFolder(folder);
+            // Handle folders for legacy format
+            if (collection.folders && Array.isArray(collection.folders)) {
+              setFolders(collection.folders);
+              
+              if (selectedObject.folderName) {
+                const folder = collection.folders.find(f => 
+                  f.name === selectedObject.folderName || f.folderName === selectedObject.folderName
+                );
+                if (folder) {
+                  console.log('📁 Found folder in legacy format:', folder);
+                  setSelectedFolder(folder);
+                }
               }
             }
           }
