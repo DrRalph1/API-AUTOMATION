@@ -1212,295 +1212,302 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     }
   }, [authToken, selectedCollection, selectedRequest, fetchEndpointDetails]);
 
-  // Load endpoint details - FIXED VERSION with parameter grouping
   // Load endpoint details - FIXED VERSION with proper header handling
-const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
-  console.log(`📡 [Documentation] Fetching details for endpoint ${endpointId}`);
-  
-  if (!authToken || !collectionId || !endpointId) {
-    console.log('Missing params for fetchEndpointDetails');
-    return;
-  }
+  const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
+    console.log(`📡 [Documentation] Fetching details for endpoint ${endpointId}`);
+    
+    if (!authToken || !collectionId || !endpointId) {
+      console.log('Missing params for fetchEndpointDetails');
+      return;
+    }
 
-  try {
-    setIsLoading(prev => ({ ...prev, endpointDetails: true }));
-    const response = await getEndpointDetails(authToken, collectionId, endpointId);
-    console.log('📦 [Documentation] Raw endpoint details response:', response);
-    
-    // Handle the response properly
-    const handledResponse = handleDocumentationResponse(response);
-    console.log('🔄 [Documentation] Handled response:', handledResponse);
-    
-    // Extract the endpoint details from the response structure
-    let endpointData = null;
-    
-    if (handledResponse && handledResponse.data) {
-      endpointData = handledResponse.data;
-      console.log('📊 [Documentation] Found endpoint data in response.data');
-    } else if (handledResponse && handledResponse.endpoint) {
-      endpointData = handledResponse.endpoint;
-    } else if (handledResponse && typeof handledResponse === 'object') {
-      endpointData = handledResponse;
-    }
-    
-    console.log('📊 [Documentation] Extracted endpoint data:', endpointData);
-    
-    if (endpointData) {
-      // Group parameters by location
-      const pathParams = [];
-      const queryParams = [];
-      const headerParams = []; // These will go to Headers tab
-      const bodyParams = [];
+    try {
+      setIsLoading(prev => ({ ...prev, endpointDetails: true }));
+      const response = await getEndpointDetails(authToken, collectionId, endpointId);
+      console.log('📦 [Documentation] Raw endpoint details response:', response);
       
-      // Collect all headers to display (both from headers array and header parameters)
-      const allHeaders = [];
+      // Handle the response properly
+      const handledResponse = handleDocumentationResponse(response);
+      console.log('🔄 [Documentation] Handled response:', handledResponse);
       
-      // Process each parameter based on parameterLocation
-      if (endpointData.parameters && Array.isArray(endpointData.parameters)) {
-        endpointData.parameters.forEach(param => {
-          // Determine parameter location
-          const location = param.parameterLocation?.toLowerCase() || param.in?.toLowerCase() || 'query';
-          
-          const formattedParam = {
-            ...param,
-            id: param.id || param.name,
-            name: param.name || param.key || '',
-            key: param.key || param.name || '',
-            type: param.type || param.parameterType || param.apiType || 'string',
-            required: param.required || false,
-            requiredBadge: param.required ? 'Required' : 'Optional',
-            description: param.description || '',
-            defaultValue: param.defaultValue || '',
-            example: param.example || '',
-            format: param.format || null,
-            validationPattern: param.validationPattern || '',
-            position: param.position || 0,
-            in: location
-          };
-          
-          // Group by location
-          if (location === 'path') {
-            pathParams.push(formattedParam);
-          } else if (location === 'query') {
-            queryParams.push(formattedParam);
-          } else if (location === 'header') {
-            // These are header parameters - add to headerParams and also to allHeaders for display
-            headerParams.push(formattedParam);
-            allHeaders.push({
-              key: formattedParam.key,
-              value: formattedParam.example || formattedParam.defaultValue || '',
-              description: formattedParam.description,
-              required: formattedParam.required,
-              type: formattedParam.type,
-              source: 'parameter'
-            });
-          } else if (location === 'body') {
-            bodyParams.push(formattedParam);
-          } else {
-            // Default to query if location unknown
-            queryParams.push(formattedParam);
-          }
-        });
+      // Extract the endpoint details from the response structure
+      let endpointData = null;
+      
+      if (handledResponse && handledResponse.data) {
+        endpointData = handledResponse.data;
+        console.log('📊 [Documentation] Found endpoint data in response.data');
+      } else if (handledResponse && handledResponse.endpoint) {
+        endpointData = handledResponse.endpoint;
+      } else if (handledResponse && typeof handledResponse === 'object') {
+        endpointData = handledResponse;
       }
       
-      // Process headers from the headers array (regular HTTP headers)
-      if (endpointData.headers && Array.isArray(endpointData.headers)) {
-        endpointData.headers.forEach(header => {
-          allHeaders.push({
-            key: header.key,
-            value: header.value || '',
-            description: header.description || '',
-            required: header.required || false,
-            type: header.type || 'string',
-            source: 'header'
+      console.log('📊 [Documentation] Extracted endpoint data:', endpointData);
+      
+      if (endpointData) {
+        // Group parameters by location
+        const pathParams = [];
+        const queryParams = [];
+        const headerParams = []; // These will go to Headers tab
+        const bodyParams = [];
+        
+        // Collect all headers to display (both from headers array and header parameters)
+        const allHeaders = [];
+        
+        // Process each parameter based on parameterLocation
+        if (endpointData.parameters && Array.isArray(endpointData.parameters)) {
+          endpointData.parameters.forEach(param => {
+            // Determine parameter location
+            const location = param.parameterLocation?.toLowerCase() || param.in?.toLowerCase() || 'query';
+            
+            const formattedParam = {
+              ...param,
+              id: param.id || param.name,
+              name: param.name || param.key || '',
+              key: param.key || param.name || '',
+              type: param.type || param.parameterType || param.apiType || 'string',
+              required: param.required || false,
+              requiredBadge: param.required ? 'Required' : 'Optional',
+              description: param.description || '',
+              defaultValue: param.defaultValue || '',
+              example: param.example || '',
+              format: param.format || null,
+              validationPattern: param.validationPattern || '',
+              position: param.position || 0,
+              in: location
+            };
+            
+            // Group by location
+            if (location === 'path') {
+              pathParams.push(formattedParam);
+            } else if (location === 'query') {
+              queryParams.push(formattedParam);
+            } else if (location === 'header') {
+              // These are header parameters - add to headerParams and also to allHeaders for display
+              headerParams.push(formattedParam);
+              allHeaders.push({
+                key: formattedParam.key,
+                value: formattedParam.example || formattedParam.defaultValue || '',
+                description: formattedParam.description,
+                required: formattedParam.required,
+                type: formattedParam.type,
+                source: 'parameter'
+              });
+            } else if (location === 'body') {
+              bodyParams.push(formattedParam);
+            } else {
+              // Default to query if location unknown
+              queryParams.push(formattedParam);
+            }
           });
+        }
+        
+        // Process headers from the headers array (regular HTTP headers)
+        if (endpointData.headers && Array.isArray(endpointData.headers)) {
+          endpointData.headers.forEach(header => {
+            allHeaders.push({
+              key: header.key,
+              value: header.value || '',
+              description: header.description || '',
+              required: header.required || false,
+              type: header.type || 'string',
+              source: 'header'
+            });
+          });
+        }
+        
+        // ============== FIXED: Process auth config and add to headers ==============
+        // Get auth config from endpoint data
+        const authConfigFromEndpoint = endpointData.authConfig || endpointData.auth || {};
+        
+        if (authConfigFromEndpoint && Object.keys(authConfigFromEndpoint).length > 0) {
+          console.log('🔐 Processing auth config from endpoint:', authConfigFromEndpoint);
+          
+          const authType = authConfigFromEndpoint.type || authConfigFromEndpoint.authType || 'noauth';
+          
+          if (authType === 'apikey') {
+            // Handle API Key auth - add to headers
+            const key = authConfigFromEndpoint.key || 
+                      authConfigFromEndpoint.apiKey || 
+                      authConfigFromEndpoint.apiKeyHeader || '';
+            const value = authConfigFromEndpoint.value || 
+                        authConfigFromEndpoint.apiSecret || 
+                        authConfigFromEndpoint.apiKeyValue || 
+                        authConfigFromEndpoint.secret || '';
+            
+            if (key && value) {
+              allHeaders.push({
+                key: key,
+                value: value,
+                description: 'API Key authentication',
+                required: true,
+                type: 'string',
+                source: 'auth'
+              });
+              console.log(`🔐 Added API Key header: ${key}`);
+            }
+            
+            // Check for API Secret separately if it exists (different field names)
+            if (authConfigFromEndpoint.apiSecretHeader && authConfigFromEndpoint.apiSecretValue) {
+              allHeaders.push({
+                key: authConfigFromEndpoint.apiSecretHeader,
+                value: authConfigFromEndpoint.apiSecretValue,
+                description: 'API Secret authentication',
+                required: true,
+                type: 'string',
+                source: 'auth'
+              });
+              console.log(`🔐 Added API Secret header: ${authConfigFromEndpoint.apiSecretHeader}`);
+            }
+          } 
+          else if (authType === 'bearer') {
+            const token = authConfigFromEndpoint.token || authConfigFromEndpoint.bearerToken || '';
+            const tokenType = authConfigFromEndpoint.tokenType || 'Bearer';
+            if (token) {
+              allHeaders.push({
+                key: 'Authorization',
+                value: `${tokenType} ${token}`,
+                description: 'Bearer token authentication',
+                required: true,
+                type: 'string',
+                source: 'auth'
+              });
+            }
+          }
+          else if (authType === 'basic') {
+            const username = authConfigFromEndpoint.username || '';
+            const password = authConfigFromEndpoint.password || '';
+            if (username && password) {
+              const credentials = btoa(`${username}:${password}`);
+              allHeaders.push({
+                key: 'Authorization',
+                value: `Basic ${credentials}`,
+                description: 'Basic authentication',
+                required: true,
+                type: 'string',
+                source: 'auth'
+              });
+            }
+          }
+          else if (authType === 'oauth2') {
+            const token = authConfigFromEndpoint.token || '';
+            if (token) {
+              allHeaders.push({
+                key: 'Authorization',
+                value: `Bearer ${token}`,
+                description: 'OAuth2 token authentication',
+                required: true,
+                type: 'string',
+                source: 'auth'
+              });
+            }
+          }
+        }
+        // ============== END FIX ==============
+        
+        // Remove duplicate headers (by key)
+        const uniqueHeaders = allHeaders.reduce((acc, current) => {
+          const exists = acc.some(h => h.key.toLowerCase() === current.key.toLowerCase());
+          if (!exists) {
+            acc.push(current);
+          }
+          return acc;
+        }, []);
+        
+        // Sort parameters by position if available
+        const sortByPosition = (a, b) => (a.position || 0) - (b.position || 0);
+        pathParams.sort(sortByPosition);
+        queryParams.sort(sortByPosition);
+        headerParams.sort(sortByPosition);
+        bodyParams.sort(sortByPosition);
+        
+        // Format the details for display with grouped parameters
+        const formattedDetails = {
+          id: endpointData.endpointId || endpointData.id,
+          name: endpointData.name || '',
+          method: endpointData.method || 'GET',
+          url: endpointData.url || '',
+          path: endpointData.url || endpointData.path || '',
+          description: endpointData.description || '',
+          category: endpointData.category || 'general',
+          tags: endpointData.tags || [],
+          formattedTags: (endpointData.tags || []).map(tag => ({
+            name: tag,
+            color: getTagColor(tag)
+          })),
+          lastModified: endpointData.lastModified,
+          timeAgo: getTimeAgo(endpointData.lastModified),
+          version: endpointData.version || '1.0.0',
+          requiresAuthentication: endpointData.requiresAuthentication || false,
+          rateLimit: endpointData.rateLimit || null,
+          formattedRateLimit: endpointData.formattedRateLimit || 
+            (endpointData.rateLimit ? formatRateLimit(endpointData.rateLimit) : 'Not rate limited'),
+          deprecated: endpointData.deprecated || false,
+          
+          // Headers to display (combined from headers array, header parameters, and auth)
+          headers: uniqueHeaders,
+          
+          // Grouped parameters by location
+          pathParameters: pathParams,
+          queryParameters: queryParams,
+          headerParameters: headerParams, // Keep separate for reference
+          bodyParameters: bodyParams,
+          
+          // Keep original parameters array for backward compatibility
+          parameters: endpointData.parameters || [],
+          
+          responseExamples: Array.isArray(endpointData.responseExamples) ? 
+            endpointData.responseExamples.map(example => ({
+              ...example,
+              statusBadge: getStatusCodeBadge(example.statusCode),
+              formattedExample: example.example ? formatJsonExample(example.example) : '{}'
+            })) : [],
+          
+          // Generate request body example from parameters or use provided example
+          requestBodyExample: endpointData.requestBodyExample || 
+            (bodyParams.length > 0 ? 
+              JSON.stringify(
+                bodyParams.reduce((acc, param) => {
+                  acc[param.name] = param.example || param.defaultValue || '';
+                  return acc;
+                }, {}), 
+                null, 2
+              ) : '{}'),
+          
+          changelog: Array.isArray(endpointData.changelog) ? endpointData.changelog : [],
+          rateLimitInfo: endpointData.rateLimitInfo || null
+        };
+        
+        console.log('📊 [Documentation] Formatted endpoint details with grouped parameters:', {
+          total: formattedDetails.parameters.length,
+          path: formattedDetails.pathParameters.length,
+          query: formattedDetails.queryParameters.length,
+          header: formattedDetails.headerParameters.length,
+          body: formattedDetails.bodyParameters.length,
+          headersToDisplay: formattedDetails.headers.length
         });
+        
+        setEndpointDetails(formattedDetails);
+        
+        // Load changelog for this endpoint if available
+        if (formattedDetails.changelog && formattedDetails.changelog.length > 0) {
+          setChangelog(formattedDetails.changelog);
+        } else {
+          // Try to fetch changelog separately
+          await fetchChangelog(collectionId);
+        }
+        
+        // Load code examples for the selected language
+        await fetchCodeExamples(endpointId, selectedLanguage);
       }
       
-      // Process auth config if present - add to headers
-      if (endpointData.authConfig || endpointData.auth) {
-        const authConfig = endpointData.authConfig || endpointData.auth || {};
-        console.log('🔐 Processing auth config for headers:', authConfig);
-        
-        const authType = authConfig.type || authConfig.authType || 'noauth';
-        
-        if (authType === 'apikey') {
-          // Handle API Key auth - add to headers
-          const key = authConfig.key || authConfig.apiKey || authConfig.apiKeyHeader || '';
-          const value = authConfig.value || authConfig.apiSecret || authConfig.apiKeyValue || authConfig.secret || '';
-          
-          if (key && value) {
-            allHeaders.push({
-              key: key,
-              value: value,
-              description: 'API Key authentication',
-              required: true,
-              type: 'string',
-              source: 'auth'
-            });
-            console.log(`🔐 Added API Key header: ${key}`);
-          }
-          
-          // Check for API Secret separately if it exists
-          if (authConfig.apiSecretHeader && authConfig.apiSecretValue) {
-            allHeaders.push({
-              key: authConfig.apiSecretHeader,
-              value: authConfig.apiSecretValue,
-              description: 'API Secret authentication',
-              required: true,
-              type: 'string',
-              source: 'auth'
-            });
-            console.log(`🔐 Added API Secret header: ${authConfig.apiSecretHeader}`);
-          }
-        } 
-        else if (authType === 'bearer') {
-          const token = authConfig.token || authConfig.bearerToken || '';
-          const tokenType = authConfig.tokenType || 'Bearer';
-          if (token) {
-            allHeaders.push({
-              key: 'Authorization',
-              value: `${tokenType} ${token}`,
-              description: 'Bearer token authentication',
-              required: true,
-              type: 'string',
-              source: 'auth'
-            });
-          }
-        }
-        else if (authType === 'basic') {
-          const username = authConfig.username || '';
-          const password = authConfig.password || '';
-          if (username && password) {
-            const credentials = btoa(`${username}:${password}`);
-            allHeaders.push({
-              key: 'Authorization',
-              value: `Basic ${credentials}`,
-              description: 'Basic authentication',
-              required: true,
-              type: 'string',
-              source: 'auth'
-            });
-          }
-        }
-        else if (authType === 'oauth2') {
-          const token = authConfig.token || '';
-          if (token) {
-            allHeaders.push({
-              key: 'Authorization',
-              value: `Bearer ${token}`,
-              description: 'OAuth2 token authentication',
-              required: true,
-              type: 'string',
-              source: 'auth'
-            });
-          }
-        }
-      }
-      
-      // Remove duplicate headers (by key)
-      const uniqueHeaders = allHeaders.reduce((acc, current) => {
-        const exists = acc.some(h => h.key.toLowerCase() === current.key.toLowerCase());
-        if (!exists) {
-          acc.push(current);
-        }
-        return acc;
-      }, []);
-      
-      // Sort parameters by position if available
-      const sortByPosition = (a, b) => (a.position || 0) - (b.position || 0);
-      pathParams.sort(sortByPosition);
-      queryParams.sort(sortByPosition);
-      headerParams.sort(sortByPosition);
-      bodyParams.sort(sortByPosition);
-      
-      // Format the details for display with grouped parameters
-      const formattedDetails = {
-        id: endpointData.endpointId || endpointData.id,
-        name: endpointData.name || '',
-        method: endpointData.method || 'GET',
-        url: endpointData.url || '',
-        path: endpointData.url || endpointData.path || '',
-        description: endpointData.description || '',
-        category: endpointData.category || 'general',
-        tags: endpointData.tags || [],
-        formattedTags: (endpointData.tags || []).map(tag => ({
-          name: tag,
-          color: getTagColor(tag)
-        })),
-        lastModified: endpointData.lastModified,
-        timeAgo: getTimeAgo(endpointData.lastModified),
-        version: endpointData.version || '1.0.0',
-        requiresAuthentication: endpointData.requiresAuthentication || false,
-        rateLimit: endpointData.rateLimit || null,
-        formattedRateLimit: endpointData.formattedRateLimit || 
-          (endpointData.rateLimit ? formatRateLimit(endpointData.rateLimit) : 'Not rate limited'),
-        deprecated: endpointData.deprecated || false,
-        
-        // Headers to display (combined from headers array, header parameters, and auth)
-        headers: uniqueHeaders,
-        
-        // Grouped parameters by location
-        pathParameters: pathParams,
-        queryParameters: queryParams,
-        headerParameters: headerParams, // Keep separate for reference
-        bodyParameters: bodyParams,
-        
-        // Keep original parameters array for backward compatibility
-        parameters: endpointData.parameters || [],
-        
-        responseExamples: Array.isArray(endpointData.responseExamples) ? 
-          endpointData.responseExamples.map(example => ({
-            ...example,
-            statusBadge: getStatusCodeBadge(example.statusCode),
-            formattedExample: example.example ? formatJsonExample(example.example) : '{}'
-          })) : [],
-        
-        // Generate request body example from parameters or use provided example
-        requestBodyExample: endpointData.requestBodyExample || 
-          (bodyParams.length > 0 ? 
-            JSON.stringify(
-              bodyParams.reduce((acc, param) => {
-                acc[param.name] = param.example || param.defaultValue || '';
-                return acc;
-              }, {}), 
-              null, 2
-            ) : '{}'),
-        
-        changelog: Array.isArray(endpointData.changelog) ? endpointData.changelog : [],
-        rateLimitInfo: endpointData.rateLimitInfo || null
-      };
-      
-      console.log('📊 [Documentation] Formatted endpoint details with grouped parameters:', {
-        total: formattedDetails.parameters.length,
-        path: formattedDetails.pathParameters.length,
-        query: formattedDetails.queryParameters.length,
-        header: formattedDetails.headerParameters.length,
-        body: formattedDetails.bodyParameters.length,
-        headersToDisplay: formattedDetails.headers.length
-      });
-      
-      setEndpointDetails(formattedDetails);
-      
-      // Load changelog for this endpoint if available
-      if (formattedDetails.changelog && formattedDetails.changelog.length > 0) {
-        setChangelog(formattedDetails.changelog);
-      } else {
-        // Try to fetch changelog separately
-        await fetchChangelog(collectionId);
-      }
-      
-      // Load code examples for the selected language
-      await fetchCodeExamples(endpointId, selectedLanguage);
+    } catch (error) {
+      console.error('❌ [Documentation] Error loading endpoint details:', error);
+      showToast(`Failed to load endpoint details: ${error.message}`, 'error');
+    } finally {
+      setIsLoading(prev => ({ ...prev, endpointDetails: false }));
     }
-    
-  } catch (error) {
-    console.error('❌ [Documentation] Error loading endpoint details:', error);
-    showToast(`Failed to load endpoint details: ${error.message}`, 'error');
-  } finally {
-    setIsLoading(prev => ({ ...prev, endpointDetails: false }));
-  }
-}, [authToken, selectedLanguage, fetchChangelog, fetchCodeExamples]);
+  }, [authToken, selectedLanguage, fetchChangelog, fetchCodeExamples]);
 
   // Load code examples
   const fetchCodeExamples = useCallback(async (endpointId, language) => {
@@ -2417,7 +2424,7 @@ req.end();`
               {endpointDetails.bodyParameters && endpointDetails.bodyParameters.length > 0 && (
                 <div className="mb-8">
                   <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>
-                    Request Body Parameters
+                    Request Body
                     <span className="ml-2 text-xs px-2 py-1 rounded" style={{ 
                       backgroundColor: 'rgb(96 165 250)',
                       color: 'white'
@@ -2468,7 +2475,7 @@ req.end();`
                       </tbody>
                     </table>
                   </div>
-                  
+
                 </div>
               )}
 
