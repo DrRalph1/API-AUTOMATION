@@ -87,140 +87,199 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
   }, []);
 
   // Handle edit API
-const handleEditApi = useCallback((api) => {
-  const apiForEditing = {
-    id: api.id,
-    name: api.name,
-    type: 'API',
-    method: api.method,
-    description: api.description,
-    url: api.url,
-    collectionName: api.collectionName,
-    collectionId: api.collectionId,
-    folderName: api.folderName,
+  const handleEditApi = useCallback((api) => {
+    console.log('🔍 Editing API:', api.id, api.name);
+    console.log('📋 Original API headers:', api.headers);
+    console.log('📋 Request details headers:', api.requestDetails?.headers);
+
+    // Parameters already have IDs from the backend - preserve them
+    const parametersWithIds = (api.parameters || []).map(param => ({
+      ...param,
+      // Ensure ID is preserved, generate only if missing
+      id: param.id || `param-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    }));
+
+    // Response mappings already have IDs from the backend - preserve them
+    const responseMappingsWithIds = (api.responseMappings || []).map(mapping => ({
+      ...mapping,
+      // Ensure ID is preserved, generate only if missing
+      id: mapping.id || `mapping-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    }));
+
+    // Tags (if any) - preserve existing IDs or create new ones
+    const tagsWithIds = (api.tags || []).map(tag => {
+      if (typeof tag === 'string') {
+        return {
+          id: `tag-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          name: tag,
+          value: tag
+        };
+      }
+      return {
+        ...tag,
+        id: tag.id || `tag-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      };
+    });
+
+    // Headers - ONLY use if they exist in the API data
+    // Check both api.headers and api.requestDetails?.headers
+    let headersWithIds = [];
     
-    // Parameters and response mappings
-    parameters: api.parameters || [],
-    responseMappings: api.responseMappings || [],
-    
-    // API details
-    apiName: api.name,
-    apiCode: api.id || `API_${api.name.replace(/\s+/g, '_').toUpperCase()}`,
-    httpMethod: api.method,
-    endpointPath: api.url,
-    version: api.version || '1.0.0',
-    status: api.status?.toUpperCase() === 'ACTIVE' ? 'ACTIVE' : 'DRAFT',
-    owner: api.owner || 'HR',
-    tags: api.tags || ['default'],
-    
-    // Request/Response configs
-    requestBody: api.requestBody || {
-      bodyType: 'json',
-      sample: '{\n  "success": true,\n  "data": {}\n}',
-      requiredFields: [],
-      validateSchema: true,
-      maxSize: 1048576,
-      allowedMediaTypes: ['application/json']
-    },
-    
-    responseBody: api.responseBody || {
-      successSchema: '{\n  "success": true,\n  "data": {},\n  "message": "Request processed successfully"\n}',
-      errorSchema: '{\n  "success": false,\n  "error": {\n    "code": "ERROR_CODE",\n    "message": "Error description",\n    "details": {}\n  }\n}',
-      includeMetadata: true,
-      metadataFields: ['timestamp', 'apiVersion', 'requestId'],
-      contentType: 'application/json',
-      compression: 'gzip'
-    },
-    
-    // Auth config
-    authConfig: api.authConfig || {
-      authType: 'none',
-      apiKeyHeader: 'X-API-Key',
-      apiSecretHeader: 'X-API-Secret',
-      jwtIssuer: 'api.example.com',
-      rateLimitRequests: 100,
-      rateLimitPeriod: 'minute',
-      enableRateLimiting: false,
-      corsOrigins: ['*'],
-      auditLevel: 'standard'
-    },
-    
-    // Headers
-    headers: api.headers || [
-      { id: '1', key: 'Content-Type', value: 'application/json', required: true, description: 'Response content type' },
-      { id: '2', key: 'Cache-Control', value: 'no-cache', required: false, description: 'Cache control header' }
-    ],
-    
-    // Tests
-    tests: api.tests || {
-      testConnection: true,
-      testObjectAccess: true,
-      testPrivileges: true,
-      testDataTypes: true,
-      testNullConstraints: true,
-      testUniqueConstraints: false,
-      testForeignKeyReferences: false,
-      testQueryPerformance: true,
-      performanceThreshold: 1000,
-      testWithSampleData: true,
-      sampleDataRows: 10,
-      testProcedureExecution: true,
-      testFunctionReturn: true,
-      testExceptionHandling: true,
-      testSQLInjection: true,
-      testAuthentication: true,
-      testAuthorization: true,
-      testData: '',
-      testQueries: []
-    },
-    
-    // Settings
-    settings: api.settings || {
-      timeout: 30000,
-      maxRecords: 1000,
-      enableLogging: true,
-      logLevel: 'INFO',
-      enableCaching: false,
-      cacheTtl: 300,
-      generateSwagger: true,
-      generatePostman: true,
-      generateClientSDK: true,
-      enableMonitoring: true,
-      enableAlerts: false,
-      alertEmail: '',
-      enableTracing: false,
-      corsEnabled: true
-    },
-    
-    // Collection info
-    collectionInfo: {
+    // First check api.headers
+    if (api.headers && Array.isArray(api.headers) && api.headers.length > 0) {
+      headersWithIds = api.headers.map(header => ({
+        ...header,
+        id: header.id || `header-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      }));
+      console.log('✅ Using existing headers from api.headers:', headersWithIds);
+    } 
+    // Then check api.requestDetails?.headers
+    else if (api.requestDetails?.headers && Array.isArray(api.requestDetails.headers) && api.requestDetails.headers.length > 0) {
+      headersWithIds = api.requestDetails.headers.map(header => ({
+        ...header,
+        id: header.id || `header-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      }));
+      console.log('✅ Using headers from requestDetails:', headersWithIds);
+    }
+    else {
+      // NO FALLBACK - leave headers empty
+      console.log('ℹ️ No headers found in API data, leaving empty');
+      headersWithIds = [];
+    }
+
+    const apiForEditing = {
+      // Core fields - preserve all IDs from the original API
+      id: api.id,
+      name: api.name,
+      type: 'API',
+      method: api.method,
+      description: api.description,
+      url: api.url,
       collectionName: api.collectionName,
       collectionId: api.collectionId,
-      folderName: api.folderName
-    },
-    
-    // Schema config
-    schemaConfig: api.schemaConfig || {
-      schemaName: 'HR',
-      objectType: 'TABLE',
-      objectName: api.name?.replace(/\s+/g, '_').toUpperCase() || 'OBJECT',
-      operation: api.method === 'GET' ? 'SELECT' : 
-                api.method === 'POST' ? 'INSERT' :
-                api.method === 'PUT' ? 'UPDATE' :
-                api.method === 'DELETE' ? 'DELETE' : 'SELECT',
-      primaryKeyColumn: '',
-      sequenceName: '',
-      enablePagination: true,
-      pageSize: 10,
-      enableSorting: true,
-      defaultSortColumn: '',
-      defaultSortDirection: 'ASC'
-    }
-  };
+      folderName: api.folderName,
+      
+      // Parameters and response mappings - now with preserved IDs
+      parameters: parametersWithIds,
+      responseMappings: responseMappingsWithIds,
+      
+      // API details
+      apiName: api.name,
+      apiCode: api.id || `API_${api.name.replace(/\s+/g, '_').toUpperCase()}`,
+      httpMethod: api.method,
+      endpointPath: api.url,
+      version: api.version || '1.0.0',
+      status: api.status?.toUpperCase() === 'ACTIVE' ? 'ACTIVE' : 'DRAFT',
+      owner: api.owner || 'HR',
+      tags: tagsWithIds,
+      
+      // Request/Response configs
+      requestBody: api.requestBody || {
+        bodyType: 'json',
+        sample: '{\n  "success": true,\n  "data": {}\n}',
+        requiredFields: [],
+        validateSchema: true,
+        maxSize: 1048576,
+        allowedMediaTypes: ['application/json']
+      },
+      
+      responseBody: api.responseBody || {
+        successSchema: '{\n  "success": true,\n  "data": {},\n  "message": "Request processed successfully"\n}',
+        errorSchema: '{\n  "success": false,\n  "error": {\n    "code": "ERROR_CODE",\n    "message": "Error description",\n    "details": {}\n  }\n}',
+        includeMetadata: true,
+        metadataFields: ['timestamp', 'apiVersion', 'requestId'],
+        contentType: 'application/json',
+        compression: 'gzip'
+      },
+      
+      // Auth config
+      authConfig: api.authConfig || {
+        authType: 'none',
+        apiKeyHeader: 'X-API-Key',
+        apiSecretHeader: 'X-API-Secret',
+        jwtIssuer: 'api.example.com',
+        rateLimitRequests: 100,
+        rateLimitPeriod: 'minute',
+        enableRateLimiting: false,
+        corsOrigins: ['*'],
+        auditLevel: 'standard'
+      },
+      
+      // Headers - ONLY use if they exist, otherwise empty array
+      headers: headersWithIds,
+      
+      // Tests
+      tests: api.tests || {
+        testConnection: true,
+        testObjectAccess: true,
+        testPrivileges: true,
+        testDataTypes: true,
+        testNullConstraints: true,
+        testUniqueConstraints: false,
+        testForeignKeyReferences: false,
+        testQueryPerformance: true,
+        performanceThreshold: 1000,
+        testWithSampleData: true,
+        sampleDataRows: 10,
+        testProcedureExecution: true,
+        testFunctionReturn: true,
+        testExceptionHandling: true,
+        testSQLInjection: true,
+        testAuthentication: true,
+        testAuthorization: true,
+        testData: '',
+        testQueries: []
+      },
+      
+      // Settings
+      settings: api.settings || {
+        timeout: 30000,
+        maxRecords: 1000,
+        enableLogging: true,
+        logLevel: 'INFO',
+        enableCaching: false,
+        cacheTtl: 300,
+        generateSwagger: true,
+        generatePostman: true,
+        generateClientSDK: true,
+        enableMonitoring: true,
+        enableAlerts: false,
+        alertEmail: '',
+        enableTracing: false,
+        corsEnabled: true
+      },
+      
+      // Collection info
+      collectionInfo: {
+        collectionName: api.collectionName,
+        collectionId: api.collectionId,
+        folderName: api.folderName
+      },
+      
+      // Schema config
+      schemaConfig: api.schemaConfig || {
+        schemaName: 'HR',
+        objectType: 'TABLE',
+        objectName: api.name?.replace(/\s+/g, '_').toUpperCase() || 'OBJECT',
+        operation: api.method === 'GET' ? 'SELECT' : 
+                  api.method === 'POST' ? 'INSERT' :
+                  api.method === 'PUT' ? 'UPDATE' :
+                  api.method === 'DELETE' ? 'DELETE' : 'SELECT',
+        primaryKeyColumn: '',
+        sequenceName: '',
+        enablePagination: true,
+        pageSize: 10,
+        enableSorting: true,
+        defaultSortColumn: '',
+        defaultSortDirection: 'ASC'
+      }
+    };
 
-  setSelectedForApiGeneration(apiForEditing);
-  setShowApiModal(true);
-}, []);
+    console.log('✅ Final selected object headers:', apiForEditing.headers);
+    console.log('📦 Final selected object for editing:', apiForEditing);
+    setSelectedForApiGeneration(apiForEditing);
+    setShowApiModal(true);
+  }, []);
 
   // Handle generate from modal
   const handleGenerateAPIFromModal = useCallback(async () => {
@@ -365,30 +424,42 @@ const handleEditApi = useCallback((api) => {
     const endpoints = data.endpoints?.endpoints || [];
     const now = new Date();
     
-    const apisData = endpoints.map((endpoint, index) => ({
-      id: endpoint.id,
-      name: endpoint.name,
-      description: endpoint.description,
-      method: endpoint.method,
-      url: endpoint.url,
-      status: 'active',
-      version: 'v1',
-      calls: Math.floor(Math.random() * 1000) + 100,
-      latency: '42ms',
-      successRate: '98.5%',
-      errors: Math.floor(Math.random() * 10),
-      avgResponseTime: '42ms',
-      owner: endpoint.owner || 'System',
-      collectionId: endpoint.collectionId,
-      collectionName: endpoint.collectionName,
-      folderName: endpoint.folderName,
-      lastUpdated: new Date(now.getTime() - (index * 3600000)).toISOString(),
-      timeAgo: getTimeAgo(new Date(now.getTime() - (index * 3600000))),
-      parameters: endpoint.parameters || [],
-      responseMappings: endpoint.responseMappings || [],
-      schemaConfig: endpoint.schemaConfig,
-      tags: endpoint.tags || []
-    }))
+    const apisData = endpoints.map((endpoint, index) => {
+      // Extract headers from the endpoint data if available
+      // This assumes headers might be in the endpoint object from the backend
+      const endpointHeaders = endpoint.headers || [];
+      
+      return {
+        id: endpoint.id,
+        name: endpoint.name,
+        description: endpoint.description,
+        method: endpoint.method,
+        url: endpoint.url,
+        status: 'active',
+        version: 'v1',
+        calls: Math.floor(Math.random() * 1000) + 100,
+        latency: '42ms',
+        successRate: '98.5%',
+        errors: Math.floor(Math.random() * 10),
+        avgResponseTime: '42ms',
+        owner: endpoint.owner || 'System',
+        collectionId: endpoint.collectionId,
+        collectionName: endpoint.collectionName,
+        folderName: endpoint.folderName,
+        lastUpdated: new Date(now.getTime() - (index * 3600000)).toISOString(),
+        timeAgo: getTimeAgo(new Date(now.getTime() - (index * 3600000))),
+        parameters: endpoint.parameters || [],
+        responseMappings: endpoint.responseMappings || [],
+        schemaConfig: endpoint.schemaConfig,
+        tags: endpoint.tags || [],
+        headers: endpointHeaders, // Add headers from the endpoint
+        
+        // Also check if headers are in requestDetails or elsewhere in the data structure
+        requestDetails: endpoint.requestDetails || {
+          headers: endpointHeaders
+        }
+      };
+    })
     .sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated));
     
     const totalApis = endpoints.length;

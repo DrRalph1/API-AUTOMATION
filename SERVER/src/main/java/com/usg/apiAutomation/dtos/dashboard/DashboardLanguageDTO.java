@@ -11,4 +11,7 @@ public class DashboardLanguageDTO {
     private String icon;
     private int implementationCount;
     private boolean available;
+    private String language;
+    private String createdAt;
+    private String updatedAt;
 }

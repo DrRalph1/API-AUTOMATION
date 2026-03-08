@@ -35,4 +35,7 @@ public class UserDTO {
     private int activeSessions;
     private String lastActive;
     private String joinedDate;
+    private String createdAt;
+    private String updatedAt;
+    private String createdBy;
 }

@@ -180,6 +180,7 @@ public class DashboardService {
                                 List<Map<String, Object>> parameters = new ArrayList<>();
                                 for (ApiParameterDTO param : requestDetails.getParameters()) {
                                     Map<String, Object> paramMap = new HashMap<>();
+                                    paramMap.put("id", param.getId());
                                     paramMap.put("name", param.getKey());
                                     paramMap.put("type", param.getType());
                                     paramMap.put("required", param.getRequired());
@@ -198,6 +199,7 @@ public class DashboardService {
                                 List<Map<String, Object>> responseMappings = new ArrayList<>();
                                 for (ApiResponseMappingDTO mapping : requestDetails.getResponseMappings()) {
                                     Map<String, Object> mappingMap = new HashMap<>();
+                                    mappingMap.put("id", mapping.getId());
                                     mappingMap.put("apiField", mapping.getApiField());
                                     mappingMap.put("dbColumn", mapping.getDbColumn());
                                     mappingMap.put("type", mapping.getApiType());
@@ -213,7 +215,48 @@ public class DashboardService {
 
                             // Set tags
                             if (request.getTags() != null) {
-                                dto.setTags(new ArrayList<>(Collections.singleton(request.getTags())));
+                                List<Map<String, Object>> tagsList = new ArrayList<>();
+                                Object tagsObj = request.getTags();
+
+                                if (tagsObj instanceof List) {
+                                    // Handle List type
+                                    List<?> tags = (List<?>) tagsObj;
+                                    for (Object tag : tags) {
+                                        if (tag instanceof Map) {
+                                            // If it's already a Map with the right structure
+                                            tagsList.add((Map<String, Object>) tag);
+                                        } else if (tag instanceof String) {
+                                            // If it's a String, create a Map
+                                            Map<String, Object> tagMap = new HashMap<>();
+                                            tagMap.put("name", tag);
+                                            tagMap.put("id", UUID.randomUUID().toString());
+                                            tagsList.add(tagMap);
+                                        }
+                                    }
+                                } else if (tagsObj instanceof String) {
+                                    // Handle comma-separated string
+                                    String tagsStr = (String) tagsObj;
+                                    if (!tagsStr.isEmpty()) {
+                                        String[] tagArray = tagsStr.split(",");
+                                        for (String tag : tagArray) {
+                                            String trimmedTag = tag.trim();
+                                            if (!trimmedTag.isEmpty()) {
+                                                Map<String, Object> tagMap = new HashMap<>();
+                                                tagMap.put("name", trimmedTag);
+                                                tagMap.put("id", UUID.randomUUID().toString());
+                                                tagsList.add(tagMap);
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // Handle single object
+                                    Map<String, Object> tagMap = new HashMap<>();
+                                    tagMap.put("name", tagsObj.toString());
+                                    tagMap.put("id", UUID.randomUUID().toString());
+                                    tagsList.add(tagMap);
+                                }
+
+                                dto.setTags(tagsList);
                             } else {
                                 dto.setTags(new ArrayList<>());
                             }
@@ -245,7 +288,7 @@ public class DashboardService {
                             // Set fallback values
                             dto.setParameters(new ArrayList<>());
                             dto.setResponseMappings(new ArrayList<>());
-                            dto.setTags(request.getTags() != null ? new ArrayList<>(Collections.singleton(request.getTags())) : new ArrayList<>());
+                            dto.setTags(convertToTagsList(request.getTags()));
                             dto.setStatus("active");
                             dto.setVersion(collection.getVersion() != null ? collection.getVersion() : "v1");
                             dto.setOwner(collection.getOwner() != null ? collection.getOwner() : "System");
@@ -848,9 +891,49 @@ public class DashboardService {
         // Basic stats
         response.setStats(getDashboardStats(requestId, req, performedBy));
 
-        // Collections and endpoints (make sure endpoints have all fields)
+        // Collections and endpoints (make sure endpoints have all fields with IDs)
         response.setCollections(getDashboardCollections(requestId, req, performedBy));
-        response.setEndpoints(getDashboardEndpoints(requestId, req, performedBy)); // Now returns full data
+
+        // Get endpoints and ensure all nested elements have IDs
+        DashboardEndpointsResponseDTO endpointsResponse = getDashboardEndpoints(requestId, req, performedBy);
+
+        // Ensure all nested elements in each endpoint have proper IDs
+        if (endpointsResponse.getEndpoints() != null) {
+            for (DashboardEndpointDTO endpoint : endpointsResponse.getEndpoints()) {
+                // Ensure endpoint itself has ID
+                if (endpoint.getId() == null || endpoint.getId().isEmpty()) {
+                    endpoint.setId(UUID.randomUUID().toString());
+                }
+
+                // Ensure parameters have IDs
+                if (endpoint.getParameters() != null) {
+                    for (Map<String, Object> param : endpoint.getParameters()) {
+                        if (!param.containsKey("id") || param.get("id") == null) {
+                            param.put("id", UUID.randomUUID().toString());
+                        }
+                    }
+                }
+
+                // Ensure response mappings have IDs
+                if (endpoint.getResponseMappings() != null) {
+                    for (Map<String, Object> mapping : endpoint.getResponseMappings()) {
+                        if (!mapping.containsKey("id") || mapping.get("id") == null) {
+                            mapping.put("id", UUID.randomUUID().toString());
+                        }
+                    }
+                }
+
+                // Ensure tags have IDs
+                if (endpoint.getTags() != null) {
+                    for (Map<String, Object> tag : endpoint.getTags()) {
+                        if (!tag.containsKey("id") || tag.get("id") == null) {
+                            tag.put("id", UUID.randomUUID().toString());
+                        }
+                    }
+                }
+            }
+        }
+        response.setEndpoints(endpointsResponse);
 
         // Security data
         response.setRateLimitRules(getDashboardRateLimitRules(requestId, req, performedBy));
@@ -880,7 +963,7 @@ public class DashboardService {
         response.setGeneratedFor(performedBy);
         response.setRequestId(requestId);
 
-        log.info("Request ID: {}, Retrieved comprehensive dashboard data", requestId);
+        log.info("Request ID: {}, Retrieved comprehensive dashboard data with all element IDs", requestId);
         return response;
     }
 
@@ -984,6 +1067,258 @@ public class DashboardService {
     // ============================================================
     // PRIVATE HELPER METHODS
     // ============================================================
+
+    // Robust tags conversion
+
+    // Add this helper method in your service class
+    private List<Map<String, Object>> convertToTagsList(Object tagsInput) {
+        List<Map<String, Object>> tagsList = new ArrayList<>();
+
+        if (tagsInput == null) {
+            return tagsList;
+        }
+
+        try {
+            // Case 1: If it's already a List of Maps (ideal case)
+            if (tagsInput instanceof List) {
+                List<?> list = (List<?>) tagsInput;
+                for (Object item : list) {
+                    if (item instanceof Map) {
+                        // Ensure the map has the required structure
+                        Map<?, ?> map = (Map<?, ?>) item;
+                        Map<String, Object> tagMap = new HashMap<>();
+
+                        // Copy existing properties or create default ones
+                        for (Map.Entry<?, ?> entry : map.entrySet()) {
+                            if (entry.getKey() != null) {
+                                tagMap.put(entry.getKey().toString(), entry.getValue());
+                            }
+                        }
+
+                        // Ensure minimum required fields exist
+                        if (!tagMap.containsKey("name") && !tagMap.containsKey("id")) {
+                            tagMap.put("name", "tag-" + UUID.randomUUID().toString().substring(0, 6));
+                        } else if (!tagMap.containsKey("name") && tagMap.containsKey("id")) {
+                            tagMap.put("name", "tag-" + tagMap.get("id"));
+                        } else if (tagMap.containsKey("name") && !tagMap.containsKey("id")) {
+                            tagMap.put("id", UUID.randomUUID().toString());
+                        }
+
+                        tagsList.add(tagMap);
+                    } else if (item != null) {
+                        // Item is not a Map, convert to a Map with default structure
+                        Map<String, Object> tagMap = new HashMap<>();
+                        tagMap.put("name", item.toString());
+                        tagMap.put("id", UUID.randomUUID().toString());
+                        tagMap.put("type", "simple");
+                        tagMap.put("value", item.toString());
+                        tagsList.add(tagMap);
+                    }
+                }
+            }
+            // Case 2: If it's a Map (single tag as Map)
+            else if (tagsInput instanceof Map) {
+                Map<?, ?> map = (Map<?, ?>) tagsInput;
+                Map<String, Object> tagMap = new HashMap<>();
+
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    if (entry.getKey() != null) {
+                        tagMap.put(entry.getKey().toString(), entry.getValue());
+                    }
+                }
+
+                // Ensure required fields
+                if (!tagMap.containsKey("name")) {
+                    tagMap.put("name", tagMap.containsKey("id") ? "tag-" + tagMap.get("id") : "tag-" + UUID.randomUUID().toString().substring(0, 6));
+                }
+                if (!tagMap.containsKey("id")) {
+                    tagMap.put("id", UUID.randomUUID().toString());
+                }
+
+                tagsList.add(tagMap);
+            }
+            // Case 3: If it's a String (comma-separated or single)
+            else if (tagsInput instanceof String) {
+                String tagsStr = (String) tagsInput;
+                if (!tagsStr.trim().isEmpty()) {
+                    // Check if it's JSON array format
+                    if (tagsStr.trim().startsWith("[") && tagsStr.trim().endsWith("]")) {
+                        try {
+                            // Try to parse as JSON array
+                            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                            List<Map<String, Object>> parsedTags = mapper.readValue(tagsStr, new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {});
+                            for (Map<String, Object> tag : parsedTags) {
+                                if (!tag.containsKey("id")) {
+                                    tag.put("id", UUID.randomUUID().toString());
+                                }
+                                if (!tag.containsKey("name")) {
+                                    tag.put("name", "tag-" + tag.getOrDefault("id", UUID.randomUUID().toString()).toString().substring(0, 6));
+                                }
+                                tagsList.add(tag);
+                            }
+                        } catch (Exception e) {
+                            // If JSON parsing fails, treat as comma-separated
+                            processCommaSeparatedTags(tagsStr, tagsList);
+                        }
+                    } else {
+                        // Treat as comma-separated string
+                        processCommaSeparatedTags(tagsStr, tagsList);
+                    }
+                }
+            }
+            // Case 4: If it's an array
+            else if (tagsInput.getClass().isArray()) {
+                Object[] array = (Object[]) tagsInput;
+                for (Object item : array) {
+                    if (item != null) {
+                        Map<String, Object> tagMap = new HashMap<>();
+                        tagMap.put("name", item.toString());
+                        tagMap.put("id", UUID.randomUUID().toString());
+                        tagMap.put("type", "array-item");
+                        tagMap.put("value", item.toString());
+                        tagsList.add(tagMap);
+                    }
+                }
+            }
+            // Case 5: Any other type
+            else {
+                Map<String, Object> tagMap = new HashMap<>();
+                tagMap.put("name", tagsInput.toString());
+                tagMap.put("id", UUID.randomUUID().toString());
+                tagMap.put("type", tagsInput.getClass().getSimpleName());
+                tagMap.put("value", tagsInput.toString());
+                tagsList.add(tagMap);
+            }
+        } catch (Exception e) {
+            // Log the error and return empty list or create a default tag
+            log.warn("Error converting tags: {}", e.getMessage());
+            Map<String, Object> errorTag = new HashMap<>();
+            errorTag.put("name", "error-tag");
+            errorTag.put("id", UUID.randomUUID().toString());
+            errorTag.put("error", e.getMessage());
+            tagsList.add(errorTag);
+        }
+
+        return tagsList;
+    }
+
+    // Helper method to process comma-separated tags
+    private void processCommaSeparatedTags(String tagsStr, List<Map<String, Object>> tagsList) {
+        String[] tagArray = tagsStr.split(",");
+        for (String tag : tagArray) {
+            String trimmedTag = tag.trim();
+            if (!trimmedTag.isEmpty()) {
+                // Check if tag contains key:value format
+                if (trimmedTag.contains(":")) {
+                    String[] keyValue = trimmedTag.split(":", 2);
+                    Map<String, Object> tagMap = new HashMap<>();
+                    tagMap.put("name", keyValue[0].trim());
+                    tagMap.put("value", keyValue[1].trim());
+                    tagMap.put("id", UUID.randomUUID().toString());
+                    tagsList.add(tagMap);
+                } else {
+                    Map<String, Object> tagMap = new HashMap<>();
+                    tagMap.put("name", trimmedTag);
+                    tagMap.put("id", UUID.randomUUID().toString());
+                    tagMap.put("type", "simple");
+                    tagMap.put("value", trimmedTag);
+                    tagsList.add(tagMap);
+                }
+            }
+        }
+    }
+
+    // Alternative even more robust version with builder pattern
+    public List<Map<String, Object>> convertToTagsListRobust(Object tagsInput) {
+        return Optional.ofNullable(tagsInput)
+                .map(this::convertToTagsListInternal)
+                .orElseGet(ArrayList::new);
+    }
+
+    private List<Map<String, Object>> convertToTagsListInternal(Object tagsInput) {
+        List<Map<String, Object>> tagsList = new ArrayList<>();
+
+        // Use Optional to handle nulls elegantly
+        Optional.ofNullable(tagsInput)
+                .ifPresent(input -> {
+                    try {
+                        // Stream-based processing for Collections
+                        if (input instanceof Collection) {
+                            ((Collection<?>) input).stream()
+                                    .filter(Objects::nonNull)
+                                    .forEach(item -> processTagItem(item, tagsList));
+                        }
+                        // Handle arrays
+                        else if (input.getClass().isArray()) {
+                            Arrays.stream((Object[]) input)
+                                    .filter(Objects::nonNull)
+                                    .forEach(item -> processTagItem(item, tagsList));
+                        }
+                        // Handle single items
+                        else {
+                            processTagItem(input, tagsList);
+                        }
+                    } catch (Exception e) {
+                        log.error("Error processing tags: {}", e.getMessage(), e);
+                        createErrorTag(tagsList, e);
+                    }
+                });
+
+        return tagsList;
+    }
+
+    private void processTagItem(Object item, List<Map<String, Object>> tagsList) {
+        Map<String, Object> tagMap = createTagMap(item);
+        if (!tagMap.isEmpty()) {
+            tagsList.add(tagMap);
+        }
+    }
+
+    private Map<String, Object> createTagMap(Object item) {
+        Map<String, Object> tagMap = new HashMap<>();
+
+        if (item instanceof Map) {
+            // Copy existing map and ensure required fields
+            ((Map<?, ?>) item).forEach((key, value) -> {
+                if (key != null) {
+                    tagMap.put(key.toString(), value);
+                }
+            });
+
+            // Ensure required fields exist
+            if (!tagMap.containsKey("id")) {
+                tagMap.put("id", UUID.randomUUID().toString());
+            }
+            if (!tagMap.containsKey("name")) {
+                String name = tagMap.containsKey("value") ?
+                        tagMap.get("value").toString() :
+                        "tag-" + tagMap.get("id").toString().substring(0, 6);
+                tagMap.put("name", name);
+            }
+        } else {
+            // Create new map for non-Map items
+            tagMap.put("id", UUID.randomUUID().toString());
+            tagMap.put("name", item.toString());
+            tagMap.put("value", item.toString());
+            tagMap.put("type", item.getClass().getSimpleName());
+            tagMap.put("original", item.toString());
+        }
+
+        // Add metadata
+        tagMap.put("convertedAt", LocalDateTime.now().toString());
+        tagMap.put("source", item.getClass().getSimpleName());
+
+        return tagMap;
+    }
+
+    private void createErrorTag(List<Map<String, Object>> tagsList, Exception e) {
+        Map<String, Object> errorTag = new HashMap<>();
+        errorTag.put("id", UUID.randomUUID().toString());
+        errorTag.put("name", "conversion-error");
+        errorTag.put("error", e.getMessage());
+        errorTag.put("timestamp", LocalDateTime.now().toString());
+        tagsList.add(errorTag);
+    }
 
     private String getTimeAgo(String timestamp) {
         try {

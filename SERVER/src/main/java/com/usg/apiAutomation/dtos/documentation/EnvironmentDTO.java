@@ -20,4 +20,7 @@ public class EnvironmentDTO {
     private String secret;
     private Map<String, Object> variables;
     private String lastUsed;
+    private String createdAt;
+    private String updatedAt;
+    private String createdBy;
 }

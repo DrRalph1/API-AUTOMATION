@@ -18,4 +18,8 @@ public class NotificationDTO {
     private String actionUrl;
     private String collectionId;
     private String endpointId;
+    private String entityId;
+    private String entityType;
+    private String createdAt;
+    private String expiresAt;
 }

@@ -48,4 +48,21 @@ public class ActivityDTO {
     private String oldValue;
     private String newValue;
     private String metadata;
+
+    private String entityId;
+    private String entityType;
+
+    // Add these missing getters (Lombok will generate them, but for clarity)
+    // public String getEntityId() { return entityId; }
+    // public String getEntityType() { return entityType; }
+    // public String getSessionId() { return sessionId; }
+    // public String getLocation() { return location; }
+    // public String getDepartment() { return department; }
+    // public String getProject() { return project; }
+    // public String getModule() { return module; }
+    // public String getSource() { return source; }
+    // public String getTarget() { return target; }
+    // public String getOldValue() { return oldValue; }
+    // public String getNewValue() { return newValue; }
+    // public String getMetadata() { return metadata; }
 }

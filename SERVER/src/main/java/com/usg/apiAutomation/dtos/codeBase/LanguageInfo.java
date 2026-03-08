@@ -18,4 +18,6 @@ public class LanguageInfo {
     private String command;
     private Boolean isAvailable;
     private int implementationCount;
+    private String createdAt;
+    private String updatedAt;
 }

@@ -11,4 +11,6 @@ public class DashboardSecurityAlertDTO {
     private String endpoint;
     private boolean read;
     private String timestamp;
+    private String acknowledgedBy;
+    private String acknowledgedAt;
 }

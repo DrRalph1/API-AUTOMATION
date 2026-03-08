@@ -6,27 +6,50 @@ import java.util.Map;
 
 @Data
 public class DashboardEndpointDTO {
-    private String id;
+    // Basic IDs
+    private String id; // Endpoint/Request ID
+    private String apiCode; // API Code
+
+    // Collection and Folder IDs
+    private String collectionId;
+    private String collectionName;
+    private String folderId;
+    private String folderName;
+
+    // Basic Info
     private String name;
-    private String description;
     private String method;
     private String url;
+    private String description;
     private String status;
     private String version;
+    private String owner;
+
+    // Timestamps
+    private String lastUpdated;
+    private String timeAgo;
+    private String createdAt;
+    private String updatedAt;
+    private String createdBy;
+
+    // Performance metrics
     private int calls;
     private String latency;
     private String successRate;
     private int errors;
     private String avgResponseTime;
-    private String owner;
-    private String collectionId;
-    private String collectionName;
-    private String folderId;
-    private String folderName;
-    private String lastUpdated;
-    private String timeAgo;
-    private String apiCode;
-    private List<Map<String, Object>> parameters;
-    private List<Map<String, Object>> responseMappings;
-    private List<String> tags;
+
+    // Complex objects with their own IDs
+    private List<Map<String, Object>> tags;
+    private List<Map<String, Object>> parameters; // Each has ID
+    private List<Map<String, Object>> responseMappings; // Each has ID
+    private List<Map<String, Object>> headers; // Each has ID
+    private Map<String, Object> authConfig; // Has its own ID
+    private Map<String, Object> requestBody; // Has its own ID
+    private Map<String, Object> responseBody; // Has its own ID
+    private Map<String, Object> schemaConfig; // Has its own ID
+    private Map<String, Object> testConfig; // Has its own ID
+    private Map<String, Object> settings; // Has its own ID
+    private Map<String, Object> collectionInfo; // Collection metadata
+    private Map<String, Object> requestDetails; // Full request details
 }

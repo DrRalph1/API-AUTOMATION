@@ -357,9 +357,9 @@ const LoadingOverlay = ({ isLoading, colors, loadingText }) => {
         <p className="text-sm mb-2" style={{ color: colors.textSecondary }}>
           {loadingText || 'Please wait while we load your documentation data'}
         </p>
-        <p className="text-xs" style={{ color: colors.textTertiary }}>
+        {/* <p className="text-xs" style={{ color: colors.textTertiary }}>
           This won't take long
-        </p>
+        </p> */}
       </div>
     </div>
   );

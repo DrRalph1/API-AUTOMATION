@@ -13,4 +13,6 @@ public class DashboardRateLimitRuleDTO {
     private String window;
     private String status;
     private String createdAt;
+    private String updatedAt;
+    private String createdBy;
 }

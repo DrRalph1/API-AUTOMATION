@@ -10,4 +10,6 @@ public class DashboardIpWhitelistEntryDTO {
     private String description;
     private String status;
     private String createdAt;
+    private String updatedAt;
+    private String createdBy;
 }

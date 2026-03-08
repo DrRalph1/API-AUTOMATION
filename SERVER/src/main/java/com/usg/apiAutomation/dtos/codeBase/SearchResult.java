@@ -23,4 +23,7 @@ public class SearchResult {
     private String lastModified;
     private Integer implementations;
     private String matchType;
+    private String createdAt;
+    private String createdBy;
+    private String updatedAt;
 }

@@ -2921,9 +2921,9 @@ const EditUserModal = ({ data: user }) => {
           <p className="text-xs mb-1" style={{ color: colors.textTertiary }}>
             {getLoadingTip()}
           </p>
-          <p className="text-xs" style={{ color: colors.textTertiary }}>
+          {/* <p className="text-xs" style={{ color: colors.textTertiary }}>
             This won't take long
-          </p>
+          </p> */}
         </div>
       </div>
     );

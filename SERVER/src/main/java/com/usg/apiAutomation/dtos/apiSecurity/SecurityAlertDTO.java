@@ -16,4 +16,6 @@ public class SecurityAlertDTO {
     private boolean read;
     private String timestamp;
     private Boolean isRead;
+    private String acknowledgedBy;
+    private String acknowledgedAt;
 }

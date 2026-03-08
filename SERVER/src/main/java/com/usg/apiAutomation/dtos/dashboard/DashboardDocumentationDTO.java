@@ -13,4 +13,8 @@ public class DashboardDocumentationDTO {
     private boolean published;
     private String publishedUrl;
     private String publishedAt;
+
+    // Add these missing fields
+    private String publishedId;
+    private String publishedBy;
 }

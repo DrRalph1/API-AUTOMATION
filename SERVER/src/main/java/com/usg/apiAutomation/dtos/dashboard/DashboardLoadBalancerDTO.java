@@ -11,4 +11,6 @@ public class DashboardLoadBalancerDTO {
     private int totalConnections;
     private int serverCount;
     private int healthyServers;
+    private String createdAt;
+    private String updatedAt;
 }

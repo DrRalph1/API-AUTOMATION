@@ -11,4 +11,9 @@ public class DashboardEnvironmentDTO {
     private String description;
     private String lastUsed;
     private int variablesCount;
+    private String createdAt;
+    private String updatedAt;
+    private String createdBy;
+
+    private String variables;
 }

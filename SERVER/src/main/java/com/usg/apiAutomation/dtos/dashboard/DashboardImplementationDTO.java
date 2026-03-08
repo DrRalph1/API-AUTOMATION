@@ -15,4 +15,7 @@ public class DashboardImplementationDTO {
     private List<String> languages;
     private int implementationsCount;
     private String lastModified;
+    private String createdAt;
+    private String createdBy;
+    private String updatedAt;
 }

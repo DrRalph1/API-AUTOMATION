@@ -49,7 +49,7 @@ public interface GeneratedAPIRepository extends JpaRepository<GeneratedApiEntity
 
     boolean existsByApiCode(String apiCode);
 
-    // ============= CORRECTED JSONB QUERIES =============
+    // ============= JSONB QUERIES =============
 
     @Query(value = "SELECT * FROM tb_eng_generated_apis WHERE source_object_info @> jsonb_build_object('requestId', :requestId)", nativeQuery = true)
     Optional<GeneratedApiEntity> findBySourceObjectInfoRequestId(@Param("requestId") String requestId);
@@ -98,7 +98,6 @@ public interface GeneratedAPIRepository extends JpaRepository<GeneratedApiEntity
     @Query("SELECT s FROM ApiSettingsEntity s WHERE s.generatedApi.id = :apiId")
     Optional<ApiSettingsEntity> findSettingsByApiId(@Param("apiId") String apiId);
 
-
     @Query("SELECT g FROM GeneratedApiEntity g " +
             "LEFT JOIN FETCH g.schemaConfig " +
             "LEFT JOIN FETCH g.authConfig " +
@@ -107,4 +106,26 @@ public interface GeneratedAPIRepository extends JpaRepository<GeneratedApiEntity
             "LEFT JOIN FETCH g.settings " +
             "WHERE g.id = :apiId")
     Optional<GeneratedApiEntity> findByIdWithConfigs(@Param("apiId") String apiId);
+
+    // ============= NEW METHODS FOR FINDING BY ID =============
+
+    @Query("SELECT h FROM ApiHeaderEntity h WHERE h.id = :id")
+    Optional<ApiHeaderEntity> findHeaderById(@Param("id") String id);
+
+    @Query("SELECT p FROM ApiParameterEntity p WHERE p.id = :id")
+    Optional<ApiParameterEntity> findParameterById(@Param("id") String id);
+
+    @Query("SELECT rm FROM ApiResponseMappingEntity rm WHERE rm.id = :id")
+    Optional<ApiResponseMappingEntity> findResponseMappingById(@Param("id") String id);
+
+    // ============= NEW METHODS FOR FINDING BY BUSINESS KEY =============
+
+    @Query("SELECT h FROM ApiHeaderEntity h WHERE h.generatedApi.id = :apiId AND h.key = :key")
+    Optional<ApiHeaderEntity> findHeaderByApiIdAndKey(@Param("apiId") String apiId, @Param("key") String key);
+
+    @Query("SELECT p FROM ApiParameterEntity p WHERE p.generatedApi.id = :apiId AND p.key = :key")
+    Optional<ApiParameterEntity> findParameterByApiIdAndKey(@Param("apiId") String apiId, @Param("key") String key);
+
+    @Query("SELECT rm FROM ApiResponseMappingEntity rm WHERE rm.generatedApi.id = :apiId AND rm.apiField = :apiField")
+    Optional<ApiResponseMappingEntity> findResponseMappingByApiIdAndApiField(@Param("apiId") String apiId, @Param("apiField") String apiField);
 }

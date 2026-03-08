@@ -1982,9 +1982,9 @@ const APISecurity = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
           <p className="text-sm mb-2" style={{ color: colors.textSecondary }}>
             {getLoadingTip()}
           </p>
-          <p className="text-xs" style={{ color: colors.textTertiary }}>
+          {/* <p className="text-xs" style={{ color: colors.textTertiary }}>
             This won't take long
-          </p>
+          </p> */}
         </div>
       </div>
     );

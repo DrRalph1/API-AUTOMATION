@@ -17,4 +17,7 @@ public class DashboardUserDTO {
     private int securityScore;
     private boolean mfaEnabled;
     private List<String> tags;
+    private String createdAt;
+    private String createdBy;
+    private String updatedAt;
 }
