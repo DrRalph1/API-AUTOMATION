@@ -1534,48 +1534,8 @@ const transformCollectionsData = (apiData) => {
         
         // Log header params specifically
         if (headerParams.length > 0) {
-          console.log('📌 Adding header parameters to headers:', headerParams);
-          
-          const headerParamHeaders = headerParams.map(param => ({
-            id: param.id || `header-${Date.now()}-${Math.random()}`,
-            key: param.key,
-            value: param.value || '',
-            description: param.description || '',
-            enabled: param.enabled !== false,
-            required: param.required || false
-          }));
-          
-          setRequestHeaders(prevHeaders => {
-            const currentHeaders = Array.isArray(prevHeaders) ? prevHeaders : [];
-            
-            // Add header parameters that don't already exist
-            const newHeaders = headerParamHeaders.filter(newH => 
-              !currentHeaders.some(h => h.key.toLowerCase() === newH.key.toLowerCase())
-            );
-            
-            return [...currentHeaders, ...newHeaders];
-          });
-        }
-
-        // Handle regular headers from details (these are actual HTTP headers)
-        if (details.headers && details.headers.length > 0) {
-          console.log('📌 Setting regular headers from details:', details.headers);
-          const regularHeaders = cleanHeaders(details.headers.map((header, idx) => ({
-            id: header.id || `header-${Date.now()}-${idx}-${Math.random()}`,
-            key: header.key,
-            value: header.value || '',
-            description: header.description || '',
-            enabled: header.enabled !== false,
-            required: header.required || false
-          })));
-          
-          setRequestHeaders(prevHeaders => {
-            const currentHeaders = Array.isArray(prevHeaders) ? prevHeaders : [];
-            const newHeaders = regularHeaders.filter(newH => 
-              !currentHeaders.some(h => h.key.toLowerCase() === newH.key.toLowerCase())
-            );
-            return [...currentHeaders, ...newHeaders];
-          });
+          console.log(`📌 [Transform] Header params for ${request.name}:`, 
+            headerParams.map(p => ({ key: p.key, value: p.value })));
         }
         
         // Log body params specifically
@@ -1601,8 +1561,8 @@ const transformCollectionsData = (apiData) => {
           const sourceConfig = request.authConfig || request.auth || {};
           processedAuthConfig = {
             type: 'apikey',
-            key: sourceConfig.key || sourceConfig.apiKey || '',
-            value: sourceConfig.value || sourceConfig.apiSecret || sourceConfig.secret || '',
+            key: sourceConfig.key || sourceConfig.apiKey || sourceConfig.apiKeyHeader || '',
+            value: sourceConfig.value || sourceConfig.apiSecret || sourceConfig.apiKeyValue || sourceConfig.secret || '',
             addTo: sourceConfig.addTo || 'header'
           };
           console.log('🔐 [Transform] Processed API Key config:', processedAuthConfig);
@@ -1718,7 +1678,7 @@ const transformCollectionsData = (apiData) => {
           authConfig: processedAuthConfig,
           // Regular headers only - these are actual HTTP headers like Content-Type
           headers: cleanHeaders([...(request.headers || [])]),
-          // Parameters separated by location
+          // Parameters separated by location - these will be used in handleSelectRequest
           queryParams: queryParams,
           pathParams: pathParams,
           headerParams: headerParams, // These will be added to headers in handleSelectRequest
