@@ -17,6 +17,9 @@ public class NotificationEntity {
 //    @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
+    @Column(name = "generated_api_id")
+    private String generatedApiId;
+
     @Column(nullable = false)
     private String title;
 

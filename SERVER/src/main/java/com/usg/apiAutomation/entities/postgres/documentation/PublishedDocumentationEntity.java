@@ -17,6 +17,9 @@ public class PublishedDocumentationEntity {
 //    @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
+    @Column(name = "generated_api_id")
+    private String generatedApiId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "collection_id", nullable = false)
     private APICollectionEntity collection;

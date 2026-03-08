@@ -97,4 +97,14 @@ public interface GeneratedAPIRepository extends JpaRepository<GeneratedApiEntity
 
     @Query("SELECT s FROM ApiSettingsEntity s WHERE s.generatedApi.id = :apiId")
     Optional<ApiSettingsEntity> findSettingsByApiId(@Param("apiId") String apiId);
+
+
+    @Query("SELECT g FROM GeneratedApiEntity g " +
+            "LEFT JOIN FETCH g.schemaConfig " +
+            "LEFT JOIN FETCH g.authConfig " +
+            "LEFT JOIN FETCH g.requestConfig " +
+            "LEFT JOIN FETCH g.responseConfig " +
+            "LEFT JOIN FETCH g.settings " +
+            "WHERE g.id = :apiId")
+    Optional<GeneratedApiEntity> findByIdWithConfigs(@Param("apiId") String apiId);
 }

@@ -1589,9 +1589,10 @@ export default function ApiGenerationModal({
     }
     if (!apiDetails.endpointPath?.trim()) {
       errors.endpointPath = 'Endpoint Path is required';
-    } else if (!apiDetails.endpointPath.startsWith('/')) {
-      errors.endpointPath = 'Endpoint Path must start with /';
-    }
+    } 
+    // else if (!apiDetails.endpointPath.startsWith('/')) {
+    //   errors.endpointPath = 'Endpoint Path must start with /';
+    // }
 
     // For new APIs (not editing), check schema config
     if (!isEditing) {
@@ -1765,571 +1766,748 @@ export default function ApiGenerationModal({
 
   // Initialize parameters and mappings based on selected object
   useEffect(() => {
-    const initializeFromObject = async () => {
-      if (!selectedObject) {
-        console.log('ℹ️ ApiGenerationModal - No selected object provided, showing empty form');
+  const initializeFromObject = async () => {
+    if (!selectedObject) {
+      console.log('ℹ️ ApiGenerationModal - No selected object provided, showing empty form');
+      return;
+    }
+
+    setLoading(true);
+    console.log('🔍 ApiGenerationModal - Initializing with selected object:', {
+      name: selectedObject.name,
+      type: selectedObject.type,
+      owner: selectedObject.owner,
+      isEditing: isEditing,
+      hasParameters: !!(selectedObject.parameters && selectedObject.parameters.length > 0),
+      hasResponseMappings: !!(selectedObject.responseMappings && selectedObject.responseMappings.length > 0),
+      hasColumns: !!(selectedObject.columns && selectedObject.columns.length > 0),
+      fullObject: selectedObject
+    });
+
+    try {
+      // Skip validation for API objects (when editing)
+      if (!isEditing && selectedObject.type !== 'API' && selectedObject.type !== 'CONNECTION') {
+        // First, validate the source object
+        await validateObject(selectedObject, selectedObject.type);
+      } else {
+        setValidationResult({ valid: true, message: 'API object - validation skipped' });
+      }
+
+      // For API objects (editing mode), populate from the selectedObject directly
+      if (isEditing || selectedObject.type === 'API' || selectedObject.type === 'CONNECTION') {
+        console.log('📝 Populating form for API editing with data:', selectedObject);
+        
+        // API DETAILS TAB
+        setApiDetails({
+          apiName: selectedObject.apiName || selectedObject.name || '',
+          apiCode: selectedObject.apiCode || selectedObject.id || '',
+          description: selectedObject.description || '',
+          version: selectedObject.version || '1.0.0',
+          status: selectedObject.status || 'DRAFT',
+          httpMethod: selectedObject.httpMethod || selectedObject.method || 'GET',
+          basePath: selectedObject.basePath || '/api/v1',
+          endpointPath: selectedObject.endpointPath || selectedObject.url || '',
+          tags: selectedObject.tags || ['default'],
+          category: selectedObject.category || 'general',
+          owner: selectedObject.owner || 'HR',
+        });
+
+        // SCHEMA TAB
+        if (selectedObject.schemaConfig) {
+          console.log('📊 Setting schemaConfig from selectedObject:', selectedObject.schemaConfig);
+          setSchemaConfig(selectedObject.schemaConfig);
+        } else if (selectedObject.sourceObject) {
+          // Try to get schema config from sourceObject
+          setSchemaConfig({
+            schemaName: selectedObject.sourceObject.owner || 'HR',
+            objectType: selectedObject.sourceObject.type || 'TABLE',
+            objectName: selectedObject.sourceObject.name || '',
+            operation: selectedObject.sourceObject.operation || 'SELECT',
+            primaryKeyColumn: selectedObject.sourceObject.primaryKeyColumn || '',
+            sequenceName: selectedObject.sourceObject.sequenceName || '',
+            enablePagination: selectedObject.sourceObject.enablePagination !== undefined ? selectedObject.sourceObject.enablePagination : true,
+            pageSize: selectedObject.sourceObject.pageSize || 10,
+            enableSorting: selectedObject.sourceObject.enableSorting !== undefined ? selectedObject.sourceObject.enableSorting : true,
+            defaultSortColumn: selectedObject.sourceObject.defaultSortColumn || '',
+            defaultSortDirection: selectedObject.sourceObject.defaultSortDirection || 'ASC'
+          });
+        } else {
+          setSchemaConfig({
+            schemaName: 'HR',
+            objectType: 'TABLE',
+            objectName: selectedObject.name?.replace(/\s+/g, '_').toUpperCase() || 'OBJECT',
+            operation: selectedObject.method === 'GET' ? 'SELECT' : 
+                      selectedObject.method === 'POST' ? 'INSERT' :
+                      selectedObject.method === 'PUT' ? 'UPDATE' :
+                      selectedObject.method === 'DELETE' ? 'DELETE' : 'SELECT',
+            primaryKeyColumn: '',
+            sequenceName: '',
+            enablePagination: true,
+            pageSize: 10,
+            enableSorting: true,
+            defaultSortColumn: '',
+            defaultSortDirection: 'ASC'
+          });
+        }
+
+        // PARAMETERS TAB - load parameters (should be IN parameters)
+        if (selectedObject.parameters && selectedObject.parameters.length > 0) {
+          console.log('📦 Loading parameters for editing:', selectedObject.parameters);
+          
+          // Map existing parameters to ensure they have proper structure
+          const mappedParams = selectedObject.parameters.map(param => ({
+            id: param.id || `param-${Date.now()}-${Math.random()}`,
+            key: param.key || param.name || '',
+            dbColumn: param.dbColumn || param.column || '',
+            oracleType: param.oracleType || param.type || 'VARCHAR2',
+            apiType: param.apiType || (param.oracleType?.includes('NUMBER') ? 'integer' : 'string'),
+            parameterLocation: param.parameterLocation || param.location || 'query',
+            required: param.required || false,
+            description: param.description || '',
+            example: param.example || '',
+            validationPattern: param.validationPattern || '',
+            defaultValue: param.defaultValue || '',
+            inBody: param.inBody || param.parameterLocation === 'body' || false,
+            isPrimaryKey: param.isPrimaryKey || false,
+            paramMode: param.paramMode || 'IN'
+          }));
+          
+          console.log('📦 Mapped parameters for editing (count: ' + mappedParams.length + '):', mappedParams);
+          setParameters(mappedParams);
+        } else if (selectedObject.columns && selectedObject.columns.length > 0) {
+          // If no parameters but there are columns, generate parameters from columns
+          console.log('📦 Generating parameters from columns for editing:', selectedObject.columns);
+          const generatedParams = selectedObject.columns.map((col, index) => {
+            const httpMethod = selectedObject.httpMethod || 'GET';
+            const parameterLocation = col.isPrimaryKey ? 'path' : 
+                                     (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') ? 'body' : 'query';
+            
+            return {
+              id: `param-${Date.now()}-${index}`,
+              key: col.name?.toLowerCase() || `column_${index + 1}`,
+              dbColumn: col.name || '',
+              oracleType: col.type?.includes('VARCHAR') ? 'VARCHAR2' : 
+                         col.type?.includes('NUMBER') ? 'NUMBER' :
+                         col.type?.includes('DATE') ? 'DATE' : 'VARCHAR2',
+              apiType: col.type?.includes('NUMBER') ? 'integer' : 'string',
+              parameterLocation: parameterLocation,
+              required: col.isPrimaryKey || col.nullable === 'N',
+              description: col.description || `From ${col.name}`,
+              example: col.name?.includes('ID') ? '1' : 
+                      col.name?.includes('DATE') ? '2024-01-01' : 'sample',
+              validationPattern: '',
+              defaultValue: col.defaultValue || '',
+              inBody: parameterLocation === 'body',
+              isPrimaryKey: col.isPrimaryKey || false,
+              paramMode: 'IN'
+            };
+          });
+          console.log('📦 Generated parameters from columns (count: ' + generatedParams.length + '):', generatedParams);
+          setParameters(generatedParams);
+        } else {
+          console.log('📦 No parameters found in selected object');
+          setParameters([]);
+        }
+
+        // MAPPING TAB - load response mappings (should include OUT parameters)
+        if (selectedObject.responseMappings && selectedObject.responseMappings.length > 0) {
+          console.log('📋 Loading response mappings for editing:', selectedObject.responseMappings);
+          
+          const mappedMappings = selectedObject.responseMappings.map(mapping => ({
+            id: mapping.id || `mapping-${Date.now()}-${Math.random()}`,
+            apiField: mapping.apiField || mapping.field || '',
+            dbColumn: mapping.dbColumn || mapping.column || '',
+            oracleType: mapping.oracleType || mapping.type || 'VARCHAR2',
+            apiType: mapping.apiType || (mapping.oracleType?.includes('NUMBER') ? 'integer' : 'string'),
+            format: mapping.format || (mapping.oracleType?.includes('DATE') ? 'date-time' : ''),
+            nullable: mapping.nullable !== undefined ? mapping.nullable : true,
+            isPrimaryKey: mapping.isPrimaryKey || false,
+            includeInResponse: mapping.includeInResponse !== undefined ? mapping.includeInResponse : true,
+            inResponse: mapping.inResponse !== undefined ? mapping.inResponse : true,
+            paramMode: mapping.paramMode || 'OUT'
+          }));
+          
+          console.log('📋 Mapped response mappings for editing (count: ' + mappedMappings.length + '):', mappedMappings);
+          setResponseMappings(mappedMappings);
+        } else if (selectedObject.columns && selectedObject.columns.length > 0) {
+          // If no response mappings but there are columns, generate mappings from columns
+          console.log('📋 Generating response mappings from columns for editing:', selectedObject.columns);
+          const generatedMappings = selectedObject.columns.map((col, index) => ({
+            id: `mapping-${Date.now()}-${index}`,
+            apiField: col.name?.toLowerCase() || `column_${index + 1}`,
+            dbColumn: col.name || '',
+            oracleType: col.type?.includes('VARCHAR') ? 'VARCHAR2' : 
+                       col.type?.includes('NUMBER') ? 'NUMBER' :
+                       col.type?.includes('DATE') ? 'DATE' : 'VARCHAR2',
+            apiType: col.type?.includes('NUMBER') ? 'integer' : 'string',
+            format: col.type?.includes('DATE') ? 'date-time' : '',
+            nullable: col.nullable === 'Y',
+            isPrimaryKey: col.isPrimaryKey || false,
+            includeInResponse: true,
+            inResponse: true,
+            paramMode: 'OUT'
+          }));
+          console.log('📋 Generated response mappings from columns (count: ' + generatedMappings.length + '):', generatedMappings);
+          setResponseMappings(generatedMappings);
+        } else {
+          console.log('📋 No response mappings found in selected object');
+          setResponseMappings([]);
+        }
+
+        // AUTHENTICATION TAB
+        if (selectedObject.authConfig) {
+          console.log('🔐 Loading auth config:', selectedObject.authConfig);
+          setAuthConfig(selectedObject.authConfig);
+        } else {
+          setAuthConfig({
+            authType: 'none',
+            apiKeyHeader: 'X-API-Key',
+            apiKeyValue: '',
+            apiSecretHeader: 'X-API-Secret',
+            apiSecretValue: '',
+            jwtToken: '',
+            jwtIssuer: 'api.example.com',
+            basicUsername: '',
+            basicPassword: '',
+            ipWhitelist: '',
+            rateLimitRequests: 100,
+            rateLimitPeriod: 'minute',
+            enableRateLimiting: false,
+            corsOrigins: ['*'],
+            auditLevel: 'standard'
+          });
+        }
+
+        // REQUEST TAB
+        if (selectedObject.requestBody) {
+          console.log('📤 Loading request body:', selectedObject.requestBody);
+          setRequestBody(selectedObject.requestBody);
+        } else {
+          setRequestBody({
+            bodyType: 'json',
+            sample: JSON.stringify({
+              success: true,
+              data: {}
+            }, null, 2),
+            requiredFields: [],
+            validateSchema: true,
+            maxSize: 1048576,
+            allowedMediaTypes: ['application/json']
+          });
+        }
+
+        // RESPONSE TAB
+        if (selectedObject.responseBody) {
+          console.log('📥 Loading response body:', selectedObject.responseBody);
+          setResponseBody(selectedObject.responseBody);
+        } else {
+          // Generate sample response from mappings if available
+          let successSchema = JSON.stringify({
+            success: true,
+            data: {},
+            message: "Request processed successfully",
+            metadata: {
+              timestamp: "{{timestamp}}",
+              apiVersion: selectedObject.version || "1.0.0",
+              requestId: "{{requestId}}"
+            }
+          }, null, 2);
+          
+          const mappingsToUse = selectedObject.responseMappings || 
+                               (selectedObject.columns ? selectedObject.columns.map(col => ({
+                                 apiField: col.name?.toLowerCase(),
+                                 apiType: col.type?.includes('NUMBER') ? 'integer' : 'string',
+                                 format: col.type?.includes('DATE') ? 'date-time' : ''
+                               })) : []);
+          
+          if (mappingsToUse.length > 0) {
+            const sampleData = {};
+            mappingsToUse.slice(0, 5).forEach(mapping => {
+              const fieldName = mapping.apiField || mapping.field || mapping.name;
+              if (mapping.apiType === 'integer' || mapping.oracleType?.includes('NUMBER')) {
+                sampleData[fieldName] = 123;
+              } else if (mapping.apiType === 'string' || mapping.oracleType?.includes('VARCHAR')) {
+                if (mapping.format === 'date-time' || mapping.oracleType?.includes('DATE')) {
+                  sampleData[fieldName] = '2024-01-01T00:00:00Z';
+                } else {
+                  sampleData[fieldName] = fieldName === 'id' ? 1 : 'sample';
+                }
+              } else if (mapping.apiType === 'boolean') {
+                sampleData[fieldName] = true;
+              }
+            });
+            
+            successSchema = JSON.stringify({
+              success: true,
+              data: sampleData,
+              message: "Request processed successfully",
+              metadata: {
+                timestamp: "{{timestamp}}",
+                apiVersion: selectedObject.version || "1.0.0",
+                requestId: "{{requestId}}"
+              }
+            }, null, 2);
+          }
+          
+          setResponseBody({
+            successSchema: successSchema,
+            errorSchema: JSON.stringify({
+              success: false,
+              error: {
+                code: "ERROR_CODE",
+                message: "Error description",
+                details: {}
+              }
+            }, null, 2),
+            includeMetadata: true,
+            metadataFields: ['timestamp', 'apiVersion', 'requestId'],
+            contentType: 'application/json',
+            compression: 'gzip'
+          });
+        }
+
+        // HEADERS
+        if (selectedObject.headers && selectedObject.headers.length > 0) {
+          console.log('📌 Loading headers:', selectedObject.headers);
+          setHeaders(selectedObject.headers);
+        } else {
+          setHeaders([
+            { id: '1', key: 'Content-Type', value: 'application/json', required: true, description: 'Response content type' },
+            { id: '2', key: 'Cache-Control', value: 'no-cache', required: false, description: 'Cache control header' }
+          ]);
+        }
+
+        // DATABASE TESTS TAB
+        if (selectedObject.tests) {
+          console.log('🧪 Loading tests:', selectedObject.tests);
+          setTests(selectedObject.tests);
+        } else {
+          setTests({
+            testConnection: true,
+            testObjectAccess: true,
+            testPrivileges: true,
+            testDataTypes: true,
+            testNullConstraints: true,
+            testUniqueConstraints: false,
+            testForeignKeyReferences: false,
+            testQueryPerformance: true,
+            performanceThreshold: 1000,
+            testWithSampleData: true,
+            sampleDataRows: 10,
+            testProcedureExecution: true,
+            testFunctionReturn: true,
+            testExceptionHandling: true,
+            testSQLInjection: true,
+            testAuthentication: true,
+            testAuthorization: true,
+            testData: '',
+            testQueries: []
+          });
+        }
+
+        // SETTINGS TAB
+        if (selectedObject.settings) {
+          console.log('⚙️ Loading settings:', selectedObject.settings);
+          setSettings(selectedObject.settings);
+        } else {
+          setSettings({
+            timeout: 30000,
+            maxRecords: 1000,
+            enableLogging: true,
+            logLevel: 'INFO',
+            enableCaching: false,
+            cacheTtl: 300,
+            generateSwagger: true,
+            generatePostman: true,
+            generateClientSDK: true,
+            enableMonitoring: true,
+            enableAlerts: false,
+            alertEmail: '',
+            enableTracing: false,
+            corsEnabled: true
+          });
+        }
+
+        // COLLECTION & FOLDER INFO
+        if (selectedObject.collectionInfo) {
+          console.log('📁 Loading collection info:', selectedObject.collectionInfo);
+          const collectionId = selectedObject.collectionInfo.collectionId || 
+                              selectedObject.collectionInfo.id;
+          const folderId = selectedObject.collectionInfo.folderId;
+          
+          if (collectionId) {
+            const collection = collections.find(c => c.id === collectionId) || 
+                             collections.find(c => c.name === selectedObject.collectionInfo.collectionName);
+            if (collection) {
+              setSelectedCollection(collection);
+              setFolders(collection.folders || []);
+              
+              if (folderId) {
+                const folder = collection.folders?.find(f => f.id === folderId) ||
+                             collection.folders?.find(f => f.name === selectedObject.collectionInfo.folderName);
+                if (folder) {
+                  setSelectedFolder(folder);
+                }
+              }
+            }
+          }
+        } else if (selectedObject.collectionName) {
+          // Legacy format
+          console.log('📁 Loading legacy collection info:', selectedObject.collectionName, selectedObject.folderName);
+          const collection = collections.find(c => c.name === selectedObject.collectionName);
+          if (collection) {
+            setSelectedCollection(collection);
+            setFolders(collection.folders || []);
+            
+            if (selectedObject.folderName) {
+              const folder = collection.folders?.find(f => f.name === selectedObject.folderName);
+              if (folder) {
+                setSelectedFolder(folder);
+              }
+            }
+          }
+        }
+
+        console.log('✅ Editing initialization complete:', {
+          parametersCount: parameters.length,
+          responseMappingsCount: responseMappings.length,
+          apiDetails: apiDetails,
+          schemaConfig: schemaConfig
+        });
+
+        setLoading(false);
         return;
       }
 
-      setLoading(true);
-      console.log('🔍 ApiGenerationModal - Initializing with selected object:', {
-        name: selectedObject.name,
-        type: selectedObject.type,
-        owner: selectedObject.owner,
-        isEditing: isEditing
-      });
-
-      try {
-        // Skip validation for API objects (when editing)
-        if (!isEditing && selectedObject.type !== 'API' && selectedObject.type !== 'CONNECTION') {
-          // First, validate the source object
-          await validateObject(selectedObject, selectedObject.type);
-        } else {
-          setValidationResult({ valid: true, message: 'API object - validation skipped' });
+      // FOR DATABASE OBJECTS (NEW API GENERATION)
+      
+      // Fetch detailed object information (especially important for synonyms)
+      let detailedObject = selectedObject;
+      let objectType = selectedObject.type;
+      let objectName = selectedObject.name;
+      let objectOwner = selectedObject.owner;
+      
+      // If we have authToken, try to fetch more details
+      if (authToken) {
+        const fetchedDetails = await fetchObjectDetails(selectedObject, selectedObject.type);
+        if (fetchedDetails) {
+          detailedObject = fetchedDetails;
         }
+      }
+      
+      // For synonyms, use the targetDetails if available
+      let effectiveObject = detailedObject;
+      let effectiveType = objectType;
+      let effectiveName = objectName;
+      let effectiveOwner = objectOwner;
+      
+      if (detailedObject?.targetDetails) {
+        // This is a synonym with target details
+        effectiveObject = detailedObject.targetDetails;
+        effectiveType = detailedObject.targetDetails.OBJECT_TYPE || objectType;
+        effectiveName = detailedObject.targetDetails.OBJECT_NAME || objectName;
+        effectiveOwner = detailedObject.targetDetails.OWNER || objectOwner;
+        
+        console.log('🎯 Using target object:', {
+          type: effectiveType,
+          name: effectiveName,
+          owner: effectiveOwner,
+          hasParameters: !!(effectiveObject.parameters || effectiveObject.arguments || effectiveObject.PARAMETERS || effectiveObject.ARGUMENTS)
+        });
+      }
 
-        // For API objects (editing mode), populate from the selectedObject directly
-        if (isEditing || selectedObject.type === 'API' || selectedObject.type === 'CONNECTION') {
-          console.log('📝 Populating form for API editing');
+      // Determine operation and HTTP method
+      let operation = 'SELECT';
+      let httpMethod = 'GET';
+      
+      const normalizedType = (effectiveType || '').toUpperCase();
+      
+      if (normalizedType === 'PROCEDURE' || normalizedType === 'FUNCTION') {
+        operation = 'EXECUTE';
+        httpMethod = 'POST';
+      } else if (normalizedType === 'PACKAGE') {
+        operation = 'EXECUTE';
+        httpMethod = 'POST';
+      } else if (normalizedType === 'VIEW') {
+        operation = 'SELECT';
+        httpMethod = 'GET';
+      } else if (normalizedType === 'TABLE') {
+        operation = 'SELECT';
+        httpMethod = 'GET';
+      } else if (normalizedType === 'SEQUENCE') {
+        operation = 'SELECT';
+        httpMethod = 'GET';
+      } else if (normalizedType === 'TRIGGER') {
+        operation = 'EXECUTE';
+        httpMethod = 'POST';
+      }
+
+      // Set API details
+      const baseName = effectiveName?.toLowerCase() || '';
+      const endpointPath = baseName ? `/${baseName.replace(/_/g, '-').toLowerCase()}` : '';
+      
+      setApiDetails(prev => ({
+        ...prev,
+        apiName: effectiveName ? `${effectiveName} API` : 'New API',
+        apiCode: normalizedType ? `${normalizedType.slice(0, 3)}_${effectiveName || 'API'}` : 'API',
+        description: selectedObject.comment || detailedObject?.COMMENTS || (effectiveName ? `API for ${effectiveName}` : ''),
+        endpointPath: endpointPath,
+        owner: effectiveOwner || 'HR',
+        httpMethod: httpMethod
+      }));
+
+      setSchemaConfig(prev => ({
+        ...prev,
+        schemaName: effectiveOwner || 'HR',
+        objectType: effectiveType || 'TABLE',
+        objectName: effectiveName || '',
+        operation: operation,
+        primaryKeyColumn: ''
+      }));
+
+      // Generate parameters and response mappings with proper separation
+      const newParameters = [];
+      const newMappings = [];
+
+      // Check for parameters (procedures/functions)
+      let parametersArray = null;
+      
+      if (effectiveObject.parameters && Array.isArray(effectiveObject.parameters)) {
+        parametersArray = effectiveObject.parameters;
+      } else if (effectiveObject.PARAMETERS && Array.isArray(effectiveObject.PARAMETERS)) {
+        parametersArray = effectiveObject.PARAMETERS;
+      } else if (effectiveObject.arguments && Array.isArray(effectiveObject.arguments)) {
+        parametersArray = effectiveObject.arguments;
+      } else if (effectiveObject.ARGUMENTS && Array.isArray(effectiveObject.ARGUMENTS)) {
+        parametersArray = effectiveObject.ARGUMENTS;
+      }
+
+      if (parametersArray && parametersArray.length > 0) {
+        // Generate parameters from procedure/function
+        parametersArray.forEach((param, index) => {
+          const paramName = param.ARGUMENT_NAME || param.argument_name || param.name || param.NAME || `param_${index + 1}`;
+          const paramType = param.DATA_TYPE || param.data_type || param.type || param.TYPE || 'VARCHAR2';
+          const paramMode = param.IN_OUT || param.in_out || param.mode || param.MODE || 'IN';
           
-          // API DETAILS TAB
-          setApiDetails({
-            apiName: selectedObject.apiName || selectedObject.name || '',
-            apiCode: selectedObject.apiCode || selectedObject.id || '',
-            description: selectedObject.description || '',
-            version: selectedObject.version || '1.0.0',
-            status: selectedObject.status || 'DRAFT',
-            httpMethod: selectedObject.httpMethod || selectedObject.method || 'GET',
-            basePath: selectedObject.basePath || '/api/v1',
-            endpointPath: selectedObject.endpointPath || selectedObject.url || '',
-            tags: selectedObject.tags || ['default'],
-            category: selectedObject.category || 'general',
-            owner: selectedObject.owner || 'HR',
-          });
-
-          // SCHEMA TAB
-          if (selectedObject.schemaConfig) {
-            setSchemaConfig(selectedObject.schemaConfig);
+          // Generate a clean key name
+          let cleanKey = paramName;
+          if (typeof paramName === 'string') {
+            cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
           } else {
-            setSchemaConfig({
-              schemaName: 'HR',
-              objectType: 'TABLE',
-              objectName: selectedObject.name?.replace(/\s+/g, '_').toUpperCase() || 'OBJECT',
-              operation: selectedObject.method === 'GET' ? 'SELECT' : 
-                        selectedObject.method === 'POST' ? 'INSERT' :
-                        selectedObject.method === 'PUT' ? 'UPDATE' :
-                        selectedObject.method === 'DELETE' ? 'DELETE' : 'SELECT',
-              primaryKeyColumn: '',
-              sequenceName: '',
-              enablePagination: true,
-              pageSize: 10,
-              enableSorting: true,
-              defaultSortColumn: '',
-              defaultSortDirection: 'ASC'
-            });
+            cleanKey = `param_${index + 1}`;
           }
-
-          // PARAMETERS TAB - only load parameters (should be IN parameters)
-          if (selectedObject.parameters && selectedObject.parameters.length > 0) {
-            // Filter to only show IN parameters in parameters tab
-            const inParams = selectedObject.parameters.filter(p => 
-              !p.paramMode || p.paramMode === 'IN' || p.paramMode === 'IN OUT'
-            );
-            setParameters(inParams);
-          } else {
-            setParameters([]);
-          }
-
-          // MAPPING TAB - load response mappings (should include OUT parameters)
-          if (selectedObject.responseMappings && selectedObject.responseMappings.length > 0) {
-            setResponseMappings(selectedObject.responseMappings);
-          } else {
-            setResponseMappings([]);
-          }
-
-          // AUTHENTICATION TAB
-          if (selectedObject.authConfig) {
-            setAuthConfig(selectedObject.authConfig);
-          } else {
-            setAuthConfig({
-              authType: 'none',
-              apiKeyHeader: 'X-API-Key',
-              apiKeyValue: '',
-              apiSecretHeader: 'X-API-Secret',
-              apiSecretValue: '',
-              jwtToken: '',
-              jwtIssuer: 'api.example.com',
-              basicUsername: '',
-              basicPassword: '',
-              ipWhitelist: '',
-              rateLimitRequests: 100,
-              rateLimitPeriod: 'minute',
-              enableRateLimiting: false,
-              corsOrigins: ['*'],
-              auditLevel: 'standard'
-            });
-          }
-
-          // REQUEST TAB
-          if (selectedObject.requestBody) {
-            setRequestBody(selectedObject.requestBody);
-          } else {
-            setRequestBody({
-              bodyType: 'json',
-              sample: JSON.stringify({
-                success: true,
-                data: {}
-              }, null, 2),
-              requiredFields: [],
-              validateSchema: true,
-              maxSize: 1048576,
-              allowedMediaTypes: ['application/json']
-            });
-          }
-
-          // RESPONSE TAB
-          if (selectedObject.responseBody) {
-            setResponseBody(selectedObject.responseBody);
-          } else {
-            setResponseBody({
-              successSchema: JSON.stringify({
-                success: true,
-                data: {},
-                message: "Request processed successfully",
-                metadata: {
-                  timestamp: "{{timestamp}}",
-                  apiVersion: "1.0.0",
-                  requestId: "{{requestId}}"
-                }
-              }, null, 2),
-              errorSchema: JSON.stringify({
-                success: false,
-                error: {
-                  code: "ERROR_CODE",
-                  message: "Error description",
-                  details: {}
-                }
-              }, null, 2),
-              includeMetadata: true,
-              metadataFields: ['timestamp', 'apiVersion', 'requestId'],
-              contentType: 'application/json',
-              compression: 'gzip'
-            });
-          }
-
-          // HEADERS
-          if (selectedObject.headers && selectedObject.headers.length > 0) {
-            setHeaders(selectedObject.headers);
-          } else {
-            setHeaders([
-              { id: '1', key: 'Content-Type', value: 'application/json', required: true, description: 'Response content type' },
-              { id: '2', key: 'Cache-Control', value: 'no-cache', required: false, description: 'Cache control header' }
-            ]);
-          }
-
-          // DATABASE TESTS TAB
-          if (selectedObject.tests) {
-            setTests(selectedObject.tests);
-          } else {
-            setTests({
-              testConnection: true,
-              testObjectAccess: true,
-              testPrivileges: true,
-              testDataTypes: true,
-              testNullConstraints: true,
-              testUniqueConstraints: false,
-              testForeignKeyReferences: false,
-              testQueryPerformance: true,
-              performanceThreshold: 1000,
-              testWithSampleData: true,
-              sampleDataRows: 10,
-              testProcedureExecution: true,
-              testFunctionReturn: true,
-              testExceptionHandling: true,
-              testSQLInjection: true,
-              testAuthentication: true,
-              testAuthorization: true,
-              testData: '',
-              testQueries: []
-            });
-          }
-
-          // SETTINGS TAB
-          if (selectedObject.settings) {
-            setSettings(selectedObject.settings);
-          } else {
-            setSettings({
-              timeout: 30000,
-              maxRecords: 1000,
-              enableLogging: true,
-              logLevel: 'INFO',
-              enableCaching: false,
-              cacheTtl: 300,
-              generateSwagger: true,
-              generatePostman: true,
-              generateClientSDK: true,
-              enableMonitoring: true,
-              enableAlerts: false,
-              alertEmail: '',
-              enableTracing: false,
-              corsEnabled: true
-            });
-          }
-
-          // COLLECTION & FOLDER INFO
-          if (selectedObject.collectionName || selectedObject.collectionInfo) {
-            const collectionName = selectedObject.collectionName || selectedObject.collectionInfo?.collectionName;
-            const folderName = selectedObject.folderName || selectedObject.collectionInfo?.folderName;
-            
-            if (collectionName) {
-              const collection = collections.find(c => c.name === collectionName);
-              if (collection) {
-                setSelectedCollection(collection);
-                setFolders(collection.folders || []);
-                
-                if (folderName) {
-                  const folder = collection.folders?.find(f => f.name === folderName);
-                  if (folder) {
-                    setSelectedFolder(folder);
-                  }
-                }
-              }
-            }
-          }
-
-          setLoading(false);
-          return;
-        }
-
-        // FOR DATABASE OBJECTS (NEW API GENERATION)
-        
-        // Fetch detailed object information (especially important for synonyms)
-        let detailedObject = selectedObject;
-        let objectType = selectedObject.type;
-        let objectName = selectedObject.name;
-        let objectOwner = selectedObject.owner;
-        
-        // If we have authToken, try to fetch more details
-        if (authToken) {
-          const fetchedDetails = await fetchObjectDetails(selectedObject, selectedObject.type);
-          if (fetchedDetails) {
-            detailedObject = fetchedDetails;
-          }
-        }
-        
-        // For synonyms, use the targetDetails if available
-        let effectiveObject = detailedObject;
-        let effectiveType = objectType;
-        let effectiveName = objectName;
-        let effectiveOwner = objectOwner;
-        
-        if (detailedObject?.targetDetails) {
-          // This is a synonym with target details
-          effectiveObject = detailedObject.targetDetails;
-          effectiveType = detailedObject.targetDetails.OBJECT_TYPE || objectType;
-          effectiveName = detailedObject.targetDetails.OBJECT_NAME || objectName;
-          effectiveOwner = detailedObject.targetDetails.OWNER || objectOwner;
           
-          console.log('🎯 Using target object:', {
-            type: effectiveType,
-            name: effectiveName,
-            owner: effectiveOwner,
-            hasParameters: !!(effectiveObject.parameters || effectiveObject.arguments || effectiveObject.PARAMETERS || effectiveObject.ARGUMENTS)
-          });
-        }
+          // Determine parameter location based on mode
+          let parameterLocation = 'query';
+          if (paramMode === 'IN' && (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH')) {
+            parameterLocation = 'body';
+          } else if (paramMode === 'IN' && httpMethod === 'GET') {
+            parameterLocation = 'query';
+          } else if (paramMode === 'IN OUT') {
+            parameterLocation = 'body'; // IN OUT goes to body
+          }
 
-        // Determine operation and HTTP method
-        let operation = 'SELECT';
-        let httpMethod = 'GET';
-        
-        const normalizedType = (effectiveType || '').toUpperCase();
-        
-        if (normalizedType === 'PROCEDURE' || normalizedType === 'FUNCTION') {
-          operation = 'EXECUTE';
-          httpMethod = 'POST';
-        } else if (normalizedType === 'PACKAGE') {
-          operation = 'EXECUTE';
-          httpMethod = 'POST';
-        } else if (normalizedType === 'VIEW') {
-          operation = 'SELECT';
-          httpMethod = 'GET';
-        } else if (normalizedType === 'TABLE') {
-          operation = 'SELECT';
-          httpMethod = 'GET';
-        } else if (normalizedType === 'SEQUENCE') {
-          operation = 'SELECT';
-          httpMethod = 'GET';
-        } else if (normalizedType === 'TRIGGER') {
-          operation = 'EXECUTE';
-          httpMethod = 'POST';
-        }
+          // For OUT parameters, don't add to parameters list - only add to mappings
+          if (paramMode === 'IN' || paramMode === 'IN OUT') {
+            newParameters.push({
+              id: `proc-param-${Date.now()}-${index}`,
+              key: cleanKey,
+              dbColumn: paramName,
+              oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
+                         paramType.includes('NUMBER') ? 'NUMBER' :
+                         paramType.includes('DATE') ? 'DATE' : 
+                         paramType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
+              apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
+              parameterLocation: parameterLocation,
+              required: paramMode === 'IN' || paramMode === 'IN OUT',
+              description: `${paramName} (${paramMode})`,
+              example: paramType.includes('NUMBER') ? '1' : 
+                      paramType.includes('DATE') ? '2024-01-01' : '',
+              validationPattern: '',
+              defaultValue: param.DATA_DEFAULT || param.defaultValue || '',
+              inBody: parameterLocation === 'body',
+              isPrimaryKey: false,
+              paramMode: paramMode
+            });
+          }
 
-        // Set API details
-        const baseName = effectiveName?.toLowerCase() || '';
-        const endpointPath = baseName ? `/${baseName.replace(/_/g, '-').toLowerCase()}` : '';
-        
-        setApiDetails(prev => ({
-          ...prev,
-          apiName: effectiveName ? `${effectiveName} API` : 'New API',
-          apiCode: normalizedType ? `${normalizedType.slice(0, 3)}_${effectiveName || 'API'}` : 'API',
-          description: selectedObject.comment || detailedObject?.COMMENTS || (effectiveName ? `API for ${effectiveName}` : ''),
-          endpointPath: endpointPath,
-          owner: effectiveOwner || 'HR',
-          httpMethod: httpMethod
-        }));
-
-        setSchemaConfig(prev => ({
-          ...prev,
-          schemaName: effectiveOwner || 'HR',
-          objectType: effectiveType || 'TABLE',
-          objectName: effectiveName || '',
-          operation: operation,
-          primaryKeyColumn: ''
-        }));
-
-        // Generate parameters and response mappings with proper separation
-        const newParameters = [];
-        const newMappings = [];
-
-        // Check for parameters (procedures/functions)
-        let parametersArray = null;
-        
-        if (effectiveObject.parameters && Array.isArray(effectiveObject.parameters)) {
-          parametersArray = effectiveObject.parameters;
-        } else if (effectiveObject.PARAMETERS && Array.isArray(effectiveObject.PARAMETERS)) {
-          parametersArray = effectiveObject.PARAMETERS;
-        } else if (effectiveObject.arguments && Array.isArray(effectiveObject.arguments)) {
-          parametersArray = effectiveObject.arguments;
-        } else if (effectiveObject.ARGUMENTS && Array.isArray(effectiveObject.ARGUMENTS)) {
-          parametersArray = effectiveObject.ARGUMENTS;
-        }
-
-        if (parametersArray && parametersArray.length > 0) {
-          // Generate parameters from procedure/function
-          parametersArray.forEach((param, index) => {
-            const paramName = param.ARGUMENT_NAME || param.argument_name || param.name || param.NAME || `param_${index + 1}`;
-            const paramType = param.DATA_TYPE || param.data_type || param.type || param.TYPE || 'VARCHAR2';
-            const paramMode = param.IN_OUT || param.in_out || param.mode || param.MODE || 'IN';
-            
-            // Generate a clean key name
-            let cleanKey = paramName;
-            if (typeof paramName === 'string') {
-              cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
-            } else {
-              cleanKey = `param_${index + 1}`;
-            }
-            
-            // Determine parameter location based on mode
-            let parameterLocation = 'query';
-            if (paramMode === 'IN' && (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH')) {
-              parameterLocation = 'body';
-            } else if (paramMode === 'IN' && httpMethod === 'GET') {
-              parameterLocation = 'query';
-            } else if (paramMode === 'IN OUT') {
-              parameterLocation = 'body'; // IN OUT goes to body
-            }
-
-            // For OUT parameters, don't add to parameters list - only add to mappings
-            if (paramMode === 'IN' || paramMode === 'IN OUT') {
-              newParameters.push({
-                id: `proc-param-${Date.now()}-${index}`,
-                key: cleanKey,
-                dbColumn: paramName,
-                oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
-                           paramType.includes('NUMBER') ? 'NUMBER' :
-                           paramType.includes('DATE') ? 'DATE' : 
-                           paramType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
-                apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
-                parameterLocation: parameterLocation,
-                required: paramMode === 'IN' || paramMode === 'IN OUT',
-                description: `${paramName} (${paramMode})`,
-                example: paramType.includes('NUMBER') ? '1' : 
-                        paramType.includes('DATE') ? '2024-01-01' : '',
-                validationPattern: '',
-                defaultValue: param.DATA_DEFAULT || param.defaultValue || '',
-                inBody: parameterLocation === 'body',
-                isPrimaryKey: false,
-                paramMode: paramMode
-              });
-            }
-
-            // Add to response mappings for OUT parameters (and IN OUT parameters as they appear in both)
-            if (paramMode === 'OUT' || paramMode === 'IN OUT') {
-              newMappings.push({
-                id: `mapping-${Date.now()}-out-${index}`,
-                apiField: cleanKey,
-                dbColumn: paramName,
-                oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
-                           paramType.includes('NUMBER') ? 'NUMBER' :
-                           paramType.includes('DATE') ? 'DATE' : 'VARCHAR2',
-                apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
-                format: paramType.includes('DATE') ? 'date-time' : '',
-                nullable: true,
-                isPrimaryKey: false,
-                includeInResponse: true,
-                inResponse: true,
-                paramMode: paramMode
-              });
-            }
-          });
-          
-          // If there's a return type for functions, add it to mappings
-          const returnType = effectiveObject.RETURN_TYPE || effectiveObject.return_type || effectiveObject.returnType;
-          if (returnType && normalizedType === 'FUNCTION') {
+          // Add to response mappings for OUT parameters (and IN OUT parameters as they appear in both)
+          if (paramMode === 'OUT' || paramMode === 'IN OUT') {
             newMappings.push({
-              id: `mapping-${Date.now()}-return`,
-              apiField: 'result',
-              dbColumn: 'RETURN_VALUE',
-              oracleType: returnType.includes('VARCHAR') ? 'VARCHAR2' : 
-                         returnType.includes('NUMBER') ? 'NUMBER' :
-                         returnType.includes('DATE') ? 'DATE' : 'VARCHAR2',
-              apiType: returnType.includes('NUMBER') ? 'integer' : 'string',
-              format: '',
-              nullable: false,
+              id: `mapping-${Date.now()}-out-${index}`,
+              apiField: cleanKey,
+              dbColumn: paramName,
+              oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
+                         paramType.includes('NUMBER') ? 'NUMBER' :
+                         paramType.includes('DATE') ? 'DATE' : 'VARCHAR2',
+              apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
+              format: paramType.includes('DATE') ? 'date-time' : '',
+              nullable: true,
               isPrimaryKey: false,
               includeInResponse: true,
               inResponse: true,
-              paramMode: 'OUT'
+              paramMode: paramMode
             });
           }
-        } else {
-          // Check for columns (tables/views)
-          let columnsArray = null;
-          
-          if (effectiveObject.columns && Array.isArray(effectiveObject.columns)) {
-            columnsArray = effectiveObject.columns;
-          } else if (effectiveObject.COLUMNS && Array.isArray(effectiveObject.COLUMNS)) {
-            columnsArray = effectiveObject.COLUMNS;
-          }
-
-          if (columnsArray && columnsArray.length > 0) {
-            columnsArray.forEach((col, index) => {
-              const colName = col.name || col.COLUMN_NAME || col.column_name;
-              const colType = col.type || col.DATA_TYPE || col.data_type || 'VARCHAR2';
-              const colNullable = col.nullable || col.NULLABLE || 'Y';
-              const isPrimaryKey = col.key === 'PK' || col.CONSTRAINT_TYPE === 'P' || col.isPrimaryKey;
-              
-              if (colName) {
-                // Clean up column name for API key
-                const cleanKey = typeof colName === 'string' ? colName.toLowerCase() : `column_${index + 1}`;
-                
-                // Determine parameter location
-                let parameterLocation = 'query';
-                if (isPrimaryKey && (httpMethod === 'GET' || httpMethod === 'PUT' || httpMethod === 'DELETE')) {
-                  parameterLocation = 'path';
-                } else if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
-                  parameterLocation = 'body';
-                }
-                
-                // For tables/views, all columns go to both parameters and mappings
-                newParameters.push({
-                  id: `param-${Date.now()}-${index}`,
-                  key: cleanKey,
-                  dbColumn: colName,
-                  oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
-                            colType.includes('NUMBER') ? 'NUMBER' :
-                            colType.includes('DATE') ? 'DATE' : 
-                            colType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
-                  apiType: colType.includes('NUMBER') ? 'integer' : 'string',
-                  parameterLocation: parameterLocation,
-                  required: isPrimaryKey || colNullable === 'N',
-                  description: col.comment || col.COMMENTS || `From ${effectiveName}.${colName}`,
-                  example: colName.includes('ID') ? '1' : 
-                          colName.includes('DATE') ? '2024-01-01' :
-                          colName.includes('NAME') ? 'Sample' : '',
-                  validationPattern: '',
-                  defaultValue: col.DATA_DEFAULT || col.defaultValue || '',
-                  inBody: parameterLocation === 'body',
-                  isPrimaryKey: isPrimaryKey,
-                  paramMode: null
-                });
-
-                newMappings.push({
-                  id: `mapping-${Date.now()}-${index}`,
-                  apiField: cleanKey,
-                  dbColumn: colName,
-                  oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
-                            colType.includes('NUMBER') ? 'NUMBER' :
-                            colType.includes('DATE') ? 'DATE' : 'VARCHAR2',
-                  apiType: colType.includes('NUMBER') ? 'integer' : 'string',
-                  format: colType.includes('DATE') ? 'date-time' : '',
-                  nullable: colNullable === 'Y',
-                  isPrimaryKey: isPrimaryKey,
-                  includeInResponse: true,
-                  inResponse: true,
-                  paramMode: null
-                });
-              }
-            });
-          }
+        });
+        
+        // If there's a return type for functions, add it to mappings
+        const returnType = effectiveObject.RETURN_TYPE || effectiveObject.return_type || effectiveObject.returnType;
+        if (returnType && normalizedType === 'FUNCTION') {
+          newMappings.push({
+            id: `mapping-${Date.now()}-return`,
+            apiField: 'result',
+            dbColumn: 'RETURN_VALUE',
+            oracleType: returnType.includes('VARCHAR') ? 'VARCHAR2' : 
+                       returnType.includes('NUMBER') ? 'NUMBER' :
+                       returnType.includes('DATE') ? 'DATE' : 'VARCHAR2',
+            apiType: returnType.includes('NUMBER') ? 'integer' : 'string',
+            format: '',
+            nullable: false,
+            isPrimaryKey: false,
+            includeInResponse: true,
+            inResponse: true,
+            paramMode: 'OUT'
+          });
+        }
+      } else {
+        // Check for columns (tables/views)
+        let columnsArray = null;
+        
+        if (effectiveObject.columns && Array.isArray(effectiveObject.columns)) {
+          columnsArray = effectiveObject.columns;
+        } else if (effectiveObject.COLUMNS && Array.isArray(effectiveObject.COLUMNS)) {
+          columnsArray = effectiveObject.COLUMNS;
         }
 
-        setParameters(newParameters);
-        setResponseMappings(newMappings);
-        
-        // Generate sample response based on mappings
-        if (newMappings.length > 0) {
-          const sampleData = {};
-          newMappings.slice(0, 5).forEach(mapping => {
-            if (mapping.apiType === 'integer') {
-              sampleData[mapping.apiField] = 123;
-            } else if (mapping.apiType === 'string') {
-              if (mapping.format === 'date-time') {
-                sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
-              } else {
-                sampleData[mapping.apiField] = mapping.apiField === 'id' ? 1 : 'sample';
+        if (columnsArray && columnsArray.length > 0) {
+          columnsArray.forEach((col, index) => {
+            const colName = col.name || col.COLUMN_NAME || col.column_name;
+            const colType = col.type || col.DATA_TYPE || col.data_type || 'VARCHAR2';
+            const colNullable = col.nullable || col.NULLABLE || 'Y';
+            const isPrimaryKey = col.key === 'PK' || col.CONSTRAINT_TYPE === 'P' || col.isPrimaryKey;
+            
+            if (colName) {
+              // Clean up column name for API key
+              const cleanKey = typeof colName === 'string' ? colName.toLowerCase() : `column_${index + 1}`;
+              
+              // Determine parameter location
+              let parameterLocation = 'query';
+              if (isPrimaryKey && (httpMethod === 'GET' || httpMethod === 'PUT' || httpMethod === 'DELETE')) {
+                parameterLocation = 'path';
+              } else if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
+                parameterLocation = 'body';
               }
-            } else if (mapping.apiType === 'boolean') {
-              sampleData[mapping.apiField] = true;
+              
+              // For tables/views, all columns go to both parameters and mappings
+              newParameters.push({
+                id: `param-${Date.now()}-${index}`,
+                key: cleanKey,
+                dbColumn: colName,
+                oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
+                          colType.includes('NUMBER') ? 'NUMBER' :
+                          colType.includes('DATE') ? 'DATE' : 
+                          colType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
+                apiType: colType.includes('NUMBER') ? 'integer' : 'string',
+                parameterLocation: parameterLocation,
+                required: isPrimaryKey || colNullable === 'N',
+                description: col.comment || col.COMMENTS || `From ${effectiveName}.${colName}`,
+                example: colName.includes('ID') ? '1' : 
+                        colName.includes('DATE') ? '2024-01-01' :
+                        colName.includes('NAME') ? 'Sample' : '',
+                validationPattern: '',
+                defaultValue: col.DATA_DEFAULT || col.defaultValue || '',
+                inBody: parameterLocation === 'body',
+                isPrimaryKey: isPrimaryKey,
+                paramMode: null
+              });
+
+              newMappings.push({
+                id: `mapping-${Date.now()}-${index}`,
+                apiField: cleanKey,
+                dbColumn: colName,
+                oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
+                          colType.includes('NUMBER') ? 'NUMBER' :
+                          colType.includes('DATE') ? 'DATE' : 'VARCHAR2',
+                apiType: colType.includes('NUMBER') ? 'integer' : 'string',
+                format: colType.includes('DATE') ? 'date-time' : '',
+                nullable: colNullable === 'Y',
+                isPrimaryKey: isPrimaryKey,
+                includeInResponse: true,
+                inResponse: true,
+                paramMode: null
+              });
             }
           });
-          
-          const successSchema = JSON.stringify({
-            success: true,
-            data: sampleData,
-            message: 'Request processed successfully',
-            metadata: {
-              timestamp: '{{timestamp}}',
-              apiVersion: apiDetails.version,
-              requestId: '{{requestId}}'
-            }
-          }, null, 2);
-          
-          const errorSchema = JSON.stringify({
-            success: false,
-            error: {
-              code: 'ERR_001',
-              message: 'Error processing request',
-              details: {
-                field: 'field_name',
-                reason: 'Invalid value'
-              }
-            }
-          }, null, 2);
-          
-          setResponseBody(prev => ({
-            ...prev,
-            successSchema,
-            errorSchema
-          }));
         }
-        
-        console.log('✅ ApiGenerationModal - Initialization complete:', {
-          inParametersCount: newParameters.length,
-          outMappingsCount: newMappings.length
-        });
-
-      } catch (error) {
-        console.error('❌ Error initializing modal:', error);
-      } finally {
-        setLoading(false);
       }
-    };
 
-    if (isOpen) {
-      initializeFromObject();
+      setParameters(newParameters);
+      setResponseMappings(newMappings);
+      
+      // Generate sample response based on mappings
+      if (newMappings.length > 0) {
+        const sampleData = {};
+        newMappings.slice(0, 5).forEach(mapping => {
+          if (mapping.apiType === 'integer') {
+            sampleData[mapping.apiField] = 123;
+          } else if (mapping.apiType === 'string') {
+            if (mapping.format === 'date-time') {
+              sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
+            } else {
+              sampleData[mapping.apiField] = mapping.apiField === 'id' ? 1 : 'sample';
+            }
+          } else if (mapping.apiType === 'boolean') {
+            sampleData[mapping.apiField] = true;
+          }
+        });
+        
+        const successSchema = JSON.stringify({
+          success: true,
+          data: sampleData,
+          message: 'Request processed successfully',
+          metadata: {
+            timestamp: '{{timestamp}}',
+            apiVersion: apiDetails.version,
+            requestId: '{{requestId}}'
+          }
+        }, null, 2);
+        
+        const errorSchema = JSON.stringify({
+          success: false,
+          error: {
+            code: 'ERR_001',
+            message: 'Error processing request',
+            details: {
+              field: 'field_name',
+              reason: 'Invalid value'
+            }
+          }
+        }, null, 2);
+        
+        setResponseBody(prev => ({
+          ...prev,
+          successSchema,
+          errorSchema
+        }));
+      }
+      
+      console.log('✅ ApiGenerationModal - Initialization complete:', {
+        inParametersCount: newParameters.length,
+        outMappingsCount: newMappings.length
+      });
+
+    } catch (error) {
+      console.error('❌ Error initializing modal:', error);
+    } finally {
+      setLoading(false);
     }
-  }, [selectedObject, isOpen, authToken, obType, isEditing, collections]);
+  };
+
+  if (isOpen) {
+    initializeFromObject();
+  }
+}, [selectedObject, isOpen, authToken, obType, isEditing, collections]);
 
   // Handle collection selection
   const handleCollectionChange = (collectionId) => {
@@ -3601,7 +3779,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
   return (
     <>
       <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4" style={{ zIndex: 1000 }}>
-        <div className="rounded-xl shadow-2xl w-5xl max-w-5xl max-h-[90vh] overflow-hidden flex flex-col" style={{ 
+        <div className="rounded-xl shadow-2xl w-5xl max-w-5xl max-h-[90vh] overflow-y-scroll flex flex-col" style={{ 
           backgroundColor: themeColors.bg,
           border: `1px solid ${themeColors.modalBorder}`
         }}>
@@ -6301,12 +6479,6 @@ WHERE ROWNUM <= 100;` : ''}`}
               <span className="text-xs block mt-1" style={{ color: themeColors.info }}>
                 IN Parameters: {getInParameters().length} | Response Fields: {getOutMappings().length}
               </span>
-              {Object.keys(validationErrors).length > 0 && (
-                <span className="text-xs block mt-1" style={{ color: themeColors.error }}>
-                  <AlertCircle className="h-3 w-3 inline mr-1" />
-                  {Object.keys(validationErrors).length} required field(s) missing
-                </span>
-              )}
             </div>
             <div className="flex items-center gap-3">
               <button

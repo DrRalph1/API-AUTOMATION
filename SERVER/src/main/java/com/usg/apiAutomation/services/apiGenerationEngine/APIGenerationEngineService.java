@@ -4769,33 +4769,6 @@ public class APIGenerationEngineService {
         }
     }
 
-    private void generateImplementations(GeneratedApiEntity api, RequestEntity request) {
-        List<String> languages = Arrays.asList("java", "javascript", "python", "curl", "csharp", "php", "ruby", "go");
-
-        for (String language : languages) {
-            try {
-                Optional<ImplementationEntity> existing = implementationRepository
-                        .findByRequestIdAndLanguageAndComponent(request.getId(), language, "main");
-
-                if (existing.isEmpty()) {
-                    String code = generateCodeForLanguage(api, language);
-
-                    ImplementationEntity implementation = ImplementationEntity.builder()
-                            .language(language)
-                            .component("main")
-                            .code(code)
-                            .linesOfCode(code != null ? code.split("\n").length : 0)
-                            .request(request)
-                            .isValidated(false)
-                            .build();
-
-                    implementationRepository.save(implementation);
-                }
-            } catch (Exception e) {
-                log.warn("Failed to generate {} implementation: {}", language, e.getMessage());
-            }
-        }
-    }
 
     /**
      * Generate collections using the provided collection info
@@ -5599,6 +5572,36 @@ public class APIGenerationEngineService {
             throw new RuntimeException("Failed to generate Documentation: " + e.getMessage(), e);
         }
     }
+
+
+    private void generateImplementations(GeneratedApiEntity api, RequestEntity request) {
+        List<String> languages = Arrays.asList("java", "javascript", "python", "curl", "csharp", "php", "ruby", "go");
+
+        for (String language : languages) {
+            try {
+                Optional<ImplementationEntity> existing = implementationRepository
+                        .findByRequestIdAndLanguageAndComponent(request.getId(), language, "main");
+
+                if (existing.isEmpty()) {
+                    String code = generateCodeForLanguage(api, language);
+
+                    ImplementationEntity implementation = ImplementationEntity.builder()
+                            .language(language)
+                            .component("main")
+                            .code(code)
+                            .linesOfCode(code != null ? code.split("\n").length : 0)
+                            .request(request)
+                            .isValidated(false)
+                            .build();
+
+                    implementationRepository.save(implementation);
+                }
+            } catch (Exception e) {
+                log.warn("Failed to generate {} implementation: {}", language, e.getMessage());
+            }
+        }
+    }
+
 
     private void generateDocumentationCodeExamples(GeneratedApiEntity api, APIEndpointEntity endpoint,
                                                    String codeBaseRequestId) {
@@ -8179,4 +8182,454 @@ public class APIGenerationEngineService {
             return false;
         }
     }
+
+
+
+    @Transactional(readOnly = true)
+    public ApiDetailsResponseDTO getCompleteApiDetails(String requestId, String apiId) {
+        try {
+            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+                    ", Fetching complete API details for: " + apiId);
+
+            // Fetch the API entity with basic configs only
+            GeneratedApiEntity api = generatedAPIRepository.findByIdWithConfigs(apiId)
+                    .orElseThrow(() -> new RuntimeException("API not found: " + apiId));
+
+            // Fetch collections separately to avoid MultipleBagFetchException
+            List<ApiParameterEntity> parameters = generatedAPIRepository.findParametersByApiId(apiId);
+            List<ApiResponseMappingEntity> responseMappings = generatedAPIRepository.findResponseMappingsByApiId(apiId);
+            List<ApiHeaderEntity> headers = generatedAPIRepository.findHeadersByApiId(apiId);
+            List<ApiTestEntity> tests = generatedAPIRepository.findTestsByApiId(apiId);
+
+            // Set the fetched collections
+            api.setParameters(parameters);
+            api.setResponseMappings(responseMappings);
+            api.setHeaders(headers);
+            api.setTests(tests);
+
+            // Convert to the complete response DTO
+            ApiDetailsResponseDTO response = mapToApiDetailsResponse(api);
+
+            // Add generated files if needed
+            Map<String, String> generatedFiles = generateApiCode(api);
+            response.setGeneratedFiles(generatedFiles);
+
+            // Add execution stats
+            response.setTotalCalls(api.getTotalCalls() != null ? api.getTotalCalls() : 0L);
+            response.setLastCalledAt(api.getLastCalledAt());
+
+            // Add average execution time
+            Double avgTime = executionLogRepository.getAverageExecutionTime(apiId);
+            if (avgTime != null) {
+                if (response.getMetadata() == null) {
+                    response.setMetadata(new HashMap<>());
+                }
+                response.getMetadata().put("averageExecutionTimeMs", avgTime);
+            }
+
+            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+                    ", Complete API details fetched successfully for: " + apiId);
+
+            return response;
+
+        } catch (Exception e) {
+            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+                    ", Error fetching complete API details: " + e.getMessage());
+            throw new RuntimeException("Failed to fetch complete API details: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Map entity to complete API details response DTO
+     */
+    private ApiDetailsResponseDTO mapToApiDetailsResponse(GeneratedApiEntity entity) {
+        if (entity == null) return null;
+
+        ApiDetailsResponseDTO response = ApiDetailsResponseDTO.builder()
+                // Basic Info
+                .id(entity.getId())
+                .requestId(entity.getSourceRequestId())
+
+                // API Details Tab (exactly as captured)
+                .apiName(entity.getApiName())
+                .apiCode(entity.getApiCode())
+                .description(entity.getDescription())
+                .version(entity.getVersion())
+                .status(entity.getStatus())
+                .httpMethod(entity.getHttpMethod())
+                .basePath(entity.getBasePath())
+                .endpointPath(entity.getEndpointPath())
+                .category(entity.getCategory())
+                .owner(entity.getOwner())
+                .tags(entity.getTags() != null ? entity.getTags() : new ArrayList<>())
+
+                // Metadata
+                .createdAt(entity.getCreatedAt())
+                .updatedAt(entity.getUpdatedAt())
+                .createdBy(entity.getCreatedBy())
+                .updatedBy(entity.getUpdatedBy())
+                .isActive(entity.getIsActive())
+                .totalCalls(entity.getTotalCalls())
+                .lastCalledAt(entity.getLastCalledAt())
+
+                // Metadata (for additional info)
+                .metadata(new HashMap<>())
+                .build();
+
+        // Map validation from source object if present
+        if (entity.getSourceObjectInfo() != null && entity.getSourceObjectInfo().containsKey("validation")) {
+            response.setValidation((Map<String, Object>) entity.getSourceObjectInfo().get("validation"));
+        }
+
+        // Map response examples from source object if present
+        if (entity.getSourceObjectInfo() != null && entity.getSourceObjectInfo().containsKey("responseExamples")) {
+            response.setResponseExamples((Map<String, Object>) entity.getSourceObjectInfo().get("responseExamples"));
+        }
+
+        // Map apiDetails from source object if present
+        if (entity.getSourceObjectInfo() != null && entity.getSourceObjectInfo().containsKey("apiDetails")) {
+            response.setApiDetails((String) entity.getSourceObjectInfo().get("apiDetails"));
+        }
+
+        // Map collection info
+        if (entity.getCollectionInfo() != null) {
+            try {
+                CollectionInfoDTO collectionInfo = objectMapper.convertValue(
+                        entity.getCollectionInfo(), CollectionInfoDTO.class);
+                response.setCollectionInfo(collectionInfo);
+            } catch (Exception e) {
+                log.warn("Failed to parse collection info: {}", e.getMessage());
+            }
+        }
+
+        // Map source object info
+        if (entity.getSourceObjectInfo() != null) {
+            response.setSourceObject(entity.getSourceObjectInfo());
+        }
+
+        // Map schema config
+        if (entity.getSchemaConfig() != null) {
+            response.setSchemaConfig(mapSchemaConfigToDTO(entity.getSchemaConfig()));
+        }
+
+        // Map auth config
+        if (entity.getAuthConfig() != null) {
+            response.setAuthConfig(mapAuthConfigToDTO(entity.getAuthConfig()));
+        }
+
+        // Map request body config
+        if (entity.getRequestConfig() != null) {
+            response.setRequestBody(mapRequestConfigToDTO(entity.getRequestConfig()));
+        }
+
+        // Map response body config
+        if (entity.getResponseConfig() != null) {
+            response.setResponseBody(mapResponseConfigToDTO(entity.getResponseConfig()));
+        }
+
+        // Map settings
+        if (entity.getSettings() != null) {
+            response.setSettings(mapSettingsToDTO(entity.getSettings()));
+        }
+
+        // Map parameters
+        if (entity.getParameters() != null && !entity.getParameters().isEmpty()) {
+            List<ApiParameterDTO> parameterDTOs = entity.getParameters().stream()
+                    .sorted(Comparator.comparing(ApiParameterEntity::getPosition,
+                            Comparator.nullsLast(Comparator.naturalOrder())))
+                    .map(this::mapParameterToDTO)
+                    .collect(Collectors.toList());
+            response.setParameters(parameterDTOs);
+        }
+
+        // Map response mappings
+        if (entity.getResponseMappings() != null && !entity.getResponseMappings().isEmpty()) {
+            List<ApiResponseMappingDTO> mappingDTOs = entity.getResponseMappings().stream()
+                    .sorted(Comparator.comparing(ApiResponseMappingEntity::getPosition,
+                            Comparator.nullsLast(Comparator.naturalOrder())))
+                    .map(this::mapResponseMappingToDTO)
+                    .collect(Collectors.toList());
+            response.setResponseMappings(mappingDTOs);
+        }
+
+        // Map headers
+        if (entity.getHeaders() != null && !entity.getHeaders().isEmpty()) {
+            List<ApiHeaderDTO> headerDTOs = entity.getHeaders().stream()
+                    .map(this::mapHeaderToDTO)
+                    .collect(Collectors.toList());
+            response.setHeaders(headerDTOs);
+        }
+
+        // Map tests
+        if (entity.getTests() != null && !entity.getTests().isEmpty()) {
+            // Since tests are stored as entities, we need to combine them into ApiTestsDTO
+            ApiTestsDTO testsDTO = combineTestEntitiesToDTO(entity.getTests());
+            response.setTests(testsDTO);
+        }
+
+        return response;
+    }
+
+    /**
+     * Helper method to combine multiple test entities into a single ApiTestsDTO
+     */
+    private ApiTestsDTO combineTestEntitiesToDTO(List<ApiTestEntity> testEntities) {
+        if (testEntities == null || testEntities.isEmpty()) {
+            return null;
+        }
+
+        ApiTestsDTO testsDTO = new ApiTestsDTO();
+        Map<String, Object> combinedTestData = new HashMap<>();
+
+        for (ApiTestEntity test : testEntities) {
+            if (test.getTestData() != null) {
+                combinedTestData.putAll(test.getTestData());
+            }
+
+            // Map specific fields based on test type
+            switch (test.getTestType()) {
+                case "UNIT":
+                    if (test.getTestData() != null && test.getTestData().containsKey("tests")) {
+                        Object unitTests = test.getTestData().get("tests");
+                        if (unitTests instanceof String) {
+                            testsDTO.setUnitTests((String) unitTests);
+                        } else if (unitTests != null) {
+                            try {
+                                testsDTO.setUnitTests(objectMapper.writeValueAsString(unitTests));
+                            } catch (Exception e) {
+                                log.warn("Failed to convert unit tests to string: {}", e.getMessage());
+                            }
+                        }
+                    }
+                    break;
+                case "INTEGRATION":
+                    if (test.getTestData() != null && test.getTestData().containsKey("tests")) {
+                        Object integrationTests = test.getTestData().get("tests");
+                        if (integrationTests instanceof String) {
+                            testsDTO.setIntegrationTests((String) integrationTests);
+                        } else if (integrationTests != null) {
+                            try {
+                                testsDTO.setIntegrationTests(objectMapper.writeValueAsString(integrationTests));
+                            } catch (Exception e) {
+                                log.warn("Failed to convert integration tests to string: {}", e.getMessage());
+                            }
+                        }
+                    }
+                    break;
+                case "DATA":
+                    if (test.getTestData() != null && test.getTestData().containsKey("data")) {
+                        Object testData = test.getTestData().get("data");
+                        if (testData instanceof Map) {
+                            testsDTO.setTestData((Map<String, Object>) testData);
+                        }
+                    }
+                    break;
+            }
+        }
+
+        // Extract common fields from combined data
+        if (combinedTestData.containsKey("assertions")) {
+            testsDTO.setAssertions((List<String>) combinedTestData.get("assertions"));
+        }
+        if (combinedTestData.containsKey("environment")) {
+            testsDTO.setTestEnvironment((String) combinedTestData.get("environment"));
+        }
+        if (combinedTestData.containsKey("iterations")) {
+            testsDTO.setTestIterations((Integer) combinedTestData.get("iterations"));
+        }
+        if (combinedTestData.containsKey("users")) {
+            testsDTO.setTestUsers((Integer) combinedTestData.get("users"));
+        }
+        if (combinedTestData.containsKey("performanceThreshold")) {
+            testsDTO.setPerformanceThreshold((Integer) combinedTestData.get("performanceThreshold"));
+        }
+
+        return testsDTO;
+    }
+
+// Add these missing mapping methods if they don't exist
+
+    private ApiSchemaConfigDTO mapSchemaConfigToDTO(ApiSchemaConfigEntity entity) {
+        if (entity == null) return null;
+
+        return ApiSchemaConfigDTO.builder()
+                .schemaName(entity.getSchemaName())
+                .objectType(entity.getObjectType())
+                .objectName(entity.getObjectName())
+                .operation(entity.getOperation())
+                .primaryKeyColumn(entity.getPrimaryKeyColumn())
+                .sequenceName(entity.getSequenceName())
+                .enablePagination(entity.getEnablePagination())
+                .pageSize(entity.getPageSize())
+                .enableSorting(entity.getEnableSorting())
+                .defaultSortColumn(entity.getDefaultSortColumn())
+                .defaultSortDirection(entity.getDefaultSortDirection())
+                .isSynonym(entity.getIsSynonym())
+                .targetType(entity.getTargetType())
+                .targetName(entity.getTargetName())
+                .targetOwner(entity.getTargetOwner())
+                .build();
+    }
+
+    private ApiAuthConfigDTO mapAuthConfigToDTO(ApiAuthConfigEntity entity) {
+        if (entity == null) return null;
+
+        return ApiAuthConfigDTO.builder()
+                .authType(entity.getAuthType())
+                .apiKeyHeader(entity.getApiKeyHeader())
+                .apiKeyValue(entity.getApiKeyValue())
+                .apiKeySecret(entity.getApiKeySecret())
+                .apiKeyLocation(entity.getApiKeyLocation())
+                .apiKeyPrefix(entity.getApiKeyPrefix())
+                .basicUsername(entity.getBasicUsername())
+                .basicPassword(entity.getBasicPassword())
+                .basicRealm(entity.getBasicRealm())
+                .jwtSecret(entity.getJwtSecret())
+                .jwtIssuer(entity.getJwtIssuer())
+                .jwtAudience(entity.getJwtAudience())
+                .jwtExpiration(entity.getJwtExpiration())
+                .jwtAlgorithm(entity.getJwtAlgorithm())
+                .oauthClientId(entity.getOauthClientId())
+                .oauthClientSecret(entity.getOauthClientSecret())
+                .oauthTokenUrl(entity.getOauthTokenUrl())
+                .oauthAuthUrl(entity.getOauthAuthUrl())
+                .oauthScopes(entity.getOauthScopes())
+                .requiredRoles(entity.getRequiredRoles())
+                .customAuthFunction(entity.getCustomAuthFunction())
+                .validateSession(entity.getValidateSession())
+                .checkObjectPrivileges(entity.getCheckObjectPrivileges())
+                .ipWhitelist(entity.getIpWhitelist())
+                .rateLimitRequests(entity.getRateLimitRequests())
+                .rateLimitPeriod(entity.getRateLimitPeriod())
+                .auditLevel(entity.getAuditLevel())
+                .corsOrigins(parseCorsOrigins(entity.getCorsOrigins()))
+                .corsCredentials(entity.getCorsCredentials())
+                .build();
+    }
+
+    private ApiRequestConfigDTO mapRequestConfigToDTO(ApiRequestConfigEntity entity) {
+        if (entity == null) return null;
+
+        return ApiRequestConfigDTO.builder()
+                .bodyType(entity.getBodyType())
+                .sample(entity.getSample())
+                .maxSize(entity.getMaxSize())
+                .validateSchema(entity.getValidateSchema())
+                .allowedMediaTypes(parseAllowedMediaTypes(entity.getAllowedMediaTypes()))
+                .requiredFields(entity.getRequiredFields())
+                .build();
+    }
+
+    private ApiResponseConfigDTO mapResponseConfigToDTO(ApiResponseConfigEntity entity) {
+        if (entity == null) return null;
+
+        return ApiResponseConfigDTO.builder()
+                .successSchema(entity.getSuccessSchema())
+                .errorSchema(entity.getErrorSchema())
+                .includeMetadata(entity.getIncludeMetadata())
+                .metadataFields(entity.getMetadataFields())
+                .contentType(entity.getContentType())
+                .compression(entity.getCompression())
+                .build();
+    }
+
+    private ApiSettingsDTO mapSettingsToDTO(ApiSettingsEntity entity) {
+        if (entity == null) return null;
+
+        return ApiSettingsDTO.builder()
+                .timeout(entity.getTimeout())
+                .maxRecords(entity.getMaxRecords())
+                .enableLogging(entity.getEnableLogging())
+                .logLevel(entity.getLogLevel())
+                .enableCaching(entity.getEnableCaching())
+                .cacheTtl(entity.getCacheTtl())
+                .generateSwagger(entity.getGenerateSwagger())
+                .generatePostman(entity.getGeneratePostman())
+                .generateClientSDK(entity.getGenerateClientSDK())
+                .enableMonitoring(entity.getEnableMonitoring())
+                .enableAlerts(entity.getEnableAlerts())
+                .alertEmail(entity.getAlertEmail())
+                .enableTracing(entity.getEnableTracing())
+                .corsEnabled(entity.getCorsEnabled())
+                .build();
+    }
+
+    private ApiParameterDTO mapParameterToDTO(ApiParameterEntity entity) {
+        if (entity == null) return null;
+
+        return ApiParameterDTO.builder()
+                .key(entity.getKey())
+                .dbColumn(entity.getDbColumn())
+                .dbParameter(entity.getDbParameter())
+                .oracleType(entity.getOracleType())
+                .apiType(entity.getApiType())
+                .parameterType(entity.getParameterType())
+                .parameterLocation(entity.getParameterLocation())
+                .required(entity.getRequired())
+                .description(entity.getDescription())
+                .example(entity.getExample())
+                .validationPattern(entity.getValidationPattern())
+                .defaultValue(entity.getDefaultValue())
+                .inBody(entity.getInBody())
+                .isPrimaryKey(entity.getIsPrimaryKey())
+                .paramMode(entity.getParamMode())
+                .position(entity.getPosition())
+                .build();
+    }
+
+    private ApiResponseMappingDTO mapResponseMappingToDTO(ApiResponseMappingEntity entity) {
+        if (entity == null) return null;
+
+        return ApiResponseMappingDTO.builder()
+                .apiField(entity.getApiField())
+                .dbColumn(entity.getDbColumn())
+                .oracleType(entity.getOracleType())
+                .apiType(entity.getApiType())
+                .format(entity.getFormat())
+                .nullable(entity.getNullable())
+                .isPrimaryKey(entity.getIsPrimaryKey())
+                .includeInResponse(entity.getIncludeInResponse())
+                .inResponse(entity.getInResponse())
+                .position(entity.getPosition())
+                .build();
+    }
+
+    private ApiHeaderDTO mapHeaderToDTO(ApiHeaderEntity entity) {
+        if (entity == null) return null;
+
+        return ApiHeaderDTO.builder()
+                .key(entity.getKey())
+                .value(entity.getValue())
+                .required(entity.getRequired())
+                .description(entity.getDescription())
+                .isRequestHeader(entity.getIsRequestHeader())
+                .isResponseHeader(entity.getIsResponseHeader())
+                .build();
+    }
+
+    private List<String> parseCorsOrigins(String corsOrigins) {
+        if (corsOrigins == null || corsOrigins.isEmpty()) {
+            return new ArrayList<>();
+        }
+        try {
+            return Arrays.asList(corsOrigins.split(","));
+        } catch (Exception e) {
+            log.warn("Failed to parse cors origins: {}", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    private List<String> parseAllowedMediaTypes(String allowedMediaTypes) {
+        if (allowedMediaTypes == null || allowedMediaTypes.isEmpty()) {
+            return new ArrayList<>();
+        }
+        try {
+            return Arrays.asList(allowedMediaTypes.split(","));
+        } catch (Exception e) {
+            log.warn("Failed to parse allowed media types: {}", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+
 }

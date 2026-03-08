@@ -23,4 +23,5 @@ public class RequestDTO {
     private boolean isSaved;
     private String collectionId;
     private String folderId;
+    private String tags;
 }

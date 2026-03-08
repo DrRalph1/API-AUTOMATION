@@ -760,4 +760,47 @@ public class APIGenerationEngineController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
+
+
+    @GetMapping("/{apiId}/complete-details")
+    @Operation(summary = "Get Complete API Details",
+            description = "Get all API details exactly as they were captured during generation")
+    public ResponseEntity<?> getCompleteApiDetails(
+            @PathVariable String apiId,
+            HttpServletRequest req) {
+
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting complete API details");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+                    ", Getting complete API details for: " + apiId + " by: " + performedBy);
+
+            ApiDetailsResponseDTO details = apiGenerationEngineService.getCompleteApiDetails(requestId, apiId);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("responseCode", 200);
+            response.put("message", "Complete API details retrieved successfully");
+            response.put("data", details);
+            response.put("requestId", requestId);
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+                    ", Error getting complete API details: " + e.getMessage());
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred while getting complete API details: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
 }

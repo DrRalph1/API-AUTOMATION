@@ -24,6 +24,9 @@ public class RequestEntity {
     @ToString.Include
     private String id;
 
+    @Column(name = "generated_api_id")
+    private String generatedApiId;
+
     @Column(nullable = false)
     @EqualsAndHashCode.Include
     @ToString.Include

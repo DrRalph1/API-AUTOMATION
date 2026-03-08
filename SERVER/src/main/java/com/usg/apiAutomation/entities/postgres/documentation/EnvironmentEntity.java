@@ -15,6 +15,9 @@ public class EnvironmentEntity {
 //    @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
+    @Column(name = "generated_api_id")
+    private String generatedApiId;
+
     private String name;
     private String baseUrl;
 

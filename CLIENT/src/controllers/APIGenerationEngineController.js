@@ -681,6 +681,264 @@ export const updateApi = async (authorizationHeader, apiId, request = {}) => {
     });
 };
 
+
+
+/**
+ * Get complete API details exactly as captured during generation
+ * @param {string} authorizationHeader - Bearer token
+ * @param {string} apiId - API ID
+ * @returns {Promise} API response with complete details
+ */
+export const getCompleteApiDetails = async (authorizationHeader, apiId) => {
+    const requestId = generateRequestId();
+    
+    if (!apiId) {
+        return Promise.reject({
+            responseCode: 400,
+            message: "API ID is required",
+            requestId
+        });
+    }
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/gen-engine/${encodeURIComponent(apiId)}/complete-details`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformCompleteApiDetailsResponse(response);
+    }).catch(error => {
+        console.error('Error getting complete API details:', error);
+        return {
+            responseCode: error.response?.status || 500,
+            message: error.message || 'Failed to get complete API details',
+            data: null,
+            requestId
+        };
+    });
+};
+
+
+
+
+/**
+ * Transform complete API details response (matches GenerateApiRequestDTO structure)
+ */
+const transformCompleteApiDetailsResponse = (response) => {
+    const data = response.data || {};
+    
+    // Helper to safely parse JSON strings back to objects
+    const safeJsonParse = (str) => {
+        if (!str) return null;
+        if (typeof str === 'object') return str;
+        try {
+            return JSON.parse(str);
+        } catch (e) {
+            return str;
+        }
+    };
+
+    const transformedData = {
+        // Basic Info
+        id: data.id,
+        requestId: data.requestId,
+        
+        // API Details Tab (exactly as captured)
+        apiName: data.apiName,
+        apiCode: data.apiCode,
+        description: data.description,
+        version: data.version,
+        status: data.status || 'DRAFT',
+        httpMethod: data.httpMethod,
+        basePath: data.basePath,
+        endpointPath: data.endpointPath,
+        category: data.category,
+        owner: data.owner,
+        validation: data.validation || {},
+        responseExamples: data.responseExamples || {},
+        apiDetails: data.apiDetails,
+        tags: data.tags || [],
+        
+        // Collection & Folder Info (exactly as captured)
+        collectionInfo: data.collectionInfo ? {
+            collectionId: data.collectionInfo.collectionId,
+            collectionName: data.collectionInfo.collectionName,
+            collectionType: data.collectionInfo.collectionType,
+            folderId: data.collectionInfo.folderId,
+            folderName: data.collectionInfo.folderName,
+            parentFolderId: data.collectionInfo.parentFolderId,
+            description: data.collectionInfo.description,
+            color: data.collectionInfo.color,
+            variables: data.collectionInfo.variables || []
+        } : null,
+        
+        // Schema Configuration (exactly as captured)
+        schemaConfig: transformSchemaConfig(data.schemaConfig),
+        
+        // Parameters Tab (exactly as captured)
+        parameters: (data.parameters || []).map(transformParameter),
+        
+        // Response Mappings Tab (exactly as captured)
+        responseMappings: (data.responseMappings || []).map(transformResponseMapping),
+        
+        // Authentication Tab (exactly as captured)
+        authConfig: transformAuthConfig(data.authConfig),
+        
+        // Request Tab (exactly as captured)
+        requestBody: transformRequestConfig(data.requestBody || data.requestConfig),
+        
+        // Response Tab (exactly as captured)
+        responseBody: transformResponseConfig(data.responseBody || data.responseConfig),
+        
+        // Headers (exactly as captured)
+        headers: (data.headers || []).map(transformHeader),
+        
+        // Database Tests Tab (exactly as captured)
+        tests: data.tests ? {
+            testConnection: data.tests.testConnection !== false,
+            testObjectAccess: data.tests.testObjectAccess !== false,
+            testPrivileges: data.tests.testPrivileges !== false,
+            testDataTypes: data.tests.testDataTypes !== false,
+            testNullConstraints: data.tests.testNullConstraints !== false,
+            testUniqueConstraints: data.tests.testUniqueConstraints !== false,
+            testForeignKeyReferences: data.tests.testForeignKeyReferences !== false,
+            testQueryPerformance: data.tests.testQueryPerformance !== false,
+            performanceThreshold: data.tests.performanceThreshold || 1000,
+            testWithSampleData: data.tests.testWithSampleData !== false,
+            sampleDataRows: data.tests.sampleDataRows || 10,
+            testProcedureExecution: data.tests.testProcedureExecution !== false,
+            testFunctionReturn: data.tests.testFunctionReturn !== false,
+            testExceptionHandling: data.tests.testExceptionHandling !== false,
+            testSQLInjection: data.tests.testSQLInjection !== false,
+            testAuthentication: data.tests.testAuthentication !== false,
+            testAuthorization: data.tests.testAuthorization !== false,
+            unitTests: safeJsonParse(data.tests.unitTests),
+            integrationTests: safeJsonParse(data.tests.integrationTests),
+            testData: data.tests.testData || {},
+            testQueries: data.tests.testQueries || [],
+            assertions: data.tests.assertions || [],
+            testEnvironment: data.tests.testEnvironment || 'development',
+            testIterations: data.tests.testIterations || 1,
+            testUsers: data.tests.testUsers || 1
+        } : null,
+        
+        // Settings Tab (exactly as captured)
+        settings: transformSettings(data.settings),
+        
+        // Source Object Info (exactly as captured)
+        sourceObject: data.sourceObject || {},
+        
+        // Control flags
+        regenerateComponents: data.regenerateComponents || false,
+        isEditing: data.isEditing || false,
+        
+        // Metadata
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
+        createdBy: data.createdBy,
+        updatedBy: data.updatedBy,
+        isActive: data.isActive !== false,
+        totalCalls: data.totalCalls || 0,
+        lastCalledAt: data.lastCalledAt,
+        
+        // Related components info
+        metadata: {
+            ...(data.metadata || {}),
+            parametersCount: data.parametersCount || (data.parameters || []).length,
+            responseMappingsCount: data.responseMappingsCount || (data.responseMappings || []).length,
+            headersCount: data.headersCount || (data.headers || []).length,
+            generatedAt: data.metadata?.generatedAt,
+            codeBaseRequestId: data.metadata?.codeBaseRequestId,
+            collectionsCollectionId: data.metadata?.collectionsCollectionId,
+            documentationCollectionId: data.metadata?.documentationCollectionId,
+            averageExecutionTimeMs: data.metadata?.averageExecutionTimeMs
+        },
+        
+        // Generated files
+        generatedFiles: data.generatedFiles || {},
+        
+        // URLs for related components
+        urls: data.metadata?.urls || {}
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+
+
+/**
+ * Extract complete API details from response
+ */
+export const extractCompleteApiDetails = (response) => {
+    return response?.data || {};
+};
+
+/**
+ * Extract API configuration for editing (formatted for the UI form)
+ */
+export const extractApiConfigForEditing = (response) => {
+    const data = response?.data || {};
+    
+    // Return data in the exact format expected by the generation form
+    return {
+        // API Details Tab
+        apiName: data.apiName,
+        apiCode: data.apiCode,
+        description: data.description,
+        version: data.version,
+        status: data.status,
+        httpMethod: data.httpMethod,
+        basePath: data.basePath,
+        endpointPath: data.endpointPath,
+        category: data.category,
+        owner: data.owner,
+        tags: data.tags || [],
+        
+        // Collection Info
+        collectionInfo: data.collectionInfo,
+        
+        // Schema Config
+        schemaConfig: data.schemaConfig,
+        
+        // Parameters
+        parameters: data.parameters || [],
+        
+        // Response Mappings
+        responseMappings: data.responseMappings || [],
+        
+        // Auth Config
+        authConfig: data.authConfig,
+        
+        // Request Body
+        requestBody: data.requestBody,
+        
+        // Response Body
+        responseBody: data.responseBody,
+        
+        // Headers
+        headers: data.headers || [],
+        
+        // Tests
+        tests: data.tests,
+        
+        // Settings
+        settings: data.settings,
+        
+        // Source Object
+        sourceObject: data.sourceObject,
+        
+        // Editing flag
+        isEditing: true
+    };
+};
+
+
+
 /**
  * Partially update specific fields of an API
  * @param {string} authorizationHeader - Bearer token

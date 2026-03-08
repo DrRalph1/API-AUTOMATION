@@ -20,6 +20,9 @@ public class ParameterEntity {
     @ToString.Include
     private String id;
 
+    @Column(name = "generated_api_id")
+    private String generatedApiId;
+
     @Column(nullable = false)
     private String name;
 

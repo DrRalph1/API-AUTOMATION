@@ -20,4 +20,5 @@ public class CollectionDTO {
     private int folderCount;
     private List<String> tags;
     private String color;
+    private String version;
 }

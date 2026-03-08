@@ -19,6 +19,9 @@ public class ParameterEntity {
     @ToString.Include
     private String id;
 
+    @Column(name = "generated_api_id")
+    private String generatedApiId;
+
     @Column(name = "key", nullable = false)
     @EqualsAndHashCode.Include
     @ToString.Include

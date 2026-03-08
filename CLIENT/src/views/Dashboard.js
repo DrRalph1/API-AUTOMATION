@@ -87,7 +87,6 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
   }, []);
 
   // Handle edit API
-  // Handle edit API
 const handleEditApi = useCallback((api) => {
   const apiForEditing = {
     id: api.id,
@@ -430,9 +429,13 @@ const handleEditApi = useCallback((api) => {
     setError(null);
     
     try {
+
       const response = await getComprehensiveDashboard(authToken);
+      console.log("response:::::::" + JSON.stringify(response));
       const processedResponse = handleDashboardResponse(response);
+      console.log("processedResponse:::::::" + JSON.stringify(processedResponse));
       const transformedData = transformApiData(processedResponse);
+      console.log("transformedData::::::" + JSON.stringify(transformedData));
       
       setDashboardData(prev => ({
         ...prev,

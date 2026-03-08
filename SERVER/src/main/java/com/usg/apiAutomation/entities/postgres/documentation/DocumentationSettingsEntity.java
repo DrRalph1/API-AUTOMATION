@@ -13,6 +13,9 @@ public class DocumentationSettingsEntity {
 //    @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
+    @Column(name = "generated_api_id")
+    private String generatedApiId;
+
     private String userId;
     private boolean autoSave;
     private boolean darkMode;

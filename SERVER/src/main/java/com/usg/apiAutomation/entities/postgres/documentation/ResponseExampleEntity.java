@@ -20,6 +20,9 @@ public class ResponseExampleEntity {
 //    @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
+    @Column(name = "generated_api_id")
+    private String generatedApiId;
+
     @Column(name = "status_code", nullable = false)
     private int statusCode;
 

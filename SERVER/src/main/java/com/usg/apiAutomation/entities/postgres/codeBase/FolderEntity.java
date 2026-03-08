@@ -21,6 +21,9 @@ public class FolderEntity {
     @Id
     private String id;
 
+    @Column(name = "generated_api_id")
+    private String generatedApiId;
+
     @Column(nullable = false)
     private String name;
 
