@@ -182,8 +182,8 @@ import {
   getSupportedVisibilityOptions,
   getSupportedEnvironmentTypes,
   getSupportedDocumentationFormats,
-  getCollectionDetailsWithEndpoints, // Add this
-  extractCollectionDetailsWithEndpoints, // Add this
+  getCollectionDetailsWithEndpoints,
+  extractCollectionDetailsWithEndpoints,
 } from "../controllers/DocumentationController.js";
 
 // Also import apiCall for debug purposes
@@ -338,7 +338,7 @@ const SyntaxHighlighter = ({ language, code }) => {
   );
 };
 
-// Loading Overlay Component - Exactly matching APISecurity pattern
+// Loading Overlay Component
 const LoadingOverlay = ({ isLoading, colors, loadingText }) => {
   if (!isLoading) return null;
   
@@ -357,9 +357,6 @@ const LoadingOverlay = ({ isLoading, colors, loadingText }) => {
         <p className="text-sm mb-2" style={{ color: colors.textSecondary }}>
           {loadingText || 'Please wait while we load your documentation data'}
         </p>
-        {/* <p className="text-xs" style={{ color: colors.textTertiary }}>
-          This won't take long
-        </p> */}
       </div>
     </div>
   );
@@ -393,11 +390,25 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showEnvironmentMenu, setShowEnvironmentMenu] = useState(false);
   
+  // Auth config state (similar to Collections component)
+  const [authType, setAuthType] = useState('noauth');
+  const [showAuthDropdown, setShowAuthDropdown] = useState(false);
+  const [authConfig, setAuthConfig] = useState({ 
+    type: 'noauth',
+    token: '', 
+    username: '', 
+    password: '', 
+    key: '', 
+    value: '', 
+    addTo: 'header',
+    tokenType: 'Bearer'
+  });
+  
   // Add these state variables to track folder endpoints and loading states
   const [folderEndpoints, setFolderEndpoints] = useState({});
   const [folderLoading, setFolderLoading] = useState({});
 
-  // Updated loading state to match APISecurity pattern
+  // Updated loading state
   const [isLoading, setIsLoading] = useState({
     collections: false,
     environments: false,
@@ -405,7 +416,7 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     endpointDetails: false,
     endpoints: false,
     folders: false,
-    initialLoad: true // Add initial load state
+    initialLoad: true
   });
   
   const [endpointDetails, setEndpointDetails] = useState(null);
@@ -415,43 +426,41 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
   const [isSearching, setIsSearching] = useState(false);
   const [userId, setUserId] = useState('');
 
-  // Updated color scheme to match CodeBase
+  // Updated color scheme
   const colors = isDark ? {
-    // Using your shade as base - EXACTLY matching Dashboard
     bg: 'rgb(1 14 35)',
     white: '#FFFFFF',
     sidebar: 'rgb(41 53 72 / 19%)',
     main: 'rgb(1 14 35)',
     header: 'rgb(20 26 38)',
     card: 'rgb(41 53 72 / 19%)',
-    
-    // Text - coordinating grays - EXACTLY matching Dashboard
     text: '#F1F5F9',
     textSecondary: 'rgb(148 163 184)',
     textTertiary: 'rgb(100 116 139)',
-    
-    // Borders - variations of your shade - EXACTLY matching Dashboard
     border: 'rgb(51 65 85 / 19%)',
     borderLight: 'rgb(45 55 72)',
     borderDark: 'rgb(71 85 105)',
-    
-    // Interactive - layered transparency - EXACTLY matching Dashboard
     hover: 'rgb(45 46 72 / 33%)',
     active: 'rgb(59 74 99)',
     selected: 'rgb(44 82 130)',
-    
-    // Primary colors - EXACTLY matching Dashboard
     primary: 'rgb(96 165 250)',
     primaryLight: 'rgb(147 197 253)',
     primaryDark: 'rgb(37 99 235)',
-    
-    // Status colors - EXACTLY matching Dashboard
+    method: {
+      GET: 'rgb(52 211 153)',
+      POST: 'rgb(96 165 250)',
+      PUT: 'rgb(251 191 36)',
+      DELETE: 'rgb(248 113 113)',
+      PATCH: 'rgb(167 139 250)',
+      HEAD: 'rgb(148 163 184)',
+      OPTIONS: 'rgb(167 139 250)',
+      LINK: 'rgb(34 211 238)',
+      UNLINK: 'rgb(251 191 36)'
+    },
     success: 'rgb(52 211 153)',
     warning: 'rgb(251 191 36)',
     error: 'rgb(248 113 113)',
     info: 'rgb(96 165 250)',
-    
-    // UI Components - EXACTLY matching Dashboard
     tabActive: 'rgb(96 165 250)',
     tabInactive: 'rgb(148 163 184)',
     sidebarActive: 'rgb(96 165 250)',
@@ -466,31 +475,13 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     modalBg: 'rgb(41 53 72 / 19%)',
     modalborder: 'rgb(51 65 85 / 19%)',
     codeBg: 'rgb(41 53 72 / 19%)',
-    
-    // Connection status - EXACTLY matching Dashboard
     connectionOnline: 'rgb(52 211 153)',
     connectionOffline: 'rgb(248 113 113)',
     connectionIdle: 'rgb(251 191 36)',
-    
-    // Method colors (specific to API docs) - using Dashboard's color palette
-    method: {
-      GET: 'rgb(52 211 153)',      // success color
-      POST: 'rgb(96 165 250)',     // info/primary color
-      PUT: 'rgb(251 191 36)',      // warning color
-      DELETE: 'rgb(248 113 113)',  // error color
-      PATCH: 'rgb(167 139 250)',   // accentPurple from Dashboard
-      HEAD: 'rgb(148 163 184)',    // textSecondary
-      OPTIONS: 'rgb(167 139 250)', // accentPurple
-      LINK: 'rgb(34 211 238)',     // accentCyan from Dashboard
-      UNLINK: 'rgb(251 191 36)'    // warning color
-    },
-    
-    // Accent colors - EXACTLY matching Dashboard
     accentPurple: 'rgb(167 139 250)',
     accentPink: 'rgb(244 114 182)',
     accentCyan: 'rgb(34 211 238)'
   } : {
-    // LIGHT MODE - EXACTLY matching Dashboard's light mode
     bg: '#f8fafc',
     white: '#f8fafc',
     sidebar: '#ffffff',
@@ -509,8 +500,6 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     primary: '#1e293b',
     primaryLight: '#60a5fa',
     primaryDark: '#2563eb',
-    
-    // Method colors for light mode
     method: {
       GET: '#10b981',
       POST: '#3b82f6',
@@ -522,7 +511,6 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
       LINK: '#06b6d4',
       UNLINK: '#f97316'
     },
-    
     success: '#10b981',
     warning: '#f59e0b',
     error: '#ef4444',
@@ -598,7 +586,7 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     showToast('Check console for database debug info', 'info');
   };
 
-  // Fetch folders for a collection - FIXED: Return a folder using collection ID
+  // Fetch folders for a collection
   const fetchFolders = useCallback(async (collectionId) => {
     console.log(`📁 [Documentation] Fetching folders for collection: ${collectionId}`);
     
@@ -636,160 +624,158 @@ const Documentation = ({ theme, isDark, customTheme, toggleTheme, authToken }) =
     }
   }, [authToken]);
 
-
-
   const fetchCollectionDetailsWithEndpoints = useCallback(async (collectionId) => {
-  console.log(`📡 [Documentation] Fetching collection details with endpoints for: ${collectionId}`);
-  
-  if (!authToken || !collectionId) {
-    return;
-  }
+    console.log(`📡 [Documentation] Fetching collection details with endpoints for: ${collectionId}`);
+    
+    if (!authToken || !collectionId) {
+      return;
+    }
 
-  try {
-    setIsLoading(prev => ({ ...prev, folders: true }));
-    
-    const response = await getCollectionDetailsWithEndpoints(authToken, collectionId);
-    console.log(`📦 [Documentation] Collection details response for ${collectionId}:`, response);
-    
-    const handledResponse = handleDocumentationResponse(response);
-    const collectionDetails = extractCollectionDetailsWithEndpoints(handledResponse);
-    
-    console.log(`📊 [Documentation] Extracted collection details with endpoints:`, collectionDetails);
-    
-    if (collectionDetails) {
-      // Process folders to ensure they have the correct structure
-      const processedFolders = (collectionDetails.folders || []).map(folder => ({
-        id: folder.id,
-        name: folder.name,
-        description: folder.description || '',
-        collectionId: folder.collectionId || collectionId,
-        requests: folder.endpoints || [], // Map endpoints to requests
-        requestCount: folder.endpointCount || (folder.endpoints ? folder.endpoints.length : 0),
-        hasRequests: (folder.endpointCount || (folder.endpoints ? folder.endpoints.length : 0)) > 0,
-        isLoading: false,
-        error: null
-      }));
+    try {
+      setIsLoading(prev => ({ ...prev, folders: true }));
       
-      // Update folderEndpoints state
-      const folderEndpointsMap = {};
-      processedFolders.forEach(folder => {
-        if (folder.requests.length > 0) {
-          folderEndpointsMap[folder.id] = folder.requests;
-        }
-      });
+      const response = await getCollectionDetailsWithEndpoints(authToken, collectionId);
+      console.log(`📦 [Documentation] Collection details response for ${collectionId}:`, response);
       
-      if (Object.keys(folderEndpointsMap).length > 0) {
-        setFolderEndpoints(prev => ({
-          ...prev,
-          ...folderEndpointsMap
+      const handledResponse = handleDocumentationResponse(response);
+      const collectionDetails = extractCollectionDetailsWithEndpoints(handledResponse);
+      
+      console.log(`📊 [Documentation] Extracted collection details with endpoints:`, collectionDetails);
+      
+      if (collectionDetails) {
+        // Process folders to ensure they have the correct structure
+        const processedFolders = (collectionDetails.folders || []).map(folder => ({
+          id: folder.id,
+          name: folder.name,
+          description: folder.description || '',
+          collectionId: folder.collectionId || collectionId,
+          requests: folder.endpoints || [], // Map endpoints to requests
+          requestCount: folder.endpointCount || (folder.endpoints ? folder.endpoints.length : 0),
+          hasRequests: (folder.endpointCount || (folder.endpoints ? folder.endpoints.length : 0)) > 0,
+          isLoading: false,
+          error: null
         }));
-      }
-      
-      // Update collections state
-      setCollections(prevCollections => {
-        const updatedCollections = prevCollections.map(collection => {
-          if (collection.id === collectionId) {
-            return {
-              ...collection,
-              folders: processedFolders,
-              totalFolders: collectionDetails.totalFolders,
-              totalEndpoints: collectionDetails.totalEndpoints
-            };
+        
+        // Update folderEndpoints state
+        const folderEndpointsMap = {};
+        processedFolders.forEach(folder => {
+          if (folder.requests.length > 0) {
+            folderEndpointsMap[folder.id] = folder.requests;
           }
-          return collection;
         });
         
-        console.log(`📊 Updated collection ${collectionId} with ${processedFolders.length} folders and endpoints`);
-        return updatedCollections;
-      });
-      
-      // Update selectedCollection if it's the current one
-      if (selectedCollection?.id === collectionId) {
-        setSelectedCollection(prev => ({
-          ...prev,
-          folders: processedFolders,
-          totalFolders: collectionDetails.totalFolders,
-          totalEndpoints: collectionDetails.totalEndpoints
-        }));
+        if (Object.keys(folderEndpointsMap).length > 0) {
+          setFolderEndpoints(prev => ({
+            ...prev,
+            ...folderEndpointsMap
+          }));
+        }
+        
+        // Update collections state
+        setCollections(prevCollections => {
+          const updatedCollections = prevCollections.map(collection => {
+            if (collection.id === collectionId) {
+              return {
+                ...collection,
+                folders: processedFolders,
+                totalFolders: collectionDetails.totalFolders,
+                totalEndpoints: collectionDetails.totalEndpoints
+              };
+            }
+            return collection;
+          });
+          
+          console.log(`📊 Updated collection ${collectionId} with ${processedFolders.length} folders and endpoints`);
+          return updatedCollections;
+        });
+        
+        // Update selectedCollection if it's the current one
+        if (selectedCollection?.id === collectionId) {
+          setSelectedCollection(prev => ({
+            ...prev,
+            folders: processedFolders,
+            totalFolders: collectionDetails.totalFolders,
+            totalEndpoints: collectionDetails.totalEndpoints
+          }));
+        }
       }
+      
+    } catch (error) {
+      console.error('❌ Error fetching collection details with endpoints:', error);
+      showToast(`Failed to load collection details: ${error.message}`, 'error');
+    } finally {
+      setIsLoading(prev => ({ ...prev, folders: false }));
     }
-    
-  } catch (error) {
-    console.error('❌ Error fetching collection details with endpoints:', error);
-    showToast(`Failed to load collection details: ${error.message}`, 'error');
-  } finally {
-    setIsLoading(prev => ({ ...prev, folders: false }));
-  }
-}, [authToken, selectedCollection]);
+  }, [authToken, selectedCollection]);
 
+  // Update the auto-expand useEffect to work with the new flow
+  const autoExpandTriggered = useRef(false);
+  const isFirstLoad = useRef(true);
 
-// Update the auto-expand useEffect to work with the new flow
-useEffect(() => {
-  // Only run on first load and if not already triggered
-  if (!isFirstLoad.current || autoExpandTriggered.current) {
-    return;
-  }
-  
-  // Need selected collection
-  if (!selectedCollection) {
-    console.log('⏳ [Documentation] Waiting for selectedCollection...');
-    return;
-  }
-  
-  // Need folders to be loaded
-  if (!selectedCollection.folders || selectedCollection.folders.length === 0) {
-    console.log('⏳ [Documentation] Waiting for folders to load...');
-    return;
-  }
-  
-  // Mark as triggered immediately to prevent multiple calls
-  autoExpandTriggered.current = true;
-  
-  console.log('🔥🔥🔥 [Documentation] AUTO-EXPAND TRIGGERED');
-  
-  const autoExpandAndSelect = async () => {
-    // Find first folder that has requests
-    const firstFolderWithRequests = selectedCollection.folders.find(f => f.requests && f.requests.length > 0);
-    const folderToExpand = firstFolderWithRequests || selectedCollection.folders[0];
-    
-    if (!folderToExpand) {
-      console.log('❌ [Documentation] No folders found');
+  useEffect(() => {
+    // Only run on first load and if not already triggered
+    if (!isFirstLoad.current || autoExpandTriggered.current) {
       return;
     }
     
-    console.log(`📁 [Documentation] Auto-expanding folder: ${folderToExpand.id} - ${folderToExpand.name}`);
-    
-    // Expand the folder
-    setExpandedFolders([folderToExpand.id]);
-    
-    // Select the first endpoint if available
-    if (folderToExpand.requests && folderToExpand.requests.length > 0 && !selectedRequest) {
-      const firstEndpoint = folderToExpand.requests[0];
-      console.log(`🎯 [Documentation] Auto-selecting first endpoint: ${firstEndpoint.name}`);
-      
-      setSelectedRequest(firstEndpoint);
-      await fetchEndpointDetails(selectedCollection.id, firstEndpoint.id);
-      
-      showToast(`Viewing documentation for ${firstEndpoint.name}`, 'info');
+    // Need selected collection
+    if (!selectedCollection) {
+      console.log('⏳ [Documentation] Waiting for selectedCollection...');
+      return;
     }
     
-    // Mark that first load is complete
-    isFirstLoad.current = false;
-    console.log('✅ [Documentation] Auto-expand completed');
-  };
-  
-  autoExpandAndSelect();
-  
-}, [
-  selectedCollection, 
-  selectedCollection?.folders,
-  selectedCollection?.folders?.length,
-  selectedRequest,
-  fetchEndpointDetails,
-  showToast
-]);
-
-
+    // Need folders to be loaded
+    if (!selectedCollection.folders || selectedCollection.folders.length === 0) {
+      console.log('⏳ [Documentation] Waiting for folders to load...');
+      return;
+    }
+    
+    // Mark as triggered immediately to prevent multiple calls
+    autoExpandTriggered.current = true;
+    
+    console.log('🔥🔥🔥 [Documentation] AUTO-EXPAND TRIGGERED');
+    
+    const autoExpandAndSelect = async () => {
+      // Find first folder that has requests
+      const firstFolderWithRequests = selectedCollection.folders.find(f => f.requests && f.requests.length > 0);
+      const folderToExpand = firstFolderWithRequests || selectedCollection.folders[0];
+      
+      if (!folderToExpand) {
+        console.log('❌ [Documentation] No folders found');
+        return;
+      }
+      
+      console.log(`📁 [Documentation] Auto-expanding folder: ${folderToExpand.id} - ${folderToExpand.name}`);
+      
+      // Expand the folder
+      setExpandedFolders([folderToExpand.id]);
+      
+      // Select the first endpoint if available
+      if (folderToExpand.requests && folderToExpand.requests.length > 0 && !selectedRequest) {
+        const firstEndpoint = folderToExpand.requests[0];
+        console.log(`🎯 [Documentation] Auto-selecting first endpoint: ${firstEndpoint.name}`);
+        
+        setSelectedRequest(firstEndpoint);
+        await fetchEndpointDetails(selectedCollection.id, firstEndpoint.id);
+        
+        showToast(`Viewing documentation for ${firstEndpoint.name}`, 'info');
+      }
+      
+      // Mark that first load is complete
+      isFirstLoad.current = false;
+      console.log('✅ [Documentation] Auto-expand completed');
+    };
+    
+    autoExpandAndSelect();
+    
+  }, [
+    selectedCollection, 
+    selectedCollection?.folders,
+    selectedCollection?.folders?.length,
+    selectedRequest,
+    fetchEndpointDetails,
+    showToast
+  ]);
 
   // Fetch folders for a specific collection
   const fetchFoldersForCollection = useCallback(async (collectionId) => {
@@ -875,359 +861,359 @@ useEffect(() => {
   }, [authToken, selectedCollection, fetchAPIEndpoints]);
 
   // Load API collections and their folders
-  // In your Documentation component
-const fetchAPICollections = useCallback(async () => {
-  console.log('🔥 [Documentation] fetchAPICollections called');
-  
-  if (!authToken) {
-    console.log('❌ No auth token available');
-    showToast('Authentication required. Please login.', 'error');
-    setIsLoading(prev => ({ ...prev, collections: false, initialLoad: false }));
-    return;
-  }
-
-  setIsLoading(prev => ({ ...prev, collections: true }));
-  console.log('📡 [Documentation] Fetching API collections...');
-
-  try {
-    const response = await getAPICollections(authToken);
-    console.log('📦 [Documentation] API response:', response);
+  const fetchAPICollections = useCallback(async () => {
+    console.log('🔥 [Documentation] fetchAPICollections called');
     
-    if (!response) {
-      throw new Error('No response from documentation service');
+    if (!authToken) {
+      console.log('❌ No auth token available');
+      showToast('Authentication required. Please login.', 'error');
+      setIsLoading(prev => ({ ...prev, collections: false, initialLoad: false }));
+      return;
     }
-    
-    const handledResponse = handleDocumentationResponse(response);
-    const collectionsData = extractAPICollections(handledResponse);
-    
-    console.log('📊 [Documentation] Extracted collections data:', collectionsData.length, 'collections');
 
-    // Format collections with empty folders array
-    const formattedCollections = collectionsData.map(collection => {
-      const formatted = formatDocumentationCollection(collection);
-      formatted.folders = []; // Will be populated by details fetch
-      return formatted;
-    });
-    
-    setCollections(formattedCollections);
-    console.log('📊 [Documentation] Formatted collections:', formattedCollections);
-    
-    // Cache the data if we have userId
-    const userId = extractUserIdFromToken(authToken);
-    if (userId) {
-      cacheDocumentationData(userId, 'collections', formattedCollections);
+    setIsLoading(prev => ({ ...prev, collections: true }));
+    console.log('📡 [Documentation] Fetching API collections...');
+
+    try {
+      const response = await getAPICollections(authToken);
+      console.log('📦 [Documentation] API response:', response);
+      
+      if (!response) {
+        throw new Error('No response from documentation service');
+      }
+      
+      const handledResponse = handleDocumentationResponse(response);
+      const collectionsData = extractAPICollections(handledResponse);
+      
+      console.log('📊 [Documentation] Extracted collections data:', collectionsData.length, 'collections');
+
+      // Format collections with empty folders array
+      const formattedCollections = collectionsData.map(collection => {
+        const formatted = formatDocumentationCollection(collection);
+        formatted.folders = []; // Will be populated by details fetch
+        return formatted;
+      });
+      
+      setCollections(formattedCollections);
+      console.log('📊 [Documentation] Formatted collections:', formattedCollections);
+      
+      // Cache the data if we have userId
+      const userId = extractUserIdFromToken(authToken);
+      if (userId) {
+        cacheDocumentationData(userId, 'collections', formattedCollections);
+      }
+      
+      // NOW load details for ALL collections
+      await loadAllCollectionDetails(formattedCollections);
+      
+      showToast('Collections loaded successfully', 'success');
+      
+    } catch (error) {
+      console.error('❌ [Documentation] Error fetching API collections:', error);
+      showToast(`Failed to load collections: ${error.message}`, 'error');
+      setCollections([]);
+    } finally {
+      setIsLoading(prev => ({ ...prev, collections: false, initialLoad: false }));
+      console.log('🏁 [Documentation] fetchAPICollections completed');
     }
-    
-    // NOW load details for ALL collections (like Collections component does)
-    await loadAllCollectionDetails(formattedCollections);
-    
-    showToast('Collections loaded successfully', 'success');
-    
-  } catch (error) {
-    console.error('❌ [Documentation] Error fetching API collections:', error);
-    showToast(`Failed to load collections: ${error.message}`, 'error');
-    setCollections([]);
-  } finally {
-    setIsLoading(prev => ({ ...prev, collections: false, initialLoad: false }));
-    console.log('🏁 [Documentation] fetchAPICollections completed');
-  }
-}, [authToken]);
+  }, [authToken]);
 
-// NEW function to load details for all collections (like Collections component)
-const loadAllCollectionDetails = useCallback(async (basicCollections) => {
-  console.log('📡 [Documentation] Loading details for all collections...');
-  
-  try {
-    setIsLoading(prev => ({ ...prev, folders: true }));
+  // NEW function to load details for all collections
+  const loadAllCollectionDetails = useCallback(async (basicCollections) => {
+    console.log('📡 [Documentation] Loading details for all collections...');
     
-    const collectionsWithDetails = await Promise.all(
-      basicCollections.map(async (collection) => {
-        try {
-          // Fetch collection details with endpoints (folders + endpoints in one call)
-          const response = await getCollectionDetailsWithEndpoints(authToken, collection.id);
-          const handledResponse = handleDocumentationResponse(response);
-          const collectionDetails = extractCollectionDetailsWithEndpoints(handledResponse);
-          
-          if (collectionDetails) {
-            // Process folders with their endpoints
-            const processedFolders = (collectionDetails.folders || []).map(folder => ({
-              id: folder.id,
-              name: folder.name,
-              description: folder.description || '',
-              collectionId: folder.collectionId || collection.id,
-              requests: folder.endpoints || [], // Endpoints already attached!
-              requestCount: folder.endpointCount || (folder.endpoints ? folder.endpoints.length : 0),
-              hasRequests: (folder.endpointCount || (folder.endpoints ? folder.endpoints.length : 0)) > 0,
-              isLoading: false,
-              error: null
-            }));
+    try {
+      setIsLoading(prev => ({ ...prev, folders: true }));
+      
+      const collectionsWithDetails = await Promise.all(
+        basicCollections.map(async (collection) => {
+          try {
+            // Fetch collection details with endpoints (folders + endpoints in one call)
+            const response = await getCollectionDetailsWithEndpoints(authToken, collection.id);
+            const handledResponse = handleDocumentationResponse(response);
+            const collectionDetails = extractCollectionDetailsWithEndpoints(handledResponse);
             
-            // Update folderEndpoints cache
-            const folderEndpointsMap = {};
-            processedFolders.forEach(folder => {
-              if (folder.requests.length > 0) {
-                folderEndpointsMap[folder.id] = folder.requests;
-              }
-            });
-            
-            if (Object.keys(folderEndpointsMap).length > 0) {
-              setFolderEndpoints(prev => ({
-                ...prev,
-                ...folderEndpointsMap
+            if (collectionDetails) {
+              // Process folders with their endpoints
+              const processedFolders = (collectionDetails.folders || []).map(folder => ({
+                id: folder.id,
+                name: folder.name,
+                description: folder.description || '',
+                collectionId: folder.collectionId || collection.id,
+                requests: folder.endpoints || [], // Endpoints already attached!
+                requestCount: folder.endpointCount || (folder.endpoints ? folder.endpoints.length : 0),
+                hasRequests: (folder.endpointCount || (folder.endpoints ? folder.endpoints.length : 0)) > 0,
+                isLoading: false,
+                error: null
               }));
+              
+              // Update folderEndpoints cache
+              const folderEndpointsMap = {};
+              processedFolders.forEach(folder => {
+                if (folder.requests.length > 0) {
+                  folderEndpointsMap[folder.id] = folder.requests;
+                }
+              });
+              
+              if (Object.keys(folderEndpointsMap).length > 0) {
+                setFolderEndpoints(prev => ({
+                  ...prev,
+                  ...folderEndpointsMap
+                }));
+              }
+              
+              return {
+                ...collection,
+                folders: processedFolders,
+                totalFolders: collectionDetails.totalFolders || processedFolders.length,
+                totalEndpoints: collectionDetails.totalEndpoints || 
+                  processedFolders.reduce((sum, f) => sum + f.requests.length, 0)
+              };
             }
             
+            return collection;
+            
+          } catch (error) {
+            console.error(`❌ Error loading details for collection ${collection.id}:`, error);
+            return collection;
+          }
+        })
+      );
+      
+      console.log('📊 [Documentation] Collections with details:', collectionsWithDetails);
+      setCollections(collectionsWithDetails);
+      
+      // Auto-select first collection and its first folder/request
+      if (collectionsWithDetails.length > 0) {
+        const firstCollection = collectionsWithDetails[0];
+        setSelectedCollection(firstCollection);
+        setExpandedCollections([firstCollection.id]);
+        
+        // Find first folder with requests
+        const firstFolderWithRequests = firstCollection.folders?.find(f => f.requests && f.requests.length > 0);
+        if (firstFolderWithRequests) {
+          setExpandedFolders([firstFolderWithRequests.id]);
+          
+          // Auto-select first endpoint
+          if (firstFolderWithRequests.requests.length > 0 && !selectedRequest) {
+            const firstEndpoint = firstFolderWithRequests.requests[0];
+            console.log(`🎯 [Documentation] Auto-selecting first endpoint: ${firstEndpoint.name}`);
+            setSelectedRequest(firstEndpoint);
+            await fetchEndpointDetails(firstCollection.id, firstEndpoint.id);
+            showToast(`Viewing documentation for ${firstEndpoint.name}`, 'info');
+          }
+        } else if (firstCollection.folders && firstCollection.folders.length > 0) {
+          // Just expand first folder even if no requests
+          setExpandedFolders([firstCollection.folders[0].id]);
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Error loading collection details:', error);
+    } finally {
+      setIsLoading(prev => ({ ...prev, folders: false }));
+    }
+  }, [authToken, selectedRequest, fetchEndpointDetails]);
+
+  // Update toggleCollection to NOT fetch details again (they're already loaded)
+  const toggleCollection = async (collectionId) => {
+    console.log(`📂 [Documentation] Toggling collection ${collectionId}`);
+    
+    const isExpanding = !expandedCollections.includes(collectionId);
+    
+    setExpandedCollections(prev =>
+      prev.includes(collectionId)
+        ? prev.filter(id => id !== collectionId)
+        : [...prev, collectionId]
+    );
+    
+    // Don't fetch details here - they're already loaded in loadAllCollectionDetails
+    // Just expand/collapse the UI
+  };
+
+  // Update toggleFolder to NOT fetch endpoints (they're already attached)
+  const toggleFolder = async (folderId, collectionId) => {
+    console.log(`📁 [Documentation] Toggling folder ${folderId} in collection ${collectionId}`);
+    
+    if (!folderId || !collectionId) {
+      console.log('❌ Missing folderId or collectionId');
+      return;
+    }
+    
+    const isExpanding = !expandedFolders.includes(folderId);
+    
+    setExpandedFolders(prev =>
+      prev.includes(folderId)
+        ? prev.filter(id => id !== folderId)
+        : [...prev, folderId]
+    );
+    
+    // Don't fetch endpoints here - they're already attached to the folder
+    console.log(`📁 [Documentation] Using pre-loaded endpoints for folder ${folderId}`);
+  };
+
+  // Load API endpoints for a folder - FIXED VERSION
+  const fetchAPIEndpoints = useCallback(async (collectionId, folderId) => {
+    console.log(`📡 [Documentation] Fetching endpoints for collection ${collectionId}, folder ${folderId}`);
+    
+    if (!authToken || !collectionId || !folderId) {
+      console.log('Missing params for fetchAPIEndpoints');
+      return [];
+    }
+
+    // Set loading state for this specific folder
+    setFolderLoading(prev => ({ ...prev, [folderId]: true }));
+    
+    try {
+      console.log(`🔍 Making API call to get endpoints for folder: ${folderId}`);
+      const response = await getAPIEndpoints(authToken, collectionId, folderId);
+      console.log('📦 [Documentation] Raw endpoints response:', response);
+      
+      // Extract endpoints from the response
+      let endpoints = [];
+      
+      // Your API returns endpoints in response.data.endpoints
+      if (response?.data?.endpoints && Array.isArray(response.data.endpoints)) {
+        endpoints = response.data.endpoints;
+      } else if (response?.data && Array.isArray(response.data)) {
+        endpoints = response.data;
+      } else if (Array.isArray(response)) {
+        endpoints = response;
+      } else if (response?.endpoints && Array.isArray(response.endpoints)) {
+        endpoints = response.endpoints;
+      }
+      
+      console.log(`📊 Extracted ${endpoints.length} endpoints:`, endpoints);
+      
+      // Format endpoints for display
+      const formattedEndpoints = endpoints.map(endpoint => ({
+        id: endpoint.id,
+        name: endpoint.name || '',
+        method: endpoint.method || 'GET',
+        url: endpoint.url || '',
+        path: endpoint.url || endpoint.path || '',
+        description: endpoint.description || '',
+        category: endpoint.category || 'general',
+        tags: endpoint.tags || [],
+        lastModified: endpoint.lastModified,
+        timeAgo: getTimeAgo(endpoint.lastModified),
+        requiresAuth: endpoint.requiresAuth || endpoint.requiresAuthentication || false,
+        deprecated: endpoint.deprecated || false
+      }));
+      
+      console.log('📊 Formatted endpoints:', formattedEndpoints);
+      
+      // CRITICAL: Update BOTH state variables to ensure consistency
+      
+      // 1. Update folderEndpoints cache
+      setFolderEndpoints(prev => ({
+        ...prev,
+        [folderId]: formattedEndpoints
+      }));
+      
+      // 2. Update collections state with the endpoints
+      setCollections(prevCollections => {
+        const updatedCollections = prevCollections.map(collection => {
+          if (collection.id === collectionId) {
             return {
               ...collection,
-              folders: processedFolders,
-              totalFolders: collectionDetails.totalFolders || processedFolders.length,
-              totalEndpoints: collectionDetails.totalEndpoints || 
-                processedFolders.reduce((sum, f) => sum + f.requests.length, 0)
+              folders: (collection.folders || []).map(folder => {
+                if (folder.id === folderId) {
+                  return { 
+                    ...folder, 
+                    requests: formattedEndpoints, // Store endpoints here
+                    requestCount: formattedEndpoints.length,
+                    hasRequests: formattedEndpoints.length > 0,
+                    isLoading: false,
+                    error: null
+                  };
+                }
+                return folder;
+              })
             };
           }
-          
           return collection;
-          
-        } catch (error) {
-          console.error(`❌ Error loading details for collection ${collection.id}:`, error);
-          return collection;
-        }
-      })
-    );
-    
-    console.log('📊 [Documentation] Collections with details:', collectionsWithDetails);
-    setCollections(collectionsWithDetails);
-    
-    // Auto-select first collection and its first folder/request
-    if (collectionsWithDetails.length > 0) {
-      const firstCollection = collectionsWithDetails[0];
-      setSelectedCollection(firstCollection);
-      setExpandedCollections([firstCollection.id]);
-      
-      // Find first folder with requests
-      const firstFolderWithRequests = firstCollection.folders?.find(f => f.requests && f.requests.length > 0);
-      if (firstFolderWithRequests) {
-        setExpandedFolders([firstFolderWithRequests.id]);
+        });
         
-        // Auto-select first endpoint
-        if (firstFolderWithRequests.requests.length > 0 && !selectedRequest) {
-          const firstEndpoint = firstFolderWithRequests.requests[0];
-          console.log(`🎯 [Documentation] Auto-selecting first endpoint: ${firstEndpoint.name}`);
-          setSelectedRequest(firstEndpoint);
-          await fetchEndpointDetails(firstCollection.id, firstEndpoint.id);
-          showToast(`Viewing documentation for ${firstEndpoint.name}`, 'info');
-        }
-      } else if (firstCollection.folders && firstCollection.folders.length > 0) {
-        // Just expand first folder even if no requests
-        setExpandedFolders([firstCollection.folders[0].id]);
+        console.log('📊 Updated collections with endpoints:', updatedCollections);
+        return updatedCollections;
+      });
+      
+      // 3. Update selectedCollection if needed
+      if (selectedCollection?.id === collectionId) {
+        setSelectedCollection(prev => {
+          if (!prev) return prev;
+          const updatedSelected = {
+            ...prev,
+            folders: (prev.folders || []).map(folder => 
+              folder.id === folderId 
+                ? { 
+                    ...folder, 
+                    requests: formattedEndpoints,
+                    requestCount: formattedEndpoints.length,
+                    hasRequests: formattedEndpoints.length > 0
+                  }
+                : folder
+            )
+          };
+          console.log('📊 Updated selectedCollection:', updatedSelected);
+          return updatedSelected;
+        });
       }
-    }
-    
-  } catch (error) {
-    console.error('❌ Error loading collection details:', error);
-  } finally {
-    setIsLoading(prev => ({ ...prev, folders: false }));
-  }
-}, [authToken, selectedRequest, fetchEndpointDetails]);
-
-// Update toggleCollection to NOT fetch details again (they're already loaded)
-const toggleCollection = async (collectionId) => {
-  console.log(`📂 [Documentation] Toggling collection ${collectionId}`);
-  
-  const isExpanding = !expandedCollections.includes(collectionId);
-  
-  setExpandedCollections(prev =>
-    prev.includes(collectionId)
-      ? prev.filter(id => id !== collectionId)
-      : [...prev, collectionId]
-  );
-  
-  // Don't fetch details here - they're already loaded in loadAllCollectionDetails
-  // Just expand/collapse the UI
-};
-
-// Update toggleFolder to NOT fetch endpoints (they're already attached)
-const toggleFolder = async (folderId, collectionId) => {
-  console.log(`📁 [Documentation] Toggling folder ${folderId} in collection ${collectionId}`);
-  
-  if (!folderId || !collectionId) {
-    console.log('❌ Missing folderId or collectionId');
-    return;
-  }
-  
-  const isExpanding = !expandedFolders.includes(folderId);
-  
-  setExpandedFolders(prev =>
-    prev.includes(folderId)
-      ? prev.filter(id => id !== folderId)
-      : [...prev, folderId]
-  );
-  
-  // Don't fetch endpoints here - they're already attached to the folder
-  console.log(`📁 [Documentation] Using pre-loaded endpoints for folder ${folderId}`);
-};
-
- // Load API endpoints for a folder - FIXED VERSION
-const fetchAPIEndpoints = useCallback(async (collectionId, folderId) => {
-  console.log(`📡 [Documentation] Fetching endpoints for collection ${collectionId}, folder ${folderId}`);
-  
-  if (!authToken || !collectionId || !folderId) {
-    console.log('Missing params for fetchAPIEndpoints');
-    return [];
-  }
-
-  // Set loading state for this specific folder
-  setFolderLoading(prev => ({ ...prev, [folderId]: true }));
-  
-  try {
-    console.log(`🔍 Making API call to get endpoints for folder: ${folderId}`);
-    const response = await getAPIEndpoints(authToken, collectionId, folderId);
-    console.log('📦 [Documentation] Raw endpoints response:', response);
-    
-    // Extract endpoints from the response
-    let endpoints = [];
-    
-    // Your API returns endpoints in response.data.endpoints
-    if (response?.data?.endpoints && Array.isArray(response.data.endpoints)) {
-      endpoints = response.data.endpoints;
-    } else if (response?.data && Array.isArray(response.data)) {
-      endpoints = response.data;
-    } else if (Array.isArray(response)) {
-      endpoints = response;
-    } else if (response?.endpoints && Array.isArray(response.endpoints)) {
-      endpoints = response.endpoints;
-    }
-    
-    console.log(`📊 Extracted ${endpoints.length} endpoints:`, endpoints);
-    
-    // Format endpoints for display
-    const formattedEndpoints = endpoints.map(endpoint => ({
-      id: endpoint.id,
-      name: endpoint.name || '',
-      method: endpoint.method || 'GET',
-      url: endpoint.url || '',
-      path: endpoint.url || endpoint.path || '',
-      description: endpoint.description || '',
-      category: endpoint.category || 'general',
-      tags: endpoint.tags || [],
-      lastModified: endpoint.lastModified,
-      timeAgo: getTimeAgo(endpoint.lastModified),
-      requiresAuth: endpoint.requiresAuth || endpoint.requiresAuthentication || false,
-      deprecated: endpoint.deprecated || false
-    }));
-    
-    console.log('📊 Formatted endpoints:', formattedEndpoints);
-    
-    // CRITICAL: Update BOTH state variables to ensure consistency
-    
-    // 1. Update folderEndpoints cache
-    setFolderEndpoints(prev => ({
-      ...prev,
-      [folderId]: formattedEndpoints
-    }));
-    
-    // 2. Update collections state with the endpoints
-    setCollections(prevCollections => {
-      const updatedCollections = prevCollections.map(collection => {
-        if (collection.id === collectionId) {
-          return {
-            ...collection,
-            folders: (collection.folders || []).map(folder => {
-              if (folder.id === folderId) {
-                return { 
-                  ...folder, 
-                  requests: formattedEndpoints, // Store endpoints here
-                  requestCount: formattedEndpoints.length,
-                  hasRequests: formattedEndpoints.length > 0,
-                  isLoading: false,
-                  error: null
-                };
-              }
-              return folder;
-            })
-          };
-        }
-        return collection;
-      });
       
-      console.log('📊 Updated collections with endpoints:', updatedCollections);
-      return updatedCollections;
-    });
-    
-    // 3. Update selectedCollection if needed
-    if (selectedCollection?.id === collectionId) {
-      setSelectedCollection(prev => {
-        if (!prev) return prev;
-        const updatedSelected = {
-          ...prev,
-          folders: (prev.folders || []).map(folder => 
-            folder.id === folderId 
-              ? { 
-                  ...folder, 
-                  requests: formattedEndpoints,
-                  requestCount: formattedEndpoints.length,
-                  hasRequests: formattedEndpoints.length > 0
+      // Auto-select first endpoint if none selected
+      if (formattedEndpoints.length > 0 && !selectedRequest) {
+        console.log('🎯 Auto-selecting first endpoint');
+        const firstEndpoint = formattedEndpoints[0];
+        
+        setSelectedRequest(firstEndpoint);
+        await fetchEndpointDetails(collectionId, firstEndpoint.id);
+        showToast(`Loaded ${formattedEndpoints.length} endpoints`, 'success');
+      } else if (formattedEndpoints.length === 0) {
+        console.log('⚠️ No endpoints found for this folder');
+        showToast('No endpoints found in this folder', 'info');
+      }
+      
+      return formattedEndpoints;
+      
+    } catch (error) {
+      console.error('❌ [Documentation] Error loading API endpoints:', error);
+      
+      // Update folder with error state
+      setCollections(prevCollections => 
+        prevCollections.map(collection => {
+          if (collection.id === collectionId) {
+            return {
+              ...collection,
+              folders: (collection.folders || []).map(folder => {
+                if (folder.id === folderId) {
+                  return { 
+                    ...folder, 
+                    requests: [],
+                    requestCount: 0,
+                    hasRequests: false,
+                    error: error.message,
+                    isLoading: false
+                  };
                 }
-              : folder
-          )
-        };
-        console.log('📊 Updated selectedCollection:', updatedSelected);
-        return updatedSelected;
-      });
-    }
-    
-    // Auto-select first endpoint if none selected
-    if (formattedEndpoints.length > 0 && !selectedRequest) {
-      console.log('🎯 Auto-selecting first endpoint');
-      const firstEndpoint = formattedEndpoints[0];
+                return folder;
+              })
+            };
+          }
+          return collection;
+        })
+      );
       
-      setSelectedRequest(firstEndpoint);
-      await fetchEndpointDetails(collectionId, firstEndpoint.id);
-      showToast(`Loaded ${formattedEndpoints.length} endpoints`, 'success');
-    } else if (formattedEndpoints.length === 0) {
-      console.log('⚠️ No endpoints found for this folder');
-      showToast('No endpoints found in this folder', 'info');
+      showToast(`Failed to load endpoints: ${error.message}`, 'error');
+      return [];
+      
+    } finally {
+      setFolderLoading(prev => ({ ...prev, [folderId]: false }));
     }
-    
-    return formattedEndpoints;
-    
-  } catch (error) {
-    console.error('❌ [Documentation] Error loading API endpoints:', error);
-    
-    // Update folder with error state
-    setCollections(prevCollections => 
-      prevCollections.map(collection => {
-        if (collection.id === collectionId) {
-          return {
-            ...collection,
-            folders: (collection.folders || []).map(folder => {
-              if (folder.id === folderId) {
-                return { 
-                  ...folder, 
-                  requests: [],
-                  requestCount: 0,
-                  hasRequests: false,
-                  error: error.message,
-                  isLoading: false
-                };
-              }
-              return folder;
-            })
-          };
-        }
-        return collection;
-      })
-    );
-    
-    showToast(`Failed to load endpoints: ${error.message}`, 'error');
-    return [];
-    
-  } finally {
-    setFolderLoading(prev => ({ ...prev, [folderId]: false }));
-  }
-}, [authToken, selectedCollection, selectedRequest, fetchEndpointDetails]);
+  }, [authToken, selectedCollection, selectedRequest, fetchEndpointDetails]);
 
   // Load endpoint details - FIXED VERSION with parameter grouping
+  // Load endpoint details - FIXED VERSION with proper header handling
 const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
   console.log(`📡 [Documentation] Fetching details for endpoint ${endpointId}`);
   
@@ -1248,7 +1234,6 @@ const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
     // Extract the endpoint details from the response structure
     let endpointData = null;
     
-    // Your API returns data directly in response.data
     if (handledResponse && handledResponse.data) {
       endpointData = handledResponse.data;
       console.log('📊 [Documentation] Found endpoint data in response.data');
@@ -1264,8 +1249,11 @@ const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
       // Group parameters by location
       const pathParams = [];
       const queryParams = [];
-      const headerParams = [];
+      const headerParams = []; // These will go to Headers tab
       const bodyParams = [];
+      
+      // Collect all headers to display (both from headers array and header parameters)
+      const allHeaders = [];
       
       // Process each parameter based on parameterLocation
       if (endpointData.parameters && Array.isArray(endpointData.parameters)) {
@@ -1296,7 +1284,16 @@ const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
           } else if (location === 'query') {
             queryParams.push(formattedParam);
           } else if (location === 'header') {
+            // These are header parameters - add to headerParams and also to allHeaders for display
             headerParams.push(formattedParam);
+            allHeaders.push({
+              key: formattedParam.key,
+              value: formattedParam.example || formattedParam.defaultValue || '',
+              description: formattedParam.description,
+              required: formattedParam.required,
+              type: formattedParam.type,
+              source: 'parameter'
+            });
           } else if (location === 'body') {
             bodyParams.push(formattedParam);
           } else {
@@ -1305,6 +1302,110 @@ const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
           }
         });
       }
+      
+      // Process headers from the headers array (regular HTTP headers)
+      if (endpointData.headers && Array.isArray(endpointData.headers)) {
+        endpointData.headers.forEach(header => {
+          allHeaders.push({
+            key: header.key,
+            value: header.value || '',
+            description: header.description || '',
+            required: header.required || false,
+            type: header.type || 'string',
+            source: 'header'
+          });
+        });
+      }
+      
+      // Process auth config if present - add to headers
+      if (endpointData.authConfig || endpointData.auth) {
+        const authConfig = endpointData.authConfig || endpointData.auth || {};
+        console.log('🔐 Processing auth config for headers:', authConfig);
+        
+        const authType = authConfig.type || authConfig.authType || 'noauth';
+        
+        if (authType === 'apikey') {
+          // Handle API Key auth - add to headers
+          const key = authConfig.key || authConfig.apiKey || authConfig.apiKeyHeader || '';
+          const value = authConfig.value || authConfig.apiSecret || authConfig.apiKeyValue || authConfig.secret || '';
+          
+          if (key && value) {
+            allHeaders.push({
+              key: key,
+              value: value,
+              description: 'API Key authentication',
+              required: true,
+              type: 'string',
+              source: 'auth'
+            });
+            console.log(`🔐 Added API Key header: ${key}`);
+          }
+          
+          // Check for API Secret separately if it exists
+          if (authConfig.apiSecretHeader && authConfig.apiSecretValue) {
+            allHeaders.push({
+              key: authConfig.apiSecretHeader,
+              value: authConfig.apiSecretValue,
+              description: 'API Secret authentication',
+              required: true,
+              type: 'string',
+              source: 'auth'
+            });
+            console.log(`🔐 Added API Secret header: ${authConfig.apiSecretHeader}`);
+          }
+        } 
+        else if (authType === 'bearer') {
+          const token = authConfig.token || authConfig.bearerToken || '';
+          const tokenType = authConfig.tokenType || 'Bearer';
+          if (token) {
+            allHeaders.push({
+              key: 'Authorization',
+              value: `${tokenType} ${token}`,
+              description: 'Bearer token authentication',
+              required: true,
+              type: 'string',
+              source: 'auth'
+            });
+          }
+        }
+        else if (authType === 'basic') {
+          const username = authConfig.username || '';
+          const password = authConfig.password || '';
+          if (username && password) {
+            const credentials = btoa(`${username}:${password}`);
+            allHeaders.push({
+              key: 'Authorization',
+              value: `Basic ${credentials}`,
+              description: 'Basic authentication',
+              required: true,
+              type: 'string',
+              source: 'auth'
+            });
+          }
+        }
+        else if (authType === 'oauth2') {
+          const token = authConfig.token || '';
+          if (token) {
+            allHeaders.push({
+              key: 'Authorization',
+              value: `Bearer ${token}`,
+              description: 'OAuth2 token authentication',
+              required: true,
+              type: 'string',
+              source: 'auth'
+            });
+          }
+        }
+      }
+      
+      // Remove duplicate headers (by key)
+      const uniqueHeaders = allHeaders.reduce((acc, current) => {
+        const exists = acc.some(h => h.key.toLowerCase() === current.key.toLowerCase());
+        if (!exists) {
+          acc.push(current);
+        }
+        return acc;
+      }, []);
       
       // Sort parameters by position if available
       const sortByPosition = (a, b) => (a.position || 0) - (b.position || 0);
@@ -1336,16 +1437,13 @@ const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
           (endpointData.rateLimit ? formatRateLimit(endpointData.rateLimit) : 'Not rate limited'),
         deprecated: endpointData.deprecated || false,
         
-        // Grouped headers (separate from header parameters)
-        headers: Array.isArray(endpointData.headers) ? endpointData.headers.map(header => ({
-          ...header,
-          requiredBadge: header.required ? 'Required' : 'Optional'
-        })) : [],
+        // Headers to display (combined from headers array, header parameters, and auth)
+        headers: uniqueHeaders,
         
         // Grouped parameters by location
         pathParameters: pathParams,
         queryParameters: queryParams,
-        headerParameters: headerParams,
+        headerParameters: headerParams, // Keep separate for reference
         bodyParameters: bodyParams,
         
         // Keep original parameters array for backward compatibility
@@ -1378,7 +1476,8 @@ const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
         path: formattedDetails.pathParameters.length,
         query: formattedDetails.queryParameters.length,
         header: formattedDetails.headerParameters.length,
-        body: formattedDetails.bodyParameters.length
+        body: formattedDetails.bodyParameters.length,
+        headersToDisplay: formattedDetails.headers.length
       });
       
       setEndpointDetails(formattedDetails);
@@ -1643,23 +1742,88 @@ const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
     setTimeout(() => setToast(null), 3000);
   };
 
+  // ============== AUTH CONFIG HANDLING (similar to Collections) ==============
+  const handleAuthConfig = useCallback((authConfigFromRequest) => {
+    console.log('🔐 Processing auth config:', authConfigFromRequest);
+    
+    const authType = authConfigFromRequest.authType || authConfigFromRequest.type || 'noauth';
+    setAuthType(authType);
+    
+    let processedAuthConfig = { type: authType };
+    
+    if (authType === 'apikey') {
+      // Handle API Key auth
+      processedAuthConfig = {
+        type: 'apikey',
+        key: authConfigFromRequest.key || 
+              authConfigFromRequest.apiKey || 
+              authConfigFromRequest.apiKeyHeader || '',
+        value: authConfigFromRequest.value || 
+               authConfigFromRequest.apiSecret || 
+               authConfigFromRequest.apiKeyValue || 
+               authConfigFromRequest.secret || '',
+        addTo: authConfigFromRequest.addTo || 'header'
+      };
+      console.log('🔐 Processed API Key config:', processedAuthConfig);
+      
+      // For API Key, set authType to 'noauth' for UI (API keys go in headers)
+      setAuthType('noauth');
+    } 
+    else if (authType === 'bearer') {
+      processedAuthConfig = {
+        type: 'bearer',
+        token: authConfigFromRequest.token || authConfigFromRequest.bearerToken || '',
+        tokenType: authConfigFromRequest.tokenType || 'Bearer'
+      };
+      console.log('🔐 Processed Bearer config:', processedAuthConfig);
+      setAuthType('bearer');
+    }
+    else if (authType === 'basic') {
+      processedAuthConfig = {
+        type: 'basic',
+        username: authConfigFromRequest.username || '',
+        password: authConfigFromRequest.password || ''
+      };
+      console.log('🔐 Processed Basic config:', processedAuthConfig);
+      setAuthType('basic');
+    }
+    else if (authType === 'oauth2') {
+      processedAuthConfig = {
+        type: 'oauth2',
+        token: authConfigFromRequest.token || ''
+      };
+      console.log('🔐 Processed OAuth2 config:', processedAuthConfig);
+      setAuthType('oauth2');
+    }
+    else {
+      processedAuthConfig = { type: 'noauth' };
+      setAuthType('noauth');
+    }
+    
+    setAuthConfig(processedAuthConfig);
+  }, []);
 
- const handleSelectRequest = async (request, collectionId, folderId) => {
-  console.log('🎯 [Documentation] Selecting request:', request.name);
-  
-  const collection = collections.find(c => c.id === collectionId);
-  if (collection) {
-    setSelectedCollection(collection);
-  }
-  
-  setSelectedRequest(request);
-  
-  showToast(`Viewing documentation for ${request.name}`, 'info');
-  
-  // Make sure we have the correct ID - your API uses 'id' not 'endpointId'
-  const endpointId = request.id || request.endpointId;
-  await fetchEndpointDetails(collectionId, endpointId);
-};
+  const handleSelectRequest = async (request, collectionId, folderId) => {
+    console.log('🎯 [Documentation] Selecting request:', request.name);
+    
+    const collection = collections.find(c => c.id === collectionId);
+    if (collection) {
+      setSelectedCollection(collection);
+    }
+    
+    setSelectedRequest(request);
+    
+    // Process auth config if present in the request
+    if (request.authConfig || request.auth) {
+      handleAuthConfig(request.authConfig || request.auth);
+    }
+    
+    showToast(`Viewing documentation for ${request.name}`, 'info');
+    
+    // Make sure we have the correct ID - your API uses 'id' not 'endpointId'
+    const endpointId = request.id || request.endpointId;
+    await fetchEndpointDetails(collectionId, endpointId);
+  };
 
   const handleEnvironmentChange = (envId) => {
     setActiveEnvironment(envId);
@@ -1783,78 +1947,6 @@ req.end();`
     );
   });
 
-
-  // Add this ref near your other refs
-const autoExpandTriggered = useRef(false);
-const isFirstLoad = useRef(true);
-
-// Auto-expand first folder and select first endpoint on initial load
-useEffect(() => {
-  // Only run on first load and if not already triggered
-  if (!isFirstLoad.current || autoExpandTriggered.current) {
-    return;
-  }
-  
-  // Need selected collection
-  if (!selectedCollection) {
-    console.log('⏳ [Documentation] Waiting for selectedCollection...');
-    return;
-  }
-  
-  // Need folders to be loaded
-  if (!selectedCollection.folders || selectedCollection.folders.length === 0) {
-    console.log('⏳ [Documentation] Waiting for folders to load...');
-    return;
-  }
-  
-  // Mark as triggered immediately to prevent multiple calls
-  autoExpandTriggered.current = true;
-  
-  console.log('🔥🔥🔥 [Documentation] AUTO-EXPAND TRIGGERED');
-  
-  const autoExpandAndSelect = async () => {
-    // Find first folder that has requests
-    const firstFolderWithRequests = selectedCollection.folders.find(f => f.requests && f.requests.length > 0);
-    const folderToExpand = firstFolderWithRequests || selectedCollection.folders[0];
-    
-    if (!folderToExpand) {
-      console.log('❌ [Documentation] No folders found');
-      return;
-    }
-    
-    console.log(`📁 [Documentation] Auto-expanding folder: ${folderToExpand.id} - ${folderToExpand.name}`);
-    
-    // Expand the folder
-    setExpandedFolders([folderToExpand.id]);
-    
-    // Select the first endpoint if available (endpoints are already loaded from the collection details)
-    if (folderToExpand.requests && folderToExpand.requests.length > 0 && !selectedRequest) {
-      const firstEndpoint = folderToExpand.requests[0];
-      console.log(`🎯 [Documentation] Auto-selecting first endpoint: ${firstEndpoint.name}`);
-      
-      setSelectedRequest(firstEndpoint);
-      await fetchEndpointDetails(selectedCollection.id, firstEndpoint.id);
-      
-      showToast(`Viewing documentation for ${firstEndpoint.name}`, 'info');
-    }
-    
-    // Mark that first load is complete
-    isFirstLoad.current = false;
-    console.log('✅ [Documentation] Auto-expand completed');
-  };
-  
-  autoExpandAndSelect();
-  
-}, [
-  selectedCollection, 
-  selectedCollection?.folders,
-  selectedCollection?.folders?.length,
-  selectedRequest,
-  fetchEndpointDetails,
-  showToast
-]);
-
-
   // Initialize data
   useEffect(() => {
     console.log('🚀 [Documentation] Component mounted, fetching data...');
@@ -1886,7 +1978,7 @@ useEffect(() => {
     };
     
     initializeData();
-  }, [authToken]);
+  }, [authToken, fetchAPICollections, fetchEnvironments, fetchNotifications]);
 
   // Update the debug button in the sidebar
   const renderDebugButton = () => {
@@ -2050,459 +2142,419 @@ useEffect(() => {
   };
 
   const renderDocumentationContent = () => {
-  if (!selectedRequest || !endpointDetails) {
+    if (!selectedRequest || !endpointDetails) {
+      return (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center" style={{ color: colors.textSecondary }}>
+            <BookOpen size={48} className="mx-auto mb-4 opacity-50" />
+            <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>Select an API Endpoint</h3>
+            <p>Choose an endpoint from the left sidebar to view its documentation</p>
+          </div>
+        </div>
+      );
+    }
+    
+    const activeEnv = environments.find(e => e.id === activeEnvironment);
+    
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-center" style={{ color: colors.textSecondary }}>
-          <BookOpen size={48} className="mx-auto mb-4 opacity-50" />
-          <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>Select an API Endpoint</h3>
-          <p>Choose an endpoint from the left sidebar to view its documentation</p>
-        </div>
-      </div>
-    );
-  }
-  
-  const activeEnv = environments.find(e => e.id === activeEnvironment);
-  
-  return (
-    <div className="flex-1 overflow-auto p-8">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="px-3 py-1 rounded text-sm font-medium" style={{ 
-              backgroundColor: getMethodColor(selectedRequest.method),
-              color: 'white'
-            }}>
-              {selectedRequest.method}
+      <div className="flex-1 overflow-auto p-8">
+        <div className="max-w-6xl mx-auto">
+          {/* Header */}
+          <div className="mb-8">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="px-3 py-1 rounded text-sm font-medium" style={{ 
+                backgroundColor: getMethodColor(selectedRequest.method),
+                color: 'white'
+              }}>
+                {selectedRequest.method}
+              </div>
+              <code className="text-lg font-mono" style={{ color: colors.text }}>
+                {activeEnv?.baseUrl || ''}{selectedRequest.path || selectedRequest.url || ''}
+              </code>
             </div>
-            <code className="text-lg font-mono" style={{ color: colors.text }}>
-              {activeEnv?.baseUrl || ''}{selectedRequest.path || selectedRequest.url || ''}
-            </code>
-          </div>
-          <h1 className="text-2xl font-semibold mb-4" style={{ color: colors.text }}>
-            {selectedRequest.name}
-          </h1>
-          <p className="text-base mb-6" style={{ color: colors.textSecondary }}>
-            {selectedRequest.description || endpointDetails.description}
-          </p>
-          
-          <div className="flex flex-wrap items-center gap-4 text-sm mb-6">
-            <div style={{ color: colors.textTertiary }}>
-              <Folder size={12} className="inline mr-1" />
-              {selectedCollection?.name} › {selectedRequest.category || 'API'}
-            </div>
-            <div className="flex items-center gap-2">
-              {endpointDetails.formattedTags?.map((tag, index) => (
-                <span key={index} className="text-xs px-2 py-1 rounded" style={{ 
-                  backgroundColor: `${tag.color}20`,
-                  color: tag.color
+            <h1 className="text-2xl font-semibold mb-4" style={{ color: colors.text }}>
+              {selectedRequest.name}
+            </h1>
+            <p className="text-base mb-6" style={{ color: colors.textSecondary }}>
+              {selectedRequest.description || endpointDetails.description}
+            </p>
+            
+            <div className="flex flex-wrap items-center gap-4 text-sm mb-6">
+              <div style={{ color: colors.textTertiary }}>
+                <Folder size={12} className="inline mr-1" />
+                {selectedCollection?.name} › {selectedRequest.category || 'API'}
+              </div>
+              <div className="flex items-center gap-2">
+                {endpointDetails.formattedTags?.map((tag, index) => (
+                  <span key={index} className="text-xs px-2 py-1 rounded" style={{ 
+                    backgroundColor: `${tag.color}20`,
+                    color: tag.color
+                  }}>
+                    {tag.name}
+                  </span>
+                ))}
+              </div>
+              <div style={{ color: colors.textTertiary }}>
+                <Clock size={12} className="inline mr-1" />
+                Last updated: {endpointDetails.timeAgo || 'Unknown'}
+              </div>
+              {endpointDetails.requiresAuthentication && (
+                <div className="flex items-center gap-1 text-xs px-2 py-1 rounded" style={{ 
+                  backgroundColor: `${colors.warning}20`,
+                  color: colors.warning
                 }}>
-                  {tag.name}
-                </span>
-              ))}
-            </div>
-            <div style={{ color: colors.textTertiary }}>
-              <Clock size={12} className="inline mr-1" />
-              Last updated: {endpointDetails.timeAgo || 'Unknown'}
-            </div>
-            {endpointDetails.requiresAuthentication && (
-              <div className="flex items-center gap-1 text-xs px-2 py-1 rounded" style={{ 
-                backgroundColor: `${colors.warning}20`,
-                color: colors.warning
-              }}>
-                <Lock size={10} />
-                Requires Auth
-              </div>
-            )}
-            {endpointDetails.deprecated && (
-              <div className="flex items-center gap-1 text-xs px-2 py-1 rounded" style={{ 
-                backgroundColor: `${colors.error}20`,
-                color: colors.error
-              }}>
-                <AlertCircle size={10} />
-                Deprecated
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Request Details */}
-        <div className="space-y-8">
-          <section>
-            <h2 className="text-xl font-semibold mb-6 pb-2 border-b" style={{ 
-              color: colors.text,
-              borderColor: colors.border
-            }}>
-              Request Details
-            </h2>
-            
-            {/* Headers Section */}
-            {endpointDetails.headers && endpointDetails.headers.length > 0 && (
-              <div className="mb-8">
-                <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>Headers</h3>
-                <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
-                  <table className="w-full">
-                    <thead style={{ backgroundColor: colors.tableHeader }}>
-                      <tr>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Key</th>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Value</th>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {endpointDetails.headers.map((header, index) => (
-                        <tr key={index} className="border-b last:border-b-0" style={{ 
-                          borderColor: colors.borderLight,
-                          backgroundColor: colors.tableRow
-                        }}>
-                          <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>{header.key}</td>
-                          <td className="px-4 py-3 font-mono text-sm" style={{ color: colors.textSecondary }}>
-                            <code>{header.value}</code>
-                          </td>
-                          <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>
-                            {header.requiredBadge === 'Required' ? 'Required header' : 'Optional header'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <Lock size={10} />
+                  Requires Auth
                 </div>
-              </div>
-            )}
-
-            {/* Path Parameters */}
-            {endpointDetails.pathParameters && endpointDetails.pathParameters.length > 0 && (
-              <div className="mb-8">
-                <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>
-                  Path Parameters
-                  <span className="ml-2 text-xs px-2 py-1 rounded" style={{ 
-                    backgroundColor: 'rgb(96 165 250)',
-                    color: 'white'
-                  }}>
-                    {endpointDetails.pathParameters.length}
-                  </span>
-                </h3>
-                <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
-                  <table className="w-full">
-                    <thead style={{ backgroundColor: colors.tableHeader }}>
-                      <tr>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Name</th>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Type</th>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Required</th>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {endpointDetails.pathParameters.map((param, index) => (
-                        <tr key={param.id || index} className="border-b last:border-b-0" style={{ 
-                          borderColor: colors.borderLight,
-                          backgroundColor: colors.tableRow
-                        }}>
-                          <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>
-                            <code>{param.name}</code>
-                          </td>
-                          <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>{param.type}</td>
-                          <td className="px-4 py-3">
-                            <span className="text-xs px-2 py-1 rounded" style={{ 
-                              backgroundColor: param.required ? `${colors.error}20` : `${colors.success}20`,
-                              color: param.required ? colors.error : colors.success
-                            }}>
-                              {param.requiredBadge}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>
-                            {param.description}
-                            {param.example && (
-                              <span className="block mt-1 text-xs" style={{ color: colors.textTertiary }}>
-                                Example: <code>{param.example}</code>
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Query Parameters */}
-            {endpointDetails.queryParameters && endpointDetails.queryParameters.length > 0 && (
-              <div className="mb-8">
-                <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>
-                  Query Parameters
-                  <span className="ml-2 text-xs px-2 py-1 rounded" style={{ 
-                    backgroundColor: 'rgb(96 165 250)',
-                    color: 'white'
-                  }}>
-                    {endpointDetails.queryParameters.length}
-                  </span>
-                </h3>
-                <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
-                  <table className="w-full">
-                    <thead style={{ backgroundColor: colors.tableHeader }}>
-                      <tr>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Name</th>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Type</th>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Required</th>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {endpointDetails.queryParameters.map((param, index) => (
-                        <tr key={param.id || index} className="border-b last:border-b-0" style={{ 
-                          borderColor: colors.borderLight,
-                          backgroundColor: colors.tableRow
-                        }}>
-                          <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>
-                            <code>{param.name}</code>
-                          </td>
-                          <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>{param.type}</td>
-                          <td className="px-4 py-3">
-                            <span className="text-xs px-2 py-1 rounded" style={{ 
-                              backgroundColor: param.required ? `${colors.error}20` : `${colors.success}20`,
-                              color: param.required ? colors.error : colors.success
-                            }}>
-                              {param.requiredBadge}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>
-                            {param.description}
-                            {param.defaultValue && (
-                              <span className="block mt-1 text-xs" style={{ color: colors.textTertiary }}>
-                                Default: <code>{param.defaultValue}</code>
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Header Parameters (from parameters list) */}
-            {endpointDetails.headerParameters && endpointDetails.headerParameters.length > 0 && (
-              <div className="mb-8">
-                <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>
-                  Header Parameters
-                  <span className="ml-2 text-xs px-2 py-1 rounded" style={{ 
-                    backgroundColor: 'rgb(96 165 250)',
-                    color: 'white'
-                  }}>
-                    {endpointDetails.headerParameters.length}
-                  </span>
-                </h3>
-                <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
-                  <table className="w-full">
-                    <thead style={{ backgroundColor: colors.tableHeader }}>
-                      <tr>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Name</th>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Type</th>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Required</th>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {endpointDetails.headerParameters.map((param, index) => (
-                        <tr key={param.id || index} className="border-b last:border-b-0" style={{ 
-                          borderColor: colors.borderLight,
-                          backgroundColor: colors.tableRow
-                        }}>
-                          <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>
-                            <code>{param.name}</code>
-                          </td>
-                          <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>{param.type}</td>
-                          <td className="px-4 py-3">
-                            <span className="text-xs px-2 py-1 rounded" style={{ 
-                              backgroundColor: param.required ? `${colors.error}20` : `${colors.success}20`,
-                              color: param.required ? colors.error : colors.success
-                            }}>
-                              {param.requiredBadge}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>
-                            {param.description}
-                            {param.example && (
-                              <span className="block mt-1 text-xs" style={{ color: colors.textTertiary }}>
-                                Example: <code>{param.example}</code>
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Body Parameters */}
-            {endpointDetails.bodyParameters && endpointDetails.bodyParameters.length > 0 && (
-              <div className="mb-8">
-                <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>
-                  Request Body Parameters
-                  <span className="ml-2 text-xs px-2 py-1 rounded" style={{ 
-                    backgroundColor: 'rgb(96 165 250)',
-                    color: 'white'
-                  }}>
-                    {endpointDetails.bodyParameters.length}
-                  </span>
-                </h3>
-                
-                {/* Table view for body parameters */}
-                <div className="border rounded overflow-hidden mb-4" style={{ borderColor: colors.border }}>
-                  <table className="w-full">
-                    <thead style={{ backgroundColor: colors.tableHeader }}>
-                      <tr>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Name</th>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Type</th>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Required</th>
-                        <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {endpointDetails.bodyParameters.map((param, index) => (
-                        <tr key={param.id || index} className="border-b last:border-b-0" style={{ 
-                          borderColor: colors.borderLight,
-                          backgroundColor: colors.tableRow
-                        }}>
-                          <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>
-                            <code>{param.name}</code>
-                          </td>
-                          <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>{param.type}</td>
-                          <td className="px-4 py-3">
-                            <span className="text-xs px-2 py-1 rounded" style={{ 
-                              backgroundColor: param.required ? `${colors.error}20` : `${colors.success}20`,
-                              color: param.required ? colors.error : colors.success
-                            }}>
-                              {param.requiredBadge}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>
-                            {param.description}
-                            {param.example && (
-                              <span className="block mt-1 text-xs" style={{ color: colors.textTertiary }}>
-                                Example: <code>{param.example}</code>
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Request Body Example */}
-                {/* <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
-                  <div className="p-4 border-b flex items-center justify-between" style={{ 
-                    backgroundColor: colors.tableHeader,
-                    borderColor: colors.border
-                  }}>
-                    <span className="text-sm font-medium" style={{ color: colors.text }}>Request Body Example</span>
-                    <button 
-                      className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
-                      style={{ backgroundColor: colors.hover }}
-                      onClick={() => copyToClipboard(endpointDetails.requestBodyExample)}
-                    >
-                      <Copy size={12} style={{ color: colors.textSecondary }} />
-                    </button>
-                  </div>
-                  <div className="p-4" style={{ backgroundColor: colors.codeBg }}>
-                    <SyntaxHighlighter 
-                      language="json"
-                      code={endpointDetails.requestBodyExample}
-                    />
-                  </div>
-                </div> */}
-              </div>
-            )}
-
-            <div>
-              <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>Description</h3>
-              <div className="prose max-w-none" style={{ color: colors.textSecondary }}>
-                <p>
-                  {endpointDetails.description || 'No description available.'}
-                </p>
-                {endpointDetails.requiresAuthentication && (
-                  <p className="mt-3">
-                    <strong>Authentication Required:</strong> This endpoint requires authentication.
-                  </p>
-                )}
-                {endpointDetails.rateLimit && (
-                  <p className="mt-3">
-                    <strong>Rate Limits:</strong> {endpointDetails.formattedRateLimit}
-                  </p>
-                )}
-                {endpointDetails.deprecated && (
-                  <p className="mt-3">
-                    <strong>Deprecated:</strong> This endpoint is deprecated and may be removed in future versions.
-                  </p>
-                )}
-              </div>
-            </div>
-          </section>
-
-          {/* Response Examples */}
-          <section>
-            <h2 className="text-xl font-semibold mb-6 pb-2 border-b" style={{ 
-              color: colors.text,
-              borderColor: colors.border
-            }}>
-              Response Examples
-            </h2>
-            
-            <div className="space-y-6">
-              {endpointDetails.responseExamples && endpointDetails.responseExamples.length > 0 ? (
-                endpointDetails.responseExamples.map((example, index) => (
-                  <div key={index}>
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="flex items-center gap-2 px-3 py-1.5 rounded text-sm font-medium" style={{ 
-                        backgroundColor: example.statusCode >= 200 && example.statusCode < 300 ? `${colors.success}20` : `${colors.error}20`,
-                        color: example.statusCode >= 200 && example.statusCode < 300 ? colors.success : colors.error
-                      }}>
-                        {example.statusCode >= 200 && example.statusCode < 300 ? <CheckCircle size={12} /> : <XCircle size={12} />}
-                        {example.statusBadge?.text || `Response ${example.statusCode}`}
-                      </div>
-                      <span className="text-sm" style={{ color: colors.textSecondary }}>{example.description}</span>
-                    </div>
-                    
-                    <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
-                      <div className="p-4 border-b flex items-center justify-between" style={{ 
-                        backgroundColor: colors.tableHeader,
-                        borderColor: colors.border
-                      }}>
-                        <span className="text-sm font-medium" style={{ color: colors.text }}>JSON Response</span>
-                        <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
-                          style={{ backgroundColor: colors.hover }}
-                          onClick={() => copyToClipboard(example.formattedExample || example.example)}>
-                          <Copy size={12} style={{ color: colors.textSecondary }} />
-                        </button>
-                      </div>
-                      <div className="p-4" style={{ backgroundColor: colors.codeBg }}>
-                        <SyntaxHighlighter 
-                          language="json"
-                          code={example.formattedExample || example.example || '{}'}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-8" style={{ color: colors.textSecondary }}>
-                  <Info size={24} className="mx-auto mb-4 opacity-50" />
-                  <p>No response examples available for this endpoint.</p>
+              )}
+              {endpointDetails.deprecated && (
+                <div className="flex items-center gap-1 text-xs px-2 py-1 rounded" style={{ 
+                  backgroundColor: `${colors.error}20`,
+                  color: colors.error
+                }}>
+                  <AlertCircle size={10} />
+                  Deprecated
                 </div>
               )}
             </div>
-          </section>
+          </div>
+
+          {/* Request Details */}
+          <div className="space-y-8">
+            <section>
+              <h2 className="text-xl font-semibold mb-6 pb-2 border-b" style={{ 
+                color: colors.text,
+                borderColor: colors.border
+              }}>
+                Request Details
+              </h2>
+              
+              {/* Headers Section - Combined from all sources */}
+              {endpointDetails.headers && endpointDetails.headers.length > 0 && (
+                <div className="mb-8">
+                  <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>
+                    Headers
+                    <span className="ml-2 text-xs px-2 py-1 rounded" style={{ 
+                      backgroundColor: 'rgb(96 165 250)',
+                      color: 'white'
+                    }}>
+                      {endpointDetails.headers.length}
+                    </span>
+                  </h3>
+                  <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
+                    <table className="w-full">
+                      <thead style={{ backgroundColor: colors.tableHeader }}>
+                        <tr>
+                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Key</th>
+                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Value</th>
+                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Source</th>
+                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Description</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {endpointDetails.headers.map((header, index) => (
+                          <tr key={index} className="border-b last:border-b-0" style={{ 
+                            borderColor: colors.borderLight,
+                            backgroundColor: colors.tableRow
+                          }}>
+                            <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>
+                              <code>{header.key}</code>
+                              {header.required && (
+                                <span className="ml-2 text-xs px-1.5 py-0.5 rounded" style={{ 
+                                  backgroundColor: `${colors.error}20`,
+                                  color: colors.error
+                                }}>
+                                  required
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 font-mono text-sm" style={{ color: colors.textSecondary }}>
+                              <code>{header.value || '(empty)'}</code>
+                            </td>
+                            <td className="px-4 py-3 text-sm">
+                              <span className="text-xs px-2 py-1 rounded" style={{ 
+                                backgroundColor: header.source === 'auth' ? `${colors.warning}20` : 
+                                              header.source === 'parameter' ? `${colors.info}20` : 
+                                              `${colors.success}20`,
+                                color: header.source === 'auth' ? colors.warning : 
+                                      header.source === 'parameter' ? colors.info : 
+                                      colors.success
+                              }}>
+                                {header.source === 'auth' ? 'Auth' : 
+                                header.source === 'parameter' ? 'Header Param' : 
+                                'Standard'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>
+                              {header.description}
+                              {header.type && header.type !== 'string' && (
+                                <span className="block mt-1 text-xs" style={{ color: colors.textTertiary }}>
+                                  Type: {header.type}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Path Parameters */}
+              {endpointDetails.pathParameters && endpointDetails.pathParameters.length > 0 && (
+                <div className="mb-8">
+                  <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>
+                    Path Parameters
+                    <span className="ml-2 text-xs px-2 py-1 rounded" style={{ 
+                      backgroundColor: 'rgb(96 165 250)',
+                      color: 'white'
+                    }}>
+                      {endpointDetails.pathParameters.length}
+                    </span>
+                  </h3>
+                  <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
+                    <table className="w-full">
+                      <thead style={{ backgroundColor: colors.tableHeader }}>
+                        <tr>
+                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Name</th>
+                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Type</th>
+                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Required</th>
+                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Description</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {endpointDetails.pathParameters.map((param, index) => (
+                          <tr key={param.id || index} className="border-b last:border-b-0" style={{ 
+                            borderColor: colors.borderLight,
+                            backgroundColor: colors.tableRow
+                          }}>
+                            <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>
+                              <code>{param.name}</code>
+                            </td>
+                            <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>{param.type}</td>
+                            <td className="px-4 py-3">
+                              <span className="text-xs px-2 py-1 rounded" style={{ 
+                                backgroundColor: param.required ? `${colors.error}20` : `${colors.success}20`,
+                                color: param.required ? colors.error : colors.success
+                              }}>
+                                {param.requiredBadge}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>
+                              {param.description}
+                              {param.example && (
+                                <span className="block mt-1 text-xs" style={{ color: colors.textTertiary }}>
+                                  Example: <code>{param.example}</code>
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Query Parameters */}
+              {endpointDetails.queryParameters && endpointDetails.queryParameters.length > 0 && (
+                <div className="mb-8">
+                  <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>
+                    Query Parameters
+                    <span className="ml-2 text-xs px-2 py-1 rounded" style={{ 
+                      backgroundColor: 'rgb(96 165 250)',
+                      color: 'white'
+                    }}>
+                      {endpointDetails.queryParameters.length}
+                    </span>
+                  </h3>
+                  <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
+                    <table className="w-full">
+                      <thead style={{ backgroundColor: colors.tableHeader }}>
+                        <tr>
+                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Name</th>
+                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Type</th>
+                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Required</th>
+                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Description</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {endpointDetails.queryParameters.map((param, index) => (
+                          <tr key={param.id || index} className="border-b last:border-b-0" style={{ 
+                            borderColor: colors.borderLight,
+                            backgroundColor: colors.tableRow
+                          }}>
+                            <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>
+                              <code>{param.name}</code>
+                            </td>
+                            <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>{param.type}</td>
+                            <td className="px-4 py-3">
+                              <span className="text-xs px-2 py-1 rounded" style={{ 
+                                backgroundColor: param.required ? `${colors.error}20` : `${colors.success}20`,
+                                color: param.required ? colors.error : colors.success
+                              }}>
+                                {param.requiredBadge}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>
+                              {param.description}
+                              {param.defaultValue && (
+                                <span className="block mt-1 text-xs" style={{ color: colors.textTertiary }}>
+                                  Default: <code>{param.defaultValue}</code>
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Body Parameters */}
+              {endpointDetails.bodyParameters && endpointDetails.bodyParameters.length > 0 && (
+                <div className="mb-8">
+                  <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>
+                    Request Body Parameters
+                    <span className="ml-2 text-xs px-2 py-1 rounded" style={{ 
+                      backgroundColor: 'rgb(96 165 250)',
+                      color: 'white'
+                    }}>
+                      {endpointDetails.bodyParameters.length}
+                    </span>
+                  </h3>
+                  
+                  {/* Table view for body parameters */}
+                  <div className="border rounded overflow-hidden mb-4" style={{ borderColor: colors.border }}>
+                    <table className="w-full">
+                      <thead style={{ backgroundColor: colors.tableHeader }}>
+                        <tr>
+                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Name</th>
+                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Type</th>
+                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Required</th>
+                          <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Description</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {endpointDetails.bodyParameters.map((param, index) => (
+                          <tr key={param.id || index} className="border-b last:border-b-0" style={{ 
+                            borderColor: colors.borderLight,
+                            backgroundColor: colors.tableRow
+                          }}>
+                            <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>
+                              <code>{param.name}</code>
+                            </td>
+                            <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>{param.type}</td>
+                            <td className="px-4 py-3">
+                              <span className="text-xs px-2 py-1 rounded" style={{ 
+                                backgroundColor: param.required ? `${colors.error}20` : `${colors.success}20`,
+                                color: param.required ? colors.error : colors.success
+                              }}>
+                                {param.requiredBadge}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm" style={{ color: colors.textSecondary }}>
+                              {param.description}
+                              {param.example && (
+                                <span className="block mt-1 text-xs" style={{ color: colors.textTertiary }}>
+                                  Example: <code>{param.example}</code>
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                </div>
+              )}
+
+              <div>
+                <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>Description</h3>
+                <div className="prose max-w-none" style={{ color: colors.textSecondary }}>
+                  <p>
+                    {endpointDetails.description || 'No description available.'}
+                  </p>
+                  {endpointDetails.requiresAuthentication && (
+                    <p className="mt-3">
+                      <strong>Authentication Required:</strong> This endpoint requires authentication.
+                    </p>
+                  )}
+                  {endpointDetails.rateLimit && (
+                    <p className="mt-3">
+                      <strong>Rate Limits:</strong> {endpointDetails.formattedRateLimit}
+                    </p>
+                  )}
+                  {endpointDetails.deprecated && (
+                    <p className="mt-3">
+                      <strong>Deprecated:</strong> This endpoint is deprecated and may be removed in future versions.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            {/* Response Examples */}
+            <section>
+              <h2 className="text-xl font-semibold mb-6 pb-2 border-b" style={{ 
+                color: colors.text,
+                borderColor: colors.border
+              }}>
+                Response Examples
+              </h2>
+              
+              <div className="space-y-6">
+                {endpointDetails.responseExamples && endpointDetails.responseExamples.length > 0 ? (
+                  endpointDetails.responseExamples.map((example, index) => (
+                    <div key={index}>
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-sm font-medium" style={{ 
+                          backgroundColor: example.statusCode >= 200 && example.statusCode < 300 ? `${colors.success}20` : `${colors.error}20`,
+                          color: example.statusCode >= 200 && example.statusCode < 300 ? colors.success : colors.error
+                        }}>
+                          {example.statusCode >= 200 && example.statusCode < 300 ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                          {example.statusBadge?.text || `Response ${example.statusCode}`}
+                        </div>
+                        <span className="text-sm" style={{ color: colors.textSecondary }}>{example.description}</span>
+                      </div>
+                      
+                      <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
+                        <div className="p-4 border-b flex items-center justify-between" style={{ 
+                          backgroundColor: colors.tableHeader,
+                          borderColor: colors.border
+                        }}>
+                          <span className="text-sm font-medium" style={{ color: colors.text }}>JSON Response</span>
+                          <button className="p-1.5 rounded hover:bg-opacity-50 transition-colors"
+                            style={{ backgroundColor: colors.hover }}
+                            onClick={() => copyToClipboard(example.formattedExample || example.example)}>
+                            <Copy size={12} style={{ color: colors.textSecondary }} />
+                          </button>
+                        </div>
+                        <div className="p-4" style={{ backgroundColor: colors.codeBg }}>
+                          <SyntaxHighlighter 
+                            language="json"
+                            code={example.formattedExample || example.example || '{}'}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8" style={{ color: colors.textSecondary }}>
+                    <Info size={24} className="mx-auto mb-4 opacity-50" />
+                    <p>No response examples available for this endpoint.</p>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
         </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
   const renderToast = () => {
     if (!toast) return null;
@@ -2524,524 +2576,524 @@ useEffect(() => {
   };
 
   return (
-  <div className="flex flex-col h-screen overflow-hidden" style={{ 
-    backgroundColor: colors.bg,
-    color: colors.text,
-    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
-    fontSize: '13px'
-  }}>
-    <style>{`
-      @keyframes fadeInUp {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-      
-      @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-      }
-      
-      .animate-fade-in-up {
-        animation: fadeInUp 0.2s ease-out;
-      }
-      
-      .animate-spin {
-        animation: spin 1s linear infinite;
-      }
-      
-      .text-blue-400 { color: #60a5fa; }
-      .text-green-400 { color: #34d399; }
-      .text-purple-400 { color: #a78bfa; }
-      .text-orange-400 { color: #fb923c; }
-      .text-red-400 { color: #f87171; }
-      .text-gray-500 { color: #9ca3af; }
-      
-      /* Custom scrollbar */
-      ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-      }
-      
-      ::-webkit-scrollbar-track {
-        background: ${colors.border};
-        border-radius: 4px;
-      }
-      
-      ::-webkit-scrollbar-thumb {
-        background: ${colors.textTertiary};
-        border-radius: 4px;
-      }
-      
-      ::-webkit-scrollbar-thumb:hover {
-        background: ${colors.textSecondary};
-      }
-      
-      .prose {
-        color: ${colors.textSecondary};
-        line-height: 1.6;
-      }
-      
-      .prose p {
-        margin-bottom: 1em;
-      }
-      
-      .prose strong {
-        color: ${colors.text};
-        font-weight: 600;
-      }
-      
-      code {
-        font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Segoe UI Mono', 'Roboto Mono', monospace;
-        font-size: 0.875em;
-      }
-      
-      /* Focus styles */
-      input:focus, button:focus {
-        outline: 2px solid ${colors.primary}40;
-        outline-offset: 2px;
-      }
-      
-      /* Hover effects */
-      .hover-lift:hover {
-        transform: translateY(-2px);
-        transition: transform 0.2s ease;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-      }
-      
-      .gradient-bg {
-        background: linear-gradient(135deg, ${colors.primary}20 0%, ${colors.info}20 100%);
-      }
-    `}</style>
-
-    {/* Loading Overlay - Exactly matching APISecurity pattern */}
-    <LoadingOverlay 
-      isLoading={isLoading.initialLoad || isLoading.collections} 
-      colors={colors} 
-      loadingText={
-        isLoading.collections ? 'Loading collections...' :
-        isLoading.environments ? 'Loading environments...' :
-        isLoading.folders ? 'Loading folders...' :
-        'Please wait while we load your documentation data'
-      }
-    />
-
-    {/* TOP NAVIGATION */}
-    <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
-      backgroundColor: colors.header,
-      borderColor: colors.border
+    <div className="flex flex-col h-screen overflow-hidden" style={{ 
+      backgroundColor: colors.bg,
+      color: colors.text,
+      fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+      fontSize: '13px'
     }}>
-      <div className="flex items-center gap-4">
-        <div className="relative">
-          <span className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift`}>API Documentation</span>
-        </div>
+      <style>{`
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        
+        .animate-fade-in-up {
+          animation: fadeInUp 0.2s ease-out;
+        }
+        
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
+        
+        .text-blue-400 { color: #60a5fa; }
+        .text-green-400 { color: #34d399; }
+        .text-purple-400 { color: #a78bfa; }
+        .text-orange-400 { color: #fb923c; }
+        .text-red-400 { color: #f87171; }
+        .text-gray-500 { color: #9ca3af; }
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+          background: ${colors.border};
+          border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+          background: ${colors.textTertiary};
+          border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+          background: ${colors.textSecondary};
+        }
+        
+        .prose {
+          color: ${colors.textSecondary};
+          line-height: 1.6;
+        }
+        
+        .prose p {
+          margin-bottom: 1em;
+        }
+        
+        .prose strong {
+          color: ${colors.text};
+          font-weight: 600;
+        }
+        
+        code {
+          font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Segoe UI Mono', 'Roboto Mono', monospace;
+          font-size: 0.875em;
+        }
+        
+        /* Focus styles */
+        input:focus, button:focus {
+          outline: 2px solid ${colors.primary}40;
+          outline-offset: 2px;
+        }
+        
+        /* Hover effects */
+        .hover-lift:hover {
+          transform: translateY(-2px);
+          transition: transform 0.2s ease;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        
+        .gradient-bg {
+          background: linear-gradient(135deg, ${colors.primary}20 0%, ${colors.info}20 100%);
+        }
+      `}</style>
 
-        <div className="flex items-center gap-1 -ml-7 text-nowrap">
-          <span className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift`}>API Documentation</span>
-        </div>
-      </div>
+      {/* Loading Overlay */}
+      <LoadingOverlay 
+        isLoading={isLoading.initialLoad || isLoading.collections} 
+        colors={colors} 
+        loadingText={
+          isLoading.collections ? 'Loading collections...' :
+          isLoading.environments ? 'Loading environments...' :
+          isLoading.folders ? 'Loading folders...' :
+          'Please wait while we load your documentation data'
+        }
+      />
 
-      <div className="flex items-center gap-2">
-        {/* Environment Selector */}
-        {environments.length > 0 && (
+      {/* TOP NAVIGATION */}
+      <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
+        backgroundColor: colors.header,
+        borderColor: colors.border
+      }}>
+        <div className="flex items-center gap-4">
           <div className="relative">
-            <button className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:bg-opacity-50 transition-colors hover-lift"
-              onClick={() => setShowEnvironmentMenu(!showEnvironmentMenu)}
-              style={{ backgroundColor: colors.hover }}>
-              <Globe size={12} style={{ color: colors.textSecondary }} />
-              <span style={{ color: colors.text }}>{environments.find(e => e.isActive)?.name || 'Select Env'}</span>
-              <ChevronDown size={12} style={{ color: colors.textSecondary }} />
-            </button>
-
-            {showEnvironmentMenu && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowEnvironmentMenu(false)} />
-                <div className="absolute top-full right-0 mt-1 py-2 rounded shadow-lg z-50 border min-w-48"
-                  style={{ 
-                    backgroundColor: colors.bg,
-                    borderColor: colors.border
-                  }}>
-                  {environments.map(env => (
-                    <button
-                      key={env.id}
-                      onClick={() => handleEnvironmentChange(env.id)}
-                      className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors hover-lift"
-                      style={{ 
-                        backgroundColor: env.isActive ? colors.selected : 'transparent',
-                        color: env.isActive ? colors.primary : colors.text
-                      }}
-                    >
-                      <div className="w-2 h-2 rounded-full" style={{ 
-                        backgroundColor: env.isActive ? colors.success : colors.textSecondary 
-                      }}></div>
-                      {env.name}
-                      {env.isActive && <Check size={14} className="ml-auto" />}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
+            <span className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift`}>API Documentation</span>
           </div>
-        )}
 
-        <div className="w-px h-4" style={{ backgroundColor: colors.border }}></div>
+          <div className="flex items-center gap-1 -ml-7 text-nowrap">
+            <span className={`px-3 py-1.5 text-sm font-medium rounded transition-colors hover-lift`}>API Documentation</span>
+          </div>
+        </div>
 
-        {/* Code Panel Toggle */}
-        <button onClick={() => setShowCodePanel(!showCodePanel)} 
-          className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-          style={{ backgroundColor: showCodePanel ? colors.selected : colors.hover }}>
-          <Code size={14} style={{ color: showCodePanel ? colors.primary : colors.textSecondary }} />
-        </button>
-
-        {/* Publish Button */}
-        <button onClick={() => {
-          if (!selectedCollection) {
-            showToast('Please select a collection first', 'warning');
-            return;
-          }
-          setShowPublishModal(true);
-        }} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-          style={{ backgroundColor: colors.hover }}>
-          <ExternalLink size={14} style={{ color: colors.textSecondary }} />
-        </button>
-      </div>
-    </div>
-
-    {/* MAIN CONTENT */}
-    <div className="flex flex-1 overflow-hidden">
-      {/* Left Sidebar - Collections */}
-      {activeMainTab === 'Collections' && (
-        <div className="w-80 border-r flex flex-col" style={{ 
-          borderColor: colors.border
-        }}>
-          <div className="p-4 border-b" style={{ borderColor: colors.border }}>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Collections</h3>
-              <div className="flex gap-1">
-                {renderDebugButton()}
-                <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  onClick={async () => {
-                    try {
-                      await fetchAPICollections();
-                      showToast('Collections refreshed', 'success');
-                    } catch (error) {
-                      showToast('Failed to refresh collections', 'error');
-                    }
-                  }}
-                  style={{ backgroundColor: colors.hover }}>
-                  <RefreshCw size={12} style={{ color: colors.textSecondary }} />
-                </button>
-              </div>
-            </div>
+        <div className="flex items-center gap-2">
+          {/* Environment Selector */}
+          {environments.length > 0 && (
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
-              <input 
-                type="text" 
-                placeholder="Search collections..."
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  if (e.target.value.trim()) {
-                    searchDocumentationAPI(e.target.value);
-                  } else {
-                    setSearchResults([]);
-                  }
-                }}
-                className="w-full pl-8 pr-3 py-2 rounded text-sm focus:outline-none hover-lift"
-                style={{ 
-                  backgroundColor: colors.inputBg, 
-                  border: `1px solid ${colors.border}`, 
-                  color: colors.text 
-                }} 
-              />
-              {searchQuery && (
-                <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                  <button onClick={() => {
-                    setSearchQuery('');
-                    setSearchResults([]);
-                  }} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+              <button className="flex items-center gap-2 px-3 py-1.5 rounded text-sm hover:bg-opacity-50 transition-colors hover-lift"
+                onClick={() => setShowEnvironmentMenu(!showEnvironmentMenu)}
+                style={{ backgroundColor: colors.hover }}>
+                <Globe size={12} style={{ color: colors.textSecondary }} />
+                <span style={{ color: colors.text }}>{environments.find(e => e.isActive)?.name || 'Select Env'}</span>
+                <ChevronDown size={12} style={{ color: colors.textSecondary }} />
+              </button>
+
+              {showEnvironmentMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowEnvironmentMenu(false)} />
+                  <div className="absolute top-full right-0 mt-1 py-2 rounded shadow-lg z-50 border min-w-48"
+                    style={{ 
+                      backgroundColor: colors.bg,
+                      borderColor: colors.border
+                    }}>
+                    {environments.map(env => (
+                      <button
+                        key={env.id}
+                        onClick={() => handleEnvironmentChange(env.id)}
+                        className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors hover-lift"
+                        style={{ 
+                          backgroundColor: env.isActive ? colors.selected : 'transparent',
+                          color: env.isActive ? colors.primary : colors.text
+                        }}
+                      >
+                        <div className="w-2 h-2 rounded-full" style={{ 
+                          backgroundColor: env.isActive ? colors.success : colors.textSecondary 
+                        }}></div>
+                        {env.name}
+                        {env.isActive && <Check size={14} className="ml-auto" />}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          <div className="w-px h-4" style={{ backgroundColor: colors.border }}></div>
+
+          {/* Code Panel Toggle */}
+          <button onClick={() => setShowCodePanel(!showCodePanel)} 
+            className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+            style={{ backgroundColor: showCodePanel ? colors.selected : colors.hover }}>
+            <Code size={14} style={{ color: showCodePanel ? colors.primary : colors.textSecondary }} />
+          </button>
+
+          {/* Publish Button */}
+          <button onClick={() => {
+            if (!selectedCollection) {
+              showToast('Please select a collection first', 'warning');
+              return;
+            }
+            setShowPublishModal(true);
+          }} className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+            style={{ backgroundColor: colors.hover }}>
+            <ExternalLink size={14} style={{ color: colors.textSecondary }} />
+          </button>
+        </div>
+      </div>
+
+      {/* MAIN CONTENT */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Sidebar - Collections */}
+        {activeMainTab === 'Collections' && (
+          <div className="w-80 border-r flex flex-col" style={{ 
+            borderColor: colors.border
+          }}>
+            <div className="p-4 border-b" style={{ borderColor: colors.border }}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Collections</h3>
+                <div className="flex gap-1">
+                  {renderDebugButton()}
+                  <button className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                    onClick={async () => {
+                      try {
+                        await fetchAPICollections();
+                        showToast('Collections refreshed', 'success');
+                      } catch (error) {
+                        showToast('Failed to refresh collections', 'error');
+                      }
+                    }}
                     style={{ backgroundColor: colors.hover }}>
-                    <X size={12} style={{ color: colors.textSecondary }} />
+                    <RefreshCw size={12} style={{ color: colors.textSecondary }} />
                   </button>
                 </div>
-              )}
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-auto p-2">
-            {isLoading.collections && !isLoading.initialLoad ? (
-              <div className="text-center py-8" style={{ color: colors.textSecondary }}>
-                <RefreshCw size={16} className="animate-spin mx-auto mb-2" />
-                <p className="text-sm">Loading collections...</p>
               </div>
-            ) : filteredCollections.length === 0 && !isLoading.initialLoad ? (
-              <div className="text-center p-4" style={{ color: colors.textSecondary }}>
-                <Book size={20} className="mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No collections available</p>
-                <button className="mt-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  onClick={async () => {
-                    try {
-                      await fetchAPICollections();
-                    } catch (error) {
-                      showToast('Failed to load collections', 'error');
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
+                <input 
+                  type="text" 
+                  placeholder="Search collections..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    if (e.target.value.trim()) {
+                      searchDocumentationAPI(e.target.value);
+                    } else {
+                      setSearchResults([]);
                     }
                   }}
-                  style={{ backgroundColor: colors.hover, color: colors.text }}>
-                  Load Collections
-                </button>
-              </div>
-            ) : (
-              <>
-                {filteredCollections.map(collection => (
-                  <div key={collection.id} className="mb-3">
-                    {/* Collection Header */}
-                    <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
-                      onClick={() => toggleCollection(collection.id)}
+                  className="w-full pl-8 pr-3 py-2 rounded text-sm focus:outline-none hover-lift"
+                  style={{ 
+                    backgroundColor: colors.inputBg, 
+                    border: `1px solid ${colors.border}`, 
+                    color: colors.text 
+                  }} 
+                />
+                {searchQuery && (
+                  <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                    <button onClick={() => {
+                      setSearchQuery('');
+                      setSearchResults([]);
+                    }} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
                       style={{ backgroundColor: colors.hover }}>
-                      {expandedCollections.includes(collection.id) ? (
-                        <ChevronDown size={12} style={{ color: colors.textSecondary }} />
-                      ) : (
-                        <ChevronRight size={12} style={{ color: colors.textSecondary }} />
-                      )}
-                      <button onClick={(e) => {
-                        e.stopPropagation();
-                        const newCollections = collections.map(c => 
-                          c.id === collection.id ? { ...c, isFavorite: !c.isFavorite } : c
-                        );
-                        setCollections(newCollections);
-                        showToast(collection.isFavorite ? 'Removed from favorites' : 'Added to favorites', 'success');
-                      }}>
-                        {collection.isFavorite ? (
-                          <Star size={12} fill="#FFB300" style={{ color: '#FFB300' }} />
-                        ) : (
-                          <Star size={12} style={{ color: colors.textSecondary }} />
-                        )}
-                      </button>
-                      
-                      <span className="text-sm font-medium flex-1 truncate" style={{ color: colors.text }}>
-                        {collection.name}
-                      </span>
-                      
-                      {(!collection.folders || collection.folders.length === 0) && isLoading.folders && (
-                        <RefreshCw size={10} className="animate-spin" style={{ color: colors.textSecondary }} />
-                      )}
-                    </div>
-
-                    {/* Folders */}
-                    {expandedCollections.includes(collection.id) && collection.folders && collection.folders.length > 0 && (
-                      <>
-                        {collection.folders.map(folder => {
-                          // Debug log to see what's being rendered
-                          console.log(`🎯 Rendering folder: ${folder.name}`, {
-                            id: folder.id,
-                            requestsLength: folder.requests?.length,
-                            hasRequests: folder.hasRequests,
-                            requestCount: folder.requestCount,
-                            requests: folder.requests
-                          });
-                          
-                          return (
-                            <div key={folder.id} className="ml-4 mb-2">
-                              {/* Folder Header */}
-                              <div 
-                                className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
-                                onClick={() => toggleFolder(folder.id, collection.id)}
-                                style={{ backgroundColor: colors.hover }}
-                              >
-                                {expandedFolders.includes(folder.id) ? (
-                                  <ChevronDown size={11} style={{ color: colors.textSecondary }} />
-                                ) : (
-                                  <ChevronRight size={11} style={{ color: colors.textSecondary }} />
-                                )}
-                                <FolderOpen size={11} style={{ color: colors.textSecondary }} />
-                                
-                                <span className="text-sm flex-1 truncate" style={{ color: colors.text }}>
-                                  {folder.name}
-                                </span>
-                                
-                                {/* Show count badge if there are endpoints */}
-                                {folder.requests && folder.requests.length > 0 && (
-                                  <span className="text-xs px-1.5 py-0.5 rounded-full ml-1" style={{ 
-                                    backgroundColor: 'rgb(96 165 250)',
-                                    color: 'white'
-                                  }}>
-                                    {folder.requests.length}
-                                  </span>
-                                )}
-                                
-                                {folderLoading[folder.id] && (
-                                  <RefreshCw size={10} className="animate-spin" style={{ color: colors.textSecondary }} />
-                                )}
-                              </div>
-
-                              {/* Endpoints - Show when folder is expanded */}
-                              {expandedFolders.includes(folder.id) && (
-                                <div className="ml-6 mt-1 space-y-1">
-                                  {folderLoading[folder.id] ? (
-                                    <div className="py-2 text-center">
-                                      <RefreshCw size={12} className="animate-spin mx-auto mb-1" style={{ color: colors.textSecondary }} />
-                                      <p className="text-xs" style={{ color: colors.textTertiary }}>Loading endpoints...</p>
-                                    </div>
-                                  ) : folder.error ? (
-                                    <div className="py-2 text-center">
-                                      <p className="text-xs" style={{ color: colors.error }}>{folder.error}</p>
-                                      <button 
-                                        className="text-xs mt-1 px-2 py-1 rounded hover:bg-opacity-50 transition-colors"
-                                        onClick={() => fetchAPIEndpoints(collection.id, folder.id)}
-                                        style={{ backgroundColor: colors.hover, color: colors.text }}
-                                      >
-                                        Retry
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      {/* DIRECTLY CHECK folder.requests - this should work based on your logs */}
-                                      {folder.requests && folder.requests.length > 0 ? (
-                                        folder.requests.map(request => {
-                                          console.log(`  📌 Rendering request: ${request.name} (${request.method})`);
-                                          return (
-                                            <div key={request.id} className="flex items-center gap-2 group">
-                                              <button
-                                                onClick={() => handleSelectRequest(request, collection.id, folder.id)}
-                                                className="flex items-center gap-2 text-sm text-left transition-colors flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
-                                                style={{ 
-                                                  color: selectedRequest?.id === request.id ? colors.primary : colors.text,
-                                                  backgroundColor: selectedRequest?.id === request.id ? colors.selected : 'transparent'
-                                                }}>
-                                                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
-                                                  backgroundColor: colors.method[request.method] || colors.textSecondary
-                                                }} />
-                                                
-                                                <span className="truncate">{request.name}</span>
-                                                <span className="text-xs ml-auto opacity-60" style={{ color: colors.textSecondary }}>
-                                                  {request.method}
-                                                </span>
-                                              </button>
-                                            </div>
-                                          );
-                                        })
-                                      ) : (
-                                        <div className="py-2 text-center">
-                                          <p className="text-xs" style={{ color: colors.textTertiary }}>No endpoints available</p>
-                                          <button 
-                                            className="text-xs mt-2 px-2 py-1 rounded hover:bg-opacity-50 transition-colors"
-                                            onClick={() => fetchAPIEndpoints(collection.id, folder.id)}
-                                            style={{ backgroundColor: colors.hover, color: colors.text }}
-                                          >
-                                            Refresh
-                                          </button>
-                                        </div>
-                                      )}
-                                    </>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </>
-                    )}
+                      <X size={12} style={{ color: colors.textSecondary }} />
+                    </button>
                   </div>
-                ))}
-              </>
-            )}
-          </div>
-        </div>
-      )}
+                )}
+              </div>
+            </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Documentation Tabs */}
-        <div className="flex items-center border-b h-9" style={{ 
-          backgroundColor: colors.card,
-          borderColor: colors.border
-        }}>
-          <div className="flex items-center px-2">
-            <button
-              onClick={() => setActiveTab('documentation')}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors hover-lift ${
-                activeTab === 'documentation' ? '' : 'hover:bg-opacity-50'
-              }`}
-              style={{ 
-                borderBottomColor: activeTab === 'documentation' ? colors.primary : 'transparent',
-                color: activeTab === 'documentation' ? colors.primary : colors.textSecondary,
-                backgroundColor: 'transparent'
-              }}>
-              Documentation
-            </button>
-            
-            <button
-              onClick={() => {
-                setActiveTab('changelog');
-                if (selectedCollection) {
-                  fetchChangelog(selectedCollection.id);
-                } else {
-                  showToast('Please select a collection first', 'warning');
-                }
-              }}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors hover-lift ${
-                activeTab === 'changelog' ? '' : 'hover:bg-opacity-50'
-              }`}
-              style={{ 
-                borderBottomColor: activeTab === 'changelog' ? colors.primary : 'transparent',
-                color: activeTab === 'changelog' ? colors.primary : colors.textSecondary,
-                backgroundColor: 'transparent'
-              }}>
-              Changelog
-            </button>
-          </div>
-        </div>
-
-        {/* Documentation Content */}
-        {activeTab === 'documentation' && renderDocumentationContent()}
-        
-        {activeTab === 'changelog' && (
-          <div className="flex-1 p-8">
-            <div className="max-w-4xl mx-auto">
-              <h2 className="text-2xl font-semibold mb-6" style={{ color: colors.text }}>API Changelog</h2>
-              {changelog.length === 0 ? (
+            <div className="flex-1 overflow-auto p-2">
+              {isLoading.collections && !isLoading.initialLoad ? (
                 <div className="text-center py-8" style={{ color: colors.textSecondary }}>
-                  <History size={48} className="mx-auto mb-4 opacity-50" />
-                  <p>No changelog entries available.</p>
-                  <p className="text-sm mt-2">Select a collection to view its changelog.</p>
+                  <RefreshCw size={16} className="animate-spin mx-auto mb-2" />
+                  <p className="text-sm">Loading collections...</p>
+                </div>
+              ) : filteredCollections.length === 0 && !isLoading.initialLoad ? (
+                <div className="text-center p-4" style={{ color: colors.textSecondary }}>
+                  <Book size={20} className="mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No collections available</p>
+                  <button className="mt-4 px-3 py-1.5 text-xs rounded hover:bg-opacity-50 transition-colors hover-lift"
+                    onClick={async () => {
+                      try {
+                        await fetchAPICollections();
+                      } catch (error) {
+                        showToast('Failed to load collections', 'error');
+                      }
+                    }}
+                    style={{ backgroundColor: colors.hover, color: colors.text }}>
+                    Load Collections
+                  </button>
                 </div>
               ) : (
-                <div className="space-y-6">
-                  {changelog.map((entry, index) => (
-                    <div key={index} className="border rounded p-6 hover:border-opacity-50 transition-colors hover-lift cursor-pointer"
-                      style={{ borderColor: colors.border }}
-                      onClick={() => showToast(`Viewing ${entry.version} release notes`, 'info')}>
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="text-lg font-semibold" style={{ color: colors.text }}>Version {entry.version}</h3>
-                        <span className="text-sm" style={{ color: colors.textSecondary }}>{entry.date}</span>
+                <>
+                  {filteredCollections.map(collection => (
+                    <div key={collection.id} className="mb-3">
+                      {/* Collection Header */}
+                      <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
+                        onClick={() => toggleCollection(collection.id)}
+                        style={{ backgroundColor: colors.hover }}>
+                        {expandedCollections.includes(collection.id) ? (
+                          <ChevronDown size={12} style={{ color: colors.textSecondary }} />
+                        ) : (
+                          <ChevronRight size={12} style={{ color: colors.textSecondary }} />
+                        )}
+                        <button onClick={(e) => {
+                          e.stopPropagation();
+                          const newCollections = collections.map(c => 
+                            c.id === collection.id ? { ...c, isFavorite: !c.isFavorite } : c
+                          );
+                          setCollections(newCollections);
+                          showToast(collection.isFavorite ? 'Removed from favorites' : 'Added to favorites', 'success');
+                        }}>
+                          {collection.isFavorite ? (
+                            <Star size={12} fill="#FFB300" style={{ color: '#FFB300' }} />
+                          ) : (
+                            <Star size={12} style={{ color: colors.textSecondary }} />
+                          )}
+                        </button>
+                        
+                        <span className="text-sm font-medium flex-1 truncate" style={{ color: colors.text }}>
+                          {collection.name}
+                        </span>
+                        
+                        {(!collection.folders || collection.folders.length === 0) && isLoading.folders && (
+                          <RefreshCw size={10} className="animate-spin" style={{ color: colors.textSecondary }} />
+                        )}
                       </div>
-                      <p className="text-sm mb-4" style={{ color: colors.textSecondary }}>{entry.description}</p>
-                      {entry.changes && Array.isArray(entry.changes) && (
-                        <ul className="space-y-2">
-                          {entry.changes.map((change, idx) => (
-                            <li key={idx} className="flex items-start gap-2 text-sm" style={{ color: colors.textSecondary }}>
-                              <Check size={12} className="mt-0.5 flex-shrink-0" style={{ color: colors.success }} />
-                              {change}
-                            </li>
-                          ))}
-                        </ul>
+
+                      {/* Folders */}
+                      {expandedCollections.includes(collection.id) && collection.folders && collection.folders.length > 0 && (
+                        <>
+                          {collection.folders.map(folder => {
+                            // Debug log to see what's being rendered
+                            console.log(`🎯 Rendering folder: ${folder.name}`, {
+                              id: folder.id,
+                              requestsLength: folder.requests?.length,
+                              hasRequests: folder.hasRequests,
+                              requestCount: folder.requestCount,
+                              requests: folder.requests
+                            });
+                            
+                            return (
+                              <div key={folder.id} className="ml-4 mb-2">
+                                {/* Folder Header */}
+                                <div 
+                                  className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-opacity-50 transition-colors mb-1.5 cursor-pointer hover-lift"
+                                  onClick={() => toggleFolder(folder.id, collection.id)}
+                                  style={{ backgroundColor: colors.hover }}
+                                >
+                                  {expandedFolders.includes(folder.id) ? (
+                                    <ChevronDown size={11} style={{ color: colors.textSecondary }} />
+                                  ) : (
+                                    <ChevronRight size={11} style={{ color: colors.textSecondary }} />
+                                  )}
+                                  <FolderOpen size={11} style={{ color: colors.textSecondary }} />
+                                  
+                                  <span className="text-sm flex-1 truncate" style={{ color: colors.text }}>
+                                    {folder.name}
+                                  </span>
+                                  
+                                  {/* Show count badge if there are endpoints */}
+                                  {folder.requests && folder.requests.length > 0 && (
+                                    <span className="text-xs px-1.5 py-0.5 rounded-full ml-1" style={{ 
+                                      backgroundColor: 'rgb(96 165 250)',
+                                      color: 'white'
+                                    }}>
+                                      {folder.requests.length}
+                                    </span>
+                                  )}
+                                  
+                                  {folderLoading[folder.id] && (
+                                    <RefreshCw size={10} className="animate-spin" style={{ color: colors.textSecondary }} />
+                                  )}
+                                </div>
+
+                                {/* Endpoints - Show when folder is expanded */}
+                                {expandedFolders.includes(folder.id) && (
+                                  <div className="ml-6 mt-1 space-y-1">
+                                    {folderLoading[folder.id] ? (
+                                      <div className="py-2 text-center">
+                                        <RefreshCw size={12} className="animate-spin mx-auto mb-1" style={{ color: colors.textSecondary }} />
+                                        <p className="text-xs" style={{ color: colors.textTertiary }}>Loading endpoints...</p>
+                                      </div>
+                                    ) : folder.error ? (
+                                      <div className="py-2 text-center">
+                                        <p className="text-xs" style={{ color: colors.error }}>{folder.error}</p>
+                                        <button 
+                                          className="text-xs mt-1 px-2 py-1 rounded hover:bg-opacity-50 transition-colors"
+                                          onClick={() => fetchAPIEndpoints(collection.id, folder.id)}
+                                          style={{ backgroundColor: colors.hover, color: colors.text }}
+                                        >
+                                          Retry
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        {/* DIRECTLY CHECK folder.requests */}
+                                        {folder.requests && folder.requests.length > 0 ? (
+                                          folder.requests.map(request => {
+                                            console.log(`  📌 Rendering request: ${request.name} (${request.method})`);
+                                            return (
+                                              <div key={request.id} className="flex items-center gap-2 group">
+                                                <button
+                                                  onClick={() => handleSelectRequest(request, collection.id, folder.id)}
+                                                  className="flex items-center gap-2 text-sm text-left transition-colors flex-1 px-2 py-1.5 rounded hover:bg-opacity-50 hover-lift"
+                                                  style={{ 
+                                                    color: selectedRequest?.id === request.id ? colors.primary : colors.text,
+                                                    backgroundColor: selectedRequest?.id === request.id ? colors.selected : 'transparent'
+                                                  }}>
+                                                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ 
+                                                    backgroundColor: colors.method[request.method] || colors.textSecondary
+                                                  }} />
+                                                  
+                                                  <span className="truncate">{request.name}</span>
+                                                  <span className="text-xs ml-auto opacity-60" style={{ color: colors.textSecondary }}>
+                                                    {request.method}
+                                                  </span>
+                                                </button>
+                                              </div>
+                                            );
+                                          })
+                                        ) : (
+                                          <div className="py-2 text-center">
+                                            <p className="text-xs" style={{ color: colors.textTertiary }}>No endpoints available</p>
+                                            <button 
+                                              className="text-xs mt-2 px-2 py-1 rounded hover:bg-opacity-50 transition-colors"
+                                              onClick={() => fetchAPIEndpoints(collection.id, folder.id)}
+                                              style={{ backgroundColor: colors.hover, color: colors.text }}
+                                            >
+                                              Refresh
+                                            </button>
+                                          </div>
+                                        )}
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </>
                       )}
                     </div>
                   ))}
-                </div>
+                </>
               )}
             </div>
           </div>
         )}
+
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Documentation Tabs */}
+          <div className="flex items-center border-b h-9" style={{ 
+            backgroundColor: colors.card,
+            borderColor: colors.border
+          }}>
+            <div className="flex items-center px-2">
+              <button
+                onClick={() => setActiveTab('documentation')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors hover-lift ${
+                  activeTab === 'documentation' ? '' : 'hover:bg-opacity-50'
+                }`}
+                style={{ 
+                  borderBottomColor: activeTab === 'documentation' ? colors.primary : 'transparent',
+                  color: activeTab === 'documentation' ? colors.primary : colors.textSecondary,
+                  backgroundColor: 'transparent'
+                }}>
+                Documentation
+              </button>
+              
+              <button
+                onClick={() => {
+                  setActiveTab('changelog');
+                  if (selectedCollection) {
+                    fetchChangelog(selectedCollection.id);
+                  } else {
+                    showToast('Please select a collection first', 'warning');
+                  }
+                }}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors hover-lift ${
+                  activeTab === 'changelog' ? '' : 'hover:bg-opacity-50'
+                }`}
+                style={{ 
+                  borderBottomColor: activeTab === 'changelog' ? colors.primary : 'transparent',
+                  color: activeTab === 'changelog' ? colors.primary : colors.textSecondary,
+                  backgroundColor: 'transparent'
+                }}>
+                Changelog
+              </button>
+            </div>
+          </div>
+
+          {/* Documentation Content */}
+          {activeTab === 'documentation' && renderDocumentationContent()}
+          
+          {activeTab === 'changelog' && (
+            <div className="flex-1 p-8">
+              <div className="max-w-4xl mx-auto">
+                <h2 className="text-2xl font-semibold mb-6" style={{ color: colors.text }}>API Changelog</h2>
+                {changelog.length === 0 ? (
+                  <div className="text-center py-8" style={{ color: colors.textSecondary }}>
+                    <History size={48} className="mx-auto mb-4 opacity-50" />
+                    <p>No changelog entries available.</p>
+                    <p className="text-sm mt-2">Select a collection to view its changelog.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {changelog.map((entry, index) => (
+                      <div key={index} className="border rounded p-6 hover:border-opacity-50 transition-colors hover-lift cursor-pointer"
+                        style={{ borderColor: colors.border }}
+                        onClick={() => showToast(`Viewing ${entry.version} release notes`, 'info')}>
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-lg font-semibold" style={{ color: colors.text }}>Version {entry.version}</h3>
+                          <span className="text-sm" style={{ color: colors.textSecondary }}>{entry.date}</span>
+                        </div>
+                        <p className="text-sm mb-4" style={{ color: colors.textSecondary }}>{entry.description}</p>
+                        {entry.changes && Array.isArray(entry.changes) && (
+                          <ul className="space-y-2">
+                            {entry.changes.map((change, idx) => (
+                              <li key={idx} className="flex items-start gap-2 text-sm" style={{ color: colors.textSecondary }}>
+                                <Check size={12} className="mt-0.5 flex-shrink-0" style={{ color: colors.success }} />
+                                {change}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right Code Panel */}
+        {showCodePanel && renderCodePanel()}
       </div>
 
-      {/* Right Code Panel */}
-      {showCodePanel && renderCodePanel()}
+      {/* TOAST */}
+      {renderToast()}
     </div>
-
-    {/* TOAST */}
-    {renderToast()}
-  </div>
-);
+  );
 };
 
 export default Documentation;
