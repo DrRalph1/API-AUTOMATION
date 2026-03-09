@@ -72,7 +72,16 @@ export const getRequestDetails = async (authorizationHeader, collectionId, reque
  * @param {Object} executeRequest.authConfig - Auth configuration
  * @returns {Promise} API response
  */
+// In CollectionsController.js, update the executeRequest function
 export const executeRequest = async (authorizationHeader, executeRequest) => {
+  console.log('📤 [Controller] Executing request with data:', {
+    method: executeRequest.method,
+    url: executeRequest.url,
+    authType: executeRequest.authType,
+    headersCount: executeRequest.headers?.length,
+    queryParamsCount: executeRequest.queryParams?.length
+  });
+  
   return apiCallWithTokenRefresh(
     authorizationHeader,
     (authHeader) => apiCall(`/collections/execute`, {
@@ -476,20 +485,33 @@ export const extractRequestDetails = (response) => {
  * @returns {Object} Execute request results
  */
 export const extractExecuteResults = (response) => {
-  if (!response || !response.data) return null;
+  console.log('📥 Extracting execute results from:', response);
   
-  const data = response.data;
+  // If response is already in the expected format
+  if (response.data) {
+    return response.data;
+  }
   
+  // If response has a data field with the results
+  if (response.data && response.data.data) {
+    return response.data.data;
+  }
+  
+  // If response is the execute results directly
+  if (response.statusCode !== undefined || response.responseBody !== undefined) {
+    return response;
+  }
+  
+  // Default fallback
   return {
-    responseBody: data.responseBody || data.body,
-    statusCode: data.statusCode,
-    statusText: data.statusText,
-    headers: data.headers || [],
-    responseTime: data.responseTime,
-    responseSize: data.responseSize,
-    success: data.statusCode >= 200 && data.statusCode < 300,
-    errorMessage: data.errorMessage,
-    metadata: data.metadata || {}
+    responseBody: JSON.stringify(response, null, 2),
+    statusCode: response.status || 200,
+    statusText: response.statusText || 'OK',
+    headers: response.headers || [],
+    responseTime: 0,
+    responseSize: 0,
+    success: true,
+    data: response
   };
 };
 

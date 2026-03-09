@@ -308,6 +308,8 @@ const CodePanel = React.memo(({
   const [codeSnippet, setCodeSnippet] = useState('');
   const abortControllerRef = useRef(null);
   const isMounted = useRef(true);
+  // Add a ref for the URL input
+  
   
   console.log('🎨 CodePanel rendered with language:', selectedLanguage, 'and request:', selectedRequest?.id);
 
@@ -428,6 +430,7 @@ const CodePanel = React.memo(({
       }
     }
   }, [selectedLanguage, requestMethod, requestUrl, requestHeaders, requestBody, authToken, showToast, setLoading, selectedRequest?.id]);
+  
 
   // Auto-generate when request changes OR language changes
   useEffect(() => {
@@ -669,6 +672,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   const prevAuthTokenRef = useRef(authToken);
   const initialDataLoaded = useRef(false);
   const fetchInProgressRef = useRef(false);
+  const lastRebuiltUrlRef = useRef('');
 
   // Add these memoized callbacks near the top of the Collections component
   const memoizedSetSelectedLanguage = useCallback((lang) => {
@@ -920,8 +924,6 @@ const addPathParam = () => {
 };
 
 
-
-
 // Add these functions with your other CRUD operations (around line 400)
 // Add query param
 const addQueryParam = () => {
@@ -1018,30 +1020,48 @@ const parseUrlAndUpdateQueryParams = (url) => {
   }
 };
 
-
-// Add this updated function near your other helper functions (around line 400)
-const parseUrlIntoTemplateAndParams = useCallback((url) => {
-  if (!url) return { templateUrl: '', pathParams: [], queryParams: [] };
+// Replace your parseUrlIntoTemplateAndParams function (around line 1028)
+const parseUrlIntoTemplateAndParams = useCallback((url, existingPathParams = []) => {
+  if (!url) return { templateUrl: '', pathParams: [], queryParams: [], envVarNames: [] };
+  
+  console.log('🔍 Parsing URL:', url);
+  console.log('📋 Existing path params:', existingPathParams);
   
   try {
+    // First, decode the URL to handle encoded characters
+    let decodedUrl = url;
+    try {
+      decodedUrl = decodeURIComponent(url);
+    } catch (e) {
+      // If decoding fails, use original
+      decodedUrl = url;
+    }
+    
     // Parse the URL
     let urlObj;
     let baseUrl = '';
     let path = '';
     let search = '';
+    let isEnvVarUrl = false;
     
     try {
-      urlObj = new URL(url);
+      urlObj = new URL(decodedUrl);
       baseUrl = `${urlObj.protocol}//${urlObj.host}`;
       path = urlObj.pathname;
       search = urlObj.search;
     } catch (e) {
       // If it's not a valid full URL, it might be a template with environment variables
       // Try to extract path and query parts
-      const [urlPath, queryString] = url.split('?');
+      const [urlPath, queryString] = decodedUrl.split('?');
       path = urlPath;
       search = queryString ? `?${queryString}` : '';
       baseUrl = ''; // No base URL for templates
+      
+      // Check if this is an environment variable URL (contains {{ }})
+      if (decodedUrl.includes('{{') && decodedUrl.includes('}}')) {
+        isEnvVarUrl = true;
+        console.log('🌍 Detected environment variable URL');
+      }
     }
     
     // Extract path segments
@@ -1050,50 +1070,168 @@ const parseUrlIntoTemplateAndParams = useCallback((url) => {
     // Detect path parameters (single curly braces) and environment variables (double curly braces)
     const pathParams = [];
     const templateSegments = [];
+    const envVarNames = [];
+    const processedKeys = new Set(); // Track which keys we've already processed
     
     pathSegments.forEach((segment, index) => {
       // Check for environment variables (double curly braces) first
       if (segment.startsWith('{{') && segment.endsWith('}}')) {
         // This is an environment variable, keep it as-is in the template
-        // Do NOT add to pathParams
+        const envVarName = segment.substring(2, segment.length - 2);
+        envVarNames.push(envVarName);
         templateSegments.push(segment);
+        console.log(`🌍 Found environment variable: ${envVarName}`);
       }
-      // Check for path parameters (single curly braces)
+      // Check for path parameters (single curly braces) in decoded form
       else if (segment.startsWith('{') && segment.endsWith('}')) {
         // Make sure it's not actually a double curly brace that we missed
         if (!segment.startsWith('{{')) {
           // It's a path parameter, extract the key
           const key = segment.substring(1, segment.length - 1);
-          pathParams.push({
-            id: `path-${Date.now()}-${index}-${Math.random()}`,
-            key: key,
-            value: '',
-            description: '',
-            enabled: true,
-            required: true
-          });
+          
+          // Check if we've already processed this key (to avoid duplicates)
+          if (!processedKeys.has(key)) {
+            processedKeys.add(key);
+            
+            // Check if we have an existing value for this key
+            let existingValue = '';
+            const existingParam = existingPathParams.find(p => p.key === key);
+            if (existingParam && existingParam.value) {
+              existingValue = existingParam.value;
+            }
+            
+            pathParams.push({
+              id: existingParam?.id || `path-${Date.now()}-${index}-${Math.random()}`,
+              key: key,
+              value: existingValue,
+              description: existingParam?.description || '',
+              enabled: true,
+              required: true
+            });
+          }
           templateSegments.push(`{${key}}`);
         } else {
-          // This shouldn't happen due to the first condition, but just in case
+          templateSegments.push(segment);
+        }
+      }
+      // Check for URL-encoded path parameters (%7Bkey%7D)
+      else if (segment.includes('%7B') && segment.includes('%7D')) {
+        // This is an encoded path parameter
+        // First decode it to see if it's a valid placeholder
+        try {
+          const decodedSegment = decodeURIComponent(segment);
+          if (decodedSegment.startsWith('{') && decodedSegment.endsWith('}')) {
+            const key = decodedSegment.substring(1, decodedSegment.length - 1);
+            
+            // Check if we've already processed this key
+            if (!processedKeys.has(key)) {
+              processedKeys.add(key);
+              
+              // Check if we have an existing value for this key
+              let existingValue = '';
+              const existingParam = existingPathParams.find(p => p.key === key);
+              if (existingParam && existingParam.value) {
+                existingValue = existingParam.value;
+              }
+              
+              pathParams.push({
+                id: existingParam?.id || `path-${Date.now()}-${index}-${Math.random()}`,
+                key: key,
+                value: existingValue,
+                description: existingParam?.description || '',
+                enabled: true,
+                required: true
+              });
+            }
+            templateSegments.push(`{${key}}`);
+          } else {
+            templateSegments.push(segment);
+          }
+        } catch {
+          templateSegments.push(segment);
+        }
+      }
+      // Check for partially encoded segments or segments that might contain values
+      else if (segment.includes('{') || segment.includes('}') || segment.includes('%7B') || segment.includes('%7D')) {
+        // Try to extract if it contains curly braces in any form
+        const openBraceMatch = segment.match(/(.*?)(?:{|%7B)(.*?)(?:}|%7D)(.*)/);
+        if (openBraceMatch) {
+          const prefix = openBraceMatch[1];
+          const key = openBraceMatch[2];
+          const suffix = openBraceMatch[3];
+          
+          // Check if we've already processed this key
+          if (!processedKeys.has(key)) {
+            processedKeys.add(key);
+            
+            // Check if we have an existing value for this key
+            let existingValue = '';
+            const existingParam = existingPathParams.find(p => p.key === key);
+            if (existingParam && existingParam.value) {
+              existingValue = existingParam.value;
+            }
+            
+            pathParams.push({
+              id: existingParam?.id || `path-${Date.now()}-${index}-${Math.random()}`,
+              key: key,
+              value: existingValue,
+              description: existingParam?.description || '',
+              enabled: true,
+              required: true
+            });
+          }
+          templateSegments.push(prefix + `{${key}}` + suffix);
+        } else {
           templateSegments.push(segment);
         }
       }
       else if (segment.startsWith(':')) {
         // Colon-style placeholder
         const key = segment.substring(1);
-        pathParams.push({
-          id: `path-${Date.now()}-${index}-${Math.random()}`,
-          key: key,
-          value: '',
-          description: '',
-          enabled: true,
-          required: true
-        });
+        
+        // Check if we've already processed this key
+        if (!processedKeys.has(key)) {
+          processedKeys.add(key);
+          
+          // Check if we have an existing value for this key
+          let existingValue = '';
+          const existingParam = existingPathParams.find(p => p.key === key);
+          if (existingParam && existingParam.value) {
+            existingValue = existingParam.value;
+          }
+          
+          pathParams.push({
+            id: existingParam?.id || `path-${Date.now()}-${index}-${Math.random()}`,
+            key: key,
+            value: existingValue,
+            description: existingParam?.description || '',
+            enabled: true,
+            required: true
+          });
+        }
         templateSegments.push(`{${key}}`);
       }
       else {
-        // Regular path segment
-        templateSegments.push(segment);
+        // Regular path segment - check if it matches any existing param value
+        let matched = false;
+        existingPathParams.forEach(existingParam => {
+          if (existingParam.value === segment) {
+            // This segment is a value for an existing param
+            if (!processedKeys.has(existingParam.key)) {
+              processedKeys.add(existingParam.key);
+              pathParams.push({
+                ...existingParam,
+                id: existingParam.id || `path-${Date.now()}-${index}-${Math.random()}`
+              });
+              templateSegments.push(`{${existingParam.key}}`);
+              matched = true;
+            }
+          }
+        });
+        
+        if (!matched) {
+          templateSegments.push(segment);
+        }
       }
     });
     
@@ -1126,26 +1264,54 @@ const parseUrlIntoTemplateAndParams = useCallback((url) => {
       }
     }
     
+    console.log('✅ Parsed path params:', pathParams);
+    console.log('✅ Parsed query params:', queryParams);
+    console.log('✅ Template URL:', templateBase || url);
+    console.log('✅ Environment variables found:', envVarNames);
+    
     return {
       templateUrl: templateBase || url,
       pathParams: pathParams,
-      queryParams: queryParams
+      queryParams: queryParams,
+      envVarNames: envVarNames
     };
   } catch (e) {
     console.error('Error parsing URL:', e);
-    return { templateUrl: url, pathParams: [], queryParams: [] };
+    return { templateUrl: url, pathParams: [], queryParams: [], envVarNames: [] };
   }
 }, []);
 
 
 
-// Handle URL change with parameter parsing
+// Add these refs near your other refs
+const isUpdatingFromInput = useRef(false);
+const urlInputRef = useRef(null);
+
+// Replace your handleUrlChange function (around line 1345)
 const handleUrlChange = useCallback((e) => {
-  const newUrl = e.target.value;
-  setRequestUrl(newUrl);
+  // Get the current cursor position
+  const cursorPos = e.target.selectionStart;
   
-  // Parse the URL to extract parameters
-  const parsed = parseUrlIntoTemplateAndParams(newUrl);
+  // Set flag that this update is from user input
+  isUpdatingFromInput.current = true;
+  
+  const newUrl = e.target.value;
+  
+  // CRITICAL FIX: If the URL contains encoded placeholders, decode them for display
+  let displayUrl = newUrl;
+  if (newUrl.includes('%7B') && newUrl.includes('%7D')) {
+    try {
+      displayUrl = decodeURIComponent(newUrl);
+      console.log('🔧 Decoding URL for display:', newUrl, '->', displayUrl);
+    } catch (e) {
+      displayUrl = newUrl;
+    }
+  }
+  
+  setRequestUrl(displayUrl);
+  
+  // Parse the URL to extract parameters, passing existing path params
+  const parsed = parseUrlIntoTemplateAndParams(displayUrl, requestPathParams);
   
   // Update query params
   if (parsed.queryParams.length > 0) {
@@ -1169,67 +1335,323 @@ const handleUrlChange = useCallback((e) => {
       return mergedParams;
     });
   } else {
-    setRequestParams(prev => prev.filter(p => p.key && p.value));
+    setRequestParams([]);
   }
   
-  // Update path params - ONLY from the parsed result (which now correctly filters env vars)
+  // Handle path params - CRITICAL FIX: Only update if we actually have new params
   if (parsed.pathParams.length > 0) {
+    // Merge with existing path params to preserve values
     setRequestPathParams(prevParams => {
-      const existingParamsMap = new Map(
-        prevParams.map(p => [p.key, p])
-      );
-      
-      const mergedParams = parsed.pathParams.map(parsedParam => {
-        const existing = existingParamsMap.get(parsedParam.key);
+      const mergedParams = parsed.pathParams.map(newParam => {
+        const existing = prevParams.find(p => p.key === newParam.key);
         if (existing) {
+          // Preserve existing value if it's not a placeholder
           return {
-            ...existing,
-            key: parsedParam.key,
-            value: existing.value || ''
+            ...newParam,
+            value: existing.value || newParam.value
           };
         }
-        return parsedParam;
+        return newParam;
       });
       
+      console.log('📋 Updated path params from URL:', mergedParams);
       return mergedParams;
     });
-    
     setTemplateUrl(parsed.templateUrl);
   } else {
-    setRequestPathParams(prev => prev.filter(p => p.key && p.value));
+    // Check if this is a transition from env var to actual URL
+    const isTransitionToActualUrl = displayUrl.includes('http') && 
+                                   requestPathParams.length > 0 && 
+                                   templateUrl && 
+                                   templateUrl.includes('{{');
+    
+    if (isTransitionToActualUrl) {
+      console.log('🔄 Detected transition from env var to actual URL');
+      
+      // Try to preserve path params by matching the structure
+      const preservedParams = requestPathParams.map(param => ({
+        ...param,
+        id: param.id || `path-${Date.now()}-${Math.random()}`
+      }));
+      
+      setRequestPathParams(preservedParams);
+      
+      // Reconstruct template URL by replacing the env var with the actual base
+      const envVarMatch = templateUrl.match(/\{\{[^}]+\}\}/);
+      if (envVarMatch) {
+        let newTemplateUrl = templateUrl.replace(envVarMatch[0], '');
+        if (!newTemplateUrl.startsWith('http')) {
+          const match = displayUrl.match(/^(https?:\/\/[^\/]+)/);
+          if (match) {
+            newTemplateUrl = match[1] + newTemplateUrl;
+          }
+        }
+        setTemplateUrl(newTemplateUrl);
+      } else {
+        setTemplateUrl(displayUrl);
+      }
+    } else {
+      // CRITICAL FIX: Don't clear path params if URL doesn't have placeholders
+      // Only clear if URL is completely empty or doesn't match the template structure
+      const shouldClear = !displayUrl || displayUrl === '' || 
+                         (templateUrl && !displayUrl.includes('{') && !displayUrl.includes('}') && 
+                          !displayUrl.includes('%7B') && !displayUrl.includes('%7D'));
+      
+      if (shouldClear) {
+        setRequestPathParams([]);
+        setTemplateUrl(displayUrl);
+      }
+    }
   }
   
-  console.log('📝 URL parsed:', {
-    original: newUrl,
-    template: parsed.templateUrl,
-    pathParams: parsed.pathParams,
-    queryParams: parsed.queryParams
+  console.log('📝 URL changed:', displayUrl);
+  
+  // Restore cursor position after React renders
+  requestAnimationFrame(() => {
+    if (urlInputRef.current && isUpdatingFromInput.current) {
+      urlInputRef.current.selectionStart = cursorPos;
+      urlInputRef.current.selectionEnd = cursorPos;
+      isUpdatingFromInput.current = false;
+    }
   });
-}, [parseUrlIntoTemplateAndParams]);
-
+  
+}, [parseUrlIntoTemplateAndParams, requestPathParams, templateUrl]);
 
 // Replace your existing handleUrlPaste function
 const handleUrlPaste = useCallback((e) => {
-  // Let the paste happen naturally, then parse
+  // Prevent the default paste to handle it ourselves
+  e.preventDefault();
+  
+  // Get pasted text
+  const pastedText = e.clipboardData.getData('text');
+  
+  // Get current cursor position and selection
+  const start = e.target.selectionStart;
+  const end = e.target.selectionEnd;
+  const currentUrl = requestUrl;
+  
+  // Insert pasted text at cursor position, replacing any selected text
+  const newUrl = currentUrl.substring(0, start) + pastedText + currentUrl.substring(end);
+  
+  // Set flag that this is a paste operation
+  isUpdatingFromInput.current = true;
+  
+  // Update URL with pasted content
+  setRequestUrl(newUrl);
+  
+  // Parse the URL after paste
   setTimeout(() => {
-    if (requestUrl) {
-      const parsed = parseUrlIntoTemplateAndParams(requestUrl);
-      
-      let message = '';
-      if (parsed.queryParams.length > 0 && parsed.pathParams.length > 0) {
-        message = `Parsed ${parsed.pathParams.length} path param(s) and ${parsed.queryParams.length} query param(s)`;
-      } else if (parsed.queryParams.length > 0) {
-        message = `Parsed ${parsed.queryParams.length} query parameter(s)`;
-      } else if (parsed.pathParams.length > 0) {
-        message = `Parsed ${parsed.pathParams.length} path parameter(s)`;
+    const parsed = parseUrlIntoTemplateAndParams(newUrl, requestPathParams);
+    
+    // Update query params if needed
+    if (parsed.queryParams.length > 0) {
+      setRequestParams(prevParams => {
+        const existingParamsMap = new Map(
+          prevParams.filter(p => p.key).map(p => [p.key, p])
+        );
+        
+        const mergedParams = parsed.queryParams.map(parsedParam => {
+          const existing = existingParamsMap.get(parsedParam.key);
+          if (existing) {
+            return {
+              ...existing,
+              value: parsedParam.value,
+              key: parsedParam.key
+            };
+          }
+          return parsedParam;
+        });
+        
+        return mergedParams;
+      });
+    }
+    
+    // Update path params
+    if (parsed.pathParams.length > 0) {
+      setRequestPathParams(parsed.pathParams);
+      setTemplateUrl(parsed.templateUrl);
+    }
+    
+    // Show toast with parse results
+    let message = '';
+    if (parsed.queryParams.length > 0 && parsed.pathParams.length > 0) {
+      message = `Parsed ${parsed.pathParams.length} path param(s) and ${parsed.queryParams.length} query param(s)`;
+    } else if (parsed.queryParams.length > 0) {
+      message = `Parsed ${parsed.queryParams.length} query parameter(s)`;
+    } else if (parsed.pathParams.length > 0) {
+      message = `Parsed ${parsed.pathParams.length} path parameter(s)`;
+    }
+    
+    if (message) {
+      showToast(message, 'success');
+    }
+    
+    // Force cursor position after all updates
+    requestAnimationFrame(() => {
+      if (urlInputRef.current) {
+        const newCursorPos = start + pastedText.length;
+        urlInputRef.current.selectionStart = newCursorPos;
+        urlInputRef.current.selectionEnd = newCursorPos;
       }
-      
-      if (message) {
-        showToast(message, 'success');
+      isUpdatingFromInput.current = false;
+    });
+  }, 0); // Use 0ms timeout to let React finish rendering
+  
+}, [requestUrl, requestPathParams, parseUrlIntoTemplateAndParams, showToast]);
+
+// Replace your existing updatePathParam function
+const updatePathParam = (id, field, value) => {
+  console.log('🟢 updatePathParam called:', { id, field, value });
+  
+  // Set flag that this is an internal update
+  isUpdatingFromInput.current = true;
+  
+  // First update the state with the new value
+  setRequestPathParams(params => {
+    const updatedParams = params.map(param => 
+      param.id === id ? { ...param, [field]: value } : param
+    );
+    
+    // If the key changed, update the template URL
+    if (field === 'key' && templateUrl) {
+      const oldParam = params.find(p => p.id === id);
+      if (oldParam && oldParam.key && oldParam.key !== value) {
+        const oldPlaceholder = `{${oldParam.key}}`;
+        const newPlaceholder = `{${value}}`;
+        const newTemplateUrl = templateUrl.replace(oldPlaceholder, newPlaceholder);
+        setTemplateUrl(newTemplateUrl);
       }
     }
-  }, 100);
-}, [requestUrl, parseUrlIntoTemplateAndParams]);
+    
+    // If value changed, update the URL immediately
+    if (field === 'value' && templateUrl) {
+      const param = updatedParams.find(p => p.id === id);
+      if (param && param.key) {
+        const placeholder = `{${param.key}}`;
+        if (templateUrl.includes(placeholder)) {
+          // CRITICAL FIX: Only replace if the value doesn't contain other placeholders
+          // This prevents replacing {fname} with {tin_v} which causes duplication
+          const newValue = value && value.trim() !== '' && !value.includes('{') && !value.includes('}') 
+            ? value 
+            : placeholder;
+          
+          let newUrl = templateUrl.replace(placeholder, newValue);
+          
+          // Add back any query parameters
+          if (requestUrl.includes('?')) {
+            const queryString = requestUrl.split('?')[1];
+            if (queryString) {
+              newUrl = newUrl.split('?')[0] + '?' + queryString;
+            }
+          }
+          
+          console.log('Updating URL to:', newUrl);
+          setRequestUrl(newUrl);
+        }
+      }
+    }
+    
+    // Reset flag after a short delay
+    setTimeout(() => {
+      isUpdatingFromInput.current = false;
+    }, 200);
+    
+    return updatedParams;
+  });
+};
+
+
+// Add this effect near your other effects (around line 3650)
+useEffect(() => {
+  // If URL is empty, clear path params
+  if (!requestUrl || requestUrl.trim() === '') {
+    setRequestPathParams([]);
+    setTemplateUrl('');
+  }
+}, [requestUrl]);
+
+// Add this effect near your other useEffect hooks
+useEffect(() => {
+  // This effect ensures that placeholders are displayed as {key} not %7Bkey%7D
+  if (requestUrl && requestUrl.includes('%7B') && requestUrl.includes('%7D')) {
+    // This URL has encoded curly braces - fix it for display
+    try {
+      const decodedUrl = decodeURIComponent(requestUrl);
+      if (decodedUrl !== requestUrl) {
+        console.log('🔧 Fixing encoded URL in display:', requestUrl, '->', decodedUrl);
+        setRequestUrl(decodedUrl);
+      }
+    } catch (e) {
+      console.error('Error fixing URL display:', e);
+    }
+  }
+}, [requestUrl]); // Run whenever requestUrl changes
+
+// Keep only this one for syncing from URL to path params when not typing
+useEffect(() => {
+  // Skip if this update came from user input
+  if (isUpdatingFromInput.current) {
+    return;
+  }
+  
+  // Only sync when we have a complete URL and path params
+  if (requestUrl && requestPathParams.length > 0 && templateUrl) {
+    // Check if this looks like a complete value (not in the middle of typing)
+    const lastSegment = requestUrl.split('/').pop();
+    const isTyping = lastSegment === '' || lastSegment.includes('?') && !lastSegment.includes('=');
+    
+    if (!isTyping) {
+      try {
+        // Parse the URL to get path segments
+        let urlPath = '';
+        try {
+          const urlObj = new URL(requestUrl.startsWith('http') ? requestUrl : `http://${requestUrl}`);
+          urlPath = urlObj.pathname;
+        } catch {
+          urlPath = requestUrl.split('?')[0];
+        }
+        
+        const pathSegments = urlPath.split('/').filter(s => s);
+        const templateSegments = templateUrl.split('/').filter(s => s);
+        
+        // Find placeholder positions
+        const placeholderPositions = [];
+        templateSegments.forEach((segment, index) => {
+          if (segment.startsWith('{') && segment.endsWith('}')) {
+            const key = segment.substring(1, segment.length - 1);
+            placeholderPositions.push({ index, key });
+          }
+        });
+        
+        // Update path params based on position
+        const updatedPathParams = requestPathParams.map((param) => {
+          const position = placeholderPositions.find(p => p.key === param.key);
+          
+          if (position && position.index < pathSegments.length) {
+            const urlValue = pathSegments[position.index];
+            
+            // Update if it's a real value and different
+            if (urlValue && !urlValue.includes('{') && !urlValue.includes('}') && urlValue !== param.value) {
+              return { ...param, value: urlValue };
+            }
+          }
+          return param;
+        });
+        
+        // Check if any values changed
+        const hasChanges = updatedPathParams.some((param, index) => 
+          param.value !== requestPathParams[index].value
+        );
+        
+        if (hasChanges) {
+          setRequestPathParams(updatedPathParams);
+        }
+      } catch (error) {
+        console.error('Error in sync effect:', error);
+      }
+    }
+  }
+}, [requestUrl, templateUrl, requestPathParams]);
 
 
 // Fix 2: Update the determineActiveTab function to be more robust
@@ -1287,29 +1709,41 @@ const updateUrlWithPathParam = (key, value) => {
 };
 
 
-// Add this effect near your other useEffect hooks
+// Replace your existing useEffect that rebuilds the URL
 useEffect(() => {
   // This effect rebuilds the URL when path params are updated via the UI
   if (templateUrl && requestPathParams.length > 0) {
     let updatedUrl = templateUrl;
     
-    // Replace each placeholder with its current value
+    // Create a map of placeholder to value
+    const paramMap = new Map();
     requestPathParams.forEach(param => {
       if (param.key) {
-        const placeholder = `{${param.key}}`;
-        const replacementValue = param.value && param.value.trim() !== '' 
-          ? param.value 
-          : placeholder;
-        
-        if (updatedUrl.includes(placeholder)) {
-          updatedUrl = updatedUrl.replace(new RegExp(placeholder, 'g'), replacementValue);
-        } else {
-          // Try colon-style placeholder
-          const colonPlaceholder = `:${param.key}`;
-          if (updatedUrl.includes(colonPlaceholder)) {
-            updatedUrl = updatedUrl.replace(new RegExp(colonPlaceholder, 'g'), replacementValue);
-          }
-        }
+        paramMap.set(param.key, param.value && param.value.trim() !== '' ? param.value : null);
+      }
+    });
+    
+    // Sort placeholders by length (longest first) to avoid nested replacements
+    const placeholders = Array.from(paramMap.keys()).sort((a, b) => b.length - a.length);
+    
+    // Replace each placeholder with its current value, but only if it's a direct match
+    placeholders.forEach(key => {
+      const value = paramMap.get(key);
+      const placeholder = `{${key}}`;
+      const colonPlaceholder = `:${key}`;
+      
+      // Only replace if the placeholder exists and we're not replacing with another placeholder
+      if (updatedUrl.includes(placeholder)) {
+        const replacementValue = value && !value.includes('{') && !value.includes('}') ? value : placeholder;
+        // Use a regex with escaped characters to ensure we replace the exact placeholder
+        const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+        updatedUrl = updatedUrl.replace(regex, replacementValue);
+      }
+      
+      if (updatedUrl.includes(colonPlaceholder)) {
+        const replacementValue = value && !value.includes('{') && !value.includes('}') ? value : colonPlaceholder;
+        const regex = new RegExp(colonPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+        updatedUrl = updatedUrl.replace(regex, replacementValue);
       }
     });
     
@@ -1321,8 +1755,10 @@ useEffect(() => {
     
     const finalUrl = queryString ? `${updatedUrl}?${queryString}` : updatedUrl;
     
-    // Only update if different from current URL
-    if (finalUrl !== requestUrl) {
+    // OPTIMIZATION: Only update if different from current URL AND not recently rebuilt
+    if (finalUrl !== requestUrl && finalUrl !== lastRebuiltUrlRef.current) {
+      console.log('🔄 Rebuilding URL:', finalUrl);
+      lastRebuiltUrlRef.current = finalUrl;
       setRequestUrl(finalUrl);
     }
   }
@@ -1468,51 +1904,64 @@ const transformCollectionsData = (apiData) => {
         
         // Process parameters with location info
         (request.parameters || []).forEach((param, paramIdx) => {
-          if (param && param.key) {
-            const paramId = param.id || `param-${Date.now()}-${Math.random()}-${paramIdx}`;
-            const paramObject = {
-              id: paramId,
-              key: param.key,
-              value: param.value || '',
-              description: param.description || '',
-              enabled: param.enabled !== false,
-              required: param.required || false,
-              type: param.type || 'string',
-              parameterLocation: param.parameterLocation || 'query',
-              paramMode: param.paramMode || 'IN',
-              dbColumn: param.dbColumn || null,
-              oracleType: param.oracleType || null,
-              validationPattern: param.validationPattern || '',
-              defaultValue: param.defaultValue || '',
-              example: param.example || null,
-              bodyFormat: param.bodyFormat || null
-            };
-            
-            console.log(`📍 [Transform] Parameter ${param.key}: location = ${param.parameterLocation}`);
-            
-            // Sort by location - CRITICAL for path params
-            switch(param.parameterLocation?.toLowerCase()) {
-              case 'query':
-                queryParams.push(paramObject);
-                break;
-              case 'path':
-                pathParams.push(paramObject);
-                console.log(`🛣️ [Transform] Added to PATH params: ${param.key} = ${param.value || ''}`);
-                break;
-              case 'header':
-                headerParams.push(paramObject);
-                console.log(`📌 [Transform] Added to HEADER params: ${param.key}`);
-                break;
-              case 'body':
-                bodyParams.push(paramObject);
-                console.log(`📦 [Transform] Added to BODY params: ${param.key}`);
-                break;
-              default:
-                // Default to query if location not specified
-                queryParams.push(paramObject);
-            }
-          }
-        });
+  if (param && param.key) {
+    const paramId = param.id || `param-${Date.now()}-${Math.random()}-${paramIdx}`;
+    
+    // CRITICAL FIX: Clean the value at source
+    let paramValue = param.value || '';
+    
+    // If the value contains placeholder patterns, set it to empty string
+    const hasPlaceholder = paramValue.includes('{') || paramValue.includes('}') || 
+                          paramValue.includes('%7B') || paramValue.includes('%7D');
+    
+    if (hasPlaceholder) {
+      console.log(`🧹 Cleaning placeholder value for param ${param.key}: ${paramValue} -> ''`);
+      paramValue = '';
+    }
+    
+    const paramObject = {
+      id: paramId,
+      key: param.key,
+      value: paramValue, // Use cleaned value
+      description: param.description || '',
+      enabled: param.enabled !== false,
+      required: param.required || false,
+      type: param.type || 'string',
+      parameterLocation: param.parameterLocation || 'query',
+      paramMode: param.paramMode || 'IN',
+      dbColumn: param.dbColumn || null,
+      oracleType: param.oracleType || null,
+      validationPattern: param.validationPattern || '',
+      defaultValue: param.defaultValue || '',
+      example: param.example || null,
+      bodyFormat: param.bodyFormat || null
+    };
+    
+    console.log(`📍 [Transform] Parameter ${param.key}: location = ${param.parameterLocation}, value = ${paramValue}`);
+    
+    // Sort by location - CRITICAL for path params
+    switch(param.parameterLocation?.toLowerCase()) {
+      case 'query':
+        queryParams.push(paramObject);
+        break;
+      case 'path':
+        pathParams.push(paramObject);
+        console.log(`🛣️ [Transform] Added to PATH params: ${param.key} = ${paramValue}`);
+        break;
+      case 'header':
+        headerParams.push(paramObject);
+        console.log(`📌 [Transform] Added to HEADER params: ${param.key}`);
+        break;
+      case 'body':
+        bodyParams.push(paramObject);
+        console.log(`📦 [Transform] Added to BODY params: ${param.key}`);
+        break;
+      default:
+        // Default to query if location not specified
+        queryParams.push(paramObject);
+    }
+  }
+});
         
         // Process headers separately (these are HTTP headers, NOT parameters)
         const headers = (request.headers || []).map((header, headerIdx) => ({
@@ -1802,9 +2251,21 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
   
   setRequestMethod(request.method || 'GET');
   
-  // Store the template URL
-  const initialTemplateUrl = request.url || '';
-  console.log('📋 Storing template URL:', initialTemplateUrl);
+  // Store the template URL - DECODE IT FIRST to handle encoded curly braces
+  let initialTemplateUrl = request.url || '';
+  console.log('📋 Original template URL:', initialTemplateUrl);
+  
+  // DECODE the URL first to handle any encoded curly braces
+  try {
+    const decodedUrl = decodeURIComponent(initialTemplateUrl);
+    if (decodedUrl !== initialTemplateUrl) {
+      console.log('📋 Decoded URL:', decodedUrl);
+      initialTemplateUrl = decodedUrl;
+    }
+  } catch (e) {
+    // If decoding fails, use original
+    console.log('📋 URL decoding failed, using original:', initialTemplateUrl);
+  }
   
   setTemplateUrl(initialTemplateUrl);
   setRequestUrl(initialTemplateUrl);
@@ -1821,29 +2282,31 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
   setRequestPathParams(initialPathParams);
   
   // Process path params immediately to update URL with values
-  if (initialPathParams.length > 0 && initialTemplateUrl) {
-    console.log('🛣️ Processing path params for URL:', { initialTemplateUrl, initialPathParams });
-    
-    let updatedUrl = initialTemplateUrl;
-    initialPathParams.forEach(param => {
-      if (param.key && param.value && param.value.trim() !== '') {
-        const placeholder = `{${param.key}}`;
-        if (updatedUrl.includes(placeholder)) {
-          updatedUrl = updatedUrl.replace(new RegExp(placeholder, 'g'), param.value);
-          console.log(`  🔄 Replaced ${placeholder} with ${param.value}`);
-        } else {
-          const colonPlaceholder = `:${param.key}`;
-          if (updatedUrl.includes(colonPlaceholder)) {
-            updatedUrl = updatedUrl.replace(new RegExp(colonPlaceholder, 'g'), param.value);
-            console.log(`  🔄 Replaced ${colonPlaceholder} with ${param.value}`);
-          }
+if (initialPathParams.length > 0 && initialTemplateUrl) {
+  console.log('🛣️ Processing path params for URL:', { initialTemplateUrl, initialPathParams });
+  
+  let updatedUrl = initialTemplateUrl;
+  initialPathParams.forEach(param => {
+    if (param.key && param.value && param.value.trim() !== '') {
+      const placeholder = `{${param.key}}`;
+      if (updatedUrl.includes(placeholder)) {
+        // CRITICAL FIX: Only encode when actually sending the request
+        // For display, keep the value as-is
+        updatedUrl = updatedUrl.replace(new RegExp(placeholder, 'g'), param.value);
+        console.log(`  🔄 Replaced ${placeholder} with ${param.value}`);
+      } else {
+        const colonPlaceholder = `:${param.key}`;
+        if (updatedUrl.includes(colonPlaceholder)) {
+          updatedUrl = updatedUrl.replace(new RegExp(colonPlaceholder, 'g'), param.value);
+          console.log(`  🔄 Replaced ${colonPlaceholder} with ${param.value}`);
         }
       }
-    });
-    
-    console.log('✅ Updated URL with path params:', updatedUrl);
-    setRequestUrl(updatedUrl);
-  }
+    }
+  });
+  
+  console.log('✅ Updated URL with path params:', updatedUrl);
+  setRequestUrl(updatedUrl);
+}
   
   // ============== FIXED: Set auth with proper config ==============
   console.log('🔐 Setting auth from request:', {
@@ -2295,7 +2758,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
                   console.log(`📦 Body parameter: ${param.key}`);
                   break;
                 default:
-                  if (details.url && details.url.includes(`{${param.key}}`)) {
+                  if (initialTemplateUrl && initialTemplateUrl.includes(`{${param.key}}`)) {
                     pathParams.push(paramObject);
                     console.log(`🛣️ Defaulted to PATH param: ${param.key}`);
                   } else {
@@ -2320,7 +2783,25 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
           
           if (pathParams.length > 0) {
             console.log('🛣️ Setting path params:', pathParams);
-            setRequestPathParams(pathParams);
+            
+            // CRITICAL FIX: Filter out any path params that have placeholder values
+            const cleanedPathParams = pathParams.map(param => {
+              // Check if the value contains any placeholder patterns
+              const value = param.value || '';
+              
+              // If the value contains {, }, or %7B, %7D (encoded curly braces), treat it as empty
+              const hasPlaceholder = value.includes('{') || value.includes('}') || 
+                                    value.includes('%7B') || value.includes('%7D');
+              
+              return {
+                ...param,
+                // Only keep the value if it's a real value (not a placeholder)
+                value: hasPlaceholder ? '' : value
+              };
+            });
+            
+            console.log('🧹 Cleaned path params:', cleanedPathParams);
+            setRequestPathParams(cleanedPathParams);
             
             let newTemplateUrl = initialTemplateUrl;
             
@@ -2343,18 +2824,38 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
               setTemplateUrl(newTemplateUrl);
             }
             
+            // Build the URL with path params, but don't encode them yet
             let updatedUrl = newTemplateUrl;
+            
+            // Create a map of placeholders to values - only include real values
+            const paramValueMap = new Map();
             pathParams.forEach(param => {
-              if (param.key && param.value && param.value.trim() !== '') {
-                const placeholder = `{${param.key}}`;
-                if (updatedUrl.includes(placeholder)) {
-                  updatedUrl = updatedUrl.replace(new RegExp(placeholder, 'g'), param.value);
-                } else {
-                  const colonPlaceholder = `:${param.key}`;
-                  if (updatedUrl.includes(colonPlaceholder)) {
-                    updatedUrl = updatedUrl.replace(new RegExp(colonPlaceholder, 'g'), param.value);
-                  }
-                }
+              const value = param.value || '';
+              const hasPlaceholder = value.includes('{') || value.includes('}') || 
+                                    value.includes('%7B') || value.includes('%7D');
+              
+              // Only add to map if it's a real value (not a placeholder)
+              if (param.key && value && value.trim() !== '' && !hasPlaceholder) {
+                paramValueMap.set(param.key, value);
+              }
+            });
+            
+            // Replace placeholders with values, but ensure each placeholder is replaced only once
+            const placeholders = Array.from(paramValueMap.keys()).sort((a, b) => b.length - a.length);
+            
+            placeholders.forEach(key => {
+              const value = paramValueMap.get(key);
+              const placeholder = `{${key}}`;
+              const colonPlaceholder = `:${key}`;
+              
+              if (updatedUrl.includes(placeholder)) {
+                const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+                updatedUrl = updatedUrl.replace(regex, value);
+              }
+              
+              if (updatedUrl.includes(colonPlaceholder)) {
+                const regex = new RegExp(colonPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+                updatedUrl = updatedUrl.replace(regex, value);
               }
             });
             
@@ -2534,34 +3035,6 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     }
   }
 }, [authToken, determineActiveTab, requestUrl, authType, authConfig, activeTab, requestBodyType, formData.length, urlEncodedData.length]);
-
-// Replace your existing updatePathParam function
-const updatePathParam = (id, field, value) => {
-  console.log('🟢 updatePathParam called:', { id, field, value });
-  
-  // First update the state with the new value
-  setRequestPathParams(params => {
-    const updatedParams = params.map(param => 
-      param.id === id ? { ...param, [field]: value } : param
-    );
-    
-    // If the key changed, update the template URL
-    if (field === 'key' && templateUrl) {
-      // Find the old param
-      const oldParam = params.find(p => p.id === id);
-      if (oldParam && oldParam.key && oldParam.key !== value) {
-        // Replace old placeholder with new placeholder in template URL
-        const oldPlaceholder = `{${oldParam.key}}`;
-        const newPlaceholder = `{${value}}`;
-        setTemplateUrl(prev => prev.replace(oldPlaceholder, newPlaceholder));
-      }
-    }
-    
-    return updatedParams;
-  });
-  
-  // The URL will be updated by the useEffect above
-};
 
 
 // Update the addNewRequest function to properly create a new request
@@ -3217,70 +3690,84 @@ const separateParamsAndHeaders = (items) => {
       setLoading(prev => ({ ...prev, import: false }));
     }
   }, [authToken, fetchCollections]);
+  
 
-  const handleExecuteRequest = useCallback(async () => {
-    const validationErrors = validateExecuteRequest({
-      method: requestMethod,
-      url: requestUrl
-    });
-
-    if (validationErrors.length > 0) {
-      showToast(validationErrors[0], 'error');
-      return;
-    }
-
-    setLoading(prev => ({ ...prev, execute: true }));
-    setResponse(null);
-
-    try {
-      if (!authToken) {
-        showToast('Authentication required', 'error');
-        setLoading(prev => ({ ...prev, execute: false }));
-        return;
+// Add this effect to clean up duplicate placeholders
+useEffect(() => {
+  if (requestUrl && requestUrl.includes('{') && requestUrl.includes('}')) {
+    // Check for duplicate placeholders
+    const matches = requestUrl.match(/\{[^}]+\}/g);
+    if (matches) {
+      const uniquePlaceholders = new Set(matches);
+      if (matches.length !== uniquePlaceholders.size) {
+        console.log('🧹 Found duplicate placeholders, cleaning up...');
+        
+        // Rebuild the URL with unique placeholders
+        let cleanedUrl = requestUrl;
+        const seen = new Set();
+        
+        // Process from end to start to avoid index issues
+        for (let i = matches.length - 1; i >= 0; i--) {
+          const placeholder = matches[i];
+          if (seen.has(placeholder)) {
+            // This is a duplicate, remove it
+            const lastIndex = cleanedUrl.lastIndexOf(placeholder);
+            if (lastIndex !== -1) {
+              cleanedUrl = cleanedUrl.substring(0, lastIndex) + cleanedUrl.substring(lastIndex + placeholder.length);
+            }
+          } else {
+            seen.add(placeholder);
+          }
+        }
+        
+        // Clean up any double slashes
+        cleanedUrl = cleanedUrl.replace(/\/+/g, '/');
+        
+        // Remove trailing slash if it exists (but preserve protocol slashes)
+        if (cleanedUrl.endsWith('/') && !cleanedUrl.endsWith('://')) {
+          cleanedUrl = cleanedUrl.slice(0, -1);
+        }
+        
+        // OPTIMIZATION: Only update if different and not recently cleaned
+        if (cleanedUrl !== requestUrl && cleanedUrl !== lastRebuiltUrlRef.current) {
+          console.log('🧹 Cleaned URL:', cleanedUrl);
+          lastRebuiltUrlRef.current = cleanedUrl;
+          setRequestUrl(cleanedUrl);
+        }
       }
-      
-      // Match backend ExecuteRequestDTO structure
-      const executeRequestData = {
-        method: requestMethod,
-        url: requestUrl,
-        headers: requestHeaders.filter(h => h.enabled).map(h => ({
-          key: h.key,
-          value: h.value,
-          enabled: true
-        })),
-        body: requestBody,
-        queryParams: requestParams.filter(p => p.enabled).map(p => ({
-          key: p.key,
-          value: p.value,
-          enabled: true
-        })),
-        authType: authType,
-        authConfig: authConfig
-      };
-
-      const response = await executeRequest(authToken, executeRequestData);
-      const processedResponse = handleCollectionsResponse(response);
-      const executeResults = extractExecuteResults(processedResponse);
-      
-      setResponse(executeResults);
-      showToast('Request executed successfully', 'success');
-
-    } catch (error) {
-      console.error('Error executing request:', error);
-      showToast(`Request failed: ${error.message}`, 'error');
-      setResponse({
-        responseBody: JSON.stringify({ error: error.message }, null, 2),
-        statusCode: 500,
-        statusText: 'Error',
-        headers: [],
-        responseTime: 0,
-        responseSize: 0,
-        success: false
-      });
-    } finally {
-      setLoading(prev => ({ ...prev, execute: false }));
     }
-  }, [authToken, requestMethod, requestUrl, requestHeaders, requestBody, requestParams, authType, authConfig]);
+  }
+}, [requestUrl]);
+
+
+// Add this effect to clean up any path params that have placeholder values on mount
+useEffect(() => {
+  if (requestPathParams.length > 0) {
+    const hasPlaceholderValues = requestPathParams.some(param => {
+      const value = param.value || '';
+      return value.includes('{') || value.includes('}') || 
+             value.includes('%7B') || value.includes('%7D');
+    });
+    
+    if (hasPlaceholderValues) {
+      console.log('🧹 Cleaning path params with placeholder values on mount');
+      
+      const cleanedPathParams = requestPathParams.map(param => {
+        const value = param.value || '';
+        const hasPlaceholder = value.includes('{') || value.includes('}') || 
+                              value.includes('%7B') || value.includes('%7D');
+        
+        return {
+          ...param,
+          value: hasPlaceholder ? '' : value
+        };
+      });
+      
+      setRequestPathParams(cleanedPathParams);
+    }
+  }
+}, []); // Run once on mount
+
 
   // Initialize data - with check for authToken changes
   useEffect(() => {
@@ -5048,7 +5535,7 @@ const renderQueryParamsTab = () => {
     );
   };
 
-  // Render Response Panel
+  // Update the renderResponsePanel function with better error handling and display
   const renderResponsePanel = () => {
     const renderResponseContent = () => {
       if (!response) {
@@ -5075,7 +5562,63 @@ const renderQueryParamsTab = () => {
         );
       }
 
-      const responseBody = response.responseBody || response.body || '';
+      // Check if this is an error response (401, 403, etc.)
+      const isError = response.statusCode >= 400 || response.data?.statusCode >= 400;
+      
+      // Extract status information
+      const statusCode = response.statusCode || response.data?.statusCode || 0;
+      const statusText = response.statusText || response.data?.statusText || 
+                        (statusCode === 401 ? 'Unauthorized' : 
+                        statusCode >= 400 ? 'Error' : 'Success');
+
+      // Function to find and format response body
+      const getFormattedResponseBody = () => {
+        // If we have a direct responseBody field
+        if (response.responseBody) {
+          try {
+            // Try to parse it as JSON for better display
+            const parsed = JSON.parse(response.responseBody);
+            return JSON.stringify(parsed, null, 2);
+          } catch {
+            // If not JSON, return as is
+            return response.responseBody;
+          }
+        }
+        
+        // If we have data field
+        if (response.data) {
+          return JSON.stringify(response.data, null, 2);
+        }
+        
+        // If we have body field
+        if (response.body) {
+          return response.body;
+        }
+        
+        // Return the whole response object
+        return JSON.stringify(response, null, 2);
+      };
+
+      // Get headers for display
+      const getHeadersForDisplay = () => {
+        const headers = response.headers || response.data?.headers || [];
+        
+        if (Array.isArray(headers)) {
+          return headers.map(h => ({
+            key: h.key || h.name || 'Unknown',
+            value: h.value || h.val || ''
+          }));
+        } else if (typeof headers === 'object' && headers !== null) {
+          return Object.entries(headers).map(([key, value]) => ({
+            key,
+            value: String(value)
+          }));
+        }
+        
+        return [];
+      };
+
+      const displayHeaders = getHeadersForDisplay();
 
       switch (responseView) {
         case 'raw':
@@ -5087,63 +5630,94 @@ const renderQueryParamsTab = () => {
                 color: colors.text,
                 height: 'calc(100% - 60px)'
               }}>
-              {responseBody}
+              {getFormattedResponseBody()}
             </pre>
           );
         
         case 'preview':
+          const body = getFormattedResponseBody();
           try {
-            const parsed = JSON.parse(responseBody);
-            return (
-              <div className="border rounded p-4 overflow-auto text-sm hover-lift"
-                style={{ 
-                  backgroundColor: colors.codeBg,
-                  borderColor: colors.border,
-                  color: colors.text,
-                  height: 'calc(100% - 60px)'
-                }}>
-                <SyntaxHighlighter language="json" code={JSON.stringify(parsed, null, 2)} />
-              </div>
-            );
+            const trimmed = String(body).trim();
+            if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+              const parsed = JSON.parse(trimmed);
+              return (
+                <div className="border rounded p-4 overflow-auto text-sm hover-lift"
+                  style={{ 
+                    backgroundColor: colors.codeBg,
+                    borderColor: colors.border,
+                    color: colors.text,
+                    height: 'calc(100% - 60px)'
+                  }}>
+                  <SyntaxHighlighter 
+                    language="json" 
+                    code={JSON.stringify(parsed, null, 2)} 
+                  />
+                </div>
+              );
+            }
+            if (trimmed.startsWith('<')) {
+              return (
+                <div className="border rounded p-4 overflow-auto text-sm hover-lift"
+                  style={{ 
+                    backgroundColor: colors.codeBg,
+                    borderColor: colors.border,
+                    color: colors.text,
+                    height: 'calc(100% - 60px)'
+                  }}>
+                  <SyntaxHighlighter 
+                    language="xml" 
+                    code={trimmed} 
+                  />
+                </div>
+              );
+            }
           } catch (e) {
-            return (
-              <div className="border rounded p-4 overflow-auto text-sm font-mono whitespace-pre-wrap hover-lift"
-                style={{ 
-                  backgroundColor: colors.codeBg,
-                  borderColor: colors.border,
-                  color: colors.text,
-                  height: 'calc(100% - 60px)'
-                }}>
-                {responseBody}
-              </div>
-            );
+            // If parsing fails, show as text
           }
+          
+          return (
+            <pre className="border rounded p-4 overflow-auto text-sm font-mono whitespace-pre-wrap hover-lift"
+              style={{ 
+                backgroundColor: colors.codeBg,
+                borderColor: colors.border,
+                color: colors.text,
+                height: 'calc(100% - 60px)'
+              }}>
+              {String(body)}
+            </pre>
+          );
         
         case 'headers':
-          const headers = response.headers || [];
           return (
             <div className="border rounded overflow-hidden hover-lift"
               style={{ 
                 backgroundColor: colors.codeBg,
                 borderColor: colors.border,
-                height: 'calc(100% - 60px)'
+                height: 'calc(100% - 60px)',
+                overflow: 'auto'
               }}>
-              <table className="w-full">
-                <thead style={{ backgroundColor: colors.tableHeader }}>
-                  <tr>
-                    <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Header</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {headers.map((header, index) => (
-                    <tr key={index} className="border-b last:border-b-0 hover-lift" style={{ borderColor: colors.border }}>
-                      <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>{header.key}</td>
-                      <td className="px-4 py-3" style={{ color: colors.textSecondary }}>{header.value}</td>
+              {displayHeaders.length > 0 ? (
+                <table className="w-full">
+                  <thead style={{ backgroundColor: colors.tableHeader, position: 'sticky', top: 0 }}>
+                    <tr>
+                      <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Header</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Value</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {displayHeaders.map((header, index) => (
+                      <tr key={index} className="border-b last:border-b-0 hover-lift" style={{ borderColor: colors.border }}>
+                        <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>{header.key}</td>
+                        <td className="px-4 py-3" style={{ color: colors.textSecondary }}>{header.value}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="p-4 text-center" style={{ color: colors.textSecondary }}>
+                  <p className="text-sm">No headers in response</p>
+                </div>
+              )}
             </div>
           );
         
@@ -5156,16 +5730,11 @@ const renderQueryParamsTab = () => {
                 color: colors.text,
                 height: 'calc(100% - 60px)'
               }}>
-              {responseBody}
+              {getFormattedResponseBody()}
             </pre>
           );
       }
     };
-
-    const statusCode = response?.statusCode || response?.status || 0;
-    const statusText = response?.statusText || '';
-    const responseTime = response?.responseTime || response?.time || 0;
-    const responseSize = response?.responseSize || response?.size || 0;
 
     return (
       <div 
@@ -5212,29 +5781,17 @@ const renderQueryParamsTab = () => {
           </div>
           {response && (
             <div className="flex items-center gap-2">
-              <button type="button" className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+              <button type="button" 
+                className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
                 style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
                 onClick={() => {
-                  try {
-                    const parsed = JSON.parse(responseBody);
-                    setResponse({
-                      ...response,
-                      responseBody: JSON.stringify(parsed, null, 2)
-                    });
-                    showToast('Response beautified!', 'success');
-                  } catch (e) {
-                    showToast('Not valid JSON', 'error');
-                  }
-                }}>
-                Beautify
-              </button>
-              <button type="button" className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                style={{ backgroundColor: colors.hover }}
-                onClick={() => {
-                  navigator.clipboard.writeText(responseBody);
+                  const contentToCopy = response.responseBody || 
+                                      JSON.stringify(response.data, null, 2) || 
+                                      JSON.stringify(response, null, 2);
+                  navigator.clipboard.writeText(contentToCopy);
                   showToast('Copied to clipboard!', 'success');
                 }}>
-                <Copy size={12} style={{ color: colors.textSecondary }} />
+                Copy
               </button>
             </div>
           )}
@@ -5245,13 +5802,17 @@ const renderQueryParamsTab = () => {
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 <div className={`px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2 hover-lift ${
-                  statusCode >= 200 && statusCode < 300 ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
+                  response.statusCode >= 200 && response.statusCode < 300 ? 'bg-green-500/10 text-green-500' : 
+                  response.statusCode >= 400 && response.statusCode < 500 ? 'bg-orange-500/10 text-orange-500' :
+                  response.statusCode >= 500 ? 'bg-red-500/10 text-red-500' : 'bg-gray-500/10 text-gray-500'
                 }`}>
-                  {statusCode >= 200 && statusCode < 300 ? <CheckCircle size={12} /> : <XCircle size={12} />}
-                  {statusCode} {statusText}
+                  {response.statusCode >= 200 && response.statusCode < 300 ? <CheckCircle size={12} /> : 
+                  response.statusCode >= 400 && response.statusCode < 500 ? <AlertCircle size={12} /> :
+                  response.statusCode >= 500 ? <XCircle size={12} /> : <Info size={12} />}
+                  {response.statusCode} {response.statusText}
                 </div>
                 <div className="text-sm" style={{ color: colors.textSecondary }}>
-                  Time: {responseTime}ms • Size: {responseSize}KB
+                  Time: {response.responseTime || 0}ms • Size: {response.responseSize || 0}KB
                 </div>
               </div>
               {renderResponseContent()}
@@ -5261,6 +5822,618 @@ const renderQueryParamsTab = () => {
       </div>
     );
   };
+
+  // Replace the handleExecuteRequest function with this version that makes direct HTTP requests
+const handleExecuteRequest = useCallback(async () => {
+  const validationErrors = validateExecuteRequest({
+    method: requestMethod,
+    url: requestUrl
+  });
+
+  if (validationErrors.length > 0) {
+    showToast(validationErrors[0], 'error');
+    return;
+  }
+
+  setLoading(prev => ({ ...prev, execute: true }));
+  setIsSending(true);
+  setResponse(null);
+
+  // Track start time for response time calculation
+  const startTime = Date.now();
+
+  try {
+    // ============== BUILD FINAL URL WITH PATH PARAMS ==============
+    let finalUrl = requestUrl;
+    
+    // Replace path parameters in the URL
+    const pathParamsArray = requestPathParams
+      .filter(p => p.enabled && p.key && p.key.trim() !== '')
+      .map(p => ({
+        key: p.key.trim(),
+        value: p.value || '',
+        enabled: true
+      }));
+
+    if (pathParamsArray.length > 0) {
+      pathParamsArray.forEach(param => {
+        // Replace {key} and :key placeholders with actual values
+        const placeholderPatterns = [
+          new RegExp(`{${param.key}}`, 'g'),
+          new RegExp(`:${param.key}`, 'g')
+        ];
+        
+        placeholderPatterns.forEach(pattern => {
+          finalUrl = finalUrl.replace(pattern, encodeURIComponent(param.value));
+        });
+      });
+    }
+
+    // ============== BUILD QUERY PARAMS ==============
+    const queryParamsArray = requestParams
+      .filter(p => p.enabled && p.key && p.key.trim() !== '')
+      .map(p => ({
+        key: p.key.trim(),
+        value: p.value || '',
+        enabled: true
+      }));
+
+    // Add query params to URL if they're not already there
+    if (queryParamsArray.length > 0) {
+      const urlObj = new URL(finalUrl.startsWith('http') ? finalUrl : `http://${finalUrl}`);
+      const existingParams = new URLSearchParams(urlObj.search);
+      
+      queryParamsArray.forEach(param => {
+        existingParams.set(param.key, param.value);
+      });
+      
+      urlObj.search = existingParams.toString();
+      finalUrl = urlObj.toString();
+    }
+
+    // ============== BUILD HEADERS ==============
+    const headers = new Headers();
+    
+    // Add all enabled headers from the Headers tab
+    requestHeaders.filter(h => h.enabled && h.key && h.key.trim() !== '').forEach(header => {
+      headers.set(header.key.trim(), header.value || '');
+    });
+
+    // ============== PROCESS AUTHENTICATION ==============
+    // Check for API Key config
+    const hasApiKeyConfig = authConfig && (authConfig.type === 'apikey' || authConfig.authType === 'apikey');
+    
+    if (hasApiKeyConfig) {
+      // Add API Key header
+      const apiKeyHeader = authConfig.key || authConfig.apiKeyHeader || '';
+      const apiKeyValue = authConfig.value || authConfig.apiKeyValue || '';
+      
+      if (apiKeyHeader && apiKeyValue) {
+        headers.set(apiKeyHeader, apiKeyValue);
+      }
+      
+      // Add API Secret if present
+      const apiSecretHeader = authConfig.apiSecretHeader || 'X-API-Secret';
+      const apiSecretValue = authConfig.apiSecretValue || authConfig.apiKeySecret || '';
+      
+      if (apiSecretHeader && apiSecretValue) {
+        headers.set(apiSecretHeader, apiSecretValue);
+      }
+    }
+    else if (authType === 'bearer' && authConfig.token) {
+      const authHeader = `${authConfig.tokenType || 'Bearer'} ${authConfig.token}`;
+      headers.set('Authorization', authHeader);
+    }
+    else if (authType === 'basic' && authConfig.username && authConfig.password) {
+      const credentials = btoa(`${authConfig.username}:${authConfig.password}`);
+      headers.set('Authorization', `Basic ${credentials}`);
+    }
+    else if (authType === 'oauth2' && authConfig.token) {
+      headers.set('Authorization', `Bearer ${authConfig.token}`);
+    }
+
+    // ============== PROCESS BODY ==============
+    let body = null;
+    let contentType = '';
+
+    // Determine Content-Type based on body type
+    if (requestBodyType === 'raw') {
+      switch (rawBodyType) {
+        case 'json':
+          contentType = 'application/json';
+          try {
+            // Validate JSON if needed
+            if (requestBody && requestBody.trim()) {
+              JSON.parse(requestBody); // Just validate, don't re-stringify
+              body = requestBody;
+            }
+          } catch (e) {
+            showToast('Invalid JSON in request body', 'error');
+            setLoading(prev => ({ ...prev, execute: false }));
+            setIsSending(false);
+            return;
+          }
+          break;
+        case 'xml':
+          contentType = 'application/xml';
+          body = requestBody;
+          break;
+        case 'javascript':
+          contentType = 'application/javascript';
+          body = requestBody;
+          break;
+        case 'html':
+          contentType = 'text/html';
+          body = requestBody;
+          break;
+        default:
+          contentType = 'text/plain';
+          body = requestBody;
+      }
+    } 
+    else if (requestBodyType === 'form-data') {
+      // For form-data, we need to use FormData
+      const formDataObj = new FormData();
+      formData.filter(f => f.enabled && f.key && f.key.trim() !== '').forEach(field => {
+        if (field.type === 'file' && field.file) {
+          formDataObj.append(field.key, field.file);
+        } else {
+          formDataObj.append(field.key, field.value || '');
+        }
+      });
+      body = formDataObj;
+      // Don't set Content-Type for FormData - browser will set it with boundary
+    } 
+    else if (requestBodyType === 'x-www-form-urlencoded') {
+      contentType = 'application/x-www-form-urlencoded';
+      const params = new URLSearchParams();
+      urlEncodedData.filter(u => u.enabled && u.key && u.key.trim() !== '').forEach(item => {
+        params.append(item.key, item.value || '');
+      });
+      body = params.toString();
+    } 
+    else if (requestBodyType === 'xml') {
+      contentType = 'application/xml';
+      body = requestBody;
+    }
+    else if (requestBodyType === 'graphql') {
+      contentType = 'application/json';
+      try {
+        const graphqlBody = {
+          query: graphqlQuery
+        };
+        if (graphqlVariables) {
+          graphqlBody.variables = JSON.parse(graphqlVariables);
+        }
+        body = JSON.stringify(graphqlBody);
+      } catch (e) {
+        showToast('Invalid GraphQL variables JSON', 'error');
+        setLoading(prev => ({ ...prev, execute: false }));
+        setIsSending(false);
+        return;
+      }
+    }
+    else if (requestBodyType === 'binary' && binaryFile) {
+      body = binaryFile;
+      // Don't set Content-Type for binary - use the file's type
+    }
+
+    // Set Content-Type header if not already set and not FormData
+    if (contentType && requestBodyType !== 'form-data') {
+      if (!headers.has('Content-Type')) {
+        headers.set('Content-Type', contentType);
+      }
+    }
+
+    // Set Accept header if not present
+    if (!headers.has('Accept')) {
+      headers.set('Accept', '*/*');
+    }
+
+    // ============== LOG REQUEST DETAILS ==============
+    console.log('📤 Making direct HTTP request:', {
+      method: requestMethod,
+      url: finalUrl,
+      headers: Object.fromEntries(headers.entries()),
+      body: body instanceof FormData ? 'FormData' : body,
+      bodyType: requestBodyType
+    });
+
+    // ============== MAKE THE ACTUAL HTTP REQUEST ==============
+    const fetchOptions = {
+      method: requestMethod,
+      headers: headers,
+      mode: 'cors',
+      credentials: 'omit',
+      redirect: 'follow'
+    };
+
+    // Add body for methods that support it
+    if (requestMethod !== 'GET' && requestMethod !== 'HEAD' && body) {
+      fetchOptions.body = body;
+    }
+
+    // Make the actual request to the target URL
+    const fetchResponse = await fetch(finalUrl, fetchOptions);
+    
+    // Calculate response time
+    const responseTime = Date.now() - startTime;
+
+    // Get response headers
+    const responseHeaders = [];
+    fetchResponse.headers.forEach((value, key) => {
+      responseHeaders.push({ key, value });
+    });
+
+    // Get response body based on content type
+    let responseBody = '';
+    const responseContentType = fetchResponse.headers.get('content-type') || '';
+
+    if (responseContentType.includes('application/json')) {
+      try {
+        const jsonData = await fetchResponse.json();
+        responseBody = JSON.stringify(jsonData, null, 2);
+      } catch {
+        responseBody = await fetchResponse.text();
+      }
+    } else if (responseContentType.includes('text/')) {
+      responseBody = await fetchResponse.text();
+    } else if (responseContentType.includes('xml')) {
+      responseBody = await fetchResponse.text();
+    } else {
+      // For binary responses, get as text or blob based on size
+      const blob = await fetchResponse.blob();
+      if (blob.size < 1024 * 1024) { // Less than 1MB
+        responseBody = await blob.text();
+      } else {
+        responseBody = `[Binary data: ${blob.type}, ${(blob.size / 1024).toFixed(2)} KB]`;
+      }
+    }
+
+    // Format the response for display
+    const formattedResponse = {
+      responseBody,
+      statusCode: fetchResponse.status,
+      statusText: fetchResponse.statusText,
+      headers: responseHeaders,
+      responseTime,
+      responseSize: Math.round(new Blob([responseBody]).size / 1024),
+      data: responseBody
+    };
+
+    setResponse(formattedResponse);
+
+    // Show appropriate toast based on status code
+    if (fetchResponse.ok) {
+      showToast(`✓ ${requestMethod} ${fetchResponse.status}`, 'success');
+    } else if (fetchResponse.status >= 400 && fetchResponse.status < 500) {
+      showToast(`⚠️ Client Error: ${fetchResponse.status} - ${fetchResponse.statusText}`, 'warning');
+    } else if (fetchResponse.status >= 500) {
+      showToast(`❌ Server Error: ${fetchResponse.status} - ${fetchResponse.statusText}`, 'error');
+    }
+
+  } catch (error) {
+    console.error('Error executing request:', error);
+    
+    const responseTime = Date.now() - startTime;
+    
+    // Create structured error response
+    setResponse({
+      responseBody: JSON.stringify({
+        error: error.message,
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+        timestamp: new Date().toISOString(),
+        url: requestUrl,
+        method: requestMethod,
+        hint: 'This could be a CORS error, network issue, or invalid URL'
+      }, null, 2),
+      statusCode: 0,
+      statusText: error.name || 'Request Failed',
+      headers: [],
+      responseTime,
+      responseSize: 0,
+      data: {
+        error: error.message,
+        statusCode: 0
+      }
+    });
+    
+    // Show appropriate error message
+    if (error.name === 'TypeError' && error.message.includes('CORS')) {
+      showToast('❌ CORS error: The server blocked the request', 'error');
+    } else if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+      showToast('❌ Network error: Unable to reach the server', 'error');
+    } else {
+      showToast(`❌ Request failed: ${error.message}`, 'error');
+    }
+  } finally {
+    setLoading(prev => ({ ...prev, execute: false }));
+    setIsSending(false);
+  }
+}, [authToken, requestMethod, requestUrl, requestHeaders, requestBody, requestParams, requestPathParams, 
+    authType, authConfig, requestBodyType, rawBodyType, formData, urlEncodedData, binaryFile, 
+    graphqlQuery, graphqlVariables]);
+
+// Also update the addFormData function to handle file uploads properly
+const addFormData = () => {
+  const newItem = { 
+    id: `form-${Date.now()}`, 
+    key: '', 
+    value: '', 
+    type: 'text', 
+    enabled: true,
+    file: null
+  };
+  setFormData([...formData, newItem]);
+};
+
+// Update form data file handling
+const handleFormDataFile = (index, file) => {
+  const newData = [...formData];
+  newData[index].file = file;
+  newData[index].value = file.name;
+  setFormData(newData);
+};
+
+// Add this function to parse and beautify JSON responses
+const beautifyResponse = (response) => {
+  if (!response) return '';
+  
+  try {
+    if (typeof response === 'string') {
+      const parsed = JSON.parse(response);
+      return JSON.stringify(parsed, null, 2);
+    }
+    return JSON.stringify(response, null, 2);
+  } catch {
+    return response;
+  }
+};
+
+// Update the response display in renderResponsePanel
+const renderResponseContent = () => {
+  if (!response) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-center p-8">
+        {loading.execute ? (
+          <>
+            <RefreshCw size={32} className="animate-spin mb-4" style={{ color: colors.textSecondary }} />
+            <h3 className="text-sm font-semibold mb-2" style={{ color: colors.text }}>Sending Request...</h3>
+            <p className="text-sm max-w-sm" style={{ color: colors.textSecondary }}>
+              Method: {requestMethod} • URL: {requestUrl}
+            </p>
+          </>
+        ) : (
+          <>
+            <Send size={32} style={{ color: colors.textSecondary }} className="mb-4 opacity-50" />
+            <h3 className="text-sm font-semibold mb-2" style={{ color: colors.text }}>No Response</h3>
+            <p className="text-sm max-w-sm" style={{ color: colors.textSecondary }}>
+              Click Send to execute the request
+            </p>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  const statusCode = response.statusCode || 0;
+  const statusText = response.statusText || '';
+  const isError = statusCode >= 400;
+  
+  // Get response body
+  let responseBody = '';
+  if (response.responseBody) {
+    responseBody = response.responseBody;
+  } else if (response.data) {
+    responseBody = JSON.stringify(response.data, null, 2);
+  } else if (response.body) {
+    responseBody = response.body;
+  } else {
+    responseBody = JSON.stringify(response, null, 2);
+  }
+
+  // Try to detect content type from headers
+  let contentType = 'text/plain';
+  if (response.headers) {
+    const headers = Array.isArray(response.headers) 
+      ? response.headers 
+      : Object.entries(response.headers).map(([k, v]) => ({ key: k, value: v }));
+    
+    const contentTypeHeader = headers.find(h => 
+      h.key.toLowerCase() === 'content-type'
+    );
+    if (contentTypeHeader) {
+      contentType = contentTypeHeader.value;
+    }
+  }
+
+  switch (responseView) {
+    case 'raw':
+      return (
+        <pre className="border rounded p-4 overflow-auto text-sm font-mono whitespace-pre-wrap hover-lift"
+          style={{ 
+            backgroundColor: colors.codeBg,
+            borderColor: colors.border,
+            color: colors.text,
+            height: 'calc(100% - 60px)'
+          }}>
+          {responseBody}
+        </pre>
+      );
+    
+    case 'preview':
+      if (contentType.includes('application/json') || responseBody.trim().startsWith('{') || responseBody.trim().startsWith('[')) {
+        try {
+          const parsed = JSON.parse(responseBody);
+          return (
+            <div className="border rounded p-4 overflow-auto text-sm hover-lift"
+              style={{ 
+                backgroundColor: colors.codeBg,
+                borderColor: colors.border,
+                color: colors.text,
+                height: 'calc(100% - 60px)'
+              }}>
+              <SyntaxHighlighter 
+                language="json" 
+                code={JSON.stringify(parsed, null, 2)} 
+              />
+            </div>
+          );
+        } catch (e) {
+          // If not valid JSON, show as text
+        }
+      } else if (contentType.includes('xml') || responseBody.trim().startsWith('<')) {
+        return (
+          <div className="border rounded p-4 overflow-auto text-sm hover-lift"
+            style={{ 
+              backgroundColor: colors.codeBg,
+              borderColor: colors.border,
+              color: colors.text,
+              height: 'calc(100% - 60px)'
+            }}>
+            <SyntaxHighlighter 
+              language="xml" 
+              code={responseBody} 
+            />
+          </div>
+        );
+      } else if (contentType.includes('html')) {
+        return (
+          <iframe
+            srcDoc={responseBody}
+            className="w-full h-full border-0"
+            sandbox="allow-same-origin"
+            title="HTML Preview"
+          />
+        );
+      }
+      
+      return (
+        <pre className="border rounded p-4 overflow-auto text-sm font-mono whitespace-pre-wrap hover-lift"
+          style={{ 
+            backgroundColor: colors.codeBg,
+            borderColor: colors.border,
+            color: colors.text,
+            height: 'calc(100% - 60px)'
+          }}>
+          {responseBody}
+        </pre>
+      );
+    
+    case 'headers':
+      const headers = response.headers || [];
+      const headerArray = Array.isArray(headers) ? headers : Object.entries(headers).map(([k, v]) => ({
+        key: k,
+        value: v
+      }));
+      
+      return (
+        <div className="border rounded overflow-hidden hover-lift"
+          style={{ 
+            backgroundColor: colors.codeBg,
+            borderColor: colors.border,
+            height: 'calc(100% - 60px)',
+            overflow: 'auto'
+          }}>
+          {headerArray.length > 0 ? (
+            <table className="w-full">
+              <thead style={{ backgroundColor: colors.tableHeader, position: 'sticky', top: 0 }}>
+                <tr>
+                  <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Header</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {headerArray.map((header, index) => (
+                  <tr key={index} className="border-b last:border-b-0 hover-lift" style={{ borderColor: colors.border }}>
+                    <td className="px-4 py-3 font-medium" style={{ color: colors.text }}>{header.key}</td>
+                    <td className="px-4 py-3 break-all" style={{ color: colors.textSecondary }}>{header.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="p-4 text-center" style={{ color: colors.textSecondary }}>
+              <p className="text-sm">No headers in response</p>
+            </div>
+          )}
+        </div>
+      );
+    
+    default:
+      return (
+        <pre className="border rounded p-4 overflow-auto text-sm font-mono whitespace-pre-wrap hover-lift"
+          style={{ 
+            backgroundColor: colors.codeBg,
+            borderColor: colors.border,
+            color: colors.text,
+            height: 'calc(100% - 60px)'
+          }}>
+          {responseBody}
+        </pre>
+      );
+  }
+};
+
+// Update the response panel header to show more details
+<div className="flex items-center justify-between px-4 py-3 border-b" style={{ 
+  backgroundColor: colors.card,
+  borderColor: colors.border
+}}>
+  <div className="flex items-center gap-4">
+    <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Response</h3>
+    {response && (
+      <>
+        <div className={`px-2 py-1 rounded text-xs font-medium ${
+          response.statusCode >= 200 && response.statusCode < 300 ? 'bg-green-500/10 text-green-500' : 
+          response.statusCode >= 400 && response.statusCode < 500 ? 'bg-orange-500/10 text-orange-500' :
+          response.statusCode >= 500 ? 'bg-red-500/10 text-red-500' : 'bg-gray-500/10 text-gray-500'
+        }`}>
+          {response.statusCode} {response.statusText}
+        </div>
+        <div className="flex items-center gap-3 text-xs" style={{ color: colors.textSecondary }}>
+          <span>⏱️ {response.responseTime || 0}ms</span>
+          <span>📦 {response.responseSize || 0} KB</span>
+        </div>
+        <div className="flex items-center gap-1">
+          {['raw', 'preview', 'headers'].map(view => (
+            <button key={view}
+              type="button"
+              onClick={() => setResponseView(view)}
+              className={`px-2 py-1 rounded text-xs font-medium capitalize transition-colors hover-lift ${
+                responseView === view ? '' : 'hover:bg-opacity-50'
+              }`}
+              style={{ 
+                backgroundColor: responseView === view ? colors.primaryDark : colors.hover,
+                color: responseView === view ? 'white' : colors.textSecondary
+              }}>
+              {view}
+            </button>
+          ))}
+        </div>
+      </>
+    )}
+  </div>
+  {response && (
+    <div className="flex items-center gap-2">
+      <button type="button" 
+        className="text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+        style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+        onClick={() => {
+          const contentToCopy = response.responseBody || 
+                              JSON.stringify(response.data, null, 2) || 
+                              JSON.stringify(response, null, 2);
+          navigator.clipboard.writeText(contentToCopy);
+          showToast('Response copied to clipboard!', 'success');
+        }}>
+        <Copy size={12} className="mr-1 inline" />
+        Copy
+      </button>
+    </div>
+  )}
+</div>
 
   // Render other right panels
   const renderAPIsPanel = () => (
@@ -6353,6 +7526,7 @@ const renderQueryParamsTab = () => {
                 border: `1px solid ${colors.inputborder}`
               }}>
                 <input 
+                  ref={urlInputRef}
                   type="text" 
                   value={requestUrl} 
                   onChange={handleUrlChange}

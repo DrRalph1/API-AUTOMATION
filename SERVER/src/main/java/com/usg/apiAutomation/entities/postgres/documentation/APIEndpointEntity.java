@@ -65,6 +65,10 @@ public class APIEndpointEntity {
     @Column(name = "rate_limit", columnDefinition = "jsonb")
     private Map<String, Object> rateLimit;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "meta_data", columnDefinition = "jsonb")
+    private Map<String, Object> metaData;
+
     @Column(name = "api_version")
     private String apiVersion;
 

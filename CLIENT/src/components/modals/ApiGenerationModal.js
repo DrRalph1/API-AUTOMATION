@@ -210,7 +210,7 @@ const API_DATA_TYPES = [
 ];
 
 // Parameter Modes for procedures/functions
-const PARAMETER_MODES = ['IN', 'OUT', 'IN OUT'];
+const PARAMETER_MODES = ['IN', 'OUT', 'IN/OUT'];
 
 // Required fields configuration
 const REQUIRED_FIELDS = {
@@ -266,12 +266,12 @@ function ApiPreviewModal({
 
   // Filter parameters to only show IN parameters (not OUT)
   const inParameters = (apiData.parameters || []).filter(p => 
-    !p.paramMode || p.paramMode === 'IN' || p.paramMode === 'IN OUT'
+    !p.paramMode || p.paramMode === 'IN' || p.paramMode === 'IN/OUT'
   );
 
   // Filter response mappings to only show OUT parameters (and any other response fields)
   const outMappings = (apiData.responseMappings || []).filter(m => 
-    (m.paramMode === 'OUT' || m.paramMode === 'IN OUT' || !m.paramMode)
+    (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || !m.paramMode)
   );
 
   return (
@@ -1649,14 +1649,14 @@ export default function ApiGenerationModal({
   // Helper function to filter parameters to only show IN parameters
   const getInParameters = () => {
     return parameters.filter(p => 
-      !p.paramMode || p.paramMode === 'IN' || p.paramMode === 'IN OUT'
+      !p.paramMode || p.paramMode === 'IN' || p.paramMode === 'IN/OUT'
     );
   };
 
   // Helper function to filter response mappings to only show OUT parameters and other mappings
   const getOutMappings = () => {
     return responseMappings.filter(m => 
-      (m.paramMode === 'OUT' || m.paramMode === 'IN OUT' || !m.paramMode)
+      (m.paramMode === 'OUT' || m.paramMode === 'IN/OUT' || !m.paramMode)
     );
   };
 
@@ -1772,7 +1772,7 @@ export default function ApiGenerationModal({
       return;
     }
 
-    console.log("selectedObject:::::::" + JSON.stringify(selectedObject));
+    // console.log("selectedObject:::::::" + JSON.stringify(selectedObject));
 
     setLoading(true);
     console.log('🔍 ApiGenerationModal - Initializing with selected object:', {
@@ -2332,12 +2332,12 @@ export default function ApiGenerationModal({
             parameterLocation = 'body';
           } else if (paramMode === 'IN' && httpMethod === 'GET') {
             parameterLocation = 'query';
-          } else if (paramMode === 'IN OUT') {
+          } else if (paramMode === 'IN/OUT') {
             parameterLocation = 'body'; // IN OUT goes to body
           }
 
           // For OUT parameters, don't add to parameters list - only add to mappings
-          if (paramMode === 'IN' || paramMode === 'IN OUT') {
+          if (paramMode === 'IN' || paramMode === 'IN/OUT') {
             newParameters.push({
               id: `proc-param-${Date.now()}-${index}`,
               key: cleanKey,
@@ -2348,7 +2348,7 @@ export default function ApiGenerationModal({
                          paramType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
               apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
               parameterLocation: parameterLocation,
-              required: paramMode === 'IN' || paramMode === 'IN OUT',
+              required: paramMode === 'IN' || paramMode === 'IN/OUT',
               description: `${paramName} (${paramMode})`,
               example: paramType.includes('NUMBER') ? '1' : 
                       paramType.includes('DATE') ? '2024-01-01' : '',
@@ -2361,7 +2361,7 @@ export default function ApiGenerationModal({
           }
 
           // Add to response mappings for OUT parameters (and IN OUT parameters as they appear in both)
-          if (paramMode === 'OUT' || paramMode === 'IN OUT') {
+          if (paramMode === 'OUT' || paramMode === 'IN/OUT') {
             newMappings.push({
               id: `mapping-${Date.now()}-out-${index}`,
               apiField: cleanKey,
@@ -4465,7 +4465,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                             {selectedObject.parameters
                               .filter(p => {
                                 const mode = p.mode || p.IN_OUT || p.in_out;
-                                return !mode || mode === 'IN' || mode === 'IN OUT';
+                                return !mode || mode === 'IN' || mode === 'IN/OUT';
                               })
                               .map((param, index) => {
                                 const mode = param.mode || param.IN_OUT || param.in_out || 'IN';
@@ -4503,7 +4503,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                           {/* Show OUT parameters separately in a note */}
                           {selectedObject.parameters.some(p => {
                             const mode = p.mode || p.IN_OUT || p.in_out;
-                            return mode === 'OUT' || mode === 'IN OUT';
+                            return mode === 'OUT' || mode === 'IN/OUT';
                           }) && (
                             <p className="text-xs mt-2" style={{ color: themeColors.info }}>
                               Note: OUT/IN OUT parameters will appear in the Response Mapping tab.

@@ -1,4 +1,4 @@
-package com.usg.apiAutomation.services.apiGenerationEngine;
+package com.usg.apiAutomation.helpers;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ExecuteApiRequestDTO;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiAuthConfigEntity;
@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicLong;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class ApiValidatorService {
+public class ApiValidatorHelper {
 
     private final Map<String, Map<String, RateLimitInfo>> rateLimitCounters = new ConcurrentHashMap<>();
 
@@ -50,36 +50,101 @@ public class ApiValidatorService {
      * Validate authentication based on API configuration
      */
     public boolean validateAuthentication(GeneratedApiEntity api, ExecuteApiRequestDTO request) {
-        if (api.getAuthConfig() == null || api.getAuthConfig().getAuthType() == null) {
-            return true; // No auth required
+        // If API has no auth configured, always pass
+        if (api.getAuthConfig() == null || "NONE".equals(api.getAuthConfig().getAuthType())) {
+            return true;
         }
 
-        String authType = api.getAuthConfig().getAuthType();
+        String apiAuthType = api.getAuthConfig().getAuthType();
 
-        switch (authType) {
-            case "NONE":
-                return true;
-
+        switch (apiAuthType) {
             case "API_KEY":
-                return validateApiKey(api.getAuthConfig(), request);
+                // For API Key, check the headers for the API key
+                return validateApiKeyFromHeaders(api, request);
 
             case "BASIC":
-                return validateBasicAuth(api.getAuthConfig(), request);
+                // For Basic Auth, check Authorization header or credentials
+                return validateBasicAuth(api, request);
 
-            case "JWT":
             case "BEARER":
-                return validateJwt(api.getAuthConfig(), request);
-
-            case "OAUTH2":
-                return validateOAuth2(api.getAuthConfig(), request);
-
-            case "ORACLE_ROLES":
-                return validateOracleRoles(api.getAuthConfig(), request);
+            case "JWT":
+                // For Bearer/JWT, check Authorization header
+                return validateBearerToken(api, request);
 
             default:
-                log.warn("Unknown auth type: {}", authType);
                 return false;
         }
+    }
+
+    private boolean validateApiKeyFromHeaders(GeneratedApiEntity api, ExecuteApiRequestDTO request) {
+        Map<String, String> headers = request.getHeaders();
+        if (headers == null || headers.isEmpty()) {
+            return false;
+        }
+
+        // Get expected API key header and value from API config
+        String expectedHeader = api.getAuthConfig().getApiKeyHeader();
+        String expectedValue = api.getAuthConfig().getApiKeyValue();
+
+        // Check if the header exists and matches
+        String actualValue = headers.get(expectedHeader);
+        if (actualValue == null) {
+            // Try case-insensitive match
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                if (entry.getKey().equalsIgnoreCase(expectedHeader)) {
+                    actualValue = entry.getValue();
+                    break;
+                }
+            }
+        }
+
+        // If API has secret as well, validate both
+        if (api.getAuthConfig().getApiKeySecret() != null) {
+            String expectedSecret = api.getAuthConfig().getApiKeySecret();
+            String actualSecret = headers.get("X-API-Secret");
+
+            return expectedValue.equals(actualValue) && expectedSecret.equals(actualSecret);
+        }
+
+        // Simple API key validation
+        return expectedValue.equals(actualValue);
+    }
+
+    private boolean validateBasicAuth(GeneratedApiEntity api, ExecuteApiRequestDTO request) {
+        Map<String, String> headers = request.getHeaders();
+        if (headers == null) return false;
+
+        String authHeader = headers.get("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Basic ")) {
+            return false;
+        }
+
+        try {
+            String base64Credentials = authHeader.substring(6);
+            String credentials = new String(Base64.getDecoder().decode(base64Credentials));
+            String[] parts = credentials.split(":", 2);
+
+            String username = parts[0];
+            String password = parts[1];
+
+            return username.equals(api.getAuthConfig().getBasicUsername()) &&
+                    password.equals(api.getAuthConfig().getBasicPassword());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean validateBearerToken(GeneratedApiEntity api, ExecuteApiRequestDTO request) {
+        Map<String, String> headers = request.getHeaders();
+        if (headers == null) return false;
+
+        String authHeader = headers.get("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return false;
+        }
+
+        String token = authHeader.substring(7);
+        return token.equals(api.getAuthConfig().getJwtSecret());
     }
 
     /**

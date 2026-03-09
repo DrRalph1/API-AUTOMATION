@@ -193,17 +193,7 @@ const Dashboard = ({ theme, isDark, customTheme, toggleTheme, navigateTo, setAct
       },
       
       // Auth config
-      authConfig: api.authConfig || {
-        authType: 'none',
-        apiKeyHeader: 'X-API-Key',
-        apiSecretHeader: 'X-API-Secret',
-        jwtIssuer: 'api.example.com',
-        rateLimitRequests: 100,
-        rateLimitPeriod: 'minute',
-        enableRateLimiting: false,
-        corsOrigins: ['*'],
-        auditLevel: 'standard'
-      },
+      authConfig: api.authConfig || [],
       
       // Headers - ONLY use if they exist, otherwise empty array
       headers: headersWithIds,

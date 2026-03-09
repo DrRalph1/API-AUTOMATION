@@ -1,7 +1,10 @@
 package com.usg.apiAutomation.services;
 
+import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiAuthConfigDTO;
 import com.usg.apiAutomation.dtos.dashboard.*;
 import com.usg.apiAutomation.dtos.userManagement.SearchUsersRequestDTO;
+import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiAuthConfigEntity;
+import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.ApiAuthConfigRepository;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
@@ -34,6 +37,7 @@ public class DashboardService {
     private final CollectionsService collectionsService;
     private final DocumentationService documentationService;
     private final UserManagementService userManagementService;
+    private final ApiAuthConfigRepository authConfigRepository;
 
     @PostConstruct
     public void init() {
@@ -881,7 +885,7 @@ public class DashboardService {
     }
 
     // ============================================================
-    // 19. COMPREHENSIVE DASHBOARD
+    // 19. COMPREHENSIVE DASHBOARD (UPDATED WITH AUTH CONFIG)
     // ============================================================
     public ComprehensiveDashboardResponseDTO getComprehensiveDashboard(String requestId, HttpServletRequest req, String performedBy) {
         log.info("Request ID: {}, Getting comprehensive dashboard data for user: {}", requestId, performedBy);
@@ -891,11 +895,101 @@ public class DashboardService {
         // Basic stats
         response.setStats(getDashboardStats(requestId, req, performedBy));
 
-        // Collections and endpoints (make sure endpoints have all fields with IDs)
+        // Collections and endpoints
         response.setCollections(getDashboardCollections(requestId, req, performedBy));
 
         // Get endpoints and ensure all nested elements have IDs
         DashboardEndpointsResponseDTO endpointsResponse = getDashboardEndpoints(requestId, req, performedBy);
+
+        // ADD AUTH CONFIG FOR EACH ENDPOINT
+        if (endpointsResponse.getEndpoints() != null) {
+            for (DashboardEndpointDTO endpoint : endpointsResponse.getEndpoints()) {
+                try {
+                    // Pass the app_id (endpoint ID) to the repository via service
+                    ApiAuthConfigDTO authConfig = getAuthConfigByApiId(
+                            requestId, performedBy, endpoint.getId()
+                    );
+
+                    // Add auth config to the endpoint - WITH PROPER NULL SAFETY
+                    Map<String, Object> endpointAuthConfig = new HashMap<>();
+
+                    // Safely add fields with null checks
+                    endpointAuthConfig.put("authType", authConfig.getAuthType() != null ? authConfig.getAuthType() : "none");
+                    endpointAuthConfig.put("isConfigured", authConfig.getIsConfigured() != null ? authConfig.getIsConfigured() : false);
+
+                    // API Key fields - with null safety
+                    endpointAuthConfig.put("hasApiKey",
+                            (authConfig.getApiKeyHeader() != null && !authConfig.getApiKeyHeader().isEmpty()) ||
+                                    (authConfig.getApiKeyValue() != null && !authConfig.getApiKeyValue().isEmpty()) ||
+                                    (authConfig.getApiKeySecret() != null && !authConfig.getApiKeySecret().isEmpty()));
+
+                    endpointAuthConfig.put("hasBasicAuth",
+                            (authConfig.getBasicUsername() != null && !authConfig.getBasicUsername().isEmpty()) ||
+                                    (authConfig.getBasicPassword() != null && !authConfig.getBasicPassword().isEmpty()));
+
+                    endpointAuthConfig.put("hasJwt",
+                            (authConfig.getJwtSecret() != null && !authConfig.getJwtSecret().isEmpty()) ||
+                                    (authConfig.getJwtToken() != null && !authConfig.getJwtToken().isEmpty()));
+
+                    endpointAuthConfig.put("hasOAuth2",
+                            (authConfig.getOauthClientId() != null && !authConfig.getOauthClientId().isEmpty()) ||
+                                    (authConfig.getOauthClientSecret() != null && !authConfig.getOauthClientSecret().isEmpty()));
+
+                    // Add all fields with null safety
+                    endpointAuthConfig.put("apiKeyHeader", authConfig.getApiKeyHeader());
+                    endpointAuthConfig.put("apiKeyLocation", authConfig.getApiKeyLocation());
+                    endpointAuthConfig.put("apiKeyPrefix", authConfig.getApiKeyPrefix());
+                    endpointAuthConfig.put("basicUsername", authConfig.getBasicUsername());
+                    endpointAuthConfig.put("basicRealm", authConfig.getBasicRealm());
+                    endpointAuthConfig.put("jwtIssuer", authConfig.getJwtIssuer());
+                    endpointAuthConfig.put("jwtAudience", authConfig.getJwtAudience());
+                    endpointAuthConfig.put("jwtExpiration", authConfig.getJwtExpiration());
+                    endpointAuthConfig.put("jwtAlgorithm", authConfig.getJwtAlgorithm());
+                    endpointAuthConfig.put("oauthClientId", authConfig.getOauthClientId());
+                    endpointAuthConfig.put("oauthTokenUrl", authConfig.getOauthTokenUrl());
+                    endpointAuthConfig.put("oauthAuthUrl", authConfig.getOauthAuthUrl());
+                    endpointAuthConfig.put("oauthScopes", authConfig.getOauthScopes() != null ? authConfig.getOauthScopes() : new ArrayList<>());
+                    endpointAuthConfig.put("requiredRoles", authConfig.getRequiredRoles() != null ? authConfig.getRequiredRoles() : new ArrayList<>());
+                    endpointAuthConfig.put("customAuthFunction", authConfig.getCustomAuthFunction());
+                    endpointAuthConfig.put("validateSession", authConfig.getValidateSession() != null ? authConfig.getValidateSession() : false);
+                    endpointAuthConfig.put("checkObjectPrivileges", authConfig.getCheckObjectPrivileges() != null ? authConfig.getCheckObjectPrivileges() : false);
+
+                    // Rate limiting fields - with null safety
+                    Map<String, Object> rateLimiting = new HashMap<>();
+                    rateLimiting.put("enabled", authConfig.getEnableRateLimiting() != null ? authConfig.getEnableRateLimiting() : false);
+                    rateLimiting.put("requests", authConfig.getRateLimitRequests());
+                    rateLimiting.put("period", authConfig.getRateLimitPeriod());
+                    endpointAuthConfig.put("rateLimiting", rateLimiting);
+
+                    // CORS fields - with null safety
+                    Map<String, Object> cors = new HashMap<>();
+                    cors.put("origins", authConfig.getCorsOrigins());
+                    cors.put("credentials", authConfig.getCorsCredentials() != null ? authConfig.getCorsCredentials() : false);
+                    endpointAuthConfig.put("cors", cors);
+
+                    // Other security fields
+                    endpointAuthConfig.put("ipWhitelist", authConfig.getIpWhitelist());
+                    endpointAuthConfig.put("auditLevel", authConfig.getAuditLevel());
+
+                    endpoint.setAuthConfig(endpointAuthConfig);
+
+                } catch (Exception e) {
+                    log.warn("Could not get auth config for endpoint {}: {}", endpoint.getId(), e.getMessage());
+                    // Set a safe default config instead of just an error map
+                    Map<String, Object> defaultConfig = new HashMap<>();
+                    defaultConfig.put("isConfigured", false);
+                    defaultConfig.put("authType", "none");
+                    defaultConfig.put("hasApiKey", false);
+                    defaultConfig.put("hasBasicAuth", false);
+                    defaultConfig.put("hasJwt", false);
+                    defaultConfig.put("hasOAuth2", false);
+                    defaultConfig.put("rateLimiting", Map.of("enabled", false, "requests", null, "period", null));
+                    defaultConfig.put("cors", Map.of("origins", null, "credentials", false));
+                    defaultConfig.put("error", e.getMessage());
+                    endpoint.setAuthConfig(defaultConfig);
+                }
+            }
+        }
 
         // Ensure all nested elements in each endpoint have proper IDs
         if (endpointsResponse.getEndpoints() != null) {
@@ -933,6 +1027,7 @@ public class DashboardService {
                 }
             }
         }
+
         response.setEndpoints(endpointsResponse);
 
         // Security data
@@ -963,9 +1058,11 @@ public class DashboardService {
         response.setGeneratedFor(performedBy);
         response.setRequestId(requestId);
 
-        log.info("Request ID: {}, Retrieved comprehensive dashboard data with all element IDs", requestId);
+        log.info("Request ID: {}, Retrieved comprehensive dashboard data with auth configs for each endpoint", requestId);
         return response;
     }
+
+
 
     // ============================================================
     // 20. SEARCH DASHBOARD
@@ -1336,6 +1433,101 @@ public class DashboardService {
             return daysAgo + " day" + (daysAgo > 1 ? "s" : "") + " ago";
         } catch (Exception e) {
             return timestamp;
+        }
+    }
+
+
+    /**
+     * Get auth configuration by API ID
+     * @param requestId Request ID for logging
+     * @param performedBy User performing the action
+     * @param apiId The API/endpoint ID
+     * @return Auth config DTO
+     */
+    public ApiAuthConfigDTO getAuthConfigByApiId(String requestId, String performedBy, String apiId) {
+        log.info("Request ID: {}, Getting auth config for API ID: {} by user: {}", requestId, apiId, performedBy);
+        loggerUtil.log("auth", "Request ID: " + requestId + ", Getting auth config for API: " + apiId);
+
+        try {
+            Optional<ApiAuthConfigEntity> authConfigOpt = authConfigRepository.findByGeneratedApiId(apiId);
+
+            if (authConfigOpt.isPresent()) {
+                ApiAuthConfigEntity entity = authConfigOpt.get();
+                log.info("Request ID: {}, Found auth config of type: {} for API: {}",
+                        requestId, entity.getAuthType(), apiId);
+                return ApiAuthConfigDTO.fromEntity(entity, apiId);
+            } else {
+                log.info("Request ID: {}, No auth config found for API: {}", requestId, apiId);
+                // Return a fully initialized DTO with default values
+                return ApiAuthConfigDTO.builder()
+                        .apiId(apiId)
+                        .isConfigured(false)
+                        .authType("none")
+                        .enableRateLimiting(false)
+                        .corsCredentials(false)
+                        .validateSession(false)
+                        .checkObjectPrivileges(false)
+                        .oauthScopes(new ArrayList<>())
+                        .requiredRoles(new ArrayList<>())
+                        .build();
+            }
+        } catch (Exception e) {
+            log.error("Request ID: {}, Error fetching auth config for API {}: {}",
+                    requestId, apiId, e.getMessage(), e);
+            // Return a default DTO instead of throwing exception
+            return ApiAuthConfigDTO.builder()
+                    .apiId(apiId)
+                    .isConfigured(false)
+                    .authType("none")
+                    .enableRateLimiting(false)
+                    .corsCredentials(false)
+                    .validateSession(false)
+                    .checkObjectPrivileges(false)
+                    .oauthScopes(new ArrayList<>())
+                    .requiredRoles(new ArrayList<>())
+                    .build();
+        }
+    }
+
+    /**
+     * Check if API has auth configuration
+     */
+    public boolean hasAuthConfig(String requestId, String performedBy, String apiId) {
+        try {
+            return authConfigRepository.existsByGeneratedApiId(apiId);
+        } catch (Exception e) {
+            log.error("Request ID: {}, Error checking auth config for API {}: {}",
+                    requestId, apiId, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Save or update auth configuration
+     */
+    public ApiAuthConfigDTO saveAuthConfig(String requestId, String performedBy,
+                                           String apiId, ApiAuthConfigDTO authConfigDTO) {
+        log.info("Request ID: {}, Saving auth config for API ID: {}", requestId, apiId);
+
+        // Implementation for save/update would go here
+        // You'd need to fetch the GeneratedApiEntity and set it
+
+        return authConfigDTO;
+    }
+
+    /**
+     * Delete auth configuration
+     */
+    public void deleteAuthConfig(String requestId, String performedBy, String apiId) {
+        log.info("Request ID: {}, Deleting auth config for API ID: {}", requestId, apiId);
+
+        try {
+            authConfigRepository.deleteByGeneratedApiId(apiId);
+            log.info("Request ID: {}, Deleted auth config for API: {}", requestId, apiId);
+        } catch (Exception e) {
+            log.error("Request ID: {}, Error deleting auth config for API {}: {}",
+                    requestId, apiId, e.getMessage());
+            throw new RuntimeException("Failed to delete auth configuration", e);
         }
     }
 }
