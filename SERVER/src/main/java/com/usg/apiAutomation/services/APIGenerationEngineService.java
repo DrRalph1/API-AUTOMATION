@@ -2,6 +2,7 @@ package com.usg.apiAutomation.services;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.usg.apiAutomation.dtos.StandardApiResponseDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.*;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
 import com.usg.apiAutomation.entities.postgres.codeBase.ImplementationEntity;
@@ -25,6 +26,8 @@ import com.usg.apiAutomation.utils.LoggerUtil;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.SqlOutParameter;
@@ -52,7 +55,6 @@ public class APIGenerationEngineService {
     private final LoggerUtil loggerUtil;
     private final ApiValidatorHelper validatorService;
     private final OracleSchemaService oracleSchemaService;
-    private final JdbcTemplate oracleJdbcTemplate;
     private final EntityManager entityManager;
 
     // CodeBase repositories
@@ -79,17 +81,21 @@ public class APIGenerationEngineService {
     private final CodeExampleRepository codeExampleRepository;
     private final ChangelogRepository changelogRepository;
 
+    @Autowired
+    @Qualifier("oracleJdbcTemplate")
+    private JdbcTemplate oracleJdbcTemplate;
+
     /**
      * Inner class to hold Gen URL information
      */
     @lombok.Data
     @lombok.Builder
     private static class GenUrlInfo {
-        private String endpointPath;      // /gen/{apiId}/api/v1/ach-file-bc-gen/{entry_count}/{company_identification}
-        private String fullUrl;            // {{baseUrl}}/gen/{apiId}/api/v1/ach-file-bc-gen/{entry_count}/{company_identification}
-        private String urlPattern;         // {{baseUrl}}/gen/{apiId}/api/v1/ach-file-bc-gen/{entry_count}/{company_identification}?service_code={service_code}&total_debit_entry={total_debit_entry}
-        private String exampleUrl;         // https://api.example.com/gen/123e4567/api/v1/ach-file-bc-gen/100/CBX001?service_code=ACH001&total_debit_entry=5000
-        private String curlExample;        // curl -X POST 'https://api.example.com/gen/123e4567/api/v1/ach-file-bc-gen/100/CBX001?service_code=ACH001&total_debit_entry=5000' ...
+        private String endpointPath;      // /plx/api/gen/{apiId}/api/v1/ach-file-bc-gen/{entry_count}/{company_identification}
+        private String fullUrl;            // {{baseUrl}}/plx/api/gen/{apiId}/api/v1/ach-file-bc-gen/{entry_count}/{company_identification}
+        private String urlPattern;         // {{baseUrl}}/plx/api/gen/{apiId}/api/v1/ach-file-bc-gen/{entry_count}/{company_identification}?service_code={service_code}&total_debit_entry={total_debit_entry}
+        private String exampleUrl;         // https://api.example.com/plx/api/gen/123e4567/api/v1/ach-file-bc-gen/100/CBX001?service_code=ACH001&total_debit_entry=5000
+        private String curlExample;        // curl -X POST 'https://api.example.com/plx/api/gen/123e4567/api/v1/ach-file-bc-gen/100/CBX001?service_code=ACH001&total_debit_entry=5000' ...
     }
 
     /**
@@ -102,7 +108,7 @@ public class APIGenerationEngineService {
 
         // Build endpoint path with gen prefix and API ID
         StringBuilder endpointPath = new StringBuilder();
-        endpointPath.append("/gen/").append(apiId);
+        endpointPath.append("/plx/api/gen/").append(apiId);
 
         // Add base path if present
         if (api.getBasePath() != null && !api.getBasePath().isEmpty()) {
@@ -352,7 +358,7 @@ public class APIGenerationEngineService {
      */
     private String buildUrlTemplate(GeneratedApiEntity api) {
         StringBuilder template = new StringBuilder();
-        template.append("{{baseUrl}}/gen/").append(api.getId());
+        template.append("{{baseUrl}}/plx/api/gen/").append(api.getId());
 
         if (api.getBasePath() != null && !api.getBasePath().isEmpty()) {
             template.append(api.getBasePath().startsWith("/") ? "" : "/").append(api.getBasePath());
@@ -4154,6 +4160,193 @@ public class APIGenerationEngineService {
             GeneratedApiEntity api = generatedAPIRepository.findById(apiId)
                     .orElseThrow(() -> new RuntimeException("API not found: " + apiId));
 
+            // ==================== STEP 1: USE API CONFIGURED HTTP METHOD ====================
+            String configuredMethod = api.getHttpMethod();
+            if (configuredMethod == null || configuredMethod.trim().isEmpty()) {
+                configuredMethod = "GET";
+            }
+            configuredMethod = configuredMethod.trim().toUpperCase();
+
+            // ==================== STEP 2: VALIDATE AUTHENTICATION ====================
+            AuthenticationResult authResult = validateAuthentication(api, executeRequest);
+            if (!authResult.isAuthenticated()) {
+                loggerUtil.log("apiGeneration", "Authentication failed for API: " + apiId +
+                        " - Reason: " + authResult.getReason());
+                return createErrorResponse("401",
+                        "Authentication failed: " + authResult.getReason(), startTime);
+            }
+
+            // ==================== STEP 3: VALIDATE REQUIRED HEADERS ====================
+            Map<String, String> headerErrors = validateRequiredHeaders(api, executeRequest);
+            if (!headerErrors.isEmpty()) {
+                loggerUtil.log("apiGeneration", "Header validation failed for API: " + apiId +
+                        " - Errors: " + headerErrors);
+
+                String errorMsg = "Required headers missing: " + String.join(", ", headerErrors.keySet());
+                return createErrorResponse("400", errorMsg, startTime);
+            }
+
+            // ==================== STEP 4: CREATE A COPY OF THE REQUEST WITH PROPERLY LOCATED PARAMETERS ====================
+            // Create a new request with properly organized parameters
+            ExecuteApiRequestDTO validatedRequest = new ExecuteApiRequestDTO();
+            validatedRequest.setRequestId(executeRequest.getRequestId());
+
+            // Initialize maps safely (check for null and create new maps)
+            Map<String, Object> pathParams = new HashMap<>();
+            if (executeRequest.getPathParams() != null) {
+                pathParams.putAll(executeRequest.getPathParams());
+            }
+
+            Map<String, Object> queryParams = new HashMap<>();
+            if (executeRequest.getQueryParams() != null) {
+                queryParams.putAll(executeRequest.getQueryParams());
+            }
+
+            Map<String, String> headers = new HashMap<>();
+            if (executeRequest.getHeaders() != null) {
+                headers.putAll(executeRequest.getHeaders());
+            }
+
+            Object body = executeRequest.getBody();
+
+            // Log incoming parameters for debugging
+            log.debug("Incoming path params: {}", pathParams);
+            log.debug("Incoming query params: {}", queryParams);
+            log.debug("Incoming headers: {}", headers);
+            log.debug("Incoming body: {}", body);
+
+            // Categorize parameters based on API configuration
+            if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+                // Create a consolidated map of all provided parameters
+                Map<String, Object> allProvidedParams = new HashMap<>();
+                allProvidedParams.putAll(pathParams);
+                allProvidedParams.putAll(queryParams);
+
+                if (body instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> bodyMap = (Map<String, Object>) body;
+                    if (bodyMap != null) {
+                        allProvidedParams.putAll(bodyMap);
+                    }
+                }
+
+                log.debug("Consolidated parameters: {}", allProvidedParams);
+
+                // Now distribute parameters to their correct locations based on API config
+                for (ApiParameterEntity param : api.getParameters()) {
+                    if (param == null || param.getKey() == null) {
+                        continue; // Skip null parameters
+                    }
+
+                    String paramKey = param.getKey();
+                    String paramType = param.getParameterType();
+
+                    // FIX: Skip if paramType is null
+                    if (paramType == null) {
+                        log.debug("Parameter {} has null parameterType, skipping", paramKey);
+                        continue;
+                    }
+
+                    // Check if this parameter was provided anywhere
+                    if (allProvidedParams.containsKey(paramKey)) {
+                        Object value = allProvidedParams.get(paramKey);
+
+                        // Place it in the correct location based on parameter type
+                        if (value != null) {
+                            switch (paramType) {
+                                case "path":
+                                    pathParams.put(paramKey, value);
+                                    log.debug("Placed {} in path params with value: {}", paramKey, value);
+                                    break;
+                                case "query":
+                                    queryParams.put(paramKey, value);
+                                    log.debug("Placed {} in query params with value: {}", paramKey, value);
+                                    break;
+                                case "header":
+                                    headers.put(paramKey, value.toString());
+                                    log.debug("Placed {} in headers with value: {}", paramKey, value);
+                                    break;
+                                case "body":
+                                    // For body parameters, we need to build a proper body object
+                                    if (body == null) {
+                                        body = new HashMap<String, Object>();
+                                    }
+                                    if (body instanceof Map) {
+                                        @SuppressWarnings("unchecked")
+                                        Map<String, Object> bodyMap = (Map<String, Object>) body;
+                                        bodyMap.put(paramKey, value);
+                                        log.debug("Placed {} in body with value: {}", paramKey, value);
+                                    }
+                                    break;
+                                default:
+                                    log.debug("Unknown parameter type: {} for parameter: {}", paramType, paramKey);
+                                    // Default to query for unknown types
+                                    queryParams.put(paramKey, value);
+                                    break;
+                            }
+                        }
+                    } else {
+                        log.debug("Parameter {} not provided in request", paramKey);
+                    }
+                }
+            }
+
+            // Set the properly categorized parameters back to the request
+            validatedRequest.setPathParams(pathParams);
+            validatedRequest.setQueryParams(queryParams);
+            validatedRequest.setHeaders(headers);
+            validatedRequest.setBody(body);
+
+            // ==================== STEP 5: CREATE CONSOLIDATED PARAMS FOR MAPPING AND VALIDATION ====================
+            Map<String, Object> consolidatedParams = new HashMap<>();
+            consolidatedParams.putAll(pathParams);
+            consolidatedParams.putAll(queryParams);
+
+            if (body instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> bodyMap = (Map<String, Object>) body;
+                if (bodyMap != null) {
+                    consolidatedParams.putAll(bodyMap);
+                }
+            }
+
+            log.debug("=== DEBUG BEFORE mapUrlPathToApiParameters ===");
+            log.debug("api: {}", api != null ? api.getId() : "null");
+            log.debug("api.getEndpointPath(): {}", api != null ? api.getEndpointPath() : "null");
+            log.debug("validatedRequest: {}", validatedRequest);
+            log.debug("validatedRequest.getPathParams(): {}", validatedRequest.getPathParams());
+            log.debug("validatedRequest.getQueryParams(): {}", validatedRequest.getQueryParams());
+            log.debug("validatedRequest.getBody(): {}", validatedRequest.getBody());
+            log.debug("consolidatedParams: {}", consolidatedParams);
+            log.debug("===============================================");
+
+            // ==================== STEP 6: MAP URL PATH PARAMETERS ====================
+            // FIX: Use the 3-parameter version with consolidated params
+            ExecuteApiRequestDTO mappedRequest = mapUrlPathToApiParameters(api, validatedRequest, consolidatedParams);
+
+            // ==================== STEP 7: VALIDATE REQUIRED PARAMETERS ====================
+            Map<String, String> validationErrors = validateRequiredParameters(api, mappedRequest, consolidatedParams);
+
+            if (!validationErrors.isEmpty()) {
+                log.warn("Parameter validation failed for API {}: {}", apiId, validationErrors);
+
+                String errorMsg = "Required parameters missing: " + String.join(", ", validationErrors.keySet());
+                return createErrorResponse("400", errorMsg, startTime);
+            }
+
+            // ==================== STEP 8: VALIDATE AUTHORIZATION ====================
+            if (!validatorService.validateAuthorization(api, performedBy)) {
+                return createErrorResponse("403",
+                        "User not authorized to access this API", startTime);
+            }
+
+            // ==================== STEP 9: CHECK RATE LIMITING ====================
+            if (!validatorService.checkRateLimit(api, clientIp)) {
+                return createErrorResponse("429",
+                        "Rate limit exceeded. Please try again later.", startTime);
+            }
+
+            // ==================== STEP 10: EXECUTE THE API ====================
             // Parse source object info from stored JSON
             ApiSourceObjectDTO sourceObject = null;
             if (api.getSourceObjectInfo() != null && !api.getSourceObjectInfo().isEmpty()) {
@@ -4164,46 +4357,8 @@ public class APIGenerationEngineService {
                 }
             }
 
-            // Log authentication attempt details
-            loggerUtil.log("apiGeneration", "Auth Check - API ID: " + apiId +
-                    ", API Auth Type: " + (api.getAuthConfig() != null ? api.getAuthConfig().getAuthType() : "NONE") +
-                    ", Headers present: " + (executeRequest != null && executeRequest.getHeaders() != null ?
-                    executeRequest.getHeaders().keySet() : "none"));
-
-            // Validate authentication
-            AuthenticationResult authResult = validateAuthentication(api, executeRequest);
-            if (!authResult.isAuthenticated()) {
-                loggerUtil.log("apiGeneration", "Authentication failed for API: " + apiId +
-                        " - Reason: " + authResult.getReason());
-                return createErrorResponse(requestId, 401,
-                        "Authentication failed: " + authResult.getReason(), startTime);
-            }
-
-            // Validate authorization
-            if (!validatorService.validateAuthorization(api, performedBy)) {
-                return createErrorResponse(requestId, 403, "Authorization failed", startTime);
-            }
-
-            // Validate rate limiting
-            if (!validatorService.checkRateLimit(api, clientIp)) {
-                return createErrorResponse(requestId, 429, "Rate limit exceeded", startTime);
-            }
-
-            // ENHANCED: Map URL path parameters to API parameters
-            if (executeRequest.getPathParams() != null && !executeRequest.getPathParams().isEmpty()) {
-                executeRequest = mapUrlPathToApiParameters(api, executeRequest);
-            }
-
-            // Validate parameters
-            Map<String, String> validationErrors = validatorService.validateParameters(api, executeRequest);
-            if (!validationErrors.isEmpty()) {
-                ExecuteApiResponseDTO response = createErrorResponse(requestId, 400, "Validation failed", startTime);
-                response.setData(validationErrors);
-                return response;
-            }
-
             // Execute the API against Oracle database
-            Object result = executeAgainstOracle(api, sourceObject, executeRequest);
+            Object result = executeAgainstOracle(api, sourceObject, mappedRequest);
 
             // Format response based on configuration
             Object formattedResponse = formatResponse(api, result);
@@ -4216,31 +4371,52 @@ public class APIGenerationEngineService {
             generatedAPIRepository.save(api);
 
             // Log execution
-            logExecution(api, executeRequest, formattedResponse, 200, executionTime,
+            logExecution(api, mappedRequest, formattedResponse, 200, executionTime,
                     performedBy, clientIp, userAgent, null);
 
-            // Build response
-            ExecuteApiResponseDTO response = ExecuteApiResponseDTO.builder()
-                    .requestId(requestId)
-                    .statusCode(200)
-                    .data(formattedResponse)
-                    .metadata(buildResponseMetadata(api, executionTime))
-                    .executionTimeMs(executionTime)
-                    .success(true)
-                    .message("API executed successfully")
-                    .build();
+            // Build success response with standardized structure
+            List<Map<String, Object>> dataList = new ArrayList<>();
 
-            // Add response headers if configured
-            if (api.getHeaders() != null) {
-                Map<String, String> responseHeaders = api.getHeaders().stream()
-                        .filter(h -> Boolean.TRUE.equals(h.getIsResponseHeader()))
-                        .collect(Collectors.toMap(
-                                ApiHeaderEntity::getKey,
-                                h -> h.getValue() != null ? h.getValue() : "",
-                                (v1, v2) -> v1 // Handle duplicate keys
-                        ));
-                response.setHeaders(responseHeaders);
+            if (formattedResponse instanceof List) {
+                List<?> resultList = (List<?>) formattedResponse;
+                for (Object item : resultList) {
+                    if (item instanceof Map) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> itemMap = (Map<String, Object>) item;
+                        dataList.add(itemMap);
+                    } else {
+                        Map<String, Object> itemMap = new HashMap<>();
+                        itemMap.put("value", item);
+                        dataList.add(itemMap);
+                    }
+                }
+            } else if (formattedResponse instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> responseMap = (Map<String, Object>) formattedResponse;
+                dataList.add(responseMap);
+            } else {
+                Map<String, Object> itemMap = new HashMap<>();
+                itemMap.put("result", formattedResponse);
+                dataList.add(itemMap);
             }
+
+            // Add metadata if configured
+            if (api.getResponseConfig() != null &&
+                    Boolean.TRUE.equals(api.getResponseConfig().getIncludeMetadata())) {
+                Map<String, Object> metadataMap = new HashMap<>();
+                metadataMap.put("executionTimeMs", executionTime);
+                metadataMap.put("timestamp", LocalDateTime.now().toString());
+                metadataMap.put("apiVersion", api.getVersion());
+                metadataMap.put("totalRecords", dataList.size());
+                dataList.add(0, metadataMap);
+            }
+
+            ExecuteApiResponseDTO response = ExecuteApiResponseDTO.builder()
+                    .responseCode(200)
+                    .message("API executed successfully")
+                    .data(dataList)
+                    .success(true)
+                    .build();
 
             loggerUtil.log("apiGeneration", "Request ID: " + requestId +
                     ", API executed successfully: " + apiId + " - Time: " + executionTime + "ms");
@@ -4252,12 +4428,667 @@ public class APIGenerationEngineService {
             loggerUtil.log("apiGeneration", "Request ID: " + requestId +
                     ", Error executing API: " + e.getMessage());
 
-            // Log error execution
+            // Log the full stack trace for debugging
+            log.error("Error executing API {}: {}", apiId, e.getMessage(), e);
+
             logExecution(null, executeRequest, null, 500, executionTime,
                     performedBy, clientIp, userAgent, e.getMessage());
 
-            return createErrorResponse(requestId, 500, e.getMessage(), startTime);
+            return createErrorResponse("500", "Error executing API: " + e.getMessage(), startTime);
         }
+    }
+
+    /**
+     * Create standardized error response using ExecuteApiResponseDTO
+     * Updated to properly set statusCode field
+     */
+    private ExecuteApiResponseDTO createErrorResponse(String responseCode, String message, long startTime) {
+        long executionTime = System.currentTimeMillis() - startTime;
+
+        // Parse responseCode to int for statusCode
+        int statusCode = 500; // default
+        try {
+            statusCode = Integer.parseInt(responseCode);
+        } catch (NumberFormatException e) {
+            // Map common string codes to HTTP status codes
+            switch (responseCode) {
+                case "400": statusCode = 400; break;
+                case "401": statusCode = 401; break;
+                case "403": statusCode = 403; break;
+                case "404": statusCode = 404; break;
+                case "405": statusCode = 405; break;
+                case "429": statusCode = 429; break;
+                default: statusCode = 500;
+            }
+        }
+
+        List<Map<String, Object>> errorData = new ArrayList<>();
+        Map<String, Object> errorMap = new HashMap<>();
+        errorMap.put("error", message);
+        errorMap.put("timestamp", LocalDateTime.now().toString());
+        errorMap.put("executionTimeMs", executionTime);
+        errorData.add(errorMap);
+
+        return ExecuteApiResponseDTO.builder()
+//                .responseCode(responseCode)
+                .responseCode(statusCode)  // Make sure this is set!
+                .message(message)
+                .data(errorData)
+//                .executionTimeMs(executionTime)
+                .success(false)
+                .build();
+    }
+
+    /**
+     * Validate required headers
+     */
+    private Map<String, String> validateRequiredHeaders(GeneratedApiEntity api, ExecuteApiRequestDTO request) {
+        Map<String, String> errors = new HashMap<>();
+
+        if (api.getHeaders() == null || api.getHeaders().isEmpty()) {
+            return errors;
+        }
+
+        Map<String, String> requestHeaders = request.getHeaders();
+        if (requestHeaders == null) {
+            requestHeaders = new HashMap<>();
+        }
+
+        for (ApiHeaderEntity header : api.getHeaders()) {
+            if (Boolean.TRUE.equals(header.getRequired()) &&
+                    Boolean.TRUE.equals(header.getIsRequestHeader())) {
+
+                String headerKey = header.getKey();
+                boolean found = false;
+
+                // Check for exact match
+                if (requestHeaders.containsKey(headerKey)) {
+                    found = true;
+                } else {
+                    // Check case-insensitive match
+                    for (String key : requestHeaders.keySet()) {
+                        if (key.equalsIgnoreCase(headerKey)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!found) {
+                    errors.put(headerKey, "Required header '" + headerKey + "' is missing");
+                }
+            }
+        }
+
+        return errors;
+    }
+
+    /**
+     * Validate required parameters (path, query, body)
+     */
+    private Map<String, String> validateRequiredParameters(GeneratedApiEntity api,
+                                                           ExecuteApiRequestDTO request,
+                                                           Map<String, Object> allParams) {
+        Map<String, String> errors = new HashMap<>();
+
+        try {
+            if (api == null) {
+                log.debug("validateRequiredParameters: api is null");
+                return errors;
+            }
+
+            if (api.getParameters() == null) {
+                log.debug("validateRequiredParameters: api.getParameters() is null");
+                return errors;
+            }
+
+            if (api.getParameters().isEmpty()) {
+                log.debug("validateRequiredParameters: api.getParameters() is empty");
+                return errors;
+            }
+
+            // Ensure allParams is not null
+            if (allParams == null) {
+                log.debug("validateRequiredParameters: allParams was null, creating new HashMap");
+                allParams = new HashMap<>();
+            }
+
+            log.debug("validateRequiredParameters: Processing {} parameters", api.getParameters().size());
+
+            int paramIndex = 0;
+            for (ApiParameterEntity param : api.getParameters()) {
+                paramIndex++;
+
+                if (param == null) {
+                    log.debug("validateRequiredParameters: Parameter at index {} is null, skipping", paramIndex);
+                    continue;
+                }
+
+                String paramKey = param.getKey();
+                if (paramKey == null) {
+                    log.debug("validateRequiredParameters: Parameter at index {} has null key, skipping", paramIndex);
+                    continue;
+                }
+
+                log.debug("validateRequiredParameters: Processing parameter [{}] with key: '{}', type: {}, required: {}",
+                        paramIndex, paramKey, param.getParameterType(), param.getRequired());
+
+                // Check if this parameter is required
+                Boolean required = param.getRequired();
+                if (required == null) {
+                    log.debug("validateRequiredParameters: Parameter [{}] has null required flag, treating as not required", paramKey);
+                    continue;
+                }
+
+                if (Boolean.TRUE.equals(required)) {
+                    boolean found = false;
+
+                    // Check in all parameters map first
+                    log.debug("validateRequiredParameters: Checking allParams for key '{}'", paramKey);
+                    if (allParams.containsKey(paramKey)) {
+                        Object value = allParams.get(paramKey);
+                        log.debug("validateRequiredParameters: Found in allParams, value: {} (type: {})",
+                                value, value != null ? value.getClass().getSimpleName() : "null");
+
+                        if (value != null) {
+                            String strValue = value.toString().trim();
+                            if (!strValue.isEmpty()) {
+                                found = true;
+                                log.debug("validateRequiredParameters: Valid non-empty value found in allParams");
+                            } else {
+                                log.debug("validateRequiredParameters: Value in allParams is empty string");
+                            }
+                        } else {
+                            log.debug("validateRequiredParameters: Value in allParams is null");
+                        }
+                    }
+
+                    // If not found, check in specific locations based on parameter type
+                    if (!found && request != null) {
+                        String paramType = param.getParameterType();
+                        if (paramType == null) {
+                            log.debug("validateRequiredParameters: Parameter [{}] has null parameterType", paramKey);
+                            continue;
+                        }
+
+                        log.debug("validateRequiredParameters: Checking specific location for type: {}", paramType);
+
+                        if ("path".equals(paramType)) {
+                            Map<String, Object> pathParams = request.getPathParams();
+                            if (pathParams != null) {
+                                log.debug("validateRequiredParameters: Checking pathParams for key '{}'", paramKey);
+                                Object value = pathParams.get(paramKey);
+                                if (value != null) {
+                                    String strValue = value.toString().trim();
+                                    if (!strValue.isEmpty()) {
+                                        found = true;
+                                        log.debug("validateRequiredParameters: Found in pathParams with value: {}", value);
+                                    }
+                                }
+                            } else {
+                                log.debug("validateRequiredParameters: pathParams is null");
+                            }
+                        }
+                        else if ("query".equals(paramType)) {
+                            Map<String, Object> queryParams = request.getQueryParams();
+                            if (queryParams != null) {
+                                log.debug("validateRequiredParameters: Checking queryParams for key '{}'", paramKey);
+                                Object value = queryParams.get(paramKey);
+                                if (value != null) {
+                                    String strValue = value.toString().trim();
+                                    if (!strValue.isEmpty()) {
+                                        found = true;
+                                        log.debug("validateRequiredParameters: Found in queryParams with value: {}", value);
+                                    }
+                                }
+                            } else {
+                                log.debug("validateRequiredParameters: queryParams is null");
+                            }
+                        }
+                        else if ("header".equals(paramType)) {
+                            // Headers are validated separately in validateRequiredHeaders
+                            log.debug("validateRequiredParameters: Skipping header parameter [{}] - validated separately", paramKey);
+                            continue;
+                        }
+                        else if ("body".equals(paramType)) {
+                            Object body = request.getBody();
+                            if (body instanceof Map) {
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> bodyMap = (Map<String, Object>) body;
+                                if (bodyMap != null) {
+                                    log.debug("validateRequiredParameters: Checking body for key '{}'", paramKey);
+                                    Object value = bodyMap.get(paramKey);
+                                    if (value != null) {
+                                        String strValue = value.toString().trim();
+                                        if (!strValue.isEmpty()) {
+                                            found = true;
+                                            log.debug("validateRequiredParameters: Found in body with value: {}", value);
+                                        }
+                                    }
+                                }
+                            } else {
+                                log.debug("validateRequiredParameters: body is not a Map, type: {}",
+                                        body != null ? body.getClass().getSimpleName() : "null");
+                            }
+                        }
+                        else {
+                            log.debug("validateRequiredParameters: Unknown parameter type: {}", paramType);
+                        }
+                    }
+
+                    if (!found) {
+                        log.debug("validateRequiredParameters: Required parameter [{}] not found", paramKey);
+                        errors.put(paramKey, "Required parameter '" + paramKey + "' is missing");
+                    } else {
+                        log.debug("validateRequiredParameters: Required parameter [{}] found successfully", paramKey);
+                    }
+                } else {
+                    log.debug("validateRequiredParameters: Parameter [{}] is not required, skipping validation", paramKey);
+                }
+            }
+
+            log.debug("validateRequiredParameters: Validation complete. Found {} errors: {}", errors.size(), errors);
+
+        } catch (Exception e) {
+            log.error("validateRequiredParameters: Exception occurred: {}", e.getMessage(), e);
+            // Re-throw to see the full stack trace
+            throw new RuntimeException("Error in validateRequiredParameters: " + e.getMessage(), e);
+        }
+
+        return errors;
+    }
+
+    /**
+     * Enhanced method to map URL path parameters to API parameters
+     */
+    private ExecuteApiRequestDTO mapUrlPathToApiParameters(GeneratedApiEntity api,
+                                                           ExecuteApiRequestDTO request,
+                                                           Map<String, Object> allParams) {
+        // Add null checks at the beginning
+        if (api == null) {
+            log.error("mapUrlPathToApiParameters: api is null");
+            return request;
+        }
+
+        if (request == null) {
+            log.error("mapUrlPathToApiParameters: request is null");
+            return null;
+        }
+
+        Map<String, Object> urlPathParams = request.getPathParams();
+        log.info("=== MAP URL PATH PARAMETERS DEBUG ===");
+        log.info("API ID: {}", api.getId());
+        log.info("API Endpoint Path: {}", api.getEndpointPath());
+        log.info("Incoming urlPathParams: {}", urlPathParams);
+        log.info("Incoming allParams: {}", allParams);
+
+        if (urlPathParams == null || urlPathParams.isEmpty()) {
+            log.debug("mapUrlPathToApiParameters: urlPathParams is null or empty");
+            return request;
+        }
+
+        // Get the API's endpoint pattern
+        String endpointPath = api.getEndpointPath();
+        if (endpointPath == null || endpointPath.isEmpty()) {
+            log.debug("mapUrlPathToApiParameters: endpointPath is null or empty");
+            return request;
+        }
+
+        // Parse the endpoint path to identify parameter names
+        List<String> pathParamNames = extractPathParameterNames(endpointPath);
+        log.info("Extracted path parameter names from endpoint: {}", pathParamNames);
+
+        // Map URL parameters to their configured parameter names
+        Map<String, Object> mappedPathParams = new HashMap<>();
+
+        // FIRST PASS: Use the extracted parameter names from the endpoint path
+        if (!pathParamNames.isEmpty()) {
+            log.info("Processing {} path parameters from endpoint pattern", pathParamNames.size());
+
+            for (int i = 0; i < pathParamNames.size(); i++) {
+                String paramName = pathParamNames.get(i);
+                log.info("Processing path parameter index {}: name='{}'", i, paramName);
+
+                // Try to get from numbered params first (param1, param2, etc.)
+                String numberedKey = "param" + (i + 1);
+                Object urlParamValue = urlPathParams.get(numberedKey);
+
+                if (urlParamValue != null) {
+                    mappedPathParams.put(paramName, urlParamValue);
+                    log.info("  Mapped URL {} to {}: {}", numberedKey, paramName, urlParamValue);
+                    continue;
+                }
+
+                // Try the actual parameter name
+                urlParamValue = urlPathParams.get(paramName);
+                if (urlParamValue != null) {
+                    mappedPathParams.put(paramName, urlParamValue);
+                    log.info("  Found direct mapping for {}: {}", paramName, urlParamValue);
+                    continue;
+                }
+
+                // Try from allParams
+                urlParamValue = allParams.get(paramName);
+                if (urlParamValue != null) {
+                    mappedPathParams.put(paramName, urlParamValue);
+                    log.info("  Found in allParams for {}: {}", paramName, urlParamValue);
+                } else {
+                    log.warn("  No value found for path parameter: {}", paramName);
+                }
+            }
+        }
+
+        // SECOND PASS: Check against configured API parameters
+        if (api.getParameters() != null) {
+            log.info("Checking against {} configured API parameters:", api.getParameters().size());
+
+            for (ApiParameterEntity configuredParam : api.getParameters()) {
+                String paramType = configuredParam.getParameterType();
+
+                // Only process path parameters
+                if ("path".equals(paramType)) {
+                    String configuredKey = configuredParam.getKey();
+                    String dbColumn = configuredParam.getDbColumn();
+                    Integer position = configuredParam.getPosition();
+
+                    log.info("  Configured path param: key='{}', dbColumn='{}', position={}, required={}",
+                            configuredKey, dbColumn, position, configuredParam.getRequired());
+
+                    // Skip if we already have a value for this key
+                    if (mappedPathParams.containsKey(configuredKey)) {
+                        log.info("    Already have value for {}: {}", configuredKey, mappedPathParams.get(configuredKey));
+                        continue;
+                    }
+
+                    // Try to find a value for this parameter
+                    Object value = null;
+
+                    // Check by position first (most reliable for numbered params)
+                    if (position != null) {
+                        String numberedKey = "param" + (position + 1);
+                        if (urlPathParams.containsKey(numberedKey)) {
+                            value = urlPathParams.get(numberedKey);
+                            log.info("    Found by position {} ({}): {}", position, numberedKey, value);
+                        }
+                    }
+
+                    // Check by key in urlPathParams
+                    if (value == null && urlPathParams.containsKey(configuredKey)) {
+                        value = urlPathParams.get(configuredKey);
+                        log.info("    Found by key in urlPathParams: {}", configuredKey);
+                    }
+
+                    // Check by key in allParams
+                    if (value == null && allParams.containsKey(configuredKey)) {
+                        value = allParams.get(configuredKey);
+                        log.info("    Found by key in allParams: {}", configuredKey);
+                    }
+
+                    // Special handling for the messy parameter structure we saw in logs
+                    if (value == null) {
+                        // Look for any value that might be our parameter
+                        // In the logs, we saw the account number "GL9900101A3213000009" appears as a value
+                        // and also as a key itself
+                        for (Map.Entry<String, Object> entry : urlPathParams.entrySet()) {
+                            Object entryValue = entry.getValue();
+                            if (entryValue != null) {
+                                String strValue = entryValue.toString();
+                                // If this looks like an account number (long alphanumeric string)
+                                if (strValue.length() > 10 && !strValue.equals("api") &&
+                                        !strValue.equals("v1") && !strValue.equals("g-ledger")) {
+                                    value = entryValue;
+                                    log.info("    Found potential value in entry: key='{}', value='{}'",
+                                            entry.getKey(), entryValue);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // Last resort: look for any key that contains the configured key name
+                    if (value == null) {
+                        for (Map.Entry<String, Object> entry : urlPathParams.entrySet()) {
+                            if (entry.getKey().toLowerCase().contains(configuredKey.toLowerCase())) {
+                                value = entry.getValue();
+                                log.info("    Found by partial key match: {} contains {}",
+                                        entry.getKey(), configuredKey);
+                                break;
+                            }
+                        }
+                    }
+
+                    if (value != null) {
+                        mappedPathParams.put(configuredKey, value);
+                        log.info("  FINAL: {} (db column: {}) = {}", configuredKey, dbColumn, value);
+                    } else if (Boolean.TRUE.equals(configuredParam.getRequired())) {
+                        log.warn("  Required path parameter {} not found in request", configuredKey);
+                    }
+                }
+            }
+        }
+
+        // THIRD PASS: FALLBACK - If we still don't have mapped parameters but have configured path parameters
+        // and the endpoint path doesn't have placeholders, try to infer from the URL structure
+        if (mappedPathParams.isEmpty() && api.getParameters() != null) {
+            log.info("Using fallback parameter mapping due to missing placeholders in endpoint path");
+
+            // Get all configured path parameters
+            List<ApiParameterEntity> pathParams = api.getParameters().stream()
+                    .filter(p -> "path".equals(p.getParameterType()))
+                    .collect(Collectors.toList());
+
+            if (!pathParams.isEmpty()) {
+                log.info("Found {} configured path parameters: {}", pathParams.size(),
+                        pathParams.stream().map(ApiParameterEntity::getKey).collect(Collectors.toList()));
+
+                // Look for values in the urlPathParams that might be our parameter values
+                for (ApiParameterEntity param : pathParams) {
+                    String paramKey = param.getKey();
+
+                    // First, try to find by looking at the last few params (param3, param4, etc.)
+                    // In the logs, the account number appeared in param4
+                    for (int i = 1; i <= 10; i++) {
+                        String numberedKey = "param" + i;
+                        if (urlPathParams.containsKey(numberedKey)) {
+                            Object value = urlPathParams.get(numberedKey);
+                            if (value != null) {
+                                String strValue = value.toString();
+                                // If this looks like a real value (not a URL segment like "api" or "v1")
+                                if (!strValue.equals("api") && !strValue.equals("v1") &&
+                                        !strValue.equals("g-ledger") && strValue.length() > 5) {
+                                    mappedPathParams.put(paramKey, value);
+                                    log.info("Fallback: Mapped {} to value: {} from key: {}",
+                                            paramKey, value, numberedKey);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // If still not found, check any key that might contain the value
+                    if (!mappedPathParams.containsKey(paramKey)) {
+                        for (Map.Entry<String, Object> entry : urlPathParams.entrySet()) {
+                            Object value = entry.getValue();
+                            if (value != null) {
+                                String strValue = value.toString();
+                                // If this looks like a real value (not a URL segment)
+                                if (!strValue.equals("api") && !strValue.equals("v1") &&
+                                        !strValue.equals("g-ledger") && strValue.length() > 5) {
+                                    mappedPathParams.put(paramKey, value);
+                                    log.info("Fallback: Mapped {} to value: {} from key: {}",
+                                            paramKey, value, entry.getKey());
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // Also check if the parameter key itself exists as a key in the map
+                    if (!mappedPathParams.containsKey(paramKey) && urlPathParams.containsKey(paramKey)) {
+                        mappedPathParams.put(paramKey, urlPathParams.get(paramKey));
+                        log.info("Fallback: Found direct key match for: {}", paramKey);
+                    }
+                }
+            }
+        }
+
+        log.info("Final mappedPathParams: {}", mappedPathParams);
+
+        // Update the request with mapped parameters
+        if (!mappedPathParams.isEmpty()) {
+            // Create a new map that preserves any existing path params
+            // but overrides with our mapped values
+            Map<String, Object> updatedPathParams = new HashMap<>();
+            if (request.getPathParams() != null) {
+                updatedPathParams.putAll(request.getPathParams());
+            }
+            updatedPathParams.putAll(mappedPathParams);
+
+            log.info("Final updated path params: {}", updatedPathParams);
+
+            // Create new request DTO with updated parameters
+            return ExecuteApiRequestDTO.builder()
+                    .pathParams(updatedPathParams)
+                    .queryParams(request.getQueryParams())
+                    .headers(request.getHeaders())
+                    .body(request.getBody())
+                    .requestId(request.getRequestId())
+                    .build();
+        }
+
+        return request;
+    }
+
+    /**
+     * Enhanced authentication validation with proper credential checking
+     */
+    private AuthenticationResult validateAuthentication(GeneratedApiEntity api, ExecuteApiRequestDTO request) {
+        // If API has no auth configured, always pass
+        if (api.getAuthConfig() == null ||
+                api.getAuthConfig().getAuthType() == null) {
+            log.debug("✅ No authentication configured, allowing access");
+            return AuthenticationResult.success();
+        }
+
+        String apiAuthType = api.getAuthConfig().getAuthType();
+
+        // Handle "NONE" or "none" as valid no-auth cases
+        if ("NONE".equalsIgnoreCase(apiAuthType) ||
+                "none".equalsIgnoreCase(apiAuthType) ||
+                apiAuthType.trim().isEmpty()) {
+            log.debug("✅ Authentication type is NONE, allowing access");
+            return AuthenticationResult.success();
+        }
+
+        log.debug("🔐 Validating authentication type: {}", apiAuthType);
+
+        switch (apiAuthType.toUpperCase()) {
+            case "API_KEY":
+                return validateApiKeyWithSecret(api, request);
+
+            case "BASIC":
+                return validateBasicAuth(api, request);
+
+            case "BEARER":
+            case "JWT":
+                return validateBearerToken(api, request);
+
+            case "OAUTH2":
+                return validateOAuth2(api, request);
+
+            case "ORACLE_ROLES":
+                return validateOracleSession(api, request);
+
+            default:
+                log.warn("❌ Unsupported auth type: {}", apiAuthType);
+                return AuthenticationResult.failure("Unsupported auth type: " + apiAuthType);
+        }
+    }
+
+    /**
+     * Validate API Key with optional secret - checks against stored values
+     */
+    private AuthenticationResult validateApiKeyWithSecret(GeneratedApiEntity api, ExecuteApiRequestDTO request) {
+        Map<String, String> headers = request.getHeaders();
+        if (headers == null || headers.isEmpty()) {
+            log.debug("❌ API Key validation failed: No headers provided");
+            return AuthenticationResult.failure("No headers provided for API Key authentication");
+        }
+
+        log.debug("🔍 Validating API Key - Available headers: {}", headers.keySet());
+
+        // Get expected API key header and value from API config
+        String expectedApiKeyHeader = api.getAuthConfig().getApiKeyHeader();
+        String expectedApiKeyValue = api.getAuthConfig().getApiKeyValue();
+        String expectedApiSecretHeader = api.getAuthConfig().getApiSecretHeader();
+        String expectedApiSecretValue = api.getAuthConfig().getApiSecretValue();
+
+        // If API key is configured, validate it
+        if (expectedApiKeyHeader != null && !expectedApiKeyHeader.isEmpty() &&
+                expectedApiKeyValue != null && !expectedApiKeyValue.isEmpty()) {
+
+            String actualApiKeyValue = null;
+
+            // Try exact match
+            if (headers.containsKey(expectedApiKeyHeader)) {
+                actualApiKeyValue = headers.get(expectedApiKeyHeader);
+                log.debug("✅ Found exact match for header: {}", expectedApiKeyHeader);
+            } else {
+                // Try case-insensitive match
+                for (Map.Entry<String, String> entry : headers.entrySet()) {
+                    if (entry.getKey().equalsIgnoreCase(expectedApiKeyHeader)) {
+                        actualApiKeyValue = entry.getValue();
+                        log.debug("✅ Found case-insensitive match: {} -> {}", entry.getKey(), expectedApiKeyHeader);
+                        break;
+                    }
+                }
+            }
+
+            if (actualApiKeyValue == null) {
+                log.debug("❌ Missing required header: {}", expectedApiKeyHeader);
+                return AuthenticationResult.failure("Missing required header: " + expectedApiKeyHeader);
+            }
+
+            if (!expectedApiKeyValue.equals(actualApiKeyValue)) {
+                log.debug("❌ API Key value mismatch for header: {}", expectedApiKeyHeader);
+                return AuthenticationResult.failure("Invalid API Key value for header: " + expectedApiKeyHeader);
+            }
+        }
+
+        // If API secret is configured, validate it
+        if (expectedApiSecretHeader != null && !expectedApiSecretHeader.isEmpty() &&
+                expectedApiSecretValue != null && !expectedApiSecretValue.isEmpty()) {
+
+            String actualApiSecretValue = null;
+
+            // Try exact match
+            if (headers.containsKey(expectedApiSecretHeader)) {
+                actualApiSecretValue = headers.get(expectedApiSecretHeader);
+                log.debug("✅ Found exact match for secret header: {}", expectedApiSecretHeader);
+            } else {
+                // Try case-insensitive match
+                for (Map.Entry<String, String> entry : headers.entrySet()) {
+                    if (entry.getKey().equalsIgnoreCase(expectedApiSecretHeader)) {
+                        actualApiSecretValue = entry.getValue();
+                        log.debug("✅ Found case-insensitive secret match: {} -> {}", entry.getKey(), expectedApiSecretHeader);
+                        break;
+                    }
+                }
+            }
+
+            if (actualApiSecretValue == null) {
+                log.debug("❌ Missing required secret header: {}", expectedApiSecretHeader);
+                return AuthenticationResult.failure("Missing required secret header: " + expectedApiSecretHeader);
+            }
+
+            if (!expectedApiSecretValue.equals(actualApiSecretValue)) {
+                log.debug("❌ API Secret value mismatch for header: {}", expectedApiSecretHeader);
+                return AuthenticationResult.failure("Invalid API Secret value for header: " + expectedApiSecretHeader);
+            }
+        }
+
+        log.debug("✅ API Key validation successful");
+        return AuthenticationResult.success();
     }
 
     /**
@@ -4287,7 +5118,7 @@ public class APIGenerationEngineService {
         // Map numbered parameters (param1, param2, etc.) to actual parameter names
         Map<String, Object> mappedPathParams = new HashMap<>();
 
-        // Get the remaining path from the request (excluding /gen/{apiId})
+        // Get the remaining path from the request (excluding /plx/api/gen/{apiId})
         // The pathParams map contains param1, param2, etc. from the URL segments
         for (int i = 0; i < pathParamNames.size(); i++) {
             String paramName = pathParamNames.get(i);
@@ -4338,19 +5169,39 @@ public class APIGenerationEngineService {
         List<String> paramNames = new ArrayList<>();
 
         if (endpointPath == null || endpointPath.isEmpty()) {
+            log.debug("extractPathParameterNames: endpointPath is null or empty");
             return paramNames;
         }
+
+        log.debug("Extracting path parameters from: {}", endpointPath);
 
         // Split the path and look for parameters in curly braces
         String[] segments = endpointPath.split("/");
         for (String segment : segments) {
+            if (segment == null || segment.trim().isEmpty()) continue;
+
+            // Check for {parameter} format
             if (segment.startsWith("{") && segment.endsWith("}")) {
                 // Extract parameter name without braces
                 String paramName = segment.substring(1, segment.length() - 1);
-                paramNames.add(paramName);
+                if (paramName != null && !paramName.trim().isEmpty()) {
+                    paramNames.add(paramName.trim());
+                    log.debug("Found path parameter: {}", paramName);
+                } else {
+                    log.warn("Empty parameter name found in segment: {}", segment);
+                }
+            }
+            // Also check for colon format used in some frameworks
+            else if (segment.startsWith(":")) {
+                String paramName = segment.substring(1);
+                if (paramName != null && !paramName.trim().isEmpty()) {
+                    paramNames.add(paramName.trim());
+                    log.debug("Found colon-style path parameter: {}", paramName);
+                }
             }
         }
 
+        log.debug("Extracted {} path parameters: {}", paramNames.size(), paramNames);
         return paramNames;
     }
 
@@ -4375,42 +5226,6 @@ public class APIGenerationEngineService {
 
         public static AuthenticationResult failure(String reason) {
             return new AuthenticationResult(false, reason);
-        }
-    }
-
-    /**
-     * Validate authentication based on API configuration
-     * Supports API Key, Basic Auth, Bearer/JWT, and No Auth
-     */
-    private AuthenticationResult validateAuthentication(GeneratedApiEntity api, ExecuteApiRequestDTO request) {
-        // If API has no auth configured, always pass
-        if (api.getAuthConfig() == null ||
-                api.getAuthConfig().getAuthType() == null ||
-                "NONE".equals(api.getAuthConfig().getAuthType())) {
-            return AuthenticationResult.success();
-        }
-
-        String apiAuthType = api.getAuthConfig().getAuthType();
-
-        switch (apiAuthType) {
-            case "API_KEY":
-                return validateApiKeyFromHeaders(api, request);
-
-            case "BASIC":
-                return validateBasicAuth(api, request);
-
-            case "BEARER":
-            case "JWT":
-                return validateBearerToken(api, request);
-
-            case "OAUTH2":
-                return validateOAuth2(api, request);
-
-            case "ORACLE_ROLES":
-                return validateOracleSession(api, request);
-
-            default:
-                return AuthenticationResult.failure("Unsupported auth type: " + apiAuthType);
         }
     }
 
@@ -4704,17 +5519,62 @@ public class APIGenerationEngineService {
                                         ExecuteApiRequestDTO request) {
         try {
             if (sourceObject == null || api.getSchemaConfig() == null) {
+                log.warn("No source object or schema config, generating sample response");
                 return generateSampleResponse(api);
             }
 
+            // Get the target type, name, and owner with proper fallbacks
             String targetType = sourceObject.getTargetType() != null ?
-                    sourceObject.getTargetType() : sourceObject.getObjectType();
-            String targetName = sourceObject.getTargetName() != null ?
-                    sourceObject.getTargetName() : sourceObject.getObjectName();
-            String targetOwner = sourceObject.getTargetOwner() != null ?
-                    sourceObject.getTargetOwner() : sourceObject.getOwner();
+                    sourceObject.getTargetType().trim().toUpperCase() :
+                    (sourceObject.getObjectType() != null ? sourceObject.getObjectType().trim().toUpperCase() : null);
 
-            switch (targetType.toUpperCase()) {
+            String targetName = sourceObject.getTargetName() != null ?
+                    sourceObject.getTargetName().trim() :
+                    (sourceObject.getObjectName() != null ? sourceObject.getObjectName().trim() : null);
+
+            // CRITICAL FIX: Get owner from multiple sources
+            String targetOwner = null;
+
+            // Try to get from targetOwner first
+            if (sourceObject.getTargetOwner() != null && !sourceObject.getTargetOwner().trim().isEmpty()) {
+                targetOwner = sourceObject.getTargetOwner().trim().toUpperCase();
+            }
+            // Then try from owner
+            else if (sourceObject.getOwner() != null && !sourceObject.getOwner().trim().isEmpty()) {
+                targetOwner = sourceObject.getOwner().trim().toUpperCase();
+            }
+            // Then try from schema config
+            else if (api.getSchemaConfig() != null && api.getSchemaConfig().getSchemaName() != null
+                    && !api.getSchemaConfig().getSchemaName().trim().isEmpty()) {
+                targetOwner = api.getSchemaConfig().getSchemaName().trim().toUpperCase();
+            }
+
+            log.info("Executing Oracle operation - Target Type: {}, Target Name: {}, Target Owner: {}",
+                    targetType, targetName, targetOwner);
+
+            if (targetName == null) {
+                throw new RuntimeException("Target object name is null");
+            }
+
+            // If owner is still null, try to get default schema from connection
+            if (targetOwner == null) {
+                try {
+                    String defaultSchema = oracleJdbcTemplate.queryForObject(
+                            "SELECT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') FROM DUAL",
+                            String.class);
+                    targetOwner = defaultSchema != null ? defaultSchema.toUpperCase() : null;
+                    log.info("Using default schema from connection: {}", targetOwner);
+                } catch (Exception e) {
+                    log.warn("Could not get default schema: {}", e.getMessage());
+                }
+            }
+
+            // If we still don't have an owner, we'll try without schema (let Oracle use default)
+            if (targetOwner == null) {
+                log.warn("Owner is null, will try without schema (using default schema)");
+            }
+
+            switch (targetType) {
                 case "TABLE":
                     return executeTableOperation(api, sourceObject, targetName, targetOwner, request);
                 case "VIEW":
@@ -4726,6 +5586,7 @@ public class APIGenerationEngineService {
                 case "PACKAGE":
                     return executePackageProcedure(api, sourceObject, targetName, targetOwner, request);
                 default:
+                    log.warn("Unknown target type: {}, generating sample response", targetType);
                     return generateSampleResponse(api);
             }
 
@@ -4734,6 +5595,7 @@ public class APIGenerationEngineService {
             throw new RuntimeException("Failed to execute Oracle operation: " + e.getMessage(), e);
         }
     }
+
 
     private Object executeTableOperation(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
                                          String tableName, String owner, ExecuteApiRequestDTO request) {
@@ -4770,34 +5632,146 @@ public class APIGenerationEngineService {
         sql.append(tableName);
 
         List<Object> paramValues = new ArrayList<>();
-        if (params != null && !params.isEmpty()) {
-            sql.append(" WHERE 1=1");
-            for (Map.Entry<String, Object> entry : params.entrySet()) {
-                sql.append(" AND ").append(entry.getKey()).append(" = ?");
-                paramValues.add(entry.getValue());
+
+        // DEBUG: Log all incoming parameters
+        log.info("=== TABLE SELECT DEBUG ===");
+        log.info("Table: {}.{}", owner, tableName);
+        log.info("All incoming params: {}", params);
+
+        if (api.getParameters() != null) {
+            log.info("API has {} configured parameters:", api.getParameters().size());
+            for (ApiParameterEntity configuredParam : api.getParameters()) {
+                log.info("  Configured param: key='{}', dbColumn='{}', type='{}', required={}",
+                        configuredParam.getKey(),
+                        configuredParam.getDbColumn(),
+                        configuredParam.getParameterType(),
+                        configuredParam.getRequired());
             }
+        } else {
+            log.info("API has NO configured parameters");
         }
 
+        // IMPORTANT: Only use parameters that are configured in the API
+        if (params != null && !params.isEmpty() && api.getParameters() != null) {
+            boolean hasWhereClause = false;
+
+            // Get all configured parameters that should be used for filtering
+            for (ApiParameterEntity configuredParam : api.getParameters()) {
+                String paramKey = configuredParam.getKey();
+                String dbColumn = configuredParam.getDbColumn();
+                String paramType = configuredParam.getParameterType();
+
+                // Only use parameters that are meant for filtering (query or path)
+                if (("query".equals(paramType) || "path".equals(paramType)) &&
+                        dbColumn != null && !dbColumn.isEmpty()) {
+
+                    log.info("Checking for parameter: key='{}' in params map", paramKey);
+
+                    // Check if this parameter was provided in the request
+                    Object value = null;
+
+                    // Try exact key match
+                    if (params.containsKey(paramKey)) {
+                        value = params.get(paramKey);
+                        log.info("  Found exact match for key '{}' with value: {}", paramKey, value);
+                    }
+                    // Try case-insensitive match
+                    else {
+                        for (Map.Entry<String, Object> entry : params.entrySet()) {
+                            if (entry.getKey().equalsIgnoreCase(paramKey)) {
+                                value = entry.getValue();
+                                log.info("  Found case-insensitive match: '{}' -> '{}' with value: {}",
+                                        entry.getKey(), paramKey, value);
+                                break;
+                            }
+                        }
+                    }
+
+                    // Also check for numbered params if this is a path parameter
+                    if (value == null && "path".equals(paramType)) {
+                        // Look for param1, param2, etc. in the params map
+                        for (int i = 1; i <= 10; i++) {
+                            String numberedKey = "param" + i;
+                            if (params.containsKey(numberedKey)) {
+                                value = params.get(numberedKey);
+                                log.info("  Found numbered param '{}' with value: {}", numberedKey, value);
+
+                                // Also check if this might be the correct parameter based on position
+                                Integer position = configuredParam.getPosition();
+                                if (position != null && position == (i - 1)) {
+                                    log.info("  Numbered param position matches configured position: {}", position);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (value != null && !value.toString().trim().isEmpty()) {
+                        if (!hasWhereClause) {
+                            sql.append(" WHERE ");
+                            hasWhereClause = true;
+                        } else {
+                            sql.append(" AND ");
+                        }
+
+                        // Use the actual database column name
+                        sql.append(dbColumn).append(" = ?");
+                        paramValues.add(value);
+                        log.info("  ADDED FILTER: {} = {} with value: {}", dbColumn, paramKey, value);
+                    } else {
+                        if (Boolean.TRUE.equals(configuredParam.getRequired())) {
+                            log.warn("  Required parameter {} not found in request", paramKey);
+                        } else {
+                            log.info("  Optional parameter {} not provided, skipping filter", paramKey);
+                        }
+                    }
+                }
+            }
+
+            // Log the final SQL before pagination
+            log.info("SQL before pagination: {} with {} parameters", sql.toString(), paramValues.size());
+
+        } else {
+            log.info("No parameters to filter by (params null/empty or api has no configured params)");
+        }
+
+        // Handle pagination if enabled
         if (api.getSchemaConfig() != null &&
                 Boolean.TRUE.equals(api.getSchemaConfig().getEnablePagination())) {
             int pageSize = api.getSchemaConfig().getPageSize() != null ?
                     api.getSchemaConfig().getPageSize() : 10;
-            int offset = 0;
+            int page = 1; // default page
 
+            // Check if page parameter was provided
             if (params != null && params.containsKey("page")) {
-                int page = Integer.parseInt(params.get("page").toString());
-                offset = (page - 1) * pageSize;
-                sql.append(" OFFSET ? ROWS FETCH NEXT ? ROWS ONLY");
-                paramValues.add(offset);
-                paramValues.add(pageSize);
+                try {
+                    page = Integer.parseInt(params.get("page").toString());
+                    log.info("Page parameter found: {}", page);
+                } catch (NumberFormatException e) {
+                    log.warn("Invalid page parameter, using default: 1");
+                }
             }
+
+            int offset = (page - 1) * pageSize;
+            sql.append(" OFFSET ? ROWS FETCH NEXT ? ROWS ONLY");
+            paramValues.add(offset);
+            paramValues.add(pageSize);
+            log.info("Added pagination: offset={}, pageSize={}", offset, pageSize);
         }
 
-        List<Map<String, Object>> results = oracleJdbcTemplate.queryForList(
-                sql.toString(), paramValues.toArray());
+        log.info("Final SQL: {} with params: {}", sql.toString(), paramValues);
 
-        return results;
+        try {
+            List<Map<String, Object>> results = oracleJdbcTemplate.queryForList(
+                    sql.toString(), paramValues.toArray());
+            log.info("Query returned {} rows", results.size());
+            return results;
+        } catch (Exception e) {
+            log.error("Error executing table select: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to execute SELECT on " + tableName + ": " + e.getMessage(), e);
+        }
     }
+
 
     private Object executeTableInsert(String tableName, String owner, Map<String, Object> params,
                                       GeneratedApiEntity api) {
@@ -4955,48 +5929,324 @@ public class APIGenerationEngineService {
             inParams.putAll((Map<String, Object>) request.getBody());
         }
 
-        SimpleJdbcCall jdbcCall = new SimpleJdbcCall(oracleJdbcTemplate)
-                .withSchemaName(owner)
-                .withProcedureName(procedureName);
+        log.info("Executing procedure - Original: {}.{}", owner, procedureName);
 
-        if (api.getResponseMappings() != null) {
-            for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
-                if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
-                    jdbcCall.declareParameters(
-                            new SqlOutParameter(mapping.getDbColumn(), mapToSqlType(mapping.getOracleType()))
-                    );
-                }
-            }
+        String oracleOwner = owner != null && !owner.trim().isEmpty() ? owner.trim().toUpperCase() : null;
+        String oracleProcedureName = procedureName != null ? procedureName.trim().toUpperCase() : null;
+
+        // Resolve the actual target (handle synonyms)
+        Map<String, Object> resolution = resolveProcedureTarget(oracleOwner, oracleProcedureName);
+
+        String actualOwner;
+        String actualProcedureName;
+
+        if ((boolean) resolution.getOrDefault("isSynonym", false)) {
+            actualOwner = (String) resolution.get("targetOwner");
+            actualProcedureName = (String) resolution.get("targetName");
+            log.info("Resolved synonym to: {}.{}", actualOwner, actualProcedureName);
+        } else {
+            actualOwner = oracleOwner;
+            actualProcedureName = oracleProcedureName;
         }
 
-        if (api.getParameters() != null) {
-            for (ApiParameterEntity param : api.getParameters()) {
-                if (inParams.containsKey(param.getKey())) {
-                    String paramName = param.getDbParameter() != null ?
-                            param.getDbParameter() :
-                            (param.getDbColumn() != null ? param.getDbColumn() : param.getKey());
-
-                    jdbcCall.declareParameters(
-                            new SqlParameter(paramName, mapToSqlType(param.getOracleType()))
-                    );
-                }
-            }
+        // Check if the resolved procedure exists and is valid
+        if (!(boolean) resolution.getOrDefault("exists", false)) {
+            log.error("Procedure {}.{} does not exist in the Oracle database", oracleOwner, oracleProcedureName);
+            listAvailableProcedures(oracleOwner);
+            throw new RuntimeException("Procedure " + oracleOwner + "." + oracleProcedureName + " does not exist in the database");
         }
 
-        Map<String, Object> result = jdbcCall.execute(inParams);
-
-        Map<String, Object> responseData = new HashMap<>();
-        if (api.getResponseMappings() != null) {
-            for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
-                String dbColumn = mapping.getDbColumn();
-                if (result.containsKey(dbColumn)) {
-                    responseData.put(mapping.getApiField(), result.get(dbColumn));
-                }
-            }
+        if (!(boolean) resolution.getOrDefault("valid", false)) {
+            String status = (String) resolution.getOrDefault("status", "INVALID");
+            log.error("Procedure {}.{} exists but is {} (compilation error)", oracleOwner, oracleProcedureName, status);
+            throw new RuntimeException("Procedure " + oracleOwner + "." + oracleProcedureName +
+                    " exists but is " + status + ". Please check database for compilation errors.");
         }
 
-        return responseData;
+        try {
+            SimpleJdbcCall jdbcCall = new SimpleJdbcCall(oracleJdbcTemplate);
+
+            // Set schema and procedure name - use resolved actual owner
+            if (actualOwner != null && !actualOwner.isEmpty()) {
+                jdbcCall = jdbcCall.withSchemaName(actualOwner);
+            }
+
+            jdbcCall = jdbcCall.withProcedureName(actualProcedureName);
+
+            // Also try without schema if we have an owner (for fallback)
+            if (actualOwner != null) {
+                jdbcCall = jdbcCall.withCatalogName(actualOwner);
+            }
+
+            log.info("Oracle will execute: {}.{}", actualOwner != null ? actualOwner : "<default schema>", actualProcedureName);
+
+            // Declare output parameters from response mappings
+            if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
+                log.debug("Declaring {} OUT parameters from response mappings", api.getResponseMappings().size());
+
+                for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
+                    if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
+                        String outParamName = mapping.getDbColumn() != null && !mapping.getDbColumn().isEmpty() ?
+                                mapping.getDbColumn().toUpperCase() : "out_param_" + mapping.getPosition();
+
+                        int sqlType = mapToSqlType(mapping.getOracleType());
+                        jdbcCall.declareParameters(new SqlOutParameter(outParamName, sqlType));
+
+                        log.debug("Declared OUT parameter: {} of type: {} (SQL type: {})",
+                                outParamName, mapping.getOracleType(), sqlType);
+                    }
+                }
+            }
+
+            // Declare input parameters from API parameters
+            if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+                int inParamCount = 0;
+
+                for (ApiParameterEntity param : api.getParameters()) {
+                    // Skip if parameter is null or has no key
+                    if (param == null || param.getKey() == null) continue;
+
+                    // Check if this is an IN parameter and if it was provided
+                    String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
+
+                    if (inParams.containsKey(param.getKey()) && !"OUT".equals(paramMode)) {
+                        String paramName = param.getDbParameter() != null && !param.getDbParameter().isEmpty() ?
+                                param.getDbParameter().toUpperCase() :
+                                (param.getDbColumn() != null && !param.getDbColumn().isEmpty() ?
+                                        param.getDbColumn().toUpperCase() : param.getKey().toUpperCase());
+
+                        int sqlType = mapToSqlType(param.getOracleType());
+                        jdbcCall.declareParameters(new SqlParameter(paramName, sqlType));
+
+                        log.debug("Declared IN parameter: {} of type: {} (SQL type: {}) with value: {}",
+                                paramName, param.getOracleType(), sqlType, inParams.get(param.getKey()));
+                        inParamCount++;
+                    }
+                }
+
+                log.debug("Declared {} IN parameters", inParamCount);
+            }
+
+            log.info("Executing SimpleJdbcCall for {}.{} with {} input parameters",
+                    actualOwner != null ? actualOwner : "<default>", actualProcedureName, inParams.size());
+
+            // Execute the procedure
+            Map<String, Object> result = jdbcCall.execute(inParams);
+
+            log.info("Procedure executed successfully, result contains {} keys: {}",
+                    result.size(), result.keySet());
+
+            // Map the results to response data
+            Map<String, Object> responseData = new HashMap<>();
+
+            if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
+                int mappedCount = 0;
+
+                for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
+                    if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
+                        String dbColumn = mapping.getDbColumn();
+                        if (dbColumn != null && !dbColumn.isEmpty()) {
+                            // Try with uppercase first (Oracle returns uppercase column names)
+                            String upperDbColumn = dbColumn.toUpperCase();
+
+                            if (result.containsKey(upperDbColumn)) {
+                                responseData.put(mapping.getApiField(), result.get(upperDbColumn));
+                                log.debug("Mapped output {} to {} with value: {}",
+                                        upperDbColumn, mapping.getApiField(), result.get(upperDbColumn));
+                                mappedCount++;
+                            }
+                            // Try with original case if uppercase not found
+                            else if (result.containsKey(dbColumn)) {
+                                responseData.put(mapping.getApiField(), result.get(dbColumn));
+                                log.debug("Mapped output {} to {} with value: {}",
+                                        dbColumn, mapping.getApiField(), result.get(dbColumn));
+                                mappedCount++;
+                            }
+                            else {
+                                log.warn("Output parameter {} not found in result set. Available keys: {}",
+                                        dbColumn, result.keySet());
+                            }
+                        }
+                    }
+                }
+
+                log.debug("Mapped {} output parameters to response", mappedCount);
+            } else {
+                // If no response mappings, just return the whole result
+                log.debug("No response mappings found, returning entire result map");
+                responseData.putAll(result);
+            }
+
+            return responseData.isEmpty() ? result : responseData;
+
+        } catch (Exception e) {
+            log.error("Error executing procedure {}.{}: {}",
+                    actualOwner != null ? actualOwner : "<default>", actualProcedureName, e.getMessage(), e);
+
+            // Provide more helpful error message
+            String errorMsg = String.format("Failed to execute procedure %s.%s: %s",
+                    actualOwner != null ? actualOwner : "<default>", actualProcedureName, e.getMessage());
+
+            if (e.getMessage() != null && e.getMessage().contains("no procedure/function/signature")) {
+                errorMsg = String.format("Procedure %s.%s not found or invalid signature. Please check that the procedure exists and has the correct parameters.",
+                        actualOwner != null ? actualOwner : "<default>", actualProcedureName);
+            }
+
+            throw new RuntimeException(errorMsg, e);
+        }
     }
+
+
+    private Map<String, Object> resolveProcedureTarget(String owner, String procedureName) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("exists", false);
+        result.put("valid", false);
+        result.put("isSynonym", false);
+
+        try {
+            // First, check if it's a synonym
+            String synonymSql = "SELECT TABLE_OWNER, TABLE_NAME FROM ALL_SYNONYMS " +
+                    "WHERE OWNER = ? AND SYNONYM_NAME = ?";
+
+            List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(
+                    synonymSql, owner, procedureName);
+
+            if (!synonyms.isEmpty()) {
+                Map<String, Object> synonym = synonyms.get(0);
+                String targetOwner = (String) synonym.get("TABLE_OWNER");
+                String targetName = (String) synonym.get("TABLE_NAME");
+
+                log.info("Found synonym {}.{} -> {}.{}", owner, procedureName, targetOwner, targetName);
+
+                result.put("isSynonym", true);
+                result.put("targetOwner", targetOwner);
+                result.put("targetName", targetName);
+
+                // Check if the target procedure exists and is valid
+                String procSql = "SELECT STATUS FROM ALL_OBJECTS " +
+                        "WHERE OWNER = ? AND OBJECT_NAME = ? AND OBJECT_TYPE = 'PROCEDURE'";
+
+                List<Map<String, Object>> procedures = oracleJdbcTemplate.queryForList(
+                        procSql, targetOwner, targetName);
+
+                if (!procedures.isEmpty()) {
+                    result.put("exists", true);
+                    String status = (String) procedures.get(0).get("STATUS");
+                    result.put("status", status);
+                    result.put("valid", "VALID".equalsIgnoreCase(status));
+
+                    log.info("Target procedure status: {}", status);
+                } else {
+                    log.warn("Synonym points to non-existent procedure: {}.{}", targetOwner, targetName);
+                }
+            } else {
+                // Not a synonym, check directly for procedure
+                String procSql = "SELECT STATUS FROM ALL_OBJECTS " +
+                        "WHERE OWNER = ? AND OBJECT_NAME = ? AND OBJECT_TYPE = 'PROCEDURE'";
+
+                List<Map<String, Object>> procedures = oracleJdbcTemplate.queryForList(
+                        procSql, owner, procedureName);
+
+                if (!procedures.isEmpty()) {
+                    result.put("exists", true);
+                    String status = (String) procedures.get(0).get("STATUS");
+                    result.put("status", status);
+                    result.put("valid", "VALID".equalsIgnoreCase(status));
+                    result.put("targetOwner", owner);
+                    result.put("targetName", procedureName);
+
+                    log.info("Found procedure {}.{} with status: {}", owner, procedureName, status);
+                }
+            }
+
+        } catch (Exception e) {
+            log.error("Error resolving procedure target: {}", e.getMessage());
+        }
+
+        return result;
+    }
+
+
+    /**
+     * Verify if a procedure exists in the Oracle database
+     */
+    private boolean verifyProcedureExists(String owner, String procedureName) {
+        try {
+            Map<String, Object> resolution = resolveProcedureTarget(owner, procedureName);
+
+            if (!(boolean) resolution.getOrDefault("exists", false)) {
+                log.error("Procedure {}.{} does not exist", owner, procedureName);
+                return false;
+            }
+
+            if (!(boolean) resolution.getOrDefault("valid", false)) {
+                String status = (String) resolution.getOrDefault("status", "UNKNOWN");
+                log.error("Procedure {}.{} exists but is {} (compilation error)",
+                        owner, procedureName, status);
+                throw new RuntimeException(
+                        String.format("Procedure %s.%s exists but is %s. Please check database for compilation errors.",
+                                owner, procedureName, status));
+            }
+
+            return true;
+
+        } catch (Exception e) {
+            log.error("Error verifying procedure: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * List available procedures in the Oracle schema for debugging
+     */
+    private void listAvailableProcedures(String owner) {
+        try {
+            if (owner == null) return;
+
+            // CRITICAL FIX: Use oracleJdbcTemplate
+            String sql = "SELECT OBJECT_NAME FROM ALL_PROCEDURES WHERE OWNER = ? AND ROWNUM <= 20";
+            List<String> procedures = oracleJdbcTemplate.queryForList(sql, String.class, owner.toUpperCase());
+
+            if (procedures.isEmpty()) {
+                log.warn("No procedures found in Oracle schema: {}", owner);
+
+                // Try to list any objects in the schema
+                String objectSql = "SELECT OBJECT_NAME, OBJECT_TYPE FROM ALL_OBJECTS WHERE OWNER = ? AND OBJECT_TYPE IN ('PROCEDURE', 'FUNCTION', 'PACKAGE') AND ROWNUM <= 20";
+                List<Map<String, Object>> objects = oracleJdbcTemplate.queryForList(objectSql, owner.toUpperCase());
+
+                if (!objects.isEmpty()) {
+                    log.info("Available objects in Oracle schema {}:", owner);
+                    for (Map<String, Object> obj : objects) {
+                        log.info("  - {} ({})", obj.get("OBJECT_NAME"), obj.get("OBJECT_TYPE"));
+                    }
+                } else {
+                    log.warn("No procedures, functions, or packages found in Oracle schema: {}", owner);
+
+                    // Try a more general query to see what's in the schema
+                    String allObjectsSql = "SELECT OBJECT_NAME, OBJECT_TYPE FROM ALL_OBJECTS WHERE OWNER = ? AND ROWNUM <= 20";
+                    List<Map<String, Object>> allObjects = oracleJdbcTemplate.queryForList(allObjectsSql, owner.toUpperCase());
+
+                    if (!allObjects.isEmpty()) {
+                        log.info("All objects in Oracle schema {}:", owner);
+                        for (Map<String, Object> obj : allObjects) {
+                            log.info("  - {} ({})", obj.get("OBJECT_NAME"), obj.get("OBJECT_TYPE"));
+                        }
+                    } else {
+                        log.warn("No objects at all found in Oracle schema: {}", owner);
+                    }
+                }
+            } else {
+                log.info("Available procedures in Oracle schema {} (first 20):", owner);
+                for (String proc : procedures) {
+                    log.info("  - {}", proc);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error listing available procedures in Oracle: {}", e.getMessage());
+        }
+    }
+
+
 
     private Object executeFunction(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
                                    String functionName, String owner, ExecuteApiRequestDTO request) {
@@ -5007,9 +6257,12 @@ public class APIGenerationEngineService {
             inParams.putAll((Map<String, Object>) request.getBody());
         }
 
+        // FIX: Ensure function name is in uppercase for Oracle
+        String oracleFunctionName = functionName != null ? functionName.toUpperCase() : null;
+
         SimpleJdbcCall jdbcCall = new SimpleJdbcCall(oracleJdbcTemplate)
                 .withSchemaName(owner)
-                .withFunctionName(functionName);
+                .withFunctionName(oracleFunctionName);
 
         if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
             String returnType = api.getResponseMappings().get(0).getOracleType();
@@ -5055,10 +6308,15 @@ public class APIGenerationEngineService {
             inParams.putAll((Map<String, Object>) request.getBody());
         }
 
+        // FIX: Ensure package and procedure names are in uppercase for Oracle
+        String oraclePackageName = packageName != null ? packageName.toUpperCase() : null;
+        String oracleProcedureName = sourceObject.getPackageProcedure() != null ?
+                sourceObject.getPackageProcedure().toUpperCase() : null;
+
         SimpleJdbcCall jdbcCall = new SimpleJdbcCall(oracleJdbcTemplate)
                 .withSchemaName(owner)
-                .withCatalogName(packageName)
-                .withProcedureName(sourceObject.getPackageProcedure());
+                .withCatalogName(oraclePackageName)
+                .withProcedureName(oracleProcedureName);
 
         if (api.getResponseMappings() != null) {
             for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
@@ -5352,10 +6610,13 @@ public class APIGenerationEngineService {
         if (upperType.contains("VARCHAR")) return Types.VARCHAR;
         if (upperType.contains("CHAR")) return Types.CHAR;
         if (upperType.contains("CLOB")) return Types.CLOB;
-        if (upperType.contains("NUMBER")) return Types.NUMERIC;
+        if (upperType.contains("NUMBER") || upperType.contains("NUMERIC")) return Types.NUMERIC;
+        if (upperType.contains("INTEGER")) return Types.INTEGER;
         if (upperType.contains("DATE")) return Types.DATE;
         if (upperType.contains("TIMESTAMP")) return Types.TIMESTAMP;
         if (upperType.contains("BLOB")) return Types.BLOB;
+        if (upperType.contains("BOOLEAN")) return Types.BOOLEAN;
+
         return Types.VARCHAR;
     }
 
@@ -5450,7 +6711,7 @@ public class APIGenerationEngineService {
                     .testName(testRequest.getTestName())
                     .passed(passed)
                     .executionTimeMs(executionTime)
-                    .statusCode(executionResult.getStatusCode())
+                    .statusCode(executionResult.getResponseCode())
                     .actualResponse(executionResult.getData())
                     .message(passed ? "Test passed" : "Test failed - response mismatch")
                     .build();
@@ -6579,7 +7840,7 @@ public class APIGenerationEngineService {
         StringBuilder js = new StringBuilder();
         js.append("// Auto-generated functional JavaScript code for ").append(api.getApiName()).append("\n\n");
 
-        String serverUrl = "{{baseUrl}}/gen/" + api.getId();
+        String serverUrl = "{{baseUrl}}/plx/api/gen/" + api.getId();
         String baseUrl = serverUrl + fullUrl;
 
         js.append("// Base URL\n");
@@ -6758,7 +8019,7 @@ public class APIGenerationEngineService {
         py.append("import json\n");
         py.append("from urllib.parse import urlencode\n\n");
 
-        String serverUrl = "{{baseUrl}}/gen/" + api.getId();
+        String serverUrl = "{{baseUrl}}/plx/api/gen/" + api.getId();
         String baseUrl = serverUrl + fullUrl;
 
         py.append("base_url = \"").append(baseUrl).append("\"\n\n");
@@ -6861,7 +8122,7 @@ public class APIGenerationEngineService {
         java.append("import com.fasterxml.jackson.databind.ObjectMapper;\n");
         java.append("import com.fasterxml.jackson.core.type.TypeReference;\n\n");
 
-        String serverUrl = "{{baseUrl}}/gen/" + api.getId();
+        String serverUrl = "{{baseUrl}}/plx/api/gen/" + api.getId();
         String fullEndpoint = serverUrl + fullUrl;
 
         java.append("public class ").append(api.getApiCode()).append("Client {\n\n");
@@ -8177,12 +9438,12 @@ public class APIGenerationEngineService {
         error.put("timestamp", LocalDateTime.now().toString());
 
         return ExecuteApiResponseDTO.builder()
-                .requestId(requestId)
-                .statusCode(statusCode)
+//                .requestId(requestId)
+                .responseCode(statusCode)
                 .success(false)
                 .message(message)
-                .error(error)
-                .executionTimeMs(executionTime)
+//                .error(error)
+//                .executionTimeMs(executionTime)
                 .build();
     }
 

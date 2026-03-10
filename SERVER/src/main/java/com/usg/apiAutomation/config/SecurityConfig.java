@@ -73,7 +73,7 @@ public class SecurityConfig {
                         .requestMatchers("/plx/api/**").permitAll()
 
                         // ✅ Everything else locked down
-                        .anyRequest().authenticated()
+                         .anyRequest().authenticated()
                 );
 
         return http.build();

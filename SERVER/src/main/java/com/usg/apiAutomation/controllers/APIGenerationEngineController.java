@@ -120,12 +120,12 @@ public class APIGenerationEngineController {
                     requestId, performedBy, apiId, executeRequest, clientIp, userAgent);
 
             Map<String, Object> apiResponse = new HashMap<>();
-            apiResponse.put("responseCode", response.getStatusCode());
+            apiResponse.put("responseCode", response.getResponseCode());
             apiResponse.put("message", response.getMessage());
             apiResponse.put("data", response);
             apiResponse.put("requestId", requestId);
 
-            return ResponseEntity.status(response.getStatusCode()).body(apiResponse);
+            return ResponseEntity.status(response.getResponseCode()).body(apiResponse);
 
         } catch (Exception e) {
             loggerUtil.log("apiGeneration", "Request ID: " + requestId +

@@ -36,14 +36,42 @@ public class ApiKeyNSecretInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-        System.out.println("[DEBUG] Interceptor triggered for path: " + request.getRequestURI());
+
+        // ============== CRITICAL FIX: Allow all OPTIONS requests for CORS preflight ==============
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            System.out.println("[DEBUG] OPTIONS request detected - allowing without authentication");
+
+            // Set CORS headers for preflight response
+            String origin = request.getHeader("Origin");
+            if (origin != null && (origin.contains("192.168.1.119:9874") ||
+                    origin.contains("localhost:9874") ||
+                    origin.contains("127.0.0.1:9874"))) {
+                response.setHeader("Access-Control-Allow-Origin", origin);
+                response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD");
+                response.setHeader("Access-Control-Allow-Headers",
+                        "Content-Type, Authorization, X-API-Key, X-API-Secret, X-Requested-With, Origin, Accept, " +
+                                "Access-Control-Request-Method, Access-Control-Request-Headers");
+                response.setHeader("Access-Control-Allow-Credentials", "true");
+                response.setHeader("Access-Control-Max-Age", "3600");
+                response.setHeader("Vary", "Origin");
+            }
+
+            response.setStatus(HttpServletResponse.SC_OK);
+            return false; // Return false to stop further processing for OPTIONS requests
+        }
+
+        System.out.println("[DEBUG] ApiKeyNSecretInterceptor triggered for path: " + request.getRequestURI() + ", method: " + request.getMethod());
+
+        // Wrap request to cache body for multiple reads
         CachedBodyHttpServletRequest cachedRequest = (request instanceof CachedBodyHttpServletRequest)
                 ? (CachedBodyHttpServletRequest) request
                 : new CachedBodyHttpServletRequest(request);
 
+        // Extract API Key and Secret from headers
         String apiKey = cachedRequest.getHeader("x-api-key");
         String apiSecret = cachedRequest.getHeader("x-api-secret");
 
+        // Build headers map for logging
         Map<String, Object> headersMap = new HashMap<>();
         Enumeration<String> headerNames = cachedRequest.getHeaderNames();
         while (headerNames.hasMoreElements()) {
@@ -52,6 +80,7 @@ public class ApiKeyNSecretInterceptor implements HandlerInterceptor {
             headersMap.put(headerName, Collections.list(headerValues));
         }
 
+        // Generate request ID and extract request details
         String requestId = UUID.randomUUID().toString();
         String method = cachedRequest.getMethod();
         String path = cachedRequest.getRequestURI();
@@ -59,8 +88,10 @@ public class ApiKeyNSecretInterceptor implements HandlerInterceptor {
         String contentType = cachedRequest.getContentType();
         String activityType = pathToActivityType(path);
 
+        // Parse request body based on content type
         Map<String, Object> requestBodyMap;
 
+        // Check for query parameters first
         Map<String, String[]> parameterMap = cachedRequest.getParameterMap();
         if (parameterMap != null && !parameterMap.isEmpty()) {
             Map<String, Object> paramMap = new HashMap<>();
@@ -72,12 +103,14 @@ public class ApiKeyNSecretInterceptor implements HandlerInterceptor {
                 }
             }
             requestBodyMap = paramMap;
-        } else if (rawRequestBody != null && !rawRequestBody.isEmpty()) {
+        }
+        // Parse body content if no query parameters
+        else if (rawRequestBody != null && !rawRequestBody.isEmpty()) {
             try {
                 if (contentType != null && contentType.contains("application/json")) {
                     String trimmedBody = rawRequestBody.trim();
                     if (trimmedBody.startsWith("[")) {
-                        // Use TypeReference to avoid unchecked warning
+                        // Handle JSON array
                         List<Map<String, Object>> listBody = objectMapper.readValue(rawRequestBody,
                                 new TypeReference<List<Map<String, Object>>>() {});
                         if (listBody.size() == 1) {
@@ -87,11 +120,12 @@ public class ApiKeyNSecretInterceptor implements HandlerInterceptor {
                             requestBodyMap.put("body", listBody);
                         }
                     } else {
-                        // Use TypeReference to avoid unchecked warning
+                        // Handle JSON object
                         requestBodyMap = objectMapper.readValue(rawRequestBody,
                                 new TypeReference<Map<String, Object>>() {});
                     }
                 } else if (contentType != null && contentType.contains("application/x-www-form-urlencoded")) {
+                    // Parse form data
                     Map<String, Object> formMap = new HashMap<>();
                     String[] pairs = rawRequestBody.split("&");
                     for (String pair : pairs) {
@@ -104,75 +138,87 @@ public class ApiKeyNSecretInterceptor implements HandlerInterceptor {
                     }
                     requestBodyMap = formMap;
                 } else {
+                    // Handle other content types
                     requestBodyMap = new HashMap<>();
                     requestBodyMap.put("rawBody", rawRequestBody);
                     requestBodyMap.put("contentType", contentType);
                 }
             } catch (Exception e) {
-                loggerUtil.log("api-automation", "Failed to parse requestEntity body: " + e.getMessage());
+                loggerUtil.log("api-automation", "Failed to parse request body: " + e.getMessage());
                 requestBodyMap = new HashMap<>();
                 requestBodyMap.put("rawBody", rawRequestBody);
+                requestBodyMap.put("parseError", e.getMessage());
             }
         } else {
             requestBodyMap = Collections.emptyMap();
         }
 
+        // Mask sensitive data for logging
         String maskedApiKey = DataMaskingHelper.maskSensitiveData(apiKey);
         String maskedApiSecret = DataMaskingHelper.maskSensitiveData(apiSecret);
 
-        loggerUtil.log("api-automation", "Incoming RequestEntity: x-api-key=" + maskedApiKey
-                + ", x-api-secret=" + maskedApiSecret);
+        loggerUtil.log("api-automation", "Incoming Request: x-api-key=" + maskedApiKey
+                + ", x-api-secret=" + maskedApiSecret + ", path=" + path + ", method=" + method);
 
+        // Validate API Key presence
         if (apiKey == null || apiKey.isEmpty()) {
             return handleForbidden(cachedRequest, response, requestId, method, path, headersMap, requestBodyMap, 403,
                     "Access Forbidden. Missing required header: x-api-key.", activityType);
         }
 
+        // Validate API Secret presence
         if (apiSecret == null || apiSecret.isEmpty()) {
             return handleForbidden(cachedRequest, response, requestId, method, path, headersMap, requestBodyMap, 403,
                     "Access Forbidden. Missing required header: x-api-secret.", activityType);
         }
 
-        // -----------------------------
-        // Enforce validation ONLY for swagger + JSON endpoints
-        // -----------------------------
-//        if (path.contains("swagger-ui") ||
-//                path.matches("^/plx/api//v1\\.0/Json.*") ||
-//                path.startsWith("/plx/api/v1.0/Json")) {
-//            if (!apiKeyNSecretHelper.validateSwaggerCredentials(apiKey, apiSecret)) {
-//                return handleForbidden(
-//                        cachedRequest,
-//                        response,
-//                        requestId,
-//                        method,
-//                        path,
-//                        headersMap,
-//                        requestBodyMap,
-//                        403,
-//                        "Access Forbidden. Invalid API Key or Secret.",
-//                        activityType
-//                );
-//            }
-//
-//            if (!clientIpHelper.validateSwaggerClientIp(apiKey, apiSecret)) {
-//                return handleForbidden(
-//                        cachedRequest,
-//                        response,
-//                        requestId,
-//                        method,
-//                        path,
-//                        headersMap,
-//                        requestBodyMap,
-//                        403,
-//                        "Access Forbidden. Invalid Client IP.",
-//                        activityType
-//                );
-//            }
-//        }
+        // ============== UNCOMMENT THIS SECTION FOR PRODUCTION ==============
+        // Validate API Key and Secret credentials
+        /*
+        if (!apiKeyNSecretHelper.validateCredentials(apiKey, apiSecret)) {
+            return handleForbidden(
+                    cachedRequest,
+                    response,
+                    requestId,
+                    method,
+                    path,
+                    headersMap,
+                    requestBodyMap,
+                    403,
+                    "Access Forbidden. Invalid API Key or Secret.",
+                    activityType
+            );
+        }
+
+        // Validate client IP if required
+        if (!clientIpHelper.validateClientIp(apiKey, apiSecret, cachedRequest.getRemoteAddr())) {
+            return handleForbidden(
+                    cachedRequest,
+                    response,
+                    requestId,
+                    method,
+                    path,
+                    headersMap,
+                    requestBodyMap,
+                    403,
+                    "Access Forbidden. Invalid Client IP.",
+                    activityType
+            );
+        }
+        */
+        // ============== END OF PRODUCTION SECTION ==============
+
+        // Store validated credentials in request for later use
+        request.setAttribute("authenticatedApiKey", apiKey);
+        request.setAttribute("authenticatedApiSecret", apiSecret);
+        request.setAttribute("requestId", requestId);
 
         return true;
     }
 
+    /**
+     * Handle forbidden access by logging and sending error response
+     */
     private boolean handleForbidden(
             CachedBodyHttpServletRequest cachedRequest,
             HttpServletResponse response,
@@ -185,46 +231,80 @@ public class ApiKeyNSecretInterceptor implements HandlerInterceptor {
             String responseMessage,
             String activityType) throws Exception {
 
-        loggerUtil.log("api-automation", responseMessage);
+        loggerUtil.log("api-automation", "Access Forbidden: " + responseMessage + " for path: " + path);
 
-        // Skip audit log if activityType contains any of these substrings
+        // Log to error handling helper if needed
         if (activityType == null ||
                 !(activityType.toLowerCase().contains("plx sha") ||
                         activityType.toLowerCase().contains("swagger") ||
                         activityType.toLowerCase().contains("favicon.ico"))) {
 
+            // Build resource URL for logging
+            String resourceUrl = cachedRequest.getScheme() + "://" +
+                    cachedRequest.getServerName() + ":" +
+                    cachedRequest.getServerPort() + path;
 
-            // CORRECTED: Use single resourceUrl parameter instead of two URL parameters
-            String resourceUrl = cachedRequest.getScheme() + "://" + cachedRequest.getServerName() + ":" + cachedRequest.getServerPort() + path;
-
+            // You can add additional logging here if needed
+            loggerUtil.log("api-automation", "Forbidden access attempt to: " + resourceUrl);
         }
 
         sendErrorResponse(response, statusCode, responseMessage);
         return false;
     }
 
+    /**
+     * Send JSON error response
+     */
     private void sendErrorResponse(HttpServletResponse response, int statusCode, String message) throws Exception {
         response.setStatus(statusCode);
         response.setContentType("application/json");
-        String jsonResponse = String.format("{\"responseCode\": %d, \"message\": \"%s\"}", statusCode, message);
+
+        // Create structured error response
+        Map<String, Object> errorResponse = new HashMap<>();
+        errorResponse.put("responseCode", statusCode);
+        errorResponse.put("message", message);
+        errorResponse.put("timestamp", new Date().toString());
+        errorResponse.put("error", "Forbidden");
+
+        String jsonResponse = objectMapper.writeValueAsString(errorResponse);
         response.getWriter().write(jsonResponse);
     }
 
+    /**
+     * Convert path to activity type for logging
+     */
     private String pathToActivityType(String path) {
         if (path == null || path.isEmpty()) {
             return "";
         }
+
+        // Remove leading/trailing slashes
         String trimmedPath = path.replaceAll("^/+", "").replaceAll("/+$", "");
+
+        // Split by slashes and hyphens
         String[] parts = trimmedPath.split("[/-]");
+
+        // Build activity type with proper capitalization
         StringBuilder activityTypeBuilder = new StringBuilder();
         for (String part : parts) {
             if (!part.isEmpty()) {
-                activityTypeBuilder
-                        .append(activityTypeBuilder.length() > 0 ? " " : "")
-                        .append(part.substring(0, 1).toUpperCase())
+                if (activityTypeBuilder.length() > 0) {
+                    activityTypeBuilder.append(" ");
+                }
+                // Capitalize first letter, lower case rest
+                activityTypeBuilder.append(part.substring(0, 1).toUpperCase())
                         .append(part.substring(1).toLowerCase());
             }
         }
+
         return activityTypeBuilder.toString();
+    }
+
+    @Override
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
+        // Clean up if needed
+        if (ex != null) {
+            loggerUtil.log("api-automation", "Request completed with error: " + ex.getMessage());
+        }
     }
 }

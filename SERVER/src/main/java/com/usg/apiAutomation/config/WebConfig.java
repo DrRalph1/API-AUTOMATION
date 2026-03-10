@@ -26,6 +26,7 @@ public class WebConfig implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/login",
                         "/error",
+                        "/plx/api/gen/**",
                         "/swagger-ui/**",
                         "/v3/api-docs/**",
                         "/swagger-resources/**"
@@ -37,6 +38,7 @@ public class WebConfig implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/plx/api/users/login",  // Exclude login from JWT check
                         "/login",
+                        "/plx/api/gen/**",
                         "/error",
                         "/swagger-ui/**",
                         "/v3/api-docs/**",

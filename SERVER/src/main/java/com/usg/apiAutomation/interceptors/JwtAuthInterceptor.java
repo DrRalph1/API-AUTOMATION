@@ -20,15 +20,28 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
 
+        // ============== CRITICAL FIX: Allow all OPTIONS requests ==============
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            response.setStatus(HttpServletResponse.SC_OK);
+            response.setHeader("Access-Control-Allow-Origin", request.getHeader("Origin"));
+            response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+            response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, X-API-Secret, X-Requested-With");
+            response.setHeader("Access-Control-Allow-Credentials", "true");
+            response.setHeader("Access-Control-Max-Age", "3600");
+            return true; // Skip authentication for preflight requests
+        }
+
         String path = request.getRequestURI();
 
-        // Bypass public / exempt paths (same pattern as ApiKeyNSecretInterceptor)
-        if (path != null && (path.contains("/plx/api/") || path.equals("/plx/api") || path.startsWith("/plx/api")
-                || path.contains("swagger-ui") || path.startsWith("/v3/plx/api/-docs") || path.startsWith("/swagger"))) {
+        // Bypass public / exempt paths
+        if (path != null && (path.contains("/plx/api/users/login")
+                || path.contains("swagger-ui")
+                || path.contains("/v3/api-docs")
+                || path.contains("/swagger"))) {
             return true;
         }
 
-        // Allow login tpartyAPI without JWT
+        // Allow login endpoint without JWT
         if ("/user-login".equals(path) || "/user-login/".equals(path)) {
             return true;
         }
@@ -52,7 +65,7 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
             return false;
         }
 
-        // Optionally set authenticated userId as requestEntity attribute
+        // Optionally set authenticated userId as request attribute
         String userId = jwtUtil.extractUserId(token);
         request.setAttribute("authenticatedUserId", userId);
 

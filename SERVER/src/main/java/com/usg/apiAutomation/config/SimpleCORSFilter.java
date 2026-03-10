@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE) // Ensure this runs first
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class SimpleCORSFilter implements Filter {
 
     @Override
@@ -24,23 +24,46 @@ public class SimpleCORSFilter implements Filter {
 
         String origin = request.getHeader("Origin");
 
-        // Only set CORS headerEntities if origin matches allowed origins
-        if (origin != null && (origin.contains("192.168.1.119:9874") || origin.contains("localhost:9874") || origin.contains("127.0.0.1:9874"))) {
+        System.out.println("=== CORS FILTER DEBUG ===");
+        System.out.println("Origin: " + origin);
+        System.out.println("Method: " + request.getMethod());
+        System.out.println("Request URI: " + request.getRequestURI());
+        System.out.println("Remote Address: " + request.getRemoteAddr());
+        System.out.println("Remote Host: " + request.getRemoteHost());
+
+        // Always set CORS headers regardless of origin
+        if (origin != null && !origin.isEmpty()) {
             response.setHeader("Access-Control-Allow-Origin", origin);
-            response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
-            response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Secret, X-API-Key, X-Forwarded-For, Origin, Accept, Access-Control-RequestEntity-Method, Access-Control-RequestEntity-Headers");
-            response.setHeader("Access-Control-Allow-Credentials", "true");
-            response.setHeader("Access-Control-Max-Age", "3600");
-            response.setHeader("Vary", "Origin");
+        } else {
+            response.setHeader("Access-Control-Allow-Origin", "*");
         }
 
-        // Handle preflight (OPTIONS) requestEntities
+        response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD");
+        response.setHeader("Access-Control-Allow-Headers", "*");
+        response.setHeader("Access-Control-Allow-Credentials", "true");
+        response.setHeader("Access-Control-Max-Age", "3600");
+        response.setHeader("Access-Control-Expose-Headers", "*");
+        response.setHeader("Vary", "Origin");
+
+        // Handle preflight requests
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            System.out.println("Handling OPTIONS preflight request");
             response.setStatus(HttpServletResponse.SC_OK);
+            response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD");
+            response.setHeader("Access-Control-Allow-Headers", "*");
+            response.setHeader("Access-Control-Max-Age", "3600");
+            response.getWriter().flush();
             return;
         }
 
-        chain.doFilter(req, res);
+        try {
+            chain.doFilter(req, res);
+            System.out.println("Request completed successfully");
+        } catch (Exception e) {
+            System.err.println("Error in filter: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
     }
 
     @Override

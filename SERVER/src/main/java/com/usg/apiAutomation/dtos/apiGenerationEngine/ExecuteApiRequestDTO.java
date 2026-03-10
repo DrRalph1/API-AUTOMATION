@@ -17,4 +17,5 @@ public class ExecuteApiRequestDTO {
     private Map<String, String> headers;
     private Object body;
     private String requestId;
+    private String httpMethod;
 }

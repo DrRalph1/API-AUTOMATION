@@ -12,13 +12,14 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ExecuteApiResponseDTO {
-    private String requestId;
-    private Integer statusCode;
-    private Map<String, String> headers;
+//    private String requestId;
+//    private Integer statusCode;
+//    private Map<String, String> headers;
     private Object data;
-    private Map<String, Object> metadata;
-    private Long executionTimeMs;
+//    private Map<String, Object> metadata;
+//    private Long executionTimeMs;
     private Boolean success;
     private String message;
-    private Map<String, Object> error;
+    private Integer responseCode;
+//    private Map<String, Object> error;
 }

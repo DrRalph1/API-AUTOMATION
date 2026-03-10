@@ -534,6 +534,27 @@ export const extractSaveRequestResults = (response) => {
   };
 };
 
+
+export const proxyRequest = async (authToken, requestData) => {
+  console.log('📡 [Proxy] Proxying request through backend');
+  
+  // This should point to YOUR backend server (the one on port 9874)
+  const proxyUrl = '/plx/api/gen'; // Relative URL or full path to your backend
+  
+  const response = await fetch(proxyUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${authToken}`
+    },
+    body: JSON.stringify(requestData)
+  });
+  
+  return response.json();
+};
+
+
+
 /**
  * Extract create collection results
  * @param {Object} response - API response
