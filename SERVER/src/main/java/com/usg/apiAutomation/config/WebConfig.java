@@ -5,7 +5,9 @@ import com.usg.apiAutomation.interceptors.JwtAuthInterceptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.PathMatchConfigurer;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import org.springframework.web.util.pattern.PathPatternParser;
 
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
@@ -42,5 +44,17 @@ public class WebConfig implements WebMvcConfigurer {
                 );
     }
 
-    // REMOVE addCorsMappings() method entirely to avoid conflicts
+
+    @Override
+    public void configurePathMatch(PathMatchConfigurer configurer) {
+        // In Spring 6+, the recommended approach is to use the default PathPatternParser
+        // and configure it through properties or accept the defaults
+
+        // If you need custom path matching, you can still set a custom parser
+        // but the API has changed
+        PathPatternParser parser = new PathPatternParser();
+        // Note: setMatchOptionalTrailingSeparator is removed/deprecated
+        // The default behavior now handles trailing slashes appropriately
+        configurer.setPatternParser(parser);
+    }
 }

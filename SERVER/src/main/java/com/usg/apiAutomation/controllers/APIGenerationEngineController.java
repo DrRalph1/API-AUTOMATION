@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.MultiValueMap;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
@@ -803,99 +804,6 @@ public class APIGenerationEngineController {
         }
     }
 
-
-
-    @GetMapping("/gen/{apiId}/**")
-    @PostMapping("/gen/{apiId}/**")
-    @PutMapping("/gen/{apiId}/**")
-    @DeleteMapping("/gen/{apiId}/**")
-    @PatchMapping("/gen/{apiId}/**")
-    @Operation(summary = "Execute API by ID", description = "Execute a generated API using its ID in the URL path")
-    public ResponseEntity<?> executeApiById(
-            @PathVariable String apiId,
-            HttpServletRequest req,
-            @RequestBody(required = false) Object body) {
-
-        String requestId = UUID.randomUUID().toString();
-
-        try {
-            // Extract the remaining path after /gen/{apiId}
-            String fullPath = req.getRequestURI();
-
-            // Find the position of /gen/{apiId} in the path
-            String genPattern = "/gen/" + apiId;
-            int genIndex = fullPath.indexOf(genPattern);
-
-            String remainingPath = "";
-            if (genIndex >= 0) {
-                remainingPath = fullPath.substring(genIndex + genPattern.length());
-                // Ensure it starts with a slash if not empty
-                if (!remainingPath.isEmpty() && !remainingPath.startsWith("/")) {
-                    remainingPath = "/" + remainingPath;
-                }
-            }
-
-            String performedBy = jwtHelper.extractPerformedBy(req);
-            String clientIp = req.getRemoteAddr();
-            String userAgent = req.getHeader("User-Agent");
-
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
-                    ", Executing API by ID: " + apiId +
-                    ", Path: " + remainingPath +
-                    ", Method: " + req.getMethod() +
-                    " by: " + performedBy);
-
-            // Extract query parameters - Convert to Map<String, Object>
-            Map<String, Object> queryParams = new HashMap<>();
-            req.getParameterMap().forEach((key, values) -> {
-                if (values.length > 0) {
-                    // If there are multiple values, store as array, otherwise as single value
-                    if (values.length > 1) {
-                        queryParams.put(key, values);
-                    } else {
-                        queryParams.put(key, values[0]);
-                    }
-                }
-            });
-
-            // Extract headers
-            Map<String, String> headers = new HashMap<>();
-            java.util.Enumeration<String> headerNames = req.getHeaderNames();
-            while (headerNames.hasMoreElements()) {
-                String headerName = headerNames.nextElement();
-                headers.put(headerName, req.getHeader(headerName));
-            }
-
-            // Extract path parameters from the remaining path - Convert to Map<String, Object>
-            Map<String, Object> pathParams = extractPathParameters(remainingPath);
-
-            // Build execute request matching your DTO structure
-            ExecuteApiRequestDTO executeRequest = ExecuteApiRequestDTO.builder()
-                    .pathParams(pathParams)
-                    .queryParams(queryParams)
-                    .headers(headers)
-                    .body(body)
-                    .requestId(requestId)
-                    .build();
-
-            // Execute the API
-            ExecuteApiResponseDTO response = apiGenerationEngineService.executeApi(
-                    requestId, performedBy, apiId, executeRequest, clientIp, userAgent);
-
-            // Return response with appropriate status code
-            return ResponseEntity.status(response.getStatusCode()).body(response);
-
-        } catch (Exception e) {
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
-                    ", Error executing API by ID: " + e.getMessage());
-
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while executing API: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-        }
-    }
 
     /**
      * Helper method to extract path parameters from the remaining path

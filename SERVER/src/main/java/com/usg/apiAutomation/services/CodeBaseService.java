@@ -114,11 +114,11 @@ public class CodeBaseService {
                     .orElseThrow(() -> new RuntimeException("Collection not found: " + collectionId));
 
             // Verify ownership
-            if (!collection.getOwner().equals(performedBy)) {
-                loggerUtil.log("codebase", "Request ID: " + requestId +
-                        ", User " + performedBy + " attempted to access collection " + collectionId + " owned by " + collection.getOwner());
-                throw new SecurityException("Access denied to collection: " + collectionId);
-            }
+//            if (!collection.getOwner().equals(performedBy)) {
+//                loggerUtil.log("codebase", "Request ID: " + requestId +
+//                        ", User " + performedBy + " attempted to access collection " + collectionId + " owned by " + collection.getOwner());
+//                throw new SecurityException("Access denied to collection: " + collectionId);
+//            }
 
             CollectionDetailsResponse response = new CollectionDetailsResponse();
             response.setId(collection.getId());
@@ -244,12 +244,12 @@ public class CodeBaseService {
             }
 
             // Verify ownership
-            if (!request.getCollection().getOwner().equals(performedBy)) {
-                loggerUtil.log("codebase", "Request ID: " + requestId +
-                        ", User " + performedBy + " attempted to access request " + requestIdParam +
-                        " owned by " + request.getCollection().getOwner());
-                throw new SecurityException("Access denied to request: " + requestIdParam);
-            }
+//            if (!request.getCollection().getOwner().equals(performedBy)) {
+//                loggerUtil.log("codebase", "Request ID: " + requestId +
+//                        ", User " + performedBy + " attempted to access request " + requestIdParam +
+//                        " owned by " + request.getCollection().getOwner());
+//                throw new SecurityException("Access denied to request: " + requestIdParam);
+//            }
 
             RequestDetailsResponse response = new RequestDetailsResponse();
             response.setId(request.getId());
@@ -332,9 +332,9 @@ public class CodeBaseService {
             RequestEntity request = requestRepository.findById(requestIdParam)
                     .orElseThrow(() -> new RuntimeException("Request not found: " + requestIdParam));
 
-            if (!request.getCollection().getOwner().equals(performedBy)) {
-                throw new SecurityException("Access denied to request: " + requestIdParam);
-            }
+//            if (!request.getCollection().getOwner().equals(performedBy)) {
+//                throw new SecurityException("Access denied to request: " + requestIdParam);
+//            }
 
             Optional<ImplementationEntity> implementationOpt = implementationRepository
                     .findByRequestIdAndLanguageAndComponent(requestIdParam, language, component);
@@ -395,9 +395,9 @@ public class CodeBaseService {
             RequestEntity request = requestRepository.findById(requestIdParam)
                     .orElseThrow(() -> new RuntimeException("Request not found: " + requestIdParam));
 
-            if (!request.getCollection().getOwner().equals(performedBy)) {
-                throw new SecurityException("Access denied to request: " + requestIdParam);
-            }
+//            if (!request.getCollection().getOwner().equals(performedBy)) {
+//                throw new SecurityException("Access denied to request: " + requestIdParam);
+//            }
 
             List<ImplementationEntity> implementations = implementationRepository.findByRequestId(requestIdParam);
 
@@ -439,9 +439,9 @@ public class CodeBaseService {
                     .orElseThrow(() -> new RuntimeException("Request not found: " + requestDto.getRequestId()));
 
             // Verify ownership
-            if (!request.getCollection().getOwner().equals(performedBy)) {
-                throw new SecurityException("Access denied to request: " + requestDto.getRequestId());
-            }
+//            if (!request.getCollection().getOwner().equals(performedBy)) {
+//                throw new SecurityException("Access denied to request: " + requestDto.getRequestId());
+//            }
 
             // Delete existing implementations for this language
             List<ImplementationEntity> existingImpls = implementationRepository
@@ -512,9 +512,9 @@ public class CodeBaseService {
                 RequestEntity request = requestRepository.findById(exportRequest.getRequestId())
                         .orElseThrow(() -> new RuntimeException("Request not found: " + exportRequest.getRequestId()));
 
-                if (!request.getCollection().getOwner().equals(performedBy)) {
-                    throw new SecurityException("Access denied to request: " + exportRequest.getRequestId());
-                }
+//                if (!request.getCollection().getOwner().equals(performedBy)) {
+//                    throw new SecurityException("Access denied to request: " + exportRequest.getRequestId());
+//                }
 
                 implementations = implementationRepository.findByRequestIdAndLanguage(
                         exportRequest.getRequestId(), exportRequest.getLanguage());
@@ -523,9 +523,9 @@ public class CodeBaseService {
                 CollectionEntity collection = collectionRepository.findById(exportRequest.getCollectionId())
                         .orElseThrow(() -> new RuntimeException("Collection not found: " + exportRequest.getCollectionId()));
 
-                if (!collection.getOwner().equals(performedBy)) {
-                    throw new SecurityException("Access denied to collection: " + exportRequest.getCollectionId());
-                }
+//                if (!collection.getOwner().equals(performedBy)) {
+//                    throw new SecurityException("Access denied to collection: " + exportRequest.getCollectionId());
+//                }
 
                 implementations = implementationRepository.findByCollectionId(exportRequest.getCollectionId());
             } else {
@@ -655,9 +655,9 @@ public class CodeBaseService {
 
             for (RequestEntity request : requestPage.getContent()) {
                 // Verify user has access to this request
-                if (!request.getCollection().getOwner().equals(performedBy)) {
-                    continue; // Skip if user doesn't have access
-                }
+//                if (!request.getCollection().getOwner().equals(performedBy)) {
+//                    continue; // Skip if user doesn't have access
+//                }
 
                 List<String> languages = implementationRepository.findLanguagesByRequestId(request.getId());
 
@@ -847,9 +847,9 @@ public class CodeBaseService {
                 RequestEntity request = requestRepository.findById(validationRequest.getRequestId())
                         .orElseThrow(() -> new RuntimeException("Request not found: " + validationRequest.getRequestId()));
 
-                if (!request.getCollection().getOwner().equals(performedBy)) {
-                    throw new SecurityException("Access denied to request: " + validationRequest.getRequestId());
-                }
+//                if (!request.getCollection().getOwner().equals(performedBy)) {
+//                    throw new SecurityException("Access denied to request: " + validationRequest.getRequestId());
+//                }
 
                 Optional<ImplementationEntity> existingImpl = implementationRepository
                         .findByRequestIdAndLanguageAndComponent(
@@ -887,9 +887,9 @@ public class CodeBaseService {
             RequestEntity request = requestRepository.findById(testRequest.getRequestId())
                     .orElseThrow(() -> new RuntimeException("Request not found: " + testRequest.getRequestId()));
 
-            if (!request.getCollection().getOwner().equals(performedBy)) {
-                throw new SecurityException("Access denied to request: " + testRequest.getRequestId());
-            }
+//            if (!request.getCollection().getOwner().equals(performedBy)) {
+//                throw new SecurityException("Access denied to request: " + testRequest.getRequestId());
+//            }
 
             // Get implementations to test
             List<ImplementationEntity> implementations;

@@ -84,11 +84,11 @@ public class CollectionsService {
                 .orElseThrow(() -> new EntityNotFoundException("Collection not found: " + collectionId));
 
         // Verify ownership
-        if (!collection.getOwner().equals(performedBy)) {
-            log.warn("Request ID: {}, User {} attempted to access collection {} owned by {}",
-                    requestId, performedBy, collectionId, collection.getOwner());
-            throw new SecurityException("Access denied to collection: " + collectionId);
-        }
+//        if (!collection.getOwner().equals(performedBy)) {
+//            log.warn("Request ID: {}, User {} attempted to access collection {} owned by {}",
+//                    requestId, performedBy, collectionId, collection.getOwner());
+//            throw new SecurityException("Access denied to collection: " + collectionId);
+//        }
 
         // Create response DTO
         CollectionDetailsResponseDTO details = new CollectionDetailsResponseDTO();
@@ -187,11 +187,11 @@ public class CollectionsService {
                 .orElseThrow(() -> new EntityNotFoundException("Request not found: " + requestIdParam));
 
         // Verify ownership through collection
-        if (!request.getCollection().getOwner().equals(performedBy)) {
-            log.warn("Request ID: {}, User {} attempted to access request {} owned by {}",
-                    requestId, performedBy, requestIdParam, request.getCollection().getOwner());
-            throw new SecurityException("Access denied to request: " + requestIdParam);
-        }
+//        if (!request.getCollection().getOwner().equals(performedBy)) {
+//            log.warn("Request ID: {}, User {} attempted to access request {} owned by {}",
+//                    requestId, performedBy, requestIdParam, request.getCollection().getOwner());
+//            throw new SecurityException("Access denied to request: " + requestIdParam);
+//        }
 
         System.out.println("collectionId:::::" + collectionId);
         System.out.println("requestIdParam::::::" + requestIdParam);
@@ -1043,9 +1043,9 @@ public class CollectionsService {
                 .orElseThrow(() -> new EntityNotFoundException("Collection not found: " + requestDto.getCollectionId()));
 
         // Verify ownership
-        if (!collection.getOwner().equals(performedBy)) {
-            throw new SecurityException("Access denied to collection: " + requestDto.getCollectionId());
-        }
+//        if (!collection.getOwner().equals(performedBy)) {
+//            throw new SecurityException("Access denied to collection: " + requestDto.getCollectionId());
+//        }
 
         RequestEntity requestEntity;
         if (requestDto.getRequestId() != null && !requestDto.getRequestId().isEmpty()) {
