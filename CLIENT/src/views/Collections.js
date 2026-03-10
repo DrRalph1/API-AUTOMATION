@@ -308,8 +308,8 @@ const CodePanel = React.memo(({
   const [codeSnippet, setCodeSnippet] = useState('');
   const abortControllerRef = useRef(null);
   const isMounted = useRef(true);
-  // Add a ref for the URL input
-  
+  const lastGeneratedUrlRef = useRef('');
+  const activeRequestIdRef = useRef(null); // <-- ADD THIS REF HERE
   
   console.log('🎨 CodePanel rendered with language:', selectedLanguage, 'and request:', selectedRequest?.id);
 
@@ -337,6 +337,33 @@ const CodePanel = React.memo(({
     };
   }, []);
 
+  // SINGLE SOURCE OF TRUTH for snippet generation
+  useEffect(() => {
+    // Create a stable reference to the current URL to prevent race conditions
+    const currentUrl = requestUrl;
+    const currentLanguage = selectedLanguage;
+    const currentRequestId = selectedRequest?.id;
+    
+    // Clear snippet if no URL
+    if (!currentUrl) {
+      setCodeSnippet('');
+      return;
+    }
+    
+    // Only generate if this is a new URL (not the same as last generated)
+    const urlKey = `${currentRequestId}-${currentLanguage}-${currentUrl}`;
+    
+    if (urlKey !== lastGeneratedUrlRef.current) {
+      console.log('🎯 CodePanel: New URL detected, generating snippet', { 
+        urlKey, 
+        lastKey: lastGeneratedUrlRef.current 
+      });
+      
+      lastGeneratedUrlRef.current = urlKey;
+      generateSnippet();
+    }
+  }, [selectedLanguage, requestUrl, selectedRequest?.id]); // Remove generateSnippet from deps
+
   // Generate code snippet when request changes OR language changes
   const generateSnippet = useCallback(async () => {
     // Cancel any ongoing request
@@ -349,15 +376,20 @@ const CodePanel = React.memo(({
     abortControllerRef.current = new AbortController();
 
     const requestId = Date.now();
+    const currentRequestId = selectedRequest?.id;
+    const currentUrl = requestUrl;
+    
+    // Set the active request ID
+    activeRequestIdRef.current = currentRequestId; // <-- SET IT HERE
     
     console.log(`📝 [CodePanel] Generating snippet for request ${requestId}`, {
       language: selectedLanguage,
       method: requestMethod,
-      url: requestUrl,
-      requestId: selectedRequest?.id
+      url: currentUrl,
+      requestId: currentRequestId
     });
 
-    if (!requestUrl) {
+    if (!currentUrl) {
       if (isMounted.current) {
         setCodeSnippet('// Enter a URL to generate code snippet');
       }
@@ -380,7 +412,7 @@ const CodePanel = React.memo(({
       const snippetRequest = {
         language: selectedLanguage,
         method: requestMethod,
-        url: requestUrl,
+        url: currentUrl,
         headers: safeHeaders
           .filter(h => h && h.enabled)
           .map(h => ({
@@ -394,9 +426,10 @@ const CodePanel = React.memo(({
       console.log(`📡 [CodePanel] Making API call for request ${requestId}`);
       const response = await generateCodeSnippet(authToken, snippetRequest);
       
-      // Check if component is still mounted
-      if (!isMounted.current) {
-        console.log(`⏭️ Response for ${requestId} ignored - unmounted`);
+      // Check if component is still mounted AND this request is still the active one
+      // <-- ADD THIS CHECK HERE
+      if (!isMounted.current || activeRequestIdRef.current !== selectedRequest?.id || requestUrl !== currentUrl) {
+        console.log(`⏭️ Response for ${requestId} ignored - request changed`);
         return;
       }
 
@@ -430,18 +463,6 @@ const CodePanel = React.memo(({
       }
     }
   }, [selectedLanguage, requestMethod, requestUrl, requestHeaders, requestBody, authToken, showToast, setLoading, selectedRequest?.id]);
-  
-
-  // Auto-generate when request changes OR language changes
-  useEffect(() => {
-    // Only auto-generate if we have a URL
-    if (requestUrl) {
-      generateSnippet();
-    } else {
-      // Clear snippet if no URL
-      setCodeSnippet('');
-    }
-  }, [selectedLanguage, requestUrl, generateSnippet, selectedRequest?.id]); // Added selectedRequest?.id as dependency
 
   // Get placeholder text based on language
   const getPlaceholderSnippet = () => {
@@ -511,9 +532,10 @@ try (Response response = client.newCall(request).execute()) {
 
   return (
     <div className="w-80 border-l flex flex-col" style={{ 
-      backgroundColor: colors.sidebar, // Changed from colors.bg to colors.sidebar
+      backgroundColor: colors.sidebar,
       borderColor: colors.border
     }}>
+      {/* ... rest of your JSX remains exactly the same ... */}
       <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: colors.border }}>
         <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Code</h3>
         <button type="button" onClick={() => setShowCodePanel(false)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
@@ -652,7 +674,6 @@ try (Response response = client.newCall(request).execute()) {
   );
 }, (prevProps, nextProps) => {
   // Custom comparison - only re-render when these change
-  // IMPORTANT: Now includes colors to ensure theme changes trigger re-render
   return (
     prevProps.selectedLanguage === nextProps.selectedLanguage &&
     prevProps.showLanguageDropdown === nextProps.showLanguageDropdown &&
@@ -660,7 +681,7 @@ try (Response response = client.newCall(request).execute()) {
     prevProps.requestUrl === nextProps.requestUrl &&
     prevProps.authToken === nextProps.authToken &&
     prevProps.selectedRequest?.id === nextProps.selectedRequest?.id &&
-    prevProps.colors === nextProps.colors && // ADD THIS LINE - crucial for theme changes
+    prevProps.colors === nextProps.colors &&
     JSON.stringify(prevProps.requestHeaders) === JSON.stringify(nextProps.requestHeaders) &&
     prevProps.requestBody === nextProps.requestBody
   );
@@ -1020,7 +1041,91 @@ const parseUrlAndUpdateQueryParams = (url) => {
   }
 };
 
-// Replace your parseUrlIntoTemplateAndParams function (around line 1028)
+
+// Add this function to clean URL-encoded placeholders and remove duplicates
+const cleanUrlEncodedPlaceholders = (url) => {
+  if (!url) return url;
+  
+  // Skip if no encoded placeholders and no visible placeholders
+  const hasEncoded = url.includes('%7B') || url.includes('%7D');
+  const hasVisiblePlaceholders = url.includes('{') && url.includes('}');
+  
+  if (!hasEncoded && !hasVisiblePlaceholders) {
+    return url;
+  }
+  
+  console.log('🧹 Cleaning URL-encoded placeholders from:', url);
+  
+  // First, decode any URL-encoded curly braces
+  let cleanedUrl = url
+    .replace(/%7B/g, '{')
+    .replace(/%7D/g, '}');
+  
+  // Now check for duplicate placeholders in the path
+  // Split the URL into base and query parts
+  const [basePath, queryString] = cleanedUrl.split('?');
+  
+  // Split the path into segments
+  const segments = basePath.split('/');
+  const seenPlaceholders = new Map(); // key -> count
+  const cleanedSegments = [];
+  
+  // First pass: count occurrences of each placeholder key
+  segments.forEach(segment => {
+    if (segment.startsWith('{') && segment.endsWith('}')) {
+      const key = segment.substring(1, segment.length - 1);
+      seenPlaceholders.set(key, (seenPlaceholders.get(key) || 0) + 1);
+    }
+  });
+  
+  // Check if any key appears more than once
+  const hasDuplicates = Array.from(seenPlaceholders.values()).some(count => count > 1);
+  
+  if (hasDuplicates) {
+    console.log('⚠️ Found duplicate placeholders, removing extras...');
+    
+    const processedKeys = new Set();
+    
+    // Second pass: only keep first occurrence of each placeholder
+    segments.forEach(segment => {
+      if (segment.startsWith('{') && segment.endsWith('}')) {
+        const key = segment.substring(1, segment.length - 1);
+        
+        // Only keep the first occurrence
+        if (!processedKeys.has(key)) {
+          cleanedSegments.push(segment);
+          processedKeys.add(key);
+        } else {
+          console.log(`  🗑️ Removing duplicate placeholder: ${segment}`);
+          // Skip this segment (remove it)
+        }
+      } else {
+        cleanedSegments.push(segment);
+      }
+    });
+    
+    // Rebuild the path
+    let newBasePath = cleanedSegments.join('/');
+    
+    // Remove any double slashes
+    newBasePath = newBasePath.replace(/\/+/g, '/');
+    
+    // Remove trailing slash if it exists (but preserve protocol slashes)
+    if (newBasePath.endsWith('/') && !newBasePath.endsWith('://')) {
+      newBasePath = newBasePath.slice(0, -1);
+    }
+    
+    // Rebuild the full URL with query string
+    cleanedUrl = queryString ? `${newBasePath}?${queryString}` : newBasePath;
+    
+    console.log('✅ Cleaned URL:', cleanedUrl);
+  }
+  
+  return cleanedUrl;
+};
+
+
+// Replace your parseUrlIntoTemplateAndParams function
 const parseUrlIntoTemplateAndParams = useCallback((url, existingPathParams = []) => {
   if (!url) return { templateUrl: '', pathParams: [], queryParams: [], envVarNames: [] };
   
@@ -1063,6 +1168,16 @@ const parseUrlIntoTemplateAndParams = useCallback((url, existingPathParams = [])
         console.log('🌍 Detected environment variable URL');
       }
     }
+
+    // CRITICAL FIX: Clean the path of any URL-encoded placeholders
+    path = cleanUrlEncodedPlaceholders(path);
+
+    // CRITICAL FIX: Clean URL-encoded placeholders
+    const cleanedPath = cleanUrlEncodedPlaceholders(path);
+    if (cleanedPath !== path) {
+      console.log('🧹 Path cleaned from:', path, 'to:', cleanedPath);
+      path = cleanedPath;
+    }
     
     // Extract path segments
     const pathSegments = path.split('/').filter(segment => segment);
@@ -1071,7 +1186,9 @@ const parseUrlIntoTemplateAndParams = useCallback((url, existingPathParams = [])
     const pathParams = [];
     const templateSegments = [];
     const envVarNames = [];
-    const processedKeys = new Set(); // Track which keys we've already processed
+    
+    // First pass: Identify all placeholders and their positions
+    const placeholderPositions = [];
     
     pathSegments.forEach((segment, index) => {
       // Check for environment variables (double curly braces) first
@@ -1088,27 +1205,7 @@ const parseUrlIntoTemplateAndParams = useCallback((url, existingPathParams = [])
         if (!segment.startsWith('{{')) {
           // It's a path parameter, extract the key
           const key = segment.substring(1, segment.length - 1);
-          
-          // Check if we've already processed this key (to avoid duplicates)
-          if (!processedKeys.has(key)) {
-            processedKeys.add(key);
-            
-            // Check if we have an existing value for this key
-            let existingValue = '';
-            const existingParam = existingPathParams.find(p => p.key === key);
-            if (existingParam && existingParam.value) {
-              existingValue = existingParam.value;
-            }
-            
-            pathParams.push({
-              id: existingParam?.id || `path-${Date.now()}-${index}-${Math.random()}`,
-              key: key,
-              value: existingValue,
-              description: existingParam?.description || '',
-              enabled: true,
-              required: true
-            });
-          }
+          placeholderPositions.push({ index, key, type: 'placeholder' });
           templateSegments.push(`{${key}}`);
         } else {
           templateSegments.push(segment);
@@ -1117,32 +1214,11 @@ const parseUrlIntoTemplateAndParams = useCallback((url, existingPathParams = [])
       // Check for URL-encoded path parameters (%7Bkey%7D)
       else if (segment.includes('%7B') && segment.includes('%7D')) {
         // This is an encoded path parameter
-        // First decode it to see if it's a valid placeholder
         try {
           const decodedSegment = decodeURIComponent(segment);
           if (decodedSegment.startsWith('{') && decodedSegment.endsWith('}')) {
             const key = decodedSegment.substring(1, decodedSegment.length - 1);
-            
-            // Check if we've already processed this key
-            if (!processedKeys.has(key)) {
-              processedKeys.add(key);
-              
-              // Check if we have an existing value for this key
-              let existingValue = '';
-              const existingParam = existingPathParams.find(p => p.key === key);
-              if (existingParam && existingParam.value) {
-                existingValue = existingParam.value;
-              }
-              
-              pathParams.push({
-                id: existingParam?.id || `path-${Date.now()}-${index}-${Math.random()}`,
-                key: key,
-                value: existingValue,
-                description: existingParam?.description || '',
-                enabled: true,
-                required: true
-              });
-            }
+            placeholderPositions.push({ index, key, type: 'placeholder' });
             templateSegments.push(`{${key}}`);
           } else {
             templateSegments.push(segment);
@@ -1151,7 +1227,7 @@ const parseUrlIntoTemplateAndParams = useCallback((url, existingPathParams = [])
           templateSegments.push(segment);
         }
       }
-      // Check for partially encoded segments or segments that might contain values
+      // Check for partially encoded segments
       else if (segment.includes('{') || segment.includes('}') || segment.includes('%7B') || segment.includes('%7D')) {
         // Try to extract if it contains curly braces in any form
         const openBraceMatch = segment.match(/(.*?)(?:{|%7B)(.*?)(?:}|%7D)(.*)/);
@@ -1159,27 +1235,7 @@ const parseUrlIntoTemplateAndParams = useCallback((url, existingPathParams = [])
           const prefix = openBraceMatch[1];
           const key = openBraceMatch[2];
           const suffix = openBraceMatch[3];
-          
-          // Check if we've already processed this key
-          if (!processedKeys.has(key)) {
-            processedKeys.add(key);
-            
-            // Check if we have an existing value for this key
-            let existingValue = '';
-            const existingParam = existingPathParams.find(p => p.key === key);
-            if (existingParam && existingParam.value) {
-              existingValue = existingParam.value;
-            }
-            
-            pathParams.push({
-              id: existingParam?.id || `path-${Date.now()}-${index}-${Math.random()}`,
-              key: key,
-              value: existingValue,
-              description: existingParam?.description || '',
-              enabled: true,
-              required: true
-            });
-          }
+          placeholderPositions.push({ index, key, type: 'placeholder' });
           templateSegments.push(prefix + `{${key}}` + suffix);
         } else {
           templateSegments.push(segment);
@@ -1188,51 +1244,36 @@ const parseUrlIntoTemplateAndParams = useCallback((url, existingPathParams = [])
       else if (segment.startsWith(':')) {
         // Colon-style placeholder
         const key = segment.substring(1);
-        
-        // Check if we've already processed this key
-        if (!processedKeys.has(key)) {
-          processedKeys.add(key);
-          
-          // Check if we have an existing value for this key
-          let existingValue = '';
-          const existingParam = existingPathParams.find(p => p.key === key);
-          if (existingParam && existingParam.value) {
-            existingValue = existingParam.value;
-          }
-          
-          pathParams.push({
-            id: existingParam?.id || `path-${Date.now()}-${index}-${Math.random()}`,
-            key: key,
-            value: existingValue,
-            description: existingParam?.description || '',
-            enabled: true,
-            required: true
-          });
-        }
+        placeholderPositions.push({ index, key, type: 'placeholder' });
         templateSegments.push(`{${key}}`);
       }
       else {
-        // Regular path segment - check if it matches any existing param value
-        let matched = false;
-        existingPathParams.forEach(existingParam => {
-          if (existingParam.value === segment) {
-            // This segment is a value for an existing param
-            if (!processedKeys.has(existingParam.key)) {
-              processedKeys.add(existingParam.key);
-              pathParams.push({
-                ...existingParam,
-                id: existingParam.id || `path-${Date.now()}-${index}-${Math.random()}`
-              });
-              templateSegments.push(`{${existingParam.key}}`);
-              matched = true;
-            }
-          }
-        });
-        
-        if (!matched) {
-          templateSegments.push(segment);
-        }
+        // Regular path segment
+        templateSegments.push(segment);
       }
+    });
+    
+    // Second pass: Create path params from placeholder positions
+    // CRITICAL: Match with existing path params by position, not just by key
+    placeholderPositions.forEach(({ index, key }) => {
+      // Try to find an existing param with the same key AND same position?
+      // For now, we'll create a new param for each placeholder position
+      const existingParam = existingPathParams.find(p => 
+        p.key === key && p.position === index
+      );
+      
+      // Also check if any existing param has this key and we can use its value
+      const anyExistingWithKey = existingPathParams.find(p => p.key === key);
+      
+      pathParams.push({
+        id: existingParam?.id || anyExistingWithKey?.id || `path-${Date.now()}-${index}-${Math.random()}`,
+        key: key,
+        value: existingParam?.value || anyExistingWithKey?.value || '',
+        description: existingParam?.description || anyExistingWithKey?.description || '',
+        enabled: true,
+        required: true,
+        position: index // Store the position for future reference
+      });
     });
     
     // Rebuild template URL
@@ -1287,7 +1328,6 @@ const parseUrlIntoTemplateAndParams = useCallback((url, existingPathParams = [])
 const isUpdatingFromInput = useRef(false);
 const urlInputRef = useRef(null);
 
-// Replace your handleUrlChange function (around line 1345)
 const handleUrlChange = useCallback((e) => {
   // Get the current cursor position
   const cursorPos = e.target.selectionStart;
@@ -1297,114 +1337,63 @@ const handleUrlChange = useCallback((e) => {
   
   const newUrl = e.target.value;
   
-  // CRITICAL FIX: If the URL contains encoded placeholders, decode them for display
-  let displayUrl = newUrl;
-  if (newUrl.includes('%7B') && newUrl.includes('%7D')) {
-    try {
-      displayUrl = decodeURIComponent(newUrl);
-      console.log('🔧 Decoding URL for display:', newUrl, '->', displayUrl);
-    } catch (e) {
-      displayUrl = newUrl;
-    }
-  }
-  
-  setRequestUrl(displayUrl);
-  
-  // Parse the URL to extract parameters, passing existing path params
-  const parsed = parseUrlIntoTemplateAndParams(displayUrl, requestPathParams);
-  
-  // Update query params
-  if (parsed.queryParams.length > 0) {
-    setRequestParams(prevParams => {
-      const existingParamsMap = new Map(
-        prevParams.filter(p => p.key).map(p => [p.key, p])
-      );
-      
-      const mergedParams = parsed.queryParams.map(parsedParam => {
-        const existing = existingParamsMap.get(parsedParam.key);
-        if (existing) {
-          return {
-            ...existing,
-            value: parsedParam.value,
-            key: parsedParam.key
-          };
-        }
-        return parsedParam;
-      });
-      
-      return mergedParams;
-    });
-  } else {
-    setRequestParams([]);
-  }
-  
-  // Handle path params - CRITICAL FIX: Only update if we actually have new params
-  if (parsed.pathParams.length > 0) {
-    // Merge with existing path params to preserve values
-    setRequestPathParams(prevParams => {
-      const mergedParams = parsed.pathParams.map(newParam => {
-        const existing = prevParams.find(p => p.key === newParam.key);
-        if (existing) {
-          // Preserve existing value if it's not a placeholder
-          return {
-            ...newParam,
-            value: existing.value || newParam.value
-          };
-        }
-        return newParam;
-      });
-      
-      console.log('📋 Updated path params from URL:', mergedParams);
-      return mergedParams;
-    });
-    setTemplateUrl(parsed.templateUrl);
-  } else {
-    // Check if this is a transition from env var to actual URL
-    const isTransitionToActualUrl = displayUrl.includes('http') && 
-                                   requestPathParams.length > 0 && 
-                                   templateUrl && 
-                                   templateUrl.includes('{{');
+  // Only update if different from current URL
+  if (newUrl !== requestUrl) {
+    setRequestUrl(newUrl);
     
-    if (isTransitionToActualUrl) {
-      console.log('🔄 Detected transition from env var to actual URL');
-      
-      // Try to preserve path params by matching the structure
-      const preservedParams = requestPathParams.map(param => ({
-        ...param,
-        id: param.id || `path-${Date.now()}-${Math.random()}`
-      }));
-      
-      setRequestPathParams(preservedParams);
-      
-      // Reconstruct template URL by replacing the env var with the actual base
-      const envVarMatch = templateUrl.match(/\{\{[^}]+\}\}/);
-      if (envVarMatch) {
-        let newTemplateUrl = templateUrl.replace(envVarMatch[0], '');
-        if (!newTemplateUrl.startsWith('http')) {
-          const match = displayUrl.match(/^(https?:\/\/[^\/]+)/);
-          if (match) {
-            newTemplateUrl = match[1] + newTemplateUrl;
+    // Parse the URL to extract parameters
+    const parsed = parseUrlIntoTemplateAndParams(newUrl, requestPathParams);
+    
+    // Update query params
+    if (parsed.queryParams.length > 0) {
+      setRequestParams(prevParams => {
+        const existingParamsMap = new Map(
+          prevParams.filter(p => p.key).map(p => [p.key, p])
+        );
+        
+        const mergedParams = parsed.queryParams.map(parsedParam => {
+          const existing = existingParamsMap.get(parsedParam.key);
+          if (existing) {
+            return {
+              ...existing,
+              value: parsedParam.value,
+              key: parsedParam.key
+            };
           }
-        }
-        setTemplateUrl(newTemplateUrl);
-      } else {
-        setTemplateUrl(displayUrl);
-      }
+          return parsedParam;
+        });
+        
+        return mergedParams;
+      });
     } else {
-      // CRITICAL FIX: Don't clear path params if URL doesn't have placeholders
-      // Only clear if URL is completely empty or doesn't match the template structure
-      const shouldClear = !displayUrl || displayUrl === '' || 
-                         (templateUrl && !displayUrl.includes('{') && !displayUrl.includes('}') && 
-                          !displayUrl.includes('%7B') && !displayUrl.includes('%7D'));
-      
-      if (shouldClear) {
-        setRequestPathParams([]);
-        setTemplateUrl(displayUrl);
-      }
+      setRequestParams([]);
+    }
+    
+    // Handle path params
+    if (parsed.pathParams.length > 0) {
+      setRequestPathParams(prevParams => {
+        const mergedParams = parsed.pathParams.map(newParam => {
+          const existing = prevParams.find(p => p.key === newParam.key);
+          if (existing) {
+            return {
+              ...newParam,
+              value: existing.value || newParam.value
+            };
+          }
+          return newParam;
+        });
+        
+        console.log('📋 Updated path params from URL:', mergedParams);
+        return mergedParams;
+      });
+      setTemplateUrl(parsed.templateUrl);
+    } else {
+      setRequestPathParams([]);
+      setTemplateUrl(newUrl);
     }
   }
   
-  console.log('📝 URL changed:', displayUrl);
+  console.log('📝 URL changed:', newUrl);
   
   // Restore cursor position after React renders
   requestAnimationFrame(() => {
@@ -1415,7 +1404,7 @@ const handleUrlChange = useCallback((e) => {
     }
   });
   
-}, [parseUrlIntoTemplateAndParams, requestPathParams, templateUrl]);
+}, [parseUrlIntoTemplateAndParams, requestPathParams, requestUrl]);
 
 // Replace your existing handleUrlPaste function
 const handleUrlPaste = useCallback((e) => {
@@ -1499,7 +1488,7 @@ const handleUrlPaste = useCallback((e) => {
   
 }, [requestUrl, requestPathParams, parseUrlIntoTemplateAndParams, showToast]);
 
-// Replace your existing updatePathParam function
+// In updatePathParam, when updating, preserve position
 const updatePathParam = (id, field, value) => {
   console.log('🟢 updatePathParam called:', { id, field, value });
   
@@ -1530,7 +1519,6 @@ const updatePathParam = (id, field, value) => {
         const placeholder = `{${param.key}}`;
         if (templateUrl.includes(placeholder)) {
           // CRITICAL FIX: Only replace if the value doesn't contain other placeholders
-          // This prevents replacing {fname} with {tin_v} which causes duplication
           const newValue = value && value.trim() !== '' && !value.includes('{') && !value.includes('}') 
             ? value 
             : placeholder;
@@ -1560,99 +1548,111 @@ const updatePathParam = (id, field, value) => {
   });
 };
 
-
-// Add this effect near your other effects (around line 3650)
 useEffect(() => {
-  // If URL is empty, clear path params
-  if (!requestUrl || requestUrl.trim() === '') {
-    setRequestPathParams([]);
-    setTemplateUrl('');
-  }
-}, [requestUrl]);
-
-// Add this effect near your other useEffect hooks
-useEffect(() => {
-  // This effect ensures that placeholders are displayed as {key} not %7Bkey%7D
-  if (requestUrl && requestUrl.includes('%7B') && requestUrl.includes('%7D')) {
-    // This URL has encoded curly braces - fix it for display
-    try {
-      const decodedUrl = decodeURIComponent(requestUrl);
-      if (decodedUrl !== requestUrl) {
-        console.log('🔧 Fixing encoded URL in display:', requestUrl, '->', decodedUrl);
-        setRequestUrl(decodedUrl);
-      }
-    } catch (e) {
-      console.error('Error fixing URL display:', e);
-    }
-  }
-}, [requestUrl]); // Run whenever requestUrl changes
-
-// Keep only this one for syncing from URL to path params when not typing
-useEffect(() => {
-  // Skip if this update came from user input
+  // Don't do anything if we're in the middle of user input
   if (isUpdatingFromInput.current) {
     return;
   }
-  
-  // Only sync when we have a complete URL and path params
-  if (requestUrl && requestPathParams.length > 0 && templateUrl) {
-    // Check if this looks like a complete value (not in the middle of typing)
-    const lastSegment = requestUrl.split('/').pop();
-    const isTyping = lastSegment === '' || lastSegment.includes('?') && !lastSegment.includes('=');
-    
-    if (!isTyping) {
-      try {
-        // Parse the URL to get path segments
-        let urlPath = '';
-        try {
-          const urlObj = new URL(requestUrl.startsWith('http') ? requestUrl : `http://${requestUrl}`);
-          urlPath = urlObj.pathname;
-        } catch {
-          urlPath = requestUrl.split('?')[0];
-        }
-        
-        const pathSegments = urlPath.split('/').filter(s => s);
-        const templateSegments = templateUrl.split('/').filter(s => s);
-        
-        // Find placeholder positions
-        const placeholderPositions = [];
-        templateSegments.forEach((segment, index) => {
-          if (segment.startsWith('{') && segment.endsWith('}')) {
-            const key = segment.substring(1, segment.length - 1);
-            placeholderPositions.push({ index, key });
-          }
-        });
-        
-        // Update path params based on position
-        const updatedPathParams = requestPathParams.map((param) => {
-          const position = placeholderPositions.find(p => p.key === param.key);
-          
-          if (position && position.index < pathSegments.length) {
-            const urlValue = pathSegments[position.index];
-            
-            // Update if it's a real value and different
-            if (urlValue && !urlValue.includes('{') && !urlValue.includes('}') && urlValue !== param.value) {
-              return { ...param, value: urlValue };
-            }
-          }
-          return param;
-        });
-        
-        // Check if any values changed
-        const hasChanges = updatedPathParams.some((param, index) => 
-          param.value !== requestPathParams[index].value
-        );
-        
-        if (hasChanges) {
-          setRequestPathParams(updatedPathParams);
-        }
-      } catch (error) {
-        console.error('Error in sync effect:', error);
-      }
-    }
-  }
-}, [requestUrl, templateUrl, requestPathParams]);
 
+  // Create a stable reference to all current values
+  const currentUrl = requestUrl;
+  const currentPathParams = requestPathParams;
+  const currentTemplateUrl = templateUrl;
+  const currentRequestParams = requestParams;
+
+  // Use a single timeout to batch all updates
+  const timeoutId = setTimeout(() => {
+    // Step 1: Clean any encoded placeholders in the URL
+    let workingUrl = currentUrl;
+    
+    // Check if URL has encoded placeholders
+    if (workingUrl && (workingUrl.includes('%7B') || workingUrl.includes('%7D'))) {
+      try {
+        workingUrl = decodeURIComponent(workingUrl);
+      } catch {
+        // Ignore decode errors
+      }
+      workingUrl = cleanUrlEncodedPlaceholders(workingUrl);
+    }
+
+    // Step 2: Clean path param values (remove any placeholder text)
+    let needsPathParamUpdate = false;
+    const cleanedPathParams = currentPathParams.map(param => {
+      const value = param.value || '';
+      const hasPlaceholder = value.includes('{') || value.includes('}') || 
+                            value.includes('%7B') || value.includes('%7D');
+      if (hasPlaceholder) {
+        needsPathParamUpdate = true;
+        return { ...param, value: '' };
+      }
+      return param;
+    });
+
+    if (needsPathParamUpdate) {
+      setRequestPathParams(cleanedPathParams);
+    }
+
+    // Step 3: Rebuild URL with path params if we have a template
+    if (currentTemplateUrl && currentPathParams.length > 0) {
+      const cleanTemplateUrl = cleanUrlEncodedPlaceholders(currentTemplateUrl);
+      let updatedUrl = cleanTemplateUrl;
+      
+      // Create a map of placeholder to value
+      const paramMap = new Map();
+      cleanedPathParams.forEach(param => {
+        if (param.key) {
+          paramMap.set(param.key, param.value && param.value.trim() !== '' ? param.value : null);
+        }
+      });
+      
+      // Sort placeholders by length
+      const placeholders = Array.from(paramMap.keys()).sort((a, b) => b.length - a.length);
+      
+      // Replace each placeholder
+      placeholders.forEach(key => {
+        const value = paramMap.get(key);
+        const placeholder = `{${key}}`;
+        const colonPlaceholder = `:${key}`;
+        
+        if (updatedUrl.includes(placeholder)) {
+          const replacementValue = value && !value.includes('{') && !value.includes('}') ? value : placeholder;
+          const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+          updatedUrl = updatedUrl.replace(regex, replacementValue);
+        }
+        
+        if (updatedUrl.includes(colonPlaceholder)) {
+          const replacementValue = value && !value.includes('{') && !value.includes('}') ? value : colonPlaceholder;
+          const regex = new RegExp(colonPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+          updatedUrl = updatedUrl.replace(regex, replacementValue);
+        }
+      });
+      
+      // Add query string
+      const queryString = currentRequestParams
+        .filter(p => p.enabled && p.key && p.key.trim() !== '')
+        .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value || '')}`)
+        .join('&');
+      
+      const finalUrl = queryString ? `${updatedUrl}?${queryString}` : updatedUrl;
+      workingUrl = finalUrl;
+    }
+
+    // Step 4: Only update if the URL actually changed
+    if (workingUrl !== currentUrl && workingUrl !== lastRebuiltUrlRef.current) {
+      console.log('🔄 Final URL after all processing:', workingUrl);
+      lastRebuiltUrlRef.current = workingUrl;
+      setRequestUrl(workingUrl);
+    }
+
+  }, 250); // Single debounce for all operations
+
+  return () => clearTimeout(timeoutId);
+}, [
+  requestUrl, 
+  JSON.stringify(requestPathParams.map(p => ({ key: p.key, value: p.value, enabled: p.enabled }))),
+  templateUrl,
+  JSON.stringify(requestParams.map(p => ({ key: p.key, value: p.value, enabled: p.enabled })))
+]);
 
 // Fix 2: Update the determineActiveTab function to be more robust
 const determineActiveTab = useCallback(() => {
@@ -1708,61 +1708,6 @@ const updateUrlWithPathParam = (key, value) => {
   });
 };
 
-
-// Replace your existing useEffect that rebuilds the URL
-useEffect(() => {
-  // This effect rebuilds the URL when path params are updated via the UI
-  if (templateUrl && requestPathParams.length > 0) {
-    let updatedUrl = templateUrl;
-    
-    // Create a map of placeholder to value
-    const paramMap = new Map();
-    requestPathParams.forEach(param => {
-      if (param.key) {
-        paramMap.set(param.key, param.value && param.value.trim() !== '' ? param.value : null);
-      }
-    });
-    
-    // Sort placeholders by length (longest first) to avoid nested replacements
-    const placeholders = Array.from(paramMap.keys()).sort((a, b) => b.length - a.length);
-    
-    // Replace each placeholder with its current value, but only if it's a direct match
-    placeholders.forEach(key => {
-      const value = paramMap.get(key);
-      const placeholder = `{${key}}`;
-      const colonPlaceholder = `:${key}`;
-      
-      // Only replace if the placeholder exists and we're not replacing with another placeholder
-      if (updatedUrl.includes(placeholder)) {
-        const replacementValue = value && !value.includes('{') && !value.includes('}') ? value : placeholder;
-        // Use a regex with escaped characters to ensure we replace the exact placeholder
-        const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-        updatedUrl = updatedUrl.replace(regex, replacementValue);
-      }
-      
-      if (updatedUrl.includes(colonPlaceholder)) {
-        const replacementValue = value && !value.includes('{') && !value.includes('}') ? value : colonPlaceholder;
-        const regex = new RegExp(colonPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-        updatedUrl = updatedUrl.replace(regex, replacementValue);
-      }
-    });
-    
-    // Add query string if any query params exist
-    const queryString = requestParams
-      .filter(p => p.enabled && p.key && p.key.trim() !== '')
-      .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value || '')}`)
-      .join('&');
-    
-    const finalUrl = queryString ? `${updatedUrl}?${queryString}` : updatedUrl;
-    
-    // OPTIMIZATION: Only update if different from current URL AND not recently rebuilt
-    if (finalUrl !== requestUrl && finalUrl !== lastRebuiltUrlRef.current) {
-      console.log('🔄 Rebuilding URL:', finalUrl);
-      lastRebuiltUrlRef.current = finalUrl;
-      setRequestUrl(finalUrl);
-    }
-  }
-}, [JSON.stringify(requestPathParams.map(p => ({ key: p.key, value: p.value, enabled: p.enabled })))]);
 
 
 // Fix 4: Add effect to update URL when path params change (as a backup)
@@ -2250,11 +2195,11 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
   console.log('📥 Setting initial request data from tree');
   
   setRequestMethod(request.method || 'GET');
-  
+
   // Store the template URL - DECODE IT FIRST to handle encoded curly braces
   let initialTemplateUrl = request.url || '';
   console.log('📋 Original template URL:', initialTemplateUrl);
-  
+
   // DECODE the URL first to handle any encoded curly braces
   try {
     const decodedUrl = decodeURIComponent(initialTemplateUrl);
@@ -2266,7 +2211,14 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     // If decoding fails, use original
     console.log('📋 URL decoding failed, using original:', initialTemplateUrl);
   }
-  
+
+  // CRITICAL FIX: Clean URL-encoded placeholders
+  const cleanedTemplateUrl = cleanUrlEncodedPlaceholders(initialTemplateUrl);
+  if (cleanedTemplateUrl !== initialTemplateUrl) {
+    console.log('🧹 Cleaned template URL:', cleanedTemplateUrl);
+    initialTemplateUrl = cleanedTemplateUrl;
+  }
+
   setTemplateUrl(initialTemplateUrl);
   setRequestUrl(initialTemplateUrl);
   
@@ -2784,8 +2736,15 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
           if (pathParams.length > 0) {
             console.log('🛣️ Setting path params:', pathParams);
             
+            // Add position information based on order
+            const pathParamsWithPosition = pathParams.map((param, index) => ({
+              ...param,
+              position: index,
+              id: param.id || `path-${Date.now()}-${index}-${Math.random()}`
+            }));
+            
             // CRITICAL FIX: Filter out any path params that have placeholder values
-            const cleanedPathParams = pathParams.map(param => {
+            const cleanedPathParams = pathParamsWithPosition.map(param => {
               // Check if the value contains any placeholder patterns
               const value = param.value || '';
               
@@ -2800,7 +2759,7 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
               };
             });
             
-            console.log('🧹 Cleaned path params:', cleanedPathParams);
+            console.log('🧹 Cleaned path params with position:', cleanedPathParams);
             setRequestPathParams(cleanedPathParams);
             
             let newTemplateUrl = initialTemplateUrl;
@@ -3690,83 +3649,6 @@ const separateParamsAndHeaders = (items) => {
       setLoading(prev => ({ ...prev, import: false }));
     }
   }, [authToken, fetchCollections]);
-  
-
-// Add this effect to clean up duplicate placeholders
-useEffect(() => {
-  if (requestUrl && requestUrl.includes('{') && requestUrl.includes('}')) {
-    // Check for duplicate placeholders
-    const matches = requestUrl.match(/\{[^}]+\}/g);
-    if (matches) {
-      const uniquePlaceholders = new Set(matches);
-      if (matches.length !== uniquePlaceholders.size) {
-        console.log('🧹 Found duplicate placeholders, cleaning up...');
-        
-        // Rebuild the URL with unique placeholders
-        let cleanedUrl = requestUrl;
-        const seen = new Set();
-        
-        // Process from end to start to avoid index issues
-        for (let i = matches.length - 1; i >= 0; i--) {
-          const placeholder = matches[i];
-          if (seen.has(placeholder)) {
-            // This is a duplicate, remove it
-            const lastIndex = cleanedUrl.lastIndexOf(placeholder);
-            if (lastIndex !== -1) {
-              cleanedUrl = cleanedUrl.substring(0, lastIndex) + cleanedUrl.substring(lastIndex + placeholder.length);
-            }
-          } else {
-            seen.add(placeholder);
-          }
-        }
-        
-        // Clean up any double slashes
-        cleanedUrl = cleanedUrl.replace(/\/+/g, '/');
-        
-        // Remove trailing slash if it exists (but preserve protocol slashes)
-        if (cleanedUrl.endsWith('/') && !cleanedUrl.endsWith('://')) {
-          cleanedUrl = cleanedUrl.slice(0, -1);
-        }
-        
-        // OPTIMIZATION: Only update if different and not recently cleaned
-        if (cleanedUrl !== requestUrl && cleanedUrl !== lastRebuiltUrlRef.current) {
-          console.log('🧹 Cleaned URL:', cleanedUrl);
-          lastRebuiltUrlRef.current = cleanedUrl;
-          setRequestUrl(cleanedUrl);
-        }
-      }
-    }
-  }
-}, [requestUrl]);
-
-
-// Add this effect to clean up any path params that have placeholder values on mount
-useEffect(() => {
-  if (requestPathParams.length > 0) {
-    const hasPlaceholderValues = requestPathParams.some(param => {
-      const value = param.value || '';
-      return value.includes('{') || value.includes('}') || 
-             value.includes('%7B') || value.includes('%7D');
-    });
-    
-    if (hasPlaceholderValues) {
-      console.log('🧹 Cleaning path params with placeholder values on mount');
-      
-      const cleanedPathParams = requestPathParams.map(param => {
-        const value = param.value || '';
-        const hasPlaceholder = value.includes('{') || value.includes('}') || 
-                              value.includes('%7B') || value.includes('%7D');
-        
-        return {
-          ...param,
-          value: hasPlaceholder ? '' : value
-        };
-      });
-      
-      setRequestPathParams(cleanedPathParams);
-    }
-  }
-}, []); // Run once on mount
 
 
   // Initialize data - with check for authToken changes
