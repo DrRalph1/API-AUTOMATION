@@ -5705,8 +5705,8 @@ const renderQueryParamsTab = () => {
     );
   };
 
-  // Replace the handleExecuteRequest function with this version that makes direct HTTP requests
-const handleExecuteRequest = useCallback(async () => {
+ 
+  const handleExecuteRequest = useCallback(async () => {
   const validationErrors = validateExecuteRequest({
     method: requestMethod,
     url: requestUrl
@@ -5721,150 +5721,125 @@ const handleExecuteRequest = useCallback(async () => {
   setIsSending(true);
   setResponse(null);
 
-  // Track start time for response time calculation
   const startTime = Date.now();
 
   try {
-    // ============== BUILD FINAL URL WITH PATH PARAMS ==============
+    // ============== STEP 1: BUILD THE FINAL URL WITH PATH PARAMETERS ==============
     let finalUrl = requestUrl;
     
-    // Replace path parameters in the URL
+    // Get the path parameters from state
     const pathParamsArray = requestPathParams
       .filter(p => p.enabled && p.key && p.key.trim() !== '')
       .map(p => ({
         key: p.key.trim(),
-        value: p.value || '',
-        enabled: true
+        value: p.value || ''
       }));
 
+    console.log('📤 Path params from UI:', pathParamsArray);
+
+    // CRITICAL FIX: The backend expects the URL to have the path parameter values
+    // in the correct positions with the correct parameter names.
+    // For example: {{baseUrl}}/plx/api/gen/{apiId}/api/v1/tblbeneficiary/{benecode}
+    // The URL should become: .../tblbeneficiary/12345
+    
     if (pathParamsArray.length > 0) {
-      pathParamsArray.forEach(param => {
-        // Replace {key} and :key placeholders with actual values
-        const placeholderPatterns = [
-          new RegExp(`{${param.key}}`, 'g'),
-          new RegExp(`:${param.key}`, 'g')
-        ];
+      // Get the base URL (everything up to the endpoint path)
+      // This is a simpler approach - just split on the endpoint path
+      const endpointIndex = finalUrl.indexOf('/tblbeneficiary');
+      if (endpointIndex !== -1) {
+        const baseUrl = finalUrl.substring(0, endpointIndex + '/tblbeneficiary'.length);
         
-        placeholderPatterns.forEach(pattern => {
-          finalUrl = finalUrl.replace(pattern, encodeURIComponent(param.value));
+        // Build the URL by adding each path param value
+        let pathWithParams = baseUrl;
+        pathParamsArray.forEach(param => {
+          // Add the value, encoding if needed
+          pathWithParams += '/' + encodeURIComponent(param.value);
         });
-      });
-    }
-
-    // ============== BUILD QUERY PARAMS ==============
-    const queryParamsArray = requestParams
-      .filter(p => p.enabled && p.key && p.key.trim() !== '')
-      .map(p => ({
-        key: p.key.trim(),
-        value: p.value || '',
-        enabled: true
-      }));
-
-    // Add query params to URL if they're not already there
-    if (queryParamsArray.length > 0) {
-      const urlObj = new URL(finalUrl.startsWith('http') ? finalUrl : `http://${finalUrl}`);
-      const existingParams = new URLSearchParams(urlObj.search);
-      
-      queryParamsArray.forEach(param => {
-        existingParams.set(param.key, param.value);
-      });
-      
-      urlObj.search = existingParams.toString();
-      finalUrl = urlObj.toString();
-    }
-
-    // ============== BUILD HEADERS ==============
-    const headers = new Headers();
-    
-    // Add all enabled headers from the Headers tab
-    requestHeaders.filter(h => h.enabled && h.key && h.key.trim() !== '').forEach(header => {
-      headers.set(header.key.trim(), header.value || '');
-    });
-
-    // ============== PROCESS AUTHENTICATION ==============
-    // Check for API Key config
-    const hasApiKeyConfig = authConfig && (authConfig.type === 'apikey' || authConfig.authType === 'apikey');
-    
-    if (hasApiKeyConfig) {
-      // Add API Key header
-      const apiKeyHeader = authConfig.key || authConfig.apiKeyHeader || '';
-      const apiKeyValue = authConfig.value || authConfig.apiKeyValue || '';
-      
-      if (apiKeyHeader && apiKeyValue) {
-        headers.set(apiKeyHeader, apiKeyValue);
-      }
-      
-      // Add API Secret if present
-      const apiSecretHeader = authConfig.apiSecretHeader || 'X-API-Secret';
-      const apiSecretValue = authConfig.apiSecretValue || authConfig.apiKeySecret || '';
-      
-      if (apiSecretHeader && apiSecretValue) {
-        headers.set(apiSecretHeader, apiSecretValue);
+        
+        // Add any query string that might exist
+        if (finalUrl.includes('?')) {
+          const queryString = finalUrl.substring(finalUrl.indexOf('?'));
+          pathWithParams += queryString;
+        }
+        
+        finalUrl = pathWithParams;
+        console.log('🔧 Reconstructed URL with path params:', finalUrl);
+      } else {
+        // Fallback: replace placeholders in the URL
+        pathParamsArray.forEach(param => {
+          const placeholder = `{${param.key}}`;
+          const colonPlaceholder = `:${param.key}`;
+          
+          if (finalUrl.includes(placeholder)) {
+            finalUrl = finalUrl.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), encodeURIComponent(param.value));
+          }
+          
+          if (finalUrl.includes(colonPlaceholder)) {
+            finalUrl = finalUrl.replace(new RegExp(colonPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), encodeURIComponent(param.value));
+          }
+        });
       }
     }
-    else if (authType === 'bearer' && authConfig.token) {
-      const authHeader = `${authConfig.tokenType || 'Bearer'} ${authConfig.token}`;
-      headers.set('Authorization', authHeader);
-    }
-    else if (authType === 'basic' && authConfig.username && authConfig.password) {
-      const credentials = btoa(`${authConfig.username}:${authConfig.password}`);
-      headers.set('Authorization', `Basic ${credentials}`);
-    }
-    else if (authType === 'oauth2' && authConfig.token) {
-      headers.set('Authorization', `Bearer ${authConfig.token}`);
-    }
 
-    // ============== PROCESS BODY ==============
+    // ============== STEP 2: BUILD THE REQUEST BODY ==============
     let body = null;
     let contentType = '';
 
-    // Determine Content-Type based on body type
+    // Handle different body types (your existing code)
     if (requestBodyType === 'raw') {
       switch (rawBodyType) {
         case 'json':
           contentType = 'application/json';
-          try {
-            // Validate JSON if needed
-            if (requestBody && requestBody.trim()) {
-              JSON.parse(requestBody); // Just validate, don't re-stringify
+          if (requestBody && requestBody.trim()) {
+            try {
+              JSON.parse(requestBody);
               body = requestBody;
+            } catch (e) {
+              showToast('Invalid JSON in request body', 'error');
+              setLoading(prev => ({ ...prev, execute: false }));
+              setIsSending(false);
+              return;
             }
-          } catch (e) {
-            showToast('Invalid JSON in request body', 'error');
-            setLoading(prev => ({ ...prev, execute: false }));
-            setIsSending(false);
-            return;
           }
           break;
         case 'xml':
           contentType = 'application/xml';
-          body = requestBody;
-          break;
-        case 'javascript':
-          contentType = 'application/javascript';
-          body = requestBody;
+          body = requestBody || '';
           break;
         case 'html':
           contentType = 'text/html';
-          body = requestBody;
+          body = requestBody || '';
+          break;
+        case 'javascript':
+          contentType = 'application/javascript';
+          body = requestBody || '';
           break;
         default:
           contentType = 'text/plain';
-          body = requestBody;
+          body = requestBody || '';
       }
     } 
     else if (requestBodyType === 'form-data') {
-      // For form-data, we need to use FormData
-      const formDataObj = new FormData();
-      formData.filter(f => f.enabled && f.key && f.key.trim() !== '').forEach(field => {
-        if (field.type === 'file' && field.file) {
-          formDataObj.append(field.key, field.file);
-        } else {
-          formDataObj.append(field.key, field.value || '');
-        }
-      });
-      body = formDataObj;
-      // Don't set Content-Type for FormData - browser will set it with boundary
+      const hasFiles = formData.some(f => f.type === 'file' && f.file);
+      
+      if (hasFiles) {
+        const formDataObj = new FormData();
+        formData.filter(f => f.enabled && f.key && f.key.trim() !== '').forEach(field => {
+          if (field.type === 'file' && field.file) {
+            formDataObj.append(field.key, field.file);
+          } else {
+            formDataObj.append(field.key, field.value || '');
+          }
+        });
+        body = formDataObj;
+      } else {
+        contentType = 'application/json';
+        const jsonBody = {};
+        formData.filter(f => f.enabled && f.key && f.key.trim() !== '').forEach(field => {
+          jsonBody[field.key] = field.value || '';
+        });
+        body = JSON.stringify(jsonBody);
+      }
     } 
     else if (requestBodyType === 'x-www-form-urlencoded') {
       contentType = 'application/x-www-form-urlencoded';
@@ -5876,52 +5851,92 @@ const handleExecuteRequest = useCallback(async () => {
     } 
     else if (requestBodyType === 'xml') {
       contentType = 'application/xml';
-      body = requestBody;
+      body = requestBody || '';
     }
     else if (requestBodyType === 'graphql') {
       contentType = 'application/json';
-      try {
-        const graphqlBody = {
-          query: graphqlQuery
-        };
-        if (graphqlVariables) {
+      const graphqlBody = {
+        query: graphqlQuery || ''
+      };
+      if (graphqlVariables) {
+        try {
           graphqlBody.variables = JSON.parse(graphqlVariables);
+        } catch (e) {
+          showToast('Invalid GraphQL variables JSON', 'error');
+          setLoading(prev => ({ ...prev, execute: false }));
+          setIsSending(false);
+          return;
         }
-        body = JSON.stringify(graphqlBody);
-      } catch (e) {
-        showToast('Invalid GraphQL variables JSON', 'error');
-        setLoading(prev => ({ ...prev, execute: false }));
-        setIsSending(false);
-        return;
       }
+      body = JSON.stringify(graphqlBody);
     }
     else if (requestBodyType === 'binary' && binaryFile) {
       body = binaryFile;
-      // Don't set Content-Type for binary - use the file's type
     }
 
-    // Set Content-Type header if not already set and not FormData
-    if (contentType && requestBodyType !== 'form-data') {
-      if (!headers.has('Content-Type')) {
-        headers.set('Content-Type', contentType);
+    // ============== STEP 3: BUILD HEADERS ==============
+    const headers = {};
+    
+    // Add headers from Headers tab
+    requestHeaders.filter(h => h.enabled && h.key && h.key.trim() !== '').forEach(header => {
+      headers[header.key.trim()] = header.value || '';
+    });
+
+    // Add authentication headers
+    const hasApiKeyConfig = authConfig && (authConfig.type === 'apikey' || authConfig.authType === 'apikey');
+    
+    if (hasApiKeyConfig) {
+      const apiKeyHeader = authConfig.key || authConfig.apiKeyHeader || '';
+      const apiKeyValue = authConfig.value || authConfig.apiKeyValue || '';
+      if (apiKeyHeader && apiKeyValue) {
+        headers[apiKeyHeader] = apiKeyValue;
+      }
+      
+      const apiSecretHeader = authConfig.apiSecretHeader || 'X-API-Secret';
+      const apiSecretValue = authConfig.apiSecretValue || authConfig.apiKeySecret || '';
+      if (apiSecretHeader && apiSecretValue) {
+        headers[apiSecretHeader] = apiSecretValue;
+      }
+    }
+    else if (authType === 'bearer' && authConfig.token) {
+      headers['Authorization'] = `${authConfig.tokenType || 'Bearer'} ${authConfig.token}`;
+    }
+    else if (authType === 'basic' && authConfig.username && authConfig.password) {
+      const credentials = btoa(`${authConfig.username}:${authConfig.password}`);
+      headers['Authorization'] = `Basic ${credentials}`;
+    }
+    else if (authType === 'oauth2' && authConfig.token) {
+      headers['Authorization'] = `Bearer ${authConfig.token}`;
+    }
+
+    // Set Content-Type header if needed
+    if (contentType && !(body instanceof FormData)) {
+      if (!headers['Content-Type']) {
+        headers['Content-Type'] = contentType;
       }
     }
 
     // Set Accept header if not present
-    if (!headers.has('Accept')) {
-      headers.set('Accept', '*/*');
+    if (!headers['Accept']) {
+      headers['Accept'] = '*/*';
     }
 
-    // ============== LOG REQUEST DETAILS ==============
-    console.log('📤 Making direct HTTP request:', {
+    // For GET and HEAD requests, ensure body is null
+    if (requestMethod === 'GET' || requestMethod === 'HEAD') {
+      body = null;
+    }
+
+    // ============== STEP 4: LOG THE FINAL REQUEST ==============
+    console.log('📤 Final Request Details:', {
       method: requestMethod,
       url: finalUrl,
-      headers: Object.fromEntries(headers.entries()),
-      body: body instanceof FormData ? 'FormData' : body,
-      bodyType: requestBodyType
+      headers: headers,
+      hasBody: !!body,
+      bodyType: body instanceof FormData ? 'FormData' : (body ? typeof body : 'none'),
+      pathParams: pathParamsArray
     });
 
-    // ============== MAKE THE ACTUAL HTTP REQUEST ==============
+    // ============== STEP 5: MAKE THE REQUEST ==============
     const fetchOptions = {
       method: requestMethod,
       headers: headers,
@@ -5930,15 +5945,14 @@ const handleExecuteRequest = useCallback(async () => {
       redirect: 'follow'
     };
 
-    // Add body for methods that support it
-    if (requestMethod !== 'GET' && requestMethod !== 'HEAD' && body) {
+    if (body) {
       fetchOptions.body = body;
     }
 
-    // Make the actual request to the target URL
+    console.log('📡 Making request to:', finalUrl);
+
     const fetchResponse = await fetch(finalUrl, fetchOptions);
     
-    // Calculate response time
     const responseTime = Date.now() - startTime;
 
     // Get response headers
@@ -5963,9 +5977,8 @@ const handleExecuteRequest = useCallback(async () => {
     } else if (responseContentType.includes('xml')) {
       responseBody = await fetchResponse.text();
     } else {
-      // For binary responses, get as text or blob based on size
       const blob = await fetchResponse.blob();
-      if (blob.size < 1024 * 1024) { // Less than 1MB
+      if (blob.size < 1024 * 1024) {
         responseBody = await blob.text();
       } else {
         responseBody = `[Binary data: ${blob.type}, ${(blob.size / 1024).toFixed(2)} KB]`;
@@ -5999,37 +6012,24 @@ const handleExecuteRequest = useCallback(async () => {
     
     const responseTime = Date.now() - startTime;
     
-    // Create structured error response
     setResponse({
       responseBody: JSON.stringify({
         error: error.message,
         name: error.name,
         message: error.message,
-        stack: error.stack,
         timestamp: new Date().toISOString(),
         url: requestUrl,
-        method: requestMethod,
-        hint: 'This could be a CORS error, network issue, or invalid URL'
+        method: requestMethod
       }, null, 2),
       statusCode: 0,
       statusText: error.name || 'Request Failed',
       headers: [],
       responseTime,
       responseSize: 0,
-      data: {
-        error: error.message,
-        statusCode: 0
-      }
+      data: { error: error.message }
     });
     
-    // Show appropriate error message
-    if (error.name === 'TypeError' && error.message.includes('CORS')) {
-      showToast('❌ CORS error: The server blocked the request', 'error');
-    } else if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-      showToast('❌ Network error: Unable to reach the server', 'error');
-    } else {
-      showToast(`❌ Request failed: ${error.message}`, 'error');
-    }
+    showToast(`❌ Request failed: ${error.message}`, 'error');
   } finally {
     setLoading(prev => ({ ...prev, execute: false }));
     setIsSending(false);
@@ -6037,6 +6037,7 @@ const handleExecuteRequest = useCallback(async () => {
 }, [authToken, requestMethod, requestUrl, requestHeaders, requestBody, requestParams, requestPathParams, 
     authType, authConfig, requestBodyType, rawBodyType, formData, urlEncodedData, binaryFile, 
     graphqlQuery, graphqlVariables]);
+    
 
 // Also update the addFormData function to handle file uploads properly
 const addFormData = () => {

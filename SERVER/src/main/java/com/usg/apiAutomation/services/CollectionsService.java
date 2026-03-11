@@ -15,6 +15,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -186,18 +187,63 @@ public class CollectionsService {
         RequestEntity request = requestRepository.findById(requestIdParam)
                 .orElseThrow(() -> new EntityNotFoundException("Request not found: " + requestIdParam));
 
-        // Verify ownership through collection
-//        if (!request.getCollection().getOwner().equals(performedBy)) {
-//            log.warn("Request ID: {}, User {} attempted to access request {} owned by {}",
-//                    requestId, performedBy, requestIdParam, request.getCollection().getOwner());
-//            throw new SecurityException("Access denied to request: " + requestIdParam);
-//        }
-
         System.out.println("collectionId:::::" + collectionId);
         System.out.println("requestIdParam::::::" + requestIdParam);
 
-        // Try to find the associated GeneratedApiEntity using the repository method
-        Optional<GeneratedApiEntity> generatedApiOpt = generatedAPIRepository.findByRequestId(requestIdParam);
+        // ============= FIXED: Handle non-unique result gracefully =============
+        Optional<GeneratedApiEntity> generatedApiOpt = Optional.empty();
+        try {
+            // Try to find the associated GeneratedApiEntity using the improved repository method
+            generatedApiOpt = generatedAPIRepository.findByRequestId(requestIdParam);
+
+            // If not found, try alternative method
+            if (generatedApiOpt.isEmpty()) {
+                generatedApiOpt = generatedAPIRepository.findByRequestIdUsingObjectName(requestIdParam);
+            }
+
+            // If still not found, try by stored requestId
+            if (generatedApiOpt.isEmpty()) {
+                generatedApiOpt = generatedAPIRepository.findByStoredRequestId(requestIdParam);
+            }
+
+            // If still not found, try to find by collection and folder
+            if (generatedApiOpt.isEmpty() && request.getCollection() != null) {
+                List<GeneratedApiEntity> apisByCollection = generatedAPIRepository
+                        .findByCollectionId(request.getCollection().getId());
+
+                if (!apisByCollection.isEmpty()) {
+                    // Try to find the most relevant one
+                    generatedApiOpt = apisByCollection.stream()
+                            .filter(api -> {
+                                if (request.getFolder() != null) {
+                                    String folderId = api.getCollectionInfo() != null ?
+                                            (String) api.getCollectionInfo().get("folderId") : null;
+                                    return request.getFolder().getId().equals(folderId);
+                                }
+                                return true;
+                            })
+                            .findFirst();
+                }
+            }
+        } catch (IncorrectResultSizeDataAccessException e) {
+            log.warn("Request ID: {}, Multiple results found for request: {}, using first result",
+                    requestId, requestIdParam);
+
+            // Handle the non-unique result by taking the first one
+            List<GeneratedApiEntity> allMatches = generatedAPIRepository.findAll().stream()
+                    .filter(api -> {
+                        if (api.getCollectionInfo() != null && request.getCollection() != null) {
+                            String apiCollectionId = (String) api.getCollectionInfo().get("collectionId");
+                            return request.getCollection().getId().equals(apiCollectionId);
+                        }
+                        return false;
+                    })
+                    .collect(Collectors.toList());
+
+            if (!allMatches.isEmpty()) {
+                generatedApiOpt = Optional.of(allMatches.get(0));
+            }
+        }
 
         System.out.println("generatedApiOpt1111111111111::::" + generatedApiOpt);
 
@@ -213,40 +259,69 @@ public class CollectionsService {
             GeneratedApiEntity generatedApi = generatedApiOpt.get();
             generateApiRequest.setVersion(generatedApi.getVersion());
             generateApiRequest.setStatus(generatedApi.getStatus());
-            generateApiRequest.setTags(generatedApi.getTags());
-            generateApiRequest.setCategory(generatedApi.getCategory());
+            generateApiRequest.setTags(generatedApi.getTags() != null ? generatedApi.getTags() : List.of("default"));
+            generateApiRequest.setCategory(generatedApi.getCategory() != null ? generatedApi.getCategory() : "general");
             generateApiRequest.setOwner(generatedApi.getOwner());
             generateApiRequest.setHttpMethod(generatedApi.getHttpMethod());
             generateApiRequest.setBasePath(generatedApi.getBasePath());
             generateApiRequest.setEndpointPath(generatedApi.getEndpointPath());
+        } else {
+            // No GeneratedApi found - this could be a manually created request
+            log.debug("No GeneratedApiEntity found for request: {}", requestIdParam);
+            generateApiRequest.setHttpMethod(request.getMethod());
+            generateApiRequest.setVersion("1.0.0");
+            generateApiRequest.setStatus("DRAFT");
+            generateApiRequest.setTags(List.of("default"));
+            generateApiRequest.setCategory("general");
+            generateApiRequest.setOwner(performedBy);
+
+            // Parse base path and endpoint from URL
+            if (request.getUrl() != null) {
+                String url = request.getUrl();
+                // Remove baseUrl placeholder if present
+                String cleanUrl = url.replace("{{baseUrl}}", "").replace("{{base_url}}", "");
+
+                // Split into base path and endpoint
+                int lastSlash = cleanUrl.lastIndexOf('/');
+                if (lastSlash > 0) {
+                    generateApiRequest.setBasePath(cleanUrl.substring(0, lastSlash));
+                    generateApiRequest.setEndpointPath(cleanUrl.substring(lastSlash));
+                } else {
+                    generateApiRequest.setBasePath("");
+                    generateApiRequest.setEndpointPath(cleanUrl);
+                }
+            }
         }
-        // No else block - leave as null if not present
 
         // ============= 2. SCHEMA CONFIG =============
         if (generatedApiOpt.isPresent()) {
             String apiId = generatedApiOpt.get().getId();
-            Optional<ApiSchemaConfigEntity> schemaConfigOpt = generatedAPIRepository.findSchemaConfigByApiId(apiId);
-            if (schemaConfigOpt.isPresent()) {
-                ApiSchemaConfigEntity schemaConfigEntity = schemaConfigOpt.get();
-                ApiSchemaConfigDTO schemaConfig = new ApiSchemaConfigDTO();
+            try {
+                Optional<ApiSchemaConfigEntity> schemaConfigOpt = generatedAPIRepository.findSchemaConfigByApiId(apiId);
+                if (schemaConfigOpt.isPresent()) {
+                    ApiSchemaConfigEntity schemaConfigEntity = schemaConfigOpt.get();
+                    ApiSchemaConfigDTO schemaConfig = new ApiSchemaConfigDTO();
 
-                schemaConfig.setSchemaName(schemaConfigEntity.getSchemaName());
-                schemaConfig.setObjectType(schemaConfigEntity.getObjectType());
-                schemaConfig.setObjectName(schemaConfigEntity.getObjectName());
-                schemaConfig.setOperation(schemaConfigEntity.getOperation());
-                schemaConfig.setPrimaryKeyColumn(schemaConfigEntity.getPrimaryKeyColumn());
-                schemaConfig.setSequenceName(schemaConfigEntity.getSequenceName());
-                schemaConfig.setEnablePagination(schemaConfigEntity.getEnablePagination());
-                schemaConfig.setPageSize(schemaConfigEntity.getPageSize());
-                schemaConfig.setEnableSorting(schemaConfigEntity.getEnableSorting());
-                schemaConfig.setDefaultSortColumn(schemaConfigEntity.getDefaultSortColumn());
-                schemaConfig.setDefaultSortDirection(schemaConfigEntity.getDefaultSortDirection());
-                schemaConfig.setIsSynonym(schemaConfigEntity.getIsSynonym());
-                schemaConfig.setTargetType(schemaConfigEntity.getTargetType());
-                schemaConfig.setTargetName(schemaConfigEntity.getTargetName());
-                schemaConfig.setTargetOwner(schemaConfigEntity.getTargetOwner());
+                    schemaConfig.setSchemaName(schemaConfigEntity.getSchemaName());
+                    schemaConfig.setObjectType(schemaConfigEntity.getObjectType());
+                    schemaConfig.setObjectName(schemaConfigEntity.getObjectName());
+                    schemaConfig.setOperation(schemaConfigEntity.getOperation());
+                    schemaConfig.setPrimaryKeyColumn(schemaConfigEntity.getPrimaryKeyColumn());
+                    schemaConfig.setSequenceName(schemaConfigEntity.getSequenceName());
+                    schemaConfig.setEnablePagination(schemaConfigEntity.getEnablePagination());
+                    schemaConfig.setPageSize(schemaConfigEntity.getPageSize());
+                    schemaConfig.setEnableSorting(schemaConfigEntity.getEnableSorting());
+                    schemaConfig.setDefaultSortColumn(schemaConfigEntity.getDefaultSortColumn());
+                    schemaConfig.setDefaultSortDirection(schemaConfigEntity.getDefaultSortDirection());
+                    schemaConfig.setIsSynonym(schemaConfigEntity.getIsSynonym());
+                    schemaConfig.setTargetType(schemaConfigEntity.getTargetType());
+                    schemaConfig.setTargetName(schemaConfigEntity.getTargetName());
+                    schemaConfig.setTargetOwner(schemaConfigEntity.getTargetOwner());
 
-                generateApiRequest.setSchemaConfig(schemaConfig);
+                    generateApiRequest.setSchemaConfig(schemaConfig);
+                }
+            } catch (Exception e) {
+                log.warn("Error fetching schema config for API {}: {}", apiId, e.getMessage());
             }
         }
 
@@ -262,79 +337,49 @@ public class CollectionsService {
         // ============= 4. REQUEST PARAMETERS =============
         List<ApiParameterDTO> parameters = new ArrayList<>();
 
-        // Try from GeneratedApiEntity using repository
         System.out.println("requestIdParam::::::::::" + requestIdParam);
-        List<ParameterEntity> paramEntities = collectionRepository.findParametersByRequestId(requestIdParam);
-        if (paramEntities != null && !paramEntities.isEmpty()) {
-            for (ParameterEntity paramEntity : paramEntities) {
-                ApiParameterDTO apiParam = new ApiParameterDTO();
-                apiParam.setKey(paramEntity.getKey());
-                apiParam.setDbColumn(paramEntity.getDbColumn());
-                apiParam.setDbParameter(paramEntity.getDbParameter());
-                apiParam.setType(paramEntity.getApiType());
-                apiParam.setOracleType(paramEntity.getOracleType());
-                apiParam.setRequired(paramEntity.getRequired());
-                apiParam.setParameterLocation(paramEntity.getParameterLocation());
-                apiParam.setBodyFormat(paramEntity.getInBody() != null && paramEntity.getInBody() ? "json" : null);
-                apiParam.setDescription(paramEntity.getDescription());
-                apiParam.setExample(paramEntity.getExample());
-                apiParam.setValidationPattern(paramEntity.getValidationPattern());
-                apiParam.setDefaultValue(paramEntity.getDefaultValue());
-                apiParam.setIsPrimaryKey(paramEntity.getIsPrimaryKey());
-                apiParam.setParamMode(paramEntity.getParamMode());
-                apiParam.setPosition(paramEntity.getPosition());
-                parameters.add(apiParam);
-            }
-        }
 
-        // If no parameters from GeneratedApi, try from apiParameterRepository by requestId
-        if (parameters.isEmpty()) {
-            List<ApiParameterEntity> parameterEntities = apiParameterRepository.findByRequestId(requestIdParam);
-            if (parameterEntities != null && !parameterEntities.isEmpty()) {
-                for (ApiParameterEntity paramEntity : parameterEntities) {
-                    ApiParameterDTO apiParam = new ApiParameterDTO();
-                    apiParam.setKey(paramEntity.getKey());
-                    apiParam.setDbColumn(paramEntity.getDbColumn());
-                    apiParam.setDbParameter(paramEntity.getDbParameter());
-                    apiParam.setType(paramEntity.getApiType());
-                    apiParam.setOracleType(paramEntity.getOracleType());
-                    apiParam.setRequired(paramEntity.getRequired());
-                    apiParam.setParameterLocation(paramEntity.getParameterLocation());
-                    apiParam.setBodyFormat(paramEntity.getInBody() != null && paramEntity.getInBody() ? "json" : null);
-                    apiParam.setDescription(paramEntity.getDescription());
-                    apiParam.setExample(paramEntity.getExample());
-                    apiParam.setValidationPattern(paramEntity.getValidationPattern());
-                    apiParam.setDefaultValue(paramEntity.getDefaultValue());
-                    apiParam.setIsPrimaryKey(paramEntity.getIsPrimaryKey());
-                    apiParam.setParamMode(paramEntity.getParamMode());
-                    apiParam.setPosition(paramEntity.getPosition());
+        try {
+            // Try from collections parameters first
+            List<ParameterEntity> paramEntities = parameterRepository.findByRequestId(requestIdParam);
+            if (paramEntities != null && !paramEntities.isEmpty()) {
+                for (ParameterEntity paramEntity : paramEntities) {
+                    ApiParameterDTO apiParam = mapParameterEntityToApiDTO(paramEntity);
                     parameters.add(apiParam);
                 }
             }
+
+            // If no parameters from collections, try from apiParameterRepository
+            if (parameters.isEmpty() && generatedApiOpt.isPresent()) {
+                List<ApiParameterEntity> parameterEntities = apiParameterRepository.findByGeneratedApiId(generatedApiOpt.get().getId());
+                if (parameterEntities != null && !parameterEntities.isEmpty()) {
+                    for (ApiParameterEntity paramEntity : parameterEntities) {
+                        ApiParameterDTO apiParam = mapApiParameterEntityToDTO(paramEntity);
+                        parameters.add(apiParam);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error fetching parameters for request {}: {}", requestIdParam, e.getMessage());
         }
+
         generateApiRequest.setParameters(parameters.isEmpty() ? null : parameters);
 
         // ============= 5. RESPONSE FIELDS (MAPPINGS) =============
         List<ApiResponseMappingDTO> responseMappings = new ArrayList<>();
 
         if (generatedApiOpt.isPresent()) {
-            String apiId = generatedApiOpt.get().getId();
-            List<ApiResponseMappingEntity> mappingEntities = generatedAPIRepository.findResponseMappingsByApiId(apiId);
-            if (mappingEntities != null && !mappingEntities.isEmpty()) {
-                for (ApiResponseMappingEntity mappingEntity : mappingEntities) {
-                    ApiResponseMappingDTO mapping = new ApiResponseMappingDTO();
-                    mapping.setApiField(mappingEntity.getApiField());
-                    mapping.setDbColumn(mappingEntity.getDbColumn());
-                    mapping.setOracleType(mappingEntity.getOracleType());
-                    mapping.setApiType(mappingEntity.getApiType());
-                    mapping.setFormat(mappingEntity.getFormat());
-                    mapping.setNullable(mappingEntity.getNullable());
-                    mapping.setIsPrimaryKey(mappingEntity.getIsPrimaryKey());
-                    mapping.setIncludeInResponse(mappingEntity.getIncludeInResponse());
-                    mapping.setInResponse(mappingEntity.getInResponse());
-                    mapping.setPosition(mappingEntity.getPosition());
-                    responseMappings.add(mapping);
+            try {
+                String apiId = generatedApiOpt.get().getId();
+                List<ApiResponseMappingEntity> mappingEntities = generatedAPIRepository.findResponseMappingsByApiId(apiId);
+                if (mappingEntities != null && !mappingEntities.isEmpty()) {
+                    for (ApiResponseMappingEntity mappingEntity : mappingEntities) {
+                        ApiResponseMappingDTO mapping = mapResponseMappingEntityToDTO(mappingEntity);
+                        responseMappings.add(mapping);
+                    }
                 }
+            } catch (Exception e) {
+                log.warn("Error fetching response mappings for API {}: {}", generatedApiOpt.get().getId(), e.getMessage());
             }
         }
         generateApiRequest.setResponseMappings(responseMappings.isEmpty() ? null : responseMappings);
@@ -342,40 +387,31 @@ public class CollectionsService {
         // ============= 6. HEADERS =============
         List<ApiHeaderDTO> headers = new ArrayList<>();
 
-        // First try from GeneratedApiEntity using repository
-        if (generatedApiOpt.isPresent()) {
-            String apiId = generatedApiOpt.get().getId();
-            List<ApiHeaderEntity> headerEntities = generatedAPIRepository.findHeadersByApiId(apiId);
-            if (headerEntities != null && !headerEntities.isEmpty()) {
-                for (ApiHeaderEntity headerEntity : headerEntities) {
-                    ApiHeaderDTO apiHeader = new ApiHeaderDTO();
-                    apiHeader.setKey(headerEntity.getKey());
-                    apiHeader.setValue(headerEntity.getValue());
-                    apiHeader.setDescription(headerEntity.getDescription());
-                    apiHeader.setRequired(headerEntity.getRequired());
-                    apiHeader.setIsRequestHeader(headerEntity.getIsRequestHeader());
-                    apiHeader.setIsResponseHeader(headerEntity.getIsResponseHeader());
-                    headers.add(apiHeader);
-                }
-            }
-        }
-
-        // If no headers from GeneratedApi, try from collections module
-        if (headers.isEmpty()) {
+        // Try from collections headers first
+        try {
             List<HeaderEntity> headerEntities = headerRepository.findByRequestId(requestIdParam);
             if (headerEntities != null && !headerEntities.isEmpty()) {
                 for (HeaderEntity headerEntity : headerEntities) {
-                    ApiHeaderDTO apiHeader = new ApiHeaderDTO();
-                    apiHeader.setKey(headerEntity.getKey());
-                    apiHeader.setValue(headerEntity.getValue() != null ? headerEntity.getValue() : "");
-                    apiHeader.setDescription(headerEntity.getDescription());
-                    apiHeader.setRequired(headerEntity.isEnabled());
-                    apiHeader.setIsRequestHeader(true);
-                    apiHeader.setIsResponseHeader(false);
+                    ApiHeaderDTO apiHeader = mapHeaderEntityToApiDTO(headerEntity);
                     headers.add(apiHeader);
                 }
             }
+
+            // If no headers from collections, try from GeneratedApi
+            if (headers.isEmpty() && generatedApiOpt.isPresent()) {
+                String apiId = generatedApiOpt.get().getId();
+                List<ApiHeaderEntity> headerEntities2 = generatedAPIRepository.findHeadersByApiId(apiId);
+                if (headerEntities2 != null && !headerEntities2.isEmpty()) {
+                    for (ApiHeaderEntity headerEntity : headerEntities2) {
+                        ApiHeaderDTO apiHeader = mapApiHeaderEntityToDTO(headerEntity);
+                        headers.add(apiHeader);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error fetching headers for request {}: {}", requestIdParam, e.getMessage());
         }
+
         generateApiRequest.setHeaders(headers.isEmpty() ? null : headers);
 
         System.out.println("generatedApiOpt22222222:::::" + generatedApiOpt);
@@ -383,30 +419,34 @@ public class CollectionsService {
         // ============= 7. REQUEST BODY =============
         if (generatedApiOpt.isPresent()) {
             System.out.println("adey here cool...");
-            String apiId = generatedApiOpt.get().getId();
-            Optional<ApiRequestConfigEntity> requestConfigOpt = generatedAPIRepository.findRequestConfigByApiId(apiId);
-            if (requestConfigOpt.isPresent()) {
-                ApiRequestConfigEntity requestConfigEntity = requestConfigOpt.get();
-                ApiRequestConfigDTO requestBody = new ApiRequestConfigDTO();
+            try {
+                String apiId = generatedApiOpt.get().getId();
+                Optional<ApiRequestConfigEntity> requestConfigOpt = generatedAPIRepository.findRequestConfigByApiId(apiId);
+                if (requestConfigOpt.isPresent()) {
+                    ApiRequestConfigEntity requestConfigEntity = requestConfigOpt.get();
+                    ApiRequestConfigDTO requestBody = new ApiRequestConfigDTO();
 
-                requestBody.setBodyType(requestConfigEntity.getBodyType());
-                requestBody.setSample(requestConfigEntity.getSample());
-                requestBody.setRequiredFields(requestConfigEntity.getRequiredFields());
-                requestBody.setValidateSchema(requestConfigEntity.getValidateSchema());
-                requestBody.setMaxSize(requestConfigEntity.getMaxSize());
+                    requestBody.setBodyType(requestConfigEntity.getBodyType());
+                    requestBody.setSample(requestConfigEntity.getSample());
+                    requestBody.setRequiredFields(requestConfigEntity.getRequiredFields());
+                    requestBody.setValidateSchema(requestConfigEntity.getValidateSchema());
+                    requestBody.setMaxSize(requestConfigEntity.getMaxSize());
 
-                if (requestConfigEntity.getAllowedMediaTypes() != null) {
-                    requestBody.setAllowedMediaTypes(Arrays.asList(requestConfigEntity.getAllowedMediaTypes().split(",")));
+                    if (requestConfigEntity.getAllowedMediaTypes() != null) {
+                        requestBody.setAllowedMediaTypes(Arrays.asList(requestConfigEntity.getAllowedMediaTypes().split(",")));
+                    }
+
+                    generateApiRequest.setRequestBody(requestBody);
                 }
-
-                generateApiRequest.setRequestBody(requestBody);
+            } catch (Exception e) {
+                log.warn("Error fetching request config for API {}: {}", generatedApiOpt.get().getId(), e.getMessage());
             }
         }
 
         System.out.println("generateApiRequest:::::" + generateApiRequest);
         System.out.println("generateApiRequest.getRequestBody() is: " + generateApiRequest.getRequestBody());
         System.out.println("request.getBody() is: " + request.getBody());
-        System.out.println("request.getBody() empty? " + request.getBody().isEmpty());
+        System.out.println("request.getBody() empty? " + (request.getBody() == null || request.getBody().isEmpty()));
 
         // If no request config from GeneratedApi, use request body from collections module
         if (generateApiRequest.getRequestBody() == null && request.getBody() != null && !request.getBody().isEmpty()) {
@@ -423,20 +463,24 @@ public class CollectionsService {
 
         // ============= 8. RESPONSE BODY =============
         if (generatedApiOpt.isPresent()) {
-            String apiId = generatedApiOpt.get().getId();
-            Optional<ApiResponseConfigEntity> responseConfigOpt = generatedAPIRepository.findResponseConfigByApiId(apiId);
-            if (responseConfigOpt.isPresent()) {
-                ApiResponseConfigEntity responseConfigEntity = responseConfigOpt.get();
-                ApiResponseConfigDTO responseBody = new ApiResponseConfigDTO();
+            try {
+                String apiId = generatedApiOpt.get().getId();
+                Optional<ApiResponseConfigEntity> responseConfigOpt = generatedAPIRepository.findResponseConfigByApiId(apiId);
+                if (responseConfigOpt.isPresent()) {
+                    ApiResponseConfigEntity responseConfigEntity = responseConfigOpt.get();
+                    ApiResponseConfigDTO responseBody = new ApiResponseConfigDTO();
 
-                responseBody.setSuccessSchema(responseConfigEntity.getSuccessSchema());
-                responseBody.setErrorSchema(responseConfigEntity.getErrorSchema());
-                responseBody.setIncludeMetadata(responseConfigEntity.getIncludeMetadata());
-                responseBody.setMetadataFields(responseConfigEntity.getMetadataFields());
-                responseBody.setContentType(responseConfigEntity.getContentType());
-                responseBody.setCompression(responseConfigEntity.getCompression());
+                    responseBody.setSuccessSchema(responseConfigEntity.getSuccessSchema());
+                    responseBody.setErrorSchema(responseConfigEntity.getErrorSchema());
+                    responseBody.setIncludeMetadata(responseConfigEntity.getIncludeMetadata());
+                    responseBody.setMetadataFields(responseConfigEntity.getMetadataFields());
+                    responseBody.setContentType(responseConfigEntity.getContentType());
+                    responseBody.setCompression(responseConfigEntity.getCompression());
 
-                generateApiRequest.setResponseBody(responseBody);
+                    generateApiRequest.setResponseBody(responseBody);
+                }
+            } catch (Exception e) {
+                log.warn("Error fetching response config for API {}: {}", generatedApiOpt.get().getId(), e.getMessage());
             }
         }
 
@@ -444,150 +488,99 @@ public class CollectionsService {
         Map<String, Object> responseExamples = new HashMap<>();
 
         if (generatedApiOpt.isPresent()) {
-            String apiId = generatedApiOpt.get().getId();
-            Optional<ApiResponseConfigEntity> responseConfigOpt = generatedAPIRepository.findResponseConfigByApiId(apiId);
-            if (responseConfigOpt.isPresent()) {
-                ApiResponseConfigEntity responseConfigEntity = responseConfigOpt.get();
+            try {
+                String apiId = generatedApiOpt.get().getId();
+                Optional<ApiResponseConfigEntity> responseConfigOpt = generatedAPIRepository.findResponseConfigByApiId(apiId);
+                if (responseConfigOpt.isPresent()) {
+                    ApiResponseConfigEntity responseConfigEntity = responseConfigOpt.get();
 
-                // Parse success schema if it exists
-                if (responseConfigEntity.getSuccessSchema() != null) {
-                    try {
-                        ObjectMapper mapper = new ObjectMapper();
-                        responseExamples.put("success", mapper.readValue(responseConfigEntity.getSuccessSchema(), Map.class));
-                    } catch (Exception e) {
-                        log.error("Failed to parse success schema", e);
+                    // Parse success schema if it exists
+                    if (responseConfigEntity.getSuccessSchema() != null) {
+                        try {
+                            ObjectMapper mapper = new ObjectMapper();
+                            responseExamples.put("success", mapper.readValue(responseConfigEntity.getSuccessSchema(), Map.class));
+                        } catch (Exception e) {
+                            log.error("Failed to parse success schema", e);
+                            // Create default success example from mappings
+                            if (!responseMappings.isEmpty()) {
+                                responseExamples.put("success", createSuccessExampleFromMappings(responseMappings));
+                            }
+                        }
+                    }
+
+                    // Parse error schema if it exists
+                    if (responseConfigEntity.getErrorSchema() != null) {
+                        try {
+                            ObjectMapper mapper = new ObjectMapper();
+                            responseExamples.put("error", mapper.readValue(responseConfigEntity.getErrorSchema(), Map.class));
+                        } catch (Exception e) {
+                            log.error("Failed to parse error schema", e);
+                            responseExamples.put("error", createDefaultErrorExample());
+                        }
                     }
                 }
-
-                // Parse error schema if it exists
-                if (responseConfigEntity.getErrorSchema() != null) {
-                    try {
-                        ObjectMapper mapper = new ObjectMapper();
-                        responseExamples.put("error", mapper.readValue(responseConfigEntity.getErrorSchema(), Map.class));
-                    } catch (Exception e) {
-                        log.error("Failed to parse error schema", e);
-                    }
-                }
+            } catch (Exception e) {
+                log.warn("Error fetching response examples for API {}: {}", generatedApiOpt.get().getId(), e.getMessage());
             }
         }
-        generateApiRequest.setResponseExamples(responseExamples.isEmpty() ? null : responseExamples);
+
+        // If no examples, create defaults
+        if (responseExamples.isEmpty()) {
+            if (!responseMappings.isEmpty()) {
+                responseExamples.put("success", createSuccessExampleFromMappings(responseMappings));
+            } else {
+                Map<String, Object> defaultSuccess = new HashMap<>();
+                defaultSuccess.put("success", true);
+                defaultSuccess.put("message", "Request processed successfully");
+                defaultSuccess.put("data", new HashMap<>());
+                responseExamples.put("success", defaultSuccess);
+            }
+            responseExamples.put("error", createDefaultErrorExample());
+        }
+
+        generateApiRequest.setResponseExamples(responseExamples);
 
         // ============= 10. AUTH CONFIG =============
         if (generatedApiOpt.isPresent()) {
-            String apiId = generatedApiOpt.get().getId();
-            Optional<ApiAuthConfigEntity> authConfigOpt = generatedAPIRepository.findAuthConfigByApiId(apiId);
-            if (authConfigOpt.isPresent()) {
-                ApiAuthConfigEntity authConfigEntity = authConfigOpt.get();
-                ApiAuthConfigDTO authConfig = new ApiAuthConfigDTO();
-
-                authConfig.setAuthType(authConfigEntity.getAuthType());
-
-                // API Key fields
-                authConfig.setApiKeyHeader(authConfigEntity.getApiKeyHeader());
-                authConfig.setApiKeyValue(authConfigEntity.getApiKeyValue());
-                authConfig.setApiKeySecret(authConfigEntity.getApiKeySecret());
-                authConfig.setApiSecretHeader(authConfigEntity.getApiSecretHeader());
-                authConfig.setApiSecretValue(authConfigEntity.getApiSecretValue());
-                authConfig.setApiKeyLocation(authConfigEntity.getApiKeyLocation());
-                authConfig.setApiKeyPrefix(authConfigEntity.getApiKeyPrefix());
-
-                // Basic Auth fields
-                authConfig.setBasicUsername(authConfigEntity.getBasicUsername());
-                authConfig.setBasicPassword(authConfigEntity.getBasicPassword());
-                authConfig.setBasicRealm(authConfigEntity.getBasicRealm());
-
-                // JWT fields
-                authConfig.setJwtToken(authConfigEntity.getJwtToken());
-                authConfig.setJwtSecret(authConfigEntity.getJwtSecret());
-                authConfig.setJwtIssuer(authConfigEntity.getJwtIssuer());
-                authConfig.setJwtAudience(authConfigEntity.getJwtAudience());
-                authConfig.setJwtExpiration(authConfigEntity.getJwtExpiration());
-                authConfig.setJwtAlgorithm(authConfigEntity.getJwtAlgorithm());
-
-                // OAuth2 fields
-                authConfig.setOauthClientId(authConfigEntity.getOauthClientId());
-                authConfig.setOauthClientSecret(authConfigEntity.getOauthClientSecret());
-                authConfig.setOauthTokenUrl(authConfigEntity.getOauthTokenUrl());
-                authConfig.setOauthAuthUrl(authConfigEntity.getOauthAuthUrl());
-                authConfig.setOauthScopes(authConfigEntity.getOauthScopes());
-
-                // Oracle Roles
-                authConfig.setRequiredRoles(authConfigEntity.getRequiredRoles());
-                authConfig.setCustomAuthFunction(authConfigEntity.getCustomAuthFunction());
-                authConfig.setValidateSession(authConfigEntity.getValidateSession());
-                authConfig.setCheckObjectPrivileges(authConfigEntity.getCheckObjectPrivileges());
-
-                // Security settings
-                authConfig.setIpWhitelist(authConfigEntity.getIpWhitelist());
-                authConfig.setRateLimitRequests(authConfigEntity.getRateLimitRequests());
-                authConfig.setRateLimitPeriod(authConfigEntity.getRateLimitPeriod());
-                authConfig.setEnableRateLimiting(authConfigEntity.getEnableRateLimiting());
-                authConfig.setAuditLevel(authConfigEntity.getAuditLevel());
-
-                if (authConfigEntity.getCorsOrigins() != null) {
-                    authConfig.setCorsOrigins(Arrays.asList(authConfigEntity.getCorsOrigins().split(",")));
+            try {
+                String apiId = generatedApiOpt.get().getId();
+                Optional<ApiAuthConfigEntity> authConfigOpt = generatedAPIRepository.findAuthConfigByApiId(apiId);
+                if (authConfigOpt.isPresent()) {
+                    ApiAuthConfigEntity authConfigEntity = authConfigOpt.get();
+                    ApiAuthConfigDTO authConfig = mapApiAuthConfigEntityToDTO(authConfigEntity);
+                    generateApiRequest.setAuthConfig(authConfig);
                 }
-                authConfig.setCorsCredentials(authConfigEntity.getCorsCredentials());
-
-                generateApiRequest.setAuthConfig(authConfig);
+            } catch (Exception e) {
+                log.warn("Error fetching auth config for API {}: {}", generatedApiOpt.get().getId(), e.getMessage());
             }
         }
 
         // If no auth config from GeneratedApi, try from collections module
         if (generateApiRequest.getAuthConfig() == null) {
-            Optional<AuthConfigEntity> authConfigEntityOpt = authConfigRepository.findByRequestId(requestIdParam);
-            if (authConfigEntityOpt.isPresent()) {
-                AuthConfigEntity authConfigEntity = authConfigEntityOpt.get();
-                ApiAuthConfigDTO authConfig = new ApiAuthConfigDTO();
-                authConfig.setAuthType(authConfigEntity.getType());
-
-                if ("api_key".equalsIgnoreCase(authConfigEntity.getType())) {
-                    authConfig.setApiKeyHeader(authConfigEntity.getKey());
-                    authConfig.setApiKeyValue(authConfigEntity.getValue());
-                } else if ("bearer".equalsIgnoreCase(authConfigEntity.getType())) {
-                    authConfig.setJwtToken(authConfigEntity.getToken());
-                } else if ("basic".equalsIgnoreCase(authConfigEntity.getType())) {
-                    authConfig.setBasicUsername(authConfigEntity.getUsername());
-                    authConfig.setBasicPassword(authConfigEntity.getPassword());
+            try {
+                Optional<AuthConfigEntity> authConfigEntityOpt = authConfigRepository.findByRequestId(requestIdParam);
+                if (authConfigEntityOpt.isPresent()) {
+                    AuthConfigEntity authConfigEntity = authConfigEntityOpt.get();
+                    ApiAuthConfigDTO authConfig = mapAuthConfigEntityToApiDTO(authConfigEntity);
+                    generateApiRequest.setAuthConfig(authConfig);
                 }
-
-                generateApiRequest.setAuthConfig(authConfig);
+            } catch (Exception e) {
+                log.warn("Error fetching auth config from collections for request {}: {}", requestIdParam, e.getMessage());
             }
         }
 
         // ============= 11. SETTINGS =============
         if (generatedApiOpt.isPresent()) {
-            String apiId = generatedApiOpt.get().getId();
-            Optional<ApiSettingsEntity> settingsOpt = generatedAPIRepository.findSettingsByApiId(apiId);
-            if (settingsOpt.isPresent()) {
-                ApiSettingsEntity settingsEntity = settingsOpt.get();
-                ApiSettingsDTO settings = new ApiSettingsDTO();
-
-                settings.setTimeout(settingsEntity.getTimeout());
-                settings.setMaxRecords(settingsEntity.getMaxRecords());
-                settings.setEnableLogging(settingsEntity.getEnableLogging());
-                settings.setLogLevel(settingsEntity.getLogLevel());
-                settings.setEnableCaching(settingsEntity.getEnableCaching());
-                settings.setCacheTtl(settingsEntity.getCacheTtl());
-                settings.setEnableRateLimiting(settingsEntity.getEnableRateLimiting());
-                settings.setRateLimit(settingsEntity.getRateLimit());
-                settings.setRateLimitPeriod(settingsEntity.getRateLimitPeriod());
-                settings.setEnableAudit(settingsEntity.getEnableAudit());
-                settings.setAuditLevel(settingsEntity.getAuditLevel());
-                settings.setGenerateSwagger(settingsEntity.getGenerateSwagger());
-                settings.setGeneratePostman(settingsEntity.getGeneratePostman());
-                settings.setGenerateClientSDK(settingsEntity.getGenerateClientSDK());
-                settings.setEnableMonitoring(settingsEntity.getEnableMonitoring());
-                settings.setEnableAlerts(settingsEntity.getEnableAlerts());
-                settings.setAlertEmail(settingsEntity.getAlertEmail());
-                settings.setEnableTracing(settingsEntity.getEnableTracing());
-                settings.setCorsEnabled(settingsEntity.getCorsEnabled());
-
-                if (settingsEntity.getCorsOrigins() != null) {
-                    settings.setCorsOrigins(Arrays.asList(settingsEntity.getCorsOrigins().split(",")));
+            try {
+                String apiId = generatedApiOpt.get().getId();
+                Optional<ApiSettingsEntity> settingsOpt = generatedAPIRepository.findSettingsByApiId(apiId);
+                if (settingsOpt.isPresent()) {
+                    ApiSettingsEntity settingsEntity = settingsOpt.get();
+                    ApiSettingsDTO settings = mapApiSettingsEntityToDTO(settingsEntity);
+                    generateApiRequest.setSettings(settings);
                 }
-
-                generateApiRequest.setSettings(settings);
+            } catch (Exception e) {
+                log.warn("Error fetching settings for API {}: {}", generatedApiOpt.get().getId(), e.getMessage());
             }
         }
 
@@ -598,59 +591,73 @@ public class CollectionsService {
 
         // ============= 13. TESTS =============
         if (generatedApiOpt.isPresent()) {
-            String apiId = generatedApiOpt.get().getId();
-            List<ApiTestEntity> testEntities = generatedAPIRepository.findTestsByApiId(apiId);
-            if (testEntities != null && !testEntities.isEmpty()) {
-                ApiTestsDTO tests = new ApiTestsDTO();
-                Optional<ApiTestEntity> testEntity = testEntities.stream().findFirst();
+            try {
+                String apiId = generatedApiOpt.get().getId();
+                List<ApiTestEntity> testEntities = generatedAPIRepository.findTestsByApiId(apiId);
+                if (testEntities != null && !testEntities.isEmpty()) {
+                    ApiTestsDTO tests = new ApiTestsDTO();
+                    // Combine all test data
+                    Map<String, Object> combinedTestData = new HashMap<>();
+                    for (ApiTestEntity test : testEntities) {
+                        if (test.getTestData() != null) {
+                            combinedTestData.putAll(test.getTestData());
+                        }
+                    }
 
-                if (testEntity.isPresent()) {
-                    ApiTestEntity test = testEntity.get();
-                    tests.setTestConnection(test.getTestConnection());
-                    tests.setTestObjectAccess(test.getTestObjectAccess());
-                    tests.setTestPrivileges(test.getTestPrivileges());
-                    tests.setTestDataTypes(test.getTestDataTypes());
-                    tests.setTestNullConstraints(test.getTestNullConstraints());
-                    tests.setTestUniqueConstraints(test.getTestUniqueConstraints());
-                    tests.setTestForeignKeyReferences(test.getTestForeignKeyReferences());
-                    tests.setTestQueryPerformance(test.getTestQueryPerformance());
-                    tests.setPerformanceThreshold(test.getPerformanceThreshold());
-                    tests.setTestWithSampleData(test.getTestWithSampleData());
-                    tests.setSampleDataRows(test.getSampleDataRows());
-                    tests.setTestProcedureExecution(test.getTestProcedureExecution());
-                    tests.setTestFunctionReturn(test.getTestFunctionReturn());
-                    tests.setTestExceptionHandling(test.getTestExceptionHandling());
-                    tests.setTestSQLInjection(test.getTestSQLInjection());
-                    tests.setTestAuthentication(test.getTestAuthentication());
-                    tests.setTestAuthorization(test.getTestAuthorization());
-                    tests.setTestData(test.getTestData());
-                    tests.setTestQueries(test.getTestQueries());
+                    // Set common test fields
+                    tests.setTestConnection((Boolean) combinedTestData.getOrDefault("testConnection", false));
+                    tests.setTestObjectAccess((Boolean) combinedTestData.getOrDefault("testObjectAccess", false));
+                    tests.setTestPrivileges((Boolean) combinedTestData.getOrDefault("testPrivileges", false));
+                    tests.setTestDataTypes((Boolean) combinedTestData.getOrDefault("testDataTypes", false));
+                    tests.setTestNullConstraints((Boolean) combinedTestData.getOrDefault("testNullConstraints", false));
+                    tests.setTestUniqueConstraints((Boolean) combinedTestData.getOrDefault("testUniqueConstraints", false));
+                    tests.setTestForeignKeyReferences((Boolean) combinedTestData.getOrDefault("testForeignKeyReferences", false));
+                    tests.setTestQueryPerformance((Boolean) combinedTestData.getOrDefault("testQueryPerformance", false));
+                    tests.setPerformanceThreshold((Integer) combinedTestData.getOrDefault("performanceThreshold", 1000));
+                    tests.setTestWithSampleData((Boolean) combinedTestData.getOrDefault("testWithSampleData", false));
+                    tests.setSampleDataRows((Integer) combinedTestData.getOrDefault("sampleDataRows", 10));
+                    tests.setTestProcedureExecution((Boolean) combinedTestData.getOrDefault("testProcedureExecution", false));
+                    tests.setTestFunctionReturn((Boolean) combinedTestData.getOrDefault("testFunctionReturn", false));
+                    tests.setTestExceptionHandling((Boolean) combinedTestData.getOrDefault("testExceptionHandling", false));
+                    tests.setTestSQLInjection((Boolean) combinedTestData.getOrDefault("testSQLInjection", false));
+                    tests.setTestAuthentication((Boolean) combinedTestData.getOrDefault("testAuthentication", false));
+                    tests.setTestAuthorization((Boolean) combinedTestData.getOrDefault("testAuthorization", false));
+                    tests.setTestData(combinedTestData.get("testData") instanceof Map ?
+                            (Map<String, Object>) combinedTestData.get("testData") : null);
+                    tests.setTestQueries(combinedTestData.get("testQueries") instanceof List ?
+                            (List<String>) combinedTestData.get("testQueries") : null);
+
+                    generateApiRequest.setTests(tests);
                 }
-
-                generateApiRequest.setTests(tests);
+            } catch (Exception e) {
+                log.warn("Error fetching tests for API {}: {}", generatedApiOpt.get().getId(), e.getMessage());
             }
         }
 
         // ============= 14. VALIDATION =============
         if (generatedApiOpt.isPresent()) {
-            String apiId = generatedApiOpt.get().getId();
-            Optional<ApiSchemaConfigEntity> schemaConfigOpt = generatedAPIRepository.findSchemaConfigByApiId(apiId);
-            if (schemaConfigOpt.isPresent()) {
-                ApiSchemaConfigEntity schemaConfig = schemaConfigOpt.get();
-                Map<String, Object> validation = new HashMap<>();
-                validation.put("valid", true);
-                validation.put("exists", true);
-                validation.put("objectName", schemaConfig.getObjectName());
-                validation.put("objectType", schemaConfig.getObjectType());
-                validation.put("owner", schemaConfig.getSchemaName());
-                validation.put("isSynonym", schemaConfig.getIsSynonym());
+            try {
+                String apiId = generatedApiOpt.get().getId();
+                Optional<ApiSchemaConfigEntity> schemaConfigOpt = generatedAPIRepository.findSchemaConfigByApiId(apiId);
+                if (schemaConfigOpt.isPresent()) {
+                    ApiSchemaConfigEntity schemaConfig = schemaConfigOpt.get();
+                    Map<String, Object> validation = new HashMap<>();
+                    validation.put("valid", true);
+                    validation.put("exists", true);
+                    validation.put("objectName", schemaConfig.getObjectName());
+                    validation.put("objectType", schemaConfig.getObjectType());
+                    validation.put("owner", schemaConfig.getSchemaName());
+                    validation.put("isSynonym", schemaConfig.getIsSynonym());
 
-                Map<String, Object> details = new HashMap<>();
-                details.put("parameterCount", parameters != null ? parameters.size() : 0);
-                details.put("parameters", parameters);
-                validation.put("details", details);
+                    Map<String, Object> details = new HashMap<>();
+                    details.put("parameterCount", parameters != null ? parameters.size() : 0);
+                    details.put("parameters", parameters);
+                    validation.put("details", details);
 
-                generateApiRequest.setValidation(validation);
+                    generateApiRequest.setValidation(validation);
+                }
+            } catch (Exception e) {
+                log.warn("Error creating validation for API {}: {}", generatedApiOpt.get().getId(), e.getMessage());
             }
         }
 
@@ -663,7 +670,216 @@ public class CollectionsService {
         return generateApiRequest;
     }
 
-    // ============= HELPER METHODS =============
+// ============= NEW HELPER METHOD TO MAP REQUEST TO API =============
+
+    @Transactional
+    public void mapRequestToApi(String requestId, String apiId, String performedBy) {
+        log.info("Mapping request {} to API {}", requestId, apiId);
+
+        RequestEntity request = requestRepository.findById(requestId)
+                .orElseThrow(() -> new EntityNotFoundException("Request not found: " + requestId));
+
+        GeneratedApiEntity api = generatedAPIRepository.findById(apiId)
+                .orElseThrow(() -> new EntityNotFoundException("API not found: " + apiId));
+
+        // Store the mapping in collection_info
+        if (api.getCollectionInfo() == null) {
+            api.setCollectionInfo(new HashMap<>());
+        }
+
+        Map<String, Object> collectionInfo = api.getCollectionInfo();
+        collectionInfo.put("requestId", requestId);
+        collectionInfo.put("collectionId", request.getCollection() != null ? request.getCollection().getId() : null);
+        collectionInfo.put("folderId", request.getFolder() != null ? request.getFolder().getId() : null);
+        collectionInfo.put("requestName", request.getName());
+        collectionInfo.put("mappedAt", LocalDateTime.now().toString());
+        collectionInfo.put("mappedBy", performedBy);
+
+        api.setCollectionInfo(collectionInfo);
+        generatedAPIRepository.save(api);
+
+        log.info("Successfully mapped request {} to API {}", requestId, apiId);
+    }
+
+// ============= MAPPING HELPER METHODS =============
+
+    private ApiParameterDTO mapParameterEntityToApiDTO(ParameterEntity entity) {
+        ApiParameterDTO dto = new ApiParameterDTO();
+        dto.setKey(entity.getKey());
+        dto.setDbColumn(entity.getDbColumn());
+        dto.setDbParameter(entity.getDbParameter());
+        dto.setType(entity.getApiType());
+        dto.setOracleType(entity.getOracleType());
+        dto.setRequired(entity.getRequired());
+        dto.setParameterLocation(entity.getParameterLocation());
+        dto.setBodyFormat(entity.getInBody() != null && entity.getInBody() ? "json" : null);
+        dto.setDescription(entity.getDescription());
+        dto.setExample(entity.getExample());
+        dto.setValidationPattern(entity.getValidationPattern());
+        dto.setDefaultValue(entity.getDefaultValue());
+        dto.setIsPrimaryKey(entity.getIsPrimaryKey());
+        dto.setParamMode(entity.getParamMode());
+        dto.setPosition(entity.getPosition());
+        return dto;
+    }
+
+    private ApiParameterDTO mapApiParameterEntityToDTO(ApiParameterEntity entity) {
+        ApiParameterDTO dto = new ApiParameterDTO();
+        dto.setKey(entity.getKey());
+        dto.setDbColumn(entity.getDbColumn());
+        dto.setDbParameter(entity.getDbParameter());
+        dto.setType(entity.getApiType());
+        dto.setOracleType(entity.getOracleType());
+        dto.setRequired(entity.getRequired());
+        dto.setParameterLocation(entity.getParameterLocation());
+        dto.setBodyFormat(entity.getInBody() != null && entity.getInBody() ? "json" : null);
+        dto.setDescription(entity.getDescription());
+        dto.setExample(entity.getExample());
+        dto.setValidationPattern(entity.getValidationPattern());
+        dto.setDefaultValue(entity.getDefaultValue());
+        dto.setIsPrimaryKey(entity.getIsPrimaryKey());
+        dto.setParamMode(entity.getParamMode());
+        dto.setPosition(entity.getPosition());
+        return dto;
+    }
+
+    private ApiResponseMappingDTO mapResponseMappingEntityToDTO(ApiResponseMappingEntity entity) {
+        ApiResponseMappingDTO dto = new ApiResponseMappingDTO();
+        dto.setApiField(entity.getApiField());
+        dto.setDbColumn(entity.getDbColumn());
+        dto.setOracleType(entity.getOracleType());
+        dto.setApiType(entity.getApiType());
+        dto.setFormat(entity.getFormat());
+        dto.setNullable(entity.getNullable());
+        dto.setIsPrimaryKey(entity.getIsPrimaryKey());
+        dto.setIncludeInResponse(entity.getIncludeInResponse());
+        dto.setInResponse(entity.getInResponse());
+        dto.setPosition(entity.getPosition());
+        return dto;
+    }
+
+    private ApiHeaderDTO mapHeaderEntityToApiDTO(HeaderEntity entity) {
+        ApiHeaderDTO dto = new ApiHeaderDTO();
+        dto.setKey(entity.getKey());
+        dto.setValue(entity.getValue() != null ? entity.getValue() : "");
+        dto.setDescription(entity.getDescription());
+        dto.setRequired(entity.isEnabled());
+        dto.setIsRequestHeader(true);
+        dto.setIsResponseHeader(false);
+        return dto;
+    }
+
+    private ApiHeaderDTO mapApiHeaderEntityToDTO(ApiHeaderEntity entity) {
+        ApiHeaderDTO dto = new ApiHeaderDTO();
+        dto.setKey(entity.getKey());
+        dto.setValue(entity.getValue());
+        dto.setDescription(entity.getDescription());
+        dto.setRequired(entity.getRequired());
+        dto.setIsRequestHeader(entity.getIsRequestHeader());
+        dto.setIsResponseHeader(entity.getIsResponseHeader());
+        return dto;
+    }
+
+    private ApiAuthConfigDTO mapApiAuthConfigEntityToDTO(ApiAuthConfigEntity entity) {
+        ApiAuthConfigDTO dto = new ApiAuthConfigDTO();
+        dto.setAuthType(entity.getAuthType());
+
+        // API Key fields
+        dto.setApiKeyHeader(entity.getApiKeyHeader());
+        dto.setApiKeyValue(entity.getApiKeyValue());
+        dto.setApiKeySecret(entity.getApiKeySecret());
+        dto.setApiSecretHeader(entity.getApiSecretHeader());
+        dto.setApiSecretValue(entity.getApiSecretValue());
+        dto.setApiKeyLocation(entity.getApiKeyLocation());
+        dto.setApiKeyPrefix(entity.getApiKeyPrefix());
+
+        // Basic Auth fields
+        dto.setBasicUsername(entity.getBasicUsername());
+        dto.setBasicPassword(entity.getBasicPassword());
+        dto.setBasicRealm(entity.getBasicRealm());
+
+        // JWT fields
+        dto.setJwtToken(entity.getJwtToken());
+        dto.setJwtSecret(entity.getJwtSecret());
+        dto.setJwtIssuer(entity.getJwtIssuer());
+        dto.setJwtAudience(entity.getJwtAudience());
+        dto.setJwtExpiration(entity.getJwtExpiration());
+        dto.setJwtAlgorithm(entity.getJwtAlgorithm());
+
+        // OAuth2 fields
+        dto.setOauthClientId(entity.getOauthClientId());
+        dto.setOauthClientSecret(entity.getOauthClientSecret());
+        dto.setOauthTokenUrl(entity.getOauthTokenUrl());
+        dto.setOauthAuthUrl(entity.getOauthAuthUrl());
+        dto.setOauthScopes(entity.getOauthScopes());
+
+        // Oracle Roles
+        dto.setRequiredRoles(entity.getRequiredRoles());
+        dto.setCustomAuthFunction(entity.getCustomAuthFunction());
+        dto.setValidateSession(entity.getValidateSession());
+        dto.setCheckObjectPrivileges(entity.getCheckObjectPrivileges());
+
+        // Security settings
+        dto.setIpWhitelist(entity.getIpWhitelist());
+        dto.setRateLimitRequests(entity.getRateLimitRequests());
+        dto.setRateLimitPeriod(entity.getRateLimitPeriod());
+        dto.setEnableRateLimiting(entity.getEnableRateLimiting());
+        dto.setAuditLevel(entity.getAuditLevel());
+
+        if (entity.getCorsOrigins() != null) {
+            dto.setCorsOrigins(Arrays.asList(entity.getCorsOrigins().split(",")));
+        }
+        dto.setCorsCredentials(entity.getCorsCredentials());
+
+        return dto;
+    }
+
+    private ApiAuthConfigDTO mapAuthConfigEntityToApiDTO(AuthConfigEntity entity) {
+        ApiAuthConfigDTO dto = new ApiAuthConfigDTO();
+        dto.setAuthType(entity.getType());
+
+        if ("api_key".equalsIgnoreCase(entity.getType())) {
+            dto.setApiKeyHeader(entity.getKey());
+            dto.setApiKeyValue(entity.getValue());
+        } else if ("bearer".equalsIgnoreCase(entity.getType())) {
+            dto.setJwtToken(entity.getToken());
+        } else if ("basic".equalsIgnoreCase(entity.getType())) {
+            dto.setBasicUsername(entity.getUsername());
+            dto.setBasicPassword(entity.getPassword());
+        }
+
+        return dto;
+    }
+
+    private ApiSettingsDTO mapApiSettingsEntityToDTO(ApiSettingsEntity entity) {
+        ApiSettingsDTO dto = new ApiSettingsDTO();
+        dto.setTimeout(entity.getTimeout());
+        dto.setMaxRecords(entity.getMaxRecords());
+        dto.setEnableLogging(entity.getEnableLogging());
+        dto.setLogLevel(entity.getLogLevel());
+        dto.setEnableCaching(entity.getEnableCaching());
+        dto.setCacheTtl(entity.getCacheTtl());
+        dto.setEnableRateLimiting(entity.getEnableRateLimiting());
+        dto.setRateLimit(entity.getRateLimit());
+        dto.setRateLimitPeriod(entity.getRateLimitPeriod());
+        dto.setEnableAudit(entity.getEnableAudit());
+        dto.setAuditLevel(entity.getAuditLevel());
+        dto.setGenerateSwagger(entity.getGenerateSwagger());
+        dto.setGeneratePostman(entity.getGeneratePostman());
+        dto.setGenerateClientSDK(entity.getGenerateClientSDK());
+        dto.setEnableMonitoring(entity.getEnableMonitoring());
+        dto.setEnableAlerts(entity.getEnableAlerts());
+        dto.setAlertEmail(entity.getAlertEmail());
+        dto.setEnableTracing(entity.getEnableTracing());
+        dto.setCorsEnabled(entity.getCorsEnabled());
+
+        if (entity.getCorsOrigins() != null) {
+            dto.setCorsOrigins(Arrays.asList(entity.getCorsOrigins().split(",")));
+        }
+
+        return dto;
+    }
+
 
     private Map<String, Object> createSuccessExampleFromMappings(List<ApiResponseMappingDTO> responseMappings) {
         Map<String, Object> successExample = new HashMap<>();
@@ -711,7 +927,6 @@ public class CollectionsService {
         return successExample;
     }
 
-
     private Map<String, Object> createDefaultErrorExample() {
         Map<String, Object> errorExample = new HashMap<>();
         errorExample.put("success", false);
@@ -732,33 +947,6 @@ public class CollectionsService {
         return errorExample;
     }
 
-    // Helper method to find GeneratedApiEntity by request ID
-    private Optional<GeneratedApiEntity> findGeneratedApiByRequestId(String requestId) {
-        // This assumes you store the request ID in sourceObjectInfo or collectionInfo
-        // You'll need to implement this based on how you store the reference
-
-        // Option 1: If you store it in sourceObjectInfo with key "requestId"
-        // You might need to fetch all and filter in memory (not efficient for large datasets)
-        List<GeneratedApiEntity> allApis = generatedAPIRepository.findAll();
-
-        return allApis.stream()
-                .filter(api -> {
-                    if (api.getSourceObjectInfo() != null) {
-                        Object requestIdObj = api.getSourceObjectInfo().get("requestId");
-                        if (requestIdObj != null && requestIdObj.toString().equals(requestId)) {
-                            return true;
-                        }
-                    }
-                    if (api.getCollectionInfo() != null) {
-                        Object requestIdObj = api.getCollectionInfo().get("requestId");
-                        if (requestIdObj != null && requestIdObj.toString().equals(requestId)) {
-                            return true;
-                        }
-                    }
-                    return false;
-                })
-                .findFirst();
-    }
 
 
     // Helper methods remain the same

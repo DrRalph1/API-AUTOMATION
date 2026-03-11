@@ -36,6 +36,7 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
         // Bypass public / exempt paths
         if (path != null && (path.contains("/plx/api/users/login")
                 || path.contains("swagger-ui")
+                || path.contains("/plx/api/gen")
                 || path.contains("/v3/api-docs")
                 || path.contains("/swagger"))) {
             return true;

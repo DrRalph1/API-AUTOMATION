@@ -1,5 +1,8 @@
 package com.usg.apiAutomation.controllers;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.*;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
 import com.usg.apiAutomation.helpers.JwtHelper;
@@ -17,12 +20,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.util.MultiValueMap;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartHttpServletRequest;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -93,29 +97,83 @@ public class APIGenerationEngineController {
     }
 
     @PostMapping("/{apiId}/execute")
-    @Operation(summary = "Execute API", description = "Execute a generated API")
+    @Operation(summary = "Execute API", description = "Execute a generated API - Accepts any content type")
     public ResponseEntity<?> executeApi(
             @PathVariable String apiId,
-            @RequestBody ExecuteApiRequestDTO executeRequest,
-            HttpServletRequest req) {
+            HttpServletRequest request) {
 
-        String requestId = executeRequest.getRequestId() != null ?
-                executeRequest.getRequestId() : UUID.randomUUID().toString();
-
-        // REMOVE THIS - Don't validate JWT for API execution
-        // ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "executing API");
-        // if (authValidation != null) {
-        //     return authValidation;
-        // }
+        String requestId = UUID.randomUUID().toString();
 
         try {
-            String performedBy = jwtHelper.extractPerformedBy(req); // This will still extract if available
-            String clientIp = req.getRemoteAddr();
-            String userAgent = req.getHeader("User-Agent");
+            String performedBy = jwtHelper.extractPerformedBy(request);
+            String clientIp = request.getRemoteAddr();
+            String userAgent = request.getHeader("User-Agent");
+            String contentType = request.getContentType();
 
             loggerUtil.log("apiGeneration", "Request ID: " + requestId +
-                    ", Executing API: " + apiId + " by: " + performedBy);
+                    ", Executing API: " + apiId + " by: " + performedBy +
+                    ", Content-Type: " + contentType);
 
+            // Create the DTO and populate it based on content type
+            ExecuteApiRequestDTO executeRequest = new ExecuteApiRequestDTO();
+            executeRequest.setRequestId(requestId);
+
+            // 1. Extract path parameters from URL
+            Map<String, Object> pathParams = extractPathParametersFromUrl(request.getRequestURI());
+            executeRequest.setPathParams(pathParams);
+
+            // 2. Extract query parameters
+            Map<String, Object> queryParams = new HashMap<>();
+            request.getParameterMap().forEach((key, values) -> {
+                if (values.length > 0) {
+                    queryParams.put(key, values.length == 1 ? values[0] : Arrays.asList(values));
+                }
+            });
+            executeRequest.setQueryParams(queryParams);
+
+            // 3. Extract headers (excluding content-type and content-length)
+            Map<String, String> headers = new HashMap<>();
+            Collections.list(request.getHeaderNames()).forEach(headerName -> {
+                if (!"content-type".equalsIgnoreCase(headerName) &&
+                        !"content-length".equalsIgnoreCase(headerName)) {
+                    headers.put(headerName, request.getHeader(headerName));
+                }
+            });
+            executeRequest.setHeaders(headers);
+
+            // 4. Handle body based on content type
+            if (request.getContentLength() > 0 || request.getContentLengthLong() > 0) {
+
+                // Handle multipart/form-data (what your frontend is sending)
+                if (contentType != null && contentType.contains("multipart/form-data")) {
+                    handleMultipartRequest(request, executeRequest);
+                }
+                // Handle application/x-www-form-urlencoded
+                else if (contentType != null && contentType.contains("application/x-www-form-urlencoded")) {
+                    handleUrlEncodedRequest(request, executeRequest);
+                }
+                // Handle application/json
+                else if (contentType != null && contentType.contains("application/json")) {
+                    handleJsonRequest(request, executeRequest);
+                }
+                // Handle application/xml
+                else if (contentType != null && contentType.contains("application/xml")) {
+                    handleXmlRequest(request, executeRequest);
+                }
+                // Handle raw text or unknown content types
+                else {
+                    handleRawRequest(request, executeRequest);
+                }
+            }
+
+            // Log what we received for debugging
+            log.debug("Request processed - Path params: {}, Query params: {}, Headers: {}, Body: {}",
+                    executeRequest.getPathParams(),
+                    executeRequest.getQueryParams(),
+                    executeRequest.getHeaders(),
+                    executeRequest.getBody() != null ? "present" : "null");
+
+            // Execute the API
             ExecuteApiResponseDTO response = apiGenerationEngineService.executeApi(
                     requestId, performedBy, apiId, executeRequest, clientIp, userAgent);
 
@@ -131,12 +189,163 @@ public class APIGenerationEngineController {
             loggerUtil.log("apiGeneration", "Request ID: " + requestId +
                     ", Error executing API: " + e.getMessage());
 
+            log.error("Error executing API {}: {}", apiId, e.getMessage(), e);
+
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while executing API: " + e.getMessage());
             errorResponse.put("requestId", requestId);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
+    }
+
+    /**
+     * Handle multipart/form-data requests (what your frontend is sending)
+     */
+    private void handleMultipartRequest(HttpServletRequest request, ExecuteApiRequestDTO executeRequest) {
+        Map<String, Object> bodyParams = new HashMap<>();
+
+        if (request instanceof MultipartHttpServletRequest) {
+            MultipartHttpServletRequest multipartRequest = (MultipartHttpServletRequest) request;
+
+            // Handle regular form fields
+            multipartRequest.getParameterMap().forEach((key, values) -> {
+                if (values.length > 0 && !values[0].isEmpty()) {
+                    bodyParams.put(key, values.length == 1 ? values[0] : Arrays.asList(values));
+                }
+            });
+
+            // Handle file parts
+            multipartRequest.getFileMap().forEach((key, file) -> {
+                try {
+                    // For text files, you might want to read the content
+                    if (file.getContentType() != null && file.getContentType().startsWith("text/")) {
+                        bodyParams.put(key, new String(file.getBytes()));
+                    } else {
+                        // For binary files, store metadata
+                        Map<String, Object> fileInfo = new HashMap<>();
+                        fileInfo.put("filename", file.getOriginalFilename());
+                        fileInfo.put("contentType", file.getContentType());
+                        fileInfo.put("size", file.getSize());
+                        fileInfo.put("bytes", file.getBytes()); // Be careful with large files
+                        bodyParams.put(key, fileInfo);
+                    }
+                } catch (IOException e) {
+                    log.warn("Failed to read file part: {}", key);
+                }
+            });
+
+            log.debug("Processed multipart/form-data with {} fields", bodyParams.size());
+        } else {
+            // Fallback for when request is not MultipartHttpServletRequest
+            request.getParameterMap().forEach((key, values) -> {
+                if (values.length > 0 && !values[0].isEmpty()) {
+                    bodyParams.put(key, values.length == 1 ? values[0] : Arrays.asList(values));
+                }
+            });
+        }
+
+        executeRequest.setBody(bodyParams);
+    }
+
+    /**
+     * Handle application/x-www-form-urlencoded requests
+     */
+    private void handleUrlEncodedRequest(HttpServletRequest request, ExecuteApiRequestDTO executeRequest) {
+        Map<String, Object> bodyParams = new HashMap<>();
+
+        request.getParameterMap().forEach((key, values) -> {
+            if (values.length > 0 && !values[0].isEmpty()) {
+                bodyParams.put(key, values.length == 1 ? values[0] : Arrays.asList(values));
+            }
+        });
+
+        executeRequest.setBody(bodyParams);
+        log.debug("Processed URL-encoded form with {} fields", bodyParams.size());
+    }
+
+    /**
+     * Handle application/json requests
+     */
+    private void handleJsonRequest(HttpServletRequest request, ExecuteApiRequestDTO executeRequest) {
+        try {
+            String body = request.getReader().lines().collect(Collectors.joining());
+            if (!body.isEmpty()) {
+                ObjectMapper mapper = new ObjectMapper();
+                JsonNode jsonNode = mapper.readTree(body);
+
+                if (jsonNode.isObject()) {
+                    Map<String, Object> bodyMap = mapper.convertValue(jsonNode, new TypeReference<Map<String, Object>>() {});
+                    executeRequest.setBody(bodyMap);
+                } else if (jsonNode.isArray()) {
+                    List<Object> bodyList = mapper.convertValue(jsonNode, new TypeReference<List<Object>>() {});
+                    executeRequest.setBody(bodyList);
+                } else {
+                    executeRequest.setBody(jsonNode.asText());
+                }
+
+                log.debug("Processed JSON request body");
+            }
+        } catch (IOException e) {
+            log.error("Failed to parse JSON body: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Handle application/xml requests
+     */
+    private void handleXmlRequest(HttpServletRequest request, ExecuteApiRequestDTO executeRequest) {
+        try {
+            String body = request.getReader().lines().collect(Collectors.joining());
+            if (!body.isEmpty()) {
+                Map<String, Object> xmlWrapper = new HashMap<>();
+                xmlWrapper.put("_xml", body);
+                executeRequest.setBody(xmlWrapper);
+                log.debug("Processed XML request body");
+            }
+        } catch (IOException e) {
+            log.error("Failed to read XML body: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Handle raw text or unknown content types
+     */
+    private void handleRawRequest(HttpServletRequest request, ExecuteApiRequestDTO executeRequest) {
+        try {
+            String body = request.getReader().lines().collect(Collectors.joining());
+            if (!body.isEmpty()) {
+                Map<String, Object> textWrapper = new HashMap<>();
+                textWrapper.put("_raw", body);
+                textWrapper.put("_contentType", request.getContentType());
+                executeRequest.setBody(textWrapper);
+                log.debug("Processed raw request body");
+            }
+        } catch (IOException e) {
+            log.error("Failed to read raw body: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Extract path parameters from URL based on your routing pattern
+     */
+    private Map<String, Object> extractPathParametersFromUrl(String requestURI) {
+        Map<String, Object> pathParams = new HashMap<>();
+
+        // Remove context path if any
+        String path = requestURI;
+
+        // Your URL pattern: /plx/api/gen/{apiId}/api/v1/vrt-trans-posting-60/{acct_link_v}/{doc_ref}
+        Pattern pattern = Pattern.compile("/plx/api/gen/([^/]+)/api/v1/vrt-trans-posting-60/([^/]+)/([^/]+)");
+        Matcher matcher = pattern.matcher(path);
+
+        if (matcher.matches()) {
+            pathParams.put("apiId", matcher.group(1));
+            pathParams.put("acct_link_v", matcher.group(2));
+            pathParams.put("doc_ref", matcher.group(3));
+        }
+
+        return pathParams;
     }
 
 

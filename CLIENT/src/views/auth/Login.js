@@ -215,26 +215,6 @@ export default function Login() {
         <div className={`absolute -bottom-40 -left-40 w-80 h-80 rounded-full bg-gradient-to-br ${colors.gradient} blur-3xl animate-pulse delay-1000`}></div>
       </div>
 
-      {/* Theme Toggle - Top Right */}
-      {/* <button
-        onClick={toggle}
-        className={`fixed top-6 right-6 p-2.5 rounded-xl border transition-all duration-300 z-10 group hover-lift`}
-        style={{ 
-          backgroundColor: colors.hover,
-          borderColor: colors.border,
-          color: colors.textSecondary
-        }}
-        aria-label="Toggle theme"
-      >
-        <div className="relative">
-          {isDark ? (
-            <Sun className="h-5 w-5 transform group-hover:rotate-45 transition-transform group-hover:text-yellow-400" />
-          ) : (
-            <Moon className="h-5 w-5 transform group-hover:-rotate-12 transition-transform group-hover:text-blue-600" />
-          )}
-        </div>
-      </button> */}
-
       {/* Main Content */}
       <div className="w-full max-w-md relative z-10">
         {/* Login Card */}
@@ -249,7 +229,7 @@ export default function Login() {
           <div className="h-1 bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500"></div>
           
           {/* Card Header */}
-          <div className="p-7 pb-4" onClick={toggle}>
+          <div className="p-7 pb-4">
             <div className="flex items-center justify-between mb-1">
               <div>
                 <h2 className="text-xl font-bold" style={{ color: colors.text }}>
@@ -366,7 +346,8 @@ export default function Login() {
                           className="text-xs font-medium px-2 py-1 rounded-lg transition-all duration-300 hover-lift hover:scale-105 active:scale-95"
                           style={{ 
                             color: colors.primary,
-                            backgroundColor: `${colors.primary}10`
+                            backgroundColor: `${colors.primary}10`,
+                            cursor: 'pointer'
                           }}
                         >
                           Forgot password?
@@ -398,7 +379,8 @@ export default function Login() {
                           style={{ 
                             backgroundColor: colors.hover,
                             border: `1px solid ${colors.border}`,
-                            color: colors.textSecondary
+                            color: colors.textSecondary,
+                            cursor: 'pointer'
                           }}
                           aria-label={showPassword ? "Hide password" : "Show password"}
                         >
@@ -411,19 +393,19 @@ export default function Login() {
                       </div>
                     </div>
 
-                    {/* Remember Me */}
+                    {/* Remember Me - Fixed checkbox */}
                     <div className="flex items-center gap-3">
                       <div className="relative">
                         <input
                           type="checkbox"
                           id="remember"
-                          className="appearance-none h-4.5 w-4.5 rounded border checked:border-transparent focus:ring-2 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300"
+                          className="peer appearance-none h-4.5 w-4.5 rounded border checked:border-transparent focus:ring-2 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300"
                           style={{ 
                             borderColor: colors.border,
                             backgroundColor: colors.inputBg
                           }}
                         />
-                        <Check className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 h-3 w-3 text-white pointer-events-none opacity-0 checked:opacity-100 transition-opacity duration-300" 
+                        <Check className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 h-3 w-3 pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity duration-300" 
                           style={{ color: colors.primary }} />
                       </div>
                       <label htmlFor="remember" className="text-sm font-medium cursor-pointer hover:text-opacity-80" style={{ color: colors.textSecondary }}>
@@ -436,9 +418,8 @@ export default function Login() {
                       type="submit"
                       className="w-full py-3.5 bg-gradient-to-r from-blue-500 via-violet-500 to-blue-500 rounded-xl font-semibold transition-all duration-300 relative group overflow-hidden hover-lift hover:shadow-lg"
                       style={{ 
-                        // backgroundColor: colors.primary,
-                        // color: isDark ? '#0f172a' : 'white',
-                        boxShadow: `0 4px 14px ${colors.primary}40`
+                        boxShadow: `0 4px 14px ${colors.primary}40`,
+                        cursor: loading ? 'wait' : 'pointer'
                       }}
                       disabled={loading}
                     >
@@ -493,14 +474,16 @@ export default function Login() {
             <div className="text-xs px-2 py-1 rounded-full hover-lift"
               style={{ 
                 backgroundColor: colors.hover,
-                color: colors.textSecondary
+                color: colors.textSecondary,
+                cursor: 'default'
               }}>
               v2.1.0
             </div>
             <div className="text-xs px-2 py-1 rounded-full hover-lift"
               style={{ 
                 backgroundColor: colors.hover,
-                color: colors.success
+                color: colors.success,
+                cursor: 'default'
               }}>
               <Fingerprint className="inline h-3 w-3 mr-1" />
               Secure
@@ -508,7 +491,8 @@ export default function Login() {
             <div className="text-xs px-2 py-1 rounded-full hover-lift"
               style={{ 
                 backgroundColor: colors.hover,
-                color: colors.primary
+                color: colors.primary,
+                cursor: 'default'
               }}>
               <Server className="inline h-3 w-3 mr-1" />
               Active
@@ -598,6 +582,29 @@ const globalStyles = `
   .text-lg { font-size: 16px; }
   .text-xl { font-size: 18px; }
   .text-2xl { font-size: 20px; }
+}
+
+/* Cursor styles */
+button, 
+[role="button"],
+input[type="submit"],
+input[type="button"],
+input[type="checkbox"],
+label,
+.cursor-pointer {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"]:disabled,
+input:disabled {
+  cursor: not-allowed;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="email"] {
+  cursor: text;
 }
 `;
 

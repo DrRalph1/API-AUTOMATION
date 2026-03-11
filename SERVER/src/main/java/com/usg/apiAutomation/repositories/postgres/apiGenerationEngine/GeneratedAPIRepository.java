@@ -128,4 +128,38 @@ public interface GeneratedAPIRepository extends JpaRepository<GeneratedApiEntity
 
     @Query("SELECT rm FROM ApiResponseMappingEntity rm WHERE rm.generatedApi.id = :apiId AND rm.apiField = :apiField")
     Optional<ApiResponseMappingEntity> findResponseMappingByApiIdAndApiField(@Param("apiId") String apiId, @Param("apiField") String apiField);
+
+    /**
+     * Alternative method that uses the source_object_info to find the API
+     * based on the object name extracted from the request name
+     */
+    @Query(value = """
+        SELECT g.* FROM tb_eng_generated_apis g
+        WHERE EXISTS (
+            SELECT 1 FROM tb_col_requests r
+            WHERE r.id = :requestId
+              AND LOWER(g.source_object_info ->> 'objectName') = LOWER(
+                  TRIM(REGEXP_REPLACE(r.name, ' API.*$', ''))
+              )
+        )
+        """, nativeQuery = true)
+    Optional<GeneratedApiEntity> findByRequestIdUsingObjectName(@Param("requestId") String requestId);
+
+    /**
+     * Find all APIs that might be associated with a collection
+     */
+    @Query(value = """
+        SELECT g.* FROM tb_eng_generated_apis g
+        WHERE g.collection_info ->> 'collectionId' = :collectionId
+        """, nativeQuery = true)
+    List<GeneratedApiEntity> findByCollectionId(@Param("collectionId") String collectionId);
+
+    /**
+     * Find by the exact mapping stored in collection_info
+     */
+    @Query(value = """
+        SELECT g.* FROM tb_eng_generated_apis g
+        WHERE g.collection_info ->> 'requestId' = :requestId
+        """, nativeQuery = true)
+    Optional<GeneratedApiEntity> findByStoredRequestId(@Param("requestId") String requestId);
 }

@@ -24,10 +24,12 @@ import com.usg.apiAutomation.repositories.postgres.collections.ParameterReposito
 import com.usg.apiAutomation.repositories.postgres.documentation.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import jakarta.persistence.EntityManager;
+import jakarta.validation.ValidationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.SqlOutParameter;
@@ -36,9 +38,16 @@ import org.springframework.jdbc.core.simple.SimpleJdbcCall;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.xml.sax.InputSource;
 
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import java.io.StringReader;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.sql.Types;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -131,7 +140,7 @@ public class APIGenerationEngineService {
             List<ApiParameterEntity> pathParams = api.getParameters().stream()
                     .filter(p -> "path".equals(p.getParameterType()))
                     .sorted(Comparator.comparing(ApiParameterEntity::getPosition))
-                    .collect(Collectors.toList());
+                    .toList();
 
             for (ApiParameterEntity param : pathParams) {
                 endpointPath.append("/{").append(param.getKey()).append("}");
@@ -3817,15 +3826,15 @@ public class APIGenerationEngineService {
                                         (Boolean) column.get("isPrimaryKey") ||
                                         "P".equals(column.get("constraint_type"));
                                 if (isPrimaryKey) {
-                                    ApiParameterEntity param = createParameterFromColumn(column, api, position++);
-                                    param.setParameterType("path");
+                                    // Pass "path" as parameterType
+                                    ApiParameterEntity param = createParameterFromColumn(column, api, position++, "path");
                                     parameters.add(param);
                                 }
                             } else if ("INSERT".equals(sourceObject.getOperation())) {
                                 boolean isNullable = "Y".equals(column.get("nullable"));
                                 if (!isNullable) {
-                                    ApiParameterEntity param = createParameterFromColumn(column, api, position++);
-                                    param.setParameterType("body");
+                                    // Pass "body" as parameterType
+                                    ApiParameterEntity param = createParameterFromColumn(column, api, position++, "body");
                                     parameters.add(param);
                                 }
                             } else if ("UPDATE".equals(sourceObject.getOperation()) ||
@@ -3834,8 +3843,8 @@ public class APIGenerationEngineService {
                                         (Boolean) column.get("isPrimaryKey") ||
                                         "P".equals(column.get("constraint_type"));
                                 if (isPrimaryKey) {
-                                    ApiParameterEntity param = createParameterFromColumn(column, api, position++);
-                                    param.setParameterType("path");
+                                    // Pass "path" as parameterType
+                                    ApiParameterEntity param = createParameterFromColumn(column, api, position++, "path");
                                     parameters.add(param);
                                 }
                             }
@@ -3867,7 +3876,12 @@ public class APIGenerationEngineService {
                         List<Map<String, Object>> params = (List<Map<String, Object>>) procData.get("parameters");
                         int position = 0;
                         for (Map<String, Object> param : params) {
-                            ApiParameterEntity apiParam = createParameterFromArgument(param, api, position++);
+                            String inOut = (String) (param.get("IN_OUT") != null ?
+                                    param.get("IN_OUT") : param.get("in_out"));
+
+                            // Determine parameter type based on IN/OUT
+                            String paramType = "IN".equals(inOut) ? "query" : "body";
+                            ApiParameterEntity apiParam = createParameterFromArgument(param, api, position++, paramType);
                             parameters.add(apiParam);
                         }
                     }
@@ -3895,7 +3909,8 @@ public class APIGenerationEngineService {
         return parameters;
     }
 
-    private ApiParameterEntity createParameterFromColumn(Map<String, Object> column, GeneratedApiEntity api, int position) {
+
+    private ApiParameterEntity createParameterFromColumn(Map<String, Object> column, GeneratedApiEntity api, int position, String parameterType) {
         String columnName = (String) (column.get("name") != null ? column.get("name") : column.get("COLUMN_NAME"));
         String dataType = (String) (column.get("data_type") != null ? column.get("data_type") : column.get("DATA_TYPE"));
         boolean nullable = "Y".equals(column.get("nullable")) || "Y".equals(column.get("NULLABLE"));
@@ -3907,7 +3922,7 @@ public class APIGenerationEngineService {
                 .dbParameter(null)
                 .oracleType(mapOracleType(dataType))
                 .apiType(mapToApiType(dataType))
-                .parameterType("query")
+                .parameterType(parameterType)  // Use the passed parameterType
                 .required(!nullable)
                 .description("Column: " + columnName)
                 .example(generateExample(dataType))
@@ -3915,13 +3930,18 @@ public class APIGenerationEngineService {
                 .build();
     }
 
-    private ApiParameterEntity createParameterFromArgument(Map<String, Object> argument, GeneratedApiEntity api, int position) {
+    private ApiParameterEntity createParameterFromArgument(Map<String, Object> argument, GeneratedApiEntity api, int position, String parameterType) {
         String argName = (String) (argument.get("ARGUMENT_NAME") != null ?
                 argument.get("ARGUMENT_NAME") : argument.get("argument_name"));
         String dataType = (String) (argument.get("DATA_TYPE") != null ?
                 argument.get("DATA_TYPE") : argument.get("data_type"));
         String inOut = (String) (argument.get("IN_OUT") != null ?
                 argument.get("IN_OUT") : argument.get("in_out"));
+
+        // If parameterType is not provided, determine based on inOut
+        if (parameterType == null) {
+            parameterType = "IN".equals(inOut) ? "query" : "body";
+        }
 
         return ApiParameterEntity.builder()
                 .generatedApi(api)
@@ -3930,7 +3950,7 @@ public class APIGenerationEngineService {
                 .dbParameter(argName)
                 .oracleType(mapOracleType(dataType))
                 .apiType(mapToApiType(dataType))
-                .parameterType("IN".equals(inOut) ? "query" : "body")
+                .parameterType(parameterType)  // Use the passed parameterType
                 .required(!"OUT".equals(inOut))
                 .description("Parameter: " + argName + " (" + inOut + ")")
                 .example(generateExample(dataType))
@@ -4142,6 +4162,152 @@ public class APIGenerationEngineService {
         return "";
     }
 
+
+
+    /**
+     * Create a safe error response that tells users what's wrong without exposing internals
+     */
+    private ExecuteApiResponseDTO createSafeErrorResponse(String apiId, Exception e, long startTime) {
+        long executionTime = System.currentTimeMillis() - startTime;
+
+        // Log the full error internally for debugging
+        log.error("Internal error for API {}: {}", apiId, e.getMessage(), e);
+
+        // Create a user-friendly message without technical details
+        String userMessage;
+        int statusCode;
+        Map<String, Object> errorDetails = new HashMap<>();
+
+        // ============ FIX: Handle ValidationException first ============
+        if (e instanceof ValidationException) {
+            // This is our custom validation exception - use the message directly
+            userMessage = e.getMessage();
+            statusCode = 400; // Bad Request
+            log.info("✅ ValidationException caught and converted to user-friendly message: {}", userMessage);
+        }
+        // Handle missing parameters - tell user which one is missing
+        else if (e.getMessage() != null && e.getMessage().contains("Required parameter")) {
+            // Extract parameter name from error message
+            // Example: "Required parameter 'account_number' is missing"
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("'([^']+)'");
+            java.util.regex.Matcher matcher = pattern.matcher(e.getMessage());
+            if (matcher.find()) {
+                String missingParam = matcher.group(1);
+                userMessage = "Missing required parameter: '" + missingParam + "'";
+                errorDetails.put("missingParameter", missingParam);
+            } else {
+                userMessage = "Missing required parameter. Please check your request.";
+            }
+            statusCode = 400;
+        }
+        // Handle invalid parameter format (like array instead of single value)
+        else if (e.getMessage() != null && e.getMessage().contains("Invalid column type")) {
+            // Try to extract which parameter had the issue
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("'(\\w+)'\\s*=\\s*\\[?([^\\]]+)\\]?");
+            java.util.regex.Matcher matcher = pattern.matcher(e.getMessage());
+            if (matcher.find()) {
+                String paramName = matcher.group(1);
+                String badValue = matcher.group(2);
+                userMessage = "Invalid format for parameter: '" + paramName + "'. " +
+                        "Please provide a single value, not a list.";
+                errorDetails.put("parameter", paramName);
+                errorDetails.put("providedValue", badValue.length() > 50 ?
+                        badValue.substring(0, 50) + "..." : badValue);
+            } else {
+                userMessage = "Invalid parameter format. Please check the data types of your parameters.";
+            }
+            statusCode = 400;
+        }
+        // Handle invalid parameter values (like empty strings for required params)
+        else if (e.getMessage() != null && e.getMessage().contains("empty")) {
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("'([^']+)'");
+            java.util.regex.Matcher matcher = pattern.matcher(e.getMessage());
+            if (matcher.find()) {
+                String emptyParam = matcher.group(1);
+                userMessage = "Parameter '" + emptyParam + "' cannot be empty.";
+                errorDetails.put("parameter", emptyParam);
+            } else {
+                userMessage = "One or more parameters contain empty values.";
+            }
+            statusCode = 400;
+        }
+        // Handle authentication/authorization errors
+        else if (e.getMessage() != null &&
+                (e.getMessage().toLowerCase().contains("authentication") ||
+                        e.getMessage().toLowerCase().contains("auth") ||
+                        e.getMessage().toLowerCase().contains("unauthorized"))) {
+            userMessage = "Authentication failed. Please check your credentials.";
+            statusCode = 401;
+        }
+        else if (e.getMessage() != null && e.getMessage().toLowerCase().contains("authoriz")) {
+            userMessage = "You don't have permission to access this resource.";
+            statusCode = 403;
+        }
+        // Handle resource not found
+        else if (e.getMessage() != null && e.getMessage().toLowerCase().contains("not found")) {
+            userMessage = "The requested resource could not be found.";
+            statusCode = 404;
+        }
+        // Handle rate limiting
+        else if (e.getMessage() != null && e.getMessage().toLowerCase().contains("rate limit")) {
+            userMessage = "Rate limit exceeded. Please try again later.";
+            statusCode = 429;
+        }
+        // Handle database connection issues
+        else if (e.getMessage() != null &&
+                (e.getMessage().toLowerCase().contains("connection") ||
+                        e.getMessage().toLowerCase().contains("timeout"))) {
+            userMessage = "Service temporarily unavailable. Please try again later.";
+            statusCode = 503;
+        }
+        // Handle Oracle-specific errors generically
+        else if (e.getMessage() != null && e.getMessage().contains("ORA-")) {
+            // Extract ORA code for logging only, don't show to user
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("(ORA-\\d+)");
+            java.util.regex.Matcher matcher = pattern.matcher(e.getMessage());
+            String oraCode = matcher.find() ? matcher.group(1) : "unknown";
+
+            // Log the ORA code internally
+            log.warn("Oracle error {} for API {}: {}", oraCode, apiId, e.getMessage());
+
+            // Generic message for all Oracle errors
+            userMessage = "A database error occurred while processing your request.";
+            statusCode = 500;
+        }
+        // Generic fallback
+        else {
+            userMessage = "An unexpected error occurred while processing your request.";
+            statusCode = 500;
+        }
+
+        // Create a clean response with helpful error details
+        Map<String, Object> errorResponse = new HashMap<>();
+        errorResponse.put("error", userMessage);
+        errorResponse.put("timestamp", LocalDateTime.now().toString());
+
+        // Add specific details if available (but never include stack traces or SQL)
+        if (!errorDetails.isEmpty()) {
+            errorResponse.put("details", errorDetails);
+        }
+
+        // For 4xx errors, include guidance
+        if (statusCode >= 400 && statusCode < 500) {
+            errorResponse.put("hint", "Please check your request parameters and try again.");
+        }
+
+        List<Map<String, Object>> dataList = new ArrayList<>();
+        dataList.add(errorResponse);
+
+        return ExecuteApiResponseDTO.builder()
+                .responseCode(statusCode)
+                .message(userMessage)
+                .data(dataList)
+                .success(false)
+                .build();
+    }
+
+
+
     /**
      * ==================== FIXED EXECUTE API METHOD ====================
      * This is the main method that handles API execution with proper authentication
@@ -4172,8 +4338,9 @@ public class APIGenerationEngineService {
             if (!authResult.isAuthenticated()) {
                 loggerUtil.log("apiGeneration", "Authentication failed for API: " + apiId +
                         " - Reason: " + authResult.getReason());
-                return createErrorResponse("401",
-                        "Authentication failed: " + authResult.getReason(), startTime);
+                return createSafeErrorResponse(apiId,
+                        new RuntimeException("Authentication failed: " + authResult.getReason()),
+                        startTime);
             }
 
             // ==================== STEP 3: VALIDATE REQUIRED HEADERS ====================
@@ -4183,7 +4350,9 @@ public class APIGenerationEngineService {
                         " - Errors: " + headerErrors);
 
                 String errorMsg = "Required headers missing: " + String.join(", ", headerErrors.keySet());
-                return createErrorResponse("400", errorMsg, startTime);
+                return createSafeErrorResponse(apiId,
+                        new RuntimeException(errorMsg),
+                        startTime);
             }
 
             // ==================== STEP 4: CREATE A COPY OF THE REQUEST WITH PROPERLY LOCATED PARAMETERS ====================
@@ -4241,7 +4410,7 @@ public class APIGenerationEngineService {
                     String paramKey = param.getKey();
                     String paramType = param.getParameterType();
 
-                    // FIX: Skip if paramType is null
+                    // Skip if paramType is null
                     if (paramType == null) {
                         log.debug("Parameter {} has null parameterType, skipping", paramKey);
                         continue;
@@ -4321,7 +4490,7 @@ public class APIGenerationEngineService {
             log.debug("===============================================");
 
             // ==================== STEP 6: MAP URL PATH PARAMETERS ====================
-            // FIX: Use the 3-parameter version with consolidated params
+            // Use the 3-parameter version with consolidated params
             ExecuteApiRequestDTO mappedRequest = mapUrlPathToApiParameters(api, validatedRequest, consolidatedParams);
 
             // ==================== STEP 7: VALIDATE REQUIRED PARAMETERS ====================
@@ -4330,20 +4499,29 @@ public class APIGenerationEngineService {
             if (!validationErrors.isEmpty()) {
                 log.warn("Parameter validation failed for API {}: {}", apiId, validationErrors);
 
-                String errorMsg = "Required parameters missing: " + String.join(", ", validationErrors.keySet());
-                return createErrorResponse("400", errorMsg, startTime);
+                // Create a user-friendly error message
+                String missingParams = String.join(", ", validationErrors.keySet());
+                String errorMsg = "Required parameter" +
+                        (validationErrors.size() > 1 ? "s" : "") +
+                        " missing: " + missingParams;
+
+                return createSafeErrorResponse(apiId,
+                        new RuntimeException(errorMsg),
+                        startTime);
             }
 
             // ==================== STEP 8: VALIDATE AUTHORIZATION ====================
             if (!validatorService.validateAuthorization(api, performedBy)) {
-                return createErrorResponse("403",
-                        "User not authorized to access this API", startTime);
+                return createSafeErrorResponse(apiId,
+                        new RuntimeException("User not authorized to access this API"),
+                        startTime);
             }
 
             // ==================== STEP 9: CHECK RATE LIMITING ====================
             if (!validatorService.checkRateLimit(api, clientIp)) {
-                return createErrorResponse("429",
-                        "Rate limit exceeded. Please try again later.", startTime);
+                return createSafeErrorResponse(apiId,
+                        new RuntimeException("Rate limit exceeded. Please try again later."),
+                        startTime);
             }
 
             // ==================== STEP 10: EXECUTE THE API ====================
@@ -4426,7 +4604,7 @@ public class APIGenerationEngineService {
         } catch (Exception e) {
             long executionTime = System.currentTimeMillis() - startTime;
             loggerUtil.log("apiGeneration", "Request ID: " + requestId +
-                    ", Error executing API: " + e.getMessage());
+                    ", " + e.getMessage());
 
             // Log the full stack trace for debugging
             log.error("Error executing API {}: {}", apiId, e.getMessage(), e);
@@ -4434,7 +4612,8 @@ public class APIGenerationEngineService {
             logExecution(null, executeRequest, null, 500, executionTime,
                     performedBy, clientIp, userAgent, e.getMessage());
 
-            return createErrorResponse("500", "Error executing API: " + e.getMessage(), startTime);
+            // Use the safe error response that provides helpful information
+            return createSafeErrorResponse(apiId, e, startTime);
         }
     }
 
@@ -4480,7 +4659,7 @@ public class APIGenerationEngineService {
     }
 
     /**
-     * Validate required headers
+     * Validate required headers - FIXED to skip Content-Type for GET requests
      */
     private Map<String, String> validateRequiredHeaders(GeneratedApiEntity api, ExecuteApiRequestDTO request) {
         Map<String, String> errors = new HashMap<>();
@@ -4494,11 +4673,27 @@ public class APIGenerationEngineService {
             requestHeaders = new HashMap<>();
         }
 
+        // Get the HTTP method from the API configuration
+        String httpMethod = api.getHttpMethod();
+        boolean isGetRequest = "GET".equalsIgnoreCase(httpMethod);
+        boolean isHeadRequest = "HEAD".equalsIgnoreCase(httpMethod);
+        boolean isDeleteRequest = "DELETE".equalsIgnoreCase(httpMethod);
+
+        // For GET, HEAD, and DELETE requests, Content-Type is not required
+        boolean skipContentTypeValidation = isGetRequest || isHeadRequest || isDeleteRequest;
+
         for (ApiHeaderEntity header : api.getHeaders()) {
             if (Boolean.TRUE.equals(header.getRequired()) &&
                     Boolean.TRUE.equals(header.getIsRequestHeader())) {
 
                 String headerKey = header.getKey();
+
+                // ============ FIX: Skip Content-Type validation for methods that don't have a body ============
+                if (skipContentTypeValidation && "Content-Type".equalsIgnoreCase(headerKey)) {
+                    log.debug("Skipping Content-Type validation for {} request", httpMethod);
+                    continue;
+                }
+
                 boolean found = false;
 
                 // Check for exact match
@@ -4582,6 +4777,7 @@ public class APIGenerationEngineService {
 
                 if (Boolean.TRUE.equals(required)) {
                     boolean found = false;
+                    Object foundValue = null;
 
                     // Check in all parameters map first
                     log.debug("validateRequiredParameters: Checking allParams for key '{}'", paramKey);
@@ -4591,12 +4787,28 @@ public class APIGenerationEngineService {
                                 value, value != null ? value.getClass().getSimpleName() : "null");
 
                         if (value != null) {
-                            String strValue = value.toString().trim();
-                            if (!strValue.isEmpty()) {
+                            // Handle collections/arrays
+                            if (value instanceof List || value.getClass().isArray()) {
+                                Collection<?> collection = value instanceof List ?
+                                        (List<?>) value : Arrays.asList((Object[]) value);
+
+                                if (!collection.isEmpty()) {
+                                    // Take the first value for validation
+                                    foundValue = collection.iterator().next();
+                                    log.debug("  Collection has {} items, using first: {}",
+                                            collection.size(), foundValue);
+                                } else {
+                                    log.debug("  Collection is empty");
+                                }
+                            } else {
+                                foundValue = value;
+                            }
+
+                            if (foundValue != null && !foundValue.toString().trim().isEmpty()) {
                                 found = true;
                                 log.debug("validateRequiredParameters: Valid non-empty value found in allParams");
                             } else {
-                                log.debug("validateRequiredParameters: Value in allParams is empty string");
+                                log.debug("validateRequiredParameters: Value in allParams is empty or became empty after processing");
                             }
                         } else {
                             log.debug("validateRequiredParameters: Value in allParams is null");
@@ -4618,10 +4830,23 @@ public class APIGenerationEngineService {
                             if (pathParams != null) {
                                 log.debug("validateRequiredParameters: Checking pathParams for key '{}'", paramKey);
                                 Object value = pathParams.get(paramKey);
+
+                                // Handle collections in path params
+                                if (value instanceof List || value.getClass().isArray()) {
+                                    Collection<?> collection = value instanceof List ?
+                                            (List<?>) value : Arrays.asList((Object[]) value);
+                                    if (!collection.isEmpty()) {
+                                        value = collection.iterator().next();
+                                    } else {
+                                        value = null;
+                                    }
+                                }
+
                                 if (value != null) {
                                     String strValue = value.toString().trim();
                                     if (!strValue.isEmpty()) {
                                         found = true;
+                                        foundValue = value;
                                         log.debug("validateRequiredParameters: Found in pathParams with value: {}", value);
                                     }
                                 }
@@ -4634,10 +4859,23 @@ public class APIGenerationEngineService {
                             if (queryParams != null) {
                                 log.debug("validateRequiredParameters: Checking queryParams for key '{}'", paramKey);
                                 Object value = queryParams.get(paramKey);
+
+                                // Handle collections in query params
+                                if (value instanceof List || value.getClass().isArray()) {
+                                    Collection<?> collection = value instanceof List ?
+                                            (List<?>) value : Arrays.asList((Object[]) value);
+                                    if (!collection.isEmpty()) {
+                                        value = collection.iterator().next();
+                                    } else {
+                                        value = null;
+                                    }
+                                }
+
                                 if (value != null) {
                                     String strValue = value.toString().trim();
                                     if (!strValue.isEmpty()) {
                                         found = true;
+                                        foundValue = value;
                                         log.debug("validateRequiredParameters: Found in queryParams with value: {}", value);
                                     }
                                 }
@@ -4658,10 +4896,23 @@ public class APIGenerationEngineService {
                                 if (bodyMap != null) {
                                     log.debug("validateRequiredParameters: Checking body for key '{}'", paramKey);
                                     Object value = bodyMap.get(paramKey);
+
+                                    // Handle collections in body
+                                    if (value instanceof List || value.getClass().isArray()) {
+                                        Collection<?> collection = value instanceof List ?
+                                                (List<?>) value : Arrays.asList((Object[]) value);
+                                        if (!collection.isEmpty()) {
+                                            value = collection.iterator().next();
+                                        } else {
+                                            value = null;
+                                        }
+                                    }
+
                                     if (value != null) {
                                         String strValue = value.toString().trim();
                                         if (!strValue.isEmpty()) {
                                             found = true;
+                                            foundValue = value;
                                             log.debug("validateRequiredParameters: Found in body with value: {}", value);
                                         }
                                     }
@@ -4678,9 +4929,11 @@ public class APIGenerationEngineService {
 
                     if (!found) {
                         log.debug("validateRequiredParameters: Required parameter [{}] not found", paramKey);
+                        // Create a specific error message with the parameter name
                         errors.put(paramKey, "Required parameter '" + paramKey + "' is missing");
                     } else {
-                        log.debug("validateRequiredParameters: Required parameter [{}] found successfully", paramKey);
+                        log.debug("validateRequiredParameters: Required parameter [{}] found successfully with value: {}",
+                                paramKey, foundValue);
                     }
                 } else {
                     log.debug("validateRequiredParameters: Parameter [{}] is not required, skipping validation", paramKey);
@@ -4691,15 +4944,15 @@ public class APIGenerationEngineService {
 
         } catch (Exception e) {
             log.error("validateRequiredParameters: Exception occurred: {}", e.getMessage(), e);
-            // Re-throw to see the full stack trace
-            throw new RuntimeException("Error in validateRequiredParameters: " + e.getMessage(), e);
+            // Add a generic error to prevent the validation from silently failing
+            errors.put("validation", "Error validating parameters: " + e.getMessage());
         }
 
         return errors;
     }
 
     /**
-     * Enhanced method to map URL path parameters to API parameters
+     * Enhanced method to map URL path parameters to API parameters based on API configuration
      */
     private ExecuteApiRequestDTO mapUrlPathToApiParameters(GeneratedApiEntity api,
                                                            ExecuteApiRequestDTO request,
@@ -4741,193 +4994,64 @@ public class APIGenerationEngineService {
         // Map URL parameters to their configured parameter names
         Map<String, Object> mappedPathParams = new HashMap<>();
 
-        // FIRST PASS: Use the extracted parameter names from the endpoint path
-        if (!pathParamNames.isEmpty()) {
-            log.info("Processing {} path parameters from endpoint pattern", pathParamNames.size());
-
-            for (int i = 0; i < pathParamNames.size(); i++) {
-                String paramName = pathParamNames.get(i);
-                log.info("Processing path parameter index {}: name='{}'", i, paramName);
-
-                // Try to get from numbered params first (param1, param2, etc.)
-                String numberedKey = "param" + (i + 1);
-                Object urlParamValue = urlPathParams.get(numberedKey);
-
-                if (urlParamValue != null) {
-                    mappedPathParams.put(paramName, urlParamValue);
-                    log.info("  Mapped URL {} to {}: {}", numberedKey, paramName, urlParamValue);
-                    continue;
-                }
-
-                // Try the actual parameter name
-                urlParamValue = urlPathParams.get(paramName);
-                if (urlParamValue != null) {
-                    mappedPathParams.put(paramName, urlParamValue);
-                    log.info("  Found direct mapping for {}: {}", paramName, urlParamValue);
-                    continue;
-                }
-
-                // Try from allParams
-                urlParamValue = allParams.get(paramName);
-                if (urlParamValue != null) {
-                    mappedPathParams.put(paramName, urlParamValue);
-                    log.info("  Found in allParams for {}: {}", paramName, urlParamValue);
-                } else {
-                    log.warn("  No value found for path parameter: {}", paramName);
-                }
-            }
-        }
-
-        // SECOND PASS: Check against configured API parameters
+        // CRITICAL: Even if no path parameters in the endpoint URL,
+        // we need to handle path parameters that are configured in the API
         if (api.getParameters() != null) {
-            log.info("Checking against {} configured API parameters:", api.getParameters().size());
-
-            for (ApiParameterEntity configuredParam : api.getParameters()) {
-                String paramType = configuredParam.getParameterType();
-
-                // Only process path parameters
-                if ("path".equals(paramType)) {
-                    String configuredKey = configuredParam.getKey();
-                    String dbColumn = configuredParam.getDbColumn();
-                    Integer position = configuredParam.getPosition();
-
-                    log.info("  Configured path param: key='{}', dbColumn='{}', position={}, required={}",
-                            configuredKey, dbColumn, position, configuredParam.getRequired());
-
-                    // Skip if we already have a value for this key
-                    if (mappedPathParams.containsKey(configuredKey)) {
-                        log.info("    Already have value for {}: {}", configuredKey, mappedPathParams.get(configuredKey));
-                        continue;
-                    }
-
-                    // Try to find a value for this parameter
-                    Object value = null;
-
-                    // Check by position first (most reliable for numbered params)
-                    if (position != null) {
-                        String numberedKey = "param" + (position + 1);
-                        if (urlPathParams.containsKey(numberedKey)) {
-                            value = urlPathParams.get(numberedKey);
-                            log.info("    Found by position {} ({}): {}", position, numberedKey, value);
-                        }
-                    }
-
-                    // Check by key in urlPathParams
-                    if (value == null && urlPathParams.containsKey(configuredKey)) {
-                        value = urlPathParams.get(configuredKey);
-                        log.info("    Found by key in urlPathParams: {}", configuredKey);
-                    }
-
-                    // Check by key in allParams
-                    if (value == null && allParams.containsKey(configuredKey)) {
-                        value = allParams.get(configuredKey);
-                        log.info("    Found by key in allParams: {}", configuredKey);
-                    }
-
-                    // Special handling for the messy parameter structure we saw in logs
-                    if (value == null) {
-                        // Look for any value that might be our parameter
-                        // In the logs, we saw the account number "GL9900101A3213000009" appears as a value
-                        // and also as a key itself
-                        for (Map.Entry<String, Object> entry : urlPathParams.entrySet()) {
-                            Object entryValue = entry.getValue();
-                            if (entryValue != null) {
-                                String strValue = entryValue.toString();
-                                // If this looks like an account number (long alphanumeric string)
-                                if (strValue.length() > 10 && !strValue.equals("api") &&
-                                        !strValue.equals("v1") && !strValue.equals("g-ledger")) {
-                                    value = entryValue;
-                                    log.info("    Found potential value in entry: key='{}', value='{}'",
-                                            entry.getKey(), entryValue);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    // Last resort: look for any key that contains the configured key name
-                    if (value == null) {
-                        for (Map.Entry<String, Object> entry : urlPathParams.entrySet()) {
-                            if (entry.getKey().toLowerCase().contains(configuredKey.toLowerCase())) {
-                                value = entry.getValue();
-                                log.info("    Found by partial key match: {} contains {}",
-                                        entry.getKey(), configuredKey);
-                                break;
-                            }
-                        }
-                    }
-
-                    if (value != null) {
-                        mappedPathParams.put(configuredKey, value);
-                        log.info("  FINAL: {} (db column: {}) = {}", configuredKey, dbColumn, value);
-                    } else if (Boolean.TRUE.equals(configuredParam.getRequired())) {
-                        log.warn("  Required path parameter {} not found in request", configuredKey);
-                    }
-                }
-            }
-        }
-
-        // THIRD PASS: FALLBACK - If we still don't have mapped parameters but have configured path parameters
-        // and the endpoint path doesn't have placeholders, try to infer from the URL structure
-        if (mappedPathParams.isEmpty() && api.getParameters() != null) {
-            log.info("Using fallback parameter mapping due to missing placeholders in endpoint path");
-
-            // Get all configured path parameters
-            List<ApiParameterEntity> pathParams = api.getParameters().stream()
+            // Find all configured path parameters
+            List<ApiParameterEntity> configuredPathParams = api.getParameters().stream()
                     .filter(p -> "path".equals(p.getParameterType()))
+                    .sorted(Comparator.comparing(ApiParameterEntity::getPosition))
                     .collect(Collectors.toList());
 
-            if (!pathParams.isEmpty()) {
-                log.info("Found {} configured path parameters: {}", pathParams.size(),
-                        pathParams.stream().map(ApiParameterEntity::getKey).collect(Collectors.toList()));
+            log.info("Found {} configured path parameters", configuredPathParams.size());
 
-                // Look for values in the urlPathParams that might be our parameter values
-                for (ApiParameterEntity param : pathParams) {
-                    String paramKey = param.getKey();
+            // Map them from the URL path segments
+            for (int i = 0; i < configuredPathParams.size(); i++) {
+                ApiParameterEntity configuredParam = configuredPathParams.get(i);
+                String configuredKey = configuredParam.getKey();
 
-                    // First, try to find by looking at the last few params (param3, param4, etc.)
-                    // In the logs, the account number appeared in param4
-                    for (int i = 1; i <= 10; i++) {
-                        String numberedKey = "param" + i;
-                        if (urlPathParams.containsKey(numberedKey)) {
-                            Object value = urlPathParams.get(numberedKey);
-                            if (value != null) {
-                                String strValue = value.toString();
-                                // If this looks like a real value (not a URL segment like "api" or "v1")
-                                if (!strValue.equals("api") && !strValue.equals("v1") &&
-                                        !strValue.equals("g-ledger") && strValue.length() > 5) {
-                                    mappedPathParams.put(paramKey, value);
-                                    log.info("Fallback: Mapped {} to value: {} from key: {}",
-                                            paramKey, value, numberedKey);
-                                    break;
-                                }
-                            }
+                // Try to get from numbered params (param1, param2, etc.)
+                String numberedKey = "param" + (i + 1);
+                Object value = null;
+
+                if (urlPathParams.containsKey(numberedKey)) {
+                    value = urlPathParams.get(numberedKey);
+                    log.info("Found by numbered key '{}' with value: {}", numberedKey, value);
+                }
+
+                // If not found, try direct key match
+                if (value == null && urlPathParams.containsKey(configuredKey)) {
+                    value = urlPathParams.get(configuredKey);
+                    log.info("Found by direct key '{}' with value: {}", configuredKey, value);
+                }
+
+                // If still not found, try from allParams
+                if (value == null && allParams.containsKey(configuredKey)) {
+                    value = allParams.get(configuredKey);
+                    log.info("Found in allParams for key '{}' with value: {}", configuredKey, value);
+                }
+
+                // Last resort: look for any value that might be a parameter
+                if (value == null && i == 0) {
+                    // For the first path parameter, try to find any value that's not a reserved word
+                    for (Map.Entry<String, Object> entry : urlPathParams.entrySet()) {
+                        String key = entry.getKey();
+                        Object val = entry.getValue();
+                        if (val != null && !key.startsWith("param") &&
+                                !key.equals("api") && !key.equals("v1") &&
+                                !key.equals(configuredKey)) {
+                            value = val;
+                            log.info("Found potential value from key '{}' with value: {}", key, val);
+                            break;
                         }
                     }
+                }
 
-                    // If still not found, check any key that might contain the value
-                    if (!mappedPathParams.containsKey(paramKey)) {
-                        for (Map.Entry<String, Object> entry : urlPathParams.entrySet()) {
-                            Object value = entry.getValue();
-                            if (value != null) {
-                                String strValue = value.toString();
-                                // If this looks like a real value (not a URL segment)
-                                if (!strValue.equals("api") && !strValue.equals("v1") &&
-                                        !strValue.equals("g-ledger") && strValue.length() > 5) {
-                                    mappedPathParams.put(paramKey, value);
-                                    log.info("Fallback: Mapped {} to value: {} from key: {}",
-                                            paramKey, value, entry.getKey());
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    // Also check if the parameter key itself exists as a key in the map
-                    if (!mappedPathParams.containsKey(paramKey) && urlPathParams.containsKey(paramKey)) {
-                        mappedPathParams.put(paramKey, urlPathParams.get(paramKey));
-                        log.info("Fallback: Found direct key match for: {}", paramKey);
-                    }
+                if (value != null) {
+                    mappedPathParams.put(configuredKey, value);
+                    log.info("Mapped configured param '{}' to value: {}", configuredKey, value);
+                } else {
+                    log.warn("No value found for configured path parameter at position {}: {}", i, configuredKey);
                 }
             }
         }
@@ -4982,8 +5106,11 @@ public class APIGenerationEngineService {
 
         log.debug("🔐 Validating authentication type: {}", apiAuthType);
 
+        // FIX: Convert to uppercase for switch statement
         switch (apiAuthType.toUpperCase()) {
             case "API_KEY":
+            case "APIKEY":  // Add this
+            case "API-KEY": // Add this
                 return validateApiKeyWithSecret(api, request);
 
             case "BASIC":
@@ -5072,6 +5199,21 @@ public class APIGenerationEngineService {
                         actualApiSecretValue = entry.getValue();
                         log.debug("✅ Found case-insensitive secret match: {} -> {}", entry.getKey(), expectedApiSecretHeader);
                         break;
+                    }
+                }
+
+                // FIX: Also check for common API key header names if the configured one not found
+                if (actualApiSecretValue == null) {
+                    String[] commonHeaders = {"x-api-key", "api-key", "apikey", "x-api-secret"};
+                    for (String commonHeader : commonHeaders) {
+                        for (Map.Entry<String, String> entry : headers.entrySet()) {
+                            if (entry.getKey().equalsIgnoreCase(commonHeader)) {
+                                actualApiSecretValue = entry.getValue();
+                                log.debug("✅ Found common API header: {}", commonHeader);
+                                break;
+                            }
+                        }
+                        if (actualApiSecretValue != null) break;
                     }
                 }
             }
@@ -5275,6 +5417,21 @@ public class APIGenerationEngineService {
                     actualApiKeyValue = entry.getValue();
                     log.debug("✅ Found case-insensitive match: {} -> {}", entry.getKey(), expectedApiKeyHeader);
                     break;
+                }
+            }
+
+            // FIX: Also check for common API key header names
+            if (actualApiKeyValue == null) {
+                String[] commonHeaders = {"x-api-key", "api-key", "apikey", "x-api-secret"};
+                for (String commonHeader : commonHeaders) {
+                    for (Map.Entry<String, String> entry : headers.entrySet()) {
+                        if (entry.getKey().equalsIgnoreCase(commonHeader)) {
+                            actualApiKeyValue = entry.getValue();
+                            log.debug("✅ Found common API header: {}", commonHeader);
+                            break;
+                        }
+                    }
+                    if (actualApiKeyValue != null) break;
                 }
             }
         }
@@ -5532,19 +5689,18 @@ public class APIGenerationEngineService {
                     sourceObject.getTargetName().trim() :
                     (sourceObject.getObjectName() != null ? sourceObject.getObjectName().trim() : null);
 
-            // CRITICAL FIX: Get owner from multiple sources
-            String targetOwner = null;
+            // CRITICAL FIX: Handle SYNONYM by resolving it
+            String resolvedTargetType = targetType;
+            String resolvedTargetName = targetName;
+            String resolvedTargetOwner = null;
 
-            // Try to get from targetOwner first
+            // Get owner from multiple sources
+            String targetOwner = null;
             if (sourceObject.getTargetOwner() != null && !sourceObject.getTargetOwner().trim().isEmpty()) {
                 targetOwner = sourceObject.getTargetOwner().trim().toUpperCase();
-            }
-            // Then try from owner
-            else if (sourceObject.getOwner() != null && !sourceObject.getOwner().trim().isEmpty()) {
+            } else if (sourceObject.getOwner() != null && !sourceObject.getOwner().trim().isEmpty()) {
                 targetOwner = sourceObject.getOwner().trim().toUpperCase();
-            }
-            // Then try from schema config
-            else if (api.getSchemaConfig() != null && api.getSchemaConfig().getSchemaName() != null
+            } else if (api.getSchemaConfig() != null && api.getSchemaConfig().getSchemaName() != null
                     && !api.getSchemaConfig().getSchemaName().trim().isEmpty()) {
                 targetOwner = api.getSchemaConfig().getSchemaName().trim().toUpperCase();
             }
@@ -5553,7 +5709,47 @@ public class APIGenerationEngineService {
                     targetType, targetName, targetOwner);
 
             if (targetName == null) {
-                throw new RuntimeException("Target object name is null");
+                throw new ValidationException("Target object name is required but was not provided");
+            }
+
+            // ============ FIX: Handle SYNONYM resolution ============
+            if ("SYNONYM".equals(targetType)) {
+                log.info("Resolving synonym: {}.{}", targetOwner, targetName);
+
+                // Resolve the synonym to its actual target
+                Map<String, Object> resolution = resolveSynonymTarget(targetOwner, targetName);
+
+                if (!(boolean) resolution.getOrDefault("exists", false)) {
+                    throw new ValidationException(
+                            String.format("Synonym '%s.%s' does not exist in any schema", targetOwner, targetName)
+                    );
+                }
+
+                // Get the resolved target details
+                resolvedTargetOwner = (String) resolution.get("targetOwner");
+                resolvedTargetName = (String) resolution.get("targetName");
+                resolvedTargetType = (String) resolution.get("targetType");
+
+                // Also capture the actual synonym owner for logging
+                String actualSynonymOwner = (String) resolution.get("synonymOwner");
+
+                log.info("Resolved synonym {}.{} (found under {}) to: {}.{} ({})",
+                        targetOwner, targetName,
+                        actualSynonymOwner != null ? actualSynonymOwner : targetOwner,
+                        resolvedTargetOwner, resolvedTargetName, resolvedTargetType);
+
+                // Validate the resolved object exists and is accessible
+                if (!(boolean) resolution.getOrDefault("targetValid", false)) {
+                    throw new ValidationException(
+                            String.format("The target object '%s.%s' of synonym is invalid or inaccessible",
+                                    resolvedTargetOwner, resolvedTargetName)
+                    );
+                }
+
+                // Now use the resolved target type for execution
+                targetType = resolvedTargetType;
+                targetName = resolvedTargetName;
+                targetOwner = resolvedTargetOwner;
             }
 
             // If owner is still null, try to get default schema from connection
@@ -5567,11 +5763,6 @@ public class APIGenerationEngineService {
                 } catch (Exception e) {
                     log.warn("Could not get default schema: {}", e.getMessage());
                 }
-            }
-
-            // If we still don't have an owner, we'll try without schema (let Oracle use default)
-            if (targetOwner == null) {
-                log.warn("Owner is null, will try without schema (using default schema)");
             }
 
             switch (targetType) {
@@ -5590,10 +5781,100 @@ public class APIGenerationEngineService {
                     return generateSampleResponse(api);
             }
 
+        } catch (ValidationException e) {
+            // Re-throw validation exceptions - they will be handled by createSafeErrorResponse
+            throw e;
         } catch (Exception e) {
             log.error("Error executing Oracle operation: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to execute Oracle operation: " + e.getMessage(), e);
         }
+    }
+
+
+    /**
+     * Resolve a synonym to its actual target object
+     */
+    private Map<String, Object> resolveSynonymTarget(String owner, String synonymName) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("exists", false);
+        result.put("targetValid", false);
+
+        try {
+            // Try multiple approaches to find the synonym
+            List<Map<String, Object>> synonyms = new ArrayList<>();
+
+            // Approach 1: Check with the provided owner
+            if (owner != null && !owner.isEmpty()) {
+                String sql1 = "SELECT TABLE_OWNER, TABLE_NAME, DB_LINK FROM ALL_SYNONYMS WHERE OWNER = ? AND SYNONYM_NAME = ?";
+                synonyms = oracleJdbcTemplate.queryForList(sql1, owner, synonymName);
+                log.info("Checked synonym under owner: {}, found: {}", owner, synonyms.size());
+            }
+
+            // Approach 2: If not found, check PUBLIC synonyms
+            if (synonyms.isEmpty()) {
+                String sql2 = "SELECT TABLE_OWNER, TABLE_NAME, DB_LINK FROM ALL_SYNONYMS WHERE OWNER = 'PUBLIC' AND SYNONYM_NAME = ?";
+                synonyms = oracleJdbcTemplate.queryForList(sql2, synonymName);
+                log.info("Checked PUBLIC synonyms, found: {}", synonyms.size());
+                if (!synonyms.isEmpty()) {
+                    result.put("isPublic", true);
+                }
+            }
+
+            // Approach 3: If still not found, check across all schemas (but limit results)
+            if (synonyms.isEmpty()) {
+                String sql3 = "SELECT OWNER, TABLE_OWNER, TABLE_NAME, DB_LINK FROM ALL_SYNONYMS WHERE SYNONYM_NAME = ? AND ROWNUM <= 5";
+                synonyms = oracleJdbcTemplate.queryForList(sql3, synonymName);
+                log.info("Checked all schemas, found: {}", synonyms.size());
+            }
+
+            if (synonyms.isEmpty()) {
+                log.warn("Synonym {} not found in any schema", synonymName);
+                return result;
+            }
+
+            // Use the first found synonym
+            Map<String, Object> synonym = synonyms.get(0);
+            String synonymOwner = (String) synonym.get("OWNER");
+            String targetOwner = (String) synonym.get("TABLE_OWNER");
+            String targetName = (String) synonym.get("TABLE_NAME");
+            String dbLink = (String) synonym.get("DB_LINK");
+
+            result.put("exists", true);
+            result.put("synonymOwner", synonymOwner);
+            result.put("targetOwner", targetOwner);
+            result.put("targetName", targetName);
+            result.put("dbLink", dbLink);
+
+            log.info("Found synonym {}.{} -> {}.{}",
+                    synonymOwner != null ? synonymOwner : owner,
+                    synonymName,
+                    targetOwner,
+                    targetName);
+
+            // Get the target object type and status
+            String typeSql = "SELECT OBJECT_TYPE, STATUS FROM ALL_OBJECTS WHERE OWNER = ? AND OBJECT_NAME = ?";
+            List<Map<String, Object>> targets = oracleJdbcTemplate.queryForList(typeSql, targetOwner, targetName);
+
+            if (!targets.isEmpty()) {
+                Map<String, Object> target = targets.get(0);
+                String targetType = (String) target.get("OBJECT_TYPE");
+                String status = (String) target.get("STATUS");
+
+                result.put("targetType", targetType);
+                result.put("status", status);
+                result.put("targetValid", "VALID".equalsIgnoreCase(status));
+
+                log.info("Resolved synonym to: {}.{} ({}) with status: {}",
+                        targetOwner, targetName, targetType, status);
+            } else {
+                log.warn("Synonym points to non-existent object: {}.{}", targetOwner, targetName);
+            }
+
+        } catch (Exception e) {
+            log.error("Error resolving synonym {}.{}: {}", owner, synonymName, e.getMessage());
+        }
+
+        return result;
     }
 
 
@@ -5602,22 +5883,91 @@ public class APIGenerationEngineService {
         String operation = sourceObject.getOperation() != null ?
                 sourceObject.getOperation() : api.getSchemaConfig().getOperation();
 
+        // Create a consolidated map of all parameters
         Map<String, Object> params = new HashMap<>();
-        if (request.getQueryParams() != null) params.putAll(request.getQueryParams());
-        if (request.getPathParams() != null) params.putAll(request.getPathParams());
+
+        // Add path parameters
+        if (request.getPathParams() != null) {
+            params.putAll(request.getPathParams());
+        }
+
+        // Add query parameters
+        if (request.getQueryParams() != null) {
+            params.putAll(request.getQueryParams());
+        }
+
+        // Add body parameters if it's a map
         if (request.getBody() instanceof Map) {
             params.putAll((Map<String, Object>) request.getBody());
         }
 
+        // Handle collection/array parameters - convert to single values for database
+        for (Map.Entry<String, Object> entry : params.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof List || value.getClass().isArray()) {
+                Collection<?> collection = value instanceof List ?
+                        (List<?>) value : Arrays.asList((Object[]) value);
+                if (!collection.isEmpty()) {
+                    // Take the first value
+                    params.put(entry.getKey(), collection.iterator().next());
+                    log.info("Converted collection parameter '{}' to single value for {} operation",
+                            entry.getKey(), operation);
+                } else {
+                    params.put(entry.getKey(), null);
+                }
+            }
+        }
+
+        log.info("Executing {} operation on {}.{} with params: {}", operation, owner, tableName, params);
+
+        String oracleOwner = owner != null && !owner.trim().isEmpty() ? owner.trim().toUpperCase() : null;
+        String oracleTableName = tableName != null ? tableName.toUpperCase() : null;
+
+        // ==================== VALIDATION STEP 1: Validate table exists ====================
+        try {
+            String sql = "SELECT COUNT(*) FROM ALL_TABLES WHERE OWNER = ? AND TABLE_NAME = ?";
+            Integer count = oracleJdbcTemplate.queryForObject(sql, Integer.class, oracleOwner, oracleTableName);
+
+            if (count == 0) {
+                throw new ValidationException(
+                        String.format("Table '%s.%s' does not exist or you don't have access to it.",
+                                oracleOwner, oracleTableName)
+                );
+            }
+            log.info("✅ Table {}.{} exists", oracleOwner, oracleTableName);
+        } catch (EmptyResultDataAccessException e) {
+            throw new ValidationException(
+                    String.format("Table '%s.%s' does not exist.", oracleOwner, oracleTableName)
+            );
+        }
+
+        // ==================== VALIDATION STEP 2: Convert configured parameters to DTOs ====================
+        List<ApiParameterDTO> configuredParamDTOs = new ArrayList<>();
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity paramEntity : api.getParameters()) {
+                ApiParameterDTO dto = convertParameterEntityToDTO(paramEntity);
+                configuredParamDTOs.add(dto);
+            }
+        }
+
+        // ==================== VALIDATION STEP 3: Validate all parameters ====================
+        try {
+            validateParameters(configuredParamDTOs, params, oracleOwner, oracleTableName);
+            log.info("✅ All parameter validations passed for table {}.{}", oracleOwner, oracleTableName);
+        } catch (ValidationException e) {
+            log.error("❌ Parameter validation failed: {}", e.getMessage());
+            throw e;
+        }
+
         switch (operation) {
             case "SELECT":
-                return executeTableSelect(tableName, owner, params, api);
+                return executeTableSelect(oracleTableName, oracleOwner, params, api);
             case "INSERT":
-                return executeTableInsert(tableName, owner, params, api);
+                return executeTableInsert(oracleTableName, oracleOwner, params, api);
             case "UPDATE":
-                return executeTableUpdate(tableName, owner, params, api);
+                return executeTableUpdate(oracleTableName, oracleOwner, params, api);
             case "DELETE":
-                return executeTableDelete(tableName, owner, params, api);
+                return executeTableDelete(oracleTableName, oracleOwner, params, api);
             default:
                 return generateSampleResponse(api);
         }
@@ -5633,106 +5983,172 @@ public class APIGenerationEngineService {
 
         List<Object> paramValues = new ArrayList<>();
 
-        // DEBUG: Log all incoming parameters
         log.info("=== TABLE SELECT DEBUG ===");
         log.info("Table: {}.{}", owner, tableName);
         log.info("All incoming params: {}", params);
 
-        if (api.getParameters() != null) {
-            log.info("API has {} configured parameters:", api.getParameters().size());
-            for (ApiParameterEntity configuredParam : api.getParameters()) {
-                log.info("  Configured param: key='{}', dbColumn='{}', type='{}', required={}",
-                        configuredParam.getKey(),
-                        configuredParam.getDbColumn(),
-                        configuredParam.getParameterType(),
-                        configuredParam.getRequired());
-            }
-        } else {
-            log.info("API has NO configured parameters");
-        }
+        boolean hasWhereClause = false;
 
-        // IMPORTANT: Only use parameters that are configured in the API
         if (params != null && !params.isEmpty() && api.getParameters() != null) {
-            boolean hasWhereClause = false;
 
-            // Get all configured parameters that should be used for filtering
+            // First, try to map path parameters from the URL
+            // The params map contains keys like param1, param2, etc. with their values
+            // We need to map these to the actual parameter names based on position
+            Map<Integer, Object> positionValues = new HashMap<>();
+
+            // Extract values by position (param1, param2, etc.)
+            for (Map.Entry<String, Object> entry : params.entrySet()) {
+                String key = entry.getKey();
+                if (key.startsWith("param") && key.length() > 5) {
+                    try {
+                        int position = Integer.parseInt(key.substring(5)) - 1; // param1 -> position 0
+                        positionValues.put(position, entry.getValue());
+                    } catch (NumberFormatException e) {
+                        // Ignore
+                    }
+                }
+            }
+
+            // Also collect all possible values from the params map
+            // This includes both keys and values that might be the voucher number
+            Set<String> possibleValues = new HashSet<>();
+
+            // Add all values that are strings
+            for (Map.Entry<String, Object> entry : params.entrySet()) {
+                Object value = entry.getValue();
+                if (value instanceof String) {
+                    String strValue = (String) value;
+                    // Skip reserved words
+                    if (!strValue.equals("api") && !strValue.equals("v1") && !strValue.equals("gl-bene") &&
+                            !strValue.equals("param1") && !strValue.equals("param2") && !strValue.equals("param3") &&
+                            !strValue.equals("param4") && strValue.length() > 2) {
+                        possibleValues.add(strValue);
+                    }
+                }
+
+                // Also add keys that might be values (like when the value becomes the key)
+                String key = entry.getKey();
+                if (!key.equals("api") && !key.equals("v1") && !key.equals("gl-bene") &&
+                        !key.startsWith("param") && key.length() > 2) {
+                    possibleValues.add(key);
+                }
+            }
+
+            log.info("Possible values found: {}", possibleValues);
+
             for (ApiParameterEntity configuredParam : api.getParameters()) {
                 String paramKey = configuredParam.getKey();
                 String dbColumn = configuredParam.getDbColumn();
                 String paramType = configuredParam.getParameterType();
 
-                // Only use parameters that are meant for filtering (query or path)
-                if (("query".equals(paramType) || "path".equals(paramType)) &&
-                        dbColumn != null && !dbColumn.isEmpty()) {
+                // FIX: Default to "query" if paramType is null
+                if (paramType == null) {
+                    paramType = "query";
+                    log.debug("Parameter {} has null paramType, defaulting to 'query'", paramKey);
+                }
 
-                    log.info("Checking for parameter: key='{}' in params map", paramKey);
+                if (dbColumn == null || dbColumn.isEmpty()) {
+                    log.debug("Parameter {} has no dbColumn mapping, skipping", paramKey);
+                    continue;
+                }
 
-                    // Check if this parameter was provided in the request
+                boolean isValidForFiltering = "query".equals(paramType) ||
+                        "path".equals(paramType) ||
+                        "body".equals(paramType);
+
+                if (isValidForFiltering) {
+                    log.info("Processing parameter: key='{}', dbColumn='{}', paramType='{}'",
+                            paramKey, dbColumn, paramType);
+
                     Object value = null;
 
-                    // Try exact key match
-                    if (params.containsKey(paramKey)) {
+                    // Try to find the value based on parameter type and position
+                    if ("path".equals(paramType)) {
+                        Integer position = configuredParam.getPosition();
+                        if (position != null && positionValues.containsKey(position)) {
+                            value = positionValues.get(position);
+                            log.info("  Found by position {} with value: {}", position, value);
+                        } else if (position != null) {
+                            // Try param1, param2 format
+                            String numberedKey = "param" + (position + 1);
+                            if (params.containsKey(numberedKey)) {
+                                value = params.get(numberedKey);
+                                log.info("  Found numbered param '{}' with value: {}", numberedKey, value);
+                            }
+                        }
+                    }
+
+                    // If still not found, try direct key match
+                    if (value == null && params.containsKey(paramKey)) {
                         value = params.get(paramKey);
                         log.info("  Found exact match for key '{}' with value: {}", paramKey, value);
                     }
-                    // Try case-insensitive match
-                    else {
+
+                    // If still not found and this is a required parameter, try to find a value
+                    if (value == null && Boolean.TRUE.equals(configuredParam.getRequired())) {
+                        // For the first required parameter, try to use the first possible value
+                        if (!possibleValues.isEmpty()) {
+                            // Take the first possible value
+                            value = possibleValues.iterator().next();
+                            log.info("  Using first possible value: {}", value);
+                        }
+                    }
+
+                    // If still not found, try case-insensitive match
+                    if (value == null) {
                         for (Map.Entry<String, Object> entry : params.entrySet()) {
                             if (entry.getKey().equalsIgnoreCase(paramKey)) {
                                 value = entry.getValue();
-                                log.info("  Found case-insensitive match: '{}' -> '{}' with value: {}",
-                                        entry.getKey(), paramKey, value);
+                                log.info("  Found case-insensitive match for key '{}' with value: {}", paramKey, value);
                                 break;
                             }
                         }
                     }
 
-                    // Also check for numbered params if this is a path parameter
-                    if (value == null && "path".equals(paramType)) {
-                        // Look for param1, param2, etc. in the params map
-                        for (int i = 1; i <= 10; i++) {
-                            String numberedKey = "param" + i;
-                            if (params.containsKey(numberedKey)) {
-                                value = params.get(numberedKey);
-                                log.info("  Found numbered param '{}' with value: {}", numberedKey, value);
+                    if (value != null) {
+                        if (value instanceof List || value.getClass().isArray()) {
+                            Collection<?> collection = value instanceof List ?
+                                    (List<?>) value : Arrays.asList((Object[]) value);
 
-                                // Also check if this might be the correct parameter based on position
-                                Integer position = configuredParam.getPosition();
-                                if (position != null && position == (i - 1)) {
-                                    log.info("  Numbered param position matches configured position: {}", position);
-                                    break;
-                                }
+                            if (!collection.isEmpty()) {
+                                value = collection.iterator().next();
+                                log.info("  Converted collection to single value: {}", value);
+                            } else {
+                                value = null;
                             }
                         }
-                    }
 
-                    if (value != null && !value.toString().trim().isEmpty()) {
-                        if (!hasWhereClause) {
-                            sql.append(" WHERE ");
-                            hasWhereClause = true;
+                        if (value != null && !value.toString().trim().isEmpty()) {
+                            if (!hasWhereClause) {
+                                sql.append(" WHERE ");
+                                hasWhereClause = true;
+                            } else {
+                                sql.append(" AND ");
+                            }
+
+                            sql.append(dbColumn).append(" = ?");
+                            paramValues.add(value);
+                            log.info("  ADDED FILTER: {} = ? with value: {}", dbColumn, value);
                         } else {
-                            sql.append(" AND ");
+                            if (Boolean.TRUE.equals(configuredParam.getRequired())) {
+                                throw new ValidationException(
+                                        String.format("Required parameter '%s' cannot be empty", paramKey)
+                                );
+                            }
+                            log.info("Optional parameter {} not provided or empty, skipping filter", paramKey);
                         }
-
-                        // Use the actual database column name
-                        sql.append(dbColumn).append(" = ?");
-                        paramValues.add(value);
-                        log.info("  ADDED FILTER: {} = {} with value: {}", dbColumn, paramKey, value);
                     } else {
                         if (Boolean.TRUE.equals(configuredParam.getRequired())) {
-                            log.warn("  Required parameter {} not found in request", paramKey);
-                        } else {
-                            log.info("  Optional parameter {} not provided, skipping filter", paramKey);
+                            throw new ValidationException(
+                                    String.format("Required parameter '%s' is missing", paramKey)
+                            );
                         }
+                        log.info("Optional parameter {} not provided, skipping filter", paramKey);
                     }
+                } else {
+                    log.info("Parameter {} with type '{}' is not for filtering, skipping", paramKey, paramType);
                 }
             }
-
-            // Log the final SQL before pagination
-            log.info("SQL before pagination: {} with {} parameters", sql.toString(), paramValues.size());
-
-        } else {
-            log.info("No parameters to filter by (params null/empty or api has no configured params)");
         }
 
         // Handle pagination if enabled
@@ -5740,12 +6156,12 @@ public class APIGenerationEngineService {
                 Boolean.TRUE.equals(api.getSchemaConfig().getEnablePagination())) {
             int pageSize = api.getSchemaConfig().getPageSize() != null ?
                     api.getSchemaConfig().getPageSize() : 10;
-            int page = 1; // default page
+            int page = 1;
 
-            // Check if page parameter was provided
             if (params != null && params.containsKey("page")) {
                 try {
                     page = Integer.parseInt(params.get("page").toString());
+                    if (page < 1) page = 1;
                     log.info("Page parameter found: {}", page);
                 } catch (NumberFormatException e) {
                     log.warn("Invalid page parameter, using default: 1");
@@ -5759,16 +6175,32 @@ public class APIGenerationEngineService {
             log.info("Added pagination: offset={}, pageSize={}", offset, pageSize);
         }
 
-        log.info("Final SQL: {} with params: {}", sql.toString(), paramValues);
+        log.info("Final SQL: {} with {} parameters", sql.toString(), paramValues.size());
 
         try {
             List<Map<String, Object>> results = oracleJdbcTemplate.queryForList(
                     sql.toString(), paramValues.toArray());
             log.info("Query returned {} rows", results.size());
+
             return results;
         } catch (Exception e) {
             log.error("Error executing table select: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to execute SELECT on " + tableName + ": " + e.getMessage(), e);
+
+            if (e.getMessage() != null && e.getMessage().contains("Invalid column type")) {
+                if (params != null) {
+                    for (Map.Entry<String, Object> entry : params.entrySet()) {
+                        if (entry.getValue() instanceof List || entry.getValue() instanceof Collection) {
+                            throw new ValidationException(
+                                    String.format("Parameter '%s' cannot accept multiple values. Please provide a single value.",
+                                            entry.getKey())
+                            );
+                        }
+                    }
+                }
+                throw new ValidationException("Invalid parameter format. Please check the data types of your parameters.");
+            }
+
+            throw new RuntimeException("Failed to execute SELECT operation: " + e.getMessage(), e);
         }
     }
 
@@ -5776,14 +6208,33 @@ public class APIGenerationEngineService {
     private Object executeTableInsert(String tableName, String owner, Map<String, Object> params,
                                       GeneratedApiEntity api) {
         if (params == null || params.isEmpty()) {
-            throw new RuntimeException("No parameters provided for INSERT");
+            throw new RuntimeException("No parameters provided for INSERT operation");
+        }
+
+        // Handle collection/array parameters - convert to single values for database
+        Map<String, Object> processedParams = new HashMap<>();
+        for (Map.Entry<String, Object> entry : params.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof List || value.getClass().isArray()) {
+                Collection<?> collection = value instanceof List ?
+                        (List<?>) value : Arrays.asList((Object[]) value);
+                if (!collection.isEmpty()) {
+                    // Take the first value
+                    processedParams.put(entry.getKey(), collection.iterator().next());
+                    log.info("Converted collection parameter '{}' to single value for INSERT", entry.getKey());
+                } else {
+                    processedParams.put(entry.getKey(), null);
+                }
+            } else {
+                processedParams.put(entry.getKey(), value);
+            }
         }
 
         StringBuilder columns = new StringBuilder();
         StringBuilder values = new StringBuilder();
         List<Object> paramValues = new ArrayList<>();
 
-        for (Map.Entry<String, Object> entry : params.entrySet()) {
+        for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
             if (columns.length() > 0) {
                 columns.append(", ");
                 values.append(", ");
@@ -5796,37 +6247,65 @@ public class APIGenerationEngineService {
         String sql = "INSERT INTO " + (owner != null && !owner.isEmpty() ? owner + "." : "") + tableName +
                 " (" + columns + ") VALUES (" + values + ")";
 
-        int rowsAffected = oracleJdbcTemplate.update(sql, paramValues.toArray());
+        try {
+            int rowsAffected = oracleJdbcTemplate.update(sql, paramValues.toArray());
 
-        Map<String, Object> result = new HashMap<>();
-        result.put("rowsAffected", rowsAffected);
-        result.put("message", "Insert successful");
+            Map<String, Object> result = new HashMap<>();
+            result.put("rowsAffected", rowsAffected);
+            result.put("message", rowsAffected > 0 ? "Insert successful" : "No rows inserted");
 
-        if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
-            String pkColumn = api.getResponseMappings().stream()
-                    .filter(m -> Boolean.TRUE.equals(m.getIsPrimaryKey()))
-                    .map(ApiResponseMappingEntity::getDbColumn)
-                    .findFirst()
-                    .orElse(null);
+            if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
+                String pkColumn = api.getResponseMappings().stream()
+                        .filter(m -> Boolean.TRUE.equals(m.getIsPrimaryKey()))
+                        .map(ApiResponseMappingEntity::getDbColumn)
+                        .findFirst()
+                        .orElse(null);
 
-            if (pkColumn != null && params.containsKey(pkColumn.toLowerCase())) {
-                String selectSql = "SELECT * FROM " + (owner != null && !owner.isEmpty() ? owner + "." : "") + tableName +
-                        " WHERE " + pkColumn + " = ?";
-                List<Map<String, Object>> inserted = oracleJdbcTemplate.queryForList(
-                        selectSql, params.get(pkColumn.toLowerCase()));
-                if (!inserted.isEmpty()) {
-                    result.put("data", inserted.get(0));
+                if (pkColumn != null && processedParams.containsKey(pkColumn.toLowerCase())) {
+                    String selectSql = "SELECT * FROM " + (owner != null && !owner.isEmpty() ? owner + "." : "") + tableName +
+                            " WHERE " + pkColumn + " = ?";
+                    List<Map<String, Object>> inserted = oracleJdbcTemplate.queryForList(
+                            selectSql, processedParams.get(pkColumn.toLowerCase()));
+                    if (!inserted.isEmpty()) {
+                        result.put("data", inserted.get(0));
+                    }
                 }
             }
-        }
 
-        return result;
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error executing INSERT on {}: {}", tableName, e.getMessage(), e);
+
+            // Provide user-friendly error messages
+            if (e.getMessage() != null && e.getMessage().contains("ORA-00942")) {
+                throw new RuntimeException("The requested table could not be found.");
+            }
+
+            if (e.getMessage() != null && e.getMessage().contains("ORA-01031")) {
+                throw new RuntimeException("Insufficient privileges to insert into this table.");
+            }
+
+            if (e.getMessage() != null && e.getMessage().contains("ORA-01400")) {
+                throw new RuntimeException("A required value is missing for a non-nullable column.");
+            }
+
+            if (e.getMessage() != null && e.getMessage().contains("ORA-02291")) {
+                throw new RuntimeException("Referential integrity constraint violation - parent record not found.");
+            }
+
+            if (e.getMessage() != null && e.getMessage().contains("ORA-12899")) {
+                throw new RuntimeException("Value too large for the target column.");
+            }
+
+            throw new RuntimeException("Failed to execute INSERT operation.", e);
+        }
     }
 
     private Object executeTableUpdate(String tableName, String owner, Map<String, Object> params,
                                       GeneratedApiEntity api) {
         if (params == null || params.isEmpty()) {
-            throw new RuntimeException("No parameters provided for UPDATE");
+            throw new RuntimeException("No parameters provided for UPDATE operation");
         }
 
         List<String> pkColumns = api.getResponseMappings().stream()
@@ -5838,12 +6317,31 @@ public class APIGenerationEngineService {
             throw new RuntimeException("No primary key defined for UPDATE operation");
         }
 
+        // Handle collection/array parameters - convert to single values for database
+        Map<String, Object> processedParams = new HashMap<>();
+        for (Map.Entry<String, Object> entry : params.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof List || value.getClass().isArray()) {
+                Collection<?> collection = value instanceof List ?
+                        (List<?>) value : Arrays.asList((Object[]) value);
+                if (!collection.isEmpty()) {
+                    // Take the first value
+                    processedParams.put(entry.getKey(), collection.iterator().next());
+                    log.info("Converted collection parameter '{}' to single value for UPDATE", entry.getKey());
+                } else {
+                    processedParams.put(entry.getKey(), null);
+                }
+            } else {
+                processedParams.put(entry.getKey(), value);
+            }
+        }
+
         StringBuilder setClause = new StringBuilder();
         StringBuilder whereClause = new StringBuilder();
         List<Object> setValues = new ArrayList<>();
         List<Object> whereValues = new ArrayList<>();
 
-        for (Map.Entry<String, Object> entry : params.entrySet()) {
+        for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
             String key = entry.getKey();
             boolean isPk = pkColumns.stream().anyMatch(pk -> pk.equalsIgnoreCase(key));
 
@@ -5865,7 +6363,7 @@ public class APIGenerationEngineService {
         }
 
         if (whereValues.isEmpty()) {
-            throw new RuntimeException("No primary key values provided for UPDATE");
+            throw new RuntimeException("No primary key values provided for UPDATE operation");
         }
 
         String sql = "UPDATE " + (owner != null && !owner.isEmpty() ? owner + "." : "") + tableName +
@@ -5874,25 +6372,68 @@ public class APIGenerationEngineService {
         List<Object> allParams = new ArrayList<>(setValues);
         allParams.addAll(whereValues);
 
-        int rowsAffected = oracleJdbcTemplate.update(sql, allParams.toArray());
+        try {
+            int rowsAffected = oracleJdbcTemplate.update(sql, allParams.toArray());
 
-        Map<String, Object> result = new HashMap<>();
-        result.put("rowsAffected", rowsAffected);
-        result.put("message", rowsAffected > 0 ? "Update successful" : "No rows updated");
+            Map<String, Object> result = new HashMap<>();
+            result.put("rowsAffected", rowsAffected);
+            result.put("message", rowsAffected > 0 ? "Update successful" : "No rows updated");
 
-        return result;
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error executing UPDATE on {}: {}", tableName, e.getMessage(), e);
+
+            // Provide user-friendly error messages
+            if (e.getMessage() != null && e.getMessage().contains("ORA-00942")) {
+                throw new RuntimeException("The requested table could not be found.");
+            }
+
+            if (e.getMessage() != null && e.getMessage().contains("ORA-01031")) {
+                throw new RuntimeException("Insufficient privileges to update this table.");
+            }
+
+            if (e.getMessage() != null && e.getMessage().contains("ORA-02291")) {
+                throw new RuntimeException("Referential integrity constraint violation.");
+            }
+
+            if (e.getMessage() != null && e.getMessage().contains("ORA-12899")) {
+                throw new RuntimeException("Value too large for the target column.");
+            }
+
+            throw new RuntimeException("Failed to execute UPDATE operation.", e);
+        }
     }
 
     private Object executeTableDelete(String tableName, String owner, Map<String, Object> params,
                                       GeneratedApiEntity api) {
         if (params == null || params.isEmpty()) {
-            throw new RuntimeException("No parameters provided for DELETE");
+            throw new RuntimeException("No parameters provided for DELETE operation");
+        }
+
+        // Handle collection/array parameters - convert to single values for database
+        Map<String, Object> processedParams = new HashMap<>();
+        for (Map.Entry<String, Object> entry : params.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof List || value.getClass().isArray()) {
+                Collection<?> collection = value instanceof List ?
+                        (List<?>) value : Arrays.asList((Object[]) value);
+                if (!collection.isEmpty()) {
+                    // Take the first value
+                    processedParams.put(entry.getKey(), collection.iterator().next());
+                    log.info("Converted collection parameter '{}' to single value for DELETE", entry.getKey());
+                } else {
+                    processedParams.put(entry.getKey(), null);
+                }
+            } else {
+                processedParams.put(entry.getKey(), value);
+            }
         }
 
         StringBuilder whereClause = new StringBuilder();
         List<Object> whereValues = new ArrayList<>();
 
-        for (Map.Entry<String, Object> entry : params.entrySet()) {
+        for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
             if (whereClause.length() > 0) {
                 whereClause.append(" AND ");
             } else {
@@ -5904,35 +6445,335 @@ public class APIGenerationEngineService {
 
         String sql = "DELETE FROM " + (owner != null && !owner.isEmpty() ? owner + "." : "") + tableName + whereClause;
 
-        int rowsAffected = oracleJdbcTemplate.update(sql, whereValues.toArray());
+        try {
+            int rowsAffected = oracleJdbcTemplate.update(sql, whereValues.toArray());
 
-        Map<String, Object> result = new HashMap<>();
-        result.put("rowsAffected", rowsAffected);
-        result.put("message", rowsAffected > 0 ? "Delete successful" : "No rows deleted");
+            Map<String, Object> result = new HashMap<>();
+            result.put("rowsAffected", rowsAffected);
+            result.put("message", rowsAffected > 0 ? "Delete successful" : "No rows deleted");
 
-        return result;
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error executing DELETE on {}: {}", tableName, e.getMessage(), e);
+
+            // Provide user-friendly error messages
+            if (e.getMessage() != null && e.getMessage().contains("ORA-00942")) {
+                throw new RuntimeException("The requested table could not be found.");
+            }
+
+            if (e.getMessage() != null && e.getMessage().contains("ORA-01031")) {
+                throw new RuntimeException("Insufficient privileges to delete from this table.");
+            }
+
+            if (e.getMessage() != null && e.getMessage().contains("ORA-02292")) {
+                throw new RuntimeException("Cannot delete record because it is referenced by other records.");
+            }
+
+            throw new RuntimeException("Failed to execute DELETE operation.", e);
+        }
     }
 
     private Object executeViewOperation(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
                                         String viewName, String owner, ExecuteApiRequestDTO request) {
-        return executeTableSelect(viewName, owner,
-                request.getQueryParams() != null ? request.getQueryParams() : new HashMap<>(),
-                api);
+        Map<String, Object> queryParams = request.getQueryParams() != null ?
+                request.getQueryParams() : new HashMap<>();
+
+        // Handle collection/array parameters in query params
+        for (Map.Entry<String, Object> entry : queryParams.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof List || value.getClass().isArray()) {
+                Collection<?> collection = value instanceof List ?
+                        (List<?>) value : Arrays.asList((Object[]) value);
+                if (!collection.isEmpty()) {
+                    // Take the first value for WHERE clause
+                    queryParams.put(entry.getKey(), collection.iterator().next());
+                    log.info("Converted collection query parameter '{}' to single value", entry.getKey());
+                }
+            }
+        }
+
+        String oracleOwner = owner != null && !owner.trim().isEmpty() ? owner.trim().toUpperCase() : null;
+        String oracleViewName = viewName != null ? viewName.toUpperCase() : null;
+
+        // ==================== VALIDATION STEP 1: Validate view exists and is accessible ====================
+        try {
+            validateDatabaseObject(oracleOwner, oracleViewName, "VIEW");
+            log.info("✅ View {}.{} exists and is accessible", oracleOwner, oracleViewName);
+        } catch (ValidationException e) {
+            log.error("❌ View validation failed: {}", e.getMessage());
+            throw e;
+        }
+
+        // ==================== VALIDATION STEP 2: Validate query parameters against view columns ====================
+        try {
+            // Get allowed columns from response mappings or API parameters
+            List<String> allowedColumns = new ArrayList<>();
+            if (api.getResponseMappings() != null) {
+                for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
+                    if (mapping.getDbColumn() != null) {
+                        allowedColumns.add(mapping.getDbColumn().toLowerCase());
+                    }
+                }
+            }
+
+            validateViewQuery(oracleOwner, oracleViewName, queryParams, allowedColumns);
+            log.info("✅ View query validation passed");
+        } catch (ValidationException e) {
+            log.error("❌ View query validation failed: {}", e.getMessage());
+            throw e;
+        }
+
+        // ==================== VALIDATION STEP 3: Convert configured parameters to DTOs ====================
+        List<ApiParameterDTO> configuredParamDTOs = new ArrayList<>();
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity paramEntity : api.getParameters()) {
+                ApiParameterDTO dto = convertParameterEntityToDTO(paramEntity);
+                configuredParamDTOs.add(dto);
+            }
+        }
+
+        // ==================== VALIDATION STEP 4: Validate all parameters ====================
+        try {
+            validateParameters(configuredParamDTOs, queryParams, oracleOwner, oracleViewName);
+            log.info("✅ All parameter validations passed for view {}.{}", oracleOwner, oracleViewName);
+        } catch (ValidationException e) {
+            log.error("❌ Parameter validation failed: {}", e.getMessage());
+            throw e;
+        }
+
+        return executeTableSelect(oracleViewName, oracleOwner, queryParams, api);
     }
 
-    private Object executeProcedure(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
-                                    String procedureName, String owner, ExecuteApiRequestDTO request) {
+    private Object executeFunction(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
+                                   String functionName, String owner, ExecuteApiRequestDTO request) {
+        // Create consolidated parameters map from all sources
         Map<String, Object> inParams = new HashMap<>();
-        if (request.getQueryParams() != null) inParams.putAll(request.getQueryParams());
-        if (request.getPathParams() != null) inParams.putAll(request.getPathParams());
+
+        // Add path parameters
+        if (request.getPathParams() != null) {
+            inParams.putAll(request.getPathParams());
+        }
+
+        // Add query parameters
+        if (request.getQueryParams() != null) {
+            inParams.putAll(request.getQueryParams());
+        }
+
+        // Add body parameters if it's a map
         if (request.getBody() instanceof Map) {
             inParams.putAll((Map<String, Object>) request.getBody());
         }
 
-        log.info("Executing procedure - Original: {}.{}", owner, procedureName);
+        // Handle collection/array parameters - convert to single values for database
+        for (Map.Entry<String, Object> entry : inParams.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof List || value.getClass().isArray()) {
+                Collection<?> collection = value instanceof List ?
+                        (List<?>) value : Arrays.asList((Object[]) value);
+                if (!collection.isEmpty()) {
+                    // Take the first value
+                    inParams.put(entry.getKey(), collection.iterator().next());
+                    log.info("Converted collection parameter '{}' to single value", entry.getKey());
+                } else {
+                    inParams.put(entry.getKey(), null);
+                }
+            }
+        }
+
+        log.info("Executing function - {}.{} with params: {}", owner, functionName, inParams);
+
+        String oracleOwner = owner != null && !owner.trim().isEmpty() ? owner.trim().toUpperCase() : null;
+        String oracleFunctionName = functionName != null ? functionName.toUpperCase() : null;
+
+        // ==================== VALIDATION STEP 1: Validate function exists and is valid ====================
+        try {
+            validateDatabaseObject(oracleOwner, oracleFunctionName, "FUNCTION");
+            log.info("✅ Function {}.{} exists and is valid", oracleOwner, oracleFunctionName);
+        } catch (ValidationException e) {
+            log.error("❌ Function validation failed: {}", e.getMessage());
+            throw e;
+        }
+
+        // ==================== VALIDATION STEP 2: Convert configured parameters to DTOs ====================
+        List<ApiParameterDTO> configuredParamDTOs = new ArrayList<>();
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity paramEntity : api.getParameters()) {
+                ApiParameterDTO dto = convertParameterEntityToDTO(paramEntity);
+                configuredParamDTOs.add(dto);
+            }
+            log.info("Converted {} configured parameters to DTOs", configuredParamDTOs.size());
+        }
+
+        // ==================== VALIDATION STEP 3: Validate all parameters ====================
+        try {
+            validateParameters(configuredParamDTOs, inParams, oracleOwner, oracleFunctionName);
+            log.info("✅ All parameter validations passed for function {}.{}", oracleOwner, oracleFunctionName);
+        } catch (ValidationException e) {
+            log.error("❌ Parameter validation failed: {}", e.getMessage());
+            throw e;
+        }
+
+        try {
+            SimpleJdbcCall jdbcCall = new SimpleJdbcCall(oracleJdbcTemplate)
+                    .withSchemaName(oracleOwner)
+                    .withFunctionName(oracleFunctionName);
+
+            if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
+                String returnType = api.getResponseMappings().get(0).getOracleType();
+                jdbcCall.declareParameters(
+                        new SqlOutParameter("return", mapToSqlType(returnType))
+                );
+            }
+
+            // Declare input parameters from API parameters
+            if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+                int inParamCount = 0;
+
+                for (ApiParameterEntity param : api.getParameters()) {
+                    // Skip if parameter is null or has no key
+                    if (param == null || param.getKey() == null) continue;
+
+                    // Handle null parameterType - treat as valid IN parameter
+                    String paramType = param.getParameterType();
+                    boolean isValidParameter = paramType == null ||
+                            "query".equals(paramType) ||
+                            "path".equals(paramType) ||
+                            "body".equals(paramType);
+
+                    if (inParams.containsKey(param.getKey()) && isValidParameter) {
+                        String paramName = param.getDbParameter() != null ?
+                                param.getDbParameter() :
+                                (param.getDbColumn() != null ? param.getDbColumn() : param.getKey());
+
+                        jdbcCall.declareParameters(
+                                new SqlParameter(paramName, mapToSqlType(param.getOracleType()))
+                        );
+                        inParamCount++;
+                        log.debug("Declared IN parameter: {} with value: {}", paramName, inParams.get(param.getKey()));
+                    }
+                }
+
+                log.debug("Declared {} IN parameters for function", inParamCount);
+            }
+
+            log.info("Executing function {}.{} with {} input parameters", oracleOwner, oracleFunctionName, inParams.size());
+
+            Map<String, Object> result = jdbcCall.execute(inParams);
+
+            Map<String, Object> responseData = new HashMap<>();
+            if (result.containsKey("return")) {
+                responseData.put("result", result.get("return"));
+                log.info("Function returned value: {}", result.get("return"));
+            }
+
+            return responseData;
+
+        } catch (ValidationException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Error executing function {}.{}: {}", oracleOwner, oracleFunctionName, e.getMessage(), e);
+
+            // Provide user-friendly error messages
+            if (e.getMessage() != null && e.getMessage().contains("ORA-06550")) {
+                throw new ValidationException("Invalid parameters provided for the function. Please check parameter names and data types.");
+            }
+            if (e.getMessage() != null && e.getMessage().contains("ORA-00942")) {
+                throw new ValidationException("The requested table or view could not be found.");
+            }
+            if (e.getMessage() != null && e.getMessage().contains("ORA-01031")) {
+                throw new ValidationException("Insufficient privileges to execute this function.");
+            }
+            if (e.getMessage() != null && e.getMessage().contains("Invalid column type")) {
+                throw new ValidationException("Invalid parameter format. Please check the data types of your parameters.");
+            }
+
+            throw new RuntimeException("Failed to execute the requested function.", e);
+        }
+    }
+
+
+    private Object executeProcedure(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
+                                    String procedureName, String owner, ExecuteApiRequestDTO request) {
+        // Create consolidated parameters map from all sources
+        Map<String, Object> inParams = new HashMap<>();
+
+        // Add path parameters
+        if (request.getPathParams() != null) {
+            inParams.putAll(request.getPathParams());
+        }
+
+        // Add query parameters
+        if (request.getQueryParams() != null) {
+            inParams.putAll(request.getQueryParams());
+        }
+
+        // Add body parameters if it's a map
+        if (request.getBody() instanceof Map) {
+            inParams.putAll((Map<String, Object>) request.getBody());
+        }
+
+        // Handle collection/array parameters - convert to single values for database
+        for (Map.Entry<String, Object> entry : inParams.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof List || value.getClass().isArray()) {
+                Collection<?> collection = value instanceof List ?
+                        (List<?>) value : Arrays.asList((Object[]) value);
+                if (!collection.isEmpty()) {
+                    // Take the first value
+                    inParams.put(entry.getKey(), collection.iterator().next());
+                    log.info("Converted collection parameter '{}' to single value", entry.getKey());
+                } else {
+                    inParams.put(entry.getKey(), null);
+                }
+            }
+        }
+
+        log.info("Executing procedure - Original: {}.{} with params: {}", owner, procedureName, inParams);
 
         String oracleOwner = owner != null && !owner.trim().isEmpty() ? owner.trim().toUpperCase() : null;
         String oracleProcedureName = procedureName != null ? procedureName.trim().toUpperCase() : null;
+
+        // ==================== VALIDATION STEP 1: Validate procedure exists and is valid ====================
+        try {
+            // This will throw ValidationException if procedure doesn't exist or is INVALID
+            validateDatabaseObject(oracleOwner, oracleProcedureName, "PROCEDURE");
+            log.info("✅ Procedure {}.{} exists and is valid", oracleOwner, oracleProcedureName);
+        } catch (EmptyResultDataAccessException e) {
+            log.error("❌ Procedure {}.{} does not exist", oracleOwner, oracleProcedureName);
+            listAvailableProcedures(oracleOwner);
+            throw new ValidationException(
+                    String.format("The procedure '%s.%s' does not exist or you don't have access to it.",
+                            oracleOwner, oracleProcedureName)
+            );
+        } catch (ValidationException e) {
+            log.error("❌ Procedure validation failed: {}", e.getMessage());
+            throw e; // This will be caught by createSafeErrorResponse
+        }
+
+        // ==================== VALIDATION STEP 2: Convert configured parameters to DTOs ====================
+        List<ApiParameterDTO> configuredParamDTOs = new ArrayList<>();
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity paramEntity : api.getParameters()) {
+                if (paramEntity != null) {
+                    ApiParameterDTO dto = convertParameterEntityToDTO(paramEntity);
+                    configuredParamDTOs.add(dto);
+                }
+            }
+            log.info("Converted {} configured parameters to DTOs", configuredParamDTOs.size());
+        } else {
+            log.debug("No configured parameters found for this API");
+        }
+
+        // ==================== VALIDATION STEP 3: Validate all parameters ====================
+        try {
+            // This will validate required parameters, data types, lengths, etc.
+            validateParameters(configuredParamDTOs, inParams, oracleOwner, oracleProcedureName);
+            log.info("✅ All parameter validations passed for procedure {}.{}", oracleOwner, oracleProcedureName);
+        } catch (ValidationException e) {
+            log.error("❌ Parameter validation failed: {}", e.getMessage());
+            throw e; // This will be caught by createSafeErrorResponse
+        }
 
         // Resolve the actual target (handle synonyms)
         Map<String, Object> resolution = resolveProcedureTarget(oracleOwner, oracleProcedureName);
@@ -5944,23 +6785,37 @@ public class APIGenerationEngineService {
             actualOwner = (String) resolution.get("targetOwner");
             actualProcedureName = (String) resolution.get("targetName");
             log.info("Resolved synonym to: {}.{}", actualOwner, actualProcedureName);
+
+            // Validate the resolved target as well
+            try {
+                validateDatabaseObject(actualOwner, actualProcedureName, "PROCEDURE");
+                log.info("✅ Resolved procedure {}.{} is valid", actualOwner, actualProcedureName);
+            } catch (ValidationException e) {
+                log.error("❌ Resolved procedure validation failed: {}", e.getMessage());
+                throw e;
+            }
         } else {
             actualOwner = oracleOwner;
             actualProcedureName = oracleProcedureName;
         }
 
-        // Check if the resolved procedure exists and is valid
+        // Double-check if the resolved procedure exists and is valid
         if (!(boolean) resolution.getOrDefault("exists", false)) {
             log.error("Procedure {}.{} does not exist in the Oracle database", oracleOwner, oracleProcedureName);
             listAvailableProcedures(oracleOwner);
-            throw new RuntimeException("Procedure " + oracleOwner + "." + oracleProcedureName + " does not exist in the database");
+            throw new ValidationException(
+                    String.format("The procedure '%s.%s' does not exist or you don't have access to it.",
+                            oracleOwner, oracleProcedureName)
+            );
         }
 
         if (!(boolean) resolution.getOrDefault("valid", false)) {
             String status = (String) resolution.getOrDefault("status", "INVALID");
             log.error("Procedure {}.{} exists but is {} (compilation error)", oracleOwner, oracleProcedureName, status);
-            throw new RuntimeException("Procedure " + oracleOwner + "." + oracleProcedureName +
-                    " exists but is " + status + ". Please check database for compilation errors.");
+            throw new ValidationException(
+                    String.format("The procedure '%s.%s' is %s (compilation error). Please compile it before using.",
+                            oracleOwner, oracleProcedureName, status)
+            );
         }
 
         try {
@@ -5972,11 +6827,6 @@ public class APIGenerationEngineService {
             }
 
             jdbcCall = jdbcCall.withProcedureName(actualProcedureName);
-
-            // Also try without schema if we have an owner (for fallback)
-            if (actualOwner != null) {
-                jdbcCall = jdbcCall.withCatalogName(actualOwner);
-            }
 
             log.info("Oracle will execute: {}.{}", actualOwner != null ? actualOwner : "<default schema>", actualProcedureName);
 
@@ -6006,10 +6856,15 @@ public class APIGenerationEngineService {
                     // Skip if parameter is null or has no key
                     if (param == null || param.getKey() == null) continue;
 
-                    // Check if this is an IN parameter and if it was provided
+                    // Handle null parameterType - treat as IN parameter
+                    String paramType = param.getParameterType();
                     String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
 
-                    if (inParams.containsKey(param.getKey()) && !"OUT".equals(paramMode)) {
+                    // Check if this parameter is meant to be an IN parameter
+                    boolean isInParameter = paramMode.contains("IN") || paramType == null ||
+                            "query".equals(paramType) || "path".equals(paramType) || "body".equals(paramType);
+
+                    if (inParams.containsKey(param.getKey()) && isInParameter) {
                         String paramName = param.getDbParameter() != null && !param.getDbParameter().isEmpty() ?
                                 param.getDbParameter().toUpperCase() :
                                 (param.getDbColumn() != null && !param.getDbColumn().isEmpty() ?
@@ -6021,6 +6876,8 @@ public class APIGenerationEngineService {
                         log.debug("Declared IN parameter: {} of type: {} (SQL type: {}) with value: {}",
                                 paramName, param.getOracleType(), sqlType, inParams.get(param.getKey()));
                         inParamCount++;
+                    } else if (inParams.containsKey(param.getKey())) {
+                        log.debug("Parameter {} is not an IN parameter (mode: {}), skipping", param.getKey(), paramMode);
                     }
                 }
 
@@ -6079,20 +6936,71 @@ public class APIGenerationEngineService {
 
             return responseData.isEmpty() ? result : responseData;
 
+        } catch (ValidationException e) {
+            // Re-throw validation exceptions
+            throw e;
         } catch (Exception e) {
             log.error("Error executing procedure {}.{}: {}",
                     actualOwner != null ? actualOwner : "<default>", actualProcedureName, e.getMessage(), e);
 
-            // Provide more helpful error message
-            String errorMsg = String.format("Failed to execute procedure %s.%s: %s",
-                    actualOwner != null ? actualOwner : "<default>", actualProcedureName, e.getMessage());
-
-            if (e.getMessage() != null && e.getMessage().contains("no procedure/function/signature")) {
-                errorMsg = String.format("Procedure %s.%s not found or invalid signature. Please check that the procedure exists and has the correct parameters.",
-                        actualOwner != null ? actualOwner : "<default>", actualProcedureName);
+            // Provide user-friendly error messages for common Oracle errors
+            if (e.getMessage() != null) {
+                if (e.getMessage().contains("ORA-06550")) {
+                    throw new ValidationException(
+                            String.format("Invalid parameters provided for procedure '%s.%s'. Please check parameter names and data types.",
+                                    actualOwner, actualProcedureName)
+                    );
+                }
+                if (e.getMessage().contains("ORA-00942")) {
+                    throw new ValidationException(
+                            String.format("Table or view referenced in procedure '%s.%s' could not be found.",
+                                    actualOwner, actualProcedureName)
+                    );
+                }
+                if (e.getMessage().contains("ORA-01031")) {
+                    throw new ValidationException(
+                            String.format("Insufficient privileges to execute procedure '%s.%s'.",
+                                    actualOwner, actualProcedureName)
+                    );
+                }
+                if (e.getMessage().contains("ORA-01400")) {
+                    throw new ValidationException(
+                            "A required value is missing for a NOT NULL column. Please provide all required parameters."
+                    );
+                }
+                if (e.getMessage().contains("ORA-01401") || e.getMessage().contains("ORA-12899")) {
+                    throw new ValidationException(
+                            "Value too large for the target column. Please check the length of your input values."
+                    );
+                }
+                if (e.getMessage().contains("ORA-02291")) {
+                    throw new ValidationException(
+                            "Referential integrity constraint violation - parent record not found."
+                    );
+                }
+                if (e.getMessage().contains("ORA-02292")) {
+                    throw new ValidationException(
+                            "Cannot delete or update because child records exist."
+                    );
+                }
+                if (e.getMessage().contains("Invalid column type")) {
+                    // Try to extract which parameter had the issue
+                    java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("'(\\w+)'\\s*=\\s*\\[?([^\\]]+)\\]?");
+                    java.util.regex.Matcher matcher = pattern.matcher(e.getMessage());
+                    if (matcher.find()) {
+                        String paramName = matcher.group(1);
+                        throw new ValidationException(
+                                String.format("Invalid format for parameter '%s'. Please provide a single value, not a list.",
+                                        paramName)
+                        );
+                    }
+                    throw new ValidationException(
+                            "Invalid parameter format. Please check the data types of your parameters."
+                    );
+                }
             }
 
-            throw new RuntimeException(errorMsg, e);
+            throw new RuntimeException("Failed to execute the requested operation.", e);
         }
     }
 
@@ -6247,113 +7155,142 @@ public class APIGenerationEngineService {
     }
 
 
-
-    private Object executeFunction(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
-                                   String functionName, String owner, ExecuteApiRequestDTO request) {
-        Map<String, Object> inParams = new HashMap<>();
-        if (request.getQueryParams() != null) inParams.putAll(request.getQueryParams());
-        if (request.getPathParams() != null) inParams.putAll(request.getPathParams());
-        if (request.getBody() instanceof Map) {
-            inParams.putAll((Map<String, Object>) request.getBody());
-        }
-
-        // FIX: Ensure function name is in uppercase for Oracle
-        String oracleFunctionName = functionName != null ? functionName.toUpperCase() : null;
-
-        SimpleJdbcCall jdbcCall = new SimpleJdbcCall(oracleJdbcTemplate)
-                .withSchemaName(owner)
-                .withFunctionName(oracleFunctionName);
-
-        if (api.getResponseMappings() != null && !api.getResponseMappings().isEmpty()) {
-            String returnType = api.getResponseMappings().get(0).getOracleType();
-            jdbcCall.declareParameters(
-                    new SqlOutParameter("return", mapToSqlType(returnType))
-            );
-        }
-
-        if (api.getParameters() != null) {
-            for (ApiParameterEntity param : api.getParameters()) {
-                if (inParams.containsKey(param.getKey())) {
-                    String paramName = param.getDbParameter() != null ?
-                            param.getDbParameter() :
-                            (param.getDbColumn() != null ? param.getDbColumn() : param.getKey());
-
-                    jdbcCall.declareParameters(
-                            new SqlParameter(paramName, mapToSqlType(param.getOracleType()))
-                    );
-                }
-            }
-        }
-
-        Map<String, Object> result = jdbcCall.execute(inParams);
-
-        Map<String, Object> responseData = new HashMap<>();
-        if (result.containsKey("return")) {
-            responseData.put("result", result.get("return"));
-        }
-
-        return responseData;
-    }
-
     private Object executePackageProcedure(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
                                            String packageName, String owner, ExecuteApiRequestDTO request) {
         if (sourceObject.getPackageProcedure() == null) {
             throw new RuntimeException("Package procedure not specified");
         }
 
+        // Create consolidated parameters map from all sources
         Map<String, Object> inParams = new HashMap<>();
-        if (request.getQueryParams() != null) inParams.putAll(request.getQueryParams());
-        if (request.getPathParams() != null) inParams.putAll(request.getPathParams());
+
+        // Add path parameters
+        if (request.getPathParams() != null) {
+            inParams.putAll(request.getPathParams());
+        }
+
+        // Add query parameters
+        if (request.getQueryParams() != null) {
+            inParams.putAll(request.getQueryParams());
+        }
+
+        // Add body parameters if it's a map
         if (request.getBody() instanceof Map) {
             inParams.putAll((Map<String, Object>) request.getBody());
         }
 
-        // FIX: Ensure package and procedure names are in uppercase for Oracle
+        // Handle collection/array parameters - convert to single values for database
+        for (Map.Entry<String, Object> entry : inParams.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof List || value.getClass().isArray()) {
+                Collection<?> collection = value instanceof List ?
+                        (List<?>) value : Arrays.asList((Object[]) value);
+                if (!collection.isEmpty()) {
+                    // Take the first value
+                    inParams.put(entry.getKey(), collection.iterator().next());
+                    log.info("Converted collection parameter '{}' to single value", entry.getKey());
+                } else {
+                    inParams.put(entry.getKey(), null);
+                }
+            }
+        }
+
+        log.info("Executing package procedure - {}.{} with params: {}", packageName,
+                sourceObject.getPackageProcedure(), inParams);
+
+        // Ensure package and procedure names are in uppercase for Oracle
         String oraclePackageName = packageName != null ? packageName.toUpperCase() : null;
         String oracleProcedureName = sourceObject.getPackageProcedure() != null ?
                 sourceObject.getPackageProcedure().toUpperCase() : null;
 
-        SimpleJdbcCall jdbcCall = new SimpleJdbcCall(oracleJdbcTemplate)
-                .withSchemaName(owner)
-                .withCatalogName(oraclePackageName)
-                .withProcedureName(oracleProcedureName);
+        try {
+            SimpleJdbcCall jdbcCall = new SimpleJdbcCall(oracleJdbcTemplate)
+                    .withSchemaName(owner)
+                    .withCatalogName(oraclePackageName)
+                    .withProcedureName(oracleProcedureName);
 
-        if (api.getResponseMappings() != null) {
-            for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
-                if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
-                    jdbcCall.declareParameters(
-                            new SqlOutParameter(mapping.getDbColumn(), mapToSqlType(mapping.getOracleType()))
-                    );
+            if (api.getResponseMappings() != null) {
+                for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
+                    if (Boolean.TRUE.equals(mapping.getIncludeInResponse())) {
+                        jdbcCall.declareParameters(
+                                new SqlOutParameter(mapping.getDbColumn(), mapToSqlType(mapping.getOracleType()))
+                        );
+                    }
                 }
             }
-        }
 
-        if (api.getParameters() != null) {
-            for (ApiParameterEntity param : api.getParameters()) {
-                if (inParams.containsKey(param.getKey())) {
-                    String paramName = param.getDbParameter() != null ?
-                            param.getDbParameter() :
-                            (param.getDbColumn() != null ? param.getDbColumn() : param.getKey());
+            // Declare input parameters from API parameters
+            if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+                int inParamCount = 0;
 
-                    jdbcCall.declareParameters(
-                            new SqlParameter(paramName, mapToSqlType(param.getOracleType()))
-                    );
+                for (ApiParameterEntity param : api.getParameters()) {
+                    // Skip if parameter is null or has no key
+                    if (param == null || param.getKey() == null) continue;
+
+                    // Handle null parameterType - treat as valid IN parameter
+                    String paramType = param.getParameterType();
+                    String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
+
+                    boolean isValidParameter = (paramMode.contains("IN") || paramType == null) &&
+                            (paramType == null || "query".equals(paramType) ||
+                                    "path".equals(paramType) || "body".equals(paramType));
+
+                    if (inParams.containsKey(param.getKey()) && isValidParameter) {
+                        String paramName = param.getDbParameter() != null ?
+                                param.getDbParameter() :
+                                (param.getDbColumn() != null ? param.getDbColumn() : param.getKey());
+
+                        jdbcCall.declareParameters(
+                                new SqlParameter(paramName, mapToSqlType(param.getOracleType()))
+                        );
+                        inParamCount++;
+                        log.debug("Declared IN parameter: {} with value: {}", paramName, inParams.get(param.getKey()));
+                    }
+                }
+
+                log.debug("Declared {} IN parameters for package procedure", inParamCount);
+            }
+
+            log.info("Executing package procedure {}.{}.{} with {} input parameters",
+                    owner, oraclePackageName, oracleProcedureName, inParams.size());
+
+            Map<String, Object> result = jdbcCall.execute(inParams);
+
+            Map<String, Object> responseData = new HashMap<>();
+            if (api.getResponseMappings() != null) {
+                for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
+                    if (result.containsKey(mapping.getDbColumn())) {
+                        responseData.put(mapping.getApiField(), result.get(mapping.getDbColumn()));
+                        log.debug("Mapped output {} to {}", mapping.getDbColumn(), mapping.getApiField());
+                    }
                 }
             }
-        }
 
-        Map<String, Object> result = jdbcCall.execute(inParams);
+            return responseData;
 
-        Map<String, Object> responseData = new HashMap<>();
-        if (api.getResponseMappings() != null) {
-            for (ApiResponseMappingEntity mapping : api.getResponseMappings()) {
-                if (result.containsKey(mapping.getDbColumn())) {
-                    responseData.put(mapping.getApiField(), result.get(mapping.getDbColumn()));
-                }
+        } catch (Exception e) {
+            log.error("Error executing package procedure {}.{}.{}: {}",
+                    owner, oraclePackageName, oracleProcedureName, e.getMessage(), e);
+
+            // Provide user-friendly error messages
+            if (e.getMessage() != null && e.getMessage().contains("no procedure/function/signature")) {
+                throw new RuntimeException("The requested package procedure could not be found.");
             }
-        }
 
-        return responseData;
+            if (e.getMessage() != null && e.getMessage().contains("ORA-06550")) {
+                throw new RuntimeException("Invalid parameters provided for the package procedure.");
+            }
+
+            if (e.getMessage() != null && e.getMessage().contains("ORA-00942")) {
+                throw new RuntimeException("The requested table or view could not be found.");
+            }
+
+            if (e.getMessage() != null && e.getMessage().contains("ORA-01031")) {
+                throw new RuntimeException("Insufficient privileges to execute this package procedure.");
+            }
+
+            throw new RuntimeException("Failed to execute the requested package procedure.", e);
+        }
     }
 
     public GeneratedApiEntity getApiEntity(String apiId) {
@@ -9117,7 +10054,7 @@ public class APIGenerationEngineService {
                 .dbParameter(dto.getDbParameter())
                 .oracleType(dto.getOracleType())
                 .apiType(dto.getApiType())
-                .parameterType(dto.getParameterType())
+                .parameterType(dto.getParameterType())  // This should already be set from UI
                 .parameterLocation(dto.getParameterLocation())
                 .required(dto.getRequired())
                 .description(dto.getDescription())
@@ -9130,6 +10067,8 @@ public class APIGenerationEngineService {
                 .position(dto.getPosition() != null ? dto.getPosition() : 0)
                 .build();
     }
+
+
 
     private ApiResponseMappingEntity mapToResponseMappingEntity(ApiResponseMappingDTO dto, GeneratedApiEntity api) {
         if (dto == null) return null;
@@ -9916,4 +10855,615 @@ public class APIGenerationEngineService {
             return new ArrayList<>();
         }
     }
+
+
+    // Add this method to your validation service
+    public void validateDatabaseObject(String schemaName, String objectName, String objectType) {
+        String sql = "";
+
+        switch(objectType.toUpperCase()) {
+            case "PROCEDURE":
+                sql = "SELECT STATUS FROM ALL_OBJECTS WHERE OWNER = ? AND OBJECT_NAME = ? AND OBJECT_TYPE = 'PROCEDURE'";
+                break;
+            case "FUNCTION":
+                sql = "SELECT STATUS FROM ALL_OBJECTS WHERE OWNER = ? AND OBJECT_NAME = ? AND OBJECT_TYPE = 'FUNCTION'";
+                break;
+            case "VIEW":
+                sql = "SELECT STATUS FROM ALL_VIEWS WHERE OWNER = ? AND VIEW_NAME = ?";
+                // For views, we need to check if they're valid by trying to describe them
+                validateView(schemaName, objectName);
+                return;
+            case "PACKAGE":
+                sql = "SELECT STATUS FROM ALL_OBJECTS WHERE OWNER = ? AND OBJECT_NAME = ? AND OBJECT_TYPE = 'PACKAGE'";
+                break;
+            default:
+                return;
+        }
+
+        try {
+            String status = oracleJdbcTemplate.queryForObject(sql, String.class, schemaName, objectName);
+
+            if ("INVALID".equalsIgnoreCase(status)) {
+                throw new ValidationException(
+                        String.format("The %s '%s.%s' is INVALID (compilation error). Please compile it before using.",
+                                objectType.toLowerCase(), schemaName, objectName)
+                );
+            }
+        } catch (EmptyResultDataAccessException e) {
+            throw new ValidationException(
+                    String.format("The %s '%s.%s' does not exist or you don't have access to it.",
+                            objectType.toLowerCase(), schemaName, objectName)
+            );
+        }
+    }
+
+    private void validateView(String schemaName, String viewName) {
+        try {
+            // Try to describe the view - if it fails, view is invalid
+            oracleJdbcTemplate.execute("SELECT 1 FROM " + schemaName + "." + viewName + " WHERE ROWNUM = 1");
+        } catch (Exception e) {
+            throw new ValidationException(
+                    String.format("The view '%s.%s' is invalid or inaccessible. Error: %s",
+                            schemaName, viewName, e.getMessage())
+            );
+        }
+    }
+
+
+    public void validateProcedureParameters(
+            String schemaName,
+            String procedureName,
+            Map<String, Object> providedParams,
+            List<ApiParameterDTO> configuredParams
+    ) {
+        // First, get actual procedure parameters from database
+        String sql =
+                "SELECT ARGUMENT_NAME, DATA_TYPE, IN_OUT, POSITION, " +
+                        "DATA_LENGTH, DATA_PRECISION, DATA_SCALE, DEFAULTED " +
+                        "FROM ALL_ARGUMENTS " +
+                        "WHERE OWNER = ? AND OBJECT_NAME = ? " +
+                        "AND DATA_LEVEL = 0 " +  // Only top-level parameters
+                        "ORDER BY POSITION";
+
+        List<Map<String, Object>> dbParams = oracleJdbcTemplate.queryForList(sql, schemaName, procedureName);
+
+        // Validate required parameters
+        for (Map<String, Object> dbParam : dbParams) {
+            String paramName = (String) dbParam.get("ARGUMENT_NAME");
+            String inOut = (String) dbParam.get("IN_OUT");
+            String defaultValue = (String) dbParam.get("DEFAULTED");
+
+            // Skip OUT parameters for input validation
+            if ("OUT".equalsIgnoreCase(inOut)) {
+                continue;
+            }
+
+            // Check if required parameter is provided
+            boolean hasDefault = "YES".equalsIgnoreCase(defaultValue);
+            boolean isProvided = providedParams.containsKey(paramName.toLowerCase()) ||
+                    providedParams.containsKey(paramName);
+
+            if (!hasDefault && !isProvided) {
+                // Check if this parameter is configured in your API
+                ApiParameterDTO configParam = configuredParams.stream()
+                        .filter(p -> p.getKey().equalsIgnoreCase(paramName))
+                        .findFirst()
+                        .orElse(null);
+
+                if (configParam != null && configParam.getRequired()) {
+                    throw new ValidationException(
+                            String.format("Required parameter '%s' is missing for procedure %s.%s",
+                                    paramName, schemaName, procedureName)
+                    );
+                }
+            }
+        }
+
+        // Validate data types
+        for (Map.Entry<String, Object> entry : providedParams.entrySet()) {
+            String paramName = entry.getKey();
+            Object paramValue = entry.getValue();
+
+            // Find corresponding DB parameter
+            Map<String, Object> dbParam = dbParams.stream()
+                    .filter(p -> paramName.equalsIgnoreCase((String) p.get("ARGUMENT_NAME")))
+                    .findFirst()
+                    .orElse(null);
+
+            if (dbParam != null && paramValue != null) {
+                validateDataType(paramName, paramValue, dbParam);
+            }
+        }
+    }
+
+
+    public void validateFunction(String schemaName, String functionName, Map<String, Object> params) {
+        // Check if function exists and is valid
+        String sql =
+                "SELECT STATUS FROM ALL_OBJECTS " +
+                        "WHERE OWNER = ? AND OBJECT_NAME = ? AND OBJECT_TYPE = 'FUNCTION'";
+
+        try {
+            String status = oracleJdbcTemplate.queryForObject(sql, String.class, schemaName, functionName);
+            if ("INVALID".equalsIgnoreCase(status)) {
+                throw new ValidationException(
+                        String.format("Function %s.%s is INVALID (compilation error)",
+                                schemaName, functionName)
+                );
+            }
+        } catch (EmptyResultDataAccessException e) {
+            throw new ValidationException(
+                    String.format("Function %s.%s does not exist", schemaName, functionName)
+            );
+        }
+
+        // Validate parameters
+        validateProcedureParameters(schemaName, functionName, params, new ArrayList<>());
+    }
+
+
+    public void validateViewQuery(
+            String schemaName,
+            String viewName,
+            Map<String, Object> queryParams,
+            List<String> allowedColumns
+    ) {
+        // Check if view exists
+        String sql =
+                "SELECT COUNT(*) FROM ALL_VIEWS " +
+                        "WHERE OWNER = ? AND VIEW_NAME = ?";
+
+        Integer count = oracleJdbcTemplate.queryForObject(sql, Integer.class, schemaName, viewName);
+        if (count == 0) {
+            throw new ValidationException(
+                    String.format("View '%s.%s' does not exist", schemaName, viewName)
+            );
+        }
+
+        // Validate view is accessible
+        try {
+            oracleJdbcTemplate.execute("SELECT 1 FROM " + schemaName + "." + viewName + " WHERE ROWNUM = 1");
+        } catch (Exception e) {
+            throw new ValidationException(
+                    String.format("Cannot access view '%s.%s': %s",
+                            schemaName, viewName, e.getMessage())
+            );
+        }
+
+        // Validate query parameters against view columns
+        if (queryParams != null && !queryParams.isEmpty()) {
+            // Get view columns
+            String columnSql =
+                    "SELECT COLUMN_NAME, DATA_TYPE, NULLABLE " +
+                            "FROM ALL_TAB_COLUMNS " +
+                            "WHERE OWNER = ? AND TABLE_NAME = ?";
+
+            List<Map<String, Object>> columns = oracleJdbcTemplate.queryForList(
+                    columnSql, schemaName, viewName);
+
+            Map<String, Map<String, Object>> columnMap = columns.stream()
+                    .collect(Collectors.toMap(
+                            c -> ((String) c.get("COLUMN_NAME")).toLowerCase(),
+                            c -> c
+                    ));
+
+            // Validate each query parameter
+            for (Map.Entry<String, Object> param : queryParams.entrySet()) {
+                String paramName = param.getKey().toLowerCase();
+
+                // Check if parameter corresponds to a view column
+                Map<String, Object> column = columnMap.get(paramName);
+                if (column == null && allowedColumns != null && !allowedColumns.contains(paramName)) {
+                    throw new ValidationException(
+                            String.format("Invalid query parameter '%s'. Not a valid column in view %s.%s",
+                                    param.getKey(), schemaName, viewName)
+                    );
+                }
+
+                // Validate data type if column exists
+                if (column != null && param.getValue() != null) {
+                    validateColumnDataType(param.getKey(), param.getValue(), column);
+                }
+            }
+        }
+    }
+
+    private void validateColumnDataType(String columnName, Object value, Map<String, Object> column) {
+        String dataType = (String) column.get("DATA_TYPE");
+        String nullable = (String) column.get("NULLABLE");
+
+        // Check for NOT NULL constraint
+        if ("N".equals(nullable) && (value == null || value.toString().trim().isEmpty())) {
+            throw new ValidationException(
+                    String.format("Column '%s' cannot be null", columnName)
+            );
+        }
+
+        // Validate data type
+        // Similar to validateDataType method above
+    }
+
+
+    private void validateDataType(String paramName, Object value, Map<String, Object> dbParam) {
+        String dataType = ((String) dbParam.get("DATA_TYPE")).toUpperCase();
+        Integer length = dbParam.get("DATA_LENGTH") != null ?
+                ((Number) dbParam.get("DATA_LENGTH")).intValue() : null;
+        Integer precision = dbParam.get("DATA_PRECISION") != null ?
+                ((Number) dbParam.get("DATA_PRECISION")).intValue() : null;
+        Integer scale = dbParam.get("DATA_SCALE") != null ?
+                ((Number) dbParam.get("DATA_SCALE")).intValue() : null;
+        String inOut = (String) dbParam.get("IN_OUT");
+
+        // Skip validation for OUT parameters as they don't receive input values
+        if ("OUT".equalsIgnoreCase(inOut)) {
+            return;
+        }
+
+        // Handle null values
+        if (value == null) {
+            // Check if parameter is nullable based on your business logic
+            return; // Null is allowed unless specified otherwise in your configuration
+        }
+
+        String stringValue = value.toString().trim();
+
+        // Validate based on Oracle data types
+        switch (dataType) {
+            case "VARCHAR2":
+            case "VARCHAR":
+            case "CHAR":
+            case "NCHAR":
+            case "NVARCHAR2":
+            case "CLOB":
+            case "LONG":
+                validateStringType(paramName, stringValue, dataType, length);
+                break;
+
+            case "NUMBER":
+            case "INTEGER":
+            case "INT":
+            case "SMALLINT":
+            case "DECIMAL":
+            case "NUMERIC":
+            case "FLOAT":
+            case "BINARY_FLOAT":
+            case "BINARY_DOUBLE":
+            case "REAL":
+                validateNumberType(paramName, stringValue, dataType, precision, scale);
+                break;
+
+            case "DATE":
+            case "TIMESTAMP":
+            case "TIMESTAMP WITH TIME ZONE":
+            case "TIMESTAMP WITH LOCAL TIME ZONE":
+                validateDateType(paramName, stringValue, dataType);
+                break;
+
+            case "BOOLEAN":
+                validateBooleanType(paramName, stringValue);
+                break;
+
+            case "BLOB":
+            case "RAW":
+            case "LONG RAW":
+            case "BFILE":
+                // Binary types - accept as is or validate base64 if needed
+                if (value instanceof byte[] || value instanceof String) {
+                    // Valid binary data
+                    return;
+                }
+                throw new ValidationException(
+                        String.format("Parameter '%s' must be binary data (byte array or base64 string)", paramName)
+                );
+
+            case "ROWID":
+            case "UROWID":
+                validateRowIdType(paramName, stringValue);
+                break;
+
+            case "XMLTYPE":
+                validateXmlType(paramName, stringValue);
+                break;
+
+            default:
+                // For custom types or unsupported types, just log a warning
+                log.warn("Unsupported data type '{}' for parameter '{}', skipping validation", dataType, paramName);
+                break;
+        }
+    }
+
+    private void validateStringType(String paramName, String value, String dataType, Integer maxLength) {
+        // Check if value exceeds maximum length
+        if (maxLength != null && value.length() > maxLength) {
+            throw new ValidationException(
+                    String.format("Parameter '%s' exceeds maximum length of %d characters. Current length: %d",
+                            paramName, maxLength, value.length())
+            );
+        }
+
+        // Additional validation for CHAR types (fixed length)
+        if (dataType.equals("CHAR") || dataType.equals("NCHAR")) {
+            if (maxLength != null && value.length() != maxLength && !value.trim().isEmpty()) {
+                log.debug("Parameter '{}' has length {} but CHAR expects {}. Will be padded/trimmed by Oracle.",
+                        paramName, value.length(), maxLength);
+                // Don't throw error, Oracle will handle padding/trimming
+            }
+        }
+
+        // Check for invalid characters if needed (based on your business rules)
+        if (containsInvalidCharacters(value)) {
+            throw new ValidationException(
+                    String.format("Parameter '%s' contains invalid characters", paramName)
+            );
+        }
+    }
+
+    private void validateNumberType(String paramName, String value, String dataType,
+                                    Integer precision, Integer scale) {
+        BigDecimal number;
+        try {
+            number = new BigDecimal(value);
+        } catch (NumberFormatException e) {
+            throw new ValidationException(
+                    String.format("Parameter '%s' must be a valid number. Provided value: '%s'",
+                            paramName, value)
+            );
+        }
+
+        // Check integer types
+        if (dataType.equals("INTEGER") || dataType.equals("INT") || dataType.equals("SMALLINT")) {
+            try {
+                number.toBigIntegerExact(); // Check if it's an integer
+            } catch (ArithmeticException e) {
+                throw new ValidationException(
+                        String.format("Parameter '%s' must be an integer value. Provided: %s",
+                                paramName, value)
+                );
+            }
+        }
+
+        // Validate precision and scale
+        if (precision != null) {
+            int integerPartLength = number.precision() - number.scale();
+            int maxIntegerLength = precision - (scale != null ? scale : 0);
+
+            if (integerPartLength > maxIntegerLength) {
+                throw new ValidationException(
+                        String.format("Parameter '%s' integer part length (%d) exceeds maximum allowed (%d)",
+                                paramName, integerPartLength, maxIntegerLength)
+                );
+            }
+        }
+
+        if (scale != null) {
+            if (number.scale() > scale) {
+                throw new ValidationException(
+                        String.format("Parameter '%s' decimal places (%d) exceed maximum allowed (%d)",
+                                paramName, number.scale(), scale)
+                );
+            }
+        }
+
+        // Range validation for specific numeric types
+        switch (dataType) {
+            case "BINARY_FLOAT":
+                float fValue;
+                try {
+                    fValue = Float.parseFloat(value);
+                    if (Float.isInfinite(fValue) || Float.isNaN(fValue)) {
+                        throw new ValidationException(
+                                String.format("Parameter '%s' must be a valid float value", paramName)
+                        );
+                    }
+                } catch (NumberFormatException e) {
+                    throw new ValidationException(
+                            String.format("Parameter '%s' must be a valid float value", paramName)
+                    );
+                }
+                break;
+
+            case "BINARY_DOUBLE":
+                double dValue;
+                try {
+                    dValue = Double.parseDouble(value);
+                    if (Double.isInfinite(dValue) || Double.isNaN(dValue)) {
+                        throw new ValidationException(
+                                String.format("Parameter '%s' must be a valid double value", paramName)
+                        );
+                    }
+                } catch (NumberFormatException e) {
+                    throw new ValidationException(
+                            String.format("Parameter '%s' must be a valid double value", paramName)
+                    );
+                }
+                break;
+        }
+    }
+
+    private void validateDateType(String paramName, String value, String dataType) {
+        List<String> dateFormats = Arrays.asList(
+                "yyyy-MM-dd",
+                "yyyy-MM-dd HH:mm:ss",
+                "yyyy-MM-dd'T'HH:mm:ss",
+                "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
+                "dd-MMM-yyyy",
+                "MM/dd/yyyy",
+                "dd/MM/yyyy",
+                "yyyy/MM/dd",
+                "dd-MMM-yy"
+        );
+
+        boolean valid = false;
+        for (String format : dateFormats) {
+            try {
+                SimpleDateFormat sdf = new SimpleDateFormat(format);
+                sdf.setLenient(false);
+                Date date = sdf.parse(value);
+
+                // Additional validation for TIMESTAMP types
+                if (dataType.startsWith("TIMESTAMP")) {
+                    // Check if time portion is included
+                    if (format.contains("HH:mm:ss") && value.contains(":")) {
+                        valid = true;
+                        break;
+                    } else if (!dataType.startsWith("TIMESTAMP") && !format.contains("HH:mm:ss")) {
+                        valid = true;
+                        break;
+                    }
+                } else {
+                    valid = true;
+                    break;
+                }
+            } catch (ParseException e) {
+                // Try next format
+            }
+        }
+
+        if (!valid) {
+            throw new ValidationException(
+                    String.format("Parameter '%s' must be a valid date/time. Supported formats: %s",
+                            paramName, String.join(", ", dateFormats))
+            );
+        }
+    }
+
+    private void validateBooleanType(String paramName, String value) {
+        String lowerValue = value.toLowerCase().trim();
+        if (!lowerValue.equals("true") && !lowerValue.equals("false") &&
+                !lowerValue.equals("1") && !lowerValue.equals("0") &&
+                !lowerValue.equals("yes") && !lowerValue.equals("no") &&
+                !lowerValue.equals("y") && !lowerValue.equals("n")) {
+            throw new ValidationException(
+                    String.format("Parameter '%s' must be a boolean value (true/false, 1/0, yes/no, y/n)",
+                            paramName)
+            );
+        }
+    }
+
+    private void validateRowIdType(String paramName, String value) {
+        // Oracle ROWID format: block.row.file (e.g., AAAAB4AABAAABqAAA)
+        String rowidPattern = "^[A-Za-z0-9+/]{18,20}$";
+        if (!value.matches(rowidPattern)) {
+            throw new ValidationException(
+                    String.format("Parameter '%s' must be a valid ROWID format", paramName)
+            );
+        }
+    }
+
+    private void validateXmlType(String paramName, String value) {
+        try {
+            // Try to parse as XML
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            DocumentBuilder builder = factory.newDocumentBuilder();
+            builder.parse(new InputSource(new StringReader(value)));
+        } catch (Exception e) {
+            throw new ValidationException(
+                    String.format("Parameter '%s' must be a valid XML. Error: %s",
+                            paramName, e.getMessage())
+            );
+        }
+    }
+
+    private boolean containsInvalidCharacters(String value) {
+        // Define invalid characters based on your business rules
+        // Example: Control characters except tabs and newlines
+        return value.chars().anyMatch(c ->
+                c < 0x20 && c != 0x09 && c != 0x0A && c != 0x0D
+        );
+    }
+
+    // Helper method to validate a list of parameters
+    public void validateParameters(List<ApiParameterDTO> configuredParams,
+                                   Map<String, Object> providedParams,
+                                   String schemaName,
+                                   String objectName) {
+        // Get actual database parameters
+        String sql =
+                "SELECT ARGUMENT_NAME, DATA_TYPE, IN_OUT, POSITION, " +
+                        "DATA_LENGTH, DATA_PRECISION, DATA_SCALE, DEFAULTED " +
+                        "FROM ALL_ARGUMENTS " +
+                        "WHERE OWNER = ? AND OBJECT_NAME = ? " +
+                        "AND DATA_LEVEL = 0 " +
+                        "ORDER BY POSITION";
+
+        List<Map<String, Object>> dbParams = oracleJdbcTemplate.queryForList(sql, schemaName, objectName);
+
+        // Create a map for quick lookup
+        Map<String, Map<String, Object>> dbParamMap = dbParams.stream()
+                .collect(Collectors.toMap(
+                        p -> ((String) p.get("ARGUMENT_NAME")).toLowerCase(),
+                        p -> p,
+                        (existing, replacement) -> existing
+                ));
+
+        // Validate each provided parameter
+        for (Map.Entry<String, Object> entry : providedParams.entrySet()) {
+            String paramName = entry.getKey();
+            Object paramValue = entry.getValue();
+
+            Map<String, Object> dbParam = dbParamMap.get(paramName.toLowerCase());
+            if (dbParam != null) {
+                validateDataType(paramName, paramValue, dbParam);
+            } else {
+                log.debug("Parameter '{}' not found in database, skipping type validation", paramName);
+            }
+        }
+
+        // Check for required parameters that are missing
+        for (Map<String, Object> dbParam : dbParams) {
+            String paramName = (String) dbParam.get("ARGUMENT_NAME");
+            String inOut = (String) dbParam.get("IN_OUT");
+            String defaulted = (String) dbParam.get("DEFAULTED");
+
+            // Skip OUT parameters
+            if ("OUT".equalsIgnoreCase(inOut)) {
+                continue;
+            }
+
+            // Check if parameter is required (no default value)
+            if (!"YES".equalsIgnoreCase(defaulted)) {
+                boolean isProvided = providedParams.containsKey(paramName) ||
+                        providedParams.containsKey(paramName.toLowerCase());
+
+                // Check if this parameter is marked as required in your configuration
+                ApiParameterDTO configParam = configuredParams.stream()
+                        .filter(p -> p.getKey().equalsIgnoreCase(paramName))
+                        .findFirst()
+                        .orElse(null);
+
+                if (!isProvided && configParam != null && configParam.getRequired()) {
+                    throw new ValidationException(
+                            String.format("Required parameter '%s' is missing", paramName)
+                    );
+                }
+            }
+        }
+    }
+
+
+    private ApiParameterDTO convertParameterEntityToDTO(ApiParameterEntity entity) {
+        if (entity == null) return null;
+
+        return ApiParameterDTO.builder()
+                .id(entity.getId())
+                .key(entity.getKey())
+                .dbColumn(entity.getDbColumn())
+                .dbParameter(entity.getDbParameter())
+                .oracleType(entity.getOracleType())
+                .apiType(entity.getApiType())
+                .parameterType(entity.getParameterType())
+                .parameterLocation(entity.getParameterLocation())
+                .required(entity.getRequired())
+                .description(entity.getDescription())
+                .example(entity.getExample())
+                .validationPattern(entity.getValidationPattern())
+                .defaultValue(entity.getDefaultValue())
+                .inBody(entity.getInBody())
+                .isPrimaryKey(entity.getIsPrimaryKey())
+                .paramMode(entity.getParamMode())
+                .position(entity.getPosition())
+                .build();
+    }
 }
+
+
