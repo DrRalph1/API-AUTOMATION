@@ -76,7 +76,7 @@ public class AutomationEngineController {
             loggingHelper.logError(requestId, "generating API", e.getMessage(), e);
             return responseBuilderHelper.buildErrorResponse(
                     requestId,
-                    "An error occurred while generating API: " + e.getMessage(),
+                    e.getMessage(),
                     HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
@@ -757,5 +757,47 @@ public class AutomationEngineController {
                 .header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
                 .header("Access-Control-Max-Age", "3600")
                 .build();
+    }
+
+
+    @GetMapping("/gen-engine/check-code")
+    @Operation(summary = "Check API code availability",
+            description = "Check if an API code is available for use")
+    public ResponseEntity<?> checkApiCodeAvailability(
+            @RequestParam String apiCode,
+            HttpServletRequest req) {
+
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "checking API code availability");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggingHelper.logGetApiDetails(requestId, apiCode, performedBy); // Reusing log method
+
+            // Create a simple response indicating if the code is available
+            // You'll need to add a method to your service to check this
+            boolean isAvailable = automationEngineService.isApiCodeAvailable(apiCode);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("available", isAvailable);
+            response.put("apiCode", apiCode);
+            response.put("message", isAvailable ? "API code is available" : "API code already exists");
+
+            return responseBuilderHelper.buildSuccessResponse(
+                    requestId,
+                    "API code availability checked successfully",
+                    response);
+
+        } catch (Exception e) {
+            loggingHelper.logError(requestId, "checking API code availability", e.getMessage(), e);
+            return responseBuilderHelper.buildErrorResponse(
+                    requestId,
+                    "An error occurred while checking API code availability: " + e.getMessage(),
+                    HttpStatus.INTERNAL_SERVER_ERROR);
+        }
     }
 }

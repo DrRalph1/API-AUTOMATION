@@ -1148,12 +1148,8 @@ export const getApiVersions = async (authorizationHeader, apiCode) => {
     });
 };
 
-/**
- * Check if API code is available
- * @param {string} authorizationHeader - Bearer token
- * @param {string} apiCode - API code to check
- * @returns {Promise} API response
- */
+
+
 export const checkApiCodeAvailability = async (authorizationHeader, apiCode) => {
     const requestId = generateRequestId();
     
@@ -1165,16 +1161,18 @@ export const checkApiCodeAvailability = async (authorizationHeader, apiCode) => 
         });
     }
     
-    const queryParams = buildQueryParams({ apiCode });
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/gen-engine/check-code?${queryParams.toString()}`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
+    try {
+        // First try the dedicated endpoint
+        const queryParams = buildQueryParams({ apiCode });
+        const response = await apiCallWithTokenRefresh(
+            authorizationHeader,
+            (authHeader) => apiCall(`/gen-engine/check-code?${queryParams.toString()}`, {
+                method: 'GET',
+                headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+                requestId: requestId
+            })
+        );
+        
         return {
             responseCode: 200,
             message: response.message || "Code availability checked",
@@ -1184,7 +1182,33 @@ export const checkApiCodeAvailability = async (authorizationHeader, apiCode) => 
             },
             requestId
         };
-    }).catch(error => {
+    } catch (error) {
+        // If the dedicated endpoint doesn't exist, fall back to trying to get the API
+        // and checking if it exists
+        if (error.response?.status === 404) {
+            try {
+                // Try to get the API by code
+                await getApiDetails(authorizationHeader, apiCode);
+                // If we get here, the API exists
+                return {
+                    responseCode: 200,
+                    message: "API code is not available",
+                    data: { available: false, apiCode },
+                    requestId
+                };
+            } catch (getError) {
+                // If we get a 404, the API doesn't exist (code is available)
+                if (getError.response?.status === 404) {
+                    return {
+                        responseCode: 200,
+                        message: "API code is available",
+                        data: { available: true, apiCode },
+                        requestId
+                    };
+                }
+            }
+        }
+        
         console.error('Error checking API code:', error);
         return {
             responseCode: error.response?.status || 500,
@@ -1192,8 +1216,9 @@ export const checkApiCodeAvailability = async (authorizationHeader, apiCode) => 
             data: { available: false, apiCode },
             requestId
         };
-    });
+    }
 };
+
 
 /**
  * Get API categories

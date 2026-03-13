@@ -744,4 +744,17 @@ public class AutomationEngineService {
         return conversionHelper.extractCollectionInfo(api, objectMapper);
     }
 
+
+
+    public boolean isApiCodeAvailable(String apiCode) {
+        try {
+            // Check if an API with this code already exists
+            return !generatedAPIRepository.existsByApiCode(apiCode);
+        } catch (Exception e) {
+            log.error("Error checking API code availability: {}", e.getMessage());
+            // Return false in case of error to be safe
+            return false;
+        }
+    }
+
 }
