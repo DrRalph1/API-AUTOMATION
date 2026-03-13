@@ -9,6 +9,8 @@ import com.usg.apiAutomation.utils.apiEngine.ParameterValidatorUtil;
 import jakarta.validation.ValidationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -19,7 +21,10 @@ import java.util.*;
 @RequiredArgsConstructor
 public class ViewExecutorUtil {
 
-    private final JdbcTemplate oracleJdbcTemplate;
+    @Autowired
+    @Qualifier("oracleJdbcTemplate")
+    private JdbcTemplate oracleJdbcTemplate;
+
     private final ParameterValidatorUtil parameterValidator;
     private final OracleObjectResolverUtil objectResolver;
     private final TableExecutorUtil tableExecutorUtil;
@@ -27,36 +32,96 @@ public class ViewExecutorUtil {
     public Object execute(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
                           String viewName, String owner, ExecuteApiRequestDTO request,
                           List<ApiParameterDTO> configuredParamDTOs) {
-        Map<String, Object> queryParams = request.getQueryParams() != null ?
-                request.getQueryParams() : new HashMap<>();
 
-        // Handle collection/array parameters in query params
-        for (Map.Entry<String, Object> entry : queryParams.entrySet()) {
+        // FIX: Combine ALL parameters - path, query, and body
+        Map<String, Object> allParams = new HashMap<>();
+
+        // Add path params
+        if (request.getPathParams() != null) {
+            allParams.putAll(request.getPathParams());
+            log.info("Added path params: {}", request.getPathParams());
+        }
+
+        // Add query params
+        if (request.getQueryParams() != null) {
+            allParams.putAll(request.getQueryParams());
+            log.info("Added query params: {}", request.getQueryParams());
+        }
+
+        // Add body params if body is a map
+        if (request.getBody() instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> bodyMap = (Map<String, Object>) request.getBody();
+            if (bodyMap != null) {
+                allParams.putAll(bodyMap);
+                log.info("Added body params: {}", bodyMap);
+            }
+        }
+
+        log.info("Combined all params for view execution: {}", allParams);
+
+        // Handle collection/array parameters in all params
+        for (Map.Entry<String, Object> entry : allParams.entrySet()) {
             Object value = entry.getValue();
             if (value instanceof List || value.getClass().isArray()) {
                 Collection<?> collection = value instanceof List ?
                         (List<?>) value : Arrays.asList((Object[]) value);
                 if (!collection.isEmpty()) {
                     // Take the first value for WHERE clause
-                    queryParams.put(entry.getKey(), collection.iterator().next());
-                    log.info("Converted collection query parameter '{}' to single value", entry.getKey());
+                    allParams.put(entry.getKey(), collection.iterator().next());
+                    log.info("Converted collection parameter '{}' to single value", entry.getKey());
                 }
             }
         }
 
-        String oracleOwner = owner != null && !owner.trim().isEmpty() ? owner.trim().toUpperCase() : null;
-        String oracleViewName = viewName != null ? viewName.toUpperCase() : null;
+        // Resolve the actual owner if null
+        String resolvedOwner = resolveOwner(owner, sourceObject);
+        String resolvedViewName = viewName != null ? viewName.toUpperCase() : null;
 
-        // ==================== VALIDATION STEP 1: Validate view exists and is accessible ====================
+        if (resolvedViewName == null) {
+            throw new ValidationException("View name cannot be null");
+        }
+
+        log.info("Resolved view owner: {}, view name: {}", resolvedOwner, resolvedViewName);
+
+        // ==================== VALIDATION STEP 1: Check if it's a synonym first ====================
+        Map<String, Object> resolutionResult = objectResolver.resolveObject(resolvedOwner, resolvedViewName, "VIEW");
+
+        if (!(boolean) resolutionResult.getOrDefault("exists", false)) {
+            String errorMsg = String.format("The view '%s.%s' does not exist or you don't have access to it.",
+                    resolvedOwner, resolvedViewName);
+            log.error("❌ {}", errorMsg);
+            throw new ValidationException(errorMsg);
+        }
+
+        // Get the resolved target information
+        String targetOwner = (String) resolutionResult.get("targetOwner");
+        String targetName = (String) resolutionResult.get("targetName");
+        String targetType = (String) resolutionResult.get("targetType");
+        boolean isSynonym = (boolean) resolutionResult.getOrDefault("isSynonym", false);
+
+        log.info("Resolved to: {}.{} ({}) {}", targetOwner, targetName, targetType,
+                isSynonym ? "(via synonym)" : "");
+
+        // If it resolved to something other than a VIEW, that's a problem
+        if (!"VIEW".equalsIgnoreCase(targetType)) {
+            throw new ValidationException(
+                    String.format("Object '%s.%s' resolved to %s, but VIEW was expected",
+                            resolvedOwner, resolvedViewName, targetType)
+            );
+        }
+
+        // ==================== VALIDATION STEP 2: Validate view is accessible ====================
         try {
-            objectResolver.validateDatabaseObject(oracleOwner, oracleViewName, "VIEW");
-            log.info("✅ View {}.{} exists and is accessible", oracleOwner, oracleViewName);
+            // Use the resolved target for validation
+            objectResolver.validateDatabaseObject(targetOwner, targetName, "VIEW");
+            log.info("✅ View {}.{} exists and is accessible", targetOwner, targetName);
         } catch (ValidationException e) {
             log.error("❌ View validation failed: {}", e.getMessage());
             throw e;
         }
 
-        // ==================== VALIDATION STEP 2: Validate query parameters against view columns ====================
+        // ==================== VALIDATION STEP 3: Validate query parameters against view columns ====================
         try {
             // Get allowed columns from response mappings or API parameters
             List<String> allowedColumns = new ArrayList<>();
@@ -68,23 +133,57 @@ public class ViewExecutorUtil {
                 }
             }
 
-            validateViewQuery(oracleOwner, oracleViewName, queryParams, allowedColumns);
+            validateViewQuery(targetOwner, targetName, allParams, allowedColumns);
             log.info("✅ View query validation passed");
         } catch (ValidationException e) {
             log.error("❌ View query validation failed: {}", e.getMessage());
             throw e;
         }
 
-        // ==================== VALIDATION STEP 3: Validate all parameters ====================
+        // ==================== VALIDATION STEP 4: Validate all parameters ====================
         try {
-            parameterValidator.validateParameters(configuredParamDTOs, queryParams, oracleOwner, oracleViewName);
-            log.info("✅ All parameter validations passed for view {}.{}", oracleOwner, oracleViewName);
+            parameterValidator.validateParameters(configuredParamDTOs, allParams, targetOwner, targetName);
+            log.info("✅ All parameter validations passed for view {}.{}", targetOwner, targetName);
         } catch (ValidationException e) {
             log.error("❌ Parameter validation failed: {}", e.getMessage());
             throw e;
         }
 
-        return tableExecutorUtil.executeSelect(oracleViewName, oracleOwner, queryParams, api, configuredParamDTOs);
+        // FIX: Pass ALL combined parameters to TableExecutorUtil
+        return tableExecutorUtil.executeSelect(targetName, targetOwner, allParams, api, configuredParamDTOs);
+    }
+
+    /**
+     * Helper method to resolve the owner from multiple sources
+     */
+    private String resolveOwner(String owner, ApiSourceObjectDTO sourceObject) {
+        // Try in order: explicit owner parameter, sourceObject owner, sourceObject schemaName, current schema
+        if (owner != null && !owner.trim().isEmpty()) {
+            return owner.trim().toUpperCase();
+        }
+
+        if (sourceObject != null) {
+            if (sourceObject.getOwner() != null && !sourceObject.getOwner().trim().isEmpty()) {
+                return sourceObject.getOwner().trim().toUpperCase();
+            }
+            if (sourceObject.getSchemaName() != null && !sourceObject.getSchemaName().trim().isEmpty()) {
+                return sourceObject.getSchemaName().trim().toUpperCase();
+            }
+        }
+
+        // Try to get current schema as last resort
+        try {
+            String currentSchema = objectResolver.getCurrentSchema();
+            if (currentSchema != null && !currentSchema.isEmpty()) {
+                log.info("Using current schema as owner: {}", currentSchema);
+                return currentSchema;
+            }
+        } catch (Exception e) {
+            log.warn("Could not get current schema: {}", e.getMessage());
+        }
+
+        // If all else fails, return null (but the resolver should handle it)
+        return null;
     }
 
     private void validateViewQuery(String schemaName, String viewName, Map<String, Object> queryParams,

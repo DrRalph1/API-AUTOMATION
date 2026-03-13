@@ -9,6 +9,8 @@ import com.usg.apiAutomation.utils.apiEngine.ParameterValidatorUtil;
 import jakarta.validation.ValidationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.SqlOutParameter;
@@ -20,12 +22,21 @@ import java.util.*;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class FunctionExecutorUtil {
 
-    private final JdbcTemplate oracleJdbcTemplate;
+    @Autowired
+    @Qualifier("oracleJdbcTemplate")
+    private JdbcTemplate oracleJdbcTemplate;
+
     private final ParameterValidatorUtil parameterValidatorUtil;
     private final OracleObjectResolverUtil objectResolver;
+
+    public FunctionExecutorUtil(
+            ParameterValidatorUtil parameterValidatorUtil,
+            OracleObjectResolverUtil objectResolver) {
+        this.parameterValidatorUtil = parameterValidatorUtil;
+        this.objectResolver = objectResolver;
+    }
 
     public Object execute(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
                           String functionName, String owner, ExecuteApiRequestDTO request,

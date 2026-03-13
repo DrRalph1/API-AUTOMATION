@@ -2,10 +2,14 @@ package com.usg.apiAutomation.utils.apiEngine.executor;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiParameterDTO;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
+import com.usg.apiAutomation.utils.apiEngine.OracleObjectResolverUtil;
 import com.usg.apiAutomation.utils.apiEngine.ParameterValidator;
+import com.usg.apiAutomation.utils.apiEngine.ParameterValidatorUtil;
 import jakarta.validation.ValidationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -14,219 +18,196 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class TableExecutorUtil {
 
-    private final JdbcTemplate oracleJdbcTemplate;
-    private final ParameterValidator parameterValidator;
+    @Autowired
+    @Qualifier("oracleJdbcTemplate")
+    private JdbcTemplate oracleJdbcTemplate;
+
+    private final ParameterValidatorUtil parameterValidator;
+
+    public TableExecutorUtil(
+            ParameterValidatorUtil parameterValidator) {
+        this.parameterValidator = parameterValidator;
+    }
 
     public Object executeSelect(String tableName, String owner, Map<String, Object> params,
                                 GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
-        StringBuilder sql = new StringBuilder("SELECT * FROM ");
-        if (owner != null && !owner.isEmpty()) {
-            sql.append(owner).append(".");
-        }
-        sql.append(tableName);
+        try {
+            StringBuilder sql = new StringBuilder("SELECT * FROM ");
+            if (owner != null && !owner.isEmpty()) {
+                sql.append(owner).append(".");
+            }
+            sql.append(tableName);
 
-        List<Object> paramValues = new ArrayList<>();
+            List<Object> paramValues = new ArrayList<>();
+            List<String> whereClauses = new ArrayList<>();
 
-        log.info("=== TABLE SELECT DEBUG ===");
-        log.info("Table: {}.{}", owner, tableName);
-        log.info("All incoming params: {}", params);
+            log.info("=== TABLE SELECT DEBUG ===");
+            log.info("Table: {}.{}", owner, tableName);
+            log.info("All incoming params: {}", params);
 
-        boolean hasWhereClause = false;
+            // Build a clean parameter map - keep ALL parameters
+            Map<String, Object> cleanParams = new HashMap<>();
+            if (params != null) {
+                // Simply copy all parameters
+                cleanParams.putAll(params);
 
-        if (params != null && !params.isEmpty() && api.getParameters() != null) {
-
-            // First, try to map path parameters from the URL
-            Map<Integer, Object> positionValues = new HashMap<>();
-
-            // Extract values by position (param1, param2, etc.)
-            for (Map.Entry<String, Object> entry : params.entrySet()) {
-                String key = entry.getKey();
-                if (key.startsWith("param") && key.length() > 5) {
-                    try {
-                        int position = Integer.parseInt(key.substring(5)) - 1; // param1 -> position 0
-                        positionValues.put(position, entry.getValue());
-                    } catch (NumberFormatException e) {
-                        // Ignore
+                // Also handle any numbered parameters (param1, param2, etc.) that might come from path
+                for (Map.Entry<String, Object> entry : params.entrySet()) {
+                    String key = entry.getKey();
+                    if (key.startsWith("param") && key.length() > 5) {
+                        try {
+                            int position = Integer.parseInt(key.substring(5)) - 1;
+                            cleanParams.put("position_" + position, entry.getValue());
+                            log.info("Mapped numbered param {} to position {}", key, position);
+                        } catch (NumberFormatException e) {
+                            // Ignore
+                        }
                     }
                 }
             }
 
-            // Also collect all possible values from the params map
-            Set<String> possibleValues = new HashSet<>();
+            log.info("Cleaned params: {}", cleanParams);
 
-            // Add all values that are strings
-            for (Map.Entry<String, Object> entry : params.entrySet()) {
-                Object value = entry.getValue();
-                if (value instanceof String) {
-                    String strValue = (String) value;
-                    // Skip reserved words
-                    if (!strValue.equals("api") && !strValue.equals("v1") && !strValue.equals("gl-bene") &&
-                            !strValue.equals("param1") && !strValue.equals("param2") && !strValue.equals("param3") &&
-                            !strValue.equals("param4") && strValue.length() > 2) {
-                        possibleValues.add(strValue);
+            // Build WHERE clause from configured parameters
+            if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+                log.info("Processing {} configured parameters", api.getParameters().size());
+
+                for (ApiParameterEntity configuredParam : api.getParameters()) {
+                    String paramKey = configuredParam.getKey();
+                    String dbColumn = configuredParam.getDbColumn();
+                    String paramType = configuredParam.getParameterType();
+
+                    // Default to "query" if paramType is null
+                    if (paramType == null) {
+                        paramType = "query";
+                        log.debug("Parameter {} has null paramType, defaulting to 'query'", paramKey);
                     }
-                }
 
-                // Also add keys that might be values
-                String key = entry.getKey();
-                if (!key.equals("api") && !key.equals("v1") && !key.equals("gl-bene") &&
-                        !key.startsWith("param") && key.length() > 2) {
-                    possibleValues.add(key);
-                }
-            }
+                    if (dbColumn == null || dbColumn.isEmpty()) {
+                        log.debug("Parameter {} has no dbColumn mapping, skipping", paramKey);
+                        continue;
+                    }
 
-            log.info("Possible values found: {}", possibleValues);
+                    boolean isValidForFiltering = "query".equals(paramType) ||
+                            "path".equals(paramType) ||
+                            "body".equals(paramType);
 
-            for (ApiParameterEntity configuredParam : api.getParameters()) {
-                String paramKey = configuredParam.getKey();
-                String dbColumn = configuredParam.getDbColumn();
-                String paramType = configuredParam.getParameterType();
+                    if (isValidForFiltering) {
+                        log.info("Processing parameter: key='{}', dbColumn='{}', paramType='{}', required={}",
+                                paramKey, dbColumn, paramType, configuredParam.getRequired());
 
-                // Default to "query" if paramType is null
-                if (paramType == null) {
-                    paramType = "query";
-                    log.debug("Parameter {} has null paramType, defaulting to 'query'", paramKey);
-                }
+                        Object value = null;
 
-                if (dbColumn == null || dbColumn.isEmpty()) {
-                    log.debug("Parameter {} has no dbColumn mapping, skipping", paramKey);
-                    continue;
-                }
+                        // Try to find value by direct key match
+                        if (cleanParams.containsKey(paramKey)) {
+                            value = cleanParams.get(paramKey);
+                            log.info("  Found exact match for key '{}' with value: {}", paramKey, value);
+                        }
 
-                boolean isValidForFiltering = "query".equals(paramType) ||
-                        "path".equals(paramType) ||
-                        "body".equals(paramType);
-
-                if (isValidForFiltering) {
-                    log.info("Processing parameter: key='{}', dbColumn='{}', paramType='{}'",
-                            paramKey, dbColumn, paramType);
-
-                    Object value = null;
-
-                    // Try to find the value based on parameter type and position
-                    if ("path".equals(paramType)) {
-                        Integer position = configuredParam.getPosition();
-                        if (position != null && positionValues.containsKey(position)) {
-                            value = positionValues.get(position);
-                            log.info("  Found by position {} with value: {}", position, value);
-                        } else if (position != null) {
-                            // Try param1, param2 format
-                            String numberedKey = "param" + (position + 1);
-                            if (params.containsKey(numberedKey)) {
-                                value = params.get(numberedKey);
-                                log.info("  Found numbered param '{}' with value: {}", numberedKey, value);
+                        // Try case-insensitive match
+                        if (value == null) {
+                            for (Map.Entry<String, Object> entry : cleanParams.entrySet()) {
+                                if (entry.getKey().equalsIgnoreCase(paramKey)) {
+                                    value = entry.getValue();
+                                    log.info("  Found case-insensitive match for key '{}' with value: {}", paramKey, value);
+                                    break;
+                                }
                             }
                         }
-                    }
 
-                    // If still not found, try direct key match
-                    if (value == null && params.containsKey(paramKey)) {
-                        value = params.get(paramKey);
-                        log.info("  Found exact match for key '{}' with value: {}", paramKey, value);
-                    }
-
-                    // If still not found and this is a required parameter, try to find a value
-                    if (value == null && Boolean.TRUE.equals(configuredParam.getRequired())) {
-                        // For the first required parameter, try to use the first possible value
-                        if (!possibleValues.isEmpty()) {
-                            // Take the first possible value
-                            value = possibleValues.iterator().next();
-                            log.info("  Using first possible value: {}", value);
-                        }
-                    }
-
-                    // If still not found, try case-insensitive match
-                    if (value == null) {
-                        for (Map.Entry<String, Object> entry : params.entrySet()) {
-                            if (entry.getKey().equalsIgnoreCase(paramKey)) {
-                                value = entry.getValue();
-                                log.info("  Found case-insensitive match for key '{}' with value: {}", paramKey, value);
-                                break;
+                        // Try to find by position if this is a path parameter
+                        if (value == null && "path".equals(paramType)) {
+                            Integer position = configuredParam.getPosition();
+                            if (position != null) {
+                                String positionKey = "position_" + position;
+                                if (cleanParams.containsKey(positionKey)) {
+                                    value = cleanParams.get(positionKey);
+                                    log.info("  Found by position {} with value: {}", position, value);
+                                }
                             }
                         }
-                    }
 
-                    if (value != null) {
-                        if (value instanceof List || value.getClass().isArray()) {
-                            Collection<?> collection = value instanceof List ?
-                                    (List<?>) value : Arrays.asList((Object[]) value);
+                        if (value != null) {
+                            // Handle collection/array values
+                            if (value instanceof List || value.getClass().isArray()) {
+                                Collection<?> collection = value instanceof List ?
+                                        (List<?>) value : Arrays.asList((Object[]) value);
 
-                            if (!collection.isEmpty()) {
-                                value = collection.iterator().next();
-                                log.info("  Converted collection to single value: {}", value);
+                                if (!collection.isEmpty()) {
+                                    value = collection.iterator().next();
+                                    log.info("  Converted collection to single value: {}", value);
+                                } else {
+                                    value = null;
+                                }
+                            }
+
+                            if (value != null && !value.toString().trim().isEmpty()) {
+                                whereClauses.add(dbColumn + " = ?");
+                                paramValues.add(value);
+                                log.info("  ADDED FILTER: {} = ? with value: {}", dbColumn, value);
                             } else {
-                                value = null;
+                                if (Boolean.TRUE.equals(configuredParam.getRequired())) {
+                                    throw new ValidationException(
+                                            String.format("Required parameter '%s' cannot be empty", paramKey)
+                                    );
+                                }
+                                log.info("Optional parameter {} not provided or empty, skipping filter", paramKey);
                             }
-                        }
-
-                        if (value != null && !value.toString().trim().isEmpty()) {
-                            if (!hasWhereClause) {
-                                sql.append(" WHERE ");
-                                hasWhereClause = true;
-                            } else {
-                                sql.append(" AND ");
-                            }
-
-                            sql.append(dbColumn).append(" = ?");
-                            paramValues.add(value);
-                            log.info("  ADDED FILTER: {} = ? with value: {}", dbColumn, value);
                         } else {
                             if (Boolean.TRUE.equals(configuredParam.getRequired())) {
+                                // FIX: Better error message showing all available params
                                 throw new ValidationException(
-                                        String.format("Required parameter '%s' cannot be empty", paramKey)
+                                        String.format("Required parameter '%s' is missing. Available params: %s. Request params: %s",
+                                                paramKey, cleanParams.keySet(), params.keySet())
                                 );
                             }
-                            log.info("Optional parameter {} not provided or empty, skipping filter", paramKey);
+                            log.info("Optional parameter {} not provided, skipping filter", paramKey);
                         }
                     } else {
-                        if (Boolean.TRUE.equals(configuredParam.getRequired())) {
-                            throw new ValidationException(
-                                    String.format("Required parameter '%s' is missing", paramKey)
-                            );
-                        }
-                        log.info("Optional parameter {} not provided, skipping filter", paramKey);
+                        log.info("Parameter {} with type '{}' is not for filtering, skipping", paramKey, paramType);
                     }
-                } else {
-                    log.info("Parameter {} with type '{}' is not for filtering, skipping", paramKey, paramType);
-                }
-            }
-        }
-
-        // Handle pagination if enabled
-        if (api.getSchemaConfig() != null &&
-                Boolean.TRUE.equals(api.getSchemaConfig().getEnablePagination())) {
-            int pageSize = api.getSchemaConfig().getPageSize() != null ?
-                    api.getSchemaConfig().getPageSize() : 10;
-            int page = 1;
-
-            if (params != null && params.containsKey("page")) {
-                try {
-                    page = Integer.parseInt(params.get("page").toString());
-                    if (page < 1) page = 1;
-                    log.info("Page parameter found: {}", page);
-                } catch (NumberFormatException e) {
-                    log.warn("Invalid page parameter, using default: 1");
                 }
             }
 
-            int offset = (page - 1) * pageSize;
-            sql.append(" OFFSET ? ROWS FETCH NEXT ? ROWS ONLY");
-            paramValues.add(offset);
-            paramValues.add(pageSize);
-            log.info("Added pagination: offset={}, pageSize={}", offset, pageSize);
-        }
+            // Add WHERE clause if we have conditions
+            if (!whereClauses.isEmpty()) {
+                sql.append(" WHERE ").append(String.join(" AND ", whereClauses));
+            }
 
-        log.info("Final SQL: {} with {} parameters", sql.toString(), paramValues.size());
+            // Handle pagination if enabled
+            if (api.getSchemaConfig() != null &&
+                    Boolean.TRUE.equals(api.getSchemaConfig().getEnablePagination())) {
+                int pageSize = api.getSchemaConfig().getPageSize() != null ?
+                        api.getSchemaConfig().getPageSize() : 10;
+                int page = 1;
 
-        try {
+                if (params != null && params.containsKey("page")) {
+                    try {
+                        page = Integer.parseInt(params.get("page").toString());
+                        if (page < 1) page = 1;
+                        log.info("Page parameter found: {}", page);
+                    } catch (NumberFormatException e) {
+                        log.warn("Invalid page parameter, using default: 1");
+                    }
+                }
+
+                int offset = (page - 1) * pageSize;
+                sql.append(" OFFSET ? ROWS FETCH NEXT ? ROWS ONLY");
+                paramValues.add(offset);
+                paramValues.add(pageSize);
+                log.info("Added pagination: offset={}, pageSize={}", offset, pageSize);
+            }
+
+            log.info("Final SQL: {} with {} parameters", sql.toString(), paramValues.size());
+
             List<Map<String, Object>> results = oracleJdbcTemplate.queryForList(
                     sql.toString(), paramValues.toArray());
             log.info("Query returned {} rows", results.size());
 
             return results;
+
         } catch (Exception e) {
             log.error("Error executing table select: {}", e.getMessage(), e);
 

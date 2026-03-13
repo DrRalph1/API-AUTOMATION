@@ -3,8 +3,11 @@ package com.usg.apiAutomation.utils.apiEngine.executor;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ExecuteApiRequestDTO;
+import com.usg.apiAutomation.utils.apiEngine.ParameterValidatorUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.SqlOutParameter;
 import org.springframework.jdbc.core.SqlParameter;
@@ -18,7 +21,10 @@ import java.util.*;
 @RequiredArgsConstructor
 public class PackageExecutorUtil {
 
-    private final JdbcTemplate oracleJdbcTemplate;
+    @Autowired
+    @Qualifier("oracleJdbcTemplate")
+    private JdbcTemplate oracleJdbcTemplate;
+
 
     public Object execute(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
                           String packageName, String owner, ExecuteApiRequestDTO request) {

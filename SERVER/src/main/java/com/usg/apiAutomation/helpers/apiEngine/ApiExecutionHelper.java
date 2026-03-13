@@ -513,7 +513,16 @@ public class ApiExecutionHelper {
                 return executeTableOperation(tableExecutorUtil, targetName, targetOwner, operation,
                         consolidatedParams, api, configuredParamDTOs);
             case "VIEW":
-                return viewExecutorUtil.execute(api, sourceObject, targetName, targetOwner, request,
+                // FIX: Ensure owner is properly resolved before passing to ViewExecutorUtil
+                String viewOwner = targetOwner;
+                if (viewOwner == null || viewOwner.isEmpty()) {
+                    // Try to get from sourceObject
+                    viewOwner = sourceObject.getOwner();
+                    if (viewOwner == null || viewOwner.isEmpty()) {
+                        viewOwner = sourceObject.getSchemaName();
+                    }
+                }
+                return viewExecutorUtil.execute(api, sourceObject, targetName, viewOwner, request,
                         configuredParamDTOs);
             case "PROCEDURE":
                 return procedureExecutorUtil.execute(api, sourceObject, targetName, targetOwner, request,
