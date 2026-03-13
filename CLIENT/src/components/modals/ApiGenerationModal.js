@@ -542,7 +542,7 @@ function ApiPreviewModal({
                 {outMappings.length > 0 ? (
                   <>
                     <div className="grid grid-cols-2 gap-4 text-xs mb-4">
-                      {outMappings.slice(0, 6).map((mapping, index) => (
+                      {outMappings.slice(0, 50).map((mapping, index) => (
                         <div key={index}>
                           <div className="font-medium" style={{ color: themeColors.text }}>
                             {mapping.apiField}
@@ -554,10 +554,10 @@ function ApiPreviewModal({
                           </div>
                         </div>
                       ))}
-                      {outMappings.length > 6 && (
+                      {outMappings.length > 50 && (
                         <div className="col-span-2 text-center pt-2">
                           <span className="text-xs" style={{ color: themeColors.textSecondary }}>
-                            + {outMappings.length - 6} more fields
+                            + {outMappings.length - 50} more fields
                           </span>
                         </div>
                       )}

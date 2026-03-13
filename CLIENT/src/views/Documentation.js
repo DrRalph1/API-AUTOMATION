@@ -2529,7 +2529,7 @@ req.end();`
               </div>
             )}
 
-            <div>
+            {/* <div>
               <h3 className="text-lg font-medium mb-4" style={{ color: colors.text }}>Description</h3>
               <div className="prose max-w-none" style={{ color: colors.textSecondary }}>
                 <p>
@@ -2551,7 +2551,7 @@ req.end();`
                   </p>
                 )}
               </div>
-            </div>
+            </div> */}
           </section>
 
           {/* Response Examples */}
