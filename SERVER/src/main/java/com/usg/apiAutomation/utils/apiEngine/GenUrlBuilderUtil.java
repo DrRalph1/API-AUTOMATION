@@ -377,14 +377,70 @@ public class GenUrlBuilderUtil {
 
         log.info("Building endpoint path with parameters. Base: {}", baseEndpoint);
 
-        // Generate parameters from source to identify path parameters
+        // Generate parameters from source
         List<ApiParameterDTO> parameters = parameterGeneratorUtil.generateParameterDTOsFromSource(sourceObjectDTO);
 
-        // Filter and sort path parameters by position
-        List<ApiParameterDTO> pathParams = parameters.stream()
-                .filter(p -> "path".equalsIgnoreCase(p.getParameterType()))
-                .sorted(Comparator.comparing(ApiParameterDTO::getPosition, Comparator.nullsLast(Comparator.naturalOrder())))
-                .collect(Collectors.toList());
+        log.info("All generated parameters (raw):");
+        parameters.forEach(p -> log.info("  - {}: location hint={}, mode={}",
+                p.getKey(), p.getParameterLocation(), p.getParamMode()));
+
+        // CRITICAL FIX: Path parameters should be determined by the request configuration,
+        // not by heuristics. The GenerateApiRequestDTO should specify which IN parameters
+        // are path parameters.
+
+        List<ApiParameterDTO> pathParams = new ArrayList<>();
+
+        // First, check if the request explicitly defines parameter locations
+        if (request.getParameters() != null && !request.getParameters().isEmpty()) {
+            // Use the explicitly configured parameter locations
+            Map<String, String> configuredLocations = request.getParameters().stream()
+                    .filter(p -> p.getParameterLocation() != null)
+                    .collect(Collectors.toMap(
+                            ApiParameterDTO::getKey,
+                            ApiParameterDTO::getParameterLocation,
+                            (existing, replacement) -> existing // Keep first if duplicate
+                    ));
+
+            log.info("Using explicitly configured parameter locations: {}", configuredLocations);
+
+            for (ApiParameterDTO param : parameters) {
+                String configuredLocation = configuredLocations.get(param.getKey());
+                if ("path".equals(configuredLocation)) {
+                    pathParams.add(param);
+                    param.setParameterType("path");
+                    param.setParameterLocation("path");
+                    log.info("  - {} configured as path parameter", param.getKey());
+                }
+            }
+        }
+
+        // If no explicit configuration, use a simple rule: first IN parameter is path,
+        // remaining are query (or you could have a configurable policy)
+        if (pathParams.isEmpty()) {
+            log.info("No explicit parameter configuration found, using default rule: first parameter as path");
+
+            // Filter to only IN/IN-OUT parameters
+            List<ApiParameterDTO> inParams = parameters.stream()
+                    .filter(p -> "IN".equals(p.getParamMode()) || "IN/OUT".equals(p.getParamMode()))
+                    .collect(Collectors.toList());
+
+            if (!inParams.isEmpty()) {
+                // First IN parameter becomes path
+                ApiParameterDTO firstParam = inParams.get(0);
+                pathParams.add(firstParam);
+                firstParam.setParameterType("path");
+                firstParam.setParameterLocation("path");
+                log.info("  - {} set as path parameter (first IN parameter)", firstParam.getKey());
+
+                // Remaining become query
+                for (int i = 1; i < inParams.size(); i++) {
+                    ApiParameterDTO param = inParams.get(i);
+                    param.setParameterType("query");
+                    param.setParameterLocation("query");
+                    log.info("  - {} set as query parameter", param.getKey());
+                }
+            }
+        }
 
         log.info("Found {} path parameters: {}", pathParams.size(),
                 pathParams.stream().map(ApiParameterDTO::getKey).collect(Collectors.joining(", ")));
@@ -407,4 +463,5 @@ public class GenUrlBuilderUtil {
 
         return fullEndpoint;
     }
+
 }

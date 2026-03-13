@@ -871,7 +871,7 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   const [requestParams, setRequestParams] = useState([]);
   const [requestHeaders, setRequestHeaders] = useState([]);
   const [requestBody, setRequestBody] = useState('');
-  const [requestBodyType, setRequestBodyType] = useState('raw');
+  const [requestBodyType, setRequestBodyType] = useState('none');
   const [rawBodyType, setRawBodyType] = useState('json');
   const [formData, setFormData] = useState([]);
   const [urlEncodedData, setUrlEncodedData] = useState([]);
@@ -1548,6 +1548,43 @@ const updatePathParam = (id, field, value) => {
   });
 };
 
+
+
+// Add this useEffect in your Collections component (around line 2500-2600, after your existing useEffects)
+useEffect(() => {
+  // Auto-set body type based on HTTP method
+  const method = requestMethod;
+  
+  if (method === 'GET' || method === 'DELETE') {
+    // For GET and DELETE, set body type to 'none'
+    setRequestBodyType('none');
+    
+    // Also clear any existing body data when switching to GET/DELETE
+    setRequestBody('');
+    setFormData([]);
+    setUrlEncodedData([]);
+    setBinaryFile(null);
+    setGraphqlQuery('');
+    setGraphqlVariables('');
+    
+    console.log('🔄 Auto-set body type to none for', method);
+  } else {
+    // For POST, PUT, PATCH, etc., set body type to 'raw' or 'json'
+    // Check if there's already a body type set, if not default to 'raw'
+    setRequestBodyType(prev => {
+      // If previous was 'none' or not set, default to 'raw'
+      if (prev === 'none' || !prev) {
+        return 'raw';
+      }
+      return prev;
+    });
+    
+    console.log('🔄 Auto-set body type for', method);
+  }
+}, [requestMethod]); // Run whenever HTTP method changes
+
+
+
 useEffect(() => {
   // Don't do anything if we're in the middle of user input
   if (isUpdatingFromInput.current) {
@@ -2162,7 +2199,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     setResponse(null);
     
     // Reset body type to default
-    setRequestBodyType('raw');
+    setRequestBodyType('none');
     setRawBodyType('json');
     
     // Set the selected request
@@ -2229,36 +2266,57 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
   // IMPORTANT: Reset headers - we'll add them properly from API details
   setRequestHeaders([]);
   
-  // Set path params
-  const initialPathParams = request.pathParams || [];
+  // Set path params - extract from URL first
+  const pathParamsFromUrl = [];
+  if (initialTemplateUrl) {
+    // Find all {param} placeholders in URL
+    const placeholderRegex = /{([^}]+)}/g;
+    let match;
+    while ((match = placeholderRegex.exec(initialTemplateUrl)) !== null) {
+      const paramName = match[1];
+      // Check if we already have this param in the request
+      const existingParam = (request.pathParams || []).find(p => p.key === paramName);
+      pathParamsFromUrl.push({
+        id: existingParam?.id || `path-${Date.now()}-${paramName}-${Math.random()}`,
+        key: paramName,
+        value: existingParam?.value || '',
+        description: existingParam?.description || `Path parameter: ${paramName}`,
+        enabled: true,
+        required: true
+      });
+    }
+  }
+  
+  // Use URL-extracted params or fall back to request.pathParams
+  const initialPathParams = pathParamsFromUrl.length > 0 ? pathParamsFromUrl : (request.pathParams || []);
   setRequestPathParams(initialPathParams);
   
   // Process path params immediately to update URL with values
-if (initialPathParams.length > 0 && initialTemplateUrl) {
-  console.log('🛣️ Processing path params for URL:', { initialTemplateUrl, initialPathParams });
-  
-  let updatedUrl = initialTemplateUrl;
-  initialPathParams.forEach(param => {
-    if (param.key && param.value && param.value.trim() !== '') {
-      const placeholder = `{${param.key}}`;
-      if (updatedUrl.includes(placeholder)) {
-        // CRITICAL FIX: Only encode when actually sending the request
-        // For display, keep the value as-is
-        updatedUrl = updatedUrl.replace(new RegExp(placeholder, 'g'), param.value);
-        console.log(`  🔄 Replaced ${placeholder} with ${param.value}`);
-      } else {
-        const colonPlaceholder = `:${param.key}`;
-        if (updatedUrl.includes(colonPlaceholder)) {
-          updatedUrl = updatedUrl.replace(new RegExp(colonPlaceholder, 'g'), param.value);
-          console.log(`  🔄 Replaced ${colonPlaceholder} with ${param.value}`);
+  if (initialPathParams.length > 0 && initialTemplateUrl) {
+    console.log('🛣️ Processing path params for URL:', { initialTemplateUrl, initialPathParams });
+    
+    let updatedUrl = initialTemplateUrl;
+    initialPathParams.forEach(param => {
+      if (param.key && param.value && param.value.trim() !== '') {
+        const placeholder = `{${param.key}}`;
+        if (updatedUrl.includes(placeholder)) {
+          // CRITICAL FIX: Only encode when actually sending the request
+          // For display, keep the value as-is
+          updatedUrl = updatedUrl.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), param.value);
+          console.log(`  🔄 Replaced ${placeholder} with ${param.value}`);
+        } else {
+          const colonPlaceholder = `:${param.key}`;
+          if (updatedUrl.includes(colonPlaceholder)) {
+            updatedUrl = updatedUrl.replace(new RegExp(colonPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), param.value);
+            console.log(`  🔄 Replaced ${colonPlaceholder} with ${param.value}`);
+          }
         }
       }
-    }
-  });
-  
-  console.log('✅ Updated URL with path params:', updatedUrl);
-  setRequestUrl(updatedUrl);
-}
+    });
+    
+    console.log('✅ Updated URL with path params:', updatedUrl);
+    setRequestUrl(updatedUrl);
+  }
   
   // ============== FIXED: Set auth with proper config ==============
   console.log('🔐 Setting auth from request:', {
@@ -2273,6 +2331,7 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
 
   // Process based on auth type
   let processedAuthConfig = { type: authTypeFromRequest };
+  let authHeaders = [];
 
   if (authTypeFromRequest === 'apikey') {
     // For API Key, we need key and value
@@ -2292,11 +2351,9 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
     // For API Key, set the Authorization tab to "No Auth" since API keys go in headers
     setAuthType('noauth');
     
-    // Add API Key headers to Headers tab
-    const headersToAdd = [];
-    
+    // Add API Key headers
     if (processedAuthConfig.key && processedAuthConfig.value) {
-      headersToAdd.push({
+      authHeaders.push({
         id: `auth-header-${Date.now()}-1`,
         key: processedAuthConfig.key,
         value: processedAuthConfig.value,
@@ -2304,12 +2361,6 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
         enabled: true,
         required: true
       });
-    }
-    
-    // Add all headers at once
-    if (headersToAdd.length > 0) {
-      setRequestHeaders(headersToAdd);
-      console.log('✅ Added API Key headers:', headersToAdd.map(h => h.key));
     }
   } 
   else if (authTypeFromRequest === 'bearer') {
@@ -2323,14 +2374,14 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
     
     // Add Authorization header for Bearer token
     if (processedAuthConfig.token) {
-      setRequestHeaders([{
+      authHeaders.push({
         id: `auth-header-${Date.now()}`,
         key: 'Authorization',
         value: `${processedAuthConfig.tokenType} ${processedAuthConfig.token}`,
         description: 'Bearer token authentication',
         enabled: true,
         required: true
-      }]);
+      });
     }
   }
   else if (authTypeFromRequest === 'basic') {
@@ -2345,14 +2396,14 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
     // Add Authorization header for Basic auth
     if (processedAuthConfig.username && processedAuthConfig.password) {
       const credentials = btoa(`${processedAuthConfig.username}:${processedAuthConfig.password}`);
-      setRequestHeaders([{
+      authHeaders.push({
         id: `auth-header-${Date.now()}`,
         key: 'Authorization',
         value: `Basic ${credentials}`,
         description: 'Basic authentication',
         enabled: true,
         required: true
-      }]);
+      });
     }
   }
   else if (authTypeFromRequest === 'oauth2') {
@@ -2365,25 +2416,29 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
     
     // Add Authorization header for OAuth2
     if (processedAuthConfig.token) {
-      setRequestHeaders([{
+      authHeaders.push({
         id: `auth-header-${Date.now()}`,
         key: 'Authorization',
         value: `Bearer ${processedAuthConfig.token}`,
         description: 'OAuth2 token authentication',
         enabled: true,
         required: true
-      }]);
+      });
     }
   }
   else {
     // No auth
     processedAuthConfig = { type: 'noauth' };
     setAuthType('noauth');
-    setRequestHeaders([]);
   }
 
   // Set the auth config in state
   setAuthConfig(processedAuthConfig);
+  
+  // Set auth headers (but don't merge yet - will merge with other headers later)
+  if (authHeaders.length > 0) {
+    setRequestHeaders(authHeaders);
+  }
   // ============== END FIX ==============
   
   setResponse(null);
@@ -2450,9 +2505,10 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
           console.log('🔐 Updating auth config from API:', details.authConfig);
           
           const apiAuthType = details.authType || authTypeFromRequest;
+          let apiAuthHeaders = [];
           
           if (apiAuthType === 'apikey' || details.authConfig.authType === 'apiKey') {
-            // Handle API Key from API - check for both formats
+            // Handle API Key from API
             const apiProcessedConfig = {
               type: 'apikey',
               key: details.authConfig.key || 
@@ -2471,12 +2527,9 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
             // Keep authType as 'noauth' for the UI (API keys go in headers)
             setAuthType('noauth');
             
-            // Update headers for API Key - handle both key and secret
-            const headersToAdd = [];
-            
-            // Add API Key header if present
+            // Build API Key headers
             if (apiProcessedConfig.key && apiProcessedConfig.value) {
-              headersToAdd.push({
+              apiAuthHeaders.push({
                 id: `auth-header-${Date.now()}-key`,
                 key: apiProcessedConfig.key,
                 value: apiProcessedConfig.value,
@@ -2488,7 +2541,7 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
             
             // Check for API Secret (if different from key)
             if (details.authConfig.apiSecretHeader && details.authConfig.apiSecretValue) {
-              headersToAdd.push({
+              apiAuthHeaders.push({
                 id: `auth-header-${Date.now()}-secret`,
                 key: details.authConfig.apiSecretHeader,
                 value: details.authConfig.apiSecretValue,
@@ -2496,12 +2549,6 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
                 enabled: true,
                 required: true
               });
-            }
-            
-            // Add all headers - REPLACE existing headers with just these
-            if (headersToAdd.length > 0) {
-              setRequestHeaders(headersToAdd);
-              console.log('✅ Updated API Key headers from API:', headersToAdd.map(h => h.key));
             }
             
             // Update the auth config in state
@@ -2518,16 +2565,15 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
             setAuthType('bearer');
             setAuthConfig(apiProcessedConfig);
             
-            // Add Authorization header for Bearer token
             if (apiProcessedConfig.token) {
-              setRequestHeaders([{
+              apiAuthHeaders.push({
                 id: `auth-header-${Date.now()}`,
                 key: 'Authorization',
                 value: `${apiProcessedConfig.tokenType} ${apiProcessedConfig.token}`,
                 description: 'Bearer token authentication',
                 enabled: true,
                 required: true
-              }]);
+              });
             }
           }
           else if (apiAuthType === 'basic') {
@@ -2541,17 +2587,16 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
             setAuthType('basic');
             setAuthConfig(apiProcessedConfig);
             
-            // Add Authorization header for Basic auth
             if (apiProcessedConfig.username && apiProcessedConfig.password) {
               const credentials = btoa(`${apiProcessedConfig.username}:${apiProcessedConfig.password}`);
-              setRequestHeaders([{
+              apiAuthHeaders.push({
                 id: `auth-header-${Date.now()}`,
                 key: 'Authorization',
                 value: `Basic ${credentials}`,
                 description: 'Basic authentication',
                 enabled: true,
                 required: true
-              }]);
+              });
             }
           }
           else if (apiAuthType === 'oauth2') {
@@ -2564,17 +2609,23 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
             setAuthType('oauth2');
             setAuthConfig(apiProcessedConfig);
             
-            // Add Authorization header for OAuth2
             if (apiProcessedConfig.token) {
-              setRequestHeaders([{
+              apiAuthHeaders.push({
                 id: `auth-header-${Date.now()}`,
                 key: 'Authorization',
                 value: `Bearer ${apiProcessedConfig.token}`,
                 description: 'OAuth2 token authentication',
                 enabled: true,
                 required: true
-              }]);
+              });
             }
+          }
+          
+          // If we have API auth headers, update them (will merge with other headers later)
+          if (apiAuthHeaders.length > 0) {
+            // Store auth headers separately - we'll merge with other headers later
+            // For now, clear any existing headers and set these
+            setRequestHeaders(apiAuthHeaders);
           }
         }
         // ============== END FIX ==============
@@ -2669,10 +2720,20 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
         if (details.parameters) {
           const queryParams = [];
           const pathParams = [];
-          const headerParams = []; // These are parameters with location='header'
+          const headerParams = [];
           const bodyParams = [];
           
           console.log('📊 Processing parameters from API:', details.parameters.length);
+          
+          // First, collect all path parameters from the template URL
+          const templateUrlPathParams = [];
+          if (initialTemplateUrl) {
+            const placeholderRegex = /{([^}]+)}/g;
+            let match;
+            while ((match = placeholderRegex.exec(initialTemplateUrl)) !== null) {
+              templateUrlPathParams.push(match[1]);
+            }
+          }
           
           details.parameters.forEach(param => {
             if (param && param.key) {
@@ -2693,30 +2754,25 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
               console.log(`📍 [API] Parameter ${param.key}: location = ${param.parameterLocation}`);
               
               const location = (param.parameterLocation || '').toLowerCase();
-              switch(location) {
-                case 'query':
-                  queryParams.push(paramObject);
-                  break;
-                case 'path':
-                  pathParams.push(paramObject);
-                  console.log(`🛣️ Added to PATH params: ${param.key}`);
-                  break;
-                case 'header':
-                  headerParams.push(paramObject);
-                  console.log(`📌 Added to HEADER params (will be added to headers): ${param.key}`);
-                  break;
-                case 'body':
-                  bodyParams.push(paramObject);
-                  console.log(`📦 Body parameter: ${param.key}`);
-                  break;
-                default:
-                  if (initialTemplateUrl && initialTemplateUrl.includes(`{${param.key}}`)) {
-                    pathParams.push(paramObject);
-                    console.log(`🛣️ Defaulted to PATH param: ${param.key}`);
-                  } else {
-                    queryParams.push(paramObject);
-                    console.log(`🔍 Defaulted to QUERY param: ${param.key}`);
-                  }
+              
+              // CRITICAL FIX: Check if this is a path parameter based on URL
+              const isInTemplateUrl = templateUrlPathParams.includes(param.key);
+              
+              if (isInTemplateUrl || location === 'path') {
+                pathParams.push(paramObject);
+                console.log(`🛣️ Added to PATH params: ${param.key} (from URL template or location)`);
+              } else if (location === 'query') {
+                queryParams.push(paramObject);
+              } else if (location === 'header') {
+                headerParams.push(paramObject);
+                console.log(`📌 Added to HEADER params: ${param.key}`);
+              } else if (location === 'body') {
+                bodyParams.push(paramObject);
+                console.log(`📦 Body parameter: ${param.key}`);
+              } else {
+                // Default to query params
+                queryParams.push(paramObject);
+                console.log(`🔍 Defaulted to QUERY param: ${param.key}`);
               }
             }
           });
@@ -2725,7 +2781,8 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
             query: queryParams.length,
             path: pathParams.length,
             header: headerParams.length,
-            body: bodyParams.length
+            body: bodyParams.length,
+            templateUrlPathParams
           });
           
           if (queryParams.length > 0) {
@@ -2736,7 +2793,7 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
           if (pathParams.length > 0) {
             console.log('🛣️ Setting path params:', pathParams);
             
-            // Add position information based on order
+            // Add position information based on order in URL
             const pathParamsWithPosition = pathParams.map((param, index) => ({
               ...param,
               position: index,
@@ -2762,29 +2819,8 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
             console.log('🧹 Cleaned path params with position:', cleanedPathParams);
             setRequestPathParams(cleanedPathParams);
             
-            let newTemplateUrl = initialTemplateUrl;
-            
-            const hasPlaceholders = pathParams.some(p => 
-              newTemplateUrl.includes(`{${p.key}}`) || newTemplateUrl.includes(`:${p.key}`)
-            );
-            
-            if (!hasPlaceholders && pathParams.length > 0) {
-              if (!newTemplateUrl.endsWith('/')) {
-                newTemplateUrl += '/';
-              }
-              pathParams.forEach((param, index) => {
-                if (index === 0) {
-                  newTemplateUrl += `{${param.key}}`;
-                } else {
-                  newTemplateUrl += `/{${param.key}}`;
-                }
-              });
-              console.log('🛣️ Added placeholders to template URL from API:', newTemplateUrl);
-              setTemplateUrl(newTemplateUrl);
-            }
-            
-            // Build the URL with path params, but don't encode them yet
-            let updatedUrl = newTemplateUrl;
+            // Build the URL with path params, but don't add extra placeholders
+            let updatedUrl = initialTemplateUrl;
             
             // Create a map of placeholders to values - only include real values
             const paramValueMap = new Map();
@@ -2799,28 +2835,23 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
               }
             });
             
-            // Replace placeholders with values, but ensure each placeholder is replaced only once
-            const placeholders = Array.from(paramValueMap.keys()).sort((a, b) => b.length - a.length);
+            // Replace placeholders with values
+            const placeholders = Array.from(paramValueMap.keys());
             
             placeholders.forEach(key => {
               const value = paramValueMap.get(key);
               const placeholder = `{${key}}`;
-              const colonPlaceholder = `:${key}`;
               
               if (updatedUrl.includes(placeholder)) {
                 const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
                 updatedUrl = updatedUrl.replace(regex, value);
               }
-              
-              if (updatedUrl.includes(colonPlaceholder)) {
-                const regex = new RegExp(colonPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-                updatedUrl = updatedUrl.replace(regex, value);
-              }
             });
             
+            // Add query params if they have values
             const queryString = queryParams
-              .filter(p => p.enabled && p.key && p.key.trim() !== '')
-              .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value || '')}`)
+              .filter(p => p.enabled && p.key && p.key.trim() !== '' && p.value && p.value.trim() !== '')
+              .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
               .join('&');
             
             const finalUrl = queryString ? `${updatedUrl}?${queryString}` : updatedUrl;
@@ -2830,15 +2861,22 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
           }
           
           // ============== FIXED: Handle headers from API details ==============
-          // Collect all headers to add
-          const headersToAdd = [];
+          // Collect all non-auth headers to add
+          const nonAuthHeaders = [];
           
           // 1. Add header parameters (parameters with location='header')
           if (headerParams.length > 0) {
             console.log('📌 Adding header parameters to headers:', headerParams);
             
             headerParams.forEach(param => {
-              headersToAdd.push({
+              // Skip if it's an auth-related header
+              const key = param.key?.toLowerCase() || '';
+              if (key.includes('authorization') || key.includes('api-key') || key.includes('api-secret')) {
+                console.log(`⏭️ Skipping auth header from parameters: ${param.key}`);
+                return;
+              }
+              
+              nonAuthHeaders.push({
                 id: param.id || `header-${Date.now()}-${Math.random()}`,
                 key: param.key,
                 value: param.value || '',
@@ -2854,14 +2892,14 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
             console.log('📌 Adding regular headers from details:', details.headers);
             
             details.headers.forEach((header, idx) => {
-              // Skip if it's an auth header (already handled)
+              // Skip if it's an auth header
               const key = header.key?.toLowerCase() || '';
               if (key.includes('authorization') || key.includes('api-key') || key.includes('api-secret')) {
-                console.log(`⏭️ Skipping auth header: ${header.key}`);
+                console.log(`⏭️ Skipping auth header from headers list: ${header.key}`);
                 return;
               }
               
-              headersToAdd.push({
+              nonAuthHeaders.push({
                 id: header.id || `header-${Date.now()}-${idx}-${Math.random()}`,
                 key: header.key,
                 value: header.value || '',
@@ -2873,7 +2911,7 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
           }
           
           // Remove duplicates (by key) - keep the first occurrence
-          const uniqueHeaders = headersToAdd.reduce((acc, current) => {
+          const uniqueNonAuthHeaders = nonAuthHeaders.reduce((acc, current) => {
             const exists = acc.some(h => h.key.toLowerCase() === current.key.toLowerCase());
             if (!exists) {
               acc.push(current);
@@ -2881,25 +2919,19 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
             return acc;
           }, []);
           
-          // Merge with existing headers (auth headers might already be set)
-          if (uniqueHeaders.length > 0) {
-            setRequestHeaders(prevHeaders => {
-              const currentHeaders = Array.isArray(prevHeaders) ? prevHeaders : [];
-              
-              // Combine and remove duplicates
-              const allHeaders = [...currentHeaders, ...uniqueHeaders];
-              const finalHeaders = allHeaders.reduce((acc, current) => {
-                const exists = acc.some(h => h.key.toLowerCase() === current.key.toLowerCase());
-                if (!exists) {
-                  acc.push(current);
-                }
-                return acc;
-              }, []);
-              
-              console.log('📌 Final headers after merge:', finalHeaders);
-              return finalHeaders;
-            });
-          }
+          // Get current auth headers from state
+          const currentHeaders = Array.isArray(requestHeaders) ? requestHeaders : [];
+          const authHeaders = currentHeaders.filter(h => 
+            h.key.toLowerCase().includes('authorization') || 
+            h.key.toLowerCase().includes('api-key') || 
+            h.key.toLowerCase().includes('api-secret')
+          );
+          
+          // Merge auth headers with non-auth headers
+          const finalHeaders = [...authHeaders, ...uniqueNonAuthHeaders];
+          
+          console.log('📌 Final headers after merge:', finalHeaders);
+          setRequestHeaders(finalHeaders);
           // ============== END FIX ==============
           
           if (bodyParams.length > 0) {
@@ -2993,7 +3025,7 @@ if (initialPathParams.length > 0 && initialTemplateUrl) {
       }
     }
   }
-}, [authToken, determineActiveTab, requestUrl, authType, authConfig, activeTab, requestBodyType, formData.length, urlEncodedData.length]);
+}, [authToken, determineActiveTab, requestUrl, authType, authConfig, activeTab, requestBodyType, formData.length, urlEncodedData.length, requestHeaders]);
 
 
 // Update the addNewRequest function to properly create a new request
@@ -3030,6 +3062,9 @@ const addNewRequest = (collectionId, folderId) => {
       )
     } : col
   ));
+  
+  // Set body type to 'none' for new requests
+  setRequestBodyType('none');
   
   // Pass the new request to handleSelectRequest - it will detect it's new and reset everything
   handleSelectRequest(newRequest, collectionId, folderId);
@@ -4851,183 +4886,78 @@ const renderQueryParamsTab = () => {
   };
 
   // Render Body Tab
-  const renderBodyTab = () => {
-    const renderBodyContent = () => {
-      switch (requestBodyType) {
-        case 'form-data':
-          return (
-            <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
-              <table className="w-full">
-                <thead style={{ backgroundColor: colors.tableHeader }}>
-                  <tr>
-                    <th className="w-12 px-4 py-3">
-                      <div className="flex items-center">
-                        <input 
-                          type="checkbox" 
-                          className="rounded-sm hover-lift"
-                          checked={formData.every(f => f.enabled)}
-                          onChange={() => {
-                            const allEnabled = formData.every(f => f.enabled);
-                            setFormData(formData.map(f => ({ ...f, enabled: !allEnabled })));
-                          }}
-                          style={{ 
-                            borderColor: colors.border,
-                            backgroundColor: colors.card,
-                            cursor: 'pointer'
-                          }}
-                        />
-                      </div>
-                    </th>
-                    <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>KEY</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>VALUE</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>TYPE</th>
-                    <th className="w-20 px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => setFormData([...formData, { id: `form-${Date.now()}`, key: '', value: '', type: 'text', enabled: true }])}
-                        className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                        style={{ backgroundColor: colors.hover }}>
-                        <Plus size={14} style={{ color: colors.textSecondary }} />
-                      </button>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {formData.map((item, index) => (
-                    <tr key={item.id} className="border-b last:border-b-0 hover-lift" style={{ borderColor: colors.border }}>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={item.enabled}
-                            onChange={() => {
-                              const newData = [...formData];
-                              newData[index].enabled = !newData[index].enabled;
-                              setFormData(newData);
-                            }}
-                            className="rounded-sm hover-lift"
-                            style={{ 
-                              borderColor: colors.border,
-                              backgroundColor: colors.card,
-                              cursor: 'pointer'
-                            }}
-                          />
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <input
-                          type="text"
-                          value={item.key}
-                          onChange={(e) => {
-                            const newData = [...formData];
-                            newData[index].key = e.target.value;
-                            setFormData(newData);
-                          }}
-                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
-                          style={{ 
-                            borderColor: colors.border,
-                            color: colors.text,
-                            backgroundColor: colors.inputBg
-                          }}
-                          placeholder="Key"
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        {item.type === 'text' ? (
-                          <input
-                            type="text"
-                            value={item.value}
-                            onChange={(e) => {
-                              const newData = [...formData];
-                              newData[index].value = e.target.value;
-                              setFormData(newData);
-                            }}
-                            className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
-                            style={{ 
-                              borderColor: colors.border,
-                              color: colors.text,
-                              backgroundColor: colors.inputBg
-                            }}
-                            placeholder="Value"
-                          />
-                        ) : (
-                          <button type="button" className="w-full px-2 py-1.5 border rounded-sm text-sm text-left hover:bg-opacity-50 transition-colors hover-lift"
-                            style={{ 
-                              borderColor: colors.border,
-                              color: colors.textSecondary,
-                              backgroundColor: colors.inputBg
-                            }}
-                            onClick={() => {
-                              const input = document.createElement('input');
-                              input.type = 'file';
-                              input.onchange = (e) => {
-                                const file = e.target.files[0];
-                                if (file) {
-                                  const newData = [...formData];
-                                  newData[index].value = file.name;
-                                  setFormData(newData);
-                                  showToast(`File selected: ${file.name}`, 'success');
-                                }
-                              };
-                              input.click();
-                            }}>
-                            Select File
-                          </button>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <select
-                          value={item.type}
-                          onChange={(e) => {
-                            const newData = [...formData];
-                            newData[index].type = e.target.value;
-                            setFormData(newData);
-                          }}
-                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
-                          style={{ 
-                            borderColor: colors.border,
-                            color: colors.text,
-                            backgroundColor: colors.inputBg
-                          }}>
-                          <option value="text">Text</option>
-                          <option value="file">File</option>
-                        </select>
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newData = formData.filter((_, i) => i !== index);
-                            setFormData(newData);
-                          }}
-                          className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                          style={{ backgroundColor: colors.hover }}>
-                          <Trash2 size={13} style={{ color: colors.textSecondary }} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          );
+  // Render Body Tab
+const renderBodyTab = () => {
+  const renderBodyContent = () => {
+    // If body type is 'none', show the none tab
+    if (requestBodyType === 'none') {
+      return (
+        <div className="flex flex-col items-center justify-center h-64 p-8 text-center">
+          <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4" 
+            style={{ backgroundColor: colors.hover }}>
+            <FileText size={32} style={{ color: colors.textSecondary, opacity: 0.7 }} />
+          </div>
+          <h3 className="text-sm font-semibold mb-2" style={{ color: colors.text }}>No Body</h3>
+          <p className="text-sm max-w-sm mb-4" style={{ color: colors.textSecondary }}>
+            This request does not have a body. Select a body type from the options above to add content.
+          </p>
+        </div>
+      );
+    }
 
-        case 'x-www-form-urlencoded':
-          return (
-            <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
-              <table className="w-full">
-                <thead style={{ backgroundColor: colors.tableHeader }}>
-                  <tr>
-                    <th className="w-12 px-4 py-3">
+    switch (requestBodyType) {
+      case 'form-data':
+        return (
+          <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
+            <table className="w-full">
+              <thead style={{ backgroundColor: colors.tableHeader }}>
+                <tr>
+                  <th className="w-12 px-4 py-3">
+                    <div className="flex items-center">
+                      <input 
+                        type="checkbox" 
+                        className="rounded-sm hover-lift"
+                        checked={formData.every(f => f.enabled)}
+                        onChange={() => {
+                          const allEnabled = formData.every(f => f.enabled);
+                          setFormData(formData.map(f => ({ ...f, enabled: !allEnabled })));
+                        }}
+                        style={{ 
+                          borderColor: colors.border,
+                          backgroundColor: colors.card,
+                          cursor: 'pointer'
+                        }}
+                      />
+                    </div>
+                  </th>
+                  <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>KEY</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>VALUE</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>TYPE</th>
+                  <th className="w-20 px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => setFormData([...formData, { id: `form-${Date.now()}`, key: '', value: '', type: 'text', enabled: true }])}
+                      className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                      style={{ backgroundColor: colors.hover }}>
+                      <Plus size={14} style={{ color: colors.textSecondary }} />
+                    </button>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {formData.map((item, index) => (
+                  <tr key={item.id} className="border-b last:border-b-0 hover-lift" style={{ borderColor: colors.border }}>
+                    <td className="px-4 py-3">
                       <div className="flex items-center">
-                        <input 
-                          type="checkbox" 
-                          className="rounded-sm hover-lift"
-                          checked={urlEncodedData.every(u => u.enabled)}
+                        <input
+                          type="checkbox"
+                          checked={item.enabled}
                           onChange={() => {
-                            const allEnabled = urlEncodedData.every(u => u.enabled);
-                            setUrlEncodedData(urlEncodedData.map(u => ({ ...u, enabled: !allEnabled })));
+                            const newData = [...formData];
+                            newData[index].enabled = !newData[index].enabled;
+                            setFormData(newData);
                           }}
+                          className="rounded-sm hover-lift"
                           style={{ 
                             borderColor: colors.border,
                             backgroundColor: colors.card,
@@ -5035,69 +4965,34 @@ const renderQueryParamsTab = () => {
                           }}
                         />
                       </div>
-                    </th>
-                    <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>KEY</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>VALUE</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>DESCRIPTION</th>
-                    <th className="w-20 px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => setUrlEncodedData([...urlEncodedData, { id: `url-${Date.now()}`, key: '', value: '', description: '', enabled: true }])}
-                        className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                        style={{ backgroundColor: colors.hover }}>
-                        <Plus size={14} style={{ color: colors.textSecondary }} />
-                      </button>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {urlEncodedData.map((item, index) => (
-                    <tr key={item.id} className="border-b last:border-b-0 hover-lift" style={{ borderColor: colors.border }}>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={item.enabled}
-                            onChange={() => {
-                              const newData = [...urlEncodedData];
-                              newData[index].enabled = !newData[index].enabled;
-                              setUrlEncodedData(newData);
-                            }}
-                            className="rounded-sm hover-lift"
-                            style={{ 
-                              borderColor: colors.border,
-                              backgroundColor: colors.card,
-                              cursor: 'pointer'
-                            }}
-                          />
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <input
-                          type="text"
-                          value={item.key}
-                          onChange={(e) => {
-                            const newData = [...urlEncodedData];
-                            newData[index].key = e.target.value;
-                            setUrlEncodedData(newData);
-                          }}
-                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
-                          style={{ 
-                            borderColor: colors.border,
-                            color: colors.text,
-                            backgroundColor: colors.inputBg
-                          }}
-                          placeholder="Key"
-                        />
-                      </td>
-                      <td className="px-4 py-3">
+                    </td>
+                    <td className="px-4 py-3">
+                      <input
+                        type="text"
+                        value={item.key}
+                        onChange={(e) => {
+                          const newData = [...formData];
+                          newData[index].key = e.target.value;
+                          setFormData(newData);
+                        }}
+                        className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
+                        style={{ 
+                          borderColor: colors.border,
+                          color: colors.text,
+                          backgroundColor: colors.inputBg
+                        }}
+                        placeholder="Key"
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      {item.type === 'text' ? (
                         <input
                           type="text"
                           value={item.value}
                           onChange={(e) => {
-                            const newData = [...urlEncodedData];
+                            const newData = [...formData];
                             newData[index].value = e.target.value;
-                            setUrlEncodedData(newData);
+                            setFormData(newData);
                           }}
                           className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
                           style={{ 
@@ -5107,119 +5002,280 @@ const renderQueryParamsTab = () => {
                           }}
                           placeholder="Value"
                         />
-                      </td>
-                      <td className="px-4 py-3">
-                        <input
-                          type="text"
-                          value={item.description || ''}
-                          onChange={(e) => {
-                            const newData = [...urlEncodedData];
-                            newData[index].description = e.target.value;
-                            setUrlEncodedData(newData);
-                          }}
-                          className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
+                      ) : (
+                        <button type="button" className="w-full px-2 py-1.5 border rounded-sm text-sm text-left hover:bg-opacity-50 transition-colors hover-lift"
                           style={{ 
                             borderColor: colors.border,
-                            color: colors.text,
+                            color: colors.textSecondary,
                             backgroundColor: colors.inputBg
                           }}
-                          placeholder="Description"
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          type="button"
                           onClick={() => {
-                            const newData = urlEncodedData.filter((_, i) => i !== index);
+                            const input = document.createElement('input');
+                            input.type = 'file';
+                            input.onchange = (e) => {
+                              const file = e.target.files[0];
+                              if (file) {
+                                const newData = [...formData];
+                                newData[index].file = file;
+                                newData[index].value = file.name;
+                                setFormData(newData);
+                                showToast(`File selected: ${file.name}`, 'success');
+                              }
+                            };
+                            input.click();
+                          }}>
+                          Select File
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <select
+                        value={item.type}
+                        onChange={(e) => {
+                          const newData = [...formData];
+                          newData[index].type = e.target.value;
+                          if (e.target.value === 'file') {
+                            newData[index].value = '';
+                          }
+                          setFormData(newData);
+                        }}
+                        className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
+                        style={{ 
+                          borderColor: colors.border,
+                          color: colors.text,
+                          backgroundColor: colors.inputBg
+                        }}>
+                        <option value="text">Text</option>
+                        <option value="file">File</option>
+                      </select>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newData = formData.filter((_, i) => i !== index);
+                          setFormData(newData);
+                        }}
+                        className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                        style={{ backgroundColor: colors.hover }}>
+                        <Trash2 size={13} style={{ color: colors.textSecondary }} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+
+      case 'x-www-form-urlencoded':
+        return (
+          <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
+            <table className="w-full">
+              <thead style={{ backgroundColor: colors.tableHeader }}>
+                <tr>
+                  <th className="w-12 px-4 py-3">
+                    <div className="flex items-center">
+                      <input 
+                        type="checkbox" 
+                        className="rounded-sm hover-lift"
+                        checked={urlEncodedData.every(u => u.enabled)}
+                        onChange={() => {
+                          const allEnabled = urlEncodedData.every(u => u.enabled);
+                          setUrlEncodedData(urlEncodedData.map(u => ({ ...u, enabled: !allEnabled })));
+                        }}
+                        style={{ 
+                          borderColor: colors.border,
+                          backgroundColor: colors.card,
+                          cursor: 'pointer'
+                        }}
+                      />
+                    </div>
+                  </th>
+                  <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>KEY</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>VALUE</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: colors.textSecondary }}>DESCRIPTION</th>
+                  <th className="w-20 px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => setUrlEncodedData([...urlEncodedData, { id: `url-${Date.now()}`, key: '', value: '', description: '', enabled: true }])}
+                      className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                      style={{ backgroundColor: colors.hover }}>
+                      <Plus size={14} style={{ color: colors.textSecondary }} />
+                    </button>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {urlEncodedData.map((item, index) => (
+                  <tr key={item.id} className="border-b last:border-b-0 hover-lift" style={{ borderColor: colors.border }}>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={item.enabled}
+                          onChange={() => {
+                            const newData = [...urlEncodedData];
+                            newData[index].enabled = !newData[index].enabled;
                             setUrlEncodedData(newData);
                           }}
-                          className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                          style={{ backgroundColor: colors.hover }}>
-                          <Trash2 size={13} style={{ color: colors.textSecondary }} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          );
+                          className="rounded-sm hover-lift"
+                          style={{ 
+                            borderColor: colors.border,
+                            backgroundColor: colors.card,
+                            cursor: 'pointer'
+                          }}
+                        />
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <input
+                        type="text"
+                        value={item.key}
+                        onChange={(e) => {
+                          const newData = [...urlEncodedData];
+                          newData[index].key = e.target.value;
+                          setUrlEncodedData(newData);
+                        }}
+                        className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
+                        style={{ 
+                          borderColor: colors.border,
+                          color: colors.text,
+                          backgroundColor: colors.inputBg
+                        }}
+                        placeholder="Key"
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <input
+                        type="text"
+                        value={item.value}
+                        onChange={(e) => {
+                          const newData = [...urlEncodedData];
+                          newData[index].value = e.target.value;
+                          setUrlEncodedData(newData);
+                        }}
+                        className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
+                        style={{ 
+                          borderColor: colors.border,
+                          color: colors.text,
+                          backgroundColor: colors.inputBg
+                        }}
+                        placeholder="Value"
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <input
+                        type="text"
+                        value={item.description || ''}
+                        onChange={(e) => {
+                          const newData = [...urlEncodedData];
+                          newData[index].description = e.target.value;
+                          setUrlEncodedData(newData);
+                        }}
+                        className="w-full px-2 py-1.5 border rounded-sm text-sm focus:outline-none hover-lift"
+                        style={{ 
+                          borderColor: colors.border,
+                          color: colors.text,
+                          backgroundColor: colors.inputBg
+                        }}
+                        placeholder="Description"
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newData = urlEncodedData.filter((_, i) => i !== index);
+                          setUrlEncodedData(newData);
+                        }}
+                        className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                        style={{ backgroundColor: colors.hover }}>
+                        <Trash2 size={13} style={{ color: colors.textSecondary }} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
 
-        case 'raw':
-          return (
-            <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
-              <div className="flex items-center justify-between px-3 py-2 border-b" style={{ 
-                backgroundColor: colors.tableHeader,
-                borderColor: colors.border
-              }}>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={rawBodyType}
-                    onChange={(e) => setRawBodyType(e.target.value)}
-                    className="px-2 py-1 rounded text-sm focus:outline-none transition-colors hover-lift"
-                    style={{ 
-                      backgroundColor: colors.card,
-                      color: colors.text,
-                      border: `1px solid ${colors.border}`,
-                      cursor: 'pointer'
-                    }}>
-                    <option value="json">JSON</option>
-                    <option value="text">Text</option>
-                    <option value="javascript">JavaScript</option>
-                    <option value="html">HTML</option>
-                    <option value="xml">XML</option>
-                  </select>
-                  <button 
-                    type="button"
-                    className="px-2 py-1 text-sm rounded hover:bg-opacity-50 transition-colors hover-lift" 
-                    style={{ 
-                      backgroundColor: colors.hover,
-                      color: colors.textSecondary
-                    }}
-                    onClick={() => {
-                      try {
-                        const parsed = JSON.parse(requestBody);
-                        setRequestBody(JSON.stringify(parsed, null, 2));
-                        showToast('JSON beautified!', 'success');
-                      } catch (e) {
-                        showToast('Not valid JSON', 'error');
-                      }
-                    }}>
-                    Beautify
-                  </button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs" style={{ color: colors.textSecondary }}>
-                    {requestBody.length} characters
-                  </span>
-                  <button 
-                    type="button"
-                    className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift" 
-                    style={{ backgroundColor: colors.hover }}
-                    onClick={() => {
-                      navigator.clipboard.writeText(requestBody);
-                      showToast('Copied to clipboard!', 'success');
-                    }}>
-                    <Copy size={13} style={{ color: colors.textSecondary }} />
-                  </button>
-                </div>
+      case 'raw':
+        return (
+          <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
+            <div className="flex items-center justify-between px-3 py-2 border-b" style={{ 
+              backgroundColor: colors.tableHeader,
+              borderColor: colors.border
+            }}>
+              <div className="flex items-center gap-2">
+                <select
+                  value={rawBodyType}
+                  onChange={(e) => setRawBodyType(e.target.value)}
+                  className="px-2 py-1 rounded text-sm focus:outline-none transition-colors hover-lift"
+                  style={{ 
+                    backgroundColor: colors.card,
+                    color: colors.text,
+                    border: `1px solid ${colors.border}`,
+                    cursor: 'pointer'
+                  }}>
+                  <option value="json">JSON</option>
+                  <option value="text">Text</option>
+                  <option value="javascript">JavaScript</option>
+                  <option value="html">HTML</option>
+                  <option value="xml">XML</option>
+                </select>
+                <button 
+                  type="button"
+                  className="px-2 py-1 text-sm rounded hover:bg-opacity-50 transition-colors hover-lift" 
+                  style={{ 
+                    backgroundColor: colors.hover,
+                    color: colors.textSecondary
+                  }}
+                  onClick={() => {
+                    try {
+                      const parsed = JSON.parse(requestBody);
+                      setRequestBody(JSON.stringify(parsed, null, 2));
+                      showToast('JSON beautified!', 'success');
+                    } catch (e) {
+                      showToast('Not valid JSON', 'error');
+                    }
+                  }}>
+                  Beautify
+                </button>
               </div>
-              <textarea
-                value={requestBody}
-                onChange={(e) => setRequestBody(e.target.value)}
-                className="w-full h-64 font-mono text-sm p-4 resize-none focus:outline-none hover-lift"
-                style={{
-                  backgroundColor: colors.card,
-                  color: colors.text,
-                  lineHeight: '1.5'
-                }}
-                placeholder={rawBodyType === 'json' ? '{\n  "key": "value"\n}' : 'Enter text here...'}
-                spellCheck="false"
-              />
+              <div className="flex items-center gap-2">
+                <span className="text-xs" style={{ color: colors.textSecondary }}>
+                  {requestBody.length} characters
+                </span>
+                <button 
+                  type="button"
+                  className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift" 
+                  style={{ backgroundColor: colors.hover }}
+                  onClick={() => {
+                    navigator.clipboard.writeText(requestBody);
+                    showToast('Copied to clipboard!', 'success');
+                  }}>
+                  <Copy size={13} style={{ color: colors.textSecondary }} />
+                </button>
+              </div>
             </div>
-          );
+            <textarea
+              value={requestBody}
+              onChange={(e) => setRequestBody(e.target.value)}
+              className="w-full h-64 font-mono text-sm p-4 resize-none focus:outline-none hover-lift"
+              style={{
+                backgroundColor: colors.card,
+                color: colors.text,
+                lineHeight: '1.5'
+              }}
+              placeholder={rawBodyType === 'json' ? '{\n  "key": "value"\n}' : 'Enter text here...'}
+              spellCheck="false"
+            />
+          </div>
+        );
 
-        case 'xml':
+      case 'xml':
         return (
           <div className="border rounded overflow-hidden" style={{ borderColor: colors.border }}>
             <div className="flex items-center justify-between px-3 py-2 border-b" style={{ 
@@ -5282,140 +5338,150 @@ const renderQueryParamsTab = () => {
                 lineHeight: '1.5'
               }}
               placeholder={`<?xml version="1.0" encoding="UTF-8"?>
-      <request>
-        <field1>value1</field1>
-        <field2>value2</field2>
-      </request>`}
+<request>
+  <field1>value1</field1>
+  <field2>value2</field2>
+</request>`}
               spellCheck="false"
             />
           </div>
         );
       
-        case 'binary':
-          return (
-            <div className="border rounded p-8 text-center" style={{ borderColor: colors.border }}>
-              <FileBinary size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
-              <p className="text-sm mb-2" style={{ color: colors.text }}>Upload a file</p>
-              <p className="text-xs mb-6 max-w-sm mx-auto" style={{ color: colors.textSecondary }}>
-                Select a file to send as the request body. Files are sent as-is without any processing.
-              </p>
-              <button type="button" className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 mx-auto hover-lift"
-                style={{ backgroundColor: colors.primaryDark, color: colors.white }}
-                onClick={() => {
-                  const input = document.createElement('input');
-                  input.type = 'file';
-                  input.accept = '*/*';
-                  input.onchange = (e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                      setBinaryFile(file);
-                      showToast(`File selected: ${file.name}`, 'success');
-                    }
-                  };
-                  input.click();
-                }}>
-                <Upload size={14} />
-                Choose File
-              </button>
-              {binaryFile && (
-                <div className="mt-4 p-3 rounded hover-lift" style={{ backgroundColor: colors.hover }}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <File size={14} style={{ color: colors.textSecondary }} />
-                      <span className="text-sm" style={{ color: colors.text }}>{binaryFile.name}</span>
-                    </div>
-                    <button type="button" onClick={() => setBinaryFile(null)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                      style={{ backgroundColor: colors.card }}>
-                      <X size={12} style={{ color: colors.textSecondary }} />
-                    </button>
+      case 'binary':
+        return (
+          <div className="border rounded p-8 text-center" style={{ borderColor: colors.border }}>
+            <FileBinary size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
+            <p className="text-sm mb-2" style={{ color: colors.text }}>Upload a file</p>
+            <p className="text-xs mb-6 max-w-sm mx-auto" style={{ color: colors.textSecondary }}>
+              Select a file to send as the request body. Files are sent as-is without any processing.
+            </p>
+            <button type="button" className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2 mx-auto hover-lift"
+              style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+              onClick={() => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '*/*';
+                input.onchange = (e) => {
+                  const file = e.target.files[0];
+                  if (file) {
+                    setBinaryFile(file);
+                    showToast(`File selected: ${file.name}`, 'success');
+                  }
+                };
+                input.click();
+              }}>
+              <Upload size={14} />
+              Choose File
+            </button>
+            {binaryFile && (
+              <div className="mt-4 p-3 rounded hover-lift" style={{ backgroundColor: colors.hover }}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <File size={14} style={{ color: colors.textSecondary }} />
+                    <span className="text-sm" style={{ color: colors.text }}>{binaryFile.name}</span>
                   </div>
-                  <p className="text-xs mt-1" style={{ color: colors.textSecondary }}>
-                    Size: {(binaryFile.size / 1024).toFixed(2)} KB
-                  </p>
+                  <button type="button" onClick={() => setBinaryFile(null)} className="p-1 rounded hover:bg-opacity-50 transition-colors hover-lift"
+                    style={{ backgroundColor: colors.card }}>
+                    <X size={12} style={{ color: colors.textSecondary }} />
+                  </button>
                 </div>
-              )}
-            </div>
-          );
-
-        case 'graphql':
-          return (
-            <div className="space-y-4">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-medium" style={{ color: colors.text }}>Query</label>
-                </div>
-                <textarea
-                  value={graphqlQuery}
-                  onChange={(e) => setGraphqlQuery(e.target.value)}
-                  className="w-full h-48 font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
-                  style={{
-                    backgroundColor: colors.card,
-                    borderColor: colors.border,
-                    color: colors.text,
-                    lineHeight: '1.5'
-                  }}
-                  placeholder="query {\n  getUser(id: 1) {\n    id\n    name\n    email\n  }\n}"
-                  spellCheck="false"
-                />
+                <p className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+                  Size: {(binaryFile.size / 1024).toFixed(2)} KB
+                </p>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Variables</label>
-                <textarea
-                  value={graphqlVariables}
-                  onChange={(e) => setGraphqlVariables(e.target.value)}
-                  className="w-full h-32 font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
-                  style={{
-                    backgroundColor: colors.card,
-                    borderColor: colors.border,
-                    color: colors.text,
-                    lineHeight: '1.5'
-                  }}
-                  placeholder='{\n  "id": 1\n}'
-                  spellCheck="false"
-                />
-              </div>
-            </div>
-          );
-
-        default:
-          return (
-            <div className="border rounded p-8 text-center" style={{ borderColor: colors.border }}>
-              <FileText size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
-              <p className="text-sm" style={{ color: colors.text }}>
-                This request does not have a body
-              </p>
-            </div>
-          );
-      }
-    };
-
-    return (
-      <div className="p-4">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Body</h3>
-          <div className="flex gap-2">
-            {['none', 'form-data', 'x-www-form-urlencoded', 'raw', 'xml', 'binary', 'graphql'].map(type => (
-              <button
-                key={type}
-                type="button"
-                onClick={() => setRequestBodyType(type)}
-                className={`px-3 py-1.5 rounded text-sm font-medium capitalize transition-colors hover-lift ${
-                  requestBodyType === type ? '' : 'hover:bg-opacity-50'
-                }`}
-                style={{ 
-                  backgroundColor: requestBodyType === type ? colors.primaryDark : colors.hover,
-                  color: requestBodyType === type ? 'white' : colors.textSecondary
-                }}>
-                {type === 'x-www-form-urlencoded' ? 'x-www-form' : type}
-              </button>
-            ))}
+            )}
           </div>
-        </div>
-        
-        {renderBodyContent()}
-      </div>
-    );
+        );
+
+      case 'graphql':
+        return (
+          <div className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-medium" style={{ color: colors.text }}>Query</label>
+              </div>
+              <textarea
+                value={graphqlQuery}
+                onChange={(e) => setGraphqlQuery(e.target.value)}
+                className="w-full h-48 font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
+                style={{
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                  color: colors.text,
+                  lineHeight: '1.5'
+                }}
+                placeholder="query {\n  getUser(id: 1) {\n    id\n    name\n    email\n  }\n}"
+                spellCheck="false"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>Variables</label>
+              <textarea
+                value={graphqlVariables}
+                onChange={(e) => setGraphqlVariables(e.target.value)}
+                className="w-full h-32 font-mono text-sm p-4 border rounded resize-none focus:outline-none hover-lift"
+                style={{
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                  color: colors.text,
+                  lineHeight: '1.5'
+                }}
+                placeholder='{\n  "id": 1\n}'
+                spellCheck="false"
+              />
+            </div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
   };
+
+  return (
+    <div className="p-4">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Body</h3>
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin" style={{ maxWidth: '100%' }}>
+          {['none', 'form-data', 'x-www-form-urlencoded', 'raw', 'xml', 'binary', 'graphql'].map(type => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => {
+                setRequestBodyType(type);
+                // If switching to raw with no previous body type, set default raw type
+                if (type === 'raw' && rawBodyType === 'json') {
+                  // Keep default
+                } else if (type === 'raw') {
+                  setRawBodyType('json');
+                }
+                // Clear body data when switching to none
+                if (type === 'none') {
+                  setRequestBody('');
+                  setFormData([]);
+                  setUrlEncodedData([]);
+                  setBinaryFile(null);
+                  setGraphqlQuery('');
+                  setGraphqlVariables('');
+                }
+              }}
+              className={`px-3 py-1.5 rounded text-sm font-medium whitespace-nowrap transition-colors hover-lift ${
+                requestBodyType === type ? '' : 'hover:bg-opacity-50'
+              }`}
+              style={{ 
+                backgroundColor: requestBodyType === type ? colors.primaryDark : colors.hover,
+                color: requestBodyType === type ? 'white' : colors.textSecondary
+              }}>
+              {type === 'x-www-form-urlencoded' ? 'x-www-form' : type}
+            </button>
+          ))}
+        </div>
+      </div>
+      
+      {renderBodyContent()}
+    </div>
+  );
+};
 
   // Update the renderResponsePanel function with better error handling and display
   const renderResponsePanel = () => {
@@ -5737,47 +5803,32 @@ const renderQueryParamsTab = () => {
 
     console.log('📤 Path params from UI:', pathParamsArray);
 
-    // CRITICAL FIX: The backend expects the URL to have the path parameter values
-    // in the correct positions with the correct parameter names.
-    // For example: {{baseUrl}}/plx/api/gen/{apiId}/api/v1/tblbeneficiary/{benecode}
-    // The URL should become: .../tblbeneficiary/12345
-    
+    // Replace path parameters in the URL
     if (pathParamsArray.length > 0) {
-      // Get the base URL (everything up to the endpoint path)
-      // This is a simpler approach - just split on the endpoint path
-      const endpointIndex = finalUrl.indexOf('/tblbeneficiary');
-      if (endpointIndex !== -1) {
-        const baseUrl = finalUrl.substring(0, endpointIndex + '/tblbeneficiary'.length);
+      // First try to replace {param} placeholders
+      pathParamsArray.forEach(param => {
+        const placeholder = `{${param.key}}`;
+        const colonPlaceholder = `:${param.key}`;
         
-        // Build the URL by adding each path param value
-        let pathWithParams = baseUrl;
-        pathParamsArray.forEach(param => {
-          // Add the value, encoding if needed
-          pathWithParams += '/' + encodeURIComponent(param.value);
-        });
-        
-        // Add any query string that might exist
-        if (finalUrl.includes('?')) {
-          const queryString = finalUrl.substring(finalUrl.indexOf('?'));
-          pathWithParams += queryString;
+        if (finalUrl.includes(placeholder)) {
+          finalUrl = finalUrl.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), encodeURIComponent(param.value));
+          console.log(`✅ Replaced ${placeholder} with ${param.value}`);
         }
         
-        finalUrl = pathWithParams;
-        console.log('🔧 Reconstructed URL with path params:', finalUrl);
-      } else {
-        // Fallback: replace placeholders in the URL
-        pathParamsArray.forEach(param => {
-          const placeholder = `{${param.key}}`;
-          const colonPlaceholder = `:${param.key}`;
-          
-          if (finalUrl.includes(placeholder)) {
-            finalUrl = finalUrl.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), encodeURIComponent(param.value));
-          }
-          
-          if (finalUrl.includes(colonPlaceholder)) {
-            finalUrl = finalUrl.replace(new RegExp(colonPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), encodeURIComponent(param.value));
-          }
-        });
+        if (finalUrl.includes(colonPlaceholder)) {
+          finalUrl = finalUrl.replace(new RegExp(colonPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), encodeURIComponent(param.value));
+          console.log(`✅ Replaced ${colonPlaceholder} with ${param.value}`);
+        }
+      });
+
+      // Check if any placeholders remain
+      const hasUnresolved = pathParamsArray.some(param => {
+        return finalUrl.includes(`{${param.key}}`) || finalUrl.includes(`:${param.key}`);
+      });
+
+      // If there are still placeholders, something's wrong
+      if (hasUnresolved) {
+        console.warn('⚠️ Some path parameters could not be resolved in URL:', finalUrl);
       }
     }
 
@@ -5785,93 +5836,105 @@ const renderQueryParamsTab = () => {
     let body = null;
     let contentType = '';
 
-    // Handle different body types (your existing code)
-    if (requestBodyType === 'raw') {
-      switch (rawBodyType) {
-        case 'json':
-          contentType = 'application/json';
-          if (requestBody && requestBody.trim()) {
-            try {
-              JSON.parse(requestBody);
-              body = requestBody;
-            } catch (e) {
-              showToast('Invalid JSON in request body', 'error');
-              setLoading(prev => ({ ...prev, execute: false }));
-              setIsSending(false);
-              return;
+    // CRITICAL FIX: Only build body if there are actual parameters to send
+    const hasBodyParams = requestBodyType === 'raw' && requestBody && requestBody.trim() !== '' ||
+                          requestBodyType === 'form-data' && formData.some(f => f.enabled && f.key && f.key.trim() !== '') ||
+                          requestBodyType === 'x-www-form-urlencoded' && urlEncodedData.some(u => u.enabled && u.key && u.key.trim() !== '') ||
+                          requestBodyType === 'xml' && requestBody && requestBody.trim() !== '' ||
+                          requestBodyType === 'graphql' && graphqlQuery && graphqlQuery.trim() !== '' ||
+                          requestBodyType === 'binary' && binaryFile;
+
+    if (hasBodyParams) {
+      if (requestBodyType === 'raw') {
+        switch (rawBodyType) {
+          case 'json':
+            contentType = 'application/json';
+            if (requestBody && requestBody.trim()) {
+              try {
+                // Validate JSON but keep as string
+                JSON.parse(requestBody);
+                body = requestBody;
+              } catch (e) {
+                showToast('Invalid JSON in request body', 'error');
+                setLoading(prev => ({ ...prev, execute: false }));
+                setIsSending(false);
+                return;
+              }
             }
-          }
-          break;
-        case 'xml':
-          contentType = 'application/xml';
-          body = requestBody || '';
-          break;
-        case 'html':
-          contentType = 'text/html';
-          body = requestBody || '';
-          break;
-        case 'javascript':
-          contentType = 'application/javascript';
-          body = requestBody || '';
-          break;
-        default:
-          contentType = 'text/plain';
-          body = requestBody || '';
-      }
-    } 
-    else if (requestBodyType === 'form-data') {
-      const hasFiles = formData.some(f => f.type === 'file' && f.file);
-      
-      if (hasFiles) {
-        const formDataObj = new FormData();
-        formData.filter(f => f.enabled && f.key && f.key.trim() !== '').forEach(field => {
-          if (field.type === 'file' && field.file) {
-            formDataObj.append(field.key, field.file);
-          } else {
-            formDataObj.append(field.key, field.value || '');
-          }
-        });
-        body = formDataObj;
-      } else {
-        contentType = 'application/json';
-        const jsonBody = {};
-        formData.filter(f => f.enabled && f.key && f.key.trim() !== '').forEach(field => {
-          jsonBody[field.key] = field.value || '';
-        });
-        body = JSON.stringify(jsonBody);
-      }
-    } 
-    else if (requestBodyType === 'x-www-form-urlencoded') {
-      contentType = 'application/x-www-form-urlencoded';
-      const params = new URLSearchParams();
-      urlEncodedData.filter(u => u.enabled && u.key && u.key.trim() !== '').forEach(item => {
-        params.append(item.key, item.value || '');
-      });
-      body = params.toString();
-    } 
-    else if (requestBodyType === 'xml') {
-      contentType = 'application/xml';
-      body = requestBody || '';
-    }
-    else if (requestBodyType === 'graphql') {
-      contentType = 'application/json';
-      const graphqlBody = {
-        query: graphqlQuery || ''
-      };
-      if (graphqlVariables) {
-        try {
-          graphqlBody.variables = JSON.parse(graphqlVariables);
-        } catch (e) {
-          showToast('Invalid GraphQL variables JSON', 'error');
-          setLoading(prev => ({ ...prev, execute: false }));
-          setIsSending(false);
-          return;
+            break;
+          case 'xml':
+            contentType = 'application/xml';
+            body = requestBody || '';
+            break;
+          case 'html':
+            contentType = 'text/html';
+            body = requestBody || '';
+            break;
+          case 'javascript':
+            contentType = 'application/javascript';
+            body = requestBody || '';
+            break;
+          default:
+            contentType = 'text/plain';
+            body = requestBody || '';
         }
+      } 
+      else if (requestBodyType === 'form-data') {
+        const hasFiles = formData.some(f => f.type === 'file' && f.file);
+        
+        if (hasFiles) {
+          const formDataObj = new FormData();
+          formData.filter(f => f.enabled && f.key && f.key.trim() !== '').forEach(field => {
+            if (field.type === 'file' && field.file) {
+              formDataObj.append(field.key, field.file);
+            } else {
+              formDataObj.append(field.key, field.value || '');
+            }
+          });
+          body = formDataObj;
+        } else {
+          contentType = 'application/json';
+          const jsonBody = {};
+          formData.filter(f => f.enabled && f.key && f.key.trim() !== '').forEach(field => {
+            jsonBody[field.key] = field.value || '';
+          });
+          body = JSON.stringify(jsonBody);
+        }
+      } 
+      else if (requestBodyType === 'x-www-form-urlencoded') {
+        contentType = 'application/x-www-form-urlencoded';
+        const params = new URLSearchParams();
+        urlEncodedData.filter(u => u.enabled && u.key && u.key.trim() !== '').forEach(item => {
+          params.append(item.key, item.value || '');
+        });
+        body = params.toString();
+      } 
+      else if (requestBodyType === 'xml') {
+        contentType = 'application/xml';
+        body = requestBody || '';
       }
-      body = JSON.stringify(graphqlBody);
-    }
-    else if (requestBodyType === 'binary' && binaryFile) {
-      body = binaryFile;
+      else if (requestBodyType === 'graphql') {
+        contentType = 'application/json';
+        const graphqlBody = {
+          query: graphqlQuery || ''
+        };
+        if (graphqlVariables) {
+          try {
+            graphqlBody.variables = JSON.parse(graphqlVariables);
+          } catch (e) {
+            showToast('Invalid GraphQL variables JSON', 'error');
+            setLoading(prev => ({ ...prev, execute: false }));
+            setIsSending(false);
+            return;
+          }
+        }
+        body = JSON.stringify(graphqlBody);
+      }
+      else if (requestBodyType === 'binary' && binaryFile) {
+        body = binaryFile;
+      }
+    } else {
+      console.log('📭 No body parameters to send');
     }
 
     // ============== STEP 3: BUILD HEADERS ==============
@@ -5909,9 +5972,9 @@ const renderQueryParamsTab = () => {
       headers['Authorization'] = `Bearer ${authConfig.token}`;
     }
 
-    // Set Content-Type header if needed
-    if (contentType && !(body instanceof FormData)) {
-      if (!headers['Content-Type']) {
+    // Set Content-Type header only if we have a body and it's not FormData
+    if (body && !(body instanceof FormData)) {
+      if (!headers['Content-Type'] && contentType) {
         headers['Content-Type'] = contentType;
       }
     }
@@ -5933,6 +5996,7 @@ const renderQueryParamsTab = () => {
       headers: headers,
       hasBody: !!body,
       bodyType: body instanceof FormData ? 'FormData' : (body ? typeof body : 'none'),
+      bodyContent: body ? (typeof body === 'string' ? body.substring(0, 200) : '[object]') : null,
       pathParams: pathParamsArray
     });
 

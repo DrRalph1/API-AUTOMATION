@@ -1,24 +1,320 @@
 package com.usg.apiAutomation.utils.apiEngine;
 
 import jakarta.validation.ValidationException;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class OracleObjectResolverUtil {
 
-    private final JdbcTemplate oracleJdbcTemplate;
+    @Autowired
+    @Qualifier("oracleJdbcTemplate")
+    private JdbcTemplate oracleJdbcTemplate;
+
+    /**
+     * Resolve any Oracle object, handling synonyms and returning complete resolution info
+     * @param owner The schema owner (can be null)
+     * @param objectName The object name
+     * @param objectType The object type (PROCEDURE, FUNCTION, TABLE, VIEW, etc.)
+     * @return Map containing resolution information
+     */
+    public Map<String, Object> resolveObject(String owner, String objectName, String objectType) {
+        Map<String, Object> result = new HashMap<>();
+
+        // Initialize result with default values
+        result.put("originalOwner", owner);
+        result.put("originalName", objectName);
+        result.put("originalType", objectType);
+        result.put("targetOwner", owner);
+        result.put("targetName", objectName);
+        result.put("targetType", objectType);
+        result.put("isSynonym", false);
+        result.put("exists", false);
+        result.put("valid", false);
+        result.put("status", "UNKNOWN");
+        result.put("dbLink", null);
+        result.put("resolutionPath", new ArrayList<String>());
+
+        try {
+            log.info("🔍 Resolving object: {}.{} ({})", owner, objectName, objectType);
+
+            // If owner is not provided, try to determine it
+            if (owner == null || owner.isEmpty()) {
+                owner = getCurrentSchema();
+                result.put("originalOwner", owner);
+                result.put("targetOwner", owner);
+                log.info("Owner not provided, using current schema: {}", owner);
+            }
+
+            // First, check if it's a synonym
+            Map<String, Object> synonymResolution = resolveSynonym(owner, objectName, objectType);
+
+            if ((boolean) synonymResolution.getOrDefault("isSynonym", false)) {
+                // It's a synonym, use the resolved target
+                result.put("isSynonym", true);
+                result.put("synonymOwner", synonymResolution.get("synonymOwner"));
+                result.put("targetOwner", synonymResolution.get("targetOwner"));
+                result.put("targetName", synonymResolution.get("targetName"));
+                result.put("targetType", synonymResolution.get("targetType"));
+                result.put("dbLink", synonymResolution.get("dbLink"));
+                result.put("resolutionPath", synonymResolution.get("resolutionPath"));
+
+                // Now validate the target object
+                validateTargetObject(result,
+                        (String) result.get("targetOwner"),
+                        (String) result.get("targetName"),
+                        (String) result.get("targetType"));
+            } else {
+                // Not a synonym, validate the object directly
+                validateTargetObject(result, owner, objectName, objectType);
+            }
+
+            log.info("✅ Resolved to: {}.{} ({}) with status: {}",
+                    result.get("targetOwner"), result.get("targetName"),
+                    result.get("targetType"), result.get("status"));
+
+        } catch (Exception e) {
+            log.error("Error resolving object {}.{}: {}", owner, objectName, e.getMessage());
+            result.put("error", e.getMessage());
+        }
+
+        return result;
+    }
+
+    /**
+     * Resolve a synonym to its target (handles chains of synonyms)
+     */
+    private Map<String, Object> resolveSynonym(String owner, String synonymName, String expectedTargetType) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("isSynonym", false);
+
+        try {
+            List<Map<String, Object>> synonyms = new ArrayList<>();
+            List<String> resolutionPath = new ArrayList<>();
+            resolutionPath.add(owner + "." + synonymName + " (SYNONYM)");
+
+            // Track the current resolution level
+            String currentOwner = owner;
+            String currentName = synonymName;
+            boolean continueResolution = true;
+            int maxDepth = 10; // Prevent infinite loops
+            int depth = 0;
+
+            while (continueResolution && depth < maxDepth) {
+                depth++;
+
+                // Try to find synonym with current owner
+                String sql = "SELECT OWNER, TABLE_OWNER, TABLE_NAME, DB_LINK " +
+                        "FROM ALL_SYNONYMS " +
+                        "WHERE OWNER = ? AND SYNONYM_NAME = ?";
+
+                synonyms = oracleJdbcTemplate.queryForList(sql, currentOwner, currentName);
+
+                // If not found, try PUBLIC synonym
+                if (synonyms.isEmpty()) {
+                    sql = "SELECT OWNER, TABLE_OWNER, TABLE_NAME, DB_LINK " +
+                            "FROM ALL_SYNONYMS " +
+                            "WHERE OWNER = 'PUBLIC' AND SYNONYM_NAME = ?";
+                    synonyms = oracleJdbcTemplate.queryForList(sql, currentName);
+                    if (!synonyms.isEmpty()) {
+                        resolutionPath.add("PUBLIC." + currentName + " (SYNONYM)");
+                    }
+                }
+
+                if (synonyms.isEmpty()) {
+                    // No more synonyms found, stop resolution
+                    continueResolution = false;
+                } else {
+                    Map<String, Object> synonym = synonyms.get(0);
+                    String synonymOwner = (String) synonym.get("OWNER");
+                    String targetOwner = (String) synonym.get("TABLE_OWNER");
+                    String targetName = (String) synonym.get("TABLE_NAME");
+                    String dbLink = (String) synonym.get("DB_LINK");
+
+                    resolutionPath.add("→ " + targetOwner + "." + targetName);
+
+                    // Check if this target is itself a synonym
+                    String checkSynonymSql = "SELECT COUNT(*) FROM ALL_SYNONYMS " +
+                            "WHERE OWNER = ? AND SYNONYM_NAME = ?";
+                    Integer count = oracleJdbcTemplate.queryForObject(
+                            checkSynonymSql, Integer.class, targetOwner, targetName);
+
+                    if (count != null && count > 0) {
+                        // Target is another synonym, continue resolution
+                        currentOwner = targetOwner;
+                        currentName = targetName;
+                        log.info("Chain resolution: {} -> {}.{} (another synonym)",
+                                synonymName, targetOwner, targetName);
+                    } else {
+                        // Reached final target
+                        result.put("isSynonym", true);
+                        result.put("synonymOwner", synonymOwner);
+                        result.put("targetOwner", targetOwner);
+                        result.put("targetName", targetName);
+                        result.put("dbLink", dbLink);
+
+                        // Determine target type
+                        String targetType = getObjectType(targetOwner, targetName);
+                        result.put("targetType", targetType);
+
+                        continueResolution = false;
+                    }
+                }
+            }
+
+            result.put("resolutionPath", resolutionPath);
+
+            if (depth >= maxDepth) {
+                log.warn("Synonym resolution exceeded max depth for {}.{}", owner, synonymName);
+                result.put("error", "Synonym resolution exceeded maximum depth (possible circular reference)");
+            }
+
+        } catch (Exception e) {
+            log.error("Error resolving synonym {}.{}: {}", owner, synonymName, e.getMessage());
+            result.put("error", e.getMessage());
+        }
+
+        return result;
+    }
+
+    /**
+     * Get the type of an object
+     */
+    private String getObjectType(String owner, String objectName) {
+        try {
+            String sql = "SELECT OBJECT_TYPE FROM ALL_OBJECTS " +
+                    "WHERE OWNER = ? AND OBJECT_NAME = ?";
+            List<Map<String, Object>> objects = oracleJdbcTemplate.queryForList(sql, owner, objectName);
+
+            if (!objects.isEmpty()) {
+                return (String) objects.get(0).get("OBJECT_TYPE");
+            }
+        } catch (Exception e) {
+            log.debug("Could not determine object type for {}.{}: {}", owner, objectName, e.getMessage());
+        }
+        return "UNKNOWN";
+    }
+
+    /**
+     * Validate the target object and add parameter/column counts
+     */
+    private void validateTargetObject(Map<String, Object> result, String owner, String objectName, String objectType) {
+        try {
+            String sql = "SELECT STATUS FROM ALL_OBJECTS " +
+                    "WHERE OWNER = ? AND OBJECT_NAME = ? AND OBJECT_TYPE = ?";
+
+            List<Map<String, Object>> objects = oracleJdbcTemplate.queryForList(
+                    sql, owner, objectName, objectType);
+
+            if (!objects.isEmpty()) {
+                result.put("exists", true);
+                String status = (String) objects.get(0).get("STATUS");
+                result.put("status", status);
+                result.put("valid", "VALID".equalsIgnoreCase(status));
+
+                log.info("✅ Found {}.{} ({}) with status: {}",
+                        owner, objectName, objectType, status);
+
+                // Add parameter/column counts based on object type
+                switch (objectType.toUpperCase()) {
+                    case "PROCEDURE":
+                    case "FUNCTION":
+                        addParameterCounts(owner, objectName, result);
+                        break;
+                    case "TABLE":
+                    case "VIEW":
+                        addColumnCounts(owner, objectName, result);
+                        break;
+                }
+            } else {
+                log.warn("❌ {}.{} ({}) not found", owner, objectName, objectType);
+            }
+
+        } catch (Exception e) {
+            log.error("Error validating target object {}.{}: {}", owner, objectName, e.getMessage());
+            result.put("validationError", e.getMessage());
+        }
+    }
+
+    /**
+     * Add parameter counts for procedures/functions
+     */
+    private void addParameterCounts(String owner, String objectName, Map<String, Object> result) {
+        try {
+            // Total parameters
+            String totalSql = "SELECT COUNT(*) FROM ALL_ARGUMENTS " +
+                    "WHERE OWNER = ? AND OBJECT_NAME = ? AND DATA_LEVEL = 0";
+            Integer totalParams = oracleJdbcTemplate.queryForObject(totalSql, Integer.class, owner, objectName);
+            result.put("totalParameters", totalParams != null ? totalParams : 0);
+
+            // IN parameters
+            String inSql = "SELECT COUNT(*) FROM ALL_ARGUMENTS " +
+                    "WHERE OWNER = ? AND OBJECT_NAME = ? AND DATA_LEVEL = 0 " +
+                    "AND IN_OUT IN ('IN', 'IN/OUT')";
+            Integer inParams = oracleJdbcTemplate.queryForObject(inSql, Integer.class, owner, objectName);
+            result.put("inParameters", inParams != null ? inParams : 0);
+
+            // OUT parameters
+            String outSql = "SELECT COUNT(*) FROM ALL_ARGUMENTS " +
+                    "WHERE OWNER = ? AND OBJECT_NAME = ? AND DATA_LEVEL = 0 " +
+                    "AND IN_OUT IN ('OUT', 'IN/OUT')";
+            Integer outParams = oracleJdbcTemplate.queryForObject(outSql, Integer.class, owner, objectName);
+            result.put("outParameters", outParams != null ? outParams : 0);
+
+            log.info("{} {}.{} has {} total parameters ({} IN, {} OUT)",
+                    objectName, owner, objectName, totalParams, inParams, outParams);
+
+        } catch (Exception e) {
+            log.debug("Could not get parameter counts for {}.{}: {}", owner, objectName, e.getMessage());
+        }
+    }
+
+    /**
+     * Add column counts for tables/views
+     */
+    private void addColumnCounts(String owner, String objectName, Map<String, Object> result) {
+        try {
+            String sql = "SELECT COUNT(*) FROM ALL_TAB_COLUMNS " +
+                    "WHERE OWNER = ? AND TABLE_NAME = ?";
+            Integer columnCount = oracleJdbcTemplate.queryForObject(sql, Integer.class, owner, objectName);
+            result.put("columnCount", columnCount != null ? columnCount : 0);
+
+            // Get primary key columns
+            String pkSql = "SELECT COUNT(DISTINCT cols.column_name) " +
+                    "FROM ALL_CONSTRAINTS cons, ALL_CONS_COLUMNS cols " +
+                    "WHERE cons.CONSTRAINT_TYPE = 'P' " +
+                    "AND cons.OWNER = ? " +
+                    "AND cons.TABLE_NAME = ? " +
+                    "AND cons.OWNER = cols.OWNER " +
+                    "AND cons.CONSTRAINT_NAME = cols.CONSTRAINT_NAME " +
+                    "AND cols.TABLE_NAME = ?";
+
+            Integer pkCount = oracleJdbcTemplate.queryForObject(
+                    pkSql, Integer.class, owner, objectName, objectName);
+            result.put("primaryKeyCount", pkCount != null ? pkCount : 0);
+
+            log.info("Table {}.{} has {} columns ({} primary keys)",
+                    owner, objectName, columnCount, pkCount);
+
+        } catch (Exception e) {
+            log.debug("Could not get column counts for {}.{}: {}", owner, objectName, e.getMessage());
+        }
+    }
+
+    // ==================== EXISTING METHODS (keep as is) ====================
 
     public void validateDatabaseObject(String schemaName, String objectName, String objectType) {
+        // Your existing implementation - keep unchanged
         String sql = "";
 
         switch(objectType.toUpperCase()) {
@@ -127,156 +423,13 @@ public class OracleObjectResolverUtil {
     }
 
     public Map<String, Object> resolveSynonymTarget(String owner, String synonymName) {
-        Map<String, Object> result = new HashMap<>();
-        result.put("exists", false);
-        result.put("targetValid", false);
-
-        try {
-            // Try multiple approaches to find the synonym
-            List<Map<String, Object>> synonyms = new java.util.ArrayList<>();
-
-            // Approach 1: Check with the provided owner
-            if (owner != null && !owner.isEmpty()) {
-                String sql1 = "SELECT TABLE_OWNER, TABLE_NAME, DB_LINK FROM ALL_SYNONYMS WHERE OWNER = ? AND SYNONYM_NAME = ?";
-                synonyms = oracleJdbcTemplate.queryForList(sql1, owner, synonymName);
-                log.info("Checked synonym under owner: {}, found: {}", owner, synonyms.size());
-            }
-
-            // Approach 2: If not found, check PUBLIC synonyms
-            if (synonyms.isEmpty()) {
-                String sql2 = "SELECT TABLE_OWNER, TABLE_NAME, DB_LINK FROM ALL_SYNONYMS WHERE OWNER = 'PUBLIC' AND SYNONYM_NAME = ?";
-                synonyms = oracleJdbcTemplate.queryForList(sql2, synonymName);
-                log.info("Checked PUBLIC synonyms, found: {}", synonyms.size());
-                if (!synonyms.isEmpty()) {
-                    result.put("isPublic", true);
-                }
-            }
-
-            // Approach 3: If still not found, check across all schemas (but limit results)
-            if (synonyms.isEmpty()) {
-                String sql3 = "SELECT OWNER, TABLE_OWNER, TABLE_NAME, DB_LINK FROM ALL_SYNONYMS WHERE SYNONYM_NAME = ? AND ROWNUM <= 5";
-                synonyms = oracleJdbcTemplate.queryForList(sql3, synonymName);
-                log.info("Checked all schemas, found: {}", synonyms.size());
-            }
-
-            if (synonyms.isEmpty()) {
-                log.warn("Synonym {} not found in any schema", synonymName);
-                return result;
-            }
-
-            // Use the first found synonym
-            Map<String, Object> synonym = synonyms.get(0);
-            String synonymOwner = (String) synonym.get("OWNER");
-            String targetOwner = (String) synonym.get("TABLE_OWNER");
-            String targetName = (String) synonym.get("TABLE_NAME");
-            String dbLink = (String) synonym.get("DB_LINK");
-
-            result.put("exists", true);
-            result.put("synonymOwner", synonymOwner);
-            result.put("targetOwner", targetOwner);
-            result.put("targetName", targetName);
-            result.put("dbLink", dbLink);
-
-            log.info("Found synonym {}.{} -> {}.{}",
-                    synonymOwner != null ? synonymOwner : owner,
-                    synonymName,
-                    targetOwner,
-                    targetName);
-
-            // Get the target object type and status
-            String typeSql = "SELECT OBJECT_TYPE, STATUS FROM ALL_OBJECTS WHERE OWNER = ? AND OBJECT_NAME = ?";
-            List<Map<String, Object>> targets = oracleJdbcTemplate.queryForList(typeSql, targetOwner, targetName);
-
-            if (!targets.isEmpty()) {
-                Map<String, Object> target = targets.get(0);
-                String targetType = (String) target.get("OBJECT_TYPE");
-                String status = (String) target.get("STATUS");
-
-                result.put("targetType", targetType);
-                result.put("status", status);
-                result.put("targetValid", "VALID".equalsIgnoreCase(status));
-
-                log.info("Resolved synonym to: {}.{} ({}) with status: {}",
-                        targetOwner, targetName, targetType, status);
-            } else {
-                log.warn("Synonym points to non-existent object: {}.{}", targetOwner, targetName);
-            }
-
-        } catch (Exception e) {
-            log.error("Error resolving synonym {}.{}: {}", owner, synonymName, e.getMessage());
-        }
-
-        return result;
+        // Keep your existing implementation or delegate to resolveObject
+        return resolveObject(owner, synonymName, "SYNONYM");
     }
 
     public Map<String, Object> resolveProcedureTarget(String owner, String procedureName) {
-        Map<String, Object> result = new HashMap<>();
-        result.put("exists", false);
-        result.put("valid", false);
-        result.put("isSynonym", false);
-        result.put("status", "UNKNOWN");
-
-        try {
-            // First, check if it's a synonym
-            String synonymSql = "SELECT TABLE_OWNER, TABLE_NAME FROM ALL_SYNONYMS " +
-                    "WHERE OWNER = ? AND SYNONYM_NAME = ?";
-
-            List<Map<String, Object>> synonyms = oracleJdbcTemplate.queryForList(
-                    synonymSql, owner, procedureName);
-
-            if (!synonyms.isEmpty()) {
-                Map<String, Object> synonym = synonyms.get(0);
-                String targetOwner = (String) synonym.get("TABLE_OWNER");
-                String targetName = (String) synonym.get("TABLE_NAME");
-
-                log.info("Found synonym {}.{} -> {}.{}", owner, procedureName, targetOwner, targetName);
-
-                result.put("isSynonym", true);
-                result.put("targetOwner", targetOwner);
-                result.put("targetName", targetName);
-
-                // Check if the target procedure exists and is valid
-                String procSql = "SELECT STATUS FROM ALL_OBJECTS " +
-                        "WHERE OWNER = ? AND OBJECT_NAME = ? AND OBJECT_TYPE = 'PROCEDURE'";
-
-                List<Map<String, Object>> procedures = oracleJdbcTemplate.queryForList(
-                        procSql, targetOwner, targetName);
-
-                if (!procedures.isEmpty()) {
-                    result.put("exists", true);
-                    String status = (String) procedures.get(0).get("STATUS");
-                    result.put("status", status);
-                    result.put("valid", "VALID".equalsIgnoreCase(status));
-
-                    log.info("Target procedure status: {}", status);
-                } else {
-                    log.warn("Synonym points to non-existent procedure: {}.{}", targetOwner, targetName);
-                }
-            } else {
-                // Not a synonym, check directly for procedure
-                String procSql = "SELECT STATUS FROM ALL_OBJECTS " +
-                        "WHERE OWNER = ? AND OBJECT_NAME = ? AND OBJECT_TYPE = 'PROCEDURE'";
-
-                List<Map<String, Object>> procedures = oracleJdbcTemplate.queryForList(
-                        procSql, owner, procedureName);
-
-                if (!procedures.isEmpty()) {
-                    result.put("exists", true);
-                    String status = (String) procedures.get(0).get("STATUS");
-                    result.put("status", status);
-                    result.put("valid", "VALID".equalsIgnoreCase(status));
-                    result.put("targetOwner", owner);
-                    result.put("targetName", procedureName);
-
-                    log.info("Found procedure {}.{} with status: {}", owner, procedureName, status);
-                }
-            }
-
-        } catch (Exception e) {
-            log.error("Error resolving procedure target: {}", e.getMessage());
-        }
-
-        return result;
+        // Keep your existing implementation or delegate to resolveObject
+        return resolveObject(owner, procedureName, "PROCEDURE");
     }
 
     private void validateGenericObject(String owner, String objectName, String objectType) {
@@ -308,6 +461,30 @@ public class OracleObjectResolverUtil {
             throw new ValidationException(
                     String.format("%s '%s.%s' does not exist", objectType, owner, objectName)
             );
+        }
+    }
+
+    /**
+     * Get the current schema name
+     */
+    public String getCurrentSchema() {
+        try {
+            return oracleJdbcTemplate.queryForObject("SELECT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') FROM DUAL", String.class);
+        } catch (Exception e) {
+            log.error("Error getting current schema: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get the current user name
+     */
+    public String getCurrentUser() {
+        try {
+            return oracleJdbcTemplate.queryForObject("SELECT USER FROM DUAL", String.class);
+        } catch (Exception e) {
+            log.error("Error getting current user: {}", e.getMessage());
+            return null;
         }
     }
 }

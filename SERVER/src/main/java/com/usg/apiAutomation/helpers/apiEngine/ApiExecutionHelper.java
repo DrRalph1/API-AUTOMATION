@@ -15,7 +15,6 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -240,77 +239,6 @@ public class ApiExecutionHelper {
         }
     }
 
-    public String buildEndpointPathWithParameters(GenerateApiRequestDTO request,
-                                                  ApiSourceObjectDTO sourceObjectDTO,
-                                                  ParameterGeneratorUtil parameterGenerator,
-                                                  String requestId,
-                                                  LoggerUtil loggerUtil) {
-        String endpointPath = request.getEndpointPath();
-        List<ApiParameterDTO> parametersForPath = new ArrayList<>();
-
-        if (sourceObjectDTO != null && (request.getParameters() == null || request.getParameters().isEmpty())) {
-            parametersForPath = parameterGenerator.generateParameterDTOsFromSource(sourceObjectDTO);
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
-                    ", Generated " + parametersForPath.size() + " parameter DTOs from source for path building");
-        } else if (request.getParameters() != null && !request.getParameters().isEmpty()) {
-            parametersForPath.addAll(request.getParameters());
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
-                    ", Using " + parametersForPath.size() + " parameters from request for path building");
-        }
-
-        if (!parametersForPath.isEmpty()) {
-            StringBuilder pathBuilder = new StringBuilder(endpointPath);
-            List<ApiParameterDTO> pathParamList = new ArrayList<>();
-            List<ApiParameterDTO> queryParamList = new ArrayList<>();
-
-            parametersForPath.forEach(param -> {
-                if (param.getKey() == null) return;
-                if ("path".equals(param.getParameterType())) {
-                    pathParamList.add(param);
-                } else if ("query".equals(param.getParameterType())) {
-                    queryParamList.add(param);
-                }
-            });
-
-            // Add path parameters - FIXED: Use traditional for loop instead of forEach with lambda
-            if (!pathParamList.isEmpty()) {
-                pathParamList.sort(Comparator.comparingInt(ApiParameterDTO::getPosition));
-
-                // Use traditional for loop instead of forEach with lambda
-                for (ApiParameterDTO param : pathParamList) {
-                    if (!endpointPath.contains("{" + param.getKey() + "}")) {
-                        if (!pathBuilder.toString().endsWith("/")) {
-                            pathBuilder.append("/");
-                        }
-                        pathBuilder.append("{").append(param.getKey()).append("}");
-                    }
-                }
-            }
-
-            // Add query parameters
-            if (!queryParamList.isEmpty()) {
-                List<String> queryPlaceholders = new ArrayList<>();
-
-                // Use traditional for loop instead of stream
-                for (ApiParameterDTO param : queryParamList) {
-                    queryPlaceholders.add(param.getKey() + "={" + param.getKey() + "}");
-                }
-                Collections.sort(queryPlaceholders);
-
-                pathBuilder.append("?").append(String.join("&", queryPlaceholders));
-            }
-
-            endpointPath = pathBuilder.toString();
-
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
-                    ", Enhanced endpoint path with parameters: " + endpointPath +
-                    " (Path params: " + pathParamList.size() +
-                    ", Query params: " + queryParamList.size() + ")");
-        }
-
-        return endpointPath;
-    }
-
 
     public ExecuteApiRequestDTO prepareValidatedRequest(GeneratedApiEntity api, ExecuteApiRequestDTO executeRequest) {
         // Create a new request with properly organized parameters
@@ -340,6 +268,12 @@ public class ApiExecutionHelper {
         log.debug("Incoming query params: {}", queryParams);
         log.debug("Incoming headers: {}", headers);
         log.debug("Incoming body: {}", body);
+
+        // CRITICAL FIX: Extract path parameters from the URL if they're not already in pathParams
+        // This would normally be done by the Spring controller, but we need to ensure it's done
+        if (pathParams.isEmpty() && executeRequest.getUrl() != null && api.getEndpointPath() != null) {
+            extractPathParamsFromUrl(api, executeRequest, pathParams);
+        }
 
         // AUTO-ADD CONTENT-TYPE HEADER FOR POST/PUT REQUESTS WITH BODY
         if (("POST".equals(api.getHttpMethod()) || "PUT".equals(api.getHttpMethod()))
@@ -440,29 +374,82 @@ public class ApiExecutionHelper {
 
 
 
-    // In ApiExecutionHelper or wherever createConsolidatedParams is defined
+
+    /**
+     * Extract path parameters from the URL based on the API's endpoint path pattern
+     */
+    private void extractPathParamsFromUrl(GeneratedApiEntity api, ExecuteApiRequestDTO executeRequest, Map<String, Object> pathParams) {
+        try {
+            String url = executeRequest.getUrl();
+            String endpointPattern = api.getEndpointPath();
+
+            log.info("Extracting path params from URL: {} using pattern: {}", url, endpointPattern);
+
+            // STEP 1: Extract all parameter names from the pattern (e.g., {acct_link}, {global_bra})
+            Pattern pattern = Pattern.compile("\\{([^}]+)\\}");
+            Matcher matcher = pattern.matcher(endpointPattern);
+
+            List<String> paramNames = new ArrayList<>();
+            while (matcher.find()) {
+                paramNames.add(matcher.group(1));
+            }
+
+            if (paramNames.isEmpty()) {
+                log.debug("No path parameters found in endpoint pattern");
+                return;
+            }
+
+            log.info("Found {} path parameters in pattern: {}", paramNames.size(), paramNames);
+
+            // STEP 2: Split the pattern into segments to understand the structure
+            String[] patternSegments = endpointPattern.split("/");
+            String[] urlSegments = url.split("/");
+
+            log.debug("Pattern segments: {}", Arrays.toString(patternSegments));
+            log.debug("URL segments: {}", Arrays.toString(urlSegments));
+
+            // STEP 3: Match each pattern segment with URL segment
+            int paramIndex = 0;
+            for (int i = 0; i < patternSegments.length && i < urlSegments.length; i++) {
+                String patternSegment = patternSegments[i];
+                String urlSegment = urlSegments[i];
+
+                // If this pattern segment is a parameter placeholder
+                if (patternSegment.startsWith("{") && patternSegment.endsWith("}")) {
+                    String paramName = patternSegment.substring(1, patternSegment.length() - 1);
+                    pathParams.put(paramName, urlSegment);
+                    log.info("Extracted path parameter: {} = {}", paramName, urlSegment);
+                    paramIndex++;
+                }
+            }
+
+            log.info("Total extracted {} path parameters", paramIndex);
+
+        } catch (Exception e) {
+            log.error("Failed to extract path parameters from URL: {}", e.getMessage(), e);
+        }
+    }
+
+
+
     public Map<String, Object> createConsolidatedParams(ExecuteApiRequestDTO request) {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> consolidated = new HashMap<>();
 
-        // Add path variables
         if (request.getPathParams() != null) {
-            params.putAll(request.getPathParams());
-            log.info("Path variables: {}", request.getPathParams());
+            consolidated.putAll(request.getPathParams());
         }
-
-        // Add query params
         if (request.getQueryParams() != null) {
-            params.putAll(request.getQueryParams());
-            log.info("Query params: {}", request.getQueryParams());
+            consolidated.putAll(request.getQueryParams());
         }
-
-        // Add body params (for POST/PUT)
         if (request.getBody() instanceof Map) {
-            params.putAll((Map<String, Object>) request.getBody());
-            log.info("Body params: {}", request.getBody());
+            @SuppressWarnings("unchecked")
+            Map<String, Object> bodyMap = (Map<String, Object>) request.getBody();
+            if (bodyMap != null) {
+                consolidated.putAll(bodyMap);
+            }
         }
 
-        return params;
+        return consolidated;
     }
 
     public Object executeAgainstOracle(
@@ -868,344 +855,5 @@ public class ApiExecutionHelper {
     @FunctionalInterface
     public interface SampleResponseGenerator {
         Object generateSampleResponse(GeneratedApiEntity api);
-    }
-
-
-    /**
-     * Extract path parameters from the actual URL based on the API's endpoint template
-     */
-    public Map<String, Object> extractPathParamsFromUrl(String actualUrl, GeneratedApiEntity api) {
-        Map<String, Object> pathParams = new HashMap<>();
-
-        try {
-            // Get the endpoint template from the API
-            String endpointTemplate = api.getEndpointPath();
-            if (endpointTemplate == null || endpointTemplate.isEmpty()) {
-                log.warn("No endpoint template found for API: {}", api.getId());
-                return pathParams;
-            }
-
-            // Parse the actual URL to get just the path
-            java.net.URL url = new java.net.URL(actualUrl);
-            String actualPath = url.getPath();
-
-            log.info("Extracting path params - Template: {}, Actual Path: {}", endpointTemplate, actualPath);
-
-            // Get all path parameters defined in the API
-            List<ApiParameterEntity> pathParamDefinitions = new ArrayList<>();
-            if (api.getParameters() != null) {
-                for (ApiParameterEntity param : api.getParameters()) {
-                    String location = param.getParameterLocation() != null ?
-                            param.getParameterLocation().toLowerCase() : "";
-                    String type = param.getParameterType() != null ?
-                            param.getParameterType().toLowerCase() : "";
-
-                    if ("path".equals(location) || "path".equals(type)) {
-                        pathParamDefinitions.add(param);
-                        log.debug("Found path parameter definition: {} at position {}",
-                                param.getKey(), param.getPosition());
-                    }
-                }
-            }
-
-            if (pathParamDefinitions.isEmpty()) {
-                log.info("No path parameters defined for API: {}", api.getId());
-                return pathParams;
-            }
-
-            // Method 1: Extract using template pattern matching
-            Map<String, Object> extracted = extractUsingTemplateMatching(actualPath, endpointTemplate, pathParamDefinitions);
-            if (!extracted.isEmpty()) {
-                return extracted;
-            }
-
-            // Method 2: If template matching fails, try regex pattern matching
-            extracted = extractUsingRegexPattern(actualPath, endpointTemplate, pathParamDefinitions);
-            if (!extracted.isEmpty()) {
-                return extracted;
-            }
-
-            // Method 3: Last resort - manual extraction based on API ID and known pattern
-            extracted = extractManually(actualPath, api, pathParamDefinitions);
-            if (!extracted.isEmpty()) {
-                return extracted;
-            }
-
-        } catch (Exception e) {
-            log.error("Failed to extract path parameters from URL: {}", e.getMessage(), e);
-        }
-
-        return pathParams;
-    }
-
-    /**
-     * Alternative extraction method using regex patterns
-     */
-    private Map<String, Object> extractUsingPattern(String actualPath, String template,
-                                                    List<ApiParameterEntity> pathParamDefinitions) {
-        Map<String, Object> pathParams = new HashMap<>();
-
-        try {
-            // Convert template to regex pattern
-            String regexPattern = template.replaceAll("\\{[^/]+\\}", "([^/]+)");
-            Pattern pattern = Pattern.compile(regexPattern);
-            Matcher matcher = pattern.matcher(actualPath);
-
-            if (matcher.matches()) {
-                // Find all parameter names from template
-                List<String> paramNames = new ArrayList<>();
-                java.util.regex.Matcher paramMatcher = java.util.regex.Pattern.compile("\\{([^/]+)\\}")
-                        .matcher(template);
-                while (paramMatcher.find()) {
-                    paramNames.add(paramMatcher.group(1));
-                }
-
-                // Match values to parameter names
-                for (int i = 0; i < paramNames.size() && i < matcher.groupCount(); i++) {
-                    String paramName = paramNames.get(i);
-                    String paramValue = matcher.group(i + 1);
-
-                    // Verify this is a defined path parameter
-                    Optional<ApiParameterEntity> matchingParam = pathParamDefinitions.stream()
-                            .filter(p -> paramName.equalsIgnoreCase(p.getKey()))
-                            .findFirst();
-
-                    if (matchingParam.isPresent()) {
-                        pathParams.put(paramName, paramValue);
-                        log.info("Extracted path parameter using regex: {} = {}", paramName, paramValue);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.error("Regex extraction failed: {}", e.getMessage());
-        }
-
-        return pathParams;
-    }
-
-    /**
-     * Create consolidated parameters map from request, with automatic path parameter extraction
-     */
-    public Map<String, Object> createConsolidatedParams(ExecuteApiRequestDTO request, GeneratedApiEntity api) {
-        Map<String, Object> params = new HashMap<>();
-
-        log.info("===== CREATE CONSOLIDATED PARAMS START =====");
-        log.info("Request URL: {}", request.getUrl());
-        log.info("Request path params (before): {}", request.getPathParams());
-        log.info("API ID: {}", api != null ? api.getId() : "null");
-
-        // 1. First, try to get path params from the request
-        if (request.getPathParams() != null && !request.getPathParams().isEmpty()) {
-            params.putAll(request.getPathParams());
-            log.info("Path params from request: {}", request.getPathParams());
-        }
-
-        // 2. If no path params in request, try to extract from URL using API's endpoint template
-        if ((request.getPathParams() == null || request.getPathParams().isEmpty())
-                && request.getUrl() != null && api != null) {
-
-            log.info("Attempting to extract path params from URL: {}", request.getUrl());
-            log.info("API endpoint template: {}", api.getEndpointPath());
-
-            Map<String, Object> extractedPathParams = extractPathParamsFromUrl(request.getUrl(), api);
-            if (!extractedPathParams.isEmpty()) {
-                params.putAll(extractedPathParams);
-                // Update the request with extracted params for logging
-                request.setPathParams(extractedPathParams);
-                log.info("Extracted path params from URL: {}", extractedPathParams);
-            } else {
-                log.warn("Could not extract path params from URL");
-            }
-        }
-
-        // 3. Add query params
-        if (request.getQueryParams() != null) {
-            params.putAll(request.getQueryParams());
-            log.info("Query params: {}", request.getQueryParams());
-        }
-
-        // 4. Add body params (for POST/PUT)
-        if (request.getBody() instanceof Map) {
-            params.putAll((Map<String, Object>) request.getBody());
-            log.info("Body params: {}", request.getBody());
-        }
-
-        log.info("Final consolidated params: {}", params);
-        log.info("===== CREATE CONSOLIDATED PARAMS END =====");
-
-        return params;
-    }
-
-
-    /**
-     * Method 1: Extract using direct template segment matching
-     */
-    private Map<String, Object> extractUsingTemplateMatching(String actualPath, String template,
-                                                             List<ApiParameterEntity> pathParamDefinitions) {
-        Map<String, Object> pathParams = new HashMap<>();
-
-        try {
-            // Remove base path if present (like /plx/api/gen/{apiId})
-            String processedTemplate = template;
-            String processedActual = actualPath;
-
-            // Find where the actual path starts matching the template
-            // This handles cases where the URL has a base path prefix
-
-            // Split both paths into segments
-            String[] templateSegments = processedTemplate.split("/");
-            String[] actualSegments = processedActual.split("/");
-
-            log.debug("Template segments: {}", Arrays.toString(templateSegments));
-            log.debug("Actual segments: {}", Arrays.toString(actualSegments));
-
-            // Create a map of parameter name to position in template
-            Map<Integer, String> positionToParamMap = new HashMap<>();
-            for (int i = 0; i < templateSegments.length; i++) {
-                String segment = templateSegments[i];
-                if (segment.startsWith("{") && segment.endsWith("}")) {
-                    String paramName = segment.substring(1, segment.length() - 1);
-                    positionToParamMap.put(i, paramName);
-                }
-            }
-
-            // Match segments and extract values where template has placeholders
-            for (Map.Entry<Integer, String> entry : positionToParamMap.entrySet()) {
-                int templatePosition = entry.getKey();
-                String paramName = entry.getValue();
-
-                // Check if we have a corresponding actual segment
-                if (templatePosition < actualSegments.length) {
-                    String actualValue = actualSegments[templatePosition];
-
-                    // Verify this is a defined path parameter
-                    Optional<ApiParameterEntity> matchingParam = pathParamDefinitions.stream()
-                            .filter(p -> paramName.equalsIgnoreCase(p.getKey()))
-                            .findFirst();
-
-                    if (matchingParam.isPresent()) {
-                        pathParams.put(paramName, actualValue);
-                        log.info("Extracted path parameter using template matching: {} = {}", paramName, actualValue);
-                    }
-                }
-            }
-
-        } catch (Exception e) {
-            log.error("Template matching failed: {}", e.getMessage());
-        }
-
-        return pathParams;
-    }
-
-    /**
-     * Method 2: Extract using regex pattern matching
-     */
-    private Map<String, Object> extractUsingRegexPattern(String actualPath, String template,
-                                                         List<ApiParameterEntity> pathParamDefinitions) {
-        Map<String, Object> pathParams = new HashMap<>();
-
-        try {
-            // Convert template to regex pattern
-            // First, escape any regex special characters
-            String regexPattern = template.replaceAll("\\{[^/]+\\}", "([^/]+)");
-
-            // Also handle the base path prefix if present
-            // The actual path might have additional prefix like /plx/api/gen/{apiId}
-            // We need to find where the template matches
-
-            Pattern pattern = Pattern.compile(".*" + regexPattern + "$");
-            Matcher matcher = pattern.matcher(actualPath);
-
-            if (matcher.matches()) {
-                // Find all parameter names from template
-                List<String> paramNames = new ArrayList<>();
-                java.util.regex.Matcher paramMatcher = java.util.regex.Pattern.compile("\\{([^/]+)\\}")
-                        .matcher(template);
-                while (paramMatcher.find()) {
-                    paramNames.add(paramMatcher.group(1));
-                }
-
-                // Match values to parameter names
-                for (int i = 0; i < paramNames.size() && i < matcher.groupCount(); i++) {
-                    String paramName = paramNames.get(i);
-                    String paramValue = matcher.group(i + 1);
-
-                    // Verify this is a defined path parameter
-                    Optional<ApiParameterEntity> matchingParam = pathParamDefinitions.stream()
-                            .filter(p -> paramName.equalsIgnoreCase(p.getKey()))
-                            .findFirst();
-
-                    if (matchingParam.isPresent()) {
-                        pathParams.put(paramName, paramValue);
-                        log.info("Extracted path parameter using regex: {} = {}", paramName, paramValue);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.error("Regex extraction failed: {}", e.getMessage());
-        }
-
-        return pathParams;
-    }
-
-    /**
-     * Method 3: Manual extraction based on API ID and known patterns
-     */
-    private Map<String, Object> extractManually(String actualPath, GeneratedApiEntity api,
-                                                List<ApiParameterEntity> pathParamDefinitions) {
-        Map<String, Object> pathParams = new HashMap<>();
-
-        try {
-            // For your specific case, the pattern is:
-            // /plx/api/gen/{apiId}/api/v1/{endpoint}/{pathParam}
-
-            String[] segments = actualPath.split("/");
-            log.debug("All segments: {}", Arrays.toString(segments));
-
-            // Find the position after the API ID
-            // Look for the pattern: after "/gen/{apiId}/api/v1/"
-            boolean foundGen = false;
-            boolean foundApiV1 = false;
-            int startPosition = -1;
-
-            for (int i = 0; i < segments.length; i++) {
-                if ("gen".equals(segments[i])) {
-                    foundGen = true;
-                    // Skip the API ID segment
-                    i += 2; // Skip past gen/{apiId}
-                    continue;
-                }
-                if (foundGen && "api".equals(segments[i]) && i + 1 < segments.length && "v1".equals(segments[i + 1])) {
-                    foundApiV1 = true;
-                    startPosition = i + 2; // Start after api/v1
-                    break;
-                }
-            }
-
-            if (startPosition > 0 && startPosition < segments.length) {
-                // Now extract path parameters in order
-                List<ApiParameterEntity> sortedParams = new ArrayList<>(pathParamDefinitions);
-                sortedParams.sort(Comparator.comparing(ApiParameterEntity::getPosition));
-
-                for (int i = 0; i < sortedParams.size(); i++) {
-                    int paramPosition = startPosition + i;
-                    if (paramPosition < segments.length) {
-                        ApiParameterEntity param = sortedParams.get(i);
-                        String value = segments[paramPosition];
-
-                        // Skip empty values and query parameters
-                        if (value != null && !value.isEmpty() && !value.contains("?")) {
-                            pathParams.put(param.getKey(), value);
-                            log.info("Extracted path parameter manually: {} = {}", param.getKey(), value);
-                        }
-                    }
-                }
-            }
-
-        } catch (Exception e) {
-            log.error("Manual extraction failed: {}", e.getMessage());
-        }
-
-        return pathParams;
     }
 }

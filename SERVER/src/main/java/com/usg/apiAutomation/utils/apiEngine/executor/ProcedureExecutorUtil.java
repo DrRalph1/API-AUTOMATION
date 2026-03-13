@@ -1,5 +1,7 @@
 package com.usg.apiAutomation.utils.apiEngine.executor;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiParameterDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
@@ -7,8 +9,9 @@ import com.usg.apiAutomation.dtos.apiGenerationEngine.ExecuteApiRequestDTO;
 import com.usg.apiAutomation.utils.apiEngine.OracleObjectResolverUtil;
 import com.usg.apiAutomation.utils.apiEngine.ParameterValidatorUtil;
 import jakarta.validation.ValidationException;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.SqlOutParameter;
@@ -20,98 +23,285 @@ import java.util.*;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class ProcedureExecutorUtil {
 
-    private final JdbcTemplate oracleJdbcTemplate;
+    @Autowired
+    @Qualifier("oracleJdbcTemplate")
+    private JdbcTemplate oracleJdbcTemplate;
+
     private final ParameterValidatorUtil parameterValidatorUtil;
     private final OracleObjectResolverUtil objectResolver;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public ProcedureExecutorUtil(
+            ParameterValidatorUtil parameterValidatorUtil,
+            OracleObjectResolverUtil objectResolver) {
+        this.parameterValidatorUtil = parameterValidatorUtil;
+        this.objectResolver = objectResolver;
+    }
 
     public Object execute(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
                           String procedureName, String owner, ExecuteApiRequestDTO request,
                           List<ApiParameterDTO> configuredParamDTOs) {
-        // Create consolidated parameters map from all sources
-        Map<String, Object> inParams = new HashMap<>();
 
-        // Add path parameters
-        if (request.getPathParams() != null) {
-            inParams.putAll(request.getPathParams());
+        // ============ DEBUGGING: Log all input parameters ============
+        log.info("============ PROCEDURE EXECUTOR DEBUG ============");
+        log.info("API ID: {}", api != null ? api.getId() : "null");
+        log.info("API Name: {}", api != null ? api.getApiName() : "null");
+        log.info("Procedure Name parameter: {}", procedureName);
+        log.info("Owner parameter: {}", owner);
+
+        // Log sourceObject details
+        if (sourceObject != null) {
+            log.info("Source Object - Owner: {}", sourceObject.getOwner());
+            log.info("Source Object - Name: {}", sourceObject.getObjectName());
+            log.info("Source Object - Type: {}", sourceObject.getObjectType());
+            log.info("Source Object - Schema: {}", sourceObject.getSchemaName());
+        } else {
+            log.info("Source Object is NULL");
         }
 
-        // Add query parameters
-        if (request.getQueryParams() != null) {
-            inParams.putAll(request.getQueryParams());
-        }
+        // Log API's source_object_info
+        if (api != null && api.getSourceObjectInfo() != null) {
+            log.info("API SourceObjectInfo type: {}", api.getSourceObjectInfo().getClass().getName());
 
-        // Add body parameters if it's a map
-        if (request.getBody() instanceof Map) {
-            inParams.putAll((Map<String, Object>) request.getBody());
-        }
-
-        // Handle collection/array parameters - convert to single values for database
-        for (Map.Entry<String, Object> entry : inParams.entrySet()) {
-            Object value = entry.getValue();
-            if (value instanceof List || value.getClass().isArray()) {
-                Collection<?> collection = value instanceof List ?
-                        (List<?>) value : Arrays.asList((Object[]) value);
-                if (!collection.isEmpty()) {
-                    // Take the first value
-                    inParams.put(entry.getKey(), collection.iterator().next());
-                    log.info("Converted collection parameter '{}' to single value", entry.getKey());
-                } else {
-                    inParams.put(entry.getKey(), null);
+            // Try to cast to Map if it's already a Map
+            if (api.getSourceObjectInfo() instanceof Map) {
+                Map<String, Object> sourceInfo = (Map<String, Object>) api.getSourceObjectInfo();
+                log.info("SourceObjectInfo Map: {}", sourceInfo);
+                if (sourceInfo.containsKey("schemaName")) {
+                    log.info("schemaName from sourceObjectInfo: {}", sourceInfo.get("schemaName"));
+                }
+                if (sourceInfo.containsKey("owner")) {
+                    log.info("owner from sourceObjectInfo: {}", sourceInfo.get("owner"));
+                }
+            } else {
+                // If it's a String, try to parse it
+                try {
+                    String jsonString = api.getSourceObjectInfo().toString();
+                    Map<String, Object> sourceInfo = objectMapper.readValue(jsonString, new TypeReference<Map<String, Object>>() {});
+                    log.info("Parsed sourceObjectInfo: {}", sourceInfo);
+                    if (sourceInfo.containsKey("schemaName")) {
+                        log.info("schemaName from sourceObjectInfo: {}", sourceInfo.get("schemaName"));
+                    }
+                    if (sourceInfo.containsKey("owner")) {
+                        log.info("owner from sourceObjectInfo: {}", sourceInfo.get("owner"));
+                    }
+                } catch (Exception e) {
+                    log.warn("Could not parse sourceObjectInfo JSON: {}", e.getMessage());
                 }
             }
         }
 
-        log.info("Executing procedure - Original: {}.{} with params: {}", owner, procedureName, inParams);
+        // ============ CREATE PARAMETER MAPPING ============
+        // Build a map of API parameter keys to database parameter names
+        Map<String, String> apiToDbParamMap = new HashMap<>();
+        if (configuredParamDTOs != null) {
+            for (ApiParameterDTO param : configuredParamDTOs) {
+                if (param.getKey() != null) {
+                    // Use dbParameter if available, otherwise use dbColumn, otherwise use the key
+                    String dbParamName = param.getDbParameter();
+                    if (dbParamName == null || dbParamName.isEmpty()) {
+                        dbParamName = param.getDbColumn();
+                    }
+                    if (dbParamName == null || dbParamName.isEmpty()) {
+                        dbParamName = param.getKey();
+                    }
+                    apiToDbParamMap.put(param.getKey(), dbParamName.toUpperCase());
+                    log.info("Parameter mapping: API '{}' -> Database '{}'", param.getKey(), dbParamName.toUpperCase());
+                }
+            }
+        }
 
-        String oracleOwner = owner != null && !owner.trim().isEmpty() ? owner.trim().toUpperCase() : null;
-        String oracleProcedureName = procedureName != null ? procedureName.trim().toUpperCase() : null;
+        // Create consolidated parameters map from all sources, using database parameter names
+        Map<String, Object> dbParams = new HashMap<>();
 
-        // ==================== VALIDATION STEP 1: Validate procedure exists and is valid ====================
-        try {
-            objectResolver.validateDatabaseObject(oracleOwner, oracleProcedureName, "PROCEDURE");
-            log.info("✅ Procedure {}.{} exists and is valid", oracleOwner, oracleProcedureName);
-        } catch (EmptyResultDataAccessException e) {
-            log.error("❌ Procedure {}.{} does not exist", oracleOwner, oracleProcedureName);
+        // Add path parameters
+        if (request.getPathParams() != null) {
+            for (Map.Entry<String, Object> entry : request.getPathParams().entrySet()) {
+                String dbParamName = apiToDbParamMap.getOrDefault(entry.getKey(), entry.getKey());
+                dbParams.put(dbParamName, entry.getValue());
+            }
+            log.info("Path params (mapped to DB names): {}", request.getPathParams());
+        }
+
+        // Add query parameters
+        if (request.getQueryParams() != null) {
+            for (Map.Entry<String, Object> entry : request.getQueryParams().entrySet()) {
+                String dbParamName = apiToDbParamMap.getOrDefault(entry.getKey(), entry.getKey());
+                dbParams.put(dbParamName, entry.getValue());
+            }
+            log.info("Query params (mapped to DB names): {}", request.getQueryParams());
+        }
+
+        // Add body parameters if it's a map
+        if (request.getBody() instanceof Map) {
+            Map<String, Object> bodyMap = (Map<String, Object>) request.getBody();
+            for (Map.Entry<String, Object> entry : bodyMap.entrySet()) {
+                String dbParamName = apiToDbParamMap.getOrDefault(entry.getKey(), entry.getKey());
+                dbParams.put(dbParamName, entry.getValue());
+            }
+            log.info("Body params (mapped to DB names): {}", request.getBody());
+        }
+
+        // Also keep original params for logging
+        Map<String, Object> originalParams = new HashMap<>();
+        if (request.getPathParams() != null) originalParams.putAll(request.getPathParams());
+        if (request.getQueryParams() != null) originalParams.putAll(request.getQueryParams());
+        if (request.getBody() instanceof Map) originalParams.putAll((Map<String, Object>) request.getBody());
+
+        // Handle collection/array parameters - convert to single values for database
+        for (Map.Entry<String, Object> entry : dbParams.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof List || (value != null && value.getClass().isArray())) {
+                Collection<?> collection = value instanceof List ?
+                        (List<?>) value : Arrays.asList((Object[]) value);
+                if (!collection.isEmpty()) {
+                    // Take the first value
+                    dbParams.put(entry.getKey(), collection.iterator().next());
+                    log.info("Converted collection parameter '{}' to single value", entry.getKey());
+                } else {
+                    dbParams.put(entry.getKey(), null);
+                }
+            }
+        }
+
+        log.info("Executing procedure - Original: {}.{} with original params: {}", owner, procedureName, originalParams);
+        log.info("Executing procedure - Mapped DB params: {}", dbParams);
+
+        // ============ OWNER RESOLUTION STRATEGY ============
+        String oracleOwner = null;
+
+        // Strategy 1: Use the owner parameter passed to the method
+        if (owner != null && !owner.trim().isEmpty()) {
+            oracleOwner = owner.trim();
+            log.info("Strategy 1 - Using owner parameter: {}", oracleOwner);
+        }
+
+        // Strategy 2: Try sourceObject.getOwner()
+        if (oracleOwner == null && sourceObject != null && sourceObject.getOwner() != null && !sourceObject.getOwner().trim().isEmpty()) {
+            oracleOwner = sourceObject.getOwner().trim();
+            log.info("Strategy 2 - Using sourceObject.getOwner(): {}", oracleOwner);
+        }
+
+        // Strategy 3: Try sourceObject.getSchemaName()
+        if (oracleOwner == null && sourceObject != null && sourceObject.getSchemaName() != null && !sourceObject.getSchemaName().trim().isEmpty()) {
+            oracleOwner = sourceObject.getSchemaName().trim();
+            log.info("Strategy 3 - Using sourceObject.getSchemaName(): {}", oracleOwner);
+        }
+
+        // Strategy 4: Get from API's source_object_info (as Map)
+        if (oracleOwner == null && api != null && api.getSourceObjectInfo() != null) {
+            try {
+                // Check if it's already a Map
+                if (api.getSourceObjectInfo() instanceof Map) {
+                    Map<String, Object> sourceInfo = (Map<String, Object>) api.getSourceObjectInfo();
+                    if (sourceInfo.containsKey("schemaName") && sourceInfo.get("schemaName") != null) {
+                        oracleOwner = sourceInfo.get("schemaName").toString().trim();
+                        log.info("Strategy 4 - Using schemaName from source_object_info Map: {}", oracleOwner);
+                    } else if (sourceInfo.containsKey("owner") && sourceInfo.get("owner") != null) {
+                        oracleOwner = sourceInfo.get("owner").toString().trim();
+                        log.info("Strategy 4 - Using owner from source_object_info Map: {}", oracleOwner);
+                    }
+                } else {
+                    // If it's a String, parse it
+                    String jsonString = api.getSourceObjectInfo().toString();
+                    Map<String, Object> sourceInfo = objectMapper.readValue(jsonString, new TypeReference<Map<String, Object>>() {});
+                    if (sourceInfo.containsKey("schemaName") && sourceInfo.get("schemaName") != null) {
+                        oracleOwner = sourceInfo.get("schemaName").toString().trim();
+                        log.info("Strategy 4 - Using schemaName from source_object_info JSON: {}", oracleOwner);
+                    } else if (sourceInfo.containsKey("owner") && sourceInfo.get("owner") != null) {
+                        oracleOwner = sourceInfo.get("owner").toString().trim();
+                        log.info("Strategy 4 - Using owner from source_object_info JSON: {}", oracleOwner);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Could not process sourceObjectInfo: {}", e.getMessage());
+            }
+        }
+
+        // Strategy 5: Try to get current user's default schema
+        if (oracleOwner == null) {
+            try {
+                String currentSchema = oracleJdbcTemplate.queryForObject(
+                        "SELECT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') FROM DUAL",
+                        String.class);
+                oracleOwner = currentSchema;
+                log.info("Strategy 5 - Using current schema from Oracle: {}", oracleOwner);
+            } catch (Exception e) {
+                log.warn("Could not get current schema: {}", e.getMessage());
+            }
+        }
+
+        // Strategy 6: Last resort - try common schemas
+        if (oracleOwner == null) {
+            String[] commonSchemas = {"CBXDMX", "CBX_APIGEN", "SYSTEM", "SYS"};
+            for (String schema : commonSchemas) {
+                try {
+                    String checkSql = "SELECT COUNT(*) FROM ALL_OBJECTS WHERE OWNER = ? AND OBJECT_NAME = ? AND ROWNUM = 1";
+                    Integer count = oracleJdbcTemplate.queryForObject(checkSql, Integer.class, schema, procedureName);
+                    if (count != null && count > 0) {
+                        oracleOwner = schema;
+                        log.info("Strategy 6 - Found object in common schema: {}", schema);
+                        break;
+                    }
+                } catch (Exception e) {
+                    // Ignore and try next
+                }
+            }
+        }
+
+        if (oracleOwner == null || oracleOwner.trim().isEmpty()) {
+            log.error("❌ COULD NOT DETERMINE OWNER/SCHEMA NAME");
             throw new ValidationException(
-                    String.format("The procedure '%s.%s' does not exist or you don't have access to it.",
-                            oracleOwner, oracleProcedureName)
+                    "Could not determine the database schema/owner for procedure: " + procedureName
             );
         }
 
-        // ==================== VALIDATION STEP 2: Validate all parameters ====================
-        try {
-            parameterValidatorUtil.validateParameters(configuredParamDTOs, inParams, oracleOwner, oracleProcedureName);
-            log.info("✅ All parameter validations passed for procedure {}.{}", oracleOwner, oracleProcedureName);
-        } catch (ValidationException e) {
-            log.error("❌ Parameter validation failed: {}", e.getMessage());
-            throw e;
-        }
+        oracleOwner = oracleOwner.toUpperCase();
+        String oracleProcedureName = procedureName != null ? procedureName.trim().toUpperCase() : null;
 
+        log.info("Final resolved owner before synonym resolution: {}", oracleOwner);
+        log.info("Final procedure name before synonym resolution: {}", oracleProcedureName);
+
+        // ============ SYNONYM RESOLUTION ============
         // Resolve the actual target (handle synonyms)
         Map<String, Object> resolution = objectResolver.resolveProcedureTarget(oracleOwner, oracleProcedureName);
+        log.info("🔍 Synonym resolution result: {}", resolution);
 
         String actualOwner;
         String actualProcedureName;
 
-        if ((boolean) resolution.getOrDefault("isSynonym", false)) {
+        if (resolution != null && resolution.containsKey("isSynonym") && (boolean) resolution.get("isSynonym")) {
             actualOwner = (String) resolution.get("targetOwner");
             actualProcedureName = (String) resolution.get("targetName");
-            log.info("Resolved synonym to: {}.{}", actualOwner, actualProcedureName);
-
-            // Validate the resolved target as well
-            try {
-                objectResolver.validateDatabaseObject(actualOwner, actualProcedureName, "PROCEDURE");
-                log.info("✅ Resolved procedure {}.{} is valid", actualOwner, actualProcedureName);
-            } catch (ValidationException e) {
-                log.error("❌ Resolved procedure validation failed: {}", e.getMessage());
-                throw e;
-            }
+            log.info("✅ Resolved synonym to: {}.{}", actualOwner, actualProcedureName);
         } else {
             actualOwner = oracleOwner;
             actualProcedureName = oracleProcedureName;
+            log.info("ℹ️ Not a synonym, using original: {}.{}", actualOwner, actualProcedureName);
+        }
+
+        // ==================== VALIDATION STEP 1: Validate procedure exists and is valid ====================
+        try {
+            objectResolver.validateDatabaseObject(actualOwner, actualProcedureName, "PROCEDURE");
+            log.info("✅ Procedure {}.{} exists and is valid", actualOwner, actualProcedureName);
+        } catch (EmptyResultDataAccessException e) {
+            log.error("❌ Procedure {}.{} does not exist", actualOwner, actualProcedureName);
+            throw new ValidationException(
+                    String.format("The procedure '%s.%s' does not exist or you don't have access to it.",
+                            actualOwner, actualProcedureName)
+            );
+        }
+
+        // ==================== VALIDATION STEP 2: Validate all parameters ====================
+        // Pass the mapped DB parameters to validation
+        try {
+            parameterValidatorUtil.validateParameters(configuredParamDTOs, dbParams, actualOwner, actualProcedureName);
+            log.info("✅ All parameter validations passed for procedure {}.{}", actualOwner, actualProcedureName);
+        } catch (ValidationException e) {
+            log.error("❌ Parameter validation failed: {}", e.getMessage());
+            throw e;
         }
 
         try {
@@ -120,9 +310,11 @@ public class ProcedureExecutorUtil {
             // Set schema and procedure name - use resolved actual owner
             if (actualOwner != null && !actualOwner.isEmpty()) {
                 jdbcCall = jdbcCall.withSchemaName(actualOwner);
+                log.info("Setting schema name to: {}", actualOwner);
             }
 
             jdbcCall = jdbcCall.withProcedureName(actualProcedureName);
+            log.info("Setting procedure name to: {}", actualProcedureName);
 
             log.info("Oracle will execute: {}.{}", actualOwner != null ? actualOwner : "<default schema>", actualProcedureName);
 
@@ -144,7 +336,7 @@ public class ProcedureExecutorUtil {
                 }
             }
 
-            // Declare input parameters from API parameters
+            // Declare input parameters from API parameters - use database parameter names
             if (api.getParameters() != null && !api.getParameters().isEmpty()) {
                 int inParamCount = 0;
 
@@ -155,24 +347,29 @@ public class ProcedureExecutorUtil {
                     String paramType = param.getParameterType();
                     String paramMode = param.getParamMode() != null ? param.getParamMode().toUpperCase() : "IN";
 
+                    // Get the database parameter name
+                    String dbParamName = null;
+                    if (param.getDbParameter() != null && !param.getDbParameter().isEmpty()) {
+                        dbParamName = param.getDbParameter().toUpperCase();
+                    } else if (param.getDbColumn() != null && !param.getDbColumn().isEmpty()) {
+                        dbParamName = param.getDbColumn().toUpperCase();
+                    } else {
+                        dbParamName = param.getKey().toUpperCase();
+                    }
+
                     // Check if this parameter is meant to be an IN parameter
                     boolean isInParameter = paramMode.contains("IN") || paramType == null ||
                             "query".equals(paramType) || "path".equals(paramType) || "body".equals(paramType);
 
-                    if (inParams.containsKey(param.getKey()) && isInParameter) {
-                        String paramName = param.getDbParameter() != null && !param.getDbParameter().isEmpty() ?
-                                param.getDbParameter().toUpperCase() :
-                                (param.getDbColumn() != null && !param.getDbColumn().isEmpty() ?
-                                        param.getDbColumn().toUpperCase() : param.getKey().toUpperCase());
-
+                    if (dbParams.containsKey(dbParamName) && isInParameter) {
                         int sqlType = mapToSqlType(param.getOracleType());
-                        jdbcCall.declareParameters(new SqlParameter(paramName, sqlType));
+                        jdbcCall.declareParameters(new SqlParameter(dbParamName, sqlType));
 
                         log.debug("Declared IN parameter: {} of type: {} (SQL type: {}) with value: {}",
-                                paramName, param.getOracleType(), sqlType, inParams.get(param.getKey()));
+                                dbParamName, param.getOracleType(), sqlType, dbParams.get(dbParamName));
                         inParamCount++;
-                    } else if (inParams.containsKey(param.getKey())) {
-                        log.debug("Parameter {} is not an IN parameter (mode: {}), skipping", param.getKey(), paramMode);
+                    } else if (dbParams.containsKey(dbParamName)) {
+                        log.debug("Parameter {} is not an IN parameter (mode: {}), skipping", dbParamName, paramMode);
                     }
                 }
 
@@ -180,10 +377,10 @@ public class ProcedureExecutorUtil {
             }
 
             log.info("Executing SimpleJdbcCall for {}.{} with {} input parameters",
-                    actualOwner != null ? actualOwner : "<default>", actualProcedureName, inParams.size());
+                    actualOwner != null ? actualOwner : "<default>", actualProcedureName, dbParams.size());
 
-            // Execute the procedure
-            Map<String, Object> result = jdbcCall.execute(inParams);
+            // Execute the procedure with the mapped database parameters
+            Map<String, Object> result = jdbcCall.execute(dbParams);
 
             log.info("Procedure executed successfully, result contains {} keys: {}",
                     result.size(), result.keySet());
@@ -229,6 +426,7 @@ public class ProcedureExecutorUtil {
                 responseData.putAll(result);
             }
 
+            log.info("============ PROCEDURE EXECUTION COMPLETE ============");
             return responseData.isEmpty() ? result : responseData;
 
         } catch (ValidationException e) {

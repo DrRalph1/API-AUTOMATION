@@ -120,8 +120,7 @@ public class AutomationEngineService {
             CollectionInfoDTO collectionInfo = validationHelper.validateAndGetCollectionInfo(request.getCollectionInfo());
 
             // Build endpoint path with parameters - FIX THIS METHOD
-            String endpointPath = genUrlBuilder.buildEndpointPathWithParameters(
-                    request, sourceObjectDTO, parameterGeneratorUtil);
+            String endpointPath = buildEndpointPathFromRequest(request);
 
             // Create and save main API entity
             GeneratedApiEntity savedApi = executionHelper.createAndSaveApiEntity(
@@ -269,7 +268,7 @@ public class AutomationEngineService {
 
             // 8. CRITICAL: Create consolidated params using the enhanced method that includes path param extraction
             // Make sure you're calling the version that takes both request AND api
-            Map<String, Object> consolidatedParams = executionHelper.createConsolidatedParams(validatedRequest, api);
+            Map<String, Object> consolidatedParams = executionHelper.createConsolidatedParams(validatedRequest);
 
             log.info("Consolidated params after extraction: {}", consolidatedParams);
             log.info("Request path params after extraction: {}", validatedRequest.getPathParams());
@@ -755,6 +754,44 @@ public class AutomationEngineService {
             // Return false in case of error to be safe
             return false;
         }
+    }
+
+
+    // Add this method to AutomationEngineService
+    private String buildEndpointPathFromRequest(GenerateApiRequestDTO request) {
+        String baseEndpoint = request.getEndpointPath();
+        if (baseEndpoint == null || baseEndpoint.isEmpty()) {
+            baseEndpoint = "/api/v1/" + request.getApiCode().toLowerCase();
+        }
+
+        log.info("Building endpoint path from request. Base: {}", baseEndpoint);
+
+        // Use the parameters DIRECTLY from the request
+        List<ApiParameterDTO> pathParams = request.getParameters().stream()
+                .filter(p -> "path".equalsIgnoreCase(p.getParameterLocation()))
+                .sorted(Comparator.comparing(ApiParameterDTO::getPosition,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .collect(Collectors.toList());
+
+        log.info("Found {} path parameters from request: {}", pathParams.size(),
+                pathParams.stream().map(ApiParameterDTO::getKey).collect(Collectors.joining(", ")));
+
+        StringBuilder endpointBuilder = new StringBuilder(baseEndpoint);
+
+        // Remove trailing slash if present
+        if (endpointBuilder.length() > 0 && endpointBuilder.charAt(endpointBuilder.length() - 1) == '/') {
+            endpointBuilder.setLength(endpointBuilder.length() - 1);
+        }
+
+        // Add each path parameter as a placeholder
+        for (ApiParameterDTO param : pathParams) {
+            endpointBuilder.append("/{").append(param.getKey()).append("}");
+        }
+
+        String fullEndpoint = endpointBuilder.toString();
+        log.info("Final endpoint path with placeholders: {}", fullEndpoint);
+
+        return fullEndpoint;
     }
 
 }

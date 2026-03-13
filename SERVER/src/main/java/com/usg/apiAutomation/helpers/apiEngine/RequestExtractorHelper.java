@@ -4,8 +4,12 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ExecuteApiRequestDTO;
+import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiParameterEntity;
+import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
+import com.usg.apiAutomation.services.AutomationEngineService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.multipart.MultipartFile;
@@ -38,7 +42,7 @@ public class RequestExtractorHelper {
         ExecuteApiRequestDTO executeRequest = new ExecuteApiRequestDTO();
         executeRequest.setRequestId(requestId);
 
-        // Extract path parameters from URL
+        // Extract path parameters from URL using the API's endpoint pattern
         Map<String, Object> pathParams = extractPathParametersFromUrl(request.getRequestURI(), apiId);
         executeRequest.setPathParams(pathParams);
 
@@ -61,25 +65,106 @@ public class RequestExtractorHelper {
     }
 
     /**
-     * Extract path parameters from URL based on API ID
+     * Extract path parameters from URL based on API ID and the API's endpoint pattern
      */
     private Map<String, Object> extractPathParametersFromUrl(String requestURI, String apiId) {
         Map<String, Object> pathParams = new HashMap<>();
 
-        // Remove context path if any
-        String path = requestURI;
+        try {
+            // Get the API entity to know its endpoint pattern
+            GeneratedApiEntity api = automationEngineService.getApiEntity(apiId);
+            String endpointPattern = api.getEndpointPath();
 
-        // Updated pattern to match your URL structure with dynamic API ID
-        // Pattern: /plx/api/gen/{apiId}/api/v1/vrt-trans-posting-60/{acct_link_v}/{doc_ref}
-        Pattern pattern = Pattern.compile("/plx/api/gen/" + apiId + "/api/v1/[^/]+/([^/]+)/([^/]+)");
-        Matcher matcher = pattern.matcher(path);
+            log.info("Endpoint pattern: {}", endpointPattern);
+            log.info("Request URI: {}", requestURI);
 
-        if (matcher.matches()) {
-            pathParams.put("acct_link_v", matcher.group(1));
-            pathParams.put("doc_ref", matcher.group(2));
+            // Extract the part after /plx/api/gen/{apiId}/
+            String basePath = "/plx/api/gen/" + apiId;
+            if (!requestURI.startsWith(basePath)) {
+                log.warn("Request URI does not start with expected base path: {}", basePath);
+                return pathParams;
+            }
+
+            String requestPath = requestURI.substring(basePath.length());
+            log.info("Request path: {}", requestPath);
+
+            // Remove leading and trailing slashes
+            requestPath = requestPath.replaceAll("^/+|/+$", "");
+
+            // Clean up the endpoint pattern - remove leading/trailing slashes
+            String cleanPattern = endpointPattern.replaceAll("^/+|/+$", "");
+
+            // Split into segments
+            String[] requestSegments = requestPath.split("/");
+            String[] patternSegments = cleanPattern.split("/");
+
+            log.info("Request segments: {}", Arrays.toString(requestSegments));
+            log.info("Pattern segments: {}", Arrays.toString(patternSegments));
+
+            // Find where the pattern actually starts in the request segments
+            int patternStartIndex = -1;
+            for (int i = 0; i < requestSegments.length; i++) {
+                if (requestSegments[i].equals(patternSegments[0])) {
+                    patternStartIndex = i;
+                    break;
+                }
+            }
+
+            if (patternStartIndex == -1) {
+                log.warn("Could not find pattern start in request segments. Using default matching.");
+                patternStartIndex = 0;
+            } else {
+                log.info("Pattern starts at request segment index: {}", patternStartIndex);
+            }
+
+            // Now match the pattern against the request segments starting from patternStartIndex
+            for (int i = 0; i < patternSegments.length; i++) {
+                int requestIndex = patternStartIndex + i;
+
+                String patternSegment = patternSegments[i];
+
+                // If pattern segment is a placeholder like {acct_link}
+                if (patternSegment.startsWith("{") && patternSegment.endsWith("}")) {
+                    String paramName = patternSegment.substring(1, patternSegment.length() - 1);
+
+                    // Check if we have a value for this parameter in the request
+                    if (requestIndex < requestSegments.length) {
+                        // We have a value
+                        String value = requestSegments[requestIndex];
+                        pathParams.put(paramName, value);
+                        log.info("Extracted path parameter: {} = {}", paramName, value);
+                    } else {
+                        // No value provided for this path parameter
+                        pathParams.put(paramName, "");
+                        log.warn("Missing path parameter: {} - no value provided in URL", paramName);
+                    }
+                } else {
+                    // Static segment - just log it
+                    if (requestIndex < requestSegments.length) {
+                        log.info("Static segment matched: {} = {}", patternSegment, requestSegments[requestIndex]);
+                    } else {
+                        log.warn("Missing static segment: {} - URL is too short", patternSegment);
+                    }
+                }
+            }
+
+            log.info("Final extracted path params: {}", pathParams);
+
+        } catch (Exception e) {
+            log.error("Failed to extract path parameters: {}", e.getMessage(), e);
         }
 
         return pathParams;
+    }
+
+
+    // You need to inject the service to fetch the API entity
+    // Add this to the class:
+    @Autowired
+    private AutomationEngineService automationEngineService;
+
+    private GeneratedApiEntity getApiEntity(String apiId) {
+        return automationEngineService.getApiEntity(apiId);
     }
 
     /**

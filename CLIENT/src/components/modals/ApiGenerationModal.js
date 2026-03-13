@@ -153,8 +153,9 @@ const PARAMETER_LOCATIONS = [
   }
 ];
 
-// Body content types
+// Body content types - UPDATED to include 'none'
 const BODY_TYPES = [
+  { value: 'none', label: 'No Body', icon: <FileText className="h-4 w-4" /> },
   { value: 'json', label: 'JSON (application/json)', icon: <FileJson className="h-4 w-4" /> },
   { value: 'xml', label: 'XML (application/xml)', icon: <Code className="h-4 w-4" /> },
   { value: 'form-data', label: 'Form Data (multipart/form-data)', icon: <Upload className="h-4 w-4" /> },
@@ -1463,8 +1464,8 @@ export default function ApiGenerationModal({
 
   // New state for request body configuration
   const [requestBody, setRequestBody] = useState({
-    bodyType: 'json',
-    sample: '{\n  "success": true,\n  "data": {}\n}',
+    bodyType: 'none',
+    sample: null,
     requiredFields: [],
     validateSchema: true,
     maxSize: 1048576, // 1MB
@@ -2030,14 +2031,11 @@ export default function ApiGenerationModal({
             setRequestBody(selectedObject.requestBody);
           } else {
             setRequestBody({
-              bodyType: 'json',
-              sample: JSON.stringify({
-                success: true,
-                data: {}
-              }, null, 2),
+              bodyType: 'none', // Changed from 'json' to 'none'
+              sample: null,
               requiredFields: [],
               validateSchema: true,
-              maxSize: 1048576,
+              maxSize: 1048576, // 1MB
               allowedMediaTypes: ['application/json']
             });
           }
@@ -3055,32 +3053,33 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                 },
               })),
             ],
-            ...(bodyParams.length > 0 && {
-              requestBody: {
-                description: 'Request body parameters',
-                required: bodyParams.some(p => p.required),
-                content: {
-                  [requestBody.bodyType === 'json' ? 'application/json' : 
-                    requestBody.bodyType === 'xml' ? 'application/xml' :
-                    requestBody.bodyType === 'form-data' ? 'multipart/form-data' :
-                    'application/x-www-form-urlencoded']: {
-                    schema: {
-                      type: 'object',
-                      properties: bodyParams.reduce((acc, p) => ({
-                        ...acc,
-                        [p.key]: {
-                          type: p.apiType,
-                          description: p.description,
-                          nullable: !p.required,
-                          example: p.example,
-                        }
-                      }), {}),
-                      required: bodyParams.filter(p => p.required).map(p => p.key)
+            ...(requestBody.bodyType !== 'none' && bodyParams.length > 0 && {
+                requestBody: {
+                  description: 'Request body parameters',
+                  required: bodyParams.some(p => p.required),
+                  content: {
+                    [requestBody.bodyType === 'json' ? 'application/json' : 
+                      requestBody.bodyType === 'xml' ? 'application/xml' :
+                      requestBody.bodyType === 'form-data' ? 'multipart/form-data' :
+                      requestBody.bodyType === 'urlencoded' ? 'application/x-www-form-urlencoded' :
+                      'text/plain']: {
+                      schema: {
+                        type: 'object',
+                        properties: bodyParams.reduce((acc, p) => ({
+                          ...acc,
+                          [p.key]: {
+                            type: p.apiType,
+                            description: p.description,
+                            nullable: !p.required,
+                            example: p.example,
+                          }
+                        }), {}),
+                        required: bodyParams.filter(p => p.required).map(p => p.key)
+                      }
                     }
                   }
                 }
-              }
-            }),
+              }),
             responses: {
               '200': {
                 description: 'Successful response',
@@ -3214,7 +3213,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
     
     // Build request body if there are body parameters
     let body = null;
-    if (bodyParams.length > 0) {
+    if (requestBody.bodyType !== 'none' && bodyParams.length > 0) {
       const bodyObject = {};
       bodyParams.forEach(p => {
         bodyObject[p.key] = p.example || (p.apiType === 'integer' ? 123 : 'sample');
@@ -3437,6 +3436,27 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
   };
 
 
+  // Add this useEffect after your other useEffects (around line 2200-2300, after the existing useEffects)
+  useEffect(() => {
+    // Auto-set body type based on HTTP method
+    const method = apiDetails.httpMethod;
+    
+    if (method === 'GET' || method === 'DELETE') {
+      // For GET and DELETE, set body type to 'none'
+      setRequestBody(prev => ({
+        ...prev,
+        bodyType: 'none'
+      }));
+    } else {
+      // For POST, PUT, PATCH, etc., set body type to 'json'
+      setRequestBody(prev => ({
+        ...prev,
+        bodyType: 'json'
+      }));
+    }
+  }, [apiDetails.httpMethod]); // Run whenever HTTP method changes
+
+
   // Add this useEffect after your initialization useEffect - FIXED VERSION
   useEffect(() => {
     // Only check code availability for new APIs when the form loads
@@ -3649,14 +3669,16 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
         })),
         // Send all response mappings (including OUT parameters)
         responseMappings: getOutMappings(),
-        requestBody: {
+              requestBody: {
           ...requestBody,
           contentType: requestBody.bodyType === 'json' ? 'application/json' :
-                     requestBody.bodyType === 'xml' ? 'application/xml' :
-                     requestBody.bodyType === 'form-data' ? 'multipart/form-data' :
-                     requestBody.bodyType === 'urlencoded' ? 'application/x-www-form-urlencoded' :
-                     'text/plain',
+                    requestBody.bodyType === 'xml' ? 'application/xml' :
+                    requestBody.bodyType === 'form-data' ? 'multipart/form-data' :
+                    requestBody.bodyType === 'urlencoded' ? 'application/x-www-form-urlencoded' :
+                    requestBody.bodyType === 'raw' ? 'text/plain' :
+                    null, // null for 'none'
           sample: (() => {
+            if (requestBody.bodyType === 'none') return null;
             if (typeof requestBody.sample === 'string') {
               return requestBody.sample;
             }
@@ -5639,155 +5661,189 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
                 {/* Request Tab */}
                 {activeTab === 'request' && (
-                  <div className="space-y-6">
-                    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-                      Request Configuration
-                    </h3>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Body Type (for body parameters)
-                          </label>
-                          <select
-                            value={requestBody.bodyType}
-                            onChange={(e) => handleRequestBodyChange('bodyType', e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.bg,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                          >
-                            {BODY_TYPES.map(type => (
-                              <option key={type.value} value={type.value}>{type.label}</option>
-                            ))}
-                          </select>
-                        </div>
+  <div className="space-y-6">
+    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+      Request Configuration
+    </h3>
+    
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+            Body Type
+          </label>
+          <select
+            value={requestBody.bodyType}
+            onChange={(e) => handleRequestBodyChange('bodyType', e.target.value)}
+            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+            style={{ 
+              backgroundColor: themeColors.bg,
+              borderColor: themeColors.border,
+              color: themeColors.text
+            }}
+          >
+            {BODY_TYPES.map(type => (
+              <option key={type.value} value={type.value}>{type.label}</option>
+            ))}
+          </select>
+          {requestBody.bodyType === 'none' && (
+            <p className="text-xs mt-2" style={{ color: themeColors.warning }}>
+              <AlertCircle className="h-3 w-3 inline mr-1" />
+              No request body will be sent. Only GET and DELETE methods typically use no body.
+            </p>
+          )}
+        </div>
 
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Max Request Size (bytes)
-                          </label>
-                          <input
-                            type="number"
-                            value={requestBody.maxSize}
-                            onChange={(e) => handleRequestBodyChange('maxSize', parseInt(e.target.value))}
-                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.card,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                            min="1024"
-                            max="10485760"
-                          />
-                        </div>
+        {/* Only show these fields if body type is not 'none' */}
+        {requestBody.bodyType !== 'none' && (
+          <>
+            <div className="space-y-2">
+              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                Max Request Size (bytes)
+              </label>
+              <input
+                type="number"
+                value={requestBody.maxSize}
+                onChange={(e) => handleRequestBodyChange('maxSize', parseInt(e.target.value))}
+                className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                style={{ 
+                  backgroundColor: themeColors.card,
+                  borderColor: themeColors.border,
+                  color: themeColors.text
+                }}
+                min="1024"
+                max="10485760"
+              />
+            </div>
 
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Validate Schema
-                          </label>
-                          <div className="flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={requestBody.validateSchema}
-                              onChange={(e) => handleRequestBodyChange('validateSchema', e.target.checked)}
-                              className="h-4 w-4 rounded"
-                              style={{ accentColor: themeColors.info }}
-                            />
-                            <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
-                              Validate request body against schema
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                Validate Schema
+              </label>
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={requestBody.validateSchema}
+                  onChange={(e) => handleRequestBodyChange('validateSchema', e.target.checked)}
+                  className="h-4 w-4 rounded"
+                  style={{ accentColor: themeColors.info }}
+                />
+                <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
+                  Validate request body against schema
+                </span>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
 
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Allowed Media Types
-                          </label>
-                          <input
-                            type="text"
-                            value={requestBody.allowedMediaTypes.join(', ')}
-                            onChange={(e) => handleRequestBodyChange('allowedMediaTypes', e.target.value.split(',').map(type => type.trim()))}
-                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.card,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                            placeholder="application/json, application/xml"
-                          />
-                        </div>
+      {requestBody.bodyType !== 'none' && (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+              Allowed Media Types
+            </label>
+            <input
+              type="text"
+              value={requestBody.allowedMediaTypes.join(', ')}
+              onChange={(e) => handleRequestBodyChange('allowedMediaTypes', e.target.value.split(',').map(type => type.trim()))}
+              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+              style={{ 
+                backgroundColor: themeColors.card,
+                borderColor: themeColors.border,
+                color: themeColors.text
+              }}
+              placeholder="application/json, application/xml"
+            />
+          </div>
 
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Required Fields (in body)
-                          </label>
-                          <input
-                            type="text"
-                            value={requestBody.requiredFields.join(', ')}
-                            onChange={(e) => handleRequestBodyChange('requiredFields', e.target.value.split(',').map(field => field.trim()))}
-                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.card,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                            placeholder="id, name, email"
-                          />
-                        </div>
-                      </div>
-                    </div>
+          <div className="space-y-2">
+            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+              Required Fields (in body)
+            </label>
+            <input
+              type="text"
+              value={requestBody.requiredFields.join(', ')}
+              onChange={(e) => handleRequestBodyChange('requiredFields', e.target.value.split(',').map(field => field.trim()))}
+              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+              style={{ 
+                backgroundColor: themeColors.card,
+                borderColor: themeColors.border,
+                color: themeColors.text
+              }}
+              placeholder="id, name, email"
+            />
+          </div>
+        </div>
+      )}
+    </div>
 
-                    {/* Request Body Sample */}
-                    <div className="space-y-4">
-                      <h4 className="font-semibold" style={{ color: themeColors.text }}>
-                        Request Body Sample
-                      </h4>
-                      <div className="border rounded-lg" style={{ 
-                        borderColor: themeColors.border,
-                        backgroundColor: themeColors.card
-                      }}>
-                        <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: themeColors.border }}>
-                          <span className="text-xs font-medium" style={{ color: themeColors.text }}>
-                            Sample {requestBody.bodyType.toUpperCase()}
-                          </span>
-                          <button
-                            onClick={() => {
-                              const sample = {};
-                              const bodyParams = getInParameters().filter(p => p.parameterLocation === 'body');
-                              bodyParams.forEach(p => {
-                                sample[p.key] = p.example || (p.apiType === 'integer' ? 123 : 'sample');
-                              });
-                              handleRequestBodyChange('sample', JSON.stringify(sample, null, 2));
-                            }}
-                            className="px-3 py-1 text-xs rounded border transition-colors hover-lift"
-                            style={{ 
-                              backgroundColor: themeColors.hover,
-                              borderColor: themeColors.border,
-                              color: themeColors.text
-                            }}
-                          >
-                            Generate from Parameters
-                          </button>
-                        </div>
-                        <textarea
-                          value={requestBody.sample}
-                          onChange={(e) => handleRequestBodyChange('sample', e.target.value)}
-                          className="w-full h-48 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
-                          style={{ 
-                            backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
-                            color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
+    {/* Request Body Sample - Only show if body type is not 'none' */}
+    {requestBody.bodyType !== 'none' && (
+      <div className="space-y-4">
+        <h4 className="font-semibold" style={{ color: themeColors.text }}>
+          Request Body Sample
+        </h4>
+        <div className="border rounded-lg" style={{ 
+          borderColor: themeColors.border,
+          backgroundColor: themeColors.card
+        }}>
+          <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: themeColors.border }}>
+            <span className="text-xs font-medium" style={{ color: themeColors.text }}>
+              Sample {requestBody.bodyType.toUpperCase()}
+            </span>
+            <button
+              onClick={() => {
+                const sample = {};
+                const bodyParams = getInParameters().filter(p => p.parameterLocation === 'body');
+                bodyParams.forEach(p => {
+                  sample[p.key] = p.example || (p.apiType === 'integer' ? 123 : 'sample');
+                });
+                handleRequestBodyChange('sample', JSON.stringify(sample, null, 2));
+              }}
+              className="px-3 py-1 text-xs rounded border transition-colors hover-lift"
+              style={{ 
+                backgroundColor: themeColors.hover,
+                borderColor: themeColors.border,
+                color: themeColors.text
+              }}
+            >
+              Generate from Parameters
+            </button>
+          </div>
+          <textarea
+            value={requestBody.sample || ''}
+            onChange={(e) => handleRequestBodyChange('sample', e.target.value)}
+            className="w-full h-48 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
+            style={{ 
+              backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
+              color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
+            }}
+            placeholder={requestBody.bodyType === 'json' ? '{\n  "key": "value"\n}' : 
+                       requestBody.bodyType === 'xml' ? '<request>\n  <key>value</key>\n</request>' :
+                       'Enter request body...'}
+          />
+        </div>
+      </div>
+    )}
+
+    {/* Show message when no body */}
+    {requestBody.bodyType === 'none' && (
+      <div className="p-8 text-center border rounded-lg" style={{ 
+        borderColor: themeColors.border,
+        backgroundColor: themeColors.hover
+      }}>
+        <FileText className="h-12 w-12 mx-auto mb-3" style={{ color: themeColors.textSecondary }} />
+        <p style={{ color: themeColors.textSecondary }}>
+          No request body will be sent with this API.
+        </p>
+        <p className="text-xs mt-2" style={{ color: themeColors.info }}>
+          This is typical for GET and DELETE operations.
+        </p>
+      </div>
+    )}
+  </div>
+)}
 
                 {/* Response Tab */}
                 {activeTab === 'response' && (
