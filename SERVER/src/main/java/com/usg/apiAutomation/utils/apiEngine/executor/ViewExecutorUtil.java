@@ -33,32 +33,51 @@ public class ViewExecutorUtil {
                           String viewName, String owner, ExecuteApiRequestDTO request,
                           List<ApiParameterDTO> configuredParamDTOs) {
 
-        // FIX: Combine ALL parameters - path, query, and body
+        // FIX: Combine ALL parameters - path, query, headers, and body
         Map<String, Object> allParams = new HashMap<>();
 
         // Add path params
         if (request.getPathParams() != null) {
             allParams.putAll(request.getPathParams());
-            log.info("Added path params: {}", request.getPathParams());
+            log.info("Added path params: {}", request.getPathParams().keySet());
         }
 
         // Add query params
         if (request.getQueryParams() != null) {
             allParams.putAll(request.getQueryParams());
-            log.info("Added query params: {}", request.getQueryParams());
+            log.info("Added query params: {}", request.getQueryParams().keySet());
         }
 
-        // Add body params if body is a map
-        if (request.getBody() instanceof Map) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> bodyMap = (Map<String, Object>) request.getBody();
-            if (bodyMap != null) {
-                allParams.putAll(bodyMap);
-                log.info("Added body params: {}", bodyMap);
+        // Add headers (these will be used for execution but NOT for view column validation)
+        Map<String, Object> headerParams = new HashMap<>();
+        if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
+            headerParams.putAll(request.getHeaders());
+            allParams.putAll(request.getHeaders());
+            log.info("Added headers: {}", request.getHeaders().keySet());
+
+            if (request.getHeaders().containsKey("group_id")) {
+                log.info("✅ group_id header found with value: {}", request.getHeaders().get("group_id"));
             }
         }
 
-        log.info("Combined all params for view execution: {}", allParams);
+        // Add body params if body is a map
+        Map<String, Object> bodyParams = new HashMap<>();
+        if (request.getBody() instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> bodyMap = (Map<String, Object>) request.getBody();
+            if (bodyMap != null && !bodyMap.isEmpty()) {
+                bodyParams.putAll(bodyMap);
+                allParams.putAll(bodyMap);
+                log.info("Added body params: {}", bodyMap.keySet());
+            }
+        }
+
+        log.info("Combined all params for view execution: {}", allParams.keySet());
+
+        // Verify group_id is in the params
+        if (allParams.containsKey("group_id")) {
+            log.info("✅ group_id successfully passed to view executor with value: {}", allParams.get("group_id"));
+        }
 
         // Handle collection/array parameters in all params
         for (Map.Entry<String, Object> entry : allParams.entrySet()) {
@@ -121,7 +140,7 @@ public class ViewExecutorUtil {
             throw e;
         }
 
-        // ==================== VALIDATION STEP 3: Validate query parameters against view columns ====================
+        // ==================== VALIDATION STEP 3: Validate ONLY THE APPROPRIATE PARAMETERS against view columns ====================
         try {
             // Get allowed columns from response mappings or API parameters
             List<String> allowedColumns = new ArrayList<>();
@@ -133,7 +152,45 @@ public class ViewExecutorUtil {
                 }
             }
 
-            validateViewQuery(targetOwner, targetName, allParams, allowedColumns);
+            // CRITICAL FIX: Create a filtered map for view column validation
+            // Only include parameters that are configured in the API definition
+            Map<String, Object> queryParamsForValidation = new HashMap<>();
+
+            // Get the list of configured parameter keys from the API
+            Set<String> configuredParamKeys = new HashSet<>();
+            if (api.getParameters() != null) {
+                for (ApiParameterEntity param : api.getParameters()) {
+                    configuredParamKeys.add(param.getKey().toLowerCase());
+                    configuredParamKeys.add(param.getKey()); // Keep original case too
+                }
+            }
+
+            log.info("Configured parameter keys: {}", configuredParamKeys);
+
+            // Only include parameters that are in the configured list
+            for (Map.Entry<String, Object> entry : allParams.entrySet()) {
+                String key = entry.getKey();
+                // Check if this is a configured parameter (case-insensitive)
+                boolean isConfigured = false;
+                for (String configuredKey : configuredParamKeys) {
+                    if (configuredKey.equalsIgnoreCase(key)) {
+                        isConfigured = true;
+                        break;
+                    }
+                }
+
+                // Also include common pagination parameters
+                if (isConfigured || "page".equalsIgnoreCase(key) || "pageSize".equalsIgnoreCase(key) ||
+                        "sort".equalsIgnoreCase(key) || "order".equalsIgnoreCase(key)) {
+                    queryParamsForValidation.put(key, entry.getValue());
+                } else {
+                    log.debug("Excluding header/other param from view validation: {} = {}", key, entry.getValue());
+                }
+            }
+
+            log.info("Validating view query with filtered params: {}", queryParamsForValidation.keySet());
+
+            validateViewQuery(targetOwner, targetName, queryParamsForValidation, allowedColumns);
             log.info("✅ View query validation passed");
         } catch (ValidationException e) {
             log.error("❌ View query validation failed: {}", e.getMessage());
@@ -149,7 +206,7 @@ public class ViewExecutorUtil {
             throw e;
         }
 
-        // FIX: Pass ALL combined parameters to TableExecutorUtil
+        // Pass ALL combined parameters to TableExecutorUtil (including headers)
         return tableExecutorUtil.executeSelect(targetName, targetOwner, allParams, api, configuredParamDTOs);
     }
 

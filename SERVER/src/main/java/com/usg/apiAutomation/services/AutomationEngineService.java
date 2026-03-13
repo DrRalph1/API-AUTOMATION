@@ -19,6 +19,7 @@ import com.usg.apiAutomation.utils.apiEngine.generator.CodeBaseGeneratorUtil;
 import com.usg.apiAutomation.utils.apiEngine.generator.CollectionsGeneratorUtil;
 import com.usg.apiAutomation.utils.apiEngine.generator.DocumentationGeneratorUtil;
 import jakarta.persistence.EntityManager;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -266,18 +267,19 @@ public class AutomationEngineService {
                     log.info("  - {}: type={}, location={}, required={}",
                             p.getKey(), p.getParameterType(), p.getParameterLocation(), p.getRequired()));
 
-            // 8. CRITICAL: Create consolidated params using the enhanced method that includes path param extraction
-            // Make sure you're calling the version that takes both request AND api
-            Map<String, Object> consolidatedParams = executionHelper.createConsolidatedParams(validatedRequest);
+            // 8. CRITICAL: Create consolidated params using the enhanced method that includes headers
+            Map<String, Object> consolidatedParams = createConsolidatedParamsWithHeaders(validatedRequest);
 
             log.info("Consolidated params after extraction: {}", consolidatedParams);
             log.info("Request path params after extraction: {}", validatedRequest.getPathParams());
             log.info("Request query params: {}", validatedRequest.getQueryParams());
+            log.info("Request headers: {}", validatedRequest.getHeaders() != null ?
+                    validatedRequest.getHeaders().keySet() : "null");
             log.info("Request body: {}", validatedRequest.getBody());
             log.info("Final path params in request: {}", validatedRequest.getPathParams());
 
-            // 9. Validate required parameters
-            Map<String, String> validationErrors = validationHelper.validateRequiredParameters(api, consolidatedParams);
+            // 9. Validate required parameters - USING ENHANCED METHOD WITHOUT REQUEST PARAMETER
+            Map<String, String> validationErrors = validateRequiredParametersEnhanced(api, consolidatedParams, validatedRequest);
 
             if (!validationErrors.isEmpty()) {
                 String missingParams = String.join(", ", validationErrors.keySet());
@@ -792,6 +794,154 @@ public class AutomationEngineService {
         log.info("Final endpoint path with placeholders: {}", fullEndpoint);
 
         return fullEndpoint;
+    }
+
+
+
+    /**
+     * Create consolidated parameters map that INCLUDES HEADERS for validation
+     */
+    private Map<String, Object> createConsolidatedParamsWithHeaders(ExecuteApiRequestDTO executeRequest) {
+        Map<String, Object> allParams = new HashMap<>();
+
+        // Add path parameters
+        if (executeRequest.getPathParams() != null && !executeRequest.getPathParams().isEmpty()) {
+            allParams.putAll(executeRequest.getPathParams());
+            log.info("Added path params to consolidated map: {}", executeRequest.getPathParams().keySet());
+        }
+
+        // Add query parameters
+        if (executeRequest.getQueryParams() != null && !executeRequest.getQueryParams().isEmpty()) {
+            allParams.putAll(executeRequest.getQueryParams());
+            log.info("Added query params to consolidated map: {}", executeRequest.getQueryParams().keySet());
+        }
+
+        // CRITICAL FIX: Add headers to the consolidated params map
+        if (executeRequest.getHeaders() != null && !executeRequest.getHeaders().isEmpty()) {
+            // Add headers as-is (original case)
+            allParams.putAll(executeRequest.getHeaders());
+
+            // Also add lowercase versions for case-insensitive matching
+            executeRequest.getHeaders().forEach((key, value) -> {
+                allParams.put(key.toLowerCase(), value);
+            });
+
+            log.info("Added headers to consolidated map: {}", executeRequest.getHeaders().keySet());
+
+            // Specifically log if ac_no header is present
+            if (executeRequest.getHeaders().containsKey("ac_no")) {
+                log.info("Found ac_no header with value: {}", executeRequest.getHeaders().get("ac_no"));
+            } else if (executeRequest.getHeaders().containsKey("AC_NO")) {
+                log.info("Found AC_NO header with value: {}", executeRequest.getHeaders().get("AC_NO"));
+            }
+        } else {
+            log.warn("No headers found in the request!");
+        }
+
+        // Add body parameters if it's a map
+        if (executeRequest.getBody() != null) {
+            if (executeRequest.getBody() instanceof Map) {
+                allParams.putAll((Map<String, Object>) executeRequest.getBody());
+                log.info("Added body params to consolidated map: {}", ((Map<?, ?>) executeRequest.getBody()).keySet());
+            } else {
+                // For non-map bodies, wrap in a special key
+                allParams.put("_body", executeRequest.getBody());
+                log.info("Added raw body to consolidated map");
+            }
+        }
+
+        log.info("Final consolidated params keys: {}", allParams.keySet());
+
+        // Check specifically for ac_no in any form
+        boolean hasAcNo = false;
+        for (String key : allParams.keySet()) {
+            if (key.equalsIgnoreCase("ac_no")) {
+                hasAcNo = true;
+                log.info("Found ac_no (case-insensitive) with key: {} and value: {}", key, allParams.get(key));
+                break;
+            }
+        }
+
+        if (!hasAcNo) {
+            log.warn("WARNING: ac_no parameter NOT found in consolidated params!");
+        }
+
+        return allParams;
+    }
+
+    /**
+     * Enhanced validation that checks headers properly (without HttpServletRequest parameter)
+     */
+    private Map<String, String> validateRequiredParametersEnhanced(
+            GeneratedApiEntity api,
+            Map<String, Object> consolidatedParams,
+            ExecuteApiRequestDTO executeRequest) {
+
+        Map<String, String> errors = new HashMap<>();
+        List<ApiParameterEntity> parameters = api.getParameters();
+
+        log.info("=== Starting Enhanced Required Parameter Validation ===");
+        log.info("Processing {} parameters", parameters.size());
+        log.info("Consolidated params keys: {}", consolidatedParams.keySet());
+
+        for (ApiParameterEntity param : parameters) {
+            if (!param.getRequired()) {
+                continue;
+            }
+
+            String paramKey = param.getKey();
+            String location = param.getParameterLocation();
+
+            log.info("Checking required parameter: {} (location: {})", paramKey, location);
+
+            Object value = null;
+
+            // Strategy 1: Check in consolidated params (case-sensitive)
+            value = consolidatedParams.get(paramKey);
+
+            // Strategy 2: Try case-insensitive match in consolidated params
+            if (value == null) {
+                for (Map.Entry<String, Object> entry : consolidatedParams.entrySet()) {
+                    if (entry.getKey().equalsIgnoreCase(paramKey)) {
+                        value = entry.getValue();
+                        log.info("Found case-insensitive match: {} = {}", entry.getKey(), value);
+                        break;
+                    }
+                }
+            }
+
+            // Strategy 3: For headers, check in the executeRequest headers directly
+            if (value == null && "header".equalsIgnoreCase(location) &&
+                    executeRequest != null && executeRequest.getHeaders() != null) {
+
+                Map<String, String> headers = executeRequest.getHeaders();
+
+                // Check exact match
+                value = headers.get(paramKey);
+
+                // Check case-insensitive
+                if (value == null) {
+                    for (Map.Entry<String, String> entry : headers.entrySet()) {
+                        if (entry.getKey().equalsIgnoreCase(paramKey)) {
+                            value = entry.getValue();
+                            log.info("Found header in executeRequest headers: {} = {}", entry.getKey(), value);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Check if value exists and is not empty
+            if (value == null || value.toString().trim().isEmpty()) {
+                log.error("Required parameter [{}] not found or empty", paramKey);
+                errors.put(paramKey, "Required parameter '" + paramKey + "' is missing");
+            } else {
+                log.info("Required parameter [{}] found with value: {}", paramKey, value);
+            }
+        }
+
+        log.info("=== Validation complete. Errors: {} ===\n", errors.size());
+        return errors;
     }
 
 }
