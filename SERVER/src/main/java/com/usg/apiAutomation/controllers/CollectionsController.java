@@ -161,7 +161,7 @@ public class CollectionsController {
             GenerateApiRequestDTO details = collectionsService.getRequestDetails(
                     requestIdParam, req, performedBy, collectionId, requestId);
 
-            // Create response in the same format as your API generation engine
+            // Create response in the same format as your API generation apiEngine
             Map<String, Object> response = new HashMap<>();
             response.put("responseCode", 200);
             response.put("message", "Request details retrieved successfully");

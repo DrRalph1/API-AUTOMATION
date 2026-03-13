@@ -85,7 +85,7 @@ export default {
     hot: true,
     historyApiFallback: true,
     port: 9874,
-    host: "192.168.1.119",
+    host: "192.168.0.127",
     allowedHosts: "all",
     headers: {
       "Access-Control-Allow-Origin": "*",

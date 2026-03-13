@@ -28,8 +28,8 @@ public class FileUtil {
             return "OTP generation, validation, and verification controller logs";
         } else if (lowerName.contains("rule-group") || lowerName.contains("rule-groups")) {
             return "Rule group configuration and evaluation logs";
-        } else if (lowerName.contains("waf-engine") || lowerName.contains("engine")) {
-            return "WAF engine operations, processing, and systemActivities activity logs";
+        } else if (lowerName.contains("waf-apiEngine") || lowerName.contains("apiEngine")) {
+            return "WAF apiEngine operations, processing, and systemActivities activity logs";
         } else if (lowerName.contains("waf-policy") || lowerName.contains("waf-policies") ||
                 lowerName.contains("policy")) {
             return "WAF policy management and enforcement logs";

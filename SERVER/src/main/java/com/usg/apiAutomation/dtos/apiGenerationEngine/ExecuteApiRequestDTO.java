@@ -12,6 +12,7 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ExecuteApiRequestDTO {
+    private String url;
     private Map<String, Object> pathParams;
     private Map<String, Object> queryParams;
     private Map<String, String> headers;

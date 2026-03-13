@@ -1,0 +1,236 @@
+package com.usg.apiAutomation.helpers.apiEngine;
+
+import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
+import com.usg.apiAutomation.dtos.apiGenerationEngine.CollectionInfoDTO;
+import com.usg.apiAutomation.dtos.apiGenerationEngine.ExecuteApiRequestDTO;
+import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiHeaderEntity;
+import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiParameterEntity;
+import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
+import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.GeneratedAPIRepository;
+import com.usg.apiAutomation.services.OracleSchemaService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+
+import java.util.*;
+
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class ApiValidationHelper {
+
+    public void validateApiCodeUniqueness(GeneratedAPIRepository repository, String apiCode) {
+        if (repository.existsByApiCode(apiCode)) {
+            throw new RuntimeException("API code already exists: " + apiCode);
+        }
+    }
+
+    public void validateApiCodeUniquenessOnUpdate(GeneratedAPIRepository repository,
+                                                  String oldCode, String newCode) {
+        if (!oldCode.equals(newCode) && repository.existsByApiCode(newCode)) {
+            throw new RuntimeException("API code already exists: " + newCode);
+        }
+    }
+
+    public CollectionInfoDTO validateAndGetCollectionInfo(CollectionInfoDTO collectionInfo) {
+        if (collectionInfo == null) {
+            throw new RuntimeException("Collection information is required");
+        }
+
+        if (collectionInfo.getCollectionId() == null || collectionInfo.getCollectionId().trim().isEmpty()) {
+            throw new RuntimeException("Collection ID is required");
+        }
+        if (collectionInfo.getCollectionName() == null || collectionInfo.getCollectionName().trim().isEmpty()) {
+            throw new RuntimeException("Collection name is required");
+        }
+        if (collectionInfo.getFolderId() == null || collectionInfo.getFolderId().trim().isEmpty()) {
+            throw new RuntimeException("Folder ID is required");
+        }
+        if (collectionInfo.getFolderName() == null || collectionInfo.getFolderName().trim().isEmpty()) {
+            throw new RuntimeException("Folder name is required");
+        }
+
+        return collectionInfo;
+    }
+
+    public void validateApiStatus(String status) {
+        List<String> validStatuses = Arrays.asList("DRAFT", "ACTIVE", "DEPRECATED", "ARCHIVED");
+        if (!validStatuses.contains(status)) {
+            throw new RuntimeException("Invalid status: " + status +
+                    ". Valid statuses: " + String.join(", ", validStatuses));
+        }
+    }
+
+    public Map<String, Object> validateSourceObject(OracleSchemaService oracleSchemaService,
+                                                    ApiSourceObjectDTO sourceObject,
+                                                    SourceObjectDetailsProvider detailsProvider) {
+        try {
+            Map<String, Object> validation = oracleSchemaService.validateObject(
+                    UUID.randomUUID().toString(),
+                    null,
+                    "system",
+                    sourceObject.getObjectName(),
+                    sourceObject.getObjectType(),
+                    sourceObject.getOwner()
+            );
+
+            Map<String, Object> result = new HashMap<>();
+            Map<String, Object> data = (Map<String, Object>) validation.get("data");
+
+            if (data != null && Boolean.TRUE.equals(data.get("exists"))) {
+                result.put("valid", true);
+                result.put("exists", true);
+                result.put("objectName", sourceObject.getObjectName());
+                result.put("objectType", sourceObject.getObjectType());
+                result.put("owner", sourceObject.getOwner());
+
+                if (sourceObject.getObjectType().equalsIgnoreCase("SYNONYM")) {
+                    Map<String, Object> resolved = oracleSchemaService.resolveSynonym(
+                            UUID.randomUUID().toString(),
+                            null,
+                            "system",
+                            sourceObject.getObjectName()
+                    );
+
+                    Map<String, Object> resolvedData = (Map<String, Object>) resolved.get("data");
+                    if (resolvedData != null && !resolvedData.containsKey("error")) {
+                        result.put("targetOwner", resolvedData.get("targetOwner"));
+                        result.put("targetName", resolvedData.get("targetName"));
+                        result.put("targetType", resolvedData.get("targetType"));
+                        result.put("isSynonym", true);
+                    }
+                }
+
+                Map<String, Object> details = detailsProvider.getSourceObjectDetails(sourceObject);
+                result.put("details", details);
+
+            } else {
+                result.put("valid", false);
+                result.put("exists", false);
+                result.put("message", "Source object not found");
+            }
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error validating source object: {}", e.getMessage());
+            Map<String, Object> error = new HashMap<>();
+            error.put("valid", false);
+            error.put("error", e.getMessage());
+            return error;
+        }
+    }
+
+    public Map<String, String> validateRequiredHeaders(GeneratedApiEntity api,
+                                                       ExecuteApiRequestDTO request) {
+        Map<String, String> errors = new HashMap<>();
+
+        if (api.getHeaders() == null || api.getHeaders().isEmpty()) {
+            return errors;
+        }
+
+        Map<String, String> requestHeaders = request.getHeaders();
+        if (requestHeaders == null) {
+            requestHeaders = new HashMap<>();
+        }
+
+        String httpMethod = api.getHttpMethod();
+        boolean isGetRequest = "GET".equalsIgnoreCase(httpMethod);
+        boolean isHeadRequest = "HEAD".equalsIgnoreCase(httpMethod);
+        boolean isDeleteRequest = "DELETE".equalsIgnoreCase(httpMethod);
+        boolean skipContentTypeValidation = isGetRequest || isHeadRequest || isDeleteRequest;
+
+        for (ApiHeaderEntity header : api.getHeaders()) {
+            if (Boolean.TRUE.equals(header.getRequired()) &&
+                    Boolean.TRUE.equals(header.getIsRequestHeader())) {
+
+                String headerKey = header.getKey();
+
+                if (skipContentTypeValidation && "Content-Type".equalsIgnoreCase(headerKey)) {
+                    log.debug("Skipping Content-Type validation for {} request", httpMethod);
+                    continue;
+                }
+
+                boolean found = false;
+
+                if (requestHeaders.containsKey(headerKey)) {
+                    found = true;
+                } else {
+                    for (String key : requestHeaders.keySet()) {
+                        if (key.equalsIgnoreCase(headerKey)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!found) {
+                    errors.put(headerKey, "Required header '" + headerKey + "' is missing");
+                }
+            }
+        }
+
+        return errors;
+    }
+
+    public Map<String, String> validateRequiredParameters(GeneratedApiEntity api,
+                                                          Map<String, Object> allParams) {
+        Map<String, String> errors = new HashMap<>();
+
+        try {
+            if (api == null || api.getParameters() == null || api.getParameters().isEmpty()) {
+                return errors;
+            }
+
+            if (allParams == null) {
+                allParams = new HashMap<>();
+            }
+
+            log.debug("validateRequiredParameters: Processing {} parameters", api.getParameters().size());
+
+            for (ApiParameterEntity param : api.getParameters()) {
+                if (param == null || param.getKey() == null) continue;
+
+                Boolean required = param.getRequired();
+                if (required == null || !required) continue;
+
+                String paramKey = param.getKey();
+                boolean found = false;
+
+                if (allParams.containsKey(paramKey)) {
+                    Object value = allParams.get(paramKey);
+
+                    if (value != null) {
+                        if (value instanceof List || value.getClass().isArray()) {
+                            Collection<?> collection = value instanceof List ?
+                                    (List<?>) value : Arrays.asList((Object[]) value);
+                            if (!collection.isEmpty()) {
+                                Object firstValue = collection.iterator().next();
+                                found = firstValue != null && !firstValue.toString().trim().isEmpty();
+                            }
+                        } else {
+                            found = !value.toString().trim().isEmpty();
+                        }
+                    }
+                }
+
+                if (!found) {
+                    log.debug("Required parameter [{}] not found or empty", paramKey);
+                    errors.put(paramKey, "Required parameter '" + paramKey + "' is missing or empty");
+                }
+            }
+
+        } catch (Exception e) {
+            log.error("validateRequiredParameters: Exception: {}", e.getMessage(), e);
+            errors.put("validation", "Error validating parameters: " + e.getMessage());
+        }
+
+        return errors;
+    }
+
+    @FunctionalInterface
+    public interface SourceObjectDetailsProvider {
+        Map<String, Object> getSourceObjectDetails(ApiSourceObjectDTO sourceObject);
+    }
+
+}

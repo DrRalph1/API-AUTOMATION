@@ -1,0 +1,544 @@
+package com.usg.apiAutomation.helpers.apiEngine;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.usg.apiAutomation.dtos.apiGenerationEngine.CollectionInfoDTO;
+import com.usg.apiAutomation.dtos.apiGenerationEngine.GenerateApiRequestDTO;
+import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
+import com.usg.apiAutomation.repositories.postgres.codeBase.CollectionRepository;
+import com.usg.apiAutomation.repositories.postgres.codeBase.FolderRepository;
+import com.usg.apiAutomation.repositories.postgres.codeBase.RequestRepository;
+import com.usg.apiAutomation.repositories.postgres.documentation.APICollectionRepository;
+import com.usg.apiAutomation.repositories.postgres.documentation.APIEndpointRepository;
+import com.usg.apiAutomation.utils.apiEngine.generator.CodeBaseGeneratorUtil;
+import com.usg.apiAutomation.utils.apiEngine.generator.CollectionsGeneratorUtil;
+import com.usg.apiAutomation.utils.apiEngine.generator.DocumentationGeneratorUtil;
+import com.usg.apiAutomation.utils.apiEngine.GenUrlBuilderUtil;
+import com.usg.apiAutomation.utils.apiEngine.OracleTypeMapperUtil;
+import jakarta.persistence.EntityManager;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+
+import java.time.LocalDateTime;
+import java.util.*;
+
+@Slf4j
+@Component
+public class ApiComponentHelper {
+
+    public void updateComponents(
+            GeneratedApiEntity savedApi,
+            String performedBy,
+            GenerateApiRequestDTO request,
+            CollectionInfoDTO collectionInfo,
+            boolean regenerate,
+            CodeBaseGeneratorUtil codeBaseGeneratorUtil,
+            CollectionsGeneratorUtil collectionsGeneratorUtil,
+            DocumentationGeneratorUtil documentationGeneratorUtil,
+            CodeBaseUpdater codeBaseUpdater,
+            CollectionsUpdater collectionsUpdater,
+            DocumentationUpdater documentationUpdater,
+            ComponentIdProvider codeBaseIdProvider,
+            ComponentIdProvider collectionIdProvider) {
+
+        if (regenerate) {
+            regenerateComponents(savedApi, performedBy, request, collectionInfo,
+                    codeBaseGeneratorUtil, collectionsGeneratorUtil, documentationGeneratorUtil,
+                    this::generateApiCodeForRegeneration); // <-- Use this method reference
+        } else {
+            codeBaseUpdater.updateCodeBase(savedApi, performedBy, request, collectionInfo);
+            collectionsUpdater.updateCollections(savedApi, performedBy, request, collectionInfo);
+            documentationUpdater.updateDocumentation(savedApi, performedBy, request, collectionInfo,
+                    codeBaseIdProvider.getComponentId(savedApi),
+                    collectionIdProvider.getComponentId(savedApi));
+        }
+    }
+
+    public void updateCodeBase(GeneratedApiEntity api,
+                               String performedBy,
+                               GenerateApiRequestDTO request,
+                               CollectionInfoDTO collectionInfo,
+                               CodeBaseGeneratorUtil codeBaseGeneratorUtil,
+                               RequestRepository requestRepository,
+                               CollectionRepository collectionRepository,
+                               FolderRepository folderRepository,
+                               EntityManager entityManager) {
+        try {
+            log.info("Updating code base for API: {} using collection: {}",
+                    api.getApiCode(), collectionInfo != null ? collectionInfo.getCollectionName() : "unknown");
+
+            String codeBaseRequestId = getCodeBaseRequestId(api);
+            if (codeBaseRequestId == null && collectionInfo != null) {
+                log.info("Creating new code base request from collection info");
+                codeBaseGeneratorUtil.generate(api, performedBy, request, collectionInfo);
+                return;
+            }
+
+            if (codeBaseRequestId != null) {
+                Optional<com.usg.apiAutomation.entities.postgres.codeBase.RequestEntity> existingRequest =
+                        requestRepository.findByIdWithLock(codeBaseRequestId);
+                if (existingRequest.isPresent()) {
+                    updateCodeBaseRequest(existingRequest.get(), api, performedBy, collectionInfo,
+                            collectionRepository, folderRepository, entityManager);
+                }
+            }
+
+        } catch (Exception e) {
+            log.error("Failed to update code base: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update code base: " + e.getMessage(), e);
+        }
+    }
+
+    public void updateCollections(GeneratedApiEntity api,
+                                  String performedBy,
+                                  GenerateApiRequestDTO request,
+                                  CollectionInfoDTO collectionInfo,
+                                  CollectionsGeneratorUtil collectionsGeneratorUtil,
+                                  com.usg.apiAutomation.repositories.postgres.collections.CollectionRepository collectionRepository,
+                                  com.usg.apiAutomation.repositories.postgres.collections.FolderRepository folderRepository,
+                                  com.usg.apiAutomation.repositories.postgres.collections.RequestRepository requestRepository,
+                                  EntityManager entityManager) {
+        try {
+            log.info("Updating collections for API: {} using collection: {}",
+                    api.getApiCode(), collectionInfo != null ? collectionInfo.getCollectionName() : "unknown");
+
+            String collectionId = getCollectionsCollectionId(api);
+            if (collectionId == null && collectionInfo != null) {
+                log.info("Creating new collections from frontend data");
+                collectionsGeneratorUtil.generate(api, performedBy, request, collectionInfo);
+                return;
+            }
+
+            if (collectionId != null) {
+                Optional<com.usg.apiAutomation.entities.postgres.collections.CollectionEntity> existingCollection =
+                        collectionRepository.findById(collectionId);
+                if (existingCollection.isPresent()) {
+                    updateCollectionEntity(existingCollection.get(), api, collectionInfo, performedBy,
+                            folderRepository, entityManager);
+                }
+            }
+
+        } catch (Exception e) {
+            log.error("Failed to update collections: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update collections: " + e.getMessage(), e);
+        }
+    }
+
+    public void updateDocumentation(GeneratedApiEntity api,
+                                    String performedBy,
+                                    GenerateApiRequestDTO request,
+                                    CollectionInfoDTO collectionInfo,
+                                    String codeBaseRequestId,
+                                    String collectionsCollectionId,
+                                    DocumentationGeneratorUtil documentationGeneratorUtil,
+                                    APICollectionRepository collectionRepository,
+                                    com.usg.apiAutomation.repositories.postgres.documentation.FolderRepository folderRepository,
+                                    APIEndpointRepository endpointRepository,
+                                    EntityManager entityManager) {
+        try {
+            log.info("Updating documentation for API: {} using collection: {}",
+                    api.getApiCode(), collectionInfo != null ? collectionInfo.getCollectionName() : "unknown");
+
+            String docCollectionId = getDocumentationCollectionId(api);
+            if (docCollectionId == null && collectionInfo != null) {
+                log.info("Creating new documentation collection from frontend data");
+                documentationGeneratorUtil.generate(api, performedBy, request, codeBaseRequestId,
+                        collectionsCollectionId, collectionInfo);
+                return;
+            }
+
+            if (docCollectionId != null) {
+                Optional<com.usg.apiAutomation.entities.postgres.documentation.APICollectionEntity> existingCollection =
+                        collectionRepository.findById(docCollectionId);
+                if (existingCollection.isPresent()) {
+                    updateDocumentationCollection(existingCollection.get(), api, collectionInfo, performedBy,
+                            folderRepository, endpointRepository, entityManager);
+                }
+            }
+
+        } catch (Exception e) {
+            log.error("Failed to update documentation: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update documentation: " + e.getMessage(), e);
+        }
+    }
+
+    public Map<String, String> generateApiCode(GeneratedApiEntity api,
+                                               GenUrlBuilderUtil genUrlBuilder,
+                                               PlSqlGenerator plSqlGenerator,
+                                               GenInfoFileGenerator genInfoGenerator,
+                                               OpenApiGenerator openApiGenerator,
+                                               PostmanGenerator postmanGenerator) {
+        Map<String, String> generatedFiles = new HashMap<>();
+
+        GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(api);
+
+        generatedFiles.put("plsql", plSqlGenerator.generatePlSqlPackage(api));
+        generatedFiles.put("gen-info", genInfoGenerator.generateGenInfoFile(api, genUrlInfo));
+
+        if (api.getSettings() != null && Boolean.TRUE.equals(api.getSettings().getGenerateSwagger())) {
+            generatedFiles.put("openapi", openApiGenerator.generateOpenApiSpec(api));
+        }
+
+        if (api.getSettings() != null && Boolean.TRUE.equals(api.getSettings().getGeneratePostman())) {
+            generatedFiles.put("postman", postmanGenerator.generatePostmanCollection(api));
+        }
+
+        return generatedFiles;
+    }
+
+    public String generatePlSqlPackage(GeneratedApiEntity api) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("-- Generated API Package: ").append(api.getApiName()).append("\n");
+        sb.append("CREATE OR REPLACE PACKAGE ").append(api.getApiCode()).append("_PKG AS\n");
+        sb.append("  PROCEDURE execute_api(\n");
+        if (api.getParameters() != null) {
+            api.getParameters().forEach(p -> {
+                sb.append("    p_").append(p.getKey()).append(" IN ").append(p.getOracleType()).append(",\n");
+            });
+        }
+        sb.append("  );\n");
+        sb.append("END;\n/\n");
+        return sb.toString();
+    }
+
+    public String generateGenInfoFile(GeneratedApiEntity api, GenUrlBuilderUtil.GenUrlInfo genUrlInfo) {
+        StringBuilder info = new StringBuilder();
+        info.append("# API Gen URL Information\n");
+        info.append("API ID: ").append(api.getId()).append("\n");
+        info.append("API Name: ").append(api.getApiName()).append("\n");
+        info.append("Gen Endpoint: ").append(genUrlInfo.getEndpointPath()).append("\n");
+        info.append("Full URL: ").append(genUrlInfo.getFullUrl()).append("\n");
+        info.append("Example URL: ").append(genUrlInfo.getExampleUrl()).append("\n");
+        return info.toString();
+    }
+
+    public String generateOpenApiSpec(GeneratedApiEntity api, ObjectMapper objectMapper,
+                                      OracleTypeMapperUtil typeMapper) {
+        Map<String, Object> spec = new HashMap<>();
+        spec.put("openapi", "3.0.0");
+
+        Map<String, Object> info = new HashMap<>();
+        info.put("title", api.getApiName());
+        info.put("version", api.getVersion());
+        spec.put("info", info);
+
+        try {
+            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(spec);
+        } catch (Exception e) {
+            log.error("Error generating OpenAPI spec: {}", e.getMessage());
+            return "{}";
+        }
+    }
+
+    public String generatePostmanCollection(GeneratedApiEntity api, ObjectMapper objectMapper) {
+        Map<String, Object> collection = new HashMap<>();
+
+        Map<String, Object> info = new HashMap<>();
+        info.put("name", api.getApiName());
+        info.put("schema", "https://schema.getpostman.com/json/collection/v2.1.0/collection.json");
+        collection.put("info", info);
+
+        try {
+            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(collection);
+        } catch (Exception e) {
+            log.error("Error generating Postman collection: {}", e.getMessage());
+            return "{}";
+        }
+    }
+
+    public void regenerateComponents(GeneratedApiEntity api,
+                                     String performedBy,
+                                     GenerateApiRequestDTO request,
+                                     CollectionInfoDTO collectionInfo,
+                                     CodeBaseGeneratorUtil codeBaseGeneratorUtil,
+                                     CollectionsGeneratorUtil collectionsGeneratorUtil,
+                                     DocumentationGeneratorUtil documentationGeneratorUtil,
+                                     ApiCodeGenerator apiCodeGenerator) {
+        try {
+            apiCodeGenerator.generateApiCode(api);
+            codeBaseGeneratorUtil.generate(api, performedBy, request, collectionInfo);
+            collectionsGeneratorUtil.generate(api, performedBy, request, collectionInfo);
+            String codeBaseRequestId = getCodeBaseRequestId(api);
+            String collectionId = getCollectionsCollectionId(api);
+            documentationGeneratorUtil.generate(api, performedBy, request, codeBaseRequestId, collectionId, collectionInfo);
+        } catch (Exception e) {
+            log.warn("Failed to regenerate components: {}", e.getMessage());
+        }
+    }
+
+    // Private update methods
+    private void updateCodeBaseRequest(com.usg.apiAutomation.entities.postgres.codeBase.RequestEntity requestEntity,
+                                       GeneratedApiEntity api,
+                                       String performedBy,
+                                       CollectionInfoDTO collectionInfo,
+                                       CollectionRepository collectionRepository,
+                                       FolderRepository folderRepository,
+                                       EntityManager entityManager) {
+        requestEntity.setName(api.getApiName() + " - " + api.getHttpMethod());
+        requestEntity.setMethod(api.getHttpMethod());
+        requestEntity.setDescription(api.getDescription());
+
+        if (collectionInfo != null) {
+            updateCodeBaseCollection(requestEntity, collectionInfo, performedBy,
+                    collectionRepository, folderRepository, entityManager);
+        }
+
+        // Update headers, parameters, etc.
+    }
+
+    private void updateCodeBaseCollection(com.usg.apiAutomation.entities.postgres.codeBase.RequestEntity requestEntity,
+                                          CollectionInfoDTO collectionInfo,
+                                          String performedBy,
+                                          CollectionRepository collectionRepository,
+                                          FolderRepository folderRepository,
+                                          EntityManager entityManager) {
+        try {
+            Optional<com.usg.apiAutomation.entities.postgres.codeBase.CollectionEntity> existingCollection =
+                    collectionRepository.findByIdWithLock(collectionInfo.getCollectionId());
+
+            com.usg.apiAutomation.entities.postgres.codeBase.CollectionEntity collection;
+            if (existingCollection.isPresent()) {
+                collection = existingCollection.get();
+                collection.setName(collectionInfo.getCollectionName());
+                collection.setUpdatedAt(LocalDateTime.now());
+                collection = collectionRepository.saveAndFlush(collection);
+            } else {
+                collection = com.usg.apiAutomation.entities.postgres.codeBase.CollectionEntity.builder()
+                        .id(collectionInfo.getCollectionId())
+                        .name(collectionInfo.getCollectionName())
+                        .owner(performedBy)
+                        .createdAt(LocalDateTime.now())
+                        .updatedAt(LocalDateTime.now())
+                        .build();
+                collection = collectionRepository.saveAndFlush(collection);
+            }
+            requestEntity.setCollection(collection);
+
+            if (collectionInfo.getFolderId() != null) {
+                updateCodeBaseFolder(requestEntity, collectionInfo, collection, folderRepository, entityManager);
+            }
+
+        } catch (Exception e) {
+            log.error("Failed to update code base collection: {}", e.getMessage());
+        }
+    }
+
+    private void updateCodeBaseFolder(com.usg.apiAutomation.entities.postgres.codeBase.RequestEntity requestEntity,
+                                      CollectionInfoDTO collectionInfo,
+                                      com.usg.apiAutomation.entities.postgres.codeBase.CollectionEntity collection,
+                                      FolderRepository folderRepository,
+                                      EntityManager entityManager) {
+        Optional<com.usg.apiAutomation.entities.postgres.codeBase.FolderEntity> existingFolder =
+                folderRepository.findByIdWithLock(collectionInfo.getFolderId());
+
+        com.usg.apiAutomation.entities.postgres.codeBase.FolderEntity folder;
+        if (existingFolder.isPresent()) {
+            folder = existingFolder.get();
+            folder.setName(collectionInfo.getFolderName());
+            folder.setUpdatedAt(LocalDateTime.now());
+            folder = folderRepository.saveAndFlush(folder);
+        } else {
+            folder = com.usg.apiAutomation.entities.postgres.codeBase.FolderEntity.builder()
+                    .id(collectionInfo.getFolderId())
+                    .name(collectionInfo.getFolderName())
+                    .collection(collection)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
+            folder = folderRepository.saveAndFlush(folder);
+        }
+        requestEntity.setFolder(folder);
+    }
+
+    private void updateCollectionEntity(com.usg.apiAutomation.entities.postgres.collections.CollectionEntity collection,
+                                        GeneratedApiEntity api,
+                                        CollectionInfoDTO collectionInfo,
+                                        String performedBy,
+                                        com.usg.apiAutomation.repositories.postgres.collections.FolderRepository folderRepository,
+                                        EntityManager entityManager) {
+        collection.setName(collectionInfo != null ? collectionInfo.getCollectionName() : api.getApiName());
+        collection.setDescription(api.getDescription());
+        collection.setLastActivity(LocalDateTime.now());
+
+        if (collectionInfo != null && collectionInfo.getFolderId() != null) {
+            updateCollectionFolder(collection, collectionInfo, folderRepository, entityManager);
+        }
+    }
+
+    private void updateCollectionFolder(com.usg.apiAutomation.entities.postgres.collections.CollectionEntity collection,
+                                        CollectionInfoDTO collectionInfo,
+                                        com.usg.apiAutomation.repositories.postgres.collections.FolderRepository folderRepository,
+                                        EntityManager entityManager) {
+        Optional<com.usg.apiAutomation.entities.postgres.collections.FolderEntity> existingFolder =
+                folderRepository.findById(collectionInfo.getFolderId());
+
+        if (existingFolder.isPresent()) {
+            com.usg.apiAutomation.entities.postgres.collections.FolderEntity folder = existingFolder.get();
+            folder.setName(collectionInfo.getFolderName());
+            folder.setCollection(collection);
+            folderRepository.save(folder);
+        } else {
+            com.usg.apiAutomation.entities.postgres.collections.FolderEntity newFolder =
+                    new com.usg.apiAutomation.entities.postgres.collections.FolderEntity();
+            newFolder.setId(collectionInfo.getFolderId());
+            newFolder.setName(collectionInfo.getFolderName());
+            newFolder.setCollection(collection);
+            folderRepository.save(newFolder);
+        }
+    }
+
+    private void updateDocumentationCollection(com.usg.apiAutomation.entities.postgres.documentation.APICollectionEntity collection,
+                                               GeneratedApiEntity api,
+                                               CollectionInfoDTO collectionInfo,
+                                               String performedBy,
+                                               com.usg.apiAutomation.repositories.postgres.documentation.FolderRepository folderRepository,
+                                               APIEndpointRepository endpointRepository,
+                                               EntityManager entityManager) {
+        collection.setName(collectionInfo != null ? collectionInfo.getCollectionName() : api.getApiName());
+        collection.setDescription(api.getDescription());
+        collection.setVersion(api.getVersion());
+        collection.setUpdatedBy(performedBy);
+
+        if (collectionInfo != null && collectionInfo.getFolderId() != null) {
+            updateDocumentationFolder(collection, collectionInfo, performedBy, folderRepository, entityManager);
+        }
+
+        // Update endpoint
+        List<com.usg.apiAutomation.entities.postgres.documentation.APIEndpointEntity> endpoints =
+                endpointRepository.findByCollectionId(collection.getId());
+        if (!endpoints.isEmpty()) {
+            com.usg.apiAutomation.entities.postgres.documentation.APIEndpointEntity endpoint = endpoints.get(0);
+            endpoint.setName(api.getApiName());
+            endpoint.setMethod(api.getHttpMethod());
+            endpoint.setDescription(api.getDescription());
+            endpoint.setUpdatedBy(performedBy);
+            endpointRepository.save(endpoint);
+        }
+    }
+
+    private void updateDocumentationFolder(com.usg.apiAutomation.entities.postgres.documentation.APICollectionEntity collection,
+                                           CollectionInfoDTO collectionInfo,
+                                           String performedBy,
+                                           com.usg.apiAutomation.repositories.postgres.documentation.FolderRepository folderRepository,
+                                           EntityManager entityManager) {
+        Optional<com.usg.apiAutomation.entities.postgres.documentation.FolderEntity> existingFolder =
+                folderRepository.findById(collectionInfo.getFolderId());
+
+        if (existingFolder.isPresent()) {
+            com.usg.apiAutomation.entities.postgres.documentation.FolderEntity folder = existingFolder.get();
+            folder.setName(collectionInfo.getFolderName());
+            folder.setCollection(collection);
+            folder.setUpdatedBy(performedBy);
+            folderRepository.save(folder);
+        } else {
+            com.usg.apiAutomation.entities.postgres.documentation.FolderEntity newFolder =
+                    new com.usg.apiAutomation.entities.postgres.documentation.FolderEntity();
+            newFolder.setId(collectionInfo.getFolderId());
+            newFolder.setName(collectionInfo.getFolderName());
+            newFolder.setCollection(collection);
+            newFolder.setCreatedBy(performedBy);
+            newFolder.setUpdatedBy(performedBy);
+            folderRepository.save(newFolder);
+        }
+    }
+
+    // Helper methods to get component IDs
+    private String getCodeBaseRequestId(GeneratedApiEntity api) {
+        try {
+            if (api.getSourceObjectInfo() != null) {
+                Map<String, Object> metadata = api.getSourceObjectInfo();
+                return (String) metadata.get("codeBaseRequestId");
+            }
+        } catch (Exception e) {
+            log.warn("Failed to extract code base request ID: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private String getCollectionsCollectionId(GeneratedApiEntity api) {
+        try {
+            if (api.getSourceObjectInfo() != null) {
+                Map<String, Object> metadata = api.getSourceObjectInfo();
+                return (String) metadata.get("collectionsCollectionId");
+            }
+        } catch (Exception e) {
+            log.warn("Failed to extract collections collection ID: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private String getDocumentationCollectionId(GeneratedApiEntity api) {
+        try {
+            if (api.getSourceObjectInfo() != null) {
+                Map<String, Object> metadata = api.getSourceObjectInfo();
+                return (String) metadata.get("documentationCollectionId");
+            }
+        } catch (Exception e) {
+            log.warn("Failed to extract documentation collection ID: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    // Functional interfaces
+    @FunctionalInterface
+    public interface CodeBaseUpdater {
+        void updateCodeBase(GeneratedApiEntity api, String performedBy,
+                            GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo);
+    }
+
+    @FunctionalInterface
+    public interface CollectionsUpdater {
+        void updateCollections(GeneratedApiEntity api, String performedBy,
+                               GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo);
+    }
+
+    @FunctionalInterface
+    public interface DocumentationUpdater {
+        void updateDocumentation(GeneratedApiEntity api, String performedBy,
+                                 GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo,
+                                 String codeBaseRequestId, String collectionsCollectionId);
+    }
+
+    @FunctionalInterface
+    public interface ComponentIdProvider {
+        String getComponentId(GeneratedApiEntity api);
+    }
+
+    @FunctionalInterface
+    public interface ApiCodeGenerator {
+        Map<String, String> generateApiCode(GeneratedApiEntity api);
+    }
+
+    @FunctionalInterface
+    public interface PlSqlGenerator {
+        String generatePlSqlPackage(GeneratedApiEntity api);
+    }
+
+    @FunctionalInterface
+    public interface GenInfoFileGenerator {
+        String generateGenInfoFile(GeneratedApiEntity api, GenUrlBuilderUtil.GenUrlInfo genUrlInfo);
+    }
+
+    @FunctionalInterface
+    public interface OpenApiGenerator {
+        String generateOpenApiSpec(GeneratedApiEntity api);
+    }
+
+    @FunctionalInterface
+    public interface PostmanGenerator {
+        String generatePostmanCollection(GeneratedApiEntity api);
+    }
+
+    // Add this method to ApiComponentHelper
+    private Map<String, String> generateApiCodeForRegeneration(GeneratedApiEntity api) {
+        // Create instances or use injected dependencies
+        GenUrlBuilderUtil genUrlBuilder = new GenUrlBuilderUtil(); // You should inject this
+        OracleTypeMapperUtil typeMapper = new OracleTypeMapperUtil(); // You should inject this
+        ObjectMapper objectMapper = new ObjectMapper(); // You should inject this
+
+        return generateApiCode(api, genUrlBuilder,
+                this::generatePlSqlPackage,
+                this::generateGenInfoFile,
+                (a) -> generateOpenApiSpec(a, objectMapper, typeMapper),
+                (a) -> generatePostmanCollection(a, objectMapper));
+    }
+}
