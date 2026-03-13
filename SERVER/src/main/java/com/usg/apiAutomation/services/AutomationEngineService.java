@@ -208,7 +208,9 @@ public class AutomationEngineService {
     @Transactional
     public ExecuteApiResponseDTO executeApi(String requestId, String performedBy,
                                             String apiId, ExecuteApiRequestDTO executeRequest,
-                                            String clientIp, String userAgent) {
+                                            String clientIp, String userAgent,
+                                            HttpServletRequest httpServletRequest) {
+
         long startTime = System.currentTimeMillis();
 
         try {
@@ -230,10 +232,41 @@ public class AutomationEngineService {
                 executeRequest.setRequestId(UUID.randomUUID().toString());
             }
 
-            // 4. Prepare and validate the request
+            // 4. CRITICAL: Extract HTTP method from HttpServletRequest
+            String httpMethod = null;
+            if (httpServletRequest != null) {
+                httpMethod = httpServletRequest.getMethod();
+                log.info("HTTP method from HttpServletRequest: {}", httpMethod);
+
+                // Set it directly in the DTO
+                executeRequest.setHttpMethod(httpMethod);
+            }
+
+            // 5. Prepare and validate the request
             ExecuteApiRequestDTO validatedRequest = executionHelper.prepareValidatedRequest(api, executeRequest);
 
-            // 5. Validate authentication
+            // 6. Ensure HTTP method is preserved (in case prepareValidatedRequest cleared it)
+            if (validatedRequest.getHttpMethod() == null && httpMethod != null) {
+                validatedRequest.setHttpMethod(httpMethod);
+                log.info("Re-set HTTP method in validatedRequest: {}", httpMethod);
+            }
+
+            // 7. Validate HTTP method
+            if (!validateHttpMethod(api, validatedRequest.getHttpMethod())) {
+                String errorMsg = String.format("HTTP method not allowed. Expected: %s, Actual: %s",
+                        api.getHttpMethod(), validatedRequest.getHttpMethod() != null ?
+                                validatedRequest.getHttpMethod() : "null");
+
+                log.warn("HTTP method mismatch. {}", errorMsg);
+
+                executionHelper.logExecution(executionLogRepository, api, validatedRequest,
+                        null, 405, System.currentTimeMillis() - startTime,
+                        performedBy, clientIp, userAgent, errorMsg, objectMapper);
+
+                return responseHelper.createErrorResponse(405, errorMsg, startTime);
+            }
+
+            // 8. Validate authentication
             AuthenticationServiceUtil.AuthenticationResult authResult =
                     authenticationService.validateAuthentication(api, validatedRequest);
             if (!authResult.isAuthenticated()) {
@@ -246,29 +279,38 @@ public class AutomationEngineService {
                         "Authentication failed: " + authResult.getReason(), startTime);
             }
 
-            // 6. Validate required headers
-            Map<String, String> headerErrors = validationHelper.validateRequiredHeaders(api, validatedRequest);
-            if (!headerErrors.isEmpty()) {
-                String missingHeaders = String.join(", ", headerErrors.keySet());
-
-                executionHelper.logExecution(executionLogRepository, api, validatedRequest,
-                        null, 400, System.currentTimeMillis() - startTime,
-                        performedBy, clientIp, userAgent,
-                        "Missing required header(s): " + missingHeaders, objectMapper);
-
-                return responseHelper.createErrorResponse(400,
-                        "Missing required header(s): " + missingHeaders, startTime);
-            }
-
-            // 7. Get all API parameters and log them
+            // 9. Get all API parameters and log them
             List<ApiParameterEntity> apiParameters = api.getParameters();
             log.info("API parameter definitions:");
             apiParameters.forEach(p ->
                     log.info("  - {}: type={}, location={}, required={}",
                             p.getKey(), p.getParameterType(), p.getParameterLocation(), p.getRequired()));
 
-            // 8. CRITICAL: Create consolidated params using the enhanced method that includes headers
+            // 10. Create consolidated params using the enhanced method that includes headers
             Map<String, Object> consolidatedParams = createConsolidatedParamsWithHeaders(validatedRequest);
+
+            // 11. AUTO-ADD CONTENT-TYPE HEADER IF MISSING BUT REQUIRED
+            boolean contentTypeRequired = apiParameters.stream()
+                    .anyMatch(p -> "Content-Type".equalsIgnoreCase(p.getKey()) && p.getRequired());
+
+            boolean contentTypeMissing = !consolidatedParams.containsKey("Content-Type") &&
+                    !consolidatedParams.containsKey("content-type");
+
+            if (contentTypeRequired && contentTypeMissing) {
+                String contentTypeValue = "application/json";
+                log.info("Auto-adding missing required Content-Type header with value: {}", contentTypeValue);
+
+                // Add to consolidated params with original case
+                consolidatedParams.put("Content-Type", contentTypeValue);
+
+                // Also add to the request headers for proper execution
+                if (validatedRequest.getHeaders() == null) {
+                    validatedRequest.setHeaders(new HashMap<>());
+                }
+                validatedRequest.getHeaders().put("Content-Type", contentTypeValue);
+
+                log.info("Content-Type header auto-added successfully");
+            }
 
             log.info("Consolidated params after extraction: {}", consolidatedParams);
             log.info("Request path params after extraction: {}", validatedRequest.getPathParams());
@@ -278,7 +320,7 @@ public class AutomationEngineService {
             log.info("Request body: {}", validatedRequest.getBody());
             log.info("Final path params in request: {}", validatedRequest.getPathParams());
 
-            // 9. Validate required parameters - USING ENHANCED METHOD WITHOUT REQUEST PARAMETER
+            // 12. Validate required parameters - USING ENHANCED METHOD
             Map<String, String> validationErrors = validateRequiredParametersEnhanced(api, consolidatedParams, validatedRequest);
 
             if (!validationErrors.isEmpty()) {
@@ -293,7 +335,7 @@ public class AutomationEngineService {
                         "Required parameter(s) missing: " + missingParams, startTime);
             }
 
-            // 10. Authorization check
+            // 13. Authorization check
             if (!validatorService.validateAuthorization(api, performedBy)) {
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, 403, System.currentTimeMillis() - startTime,
@@ -304,7 +346,7 @@ public class AutomationEngineService {
                         "User not authorized to access this API", startTime);
             }
 
-            // 11. Rate limiting check
+            // 14. Rate limiting check
             if (!validatorService.checkRateLimit(api, clientIp)) {
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, 429, System.currentTimeMillis() - startTime,
@@ -315,13 +357,13 @@ public class AutomationEngineService {
                         "Rate limit exceeded. Please try again later.", startTime);
             }
 
-            // 12. Extract source object from API
+            // 15. Extract source object from API
             ApiSourceObjectDTO sourceObject = conversionHelper.extractSourceObject(api, objectMapper);
 
-            // 13. Convert parameters to DTOs for execution
+            // 16. Convert parameters to DTOs for execution
             List<ApiParameterDTO> configuredParamDTOs = conversionHelper.convertParametersToDTOs(api.getParameters());
 
-            // 14. Execute against Oracle
+            // 17. Execute against Oracle
             Object result;
             try {
                 result = executionHelper.executeAgainstOracle(
@@ -350,20 +392,20 @@ public class AutomationEngineService {
                         "Database execution error: " + e.getMessage(), startTime);
             }
 
-            // 15. Format the response
+            // 18. Format the response
             Object formattedResponse = responseHelper.formatResponse(api, result);
 
             long executionTime = System.currentTimeMillis() - startTime;
 
-            // 16. Update API statistics
+            // 19. Update API statistics
             executionHelper.updateApiStats(api, generatedAPIRepository);
 
-            // 17. Log the successful execution
+            // 20. Log the successful execution
             executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                     formattedResponse, 200, executionTime, performedBy,
                     clientIp, userAgent, null, objectMapper);
 
-            // 18. Build success response
+            // 21. Build success response
             ExecuteApiResponseDTO response = responseHelper.buildSuccessResponse(
                     formattedResponse, executionTime, api);
 
@@ -400,9 +442,39 @@ public class AutomationEngineService {
         }
     }
 
+    /**
+     * Validate HTTP method matches API configuration
+     */
+    private boolean validateHttpMethod(GeneratedApiEntity api, String requestMethod) {
+        if (api == null || api.getHttpMethod() == null) {
+            log.warn("API or HTTP method not configured");
+            return false;
+        }
+
+        if (requestMethod == null || requestMethod.trim().isEmpty()) {
+            log.warn("Request method is null or empty");
+            return false;
+        }
+
+        String configuredMethod = api.getHttpMethod().toUpperCase().trim();
+        String actualMethod = requestMethod.toUpperCase().trim();
+
+        boolean isValid = configuredMethod.equals(actualMethod);
+
+        if (!isValid) {
+            log.warn("HTTP method mismatch. Configured: {}, Actual: {}", configuredMethod, actualMethod);
+        } else {
+            log.debug("HTTP method validation passed: {}", actualMethod);
+        }
+
+        return isValid;
+    }
+
+
+
     @Transactional
     public ApiTestResultDTO testApi(String requestId, String performedBy,
-                                    String apiId, ApiTestRequestDTO testRequest) {
+                                    String apiId, ApiTestRequestDTO testRequest, HttpServletRequest req) {
         try {
             loggerUtil.log("apiGeneration", "Request ID: " + requestId +
                     ", Testing API: " + apiId + " with test: " + testRequest.getTestName());
@@ -414,7 +486,7 @@ public class AutomationEngineService {
             ExecuteApiRequestDTO executeRequest = conversionHelper.createExecuteRequest(testRequest, requestId);
 
             ExecuteApiResponseDTO executionResult = executeApi(requestId, performedBy,
-                    apiId, executeRequest, "127.0.0.1", "API-Test");
+                    apiId, executeRequest, "127.0.0.1", "API-Test", req);
 
             long executionTime = System.currentTimeMillis() - startTime;
 

@@ -85,6 +85,7 @@ public class AutomationEngineController {
     @Operation(summary = "Execute API", description = "Execute a generated API - Accepts any content type")
     public ResponseEntity<?> executeApi(
             @PathVariable String apiId,
+            HttpServletRequest req,
             HttpServletRequest request) {
 
         String requestId = UUID.randomUUID().toString();
@@ -103,7 +104,7 @@ public class AutomationEngineController {
 
             // Execute the API
             ExecuteApiResponseDTO response = automationEngineService.executeApi(
-                    requestId, performedBy, apiId, executeRequest, clientIp, userAgent);
+                    requestId, performedBy, apiId, executeRequest, clientIp, userAgent, req);
 
             return responseBuilderHelper.buildSuccessResponse(
                     requestId,
@@ -144,7 +145,7 @@ public class AutomationEngineController {
             String performedBy = jwtHelper.extractPerformedBy(req);
             loggingHelper.logApiTest(requestId, apiId, testRequest.getTestName(), performedBy);
 
-            ApiTestResultDTO result = automationEngineService.testApi(requestId, performedBy, apiId, testRequest);
+            ApiTestResultDTO result = automationEngineService.testApi(requestId, performedBy, apiId, testRequest, req);
 
             return responseBuilderHelper.buildSuccessResponse(
                     requestId,
@@ -708,7 +709,7 @@ public class AutomationEngineController {
 
             // Execute the API
             ExecuteApiResponseDTO response = automationEngineService.executeApi(
-                    requestId, performedBy, apiId, executeRequest, clientIp, userAgent);
+                    requestId, performedBy, apiId, executeRequest, clientIp, userAgent, req);
 
             log.debug("Request ID: {} - API execution completed with status: {}",
                     requestId, response.getResponseCode());

@@ -47,6 +47,29 @@ public class ApiValidatorHelper {
     }
 
     /**
+     * NEW METHOD: Validate HTTP method matches API configuration
+     */
+    public boolean validateHttpMethod(GeneratedApiEntity api, String requestMethod) {
+        if (api == null || api.getHttpMethod() == null) {
+            log.warn("API or HTTP method not configured");
+            return false;
+        }
+
+        String configuredMethod = api.getHttpMethod().toUpperCase();
+        String actualMethod = requestMethod != null ? requestMethod.toUpperCase() : "";
+
+        boolean isValid = configuredMethod.equals(actualMethod);
+
+        if (!isValid) {
+            log.warn("HTTP method mismatch. Configured: {}, Actual: {}", configuredMethod, actualMethod);
+        } else {
+            log.debug("HTTP method validation passed: {}", actualMethod);
+        }
+
+        return isValid;
+    }
+
+    /**
      * Validate authentication based on API configuration
      */
     public boolean validateAuthentication(GeneratedApiEntity api, ExecuteApiRequestDTO request) {
