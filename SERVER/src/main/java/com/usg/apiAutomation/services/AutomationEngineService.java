@@ -278,16 +278,27 @@ public class AutomationEngineService {
             }
 
             // 8. Validate authentication
-            AuthenticationServiceUtil.AuthenticationResult authResult =
-                    authenticationService.validateAuthentication(api, validatedRequest);
-            if (!authResult.isAuthenticated()) {
-                executionHelper.logExecution(executionLogRepository, api, validatedRequest,
-                        null, 401, System.currentTimeMillis() - startTime,
-                        performedBy, clientIp, userAgent,
-                        "Authentication failed: " + authResult.getReason(), objectMapper);
+            log.info("=== STEP 8: Starting authentication validation ===");
+            try {
+                AuthenticationServiceUtil.AuthenticationResult authResult =
+                        authenticationService.validateAuthentication(api, validatedRequest);
 
-                return responseHelper.createErrorResponse(401,
-                        "Authentication failed: " + authResult.getReason(), startTime);
+                log.info("Authentication result: authenticated={}, reason={}",
+                        authResult.isAuthenticated(), authResult.getReason());
+
+                if (!authResult.isAuthenticated()) {
+                    executionHelper.logExecution(executionLogRepository, api, validatedRequest,
+                            null, 401, System.currentTimeMillis() - startTime,
+                            performedBy, clientIp, userAgent,
+                            "Authentication failed: " + authResult.getReason(), objectMapper);
+
+                    return responseHelper.createErrorResponse(401,
+                            "Authentication failed: " + authResult.getReason(), startTime);
+                }
+                log.info("=== STEP 8: Authentication validation completed successfully ===");
+            } catch (Exception e) {
+                log.error("Exception during authentication validation: {}", e.getMessage(), e);
+                throw e; // or handle appropriately
             }
 
             // 9. Get all API parameters and log them

@@ -14,6 +14,18 @@ import java.util.Map;
 public class AuthenticationServiceUtil {
 
     public AuthenticationResult validateAuthentication(GeneratedApiEntity api, ExecuteApiRequestDTO request) {
+        log.debug("========== AUTHENTICATION VALIDATION STARTED ==========");
+        log.debug("API ID: {}", api != null ? api.getId() : "null");
+        log.debug("AuthConfig present: {}", api.getAuthConfig() != null);
+
+        if (api.getAuthConfig() != null) {
+            log.debug("AuthConfig - authType: {}", api.getAuthConfig().getAuthType());
+            log.debug("AuthConfig - apiKeyHeader: {}", api.getAuthConfig().getApiKeyHeader());
+            log.debug("AuthConfig - apiSecretHeader: {}", api.getAuthConfig().getApiSecretHeader());
+            log.debug("AuthConfig - has apiKeyValue: {}", api.getAuthConfig().getApiKeyValue() != null);
+            log.debug("AuthConfig - has apiKeySecret: {}", api.getAuthConfig().getApiKeySecret() != null);
+        }
+
         // If API has no auth configured, always pass
         if (api.getAuthConfig() == null || api.getAuthConfig().getAuthType() == null) {
             log.debug("✅ No authentication configured, allowing access");
@@ -30,13 +42,28 @@ public class AuthenticationServiceUtil {
 
         log.debug("🔐 Validating authentication type: {}", apiAuthType);
 
+        // Check request headers
+        if (request != null && request.getHeaders() != null) {
+            log.debug("Request headers present: {}", request.getHeaders().keySet());
+            // Log API key and secret headers specifically if they exist
+            if (request.getHeaders().containsKey("x-api-key")) {
+                log.debug("x-api-key header found with value: {}", maskSensitiveValue(request.getHeaders().get("x-api-key")));
+            }
+            if (request.getHeaders().containsKey("x-api-secret")) {
+                log.debug("x-api-secret header found with value: {}", maskSensitiveValue(request.getHeaders().get("x-api-secret")));
+            }
+        } else {
+            log.debug("No headers in request");
+        }
+
         // Normalize the auth type for comparison
         String normalizedAuthType = apiAuthType.toUpperCase().replace("-", "").replace("_", "");
 
         // Check for API Key variations
         if (normalizedAuthType.equals("APIKEY") ||
-                normalizedAuthType.contains("API") && normalizedAuthType.contains("KEY")) {
-            return validateApiKeyFromHeaders(api, request);
+                (normalizedAuthType.contains("API") && normalizedAuthType.contains("KEY"))) {
+            log.debug("Matched API Key auth type, calling validateApiKeyNSecret");
+            return validateApiKeyNSecret(api, request);
         }
 
         // Use switch on the original type for other cases
@@ -44,19 +71,24 @@ public class AuthenticationServiceUtil {
             case "API_KEY":
             case "APIKEY":
             case "API-KEY":
-                return validateApiKeyFromHeaders(api, request);
+                log.debug("Matched API_KEY case, calling validateApiKeyNSecret");
+                return validateApiKeyNSecret(api, request);
 
             case "BASIC":
+                log.debug("Matched BASIC auth");
                 return validateBasicAuth(api, request);
 
             case "BEARER":
             case "JWT":
+                log.debug("Matched BEARER/JWT auth");
                 return validateBearerToken(api, request);
 
             case "OAUTH2":
+                log.debug("Matched OAUTH2 auth");
                 return validateOAuth2(api, request);
 
             case "ORACLE_ROLES":
+                log.debug("Matched ORACLE_ROLES auth");
                 return validateOracleSession(api, request);
 
             default:
@@ -65,108 +97,184 @@ public class AuthenticationServiceUtil {
         }
     }
 
-    private AuthenticationResult validateApiKeyFromHeaders(GeneratedApiEntity api, ExecuteApiRequestDTO request) {
+    private AuthenticationResult validateApiKeyNSecret(GeneratedApiEntity api, ExecuteApiRequestDTO request) {
+        log.debug("===== VALIDATE API KEY & SECRET STARTED =====");
+
         Map<String, String> headers = request.getHeaders();
         if (headers == null || headers.isEmpty()) {
-            log.debug("❌ API Key validation failed: No headers provided");
+            log.debug("❌ API Key & Secret validation failed: No headers provided");
             return AuthenticationResult.failure("No headers provided for API Key authentication");
         }
 
-        log.debug("🔍 Validating API Key - Available headers: {}", headers.keySet());
+        log.debug("🔍 Validating API Key & Secret - Available headers: {}", headers.keySet());
 
         // Get expected API key header and value from API config
         String expectedApiKeyHeader = api.getAuthConfig().getApiKeyHeader();
         String expectedApiKeyValue = api.getAuthConfig().getApiKeyValue();
-        String expectedApiSecret = api.getAuthConfig().getApiKeySecret();
 
-        log.debug("Expected API Key header: '{}', value: '{}'", expectedApiKeyHeader, expectedApiKeyValue);
+        // FIX: Use getApiSecretValue() instead of getApiKeySecret()
+        String expectedApiSecret = api.getAuthConfig().getApiSecretValue();
+        String expectedApiSecretHeader = api.getAuthConfig().getApiSecretHeader();
 
-        // If no API key is configured, authentication passes
-        if (expectedApiKeyHeader == null || expectedApiKeyHeader.isEmpty() ||
-                expectedApiKeyValue == null || expectedApiKeyValue.isEmpty()) {
-            log.debug("⚠️ API Key not fully configured, skipping validation");
+        log.debug("Expected API Key header: '{}', value: '{}'",
+                expectedApiKeyHeader, maskSensitiveValue(expectedApiKeyValue));
+        log.debug("Expected API Secret header: '{}', value: '{}'",
+                expectedApiSecretHeader, maskSensitiveValue(expectedApiSecret));
+
+        // DEBUG: Check if expected values are also placeholders
+        if (expectedApiKeyValue != null && isPlaceholder(expectedApiKeyValue)) {
+            log.warn("⚠️ WARNING: Expected API Key value in database is a placeholder: {}", maskSensitiveValue(expectedApiKeyValue));
+        }
+        if (expectedApiSecret != null && isPlaceholder(expectedApiSecret)) {
+            log.warn("⚠️ WARNING: Expected API Secret value in database is a placeholder: {}", maskSensitiveValue(expectedApiSecret));
+        }
+
+        // If no API credentials are configured, authentication passes
+        boolean hasKeyConfig = expectedApiKeyHeader != null && !expectedApiKeyHeader.isEmpty() &&
+                expectedApiKeyValue != null && !expectedApiKeyValue.isEmpty();
+
+        // FIX: Check apiSecretValue instead of apiKeySecret
+        boolean hasSecretConfig = expectedApiSecretHeader != null && !expectedApiSecretHeader.isEmpty() &&
+                expectedApiSecret != null && !expectedApiSecret.isEmpty();
+
+        log.debug("hasKeyConfig: {}, hasSecretConfig: {}", hasKeyConfig, hasSecretConfig);
+
+        // If no credentials configured, skip validation
+        if (!hasKeyConfig && !hasSecretConfig) {
+            log.debug("⚠️ No API Key & Secret configured, skipping validation");
             return AuthenticationResult.success();
         }
 
-        // Validate API Key header
-        String actualApiKeyValue = null;
-
-        // Try exact match
-        if (headers.containsKey(expectedApiKeyHeader)) {
-            actualApiKeyValue = headers.get(expectedApiKeyHeader);
-            log.debug("✅ Found exact match for header: {}", expectedApiKeyHeader);
-        } else {
-            // Try case-insensitive match
-            for (Map.Entry<String, String> entry : headers.entrySet()) {
-                if (entry.getKey().equalsIgnoreCase(expectedApiKeyHeader)) {
-                    actualApiKeyValue = entry.getValue();
-                    log.debug("✅ Found case-insensitive match: {} -> {}", entry.getKey(), expectedApiKeyHeader);
-                    break;
-                }
-            }
-
-            // Check for common API key header names
-            if (actualApiKeyValue == null) {
-                String[] commonHeaders = {"x-api-key", "api-key", "apikey", "x-api-secret"};
-                for (String commonHeader : commonHeaders) {
-                    for (Map.Entry<String, String> entry : headers.entrySet()) {
-                        if (entry.getKey().equalsIgnoreCase(commonHeader)) {
-                            actualApiKeyValue = entry.getValue();
-                            log.debug("✅ Found common API header: {}", commonHeader);
-                            break;
-                        }
-                    }
-                    if (actualApiKeyValue != null) break;
-                }
-            }
+        // If only one is configured, validation should FAIL
+        if (hasKeyConfig != hasSecretConfig) {
+            log.error("❌ Incomplete API Key & Secret configuration - Both key and secret are required");
+            return AuthenticationResult.failure("Invalid API Key or Secret");
         }
+
+        // Find API Key header value
+        String actualApiKeyValue = findHeaderValue(headers, expectedApiKeyHeader, "API Key");
+        log.debug("Actual API Key value found: {}", maskSensitiveValue(actualApiKeyValue));
 
         if (actualApiKeyValue == null) {
-            log.debug("❌ Missing required header: {}", expectedApiKeyHeader);
-            return AuthenticationResult.failure("Missing required header: " + expectedApiKeyHeader);
+            log.debug("❌ Missing required API Key header: {}", expectedApiKeyHeader);
+            return AuthenticationResult.failure("Invalid API Key or Secret");
         }
 
-        if (!expectedApiKeyValue.equals(actualApiKeyValue)) {
-            log.debug("❌ API Key value mismatch for header: {}", expectedApiKeyHeader);
-            return AuthenticationResult.failure("Invalid API Key value for header: " + expectedApiKeyHeader);
+        // REJECT PLACEHOLDER VALUES
+        if (isPlaceholder(actualApiKeyValue)) {
+            log.debug("❌ API Key contains placeholder value: {}", maskSensitiveValue(actualApiKeyValue));
+            return AuthenticationResult.failure("Invalid API Key or Secret");
+        }
+        log.debug("Found API Key value: {}", maskSensitiveValue(actualApiKeyValue));
+
+        // Find API Secret header value
+        String actualApiSecretValue = findHeaderValue(headers, expectedApiSecretHeader, "API Secret");
+        log.debug("Actual API Secret value found: {}", maskSensitiveValue(actualApiSecretValue));
+
+        if (actualApiSecretValue == null) {
+            log.debug("❌ Missing required API Secret header: {}", expectedApiSecretHeader);
+            return AuthenticationResult.failure("Invalid API Key or Secret");
         }
 
-        // Validate API Secret if configured
-        if (expectedApiSecret != null && !expectedApiSecret.isEmpty()) {
-            String actualApiSecret = null;
+        // REJECT PLACEHOLDER VALUES
+        if (isPlaceholder(actualApiSecretValue)) {
+            log.debug("❌ API Secret contains placeholder value: {}", maskSensitiveValue(actualApiSecretValue));
+            return AuthenticationResult.failure("Invalid API Key or Secret");
+        }
+        log.debug("Found API Secret value: {}", maskSensitiveValue(actualApiSecretValue));
 
-            // Check for common secret header names
-            String[] secretHeaders = {"X-API-Secret", "X-API-Secret-Key", "API-Secret", "Secret"};
-            for (String secretHeader : secretHeaders) {
-                if (headers.containsKey(secretHeader)) {
-                    actualApiSecret = headers.get(secretHeader);
-                    log.debug("Found exact match for secret header: {}", secretHeader);
-                    break;
-                }
-                // Case-insensitive check
-                for (Map.Entry<String, String> entry : headers.entrySet()) {
-                    if (entry.getKey().equalsIgnoreCase(secretHeader)) {
-                        actualApiSecret = entry.getValue();
-                        log.debug("Found case-insensitive secret match: {} -> {}", entry.getKey(), secretHeader);
-                        break;
-                    }
-                }
-                if (actualApiSecret != null) break;
-            }
+        // TEMPORARY DEBUG: Show unmasked values for troubleshooting
+        log.debug("=== UNMASKED VALUES FOR TROUBLESHOOTING ===");
+        log.debug("Comparing API Key - Expected: '{}', Actual: '{}'", expectedApiKeyValue, actualApiKeyValue);
+        log.debug("Comparing API Secret - Expected: '{}', Actual: '{}'", expectedApiSecret, actualApiSecretValue);
 
-            if (actualApiSecret == null) {
-                log.debug("❌ Missing API Secret header");
-                return AuthenticationResult.failure("Missing API Secret header");
-            }
-
-            if (!expectedApiSecret.equals(actualApiSecret)) {
-                log.debug("❌ API Secret value mismatch");
-                return AuthenticationResult.failure("Invalid API Secret");
-            }
+        // Validate both values match
+        String cleanedActualValue = cleanupHeaderValue(actualApiKeyValue);
+        if (!expectedApiKeyValue.equals(cleanedActualValue)) {
+            log.debug("❌ API Key value mismatch");
+            return AuthenticationResult.failure("Invalid API Key or Secret");
         }
 
-        log.debug("✅ API Key validation successful for header: {}", expectedApiKeyHeader);
+        if (!expectedApiSecret.equals(actualApiSecretValue)) {
+            log.debug("❌ API Secret value mismatch");
+            return AuthenticationResult.failure("Invalid API Key or Secret");
+        }
+
+        log.debug("✅ API Key & Secret validation successful - Key header: {}, Secret header: {}",
+                expectedApiKeyHeader, expectedApiSecretHeader);
+        log.debug("===== VALIDATE API KEY & SECRET COMPLETED SUCCESSFULLY =====");
         return AuthenticationResult.success();
+    }
+
+    /**
+     * Check if a value is a placeholder like {{api_key}}
+     */
+    private boolean isPlaceholder(String value) {
+        if (value == null || value.isEmpty()) {
+            return false;
+        }
+        String trimmed = value.trim();
+        // Check for pattern like {{anything}}, ${anything}, or {anything}
+        return trimmed.matches("\\{\\{[^}]+\\}\\}") ||  // {{api_key}}
+                trimmed.matches("\\$\\{[^}]+\\}") ||     // ${api_key}
+                trimmed.matches("\\{[^}]+\\}");          // {api_key}
+    }
+
+    private String cleanupHeaderValue(String value) {
+        if (value == null) return null;
+        // If the value contains a comma, take the first part
+        if (value.contains(",")) {
+            String firstPart = value.split(",")[0].trim();
+            log.debug("Cleaned up header value from '{}' to '{}'", value, firstPart);
+            return firstPart;
+        }
+        return value;
+    }
+
+    private String findHeaderValue(Map<String, String> headers, String expectedHeader, String headerType) {
+        // Try exact match
+        if (headers.containsKey(expectedHeader)) {
+            log.debug("✅ Found exact match for {} header: {}", headerType, expectedHeader);
+            return headers.get(expectedHeader);
+        }
+
+        // Try case-insensitive match
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            if (entry.getKey().equalsIgnoreCase(expectedHeader)) {
+                log.debug("✅ Found case-insensitive match for {} header: {} -> {}",
+                        headerType, entry.getKey(), expectedHeader);
+                return entry.getValue();
+            }
+        }
+
+        // Check for common API key header names based on type
+        String[] commonHeaders;
+        if (headerType.contains("Key")) {
+            commonHeaders = new String[]{"x-api-key", "api-key", "apikey", "X-API-Key"};
+        } else {
+            commonHeaders = new String[]{"x-api-secret", "api-secret", "apisecret", "X-API-Secret"};
+        }
+
+        for (String commonHeader : commonHeaders) {
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                if (entry.getKey().equalsIgnoreCase(commonHeader)) {
+                    log.debug("✅ Found common {} header: {}", headerType, commonHeader);
+                    return entry.getValue();
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private String maskSensitiveValue(String value) {
+        if (value == null || value.isEmpty()) {
+            return value;
+        }
+        if (value.length() <= 4) {
+            return "****";
+        }
+        return value.substring(0, 2) + "****" + value.substring(value.length() - 2);
     }
 
     private AuthenticationResult validateBasicAuth(GeneratedApiEntity api, ExecuteApiRequestDTO request) {
@@ -175,14 +283,7 @@ public class AuthenticationServiceUtil {
             return AuthenticationResult.failure("No headers provided for Basic authentication");
         }
 
-        String authHeader = null;
-
-        for (Map.Entry<String, String> entry : headers.entrySet()) {
-            if (entry.getKey().equalsIgnoreCase("Authorization")) {
-                authHeader = entry.getValue();
-                break;
-            }
-        }
+        String authHeader = extractAuthorizationHeader(headers);
 
         if (authHeader == null) {
             return AuthenticationResult.failure("Missing Authorization header for Basic authentication");
@@ -233,14 +334,7 @@ public class AuthenticationServiceUtil {
             return AuthenticationResult.failure("No headers provided for Bearer authentication");
         }
 
-        String authHeader = null;
-
-        for (Map.Entry<String, String> entry : headers.entrySet()) {
-            if (entry.getKey().equalsIgnoreCase("Authorization")) {
-                authHeader = entry.getValue();
-                break;
-            }
-        }
+        String authHeader = extractAuthorizationHeader(headers);
 
         if (authHeader == null) {
             return AuthenticationResult.failure("Missing Authorization header for Bearer authentication");
@@ -276,14 +370,7 @@ public class AuthenticationServiceUtil {
             return AuthenticationResult.failure("No headers provided for OAuth2 authentication");
         }
 
-        String authHeader = null;
-
-        for (Map.Entry<String, String> entry : headers.entrySet()) {
-            if (entry.getKey().equalsIgnoreCase("Authorization")) {
-                authHeader = entry.getValue();
-                break;
-            }
-        }
+        String authHeader = extractAuthorizationHeader(headers);
 
         if (authHeader == null) {
             return AuthenticationResult.failure("Missing Authorization header for OAuth2 authentication");
@@ -314,22 +401,7 @@ public class AuthenticationServiceUtil {
             return AuthenticationResult.failure("No headers provided for Oracle session authentication");
         }
 
-        String sessionHeader = null;
-        String[] sessionHeaders = {"X-Oracle-Session", "Oracle-Session-ID", "Session-ID"};
-
-        for (String headerName : sessionHeaders) {
-            if (headers.containsKey(headerName)) {
-                sessionHeader = headers.get(headerName);
-                break;
-            }
-            for (Map.Entry<String, String> entry : headers.entrySet()) {
-                if (entry.getKey().equalsIgnoreCase(headerName)) {
-                    sessionHeader = entry.getValue();
-                    break;
-                }
-            }
-            if (sessionHeader != null) break;
-        }
+        String sessionHeader = extractOracleSessionHeader(headers);
 
         if (sessionHeader == null) {
             return AuthenticationResult.failure("Missing Oracle session header");
@@ -341,6 +413,33 @@ public class AuthenticationServiceUtil {
 
         log.debug("Oracle session validation successful");
         return AuthenticationResult.success();
+    }
+
+    private String extractAuthorizationHeader(Map<String, String> headers) {
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            if (entry.getKey().equalsIgnoreCase("Authorization")) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+    private String extractOracleSessionHeader(Map<String, String> headers) {
+        String[] sessionHeaders = {"X-Oracle-Session", "Oracle-Session-ID", "Session-ID"};
+
+        for (String headerName : sessionHeaders) {
+            // Try exact match
+            if (headers.containsKey(headerName)) {
+                return headers.get(headerName);
+            }
+            // Try case-insensitive match
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                if (entry.getKey().equalsIgnoreCase(headerName)) {
+                    return entry.getValue();
+                }
+            }
+        }
+        return null;
     }
 
     public static class AuthenticationResult {

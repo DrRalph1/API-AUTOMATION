@@ -50,9 +50,36 @@ public class RequestExtractorHelper {
         Map<String, Object> queryParams = extractQueryParams(request);
         executeRequest.setQueryParams(queryParams);
 
-        // Extract headers
+        // Extract headers - FIXED: Now includes ALL headers
         Map<String, String> headers = extractHeaders(request);
         executeRequest.setHeaders(headers);
+
+        // DEBUG: Log authentication headers specifically
+        log.debug("=== AUTH HEADERS EXTRACTED ===");
+        if (headers.containsKey("x-api-key")) {
+            log.debug("x-api-key found with value: {}", maskSensitiveValue(headers.get("x-api-key")));
+        } else {
+            log.debug("x-api-key NOT found in headers");
+        }
+
+        if (headers.containsKey("x-api-secret")) {
+            log.debug("x-api-secret found with value: {}", maskSensitiveValue(headers.get("x-api-secret")));
+        } else {
+            log.debug("x-api-secret NOT found in headers");
+        }
+
+        // Also check case-insensitive variations
+        headers.entrySet().stream()
+                .filter(e -> e.getKey().equalsIgnoreCase("x-api-key"))
+                .findFirst()
+                .ifPresent(e -> log.debug("Found case-insensitive x-api-key: {} = {}",
+                        e.getKey(), maskSensitiveValue(e.getValue())));
+
+        headers.entrySet().stream()
+                .filter(e -> e.getKey().equalsIgnoreCase("x-api-secret"))
+                .findFirst()
+                .ifPresent(e -> log.debug("Found case-insensitive x-api-secret: {} = {}",
+                        e.getKey(), maskSensitiveValue(e.getValue())));
 
         // Extract body based on content type
         extractBodyBasedOnContentType(request, executeRequest);
@@ -246,19 +273,37 @@ public class RequestExtractorHelper {
     }
 
     /**
-     * Extract headers excluding content-type and content-length
+     * Extract headers including ALL headers
+     * FIXED: Now includes ALL headers without filtering
      */
     private Map<String, String> extractHeaders(HttpServletRequest request) {
         Map<String, String> headers = new HashMap<>();
 
         Collections.list(request.getHeaderNames()).forEach(headerName -> {
-            if (!"content-type".equalsIgnoreCase(headerName) &&
-                    !"content-length".equalsIgnoreCase(headerName)) {
-                headers.put(headerName, request.getHeader(headerName));
-            }
+            String headerValue = request.getHeader(headerName);
+            headers.put(headerName, headerValue);
+
+            // Log all headers at debug level
+            log.debug("Header extracted: {} = {}", headerName,
+                    headerName.toLowerCase().contains("key") || headerName.toLowerCase().contains("secret")
+                            ? maskSensitiveValue(headerValue) : headerValue);
         });
 
+        log.info("Total headers extracted: {}", headers.size());
         return headers;
+    }
+
+    /**
+     * Mask sensitive values for logging
+     */
+    private String maskSensitiveValue(String value) {
+        if (value == null || value.isEmpty()) {
+            return value;
+        }
+        if (value.length() <= 4) {
+            return "****";
+        }
+        return value.substring(0, 2) + "****" + value.substring(value.length() - 2);
     }
 
     /**
