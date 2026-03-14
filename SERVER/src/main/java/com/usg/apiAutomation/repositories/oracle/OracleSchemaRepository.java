@@ -3948,15 +3948,16 @@ public class OracleSchemaRepository {
 
             Map<String, Object> synonymInfo = oracleJdbcTemplate.queryForMap(sql, synonymName);
 
-            // Enrich with target object details based on type
+            // Enrich with target object details based on type - BUT DON'T RECURSE
             String targetType = (String) synonymInfo.get("target_type");
             String targetOwner = (String) synonymInfo.get("target_owner");
             String targetName = (String) synonymInfo.get("target_name");
             String dbLink = (String) synonymInfo.get("db_link");
 
             if (targetType != null && dbLink == null) {
-                Map<String, Object> targetDetails = getObjectDetailsByNameAndType(targetName, targetType, targetOwner);
-                synonymInfo.put("targetDetails", targetDetails);
+                // Get basic info about target without recursion
+                Map<String, Object> targetInfo = getBasicObjectInfo(targetOwner, targetName, targetType);
+                synonymInfo.put("targetBasicInfo", targetInfo);
             } else if (dbLink != null) {
                 Map<String, Object> remoteInfo = new HashMap<>();
                 remoteInfo.put("message", "Remote object via database link: " + dbLink);
@@ -4089,98 +4090,97 @@ public class OracleSchemaRepository {
                 details.put("owner", owner);
             }
 
-            switch (objectType.toUpperCase()) {
-                case "TABLE":
-                    Map<String, Object> tableDetails = getTableDetails(owner, objectName);
-                    details.putAll(tableDetails);
-                    break;
-                case "VIEW":
-                    details.putAll(getViewDetails(owner, objectName));
-                    break;
-                case "PROCEDURE":
-                    Map<String, Object> procDetails = getProcedureDetails(owner, objectName);
-                    details.putAll(procDetails);
+            String originalObjectType = objectType.toUpperCase();
 
-                    // Explicitly add parameters if they exist
-                    if (procDetails.containsKey("parameters")) {
-                        details.put("parameters", procDetails.get("parameters"));
-                        details.put("parameterCount", procDetails.get("parameterCount"));
-                    } else {
-                        // Try to fetch parameters separately if not included
-                        try {
-                            List<Map<String, Object>> params = getProcedureParameters(owner, objectName);
-                            details.put("parameters", params);
-                            details.put("parameterCount", params.size());
-                        } catch (Exception e) {
-                            log.debug("Could not fetch parameters separately: {}", e.getMessage());
-                        }
-                    }
-                    break;
-                case "FUNCTION":
-                    Map<String, Object> funcDetails = getFunctionDetails(owner, objectName);
-                    details.putAll(funcDetails);
+            // Try to get details for the specified object type first
+            Map<String, Object> result = getDetailsByType(originalObjectType, owner, objectName);
 
-                    // Explicitly add parameters if they exist
-                    if (funcDetails.containsKey("parameters")) {
-                        details.put("parameters", funcDetails.get("parameters"));
-                        details.put("parameterCount", funcDetails.get("parameterCount"));
-                        details.put("returnType", funcDetails.get("returnType"));
-                    } else {
-                        // Try to fetch parameters separately if not included
-                        try {
-                            Map<String, Object> funcParams = getFunctionParameters(owner, objectName);
-                            details.putAll(funcParams);
-                        } catch (Exception e) {
-                            log.debug("Could not fetch function parameters separately: {}", e.getMessage());
+            // Check if we got valid data (not an error)
+            boolean foundData = !result.isEmpty() && !result.containsKey("error") && !result.containsKey("message");
+
+            if (foundData) {
+                details.putAll(result);
+
+                // ADD SOURCE FOR TABLES AND VIEWS
+                if ("TABLE".equals(originalObjectType) || "VIEW".equals(originalObjectType)) {
+                    try {
+                        String source = getSourceForTableOrView(owner, objectName, originalObjectType);
+                        if (source != null && !source.isEmpty()) {
+                            details.put("source", source);
                         }
+                    } catch (Exception e) {
+                        log.warn("Could not get source for {} {}: {}", originalObjectType, objectName, e.getMessage());
                     }
-                    break;
-                case "PACKAGE":
-                    details.putAll(getPackageDetails(owner, objectName));
-                    break;
-                case "PACKAGE BODY":
-                    details.putAll(getPackageBodyDetails(owner, objectName));
-                    break;
-                case "SEQUENCE":
-                    details.putAll(getSequenceDetails(owner, objectName));
-                    break;
-                case "SYNONYM":  // ADD THIS CASE
-                    // Get synonym details
-                    Map<String, Object> synonymDetails = getSynonymDetails(objectName);
+                }
+
+            } else {
+                // If not found as requested type, try as synonym
+                log.info("No data found for {} {} as {}, trying as SYNONYM", owner, objectName, originalObjectType);
+
+                Map<String, Object> synonymDetails = getSynonymDetails(objectName);
+
+                if (!synonymDetails.isEmpty() && !synonymDetails.containsKey("error")) {
                     details.putAll(synonymDetails);
+                    details.put("originalObjectType", originalObjectType);
+                    details.put("objectType", "SYNONYM");
+                    details.put("isSynonym", true);
+                    details.put("fallbackUsed", true);
 
-                    // Also get the target object details if accessible
-                    if (synonymDetails.containsKey("targetDetails")) {
-                        details.put("targetDetails", synonymDetails.get("targetDetails"));
+                    // Get target object details - NOW GET FULL PROCEDURE DETAILS with parameters
+                    String targetOwner = (String) synonymDetails.get("target_owner");
+                    String targetName = (String) synonymDetails.get("target_name");
+                    String targetType = (String) synonymDetails.get("target_type");
+
+                    if (targetOwner != null && targetName != null && targetType != null) {
+                        // Get FULL details by calling getDetailsByType directly
+                        Map<String, Object> targetDetails = getDetailsByType(targetType, targetOwner, targetName);
+
+                        if (!targetDetails.isEmpty() && !targetDetails.containsKey("error")) {
+                            // This will include all parameters for procedures/functions
+                            details.put("targetObjectDetails", targetDetails);
+
+                            // ALSO GET SOURCE FOR TARGET TABLE/VIEW
+                            if ("TABLE".equalsIgnoreCase(targetType) || "VIEW".equalsIgnoreCase(targetType)) {
+                                try {
+                                    String targetSource = getSourceForTableOrView(targetOwner, targetName, targetType);
+                                    if (targetSource != null && !targetSource.isEmpty()) {
+                                        if (!targetDetails.containsKey("source")) {
+                                            targetDetails.put("source", targetSource);
+                                        }
+                                    }
+                                } catch (Exception e) {
+                                    log.warn("Could not get source for target {} {}: {}", targetType, targetName, e.getMessage());
+                                }
+                            }
+                        } else {
+                            // Fallback to basic info if full details fail
+                            Map<String, Object> targetInfo = getBasicObjectInfo(targetOwner, targetName, targetType);
+                            details.put("targetObjectInfo", targetInfo);
+
+                            // TRY TO GET SOURCE FOR BASIC INFO
+                            if ("TABLE".equalsIgnoreCase(targetType) || "VIEW".equalsIgnoreCase(targetType)) {
+                                try {
+                                    String targetSource = getSourceForTableOrView(targetOwner, targetName, targetType);
+                                    if (targetSource != null && !targetSource.isEmpty()) {
+                                        targetInfo.put("source", targetSource);
+                                    }
+                                } catch (Exception e) {
+                                    log.warn("Could not get source for target {} {}: {}", targetType, targetName, e.getMessage());
+                                }
+                            }
+
+                            log.warn("Could not get full details for target {}.{}: {}", targetOwner, targetName,
+                                    targetDetails.getOrDefault("error", "Unknown error"));
+                        }
                     }
-                    break;
-                case "TRIGGER":
-                    details.putAll(getTriggerDetails(owner, objectName));
-                    break;
-                case "INDEX":
-                    details.putAll(getIndexDetails(owner, objectName));
-                    break;
-                case "TYPE":
-                    details.putAll(getTypeDetails(owner, objectName));
-                    break;
-                case "TYPE BODY":
-                    details.putAll(getTypeBodyDetails(owner, objectName));
-                    break;
-                case "MATERIALIZED VIEW":
-                    details.putAll(getMaterializedViewDetails(owner, objectName));
-                    break;
-                case "DATABASE LINK":
-                    details.putAll(getDatabaseLinkDetails(owner, objectName));
-                    break;
-                case "JAVA CLASS":
-                case "JAVA SOURCE":
-                case "JAVA RESOURCE":
-                    details.putAll(getJavaObjectDetails(owner, objectName, objectType));
-                    break;
-                default:
-                    details.put("message", "Detailed information not available for object type: " + objectType);
-                    details.put("basicInfo", getBasicObjectInfo(owner, objectName, objectType));
+
+                    log.info("Successfully found {} as a synonym", objectName);
+                } else {
+                    details.put("message", "Object not found as " + originalObjectType + " or as a SYNONYM");
+                    details.put("notFound", true);
+                }
             }
+
         } catch (Exception e) {
             log.warn("Could not get details for {} {}: {}", objectType, objectName, e.getMessage());
             details.put("error", e.getMessage());
@@ -4188,6 +4188,166 @@ public class OracleSchemaRepository {
         }
 
         return details;
+    }
+
+    /**
+     * Helper method to get source for tables and views
+     */
+    private String getSourceForTableOrView(String owner, String objectName, String objectType) {
+        try {
+            StringBuilder source = new StringBuilder();
+
+            if ("TABLE".equalsIgnoreCase(objectType)) {
+                // Generate CREATE TABLE statement
+                source.append("CREATE TABLE ");
+                if (!owner.equalsIgnoreCase(getCurrentUser())) {
+                    source.append(owner).append(".");
+                }
+                source.append(objectName).append(" (\n");
+
+                // Get columns
+                List<Map<String, Object>> columns = getTableColumns(owner, objectName);
+                for (int i = 0; i < columns.size(); i++) {
+                    Map<String, Object> col = columns.get(i);
+                    source.append("    ").append(col.get("column_name"))
+                            .append(" ").append(col.get("data_type"));
+
+                    // Add length/precision
+                    Number dataLength = (Number) col.get("data_length");
+                    Number dataPrecision = (Number) col.get("data_precision");
+                    Number dataScale = (Number) col.get("data_scale");
+                    String dataType = (String) col.get("data_type");
+
+                    if (dataLength != null && dataLength.intValue() > 0 &&
+                            ("VARCHAR2".equalsIgnoreCase(dataType) || "CHAR".equalsIgnoreCase(dataType) ||
+                                    "VARCHAR".equalsIgnoreCase(dataType) || "NVARCHAR2".equalsIgnoreCase(dataType))) {
+                        source.append("(").append(dataLength).append(")");
+                    } else if (dataPrecision != null) {
+                        source.append("(").append(dataPrecision);
+                        if (dataScale != null && dataScale.intValue() > 0) {
+                            source.append(",").append(dataScale);
+                        }
+                        source.append(")");
+                    }
+
+                    // Add NOT NULL
+                    if ("N".equals(col.get("nullable"))) {
+                        source.append(" NOT NULL");
+                    }
+
+                    // Add DEFAULT
+                    Object defaultValue = col.get("data_default");
+                    if (defaultValue != null && !defaultValue.toString().isEmpty()) {
+                        source.append(" DEFAULT ").append(defaultValue);
+                    }
+
+                    if (i < columns.size() - 1) {
+                        source.append(",");
+                    }
+                    source.append("\n");
+                }
+
+                // Add primary key constraint
+                List<Map<String, Object>> constraints = getTableConstraints(owner, objectName);
+                for (Map<String, Object> constraint : constraints) {
+                    if ("P".equals(constraint.get("constraint_type"))) {
+                        source.append("    CONSTRAINT ").append(constraint.get("constraint_name"))
+                                .append(" PRIMARY KEY (").append(constraint.get("columns")).append(")\n");
+                        break;
+                    }
+                }
+
+                source.append(");\n");
+
+                // Add table comment
+                String comment = getTableComment(objectName);
+                if (comment != null && !comment.isEmpty()) {
+                    source.append("\nCOMMENT ON TABLE ");
+                    if (!owner.equalsIgnoreCase(getCurrentUser())) {
+                        source.append(owner).append(".");
+                    }
+                    source.append(objectName).append(" IS '").append(comment).append("';\n");
+                }
+
+            } else if ("VIEW".equalsIgnoreCase(objectType)) {
+                // Get view text
+                String viewText;
+                if (owner.equalsIgnoreCase(getCurrentUser())) {
+                    String sql = "SELECT text FROM user_views WHERE UPPER(view_name) = UPPER(?)";
+                    viewText = oracleJdbcTemplate.queryForObject(sql, String.class, objectName);
+                } else {
+                    String sql = "SELECT text FROM all_views WHERE UPPER(owner) = UPPER(?) AND UPPER(view_name) = UPPER(?)";
+                    viewText = oracleJdbcTemplate.queryForObject(sql, String.class, owner, objectName);
+                }
+
+                if (viewText != null && !viewText.isEmpty()) {
+                    source.append("CREATE OR REPLACE VIEW ");
+                    if (!owner.equalsIgnoreCase(getCurrentUser())) {
+                        source.append(owner).append(".");
+                    }
+                    source.append(objectName).append(" AS\n");
+                    source.append(viewText);
+                    if (!viewText.trim().endsWith(";")) {
+                        source.append(";");
+                    }
+                }
+            }
+
+            return source.length() > 0 ? source.toString() : null;
+
+        } catch (Exception e) {
+            log.warn("Could not generate source for {} {}.{}: {}", objectType, owner, objectName, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Helper method to route to appropriate detail method
+     */
+    private Map<String, Object> getDetailsByType(String objectType, String owner, String objectName) {
+        try {
+            switch (objectType) {
+                case "TABLE":
+                    return getTableDetails(owner, objectName);
+                case "VIEW":
+                    return getViewDetails(owner, objectName);
+                case "PROCEDURE":
+                    return getProcedureDetails(owner, objectName);
+                case "FUNCTION":
+                    return getFunctionDetails(owner, objectName);
+                case "PACKAGE":
+                    return getPackageDetails(owner, objectName);
+                case "PACKAGE BODY":
+                    return getPackageBodyDetails(owner, objectName);
+                case "SEQUENCE":
+                    return getSequenceDetails(owner, objectName);
+                case "SYNONYM":
+                    // If directly asking for synonym, don't fallback again
+                    return getSynonymDetails(objectName);
+                case "TRIGGER":
+                    return getTriggerDetails(owner, objectName);
+                case "INDEX":
+                    return getIndexDetails(owner, objectName);
+                case "TYPE":
+                    return getTypeDetails(owner, objectName);
+                case "TYPE BODY":
+                    return getTypeBodyDetails(owner, objectName);
+                case "MATERIALIZED VIEW":
+                    return getMaterializedViewDetails(owner, objectName);
+                case "DATABASE LINK":
+                    return getDatabaseLinkDetails(owner, objectName);
+                case "JAVA CLASS":
+                case "JAVA SOURCE":
+                case "JAVA RESOURCE":
+                    return getJavaObjectDetails(owner, objectName, objectType);
+                default:
+                    return getBasicObjectInfo(owner, objectName, objectType);
+            }
+        } catch (Exception e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return error;
+        }
     }
 
     /**
@@ -4497,29 +4657,46 @@ public class OracleSchemaRepository {
     }
 
     /**
-     * Get procedure details with owner
+     * Get procedure details with owner - FIXED to handle invalid procedures
      */
     private Map<String, Object> getProcedureDetails(String owner, String procedureName) {
-
-        // Add debug call
-        debugProcedureArguments(owner, procedureName);
-
         Map<String, Object> details = new HashMap<>();
 
         try {
-            if (owner.equalsIgnoreCase(getCurrentUser())) {
-                // First, check if this is a package procedure
-                String checkPackageSql = "SELECT DISTINCT package_name FROM user_arguments " +
-                        "WHERE UPPER(object_name) = UPPER(?) AND package_name IS NOT NULL";
-                List<String> packages = oracleJdbcTemplate.queryForList(
-                        checkPackageSql, String.class, procedureName);
+            // First check if this is a package procedure
+            String checkPackageSql = "SELECT DISTINCT package_name FROM all_arguments " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                    "AND package_name IS NOT NULL";
 
-                if (!packages.isEmpty()) {
-                    details.put("package_name", packages.get(0));
-                    details.put("is_package_procedure", true);
-                    log.info("Procedure {} is in package: {}", procedureName, packages.get(0));
+            List<String> packages = oracleJdbcTemplate.queryForList(
+                    checkPackageSql, String.class, owner, procedureName);
+
+            boolean isPackageProcedure = !packages.isEmpty();
+
+            if (isPackageProcedure) {
+                String packageName = packages.get(0);
+                details.put("package_name", packageName);
+                details.put("is_package_procedure", true);
+                details.put("object_name", procedureName);
+                details.put("owner", owner);
+                details.put("object_type", "PROCEDURE");
+                log.info("Procedure {} is in package: {}", procedureName, packageName);
+
+                // Get package info
+                String pkgSql = "SELECT status, created, last_ddl_time FROM all_objects " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                        "AND object_type = 'PACKAGE'";
+
+                try {
+                    Map<String, Object> pkgInfo = oracleJdbcTemplate.queryForMap(pkgSql, owner, packageName);
+                    details.put("package_status", pkgInfo.get("status"));
+                    details.put("package_created", pkgInfo.get("created"));
+                    details.put("package_modified", pkgInfo.get("last_ddl_time"));
+                } catch (Exception e) {
+                    log.debug("Could not get package info: {}", e.getMessage());
                 }
-
+            } else {
+                // Get standalone procedure info
                 String sql = "SELECT " +
                         "    object_name, " +
                         "    object_type, " +
@@ -4529,32 +4706,20 @@ public class OracleSchemaRepository {
                         "    temporary, " +
                         "    generated, " +
                         "    secondary " +
-                        "FROM user_objects " +
-                        "WHERE UPPER(object_name) = UPPER(?) AND object_type = 'PROCEDURE'";
+                        "FROM all_objects " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                        "AND object_type = 'PROCEDURE'";
 
-                try {
-                    Map<String, Object> procInfo = oracleJdbcTemplate.queryForMap(sql, procedureName);
-                    details.putAll(procInfo);
-                } catch (EmptyResultDataAccessException e) {
-                    // If not found as standalone procedure, try as package procedure
-                    // The object might be in user_objects as part of a package
-                    String altSql = "SELECT " +
-                            "    object_name, " +
-                            "    object_type, " +
-                            "    status, " +
-                            "    created, " +
-                            "    last_ddl_time, " +
-                            "    temporary, " +
-                            "    generated, " +
-                            "    secondary " +
-                            "FROM user_objects " +
-                            "WHERE UPPER(object_name) = UPPER(?) AND object_type IN ('PACKAGE', 'PACKAGE BODY')";
-                    Map<String, Object> pkgInfo = oracleJdbcTemplate.queryForMap(altSql, procedureName);
-                    details.putAll(pkgInfo);
-                    details.put("is_package", true);
-                }
+                Map<String, Object> procInfo = oracleJdbcTemplate.queryForMap(sql, owner, procedureName);
+                details.putAll(procInfo);
+            }
 
-                // Get parameters - now without package_name filter
+            // Try to get parameters from database first
+            List<Map<String, Object>> params = new ArrayList<>();
+
+            if (isPackageProcedure) {
+                // For package procedures, query by package_name and procedure_name
+                String packageName = packages.get(0);
                 String paramSql = "SELECT " +
                         "    argument_name, " +
                         "    position, " +
@@ -4566,36 +4731,260 @@ public class OracleSchemaRepository {
                         "    data_scale, " +
                         "    defaulted, " +
                         "    package_name " +
-                        "FROM user_arguments " +
-                        "WHERE UPPER(object_name) = UPPER(?) " +  // Removed package_name IS NULL
+                        "FROM all_arguments " +
+                        "WHERE UPPER(owner) = UPPER(?) " +
+                        "  AND UPPER(package_name) = UPPER(?) " +
+                        "  AND UPPER(object_name) = UPPER(?) " +
+                        "  AND argument_name IS NOT NULL " +
+                        "ORDER BY position, sequence";
+
+                params = oracleJdbcTemplate.queryForList(paramSql, owner, packageName, procedureName);
+            } else {
+                // For standalone procedures
+                String paramSql = "SELECT " +
+                        "    argument_name, " +
+                        "    position, " +
+                        "    sequence, " +
+                        "    data_type, " +
+                        "    in_out, " +
+                        "    data_length, " +
+                        "    data_precision, " +
+                        "    data_scale, " +
+                        "    defaulted " +
+                        "FROM all_arguments " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                        "AND package_name IS NULL " +
                         "AND argument_name IS NOT NULL " +
                         "ORDER BY position, sequence";
 
-                List<Map<String, Object>> params = oracleJdbcTemplate.queryForList(paramSql, procedureName);
-                details.put("parameters", params);
-                details.put("parameterCount", params.size());
-
-                // Get source code if available
-                String sourceSql = "SELECT text FROM user_source " +
-                        "WHERE UPPER(name) = UPPER(?) AND type IN ('PACKAGE', 'PACKAGE BODY') " +
-                        "ORDER BY line";
-
-                List<String> sourceLines = oracleJdbcTemplate.queryForList(sourceSql, String.class, procedureName);
-                if (!sourceLines.isEmpty()) {
-                    details.put("source", String.join("", sourceLines));
-                }
-
-            } else {
-                // Similar changes for all_* views
-                // ...
+                params = oracleJdbcTemplate.queryForList(paramSql, owner, procedureName);
             }
 
+            // If no parameters found in database (likely due to invalid object), parse from source
+            if (params.isEmpty()) {
+                log.info("No parameters in database for {}.{}, trying to parse from source", owner, procedureName);
+                params = parseParametersFromSource(owner, procedureName);
+
+                // If still no parameters, try to get from ALL_SOURCE with different type
+                if (params.isEmpty()) {
+                    log.info("Trying to parse from ALL_SOURCE with different approach for {}.{}", owner, procedureName);
+                    params = parseParametersFromAllSource(owner, procedureName);
+                }
+            }
+
+            details.put("parameters", params);
+            details.put("parameterCount", params.size());
+
+            // Get source code if available
+            String sourceSql;
+            List<String> sourceLines;
+
+            if (isPackageProcedure) {
+                // For package procedures, get the package source
+                String packageName = packages.get(0);
+                sourceSql = "SELECT text FROM all_source " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(name) = UPPER(?) " +
+                        "AND UPPER(type) IN ('PACKAGE', 'PACKAGE BODY') " +
+                        "ORDER BY line";
+
+                sourceLines = oracleJdbcTemplate.queryForList(sourceSql, String.class, owner, packageName);
+            } else {
+                // For standalone procedures, try different source types
+                sourceSql = "SELECT text FROM all_source " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(name) = UPPER(?) " +
+                        "AND UPPER(type) IN ('PROCEDURE', 'PACKAGE', 'PACKAGE BODY') " +
+                        "ORDER BY line";
+
+                sourceLines = oracleJdbcTemplate.queryForList(sourceSql, String.class, owner, procedureName);
+            }
+
+            if (!sourceLines.isEmpty()) {
+                details.put("source", String.join("", sourceLines));
+            }
+
+        } catch (EmptyResultDataAccessException e) {
+            log.warn("Procedure {}.{} not found", owner, procedureName);
+            details.put("error", "Procedure not found");
+            details.put("exists", false);
         } catch (Exception e) {
             log.warn("Error getting procedure details for {}.{}: {}", owner, procedureName, e.getMessage());
             details.put("error", e.getMessage());
         }
 
         return details;
+    }
+
+    /**
+     * Enhanced method to parse parameters from ALL_SOURCE with better pattern matching
+     */
+    private List<Map<String, Object>> parseParametersFromAllSource(String owner, String procedureName) {
+        List<Map<String, Object>> params = new ArrayList<>();
+
+        try {
+            // Get the source code from ALL_SOURCE
+            String sourceSql = "SELECT text FROM all_source " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(name) = UPPER(?) " +
+                    "ORDER BY line";
+
+            List<String> sourceLines = oracleJdbcTemplate.queryForList(sourceSql, String.class, owner, procedureName);
+
+            if (sourceLines.isEmpty()) {
+                log.info("No source found for {}.{} in ALL_SOURCE", owner, procedureName);
+                return params;
+            }
+
+            // Combine all source lines
+            StringBuilder fullSource = new StringBuilder();
+            for (String line : sourceLines) {
+                fullSource.append(line);
+            }
+
+            String source = fullSource.toString();
+
+            // More robust pattern to find procedure signature
+            // This pattern looks for: PROCEDURE procedure_name ( ... ) [IS|AS]
+            String patternStr = "PROCEDURE\\s+" + procedureName + "\\s*\\(([\\s\\S]*?)\\)\\s*(?:IS|AS)";
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                    patternStr,
+                    java.util.regex.Pattern.CASE_INSENSITIVE
+            );
+
+            java.util.regex.Matcher matcher = pattern.matcher(source);
+
+            if (matcher.find()) {
+                String paramsStr = matcher.group(1).trim();
+                log.info("Found parameter section in source: {}", paramsStr);
+
+                if (!paramsStr.isEmpty()) {
+                    // Split parameters by comma, but respect nested parentheses
+                    List<String> paramDefs = new ArrayList<>();
+                    StringBuilder currentParam = new StringBuilder();
+                    int parenCount = 0;
+
+                    for (char c : paramsStr.toCharArray()) {
+                        if (c == '(') {
+                            parenCount++;
+                            currentParam.append(c);
+                        } else if (c == ')') {
+                            parenCount--;
+                            currentParam.append(c);
+                        } else if (c == ',' && parenCount == 0) {
+                            // End of parameter
+                            String paramDef = currentParam.toString().trim();
+                            if (!paramDef.isEmpty()) {
+                                paramDefs.add(paramDef);
+                            }
+                            currentParam = new StringBuilder();
+                        } else {
+                            currentParam.append(c);
+                        }
+                    }
+
+                    // Add last parameter
+                    String lastParam = currentParam.toString().trim();
+                    if (!lastParam.isEmpty()) {
+                        paramDefs.add(lastParam);
+                    }
+
+                    int position = 1;
+                    for (String paramDef : paramDefs) {
+                        Map<String, Object> param = parseSingleParameterFromSource(paramDef, position);
+                        if (param != null && !param.isEmpty()) {
+                            params.add(param);
+                            position++;
+                        }
+                    }
+                }
+            } else {
+                log.info("No procedure signature found in source with pattern");
+            }
+
+        } catch (Exception e) {
+            log.error("Error parsing parameters from ALL_SOURCE for {}.{}: {}", owner, procedureName, e.getMessage());
+        }
+
+        log.info("Parsed {} parameters from source for {}.{}", params.size(), owner, procedureName);
+        return params;
+    }
+
+    /**
+     * Parse a single parameter definition from source code
+     */
+    private Map<String, Object> parseSingleParameterFromSource(String paramDef, int position) {
+        Map<String, Object> param = new HashMap<>();
+
+        // Remove inline comments
+        int commentIdx = paramDef.indexOf("--");
+        if (commentIdx > 0) {
+            paramDef = paramDef.substring(0, commentIdx).trim();
+        }
+
+        // Skip if empty or just dashes
+        if (paramDef.isEmpty() || paramDef.matches("^[-]+$")) {
+            return null;
+        }
+
+        // Clean up the parameter definition
+        paramDef = paramDef.replaceAll("\\s+", " ").trim();
+
+        // Pattern for parameter: name [IN|OUT|IN OUT] type
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                "^(\\w+)\\s+(IN\\s+OUT|IN|OUT)?\\s*(.*?)$",
+                java.util.regex.Pattern.CASE_INSENSITIVE
+        );
+
+        java.util.regex.Matcher matcher = pattern.matcher(paramDef);
+
+        if (matcher.find()) {
+            String paramName = matcher.group(1);
+            String inOut = matcher.group(2) != null ? matcher.group(2).trim() : "IN";
+            String dataType = matcher.group(3).trim();
+
+            // Clean up data type
+            dataType = dataType.replaceAll("[,;]$", "").trim();
+
+            param.put("argument_name", paramName);
+            param.put("position", position);
+            param.put("in_out", inOut);
+            param.put("data_type", dataType);
+
+            log.debug("Parsed parameter from source: name={}, in_out={}, data_type={}",
+                    paramName, inOut, dataType);
+        } else {
+            // Fallback to simple parsing
+            String[] parts = paramDef.split("\\s+");
+            if (parts.length >= 1) {
+                param.put("argument_name", parts[0]);
+                param.put("position", position);
+
+                // Default values
+                String inOut = "IN";
+                String dataType = "VARCHAR2";
+
+                int dataTypeIndex = 1;
+                if (parts.length > 1 && (parts[1].equalsIgnoreCase("IN") ||
+                        parts[1].equalsIgnoreCase("OUT") ||
+                        parts[1].equalsIgnoreCase("IN/OUT") ||
+                        parts[1].equalsIgnoreCase("IN OUT"))) {
+                    inOut = parts[1];
+                    dataTypeIndex = 2;
+                }
+
+                if (parts.length > dataTypeIndex) {
+                    StringBuilder dataTypeBuilder = new StringBuilder();
+                    for (int i = dataTypeIndex; i < parts.length; i++) {
+                        if (i > dataTypeIndex) dataTypeBuilder.append(" ");
+                        dataTypeBuilder.append(parts[i]);
+                    }
+                    dataType = dataTypeBuilder.toString().replaceAll("[,;]$", "").trim();
+                }
+
+                param.put("in_out", inOut);
+                param.put("data_type", dataType);
+            }
+        }
+
+        return param;
     }
 
     /**

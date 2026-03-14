@@ -300,7 +300,8 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
     { label: 'API Documentation', icon: BookOpen, onClick: () => onNavigate('api-docs'), color: colors.info },
     { label: 'API Code Base', icon: Code, onClick: () => onNavigate('code-base'), color: colors.warning },
     { label: 'API Security', icon: Shield, onClick: () => onNavigate('security'), color: colors.error },
-    { label: 'User Management', icon: UserCog, onClick: () => onNavigate('user-mgt'), color: colors.accentPurple }
+    { label: 'User Management', icon: UserCog, onClick: () => onNavigate('user-mgt'), color: colors.accentPurple },
+    { label: 'API Requests', icon: TrendingUp, onClick: () => onNavigate('api-requests'), color: colors.secondary }
   ], [colors, onNavigate]);
 
   return (

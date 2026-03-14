@@ -2530,7 +2530,8 @@ const handleUsedByPageSizeChange = useCallback((newSize) => {
     }
   }, []);
 
-  // Handle Object Select - UPDATED to load used by data
+
+
 const handleObjectSelect = useCallback(async (object, type) => {
   if (!authToken || !object) {
     console.error('Cannot select object: missing authToken or object', { authToken: !!authToken, object });
@@ -2597,6 +2598,7 @@ const handleObjectSelect = useCallback(async (object, type) => {
 
     setObType(apiObjectType);
     
+    // First API call - Get synonym/object details
     const response = await getObjectDetails(authToken, { 
       objectType: apiObjectType, 
       objectName: apiObjectName 
@@ -2605,58 +2607,121 @@ const handleObjectSelect = useCallback(async (object, type) => {
     const processedResponse = handleSchemaBrowserResponse(response);
     const responseData = processedResponse.data || processedResponse;
     
+    // Get target info from synonym response
+    const targetType = responseData.TARGET_TYPE || type || 'PROCEDURE';
+    const targetName = responseData.TARGET_NAME || object.name;
+    const targetOwner = responseData.TARGET_OWNER;
+    
+    let effectiveType = targetType;
+    let parameters = [];
+    let columns = [];
+    let sourceCode = '';
+    
+    // PRESERVE YOUR WORKING PROCEDURE LOGIC EXACTLY AS IS
+    if (targetType === 'PROCEDURE' || targetType === 'FUNCTION' || targetType === 'PACKAGE') {
+      try {
+        console.log(`📡 Fetching ${targetType} details for ${targetName}...`);
+        const procResponse = await getObjectDetails(authToken, {
+          objectType: targetType,
+          objectName: targetName,
+          owner: targetOwner
+        });
+        
+        const procData = handleSchemaBrowserResponse(procResponse);
+        const procDetails = procData.data || procData;
+        
+        // Extract parameters from procedure details
+        if (procDetails.parameters && Array.isArray(procDetails.parameters)) {
+          parameters = procDetails.parameters;
+          console.log(`📦 Extracted ${parameters.length} parameters from procedure details`);
+        } else if (procDetails.arguments && Array.isArray(procDetails.arguments)) {
+          parameters = procDetails.arguments;
+          console.log(`📦 Extracted ${parameters.length} arguments from procedure details`);
+        }
+        
+        // Extract source code
+        if (procDetails.source) {
+          sourceCode = procDetails.source;
+          console.log('📝 Found source code in procedure details');
+        } else if (procDetails.text) {
+          sourceCode = procDetails.text;
+        }
+        
+        // Merge procedure details into responseData
+        responseData.targetObjectDetails = procDetails;
+      } catch (procErr) {
+        console.error('Error fetching procedure details:', procErr);
+      }
+    } 
+    // ADD TABLE HANDLING - BUT DON'T MAKE EXTRA API CALLS, USE EXISTING DATA
+    else if (targetType === 'TABLE') {
+      // Table data is already in responseData.targetObjectDetails from the first call
+      if (responseData.targetObjectDetails) {
+        const tableDetails = responseData.targetObjectDetails;
+        
+        // Extract columns from table details
+        if (tableDetails.columns && Array.isArray(tableDetails.columns)) {
+          columns = tableDetails.columns;
+          console.log(`📦 Extracted ${columns.length} columns from table details`);
+        }
+        
+        // Extract source/DDL if available
+        if (tableDetails.source) {
+          sourceCode = tableDetails.source;
+          console.log('📝 Found source code in table details');
+        }
+      }
+    }
+    // ADD VIEW HANDLING - Similar to TABLE handling
+    else if (targetType === 'VIEW') {
+      // View data is in responseData.targetObjectDetails from the first call
+      if (responseData.targetObjectDetails) {
+        const viewDetails = responseData.targetObjectDetails;
+        
+        // Extract columns from view details
+        if (viewDetails.columns && Array.isArray(viewDetails.columns)) {
+          columns = viewDetails.columns;
+          console.log(`📦 Extracted ${columns.length} columns from view details`);
+        }
+        
+        // Extract source/DDL if available
+        if (viewDetails.source) {
+          sourceCode = viewDetails.source;
+          console.log('📝 Found source code in view details');
+        } else if (viewDetails.TEXT) {
+          sourceCode = viewDetails.TEXT;
+          console.log('📝 Found TEXT in view details');
+        }
+        
+        // Merge view details into responseData if not already there
+        if (!responseData.targetObjectDetails) {
+          responseData.targetObjectDetails = viewDetails;
+        }
+      }
+    }
+    
     const enrichedResponseData = {
       ...responseData,
       name: responseData.name || object.name,
       type: responseData.type || type,
-      isSynonym: isSynonym
+      isSynonym: isSynonym,
+      parameters: parameters, // Store parameters at top level
+      columns: columns,       // Store columns at top level
+      source: sourceCode      // Store source/DDL at top level
     };
     
     setObjectDetails(enrichedResponseData);
     
-    const upperType = type.toUpperCase();
-    let effectiveType = upperType;
-    let targetType = null;
-    let targetName = object.name;
-    let targetOwner = null;
-    
-    // Extract parameters based on the object type
-    let parameters = [];
-    let columns = [];
-    
-    if (isSynonym && responseData?.targetDetails) {
-      targetType = responseData.targetDetails.OBJECT_TYPE || responseData.targetDetails.objectType;
-      targetName = responseData.TARGET_NAME || object.name;
-      targetOwner = responseData.TARGET_OWNER || responseData.targetDetails.OWNER;
-      
-      if (targetType) {
-        effectiveType = targetType;
-      }
-      
-      // Extract parameters from target details
-      if (responseData.targetDetails.parameters && Array.isArray(responseData.targetDetails.parameters)) {
-        parameters = responseData.targetDetails.parameters;
-        console.log(`📦 Extracted ${parameters.length} parameters from target details for ${object.name}`);
-      }
-      
-      if (responseData.targetDetails.columns && Array.isArray(responseData.targetDetails.columns)) {
-        columns = responseData.targetDetails.columns;
-        console.log(`📦 Extracted ${columns.length} columns from target details for ${object.name}`);
-      }
-    } else {
-      // Direct object (not synonym)
-      if (responseData.parameters && Array.isArray(responseData.parameters)) {
-        parameters = responseData.parameters;
-        console.log(`📦 Extracted ${parameters.length} parameters from response for ${object.name}`);
-      }
-      
-      if (responseData.columns && Array.isArray(responseData.columns)) {
-        columns = responseData.columns;
-        console.log(`📦 Extracted ${columns.length} columns from response for ${object.name}`);
-      }
+    // Set DDL from source code if available
+    if (sourceCode) {
+      setObjectDDL(sourceCode);
+      console.log('✅ Set object DDL from source code');
+    } else if (responseData.TEXT) {
+      setObjectDDL(responseData.TEXT);
+      console.log('✅ Set object DDL from TEXT');
     }
     
-    // CRITICAL: Update selectedForApiGeneration with full details including parameters
+    // CRITICAL: Update selectedForApiGeneration with full details including parameters and columns
     const apiObject = {
       ...object,
       ...responseData,
@@ -2666,90 +2731,21 @@ const handleObjectSelect = useCallback(async (object, type) => {
       parameters: parameters,
       columns: columns,
       isSynonym: isSynonym,
-      targetDetails: responseData.targetDetails
+      targetDetails: responseData.targetDetails || responseData.targetObjectDetails,
+      source: sourceCode || responseData.TEXT
     };
     
     console.log(`🎯 Setting selectedForApiGeneration with ${parameters.length} parameters and ${columns.length} columns`);
     setSelectedForApiGeneration(apiObject);
     
-    // Load table/view data if applicable
-    if (effectiveType === 'TABLE') {
-      if (isSynonym && targetType === 'TABLE') {
-        loadTableData(targetName).catch(err => console.error('Background table load error:', err));
-      } else {
-        loadTableData(object.name).catch(err => console.error('Background table load error:', err));
-      }
-    }
-
-    if (effectiveType === 'VIEW') {
-      if (isSynonym && targetType === 'VIEW') {
-        loadViewData(targetName).catch(err => console.error('Background view load error:', err));
-      } else {
-        loadViewData(object.name).catch(err => console.error('Background view load error:', err));
-      }
-    }
-    
     // Load used by data in background
     loadUsedByData(
-      object.name, 
+      targetName || object.name, 
       effectiveType, 
       targetOwner || object.owner, 
       1, 
       10
     ).catch(err => console.error('Background used by load error:', err));
-    
-    // Load DDL for applicable types
-    const ddlTypes = ['TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'PACKAGE', 'TRIGGER', 'SEQUENCE'];
-    if (ddlTypes.includes(effectiveType)) {
-      (async () => {
-        try {
-          setDdlLoading(true);
-          
-          let ddlObjectType = effectiveType.toLowerCase();
-          let ddlObjectName = targetName || object.name;
-          
-          if (isSynonym && targetType) {
-            ddlObjectType = targetType.toLowerCase();
-            ddlObjectName = targetName;
-          }
-          
-          const ddlResponse = await getObjectDDL(authToken, { 
-            objectType: ddlObjectType, 
-            objectName: ddlObjectName 
-          });
-          
-          if (ddlResponse && ddlResponse.data) {
-            const ddlData = ddlResponse.data;
-            let ddlText = '';
-            
-            if (typeof ddlData === 'string') {
-              ddlText = ddlData;
-            } else if (ddlData.ddl) {
-              ddlText = ddlData.ddl;
-            } else if (ddlData.text) {
-              ddlText = ddlData.text;
-            } else if (ddlData.sql) {
-              ddlText = ddlData.sql;
-            } else {
-              ddlText = JSON.stringify(ddlData, null, 2);
-            }
-            
-            if (ddlText && ddlText !== '{}') {
-              setObjectDDL(ddlText);
-            } else {
-              setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName || object.name}`);
-            }
-          } else {
-            setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName || object.name}`);
-          }
-        } catch (ddlError) {
-          console.error('Background DDL fetch error:', ddlError);
-          setObjectDDL(`-- Error loading DDL for ${effectiveType} ${targetName || object.name}\n-- ${ddlError.message}`);
-        } finally {
-          setDdlLoading(false);
-        }
-      })();
-    }
     
   } catch (err) {
     Logger.error('SchemaBrowser', 'handleObjectSelect', `Error loading details for ${object.name}`, err);
@@ -2761,7 +2757,32 @@ const handleObjectSelect = useCallback(async (object, type) => {
   if (window.innerWidth < 768) {
     setIsLeftSidebarVisible(false);
   }
-}, [authToken, tabs, loadTableData, loadViewData, loadUsedByData]);
+}, [authToken, tabs, loadUsedByData]);
+
+
+
+
+// Helper function to generate basic DDL from columns
+const generateBasicTableDDL = (tableName, columns) => {
+  if (!columns || columns.length === 0) return `-- No columns available for ${tableName}`;
+  
+  const columnLines = columns.map(col => {
+    const colName = col.COLUMN_NAME || col.column_name || col.name;
+    const dataType = col.DATA_TYPE || col.data_type || 'VARCHAR2';
+    const dataLength = col.DATA_LENGTH || col.data_length;
+    const nullable = (col.NULLABLE === 'Y' || col.nullable === true) ? '' : ' NOT NULL';
+    const defaultValue = col.DATA_DEFAULT ? ` DEFAULT ${col.DATA_DEFAULT}` : '';
+    
+    if (dataLength) {
+      return `    ${colName} ${dataType}(${dataLength})${defaultValue}${nullable}`;
+    } else {
+      return `    ${colName} ${dataType}${defaultValue}${nullable}`;
+    }
+  }).join(',\n');
+  
+  return `CREATE TABLE ${tableName} (\n${columnLines}\n);`;
+};
+
 
   // ============================================================
   // RENDER FUNCTIONS FOR EACH TAB
@@ -2828,67 +2849,131 @@ useEffect(() => {
     />
   );
 }, [activeObject, objectDetails, usedByData, colors, handleObjectSelect, getObjectIcon, loadUsedByData, handleUsedByPageChange, handleUsedByPageSizeChange]);
-  // Render Columns Tab
-  const renderColumnsTab = () => {
-    const columns = objectDetails?.columns || 
-                    objectDetails?.targetDetails?.columns || 
-                    activeObject?.columns || 
-                    [];
-    
-    if (!columns || columns.length === 0) {
-      return (
-        <div className="flex-1 overflow-auto p-4">
-          <div className="text-center" style={{ color: colors.textSecondary }}>
-            No columns found
-          </div>
-        </div>
-      );
-    }
-    
+  
+
+  // Render Columns Tab - Enhanced for views while preserving table/procedure functionality
+const renderColumnsTab = () => {
+  // For procedures/functions, they don't have columns, so show appropriate message
+  const objectType = activeObject?.type?.toUpperCase();
+  
+  // If this is a procedure or function, show parameters instead
+  if (objectType === 'PROCEDURE' || objectType === 'FUNCTION') {
     return (
-      <div className="flex-1 overflow-auto">
-        <div className="border rounded" style={{ borderColor: colors.gridBorder, backgroundColor: colors.card }}>
-          <div className="p-2 border-b" style={{ borderColor: colors.gridBorder }}>
-            <div className="text-sm font-medium" style={{ color: colors.text }}>
-              Columns ({columns.length})
-            </div>
-          </div>
-          <div className="overflow-auto">
-            <table className="w-full">
-              <thead style={{ backgroundColor: colors.tableHeader }}>
-                <tr>
-                  <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>#</th>
-                  <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Column</th>
-                  <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Type</th>
-                  <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Nullable</th>
-                </tr>
-              </thead>
-              <tbody>
-                {columns.map((col, i) => (
-                  <tr key={col.name || col.COLUMN_NAME || i} style={{ 
-                    backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                    borderBottom: `1px solid ${colors.gridBorder}`
-                  }}>
-                    <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{col.position || col.POSITION || i + 1}</td>
-                    <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{col.name || col.COLUMN_NAME}</td>
-                    <td className="p-2 text-xs" style={{ color: colors.text }}>{col.data_type || col.DATA_TYPE || col.type}</td>
-                    <td className="p-2 text-xs">
-                      <span className={`px-2 py-0.5 rounded text-xs ${
-                        (col.nullable === 'Y' || col.nullable === true || col.NULLABLE === 'Y') ? 
-                        'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
-                      }`}>
-                        {(col.nullable === 'Y' || col.nullable === true || col.NULLABLE === 'Y') ? 'Y' : 'N'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      <div className="flex-1 overflow-auto p-4">
+        <div className="text-center" style={{ color: colors.textSecondary }}>
+          This tab is for columns. Please use the Parameters tab for {objectType.toLowerCase()} details.
         </div>
       </div>
     );
-  };
+  }
+  
+  // Check multiple locations for columns with priority for views
+  let columns = [];
+  
+  // For synonyms that point to views, check targetObjectDetails.columns first
+  if (objectType === 'SYNONYM' && objectDetails?.isSynonym) {
+    if (objectDetails?.targetObjectDetails?.columns) {
+      columns = objectDetails.targetObjectDetails.columns;
+      console.log('📊 Found view columns in targetObjectDetails:', columns.length);
+    } else if (objectDetails?.targetDetails?.columns) {
+      columns = objectDetails.targetDetails.columns;
+    }
+  }
+  
+  // If no columns found yet, check other locations
+  if (columns.length === 0) {
+    columns = objectDetails?.columns || 
+              objectDetails?.targetObjectDetails?.columns || 
+              objectDetails?.targetDetails?.columns || 
+              activeObject?.columns || 
+              [];
+  }
+  
+  console.log('📊 Columns found for', objectType, ':', columns.length);
+  
+  if (!columns || columns.length === 0) {
+    return (
+      <div className="flex-1 overflow-auto p-4">
+        <div className="text-center" style={{ color: colors.textSecondary }}>
+          No columns found for this {objectType === 'VIEW' ? 'view' : 'table'}
+        </div>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="flex-1 overflow-auto">
+      <div className="border rounded" style={{ borderColor: colors.gridBorder, backgroundColor: colors.card }}>
+        <div className="p-2 border-b" style={{ borderColor: colors.gridBorder }}>
+          <div className="text-sm font-medium" style={{ color: colors.text }}>
+            {objectType === 'VIEW' ? 'View' : 'Table'} Columns ({columns.length})
+          </div>
+        </div>
+        <div className="overflow-auto">
+          <table className="w-full">
+            <thead style={{ backgroundColor: colors.tableHeader }}>
+              <tr>
+                <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>#</th>
+                <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Column</th>
+                <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Type</th>
+                <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Length</th>
+                <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Nullable</th>
+                <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Default</th>
+              </tr>
+            </thead>
+            <tbody>
+              {columns.map((col, i) => {
+                // Handle both uppercase and lowercase field names
+                const columnId = col.COLUMN_ID || col.column_id || i + 1;
+                const columnName = col.COLUMN_NAME || col.column_name || col.name;
+                const dataType = col.DATA_TYPE || col.data_type || 'VARCHAR2';
+                const dataLength = col.DATA_LENGTH || col.data_length;
+                const dataPrecision = col.DATA_PRECISION || col.data_precision;
+                const dataScale = col.DATA_SCALE || col.data_scale;
+                const nullable = col.NULLABLE || col.nullable;
+                const dataDefault = col.DATA_DEFAULT || col.data_default;
+                
+                // Format type with length/precision
+                let typeDisplay = dataType;
+                if (dataLength) {
+                  typeDisplay = `${dataType}(${dataLength})`;
+                } else if (dataPrecision !== null && dataPrecision !== undefined) {
+                  typeDisplay = dataScale !== null && dataScale !== undefined
+                    ? `${dataType}(${dataPrecision},${dataScale})`
+                    : `${dataType}(${dataPrecision})`;
+                }
+                
+                return (
+                  <tr key={columnName + i} style={{ 
+                    backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                    borderBottom: `1px solid ${colors.gridBorder}`
+                  }}>
+                    <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{columnId}</td>
+                    <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{columnName}</td>
+                    <td className="p-2 text-xs" style={{ color: colors.text }}>{typeDisplay}</td>
+                    <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{dataLength || '-'}</td>
+                    <td className="p-2 text-xs">
+                      <span className={`px-2 py-0.5 rounded text-xs ${
+                        (nullable === 'Y' || nullable === true) ? 
+                        'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                      }`}>
+                        {(nullable === 'Y' || nullable === true) ? 'Y' : 'N'}
+                      </span>
+                    </td>
+                    <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>
+                      {dataDefault || '-'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
   // Render Data Tab
   const renderDataTab = () => {
@@ -3192,73 +3277,86 @@ useEffect(() => {
     );
   };
 
-  // Render Parameters Tab
-  const renderParametersTab = () => {
-    const parameters = objectDetails?.targetDetails?.parameters || 
-                       objectDetails?.parameters || 
-                       objectDetails?.arguments ||
-                       activeObject?.parameters || 
-                       [];
-    
-    if (!parameters || parameters.length === 0) {
-      return (
-        <div className="flex-1 overflow-auto p-4">
-          <div className="text-center" style={{ color: colors.textSecondary }}>
-            No parameters found
-          </div>
-        </div>
-      );
-    }
-    
+ // Update renderParametersTab - find this function around line 2320
+const renderParametersTab = useCallback(() => {
+  // Check multiple locations for parameters
+  const parameters = objectDetails?.targetObjectDetails?.parameters || 
+                     objectDetails?.parameters || 
+                     objectDetails?.arguments ||
+                     activeObject?.parameters || 
+                     [];
+  
+  console.log('🔍 renderParametersTab - parameters found:', parameters.length);
+  console.log('📋 Parameters array:', parameters);
+  
+  if (!parameters || parameters.length === 0) {
     return (
-      <div className="flex-1 overflow-auto">
-        <div className="border rounded" style={{ borderColor: colors.gridBorder }}>
-          <div className="p-2 border-b" style={{ borderColor: colors.gridBorder }}>
-            <div className="text-sm font-medium" style={{ color: colors.text }}>
-              Parameters ({parameters.length})
-            </div>
-          </div>
-          <div className="overflow-auto">
-            <table className="w-full">
-              <thead style={{ backgroundColor: colors.tableHeader }}>
-                <tr>
-                  <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>#</th>
-                  <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Parameter</th>
-                  <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Type</th>
-                  <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Mode</th>
-                  <th className="text-left p-2 text-xs hidden md:table-cell" style={{ color: colors.textSecondary }}>Data Length</th>
-                </tr>
-              </thead>
-              <tbody>
-                {parameters.map((param, i) => (
-                  <tr key={param.argument_name || param.ARGUMENT_NAME || param.name || i} style={{ 
-                    backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                    borderBottom: `1px solid ${colors.gridBorder}`
-                  }}>
-                    <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{param.POSITION || param.position || i + 1}</td>
-                    <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{param.argument_name || param.ARGUMENT_NAME || param.name}</td>
-                    <td className="p-2 text-xs" style={{ color: colors.text }}>{param.DATA_TYPE || param.data_type || param.type}</td>
-                    <td className="p-2 text-xs">
-                      <span className={`px-2 py-0.5 rounded text-xs ${
-                        (param.IN_OUT || param.mode || param.in_out) === 'IN' ? 'bg-blue-500/10 text-blue-400' :
-                        (param.IN_OUT || param.mode || param.in_out) === 'OUT' ? 'bg-purple-500/10 text-purple-400' :
-                        'bg-green-500/10 text-green-400'
-                      }`}>
-                        {param.IN_OUT || param.mode || param.in_out || 'IN'}
-                      </span>
-                    </td>
-                    <td className="p-2 text-xs hidden md:table-cell" style={{ color: colors.textSecondary }}>
-                      {param.DATA_LENGTH || param.data_length || '-'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      <div className="flex-1 overflow-auto p-4">
+        <div className="text-center" style={{ color: colors.textSecondary }}>
+          No parameters found for this procedure
         </div>
       </div>
     );
-  };
+  }
+  
+  return (
+    <div className="flex-1 overflow-auto">
+      <div className="border rounded" style={{ borderColor: colors.gridBorder }}>
+        <div className="p-2 border-b" style={{ borderColor: colors.gridBorder }}>
+          <div className="text-sm font-medium" style={{ color: colors.text }}>
+            Parameters ({parameters.length})
+          </div>
+        </div>
+        <div className="overflow-auto">
+          <table className="w-full">
+            <thead style={{ backgroundColor: colors.tableHeader }}>
+              <tr>
+                <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>#</th>
+                <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Parameter</th>
+                <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Type</th>
+                <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Mode</th>
+                <th className="text-left p-2 text-xs hidden md:table-cell" style={{ color: colors.textSecondary }}>Data Length</th>
+              </tr>
+            </thead>
+            <tbody>
+              {parameters.map((param, i) => {
+                // Handle both uppercase and lowercase field names
+                const position = param.POSITION || param.position || i + 1;
+                const name = param.argument_name || param.ARGUMENT_NAME || param.name || `Parameter ${i + 1}`;
+                const dataType = param.DATA_TYPE || param.data_type || param.type || 'VARCHAR2';
+                const mode = param.IN_OUT || param.in_out || param.mode || 'IN';
+                const dataLength = param.DATA_LENGTH || param.data_length || '-';
+                
+                return (
+                  <tr key={name + i} style={{ 
+                    backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                    borderBottom: `1px solid ${colors.gridBorder}`
+                  }}>
+                    <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{position}</td>
+                    <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{name}</td>
+                    <td className="p-2 text-xs" style={{ color: colors.text }}>{dataType}</td>
+                    <td className="p-2 text-xs">
+                      <span className={`px-2 py-0.5 rounded text-xs ${
+                        mode === 'IN' ? 'bg-blue-500/10 text-blue-400' :
+                        mode === 'OUT' ? 'bg-purple-500/10 text-purple-400' :
+                        'bg-green-500/10 text-green-400'
+                      }`}>
+                        {mode}
+                      </span>
+                    </td>
+                    <td className="p-2 text-xs hidden md:table-cell" style={{ color: colors.textSecondary }}>
+                      {dataLength}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}, [objectDetails, activeObject, colors]);
 
   // Render Constraints Tab
   const renderConstraintsTab = () => {
@@ -3494,6 +3592,7 @@ useEffect(() => {
   const renderPropertiesTab = () => {
     const details = objectDetails || activeObject || {};
     const targetDetails = details.targetDetails;
+    const targetObjectDetails = details.targetObjectDetails || {};
     
     if (details.objectType === 'SYNONYM' && targetDetails) {
       return (
@@ -3536,14 +3635,14 @@ useEffect(() => {
                   <div className="text-xs" style={{ color: colors.textSecondary }}>Target Created</div>
                   <div className="text-sm truncate" style={{ color: colors.text }}>
                     {details.TARGET_CREATED ? formatDateForDisplay(details.TARGET_CREATED) : 
-                     targetDetails?.CREATED ? formatDateForDisplay(targetDetails.CREATED) : '-'}
+                    targetDetails?.CREATED ? formatDateForDisplay(targetDetails.CREATED) : '-'}
                   </div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-xs" style={{ color: colors.textSecondary }}>Target Modified</div>
                   <div className="text-sm truncate" style={{ color: colors.text }}>
                     {details.TARGET_MODIFIED ? formatDateForDisplay(details.TARGET_MODIFIED) : 
-                     targetDetails?.LAST_DDL_TIME ? formatDateForDisplay(targetDetails.LAST_DDL_TIME) : '-'}
+                    targetDetails?.LAST_DDL_TIME ? formatDateForDisplay(targetDetails.LAST_DDL_TIME) : '-'}
                   </div>
                 </div>
                 <div className="space-y-1">
@@ -3599,19 +3698,39 @@ useEffect(() => {
         </div>
       );
     }
-  
+    
+    // For regular objects (including tables)
     const properties = [
       { label: 'Name', value: details.name || details.OBJECT_NAME || details.objectName || details.SYNONYM_NAME || '-' },
       { label: 'Owner', value: details.owner || details.OWNER || '-' },
       { label: 'Type', value: details.type || details.OBJECT_TYPE || details.objectType || details.TARGET_TYPE || '-' },
-      { label: 'Status', value: details.status || details.STATUS || details.TARGET_STATUS || 'VALID' },
-      { label: 'Created', value: details.created || details.CREATED || details.TARGET_CREATED ? formatDateForDisplay(details.created || details.CREATED || details.TARGET_CREATED) : '-' },
-      { label: 'Last Modified', value: details.last_ddl_time || details.LAST_DDL_TIME || details.TARGET_MODIFIED ? formatDateForDisplay(details.last_ddl_time || details.LAST_DDL_TIME || details.TARGET_MODIFIED) : '-' },
-      ...(details.num_rows || details.NUM_ROWS ? [{ label: 'Row Count', value: (details.num_rows || details.NUM_ROWS).toLocaleString() }] : []),
-      ...(details.bytes || details.BYTES ? [{ label: 'Size', value: formatBytes(details.bytes || details.BYTES) }] : []),
-      ...(details.comments || details.COMMENTS ? [{ label: 'Comment', value: details.comments || details.COMMENTS }] : [])
+      { label: 'Status', value: details.status || details.STATUS || details.TARGET_STATUS || targetObjectDetails?.STATUS || targetObjectDetails?.TABLE_STATUS || 'VALID' },
+      { label: 'Created', value: details.created || details.CREATED || details.TARGET_CREATED || targetObjectDetails?.CREATED ? formatDateForDisplay(details.created || details.CREATED || details.TARGET_CREATED || targetObjectDetails?.CREATED) : '-' },
+      { label: 'Last Modified', value: details.last_ddl_time || details.LAST_DDL_TIME || details.TARGET_MODIFIED || targetObjectDetails?.LAST_DDL_TIME ? formatDateForDisplay(details.last_ddl_time || details.LAST_DDL_TIME || details.TARGET_MODIFIED || targetObjectDetails?.LAST_DDL_TIME) : '-' },
     ];
-  
+
+    // Add table-specific properties
+    if (details.TARGET_TYPE === 'TABLE' || details.type === 'TABLE' || targetObjectDetails?.TABLE_NAME) {
+      properties.push(
+        { label: 'Row Count', value: targetObjectDetails?.NUM_ROWS ? targetObjectDetails.NUM_ROWS.toLocaleString() : details.num_rows ? details.num_rows.toLocaleString() : '-' },
+        { label: 'Size (Bytes)', value: targetObjectDetails?.size_bytes ? formatBytes(targetObjectDetails.size_bytes) : details.bytes ? formatBytes(details.bytes) : '-' },
+        { label: 'Tablespace', value: targetObjectDetails?.TABLESPACE_NAME || details.tablespace_name || '-' },
+        { label: 'Blocks', value: targetObjectDetails?.BLOCKS || details.blocks || '-' },
+        { label: 'Avg Row Length', value: targetObjectDetails?.AVG_ROW_LEN || details.avg_row_len || '-' },
+        { label: 'Last Analyzed', value: targetObjectDetails?.LAST_ANALYZED ? formatDateForDisplay(targetObjectDetails.LAST_ANALYZED) : details.last_analyzed ? formatDateForDisplay(details.last_analyzed) : '-' },
+        { label: 'Row Movement', value: targetObjectDetails?.ROW_MOVEMENT || details.row_movement || 'DISABLED' },
+        { label: 'Cache', value: targetObjectDetails?.CACHE || details.cache || 'N' }
+      );
+    }
+
+    // Add comment if available
+    if (targetObjectDetails?.comments || details.comments || details.COMMENTS) {
+      properties.push({ 
+        label: 'Comment', 
+        value: targetObjectDetails?.comments || details.comments || details.COMMENTS 
+      });
+    }
+    
     return (
       <div className="flex-1 overflow-auto">
         <div className="border rounded p-4" style={{ borderColor: colors.border }}>
@@ -3629,62 +3748,6 @@ useEffect(() => {
   };
 
 
-
-  // DDL loading effect
-  useEffect(() => {
-    if (activeTab === 'ddl' || activeTab === 'definition' || activeTab === 'spec' || activeTab === 'body') {
-      const ddlTypes = ['TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'PACKAGE', 'TRIGGER', 'SEQUENCE'];
-      const effectiveType = activeObject?.type?.toUpperCase();
-      
-      if (activeObject && ddlTypes.includes(effectiveType) && !objectDDL && !ddlLoading) {
-        const targetName = activeObject.type === 'SYNONYM' && objectDetails?.TARGET_NAME 
-          ? objectDetails.TARGET_NAME 
-          : activeObject.name;
-        
-        const loadDDL = async () => {
-          try {
-            setDdlLoading(true);
-            const ddlResponse = await getObjectDDL(authToken, { 
-              objectType: effectiveType.toLowerCase(), 
-              objectName: targetName 
-            });
-            
-            if (ddlResponse && ddlResponse.data) {
-              const ddlData = ddlResponse.data;
-              let ddlText = '';
-              
-              if (typeof ddlData === 'string') {
-                ddlText = ddlData;
-              } else if (ddlData.ddl) {
-                ddlText = ddlData.ddl;
-              } else if (ddlData.text) {
-                ddlText = ddlData.text;
-              } else if (ddlData.sql) {
-                ddlText = ddlData.sql;
-              } else {
-                ddlText = JSON.stringify(ddlData, null, 2);
-              }
-              
-              if (ddlText && ddlText !== '{}') {
-                setObjectDDL(ddlText);
-              } else {
-                setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName}`);
-              }
-            } else {
-              setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName}`);
-            }
-          } catch (ddlError) {
-            console.error('DDL fetch error:', ddlError);
-            setObjectDDL(`-- Error loading DDL for ${effectiveType} ${targetName}\n-- ${ddlError.message}`);
-          } finally {
-            setDdlLoading(false);
-          }
-        };
-        
-        loadDDL();
-      }
-    }
-  }, [activeTab, activeObject, objectDDL, ddlLoading, objectDetails, authToken]);
 
   // Render tab content based on active tab
   const renderTabContent = () => {
