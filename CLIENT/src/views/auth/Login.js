@@ -355,6 +355,7 @@ export default function Login() {
                       </div>
                       <div className="relative group">
                         <input
+                          id="password-input"
                           type={showPassword ? "text" : "password"}
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
@@ -368,14 +369,34 @@ export default function Login() {
                           required
                           autoComplete="current-password"
                         />
-                        <div className="absolute left-3.5 top-1/2 transform -translate-y-1/2 p-1.5 rounded-lg transition-colors duration-300"
+                        <div className="absolute left-3.5 top-1/2 transform -translate-y-1/2 p-1.5 rounded-lg transition-colors duration-300 pointer-events-none"
                           style={{ backgroundColor: colors.hover }}>
                           <Lock className="h-4 w-4" style={{ color: colors.textSecondary }} />
                         </div>
                         <button
                           type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3.5 top-1/2 transform -translate-y-1/2 p-2 rounded-lg transition-all duration-300 hover-lift hover:scale-110 active:scale-95"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            
+                            // Get the input element and save its cursor position
+                            const input = document.getElementById('password-input');
+                            const cursorPosition = input.selectionStart;
+                            
+                            // Toggle password visibility
+                            setShowPassword(!showPassword);
+                            
+                            // Restore cursor position after state update
+                            setTimeout(() => {
+                              input.focus();
+                              input.setSelectionRange(cursorPosition, cursorPosition);
+                            }, 0);
+                          }}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          className="absolute right-3.5 top-1/2 transform -translate-y-1/2 p-2 rounded-lg transition-all duration-300 hover-lift hover:scale-110 active:scale-95 z-20"
                           style={{ 
                             backgroundColor: colors.hover,
                             border: `1px solid ${colors.border}`,

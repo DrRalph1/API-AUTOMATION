@@ -39,6 +39,27 @@
     zoom: 0.8 !important;
   }
 
+  /* Add to your global styles or in a <style> tag */
+.absolute.right-3\.5 {
+  pointer-events: auto !important;
+  z-index: 50 !important;
+  position: absolute !important;
+}
+
+/* Ensure the button is clickable */
+button.absolute {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  background-color: transparent;
+  border: none;
+}
+
+/* Remove any potential overlay that might be blocking clicks */
+.relative.group {
+  position: relative;
+  z-index: 1;
+}
+
   /* Ensure dialogs have proper stacking context */
   [data-radix-dialog-content] {
     z-index: 50 !important;
