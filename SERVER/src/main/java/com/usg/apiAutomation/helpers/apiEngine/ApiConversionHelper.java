@@ -569,8 +569,8 @@ public class ApiConversionHelper {
                     // Schema Configuration
                     .schemaConfig(mapSchemaConfigToDTO(entity.getSchemaConfig()))
 
-                    // Authentication Configuration
-                    .authConfig(mapAuthConfigToDTO(entity.getAuthConfig()))
+                    // Authentication Configuration - FIXED to include both key and secret
+                    .authConfig(mapAuthConfigToGeneratedAPIDTO(entity.getAuthConfig()))
 
                     // Parameters
                     .parameters(mapParameterDTOs(entity.getParameters()))
@@ -833,5 +833,44 @@ public class ApiConversionHelper {
                 .build();
     }
 
+
+    // Add this new helper method for auth config mapping
+    private ApiAuthConfigDTO mapAuthConfigToGeneratedAPIDTO(ApiAuthConfigEntity entity) {
+        if (entity == null) return null;
+
+        return ApiAuthConfigDTO.builder()
+                .authType(entity.getAuthType())
+                .apiKeyHeader(entity.getApiKeyHeader())
+                .apiKeyValue(entity.getApiKeyValue())
+                .apiKeySecret(entity.getApiKeySecret())
+                .apiSecretHeader(entity.getApiSecretHeader())
+                .apiSecretValue(entity.getApiSecretValue())
+                .apiKeyLocation(entity.getApiKeyLocation())
+                .apiKeyPrefix(entity.getApiKeyPrefix())
+                .basicUsername(entity.getBasicUsername())
+                .basicPassword(entity.getBasicPassword())
+                .basicRealm(entity.getBasicRealm())
+                .jwtSecret(entity.getJwtSecret())
+                .jwtIssuer(entity.getJwtIssuer())
+                .jwtAudience(entity.getJwtAudience())
+                .jwtExpiration(entity.getJwtExpiration())
+                .jwtAlgorithm(entity.getJwtAlgorithm())
+                .oauthClientId(entity.getOauthClientId())
+                .oauthClientSecret(entity.getOauthClientSecret())
+                .oauthTokenUrl(entity.getOauthTokenUrl())
+                .oauthAuthUrl(entity.getOauthAuthUrl())
+                .oauthScopes(entity.getOauthScopes())
+                .requiredRoles(entity.getRequiredRoles())
+                .customAuthFunction(entity.getCustomAuthFunction())
+                .validateSession(entity.getValidateSession())
+                .checkObjectPrivileges(entity.getCheckObjectPrivileges())
+                .ipWhitelist(entity.getIpWhitelist())
+                .rateLimitRequests(entity.getRateLimitRequests())
+                .rateLimitPeriod(entity.getRateLimitPeriod())
+                .auditLevel(entity.getAuditLevel())
+                .corsOrigins(parseCorsOrigins(entity.getCorsOrigins()))
+                .corsCredentials(entity.getCorsCredentials())
+                .build();
+    }
 
 }
