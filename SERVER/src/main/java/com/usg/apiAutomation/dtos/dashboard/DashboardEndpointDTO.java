@@ -8,6 +8,7 @@ import java.util.Map;
 public class DashboardEndpointDTO {
     // Basic IDs
     private String id; // Endpoint/Request ID
+    private String apiId;
     private String apiCode; // API Code
 
     // Collection and Folder IDs

@@ -120,18 +120,28 @@ public class AutomationEngineService {
             // Validate collection info
             CollectionInfoDTO collectionInfo = validationHelper.validateAndGetCollectionInfo(request.getCollectionInfo());
 
-            // Build endpoint path with parameters - FIX THIS METHOD
+            // Build endpoint path with parameters
             String endpointPath = buildEndpointPathFromRequest(request);
 
-            // Create and save main API entity
+            // Create and save main API entity (WITHOUT setting sourceRequestId yet)
             GeneratedApiEntity savedApi = executionHelper.createAndSaveApiEntity(
-                    request, sourceObjectDTO, collectionInfo, endpointPath, performedBy, requestId,
+                    request, sourceObjectDTO, collectionInfo, endpointPath, performedBy, null,  // Pass null for requestId
                     generatedAPIRepository, objectMapper, parameterGeneratorUtil, conversionHelper);
 
             // Generate related components
             GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(savedApi);
             String codeBaseRequestId = codeBaseGeneratorUtil.generate(savedApi, performedBy, request, collectionInfo);
-            String collectionId = collectionsGeneratorUtil.generate(savedApi, performedBy, request, collectionInfo);
+
+            // Generate collections and get both collection ID and request ID
+            Map<String, String> collectionResult = collectionsGeneratorUtil.generateWithDetails(
+                    savedApi, performedBy, request, collectionInfo);
+            String collectionId = collectionResult.get("collectionId");
+            String collectionsRequestId = collectionResult.get("requestId");  // This is the tb_col_requests ID
+
+            // CRITICAL: Update the GeneratedApiEntity with the collections request ID
+            savedApi.setSourceRequestId(collectionsRequestId);
+            generatedAPIRepository.save(savedApi);
+
             String docCollectionId = documentationGeneratorUtil.generate(savedApi, performedBy, request,
                     codeBaseRequestId, collectionId, collectionInfo);
 
@@ -142,6 +152,7 @@ public class AutomationEngineService {
 
             loggerUtil.log("apiGeneration", "Request ID: " + requestId +
                     ", API generated successfully with ID: " + savedApi.getId() +
+                    ", Source Request ID (tb_col_requests): " + collectionsRequestId +
                     " in " + (System.currentTimeMillis() - startTime) + "ms");
 
             return response;
@@ -520,6 +531,27 @@ public class AutomationEngineService {
             if (avgTime != null) {
                 metadataHelper.addAverageExecutionTime(response, avgTime);
             }
+
+            return response;
+
+        } catch (Exception e) {
+            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+                    ", Error getting API details: " + e.getMessage());
+            throw new RuntimeException("Failed to get API details: " + e.getMessage(), e);
+        }
+    }
+
+
+
+    public GeneratedAPIDTO getGeneratedApiDetails(String requestId, String apiId) {
+        try {
+            GeneratedApiEntity api = executionHelper.getApiEntity(generatedAPIRepository, apiId);
+            GeneratedAPIDTO response = conversionHelper.mapToGeneratedAPIDTO(api, objectMapper);
+
+            response.setTotalCalls(api.getTotalCalls());
+            response.setLastCalledAt(api.getLastCalledAt());
+
+            Double avgTime = executionLogRepository.getAverageExecutionTime(apiId);
 
             return response;
 
@@ -1015,5 +1047,51 @@ public class AutomationEngineService {
         log.info("=== Validation complete. Errors: {} ===\n", errors.size());
         return errors;
     }
+
+
+
+    /**
+     * Sets the generated API ID for any entity that has a generatedApiId field
+     * This ensures all related entities are properly linked to the main API
+     */
+    private void setGeneratedApiIdForEntity(Object entity, String generatedApiId) {
+        if (entity == null || generatedApiId == null) return;
+
+        try {
+            // Use reflection to find and set generatedApiId field
+            java.lang.reflect.Field field = getGeneratedApiIdField(entity.getClass());
+            if (field != null) {
+                field.setAccessible(true);
+                field.set(entity, generatedApiId);
+            }
+        } catch (Exception e) {
+            log.warn("Could not set generatedApiId for entity: {} - {}",
+                    entity.getClass().getSimpleName(), e.getMessage());
+        }
+    }
+
+    /**
+     * Recursively find the generatedApiId field in class hierarchy
+     */
+    private java.lang.reflect.Field getGeneratedApiIdField(Class<?> clazz) {
+        while (clazz != null && clazz != Object.class) {
+            try {
+                java.lang.reflect.Field field = clazz.getDeclaredField("generatedApiId");
+                return field;
+            } catch (NoSuchFieldException e) {
+                clazz = clazz.getSuperclass();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Sets generatedApiId for a collection of entities
+     */
+    private <T> void setGeneratedApiIdForEntities(Collection<T> entities, String generatedApiId) {
+        if (entities == null) return;
+        entities.forEach(entity -> setGeneratedApiIdForEntity(entity, generatedApiId));
+    }
+
 
 }

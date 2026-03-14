@@ -6,23 +6,23 @@ import com.usg.apiAutomation.services.DashboardService;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.enums.ParameterIn;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
@@ -35,793 +35,328 @@ public class DashboardController {
     private final LoggerUtil loggerUtil;
     private final JwtHelper jwtHelper;
 
+    private ResponseEntity<?> validateAuth(HttpServletRequest req, String action, String requestId) {
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, action);
+        if (authValidation != null) {
+            loggerUtil.log("dashboard", "Request ID: " + requestId + ", Authorization failed for " + action);
+        }
+        return authValidation;
+    }
+
+    private Map<String, Object> createSuccessResponse(String message, Object data, String requestId) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("responseCode", 200);
+        response.put("message", message);
+        response.put("data", data);
+        response.put("requestId", requestId);
+        response.put("timestamp", LocalDateTime.now().toString());
+        return response;
+    }
+
+    private Map<String, Object> createErrorResponse(String message, String requestId, HttpStatus status) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("responseCode", status.value());
+        response.put("message", message);
+        response.put("requestId", requestId);
+        response.put("timestamp", LocalDateTime.now().toString());
+        return response;
+    }
+
     // ============================================================
-    // 1. GET DASHBOARD STATISTICS
+    // 1. DASHBOARD STATS (Fast, lightweight)
     // ============================================================
     @GetMapping("/stats")
     @Operation(summary = "Get dashboard statistics", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
-    })
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Dashboard statistics retrieved successfully"),
-            @ApiResponse(responseCode = "401", description = "Authorization required"),
-            @ApiResponse(responseCode = "500", description = "Internal server error")
+            @Parameter(name = "Authorization", description = "JWT Token", required = true, in = ParameterIn.HEADER)
     })
     public ResponseEntity<?> getDashboardStats(HttpServletRequest req) {
-
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting dashboard statistics");
-        if (authValidation != null) {
-            loggerUtil.log("dashboard", "Request ID: " + requestId +
-                    ", Authorization failed for getting dashboard statistics");
-            return authValidation;
-        }
+        ResponseEntity<?> authValidation = validateAuth(req, "getting dashboard statistics", requestId);
+        if (authValidation != null) return authValidation;
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            loggerUtil.log("dashboard", "Request ID: " + requestId +
-                    ", Getting dashboard statistics for user: " + performedBy);
-
             DashboardStatsResponseDTO stats = dashboardService.getDashboardStats(requestId, req, performedBy);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Dashboard statistics retrieved successfully");
-            response.put("data", stats);
-            response.put("requestId", requestId);
-
-            loggerUtil.log("dashboard", "Request ID: " + requestId +
-                    ", Dashboard statistics retrieved successfully");
-
-            return ResponseEntity.ok(response);
-
+            loggerUtil.log("dashboard", "Request ID: " + requestId + ", Stats retrieved successfully");
+            return ResponseEntity.ok(createSuccessResponse("Dashboard statistics retrieved successfully", stats, requestId));
         } catch (Exception e) {
-            loggerUtil.log("dashboard", "Request ID: " + requestId +
-                    ", Error getting dashboard statistics: " + e.getMessage());
-
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting dashboard statistics: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+            loggerUtil.log("dashboard", "Request ID: " + requestId + ", Error: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(createErrorResponse("Error getting statistics: " + e.getMessage(), requestId, HttpStatus.INTERNAL_SERVER_ERROR));
         }
     }
 
     // ============================================================
-    // 2. GET DASHBOARD COLLECTIONS
+    // 2. COLLECTIONS with Pagination
     // ============================================================
     @GetMapping("/collections")
-    @Operation(summary = "Get dashboard collections overview", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
+    @Operation(summary = "Get collections with pagination", parameters = {
+            @Parameter(name = "Authorization", required = true, in = ParameterIn.HEADER),
+            @Parameter(name = "page", description = "Page number (0-based)", in = ParameterIn.QUERY),
+            @Parameter(name = "size", description = "Page size", in = ParameterIn.QUERY),
+            @Parameter(name = "sortBy", description = "Sort field", in = ParameterIn.QUERY),
+            @Parameter(name = "sortDir", description = "Sort direction", in = ParameterIn.QUERY)
     })
-    public ResponseEntity<?> getDashboardCollections(HttpServletRequest req) {
+    public ResponseEntity<?> getCollections(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "name") String sortBy,
+            @RequestParam(defaultValue = "asc") String sortDir,
+            HttpServletRequest req) {
 
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting dashboard collections");
-        if (authValidation != null) {
-            return authValidation;
-        }
+        ResponseEntity<?> authValidation = validateAuth(req, "getting collections", requestId);
+        if (authValidation != null) return authValidation;
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            DashboardCollectionsResponseDTO collections = dashboardService.getDashboardCollections(requestId, req, performedBy);
+            Sort.Direction direction = sortDir.equalsIgnoreCase("desc") ? Sort.Direction.DESC : Sort.Direction.ASC;
+            Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortBy));
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Dashboard collections retrieved successfully");
-            response.put("data", collections);
-            response.put("requestId", requestId);
+            PaginatedResponseDTO<DashboardCollectionDTO> collections =
+                    dashboardService.getCollectionsPaginated(requestId, req, performedBy, pageable);
 
-            return ResponseEntity.ok(response);
-
+            return ResponseEntity.ok(createSuccessResponse("Collections retrieved successfully", collections, requestId));
         } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting dashboard collections: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(createErrorResponse("Error getting collections: " + e.getMessage(), requestId, HttpStatus.INTERNAL_SERVER_ERROR));
         }
     }
 
     // ============================================================
-    // 3. GET DASHBOARD ENDPOINTS
+    // 3. ENDPOINTS with Pagination and Filtering
     // ============================================================
     @GetMapping("/endpoints")
-    @Operation(summary = "Get dashboard endpoints overview", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
+    @Operation(summary = "Get endpoints with pagination and filtering", parameters = {
+            @Parameter(name = "Authorization", required = true, in = ParameterIn.HEADER),
+            @Parameter(name = "page", description = "Page number (0-based)", in = ParameterIn.QUERY),
+            @Parameter(name = "size", description = "Page size", in = ParameterIn.QUERY),
+            @Parameter(name = "collectionId", description = "Filter by collection", in = ParameterIn.QUERY),
+            @Parameter(name = "method", description = "Filter by HTTP method", in = ParameterIn.QUERY),
+            @Parameter(name = "search", description = "Search term", in = ParameterIn.QUERY),
+            @Parameter(name = "sortBy", description = "Sort field (lastUpdated, createdAt, updatedAt, name, method, etc.)", in = ParameterIn.QUERY),
+            @Parameter(name = "sortDir", description = "Sort direction (asc/desc)", in = ParameterIn.QUERY)
     })
-    public ResponseEntity<?> getDashboardEndpoints(HttpServletRequest req) {
+    public ResponseEntity<?> getEndpoints(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String collectionId,
+            @RequestParam(required = false) String method,
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "lastUpdated") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir,
+            HttpServletRequest req) {
 
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting dashboard endpoints");
-        if (authValidation != null) {
-            return authValidation;
-        }
+        ResponseEntity<?> authValidation = validateAuth(req, "getting endpoints", requestId);
+        if (authValidation != null) return authValidation;
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            DashboardEndpointsResponseDTO endpoints = dashboardService.getDashboardEndpoints(requestId, req, performedBy);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Dashboard endpoints retrieved successfully");
-            response.put("data", endpoints);
-            response.put("requestId", requestId);
+            // Create filter DTO
+            EndpointFilterDTO filter = EndpointFilterDTO.builder()
+                    .collectionId(collectionId)
+                    .method(method)
+                    .search(search)
+                    .build();
 
-            return ResponseEntity.ok(response);
+            // Get paginated endpoints with sorting
+            PaginatedResponseDTO<DashboardEndpointDTO> endpoints =
+                    dashboardService.getEndpointsPaginated(
+                            requestId, req, performedBy, filter,
+                            page, size, sortBy, sortDir);
 
+            return ResponseEntity.ok(createSuccessResponse("Endpoints retrieved successfully", endpoints, requestId));
         } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting dashboard endpoints: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(createErrorResponse("Error getting endpoints: " + e.getMessage(), requestId, HttpStatus.INTERNAL_SERVER_ERROR));
         }
     }
 
     // ============================================================
-    // 4. GET RATE LIMIT RULES
+    // 4. RECENT ACTIVITIES with Pagination
     // ============================================================
-    @GetMapping("/rate-limit-rules")
-    @Operation(summary = "Get rate limit rules overview", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
+    @GetMapping("/activities")
+    @Operation(summary = "Get recent activities with pagination", parameters = {
+            @Parameter(name = "Authorization", required = true, in = ParameterIn.HEADER),
+            @Parameter(name = "page", description = "Page number (0-based)", in = ParameterIn.QUERY),
+            @Parameter(name = "size", description = "Page size", in = ParameterIn.QUERY),
+            @Parameter(name = "from", description = "Start date", in = ParameterIn.QUERY),
+            @Parameter(name = "to", description = "End date", in = ParameterIn.QUERY)
     })
-    public ResponseEntity<?> getDashboardRateLimitRules(HttpServletRequest req) {
+    public ResponseEntity<?> getActivities(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
+            HttpServletRequest req) {
 
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting rate limit rules");
-        if (authValidation != null) {
-            return authValidation;
-        }
+        ResponseEntity<?> authValidation = validateAuth(req, "getting activities", requestId);
+        if (authValidation != null) return authValidation;
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            DashboardRateLimitRulesResponseDTO rules = dashboardService.getDashboardRateLimitRules(requestId, req, performedBy);
+            Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "timestamp"));
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Rate limit rules retrieved successfully");
-            response.put("data", rules);
-            response.put("requestId", requestId);
+            PaginatedResponseDTO<ActivityDTO> activities =
+                    dashboardService.getActivitiesPaginated(requestId, req, performedBy, from, to, pageable);
 
-            return ResponseEntity.ok(response);
-
+            return ResponseEntity.ok(createSuccessResponse("Activities retrieved successfully", activities, requestId));
         } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting rate limit rules: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(createErrorResponse("Error getting activities: " + e.getMessage(), requestId, HttpStatus.INTERNAL_SERVER_ERROR));
         }
     }
 
     // ============================================================
-    // 5. GET IP WHITELIST
+    // 5. SECURITY SUMMARY
     // ============================================================
-    @GetMapping("/ip-whitelist")
-    @Operation(summary = "Get IP whitelist overview", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
-    })
-    public ResponseEntity<?> getDashboardIpWhitelist(HttpServletRequest req) {
-
-        String requestId = UUID.randomUUID().toString();
-
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting IP whitelist");
-        if (authValidation != null) {
-            return authValidation;
-        }
-
-        try {
-            String performedBy = jwtHelper.extractPerformedBy(req);
-            DashboardIpWhitelistResponseDTO whitelist = dashboardService.getDashboardIpWhitelist(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "IP whitelist retrieved successfully");
-            response.put("data", whitelist);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting IP whitelist: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-        }
-    }
-
-    // ============================================================
-    // 6. GET LOAD BALANCERS
-    // ============================================================
-    @GetMapping("/load-balancers")
-    @Operation(summary = "Get load balancers overview", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
-    })
-    public ResponseEntity<?> getDashboardLoadBalancers(HttpServletRequest req) {
-
-        String requestId = UUID.randomUUID().toString();
-
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting load balancers");
-        if (authValidation != null) {
-            return authValidation;
-        }
-
-        try {
-            String performedBy = jwtHelper.extractPerformedBy(req);
-            DashboardLoadBalancersResponseDTO loadBalancers = dashboardService.getDashboardLoadBalancers(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Load balancers retrieved successfully");
-            response.put("data", loadBalancers);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting load balancers: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-        }
-    }
-
-    // ============================================================
-    // 7. GET SECURITY EVENTS
-    // ============================================================
-    @GetMapping("/security-events")
-    @Operation(summary = "Get security events overview", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
-    })
-    public ResponseEntity<?> getDashboardSecurityEvents(HttpServletRequest req) {
-
-        String requestId = UUID.randomUUID().toString();
-
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting security events");
-        if (authValidation != null) {
-            return authValidation;
-        }
-
-        try {
-            String performedBy = jwtHelper.extractPerformedBy(req);
-            DashboardSecurityEventsResponseDTO events = dashboardService.getDashboardSecurityEvents(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Security events retrieved successfully");
-            response.put("data", events);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting security events: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-        }
-    }
-
-    // ============================================================
-    // 8. GET SECURITY ALERTS
-    // ============================================================
-    @GetMapping("/security-alerts")
-    @Operation(summary = "Get security alerts overview", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
-    })
-    public ResponseEntity<?> getDashboardSecurityAlerts(HttpServletRequest req) {
-
-        String requestId = UUID.randomUUID().toString();
-
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting security alerts");
-        if (authValidation != null) {
-            return authValidation;
-        }
-
-        try {
-            String performedBy = jwtHelper.extractPerformedBy(req);
-            DashboardSecurityAlertsResponseDTO alerts = dashboardService.getDashboardSecurityAlerts(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Security alerts retrieved successfully");
-            response.put("data", alerts);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting security alerts: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-        }
-    }
-
-    // ============================================================
-    // 9. GET SECURITY SUMMARY
-    // ============================================================
-    @GetMapping("/security-summary")
+    @GetMapping("/security/summary")
     @Operation(summary = "Get security summary", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
+            @Parameter(name = "Authorization", required = true, in = ParameterIn.HEADER)
     })
-    public ResponseEntity<?> getDashboardSecuritySummary(HttpServletRequest req) {
-
+    public ResponseEntity<?> getSecuritySummary(HttpServletRequest req) {
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting security summary");
-        if (authValidation != null) {
-            return authValidation;
-        }
+        ResponseEntity<?> authValidation = validateAuth(req, "getting security summary", requestId);
+        if (authValidation != null) return authValidation;
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
             DashboardSecuritySummaryResponseDTO summary = dashboardService.getDashboardSecuritySummary(requestId, req, performedBy);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Security summary retrieved successfully");
-            response.put("data", summary);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
-
+            return ResponseEntity.ok(createSuccessResponse("Security summary retrieved successfully", summary, requestId));
         } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting security summary: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(createErrorResponse("Error getting security summary: " + e.getMessage(), requestId, HttpStatus.INTERNAL_SERVER_ERROR));
         }
     }
 
+
+
     // ============================================================
-    // 10. GET CODE LANGUAGES
+    // 11. LANGUAGES (Code Generation)
     // ============================================================
     @GetMapping("/languages")
-    @Operation(summary = "Get supported programming languages", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
+    @Operation(summary = "Get supported languages", parameters = {
+            @Parameter(name = "Authorization", required = true, in = ParameterIn.HEADER)
     })
-    public ResponseEntity<?> getDashboardLanguages(HttpServletRequest req) {
-
+    public ResponseEntity<?> getLanguages(HttpServletRequest req) {
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting languages");
-        if (authValidation != null) {
-            return authValidation;
-        }
+        ResponseEntity<?> authValidation = validateAuth(req, "getting languages", requestId);
+        if (authValidation != null) return authValidation;
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
             DashboardLanguagesResponseDTO languages = dashboardService.getDashboardLanguages(requestId, req, performedBy);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Languages retrieved successfully");
-            response.put("data", languages);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
-
+            return ResponseEntity.ok(createSuccessResponse("Languages retrieved successfully", languages, requestId));
         } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting languages: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(createErrorResponse("Error getting languages: " + e.getMessage(), requestId, HttpStatus.INTERNAL_SERVER_ERROR));
         }
     }
 
-    // ============================================================
-    // 11. GET CODE IMPLEMENTATIONS
-    // ============================================================
-    @GetMapping("/implementations")
-    @Operation(summary = "Get code implementations", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER),
-            @Parameter(name = "page", description = "Page number (default: 1)", in = ParameterIn.QUERY),
-            @Parameter(name = "size", description = "Page size (default: 10)", in = ParameterIn.QUERY)
-    })
-    public ResponseEntity<?> getDashboardImplementations(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int size,
-            HttpServletRequest req) {
-
-        String requestId = UUID.randomUUID().toString();
-
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting implementations");
-        if (authValidation != null) {
-            return authValidation;
-        }
-
-        try {
-            String performedBy = jwtHelper.extractPerformedBy(req);
-            DashboardImplementationsResponseDTO implementations = dashboardService.getDashboardImplementations(
-                    requestId, req, performedBy, page, size);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Implementations retrieved successfully");
-            response.put("data", implementations);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting implementations: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-        }
-    }
 
     // ============================================================
-    // 12. GET CODE GENERATION SUMMARY
-    // ============================================================
-    @GetMapping("/code-generation-summary")
-    @Operation(summary = "Get code generation summary", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
-    })
-    public ResponseEntity<?> getDashboardCodeGenerationSummary(HttpServletRequest req) {
-
-        String requestId = UUID.randomUUID().toString();
-
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting code generation summary");
-        if (authValidation != null) {
-            return authValidation;
-        }
-
-        try {
-            String performedBy = jwtHelper.extractPerformedBy(req);
-            DashboardCodeGenerationSummaryResponseDTO summary = dashboardService.getDashboardCodeGenerationSummary(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Code generation summary retrieved successfully");
-            response.put("data", summary);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting code generation summary: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-        }
-    }
-
-    // ============================================================
-    // 13. GET DOCUMENTATION OVERVIEW
-    // ============================================================
-    @GetMapping("/documentation")
-    @Operation(summary = "Get documentation overview", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
-    })
-    public ResponseEntity<?> getDashboardDocumentation(HttpServletRequest req) {
-
-        String requestId = UUID.randomUUID().toString();
-
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting documentation");
-        if (authValidation != null) {
-            return authValidation;
-        }
-
-        try {
-            String performedBy = jwtHelper.extractPerformedBy(req);
-            DashboardDocumentationResponseDTO documentation = dashboardService.getDashboardDocumentation(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Documentation retrieved successfully");
-            response.put("data", documentation);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting documentation: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-        }
-    }
-
-    // ============================================================
-    // 15. GET ENVIRONMENTS
+    // 13. ENVIRONMENTS
     // ============================================================
     @GetMapping("/environments")
-    @Operation(summary = "Get environments overview", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
+    @Operation(summary = "Get environments", parameters = {
+            @Parameter(name = "Authorization", required = true, in = ParameterIn.HEADER)
     })
-    public ResponseEntity<?> getDashboardEnvironments(HttpServletRequest req) {
-
+    public ResponseEntity<?> getEnvironments(HttpServletRequest req) {
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting environments");
-        if (authValidation != null) {
-            return authValidation;
-        }
+        ResponseEntity<?> authValidation = validateAuth(req, "getting environments", requestId);
+        if (authValidation != null) return authValidation;
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
             DashboardEnvironmentsResponseDTO environments = dashboardService.getDashboardEnvironments(requestId, req, performedBy);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Environments retrieved successfully");
-            response.put("data", environments);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
-
+            return ResponseEntity.ok(createSuccessResponse("Environments retrieved successfully", environments, requestId));
         } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting environments: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(createErrorResponse("Error getting environments: " + e.getMessage(), requestId, HttpStatus.INTERNAL_SERVER_ERROR));
         }
     }
 
 
     // ============================================================
-    // 17. GET USERS OVERVIEW
-    // ============================================================
-    @GetMapping("/users")
-    @Operation(summary = "Get users overview", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER),
-            @Parameter(name = "page", description = "Page number (default: 1)", in = ParameterIn.QUERY),
-            @Parameter(name = "size", description = "Page size (default: 10)", in = ParameterIn.QUERY)
-    })
-    public ResponseEntity<?> getDashboardUsers(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int size,
-            HttpServletRequest req) {
-
-        String requestId = UUID.randomUUID().toString();
-
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting users");
-        if (authValidation != null) {
-            return authValidation;
-        }
-
-        try {
-            String performedBy = jwtHelper.extractPerformedBy(req);
-            DashboardUsersResponseDTO users = dashboardService.getDashboardUsers(requestId, req, performedBy, page, size);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Users retrieved successfully");
-            response.put("data", users);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting users: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-        }
-    }
-
-    // ============================================================
-    // 18. GET USER ACTIVITIES
-    // ============================================================
-    @GetMapping("/user-activities")
-    @Operation(summary = "Get user activities", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER),
-            @Parameter(name = "limit", description = "Number of activities to return (default: 20)", in = ParameterIn.QUERY)
-    })
-    public ResponseEntity<?> getDashboardUserActivities(
-            @RequestParam(defaultValue = "10") int limit,
-            HttpServletRequest req) {
-
-        String requestId = UUID.randomUUID().toString();
-
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting user activities");
-        if (authValidation != null) {
-            return authValidation;
-        }
-
-        try {
-            String performedBy = jwtHelper.extractPerformedBy(req);
-            DashboardUserActivitiesResponseDTO activities = dashboardService.getDashboardUserActivities(
-                    requestId, req, performedBy, limit);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "User activities retrieved successfully");
-            response.put("data", activities);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting user activities: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-        }
-    }
-
-    // ============================================================
-    // 19. GET COMPREHENSIVE DASHBOARD DATA
-    // ============================================================
-    @GetMapping("/comprehensive")
-    @Operation(summary = "Get comprehensive dashboard data", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
-    })
-    public ResponseEntity<?> getComprehensiveDashboard(HttpServletRequest req) {
-
-        String requestId = UUID.randomUUID().toString();
-
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting comprehensive dashboard data");
-        if (authValidation != null) {
-            return authValidation;
-        }
-
-        try {
-            String performedBy = jwtHelper.extractPerformedBy(req);
-            ComprehensiveDashboardResponseDTO comprehensiveData = dashboardService.getComprehensiveDashboard(requestId, req, performedBy);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Comprehensive dashboard data retrieved successfully");
-            response.put("data", comprehensiveData);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while getting comprehensive dashboard data: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-        }
-    }
-
-    // ============================================================
-    // 20. SEARCH DASHBOARD
+    // 16. SEARCH (Global search across all sections)
     // ============================================================
     @GetMapping("/search")
-    @Operation(summary = "Search across dashboard", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER),
-            @Parameter(name = "query", description = "Search query", required = true, in = ParameterIn.QUERY),
-            @Parameter(name = "type", description = "Type to search (all, collections, endpoints, users)", in = ParameterIn.QUERY),
-            @Parameter(name = "limit", description = "Maximum results (default: 20)", in = ParameterIn.QUERY)
+    @Operation(summary = "Global search across dashboard", parameters = {
+            @Parameter(name = "Authorization", required = true, in = ParameterIn.HEADER),
+            @Parameter(name = "q", description = "Search query", required = true, in = ParameterIn.QUERY),
+            @Parameter(name = "types", description = "Comma-separated types to search (collections,endpoints,users)", in = ParameterIn.QUERY),
+            @Parameter(name = "page", in = ParameterIn.QUERY),
+            @Parameter(name = "size", in = ParameterIn.QUERY)
     })
-    public ResponseEntity<?> searchDashboard(
-            @RequestParam String query,
-            @RequestParam(required = false) String type,
-            @RequestParam(defaultValue = "10") int limit,
+    public ResponseEntity<?> globalSearch(
+            @RequestParam("q") String query,
+            @RequestParam(required = false) String types,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
             HttpServletRequest req) {
 
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "searching dashboard");
-        if (authValidation != null) {
-            return authValidation;
-        }
+        ResponseEntity<?> authValidation = validateAuth(req, "global search", requestId);
+        if (authValidation != null) return authValidation;
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
-            DashboardSearchResponseDTO searchResults = dashboardService.searchDashboard(
-                    requestId, req, performedBy, query, type, limit);
+            Pageable pageable = PageRequest.of(page, size);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Dashboard search completed successfully");
-            response.put("data", searchResults);
-            response.put("requestId", requestId);
+            SearchResponseDTO searchResults = dashboardService.globalSearch(
+                    requestId, req, performedBy, query, types, pageable);
 
-            return ResponseEntity.ok(response);
-
+            return ResponseEntity.ok(createSuccessResponse("Search completed successfully", searchResults, requestId));
         } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while searching dashboard: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(createErrorResponse("Error during search: " + e.getMessage(), requestId, HttpStatus.INTERNAL_SERVER_ERROR));
         }
     }
 
-
-
     // ============================================================
-// LIGHTWEIGHT DASHBOARD FOR INITIAL LOAD
-// ============================================================
-    @GetMapping("/lightweight")
-    @Operation(summary = "Get lightweight dashboard data for initial load", parameters = {
-            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
+    // 17. LIGHTWEIGHT INITIAL DASHBOARD (Fast initial load)
+    // ============================================================
+    @GetMapping("/initial")
+    @Operation(summary = "Get lightweight initial dashboard data", parameters = {
+            @Parameter(name = "Authorization", required = true, in = ParameterIn.HEADER)
     })
-    public ResponseEntity<?> getLightweightDashboard(HttpServletRequest req) {
+    public ResponseEntity<?> getInitialDashboard(HttpServletRequest req) {
         String requestId = UUID.randomUUID().toString();
 
-        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting lightweight dashboard data");
-        if (authValidation != null) {
-            return authValidation;
-        }
+        ResponseEntity<?> authValidation = validateAuth(req, "getting initial dashboard", requestId);
+        if (authValidation != null) return authValidation;
 
         try {
             String performedBy = jwtHelper.extractPerformedBy(req);
 
             // Only fetch essential data for initial render
-            Map<String, Object> lightweightData = new HashMap<>();
+            InitialDashboardResponseDTO initialData = InitialDashboardResponseDTO.builder()
+                    .stats(dashboardService.getDashboardStats(requestId, req, performedBy))
+                    .recentCollections(dashboardService.getRecentCollections(requestId, req, performedBy, 3))
+                    .recentEndpoints(dashboardService.getRecentEndpoints(requestId, req, performedBy, 5))
+                    .recentActivities(dashboardService.getRecentActivities(requestId, req, performedBy, 5))
+                    .securitySummary(dashboardService.getDashboardSecuritySummary(requestId, req, performedBy))
+                    .build();
 
-            // 1. Basic stats only (fast to fetch)
-            lightweightData.put("stats", dashboardService.getDashboardStats(requestId, req, performedBy));
-
-            // 2. Collections summary (without details)
-            var collections = dashboardService.getDashboardCollections(requestId, req, performedBy);
-            lightweightData.put("collections", collections);
-
-            // 3. Only first 5 endpoints with minimal fields (no parameters, mappings, etc.)
-            var allEndpoints = dashboardService.getDashboardEndpoints(requestId, req, performedBy);
-            List<Map<String, Object>> lightweightEndpoints = allEndpoints.getEndpoints().stream()
-                    .limit(5) // Only first 5
-                    .map(endpoint -> {
-                        Map<String, Object> minimal = new HashMap<>();
-                        minimal.put("id", endpoint.getId());
-                        minimal.put("name", endpoint.getName());
-                        minimal.put("method", endpoint.getMethod());
-                        minimal.put("url", endpoint.getUrl());
-                        minimal.put("description", endpoint.getDescription());
-                        minimal.put("collectionName", endpoint.getCollectionName());
-                        minimal.put("folderName", endpoint.getFolderName());
-                        minimal.put("lastUpdated", endpoint.getLastUpdated());
-                        minimal.put("createdAt", endpoint.getCreatedAt());
-                        minimal.put("timeAgo", endpoint.getTimeAgo());
-                        minimal.put("status", endpoint.getStatus());
-                        minimal.put("owner", endpoint.getOwner());
-                        // Exclude parameters, responseMappings, tags, authConfig - heavy data
-                        return minimal;
-                    })
-                    .collect(Collectors.toList());
-
-            Map<String, Object> endpointsResponse = new HashMap<>();
-            endpointsResponse.put("endpoints", lightweightEndpoints);
-            endpointsResponse.put("total", allEndpoints.getEndpoints().size());
-            lightweightData.put("endpoints", endpointsResponse);
-
-            // 4. Recent activity (minimal)
-            lightweightData.put("recentActivity", dashboardService.getDashboardUserActivities(requestId, req, performedBy, 5));
-
-            // 5. Metadata
-            lightweightData.put("generatedFor", performedBy);
-            lightweightData.put("requestId", requestId);
-            lightweightData.put("lastUpdated", LocalDateTime.now().toString());
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("responseCode", 200);
-            response.put("message", "Lightweight dashboard data retrieved successfully");
-            response.put("data", lightweightData);
-            response.put("requestId", requestId);
-
-            return ResponseEntity.ok(response);
-
+            return ResponseEntity.ok(createSuccessResponse("Initial dashboard data retrieved successfully", initialData, requestId));
         } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred: " + e.getMessage());
-            errorResponse.put("requestId", requestId);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(createErrorResponse("Error getting initial dashboard: " + e.getMessage(), requestId, HttpStatus.INTERNAL_SERVER_ERROR));
         }
     }
-
 }

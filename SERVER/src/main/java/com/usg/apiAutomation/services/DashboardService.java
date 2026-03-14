@@ -1,15 +1,19 @@
 package com.usg.apiAutomation.services;
 
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiAuthConfigDTO;
+import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiHeaderDTO;
 import com.usg.apiAutomation.dtos.dashboard.*;
 import com.usg.apiAutomation.dtos.userManagement.SearchUsersRequestDTO;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiAuthConfigEntity;
+import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
 import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.ApiAuthConfigRepository;
+import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.GeneratedAPIRepository;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +21,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 // Add these imports at the top
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiParameterDTO;
@@ -38,6 +43,7 @@ public class DashboardService {
     private final DocumentationService documentationService;
     private final UserManagementService userManagementService;
     private final ApiAuthConfigRepository authConfigRepository;
+    private final GeneratedAPIRepository generatedAPIRepository;
 
     @PostConstruct
     public void init() {
@@ -344,32 +350,6 @@ public class DashboardService {
         return new DashboardEndpointsResponseDTO(endpoints);
     }
 
-    // Helper method to get the most recent date between lastUpdated and createdAt
-    private String getMostRecentDate(DashboardEndpointDTO endpoint) {
-        String lastUpdated = endpoint.getLastUpdated();
-        String createdAt = endpoint.getCreatedAt();
-
-        // If both are null, return null
-        if (lastUpdated == null && createdAt == null) {
-            return null;
-        }
-
-        // If one is null, return the other
-        if (lastUpdated == null) return createdAt;
-        if (createdAt == null) return lastUpdated;
-
-        // Both are present, compare them
-        try {
-            LocalDateTime updateTime = LocalDateTime.parse(lastUpdated, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-            LocalDateTime createTime = LocalDateTime.parse(createdAt, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-
-            // Return the most recent (max) date
-            return updateTime.isAfter(createTime) ? lastUpdated : createdAt;
-        } catch (Exception e) {
-            // If parsing fails, return lastUpdated as default
-            return lastUpdated;
-        }
-    }
 
     // Helper method to calculate time ago
     private String calculateTimeAgo(String timestamp) {
@@ -592,48 +572,6 @@ public class DashboardService {
     }
 
     // ============================================================
-    // 10. CODE IMPLEMENTATIONS OVERVIEW
-    // ============================================================
-    public DashboardImplementationsResponseDTO getDashboardImplementations(String requestId, HttpServletRequest req,
-                                                                           String performedBy, int page, int size) {
-        log.info("Request ID: {}, Getting implementations overview for user: {}, page: {}, size: {}",
-                requestId, performedBy, page, size);
-
-        var searchResults = codeBaseService.searchImplementations(requestId, performedBy,
-                com.usg.apiAutomation.dtos.codeBase.SearchRequest.builder()
-                        .query("*")
-                        .page(page)
-                        .pageSize(size)
-                        .build());
-
-        List<DashboardImplementationDTO> implementations = searchResults.getResults().stream()
-                .map(result -> {
-                    DashboardImplementationDTO dto = new DashboardImplementationDTO();
-                    dto.setId(result.getId());
-                    dto.setName(result.getName());
-                    dto.setDescription(result.getDescription());
-                    dto.setMethod(result.getMethod());
-                    dto.setUrl(result.getUrl());
-                    dto.setCollection(result.getCollection());
-                    dto.setFolder(result.getFolder());
-                    dto.setLanguages(result.getLanguages());
-                    dto.setImplementationsCount(result.getImplementations());
-                    dto.setLastModified(result.getLastModified());
-                    return dto;
-                })
-                .collect(Collectors.toList());
-
-        log.info("Request ID: {}, Retrieved {} implementations", requestId, implementations.size());
-        return new DashboardImplementationsResponseDTO(
-                implementations,
-                searchResults.getTotal(),
-                searchResults.getPage(),
-                searchResults.getPageSize(),
-                searchResults.getTotalPages()
-        );
-    }
-
-    // ============================================================
     // 11. DOCUMENTATION OVERVIEW
     // ============================================================
     public DashboardDocumentationResponseDTO getDashboardDocumentation(String requestId, HttpServletRequest req, String performedBy) {
@@ -824,59 +762,6 @@ public class DashboardService {
         response.setUnreadAlerts(Math.toIntExact(securityAlerts.getUnread()));
 
         log.info("Request ID: {}, Retrieved security summary", requestId);
-        return response;
-    }
-
-    // ============================================================
-    // 16. CODE GENERATION SUMMARY
-    // ============================================================
-    public DashboardCodeGenerationSummaryResponseDTO getDashboardCodeGenerationSummary(String requestId, HttpServletRequest req,
-                                                                                       String performedBy) {
-        log.info("Request ID: {}, Getting code generation summary for user: {}", requestId, performedBy);
-
-        DashboardCodeGenerationSummaryResponseDTO response = new DashboardCodeGenerationSummaryResponseDTO();
-
-        // Get languages and implementations
-        var languages = codeBaseService.getLanguages(requestId, performedBy);
-        int totalImplementations = languages.getLanguages().stream()
-                .mapToInt(l -> l.getImplementationCount())
-                .sum();
-
-        response.setTotalImplementations(totalImplementations);
-        response.setSupportedLanguages(languages.getLanguages().size());
-
-        // Language distribution
-        Map<String, Integer> languageDistribution = new HashMap<>();
-        for (var lang : languages.getLanguages()) {
-            languageDistribution.put(lang.getName(), lang.getImplementationCount());
-        }
-        response.setLanguageDistribution(languageDistribution);
-
-        // Get recent implementations
-        var searchResults = codeBaseService.searchImplementations(requestId, performedBy,
-                com.usg.apiAutomation.dtos.codeBase.SearchRequest.builder()
-                        .query("*")
-                        .page(0)
-                        .pageSize(5)
-                        .build());
-
-        List<Map<String, Object>> recentImplementations = new ArrayList<>();
-        for (var result : searchResults.getResults()) {
-            Map<String, Object> impl = new HashMap<>();
-            impl.put("id", result.getId());
-            impl.put("name", result.getName());
-            impl.put("method", result.getMethod());
-            impl.put("languages", result.getLanguages());
-            impl.put("lastModified", result.getLastModified());
-            recentImplementations.add(impl);
-        }
-        response.setRecentImplementations(recentImplementations);
-
-        // Get validation stats (would need actual data)
-        response.setValidationSuccessRate("98.5%");
-        response.setAverageGenerationTime("2.3s");
-
-        log.info("Request ID: {}, Retrieved code generation summary", requestId);
         return response;
     }
 
@@ -1096,7 +981,6 @@ public class DashboardService {
 
         // Code generation
         response.setLanguages(getDashboardLanguages(requestId, req, performedBy));
-        response.setCodeGenerationSummary(getDashboardCodeGenerationSummary(requestId, req, performedBy));
 
         // Documentation
         response.setDocumentation(getDashboardDocumentation(requestId, req, performedBy));
@@ -1585,5 +1469,601 @@ public class DashboardService {
                     requestId, apiId, e.getMessage());
             throw new RuntimeException("Failed to delete auth configuration", e);
         }
+    }
+
+
+
+    // ============================================================
+    // PAGINATED ENDPOINTS
+    // ============================================================
+
+    public PaginatedResponseDTO<DashboardCollectionDTO> getCollectionsPaginated(
+            String requestId, HttpServletRequest req, String performedBy, Pageable pageable) {
+
+        log.info("Request ID: {}, Getting collections paginated: page={}, size={}",
+                requestId, pageable.getPageNumber(), pageable.getPageSize());
+
+        var collectionsList = collectionsService.getCollectionsList(requestId, req, performedBy);
+        List<DashboardCollectionDTO> allCollections = new ArrayList<>();
+
+        for (var collection : collectionsList.getCollections()) {
+            DashboardCollectionDTO dto = new DashboardCollectionDTO();
+            dto.setId(collection.getId());
+            dto.setName(collection.getName());
+            dto.setDescription(collection.getDescription());
+            dto.setRequestsCount(collection.getRequestsCount());
+            dto.setFolderCount(collection.getFolderCount());
+            dto.setFavorite(collection.isFavorite());
+            dto.setOwner(collection.getOwner());
+            dto.setLastUpdated(collection.getUpdatedAt());
+            allCollections.add(dto);
+        }
+
+        // Apply pagination
+        int start = (int) pageable.getOffset();
+        int end = Math.min((start + pageable.getPageSize()), allCollections.size());
+        List<DashboardCollectionDTO> paginatedContent = start > allCollections.size() ?
+                Collections.emptyList() : allCollections.subList(start, end);
+
+        return PaginatedResponseDTO.<DashboardCollectionDTO>builder()
+                .content(paginatedContent)
+                .page(pageable.getPageNumber())
+                .size(pageable.getPageSize())
+                .totalElements(allCollections.size())
+                .totalPages((int) Math.ceil((double) allCollections.size() / pageable.getPageSize()))
+                .first(pageable.getPageNumber() == 0)
+                .last(pageable.getPageNumber() >= (int) Math.ceil((double) allCollections.size() / pageable.getPageSize()) - 1)
+                .empty(paginatedContent.isEmpty())
+                .build();
+    }
+
+    // Updated service method with proper sorting and pagination
+    public PaginatedResponseDTO<DashboardEndpointDTO> getEndpointsPaginated(
+            String requestId, HttpServletRequest req, String performedBy,
+            EndpointFilterDTO filter, int page, int size, String sortBy, String sortDir) {
+
+        log.info("Request ID: {}, Getting endpoints paginated: filter={}, page={}, size={}, sortBy={}, sortDir={}",
+                requestId, filter, page, size, sortBy, sortDir);
+
+        // Get all endpoints first (you might want to optimize this with database queries)
+        List<DashboardEndpointDTO> allEndpoints = getAllEndpoints(requestId, req, performedBy);
+
+        // Apply filters
+        Stream<DashboardEndpointDTO> stream = allEndpoints.stream();
+
+        if (filter != null) {
+            if (filter.getCollectionId() != null && !filter.getCollectionId().isEmpty()) {
+                stream = stream.filter(e -> filter.getCollectionId().equals(e.getCollectionId()));
+            }
+            if (filter.getMethod() != null && !filter.getMethod().isEmpty()) {
+                stream = stream.filter(e -> filter.getMethod().equalsIgnoreCase(e.getMethod()));
+            }
+            if (filter.getSearch() != null && !filter.getSearch().isEmpty()) {
+                String searchLower = filter.getSearch().toLowerCase();
+                stream = stream.filter(e ->
+                        (e.getName() != null && e.getName().toLowerCase().contains(searchLower)) ||
+                                (e.getDescription() != null && e.getDescription().toLowerCase().contains(searchLower)) ||
+                                (e.getUrl() != null && e.getUrl().toLowerCase().contains(searchLower)) ||
+                                (e.getMethod() != null && e.getMethod().toLowerCase().contains(searchLower))
+                );
+            }
+        }
+
+        List<DashboardEndpointDTO> filteredList = stream.collect(Collectors.toList());
+
+        // Apply sorting
+        Comparator<DashboardEndpointDTO> comparator = getComparator(sortBy, sortDir);
+        filteredList.sort(comparator);
+
+        // Apply pagination
+        int totalElements = filteredList.size();
+        int start = page * size;
+        int end = Math.min(start + size, totalElements);
+
+        List<DashboardEndpointDTO> paginatedContent;
+        if (start >= totalElements || start < 0) {
+            paginatedContent = Collections.emptyList();
+        } else {
+            paginatedContent = filteredList.subList(start, end);
+        }
+
+        int totalPages = size > 0 ? (int) Math.ceil((double) totalElements / size) : 0;
+
+        return PaginatedResponseDTO.<DashboardEndpointDTO>builder()
+                .content(paginatedContent)
+                .page(page)
+                .size(paginatedContent.size())
+                .totalElements(totalElements)
+                .totalPages(totalPages)
+                .first(page == 0)
+                .last(page >= totalPages - 1)
+                .empty(paginatedContent.isEmpty())
+                .build();
+    }
+
+    // Helper method to get comparator based on sort field and direction
+    private Comparator<DashboardEndpointDTO> getComparator(String sortBy, String sortDir) {
+        Comparator<DashboardEndpointDTO> comparator;
+
+        // Determine comparator based on sort field
+        switch (sortBy) {
+            case "id":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getId,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "apiId":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getApiId,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "apiCode":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getApiCode,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "name":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getName,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "method":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getMethod,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "url":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getUrl,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "description":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getDescription,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "collectionId":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getCollectionId,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "collectionName":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getCollectionName,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "folderId":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getFolderId,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "folderName":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getFolderName,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "status":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getStatus,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "version":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getVersion,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "owner":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getOwner,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "createdBy":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getCreatedBy,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "createdAt":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getCreatedAt,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "updatedAt":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getUpdatedAt,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "timeAgo":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getTimeAgo,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "calls":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getCalls,
+                        Comparator.nullsLast(Integer::compareTo));
+                break;
+
+            case "latency":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getLatency,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "successRate":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getSuccessRate,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "errors":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getErrors,
+                        Comparator.nullsLast(Integer::compareTo));
+                break;
+
+            case "avgResponseTime":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getAvgResponseTime,
+                        Comparator.nullsLast(String::compareTo));
+                break;
+
+            case "lastUpdated":
+            default:
+                // Default sorting by lastUpdated timestamp
+                comparator = Comparator.comparing(
+                        (DashboardEndpointDTO dto) -> {
+                            String timestamp = dto.getLastUpdated();
+                            return timestamp != null ? timestamp : "";
+                        },
+                        Comparator.nullsLast(String::compareTo)
+                );
+                break;
+        }
+
+        // Apply direction (default to descending for timestamp fields if not specified)
+        if (sortDir.equalsIgnoreCase("desc")) {
+            comparator = comparator.reversed();
+        }
+
+        return comparator;
+    }
+
+    // Alternative approach: Parse timestamps to LocalDateTime for proper chronological sorting
+    private Comparator<DashboardEndpointDTO> getTimestampComparator(String timestampField, String sortDir) {
+        Comparator<DashboardEndpointDTO> comparator = (dto1, dto2) -> {
+            try {
+                String timestamp1 = getTimestampField(dto1, timestampField);
+                String timestamp2 = getTimestampField(dto2, timestampField);
+
+                if (timestamp1 == null && timestamp2 == null) return 0;
+                if (timestamp1 == null) return 1; // nulls last
+                if (timestamp2 == null) return -1; // nulls last
+
+                // Parse ISO timestamps (e.g., "2024-01-15T10:30:00")
+                LocalDateTime dt1 = LocalDateTime.parse(timestamp1);
+                LocalDateTime dt2 = LocalDateTime.parse(timestamp2);
+
+                return dt1.compareTo(dt2);
+            } catch (Exception e) {
+                // Fallback to string comparison if parsing fails
+                String ts1 = getTimestampField(dto1, timestampField);
+                String ts2 = getTimestampField(dto2, timestampField);
+                return String.CASE_INSENSITIVE_ORDER.compare(
+                        ts1 != null ? ts1 : "",
+                        ts2 != null ? ts2 : ""
+                );
+            }
+        };
+
+        return sortDir.equalsIgnoreCase("desc") ? comparator.reversed() : comparator;
+    }
+
+    private String getTimestampField(DashboardEndpointDTO dto, String field) {
+        switch (field) {
+            case "lastUpdated": return dto.getLastUpdated();
+            case "createdAt": return dto.getCreatedAt();
+            case "updatedAt": return dto.getUpdatedAt();
+            default: return dto.getLastUpdated();
+        }
+    }
+
+
+
+    public PaginatedResponseDTO<ActivityDTO> getActivitiesPaginated(
+            String requestId, HttpServletRequest req, String performedBy,
+            LocalDateTime from, LocalDateTime to, Pageable pageable) {
+
+        log.info("Request ID: {}, Getting activities paginated: from={}, to={}", requestId, from, to);
+
+        // Get all activities
+        List<ActivityDTO> allActivities = getAllActivities(requestId, req, performedBy);
+
+        // Apply date filters
+        Stream<ActivityDTO> stream = allActivities.stream();
+
+        if (from != null) {
+            stream = stream.filter(a -> {
+                try {
+                    LocalDateTime activityTime = LocalDateTime.parse(a.getTimestamp());
+                    return !activityTime.isBefore(from);
+                } catch (Exception e) {
+                    return true;
+                }
+            });
+        }
+
+        if (to != null) {
+            stream = stream.filter(a -> {
+                try {
+                    LocalDateTime activityTime = LocalDateTime.parse(a.getTimestamp());
+                    return !activityTime.isAfter(to);
+                } catch (Exception e) {
+                    return true;
+                }
+            });
+        }
+
+        List<ActivityDTO> filteredList = stream.collect(Collectors.toList());
+
+        // Apply pagination
+        int start = (int) pageable.getOffset();
+        int end = Math.min((start + pageable.getPageSize()), filteredList.size());
+        List<ActivityDTO> paginatedContent = start > filteredList.size() ?
+                Collections.emptyList() : filteredList.subList(start, end);
+
+        return PaginatedResponseDTO.<ActivityDTO>builder()
+                .content(paginatedContent)
+                .page(pageable.getPageNumber())
+                .size(pageable.getPageSize())
+                .totalElements(filteredList.size())
+                .totalPages((int) Math.ceil((double) filteredList.size() / pageable.getPageSize()))
+                .first(pageable.getPageNumber() == 0)
+                .last(pageable.getPageNumber() >= (int) Math.ceil((double) filteredList.size() / pageable.getPageSize()) - 1)
+                .empty(paginatedContent.isEmpty())
+                .build();
+    }
+
+    // ============================================================
+    // RECENT ITEMS FOR INITIAL LOAD
+    // ============================================================
+
+    public List<DashboardCollectionDTO> getRecentCollections(
+            String requestId, HttpServletRequest req, String performedBy, int limit) {
+
+        var collectionsList = collectionsService.getCollectionsList(requestId, req, performedBy);
+
+        return collectionsList.getCollections().stream()
+                .limit(limit)
+                .map(collection -> {
+                    DashboardCollectionDTO dto = new DashboardCollectionDTO();
+                    dto.setId(collection.getId());
+                    dto.setName(collection.getName());
+                    dto.setDescription(collection.getDescription());
+                    dto.setRequestsCount(collection.getRequestsCount());
+                    dto.setFolderCount(collection.getFolderCount());
+                    dto.setFavorite(collection.isFavorite());
+                    dto.setOwner(collection.getOwner());
+                    dto.setLastUpdated(collection.getUpdatedAt());
+                    return dto;
+                })
+                .collect(Collectors.toList());
+    }
+
+    public List<DashboardEndpointDTO> getRecentEndpoints(
+            String requestId, HttpServletRequest req, String performedBy, int limit) {
+
+        List<DashboardEndpointDTO> allEndpoints = getAllEndpoints(requestId, req, performedBy);
+
+        // Sort by lastUpdated descending and limit
+        return allEndpoints.stream()
+                .sorted((e1, e2) -> {
+                    String date1 = getMostRecentDate(e1);
+                    String date2 = getMostRecentDate(e2);
+                    if (date1 == null && date2 == null) return 0;
+                    if (date1 == null) return 1;
+                    if (date2 == null) return -1;
+                    return date2.compareTo(date1);
+                })
+                .limit(limit)
+                .collect(Collectors.toList());
+    }
+
+    public List<ActivityDTO> getRecentActivities(
+            String requestId, HttpServletRequest req, String performedBy, int limit) {
+
+        List<ActivityDTO> allActivities = getAllActivities(requestId, req, performedBy);
+
+        return allActivities.stream()
+                .limit(limit)
+                .collect(Collectors.toList());
+    }
+
+    // ============================================================
+    // GLOBAL SEARCH
+    // ============================================================
+
+    public SearchResponseDTO globalSearch(String requestId, HttpServletRequest req,
+                                          String performedBy, String query,
+                                          String types, Pageable pageable) {
+
+        log.info("Request ID: {}, Global search: query={}, types={}", requestId, query, types);
+
+        List<SearchResultDTO> allResults = new ArrayList<>();
+        Map<String, Long> countsByType = new HashMap<>();
+
+        Set<String> searchTypes = types != null ?
+                new HashSet<>(Arrays.asList(types.split(","))) :
+                new HashSet<>(Arrays.asList("collections", "endpoints", "users"));
+
+        // Search collections
+        if (searchTypes.contains("collections")) {
+            var collections = getRecentCollections(requestId, req, performedBy, Integer.MAX_VALUE);
+            List<SearchResultDTO> collectionResults = collections.stream()
+                    .filter(c -> matchesQuery(c.getName(), query) || matchesQuery(c.getDescription(), query))
+                    .map(c -> SearchResultDTO.builder()
+                            .id(c.getId())
+                            .type("collection")
+                            .title(c.getName())
+                            .description(c.getDescription())
+                            .url("/collections/" + c.getId())
+                            .build())
+                    .collect(Collectors.toList());
+
+            countsByType.put("collections", (long) collectionResults.size());
+            allResults.addAll(collectionResults);
+        }
+
+        // Search endpoints
+        if (searchTypes.contains("endpoints")) {
+            var endpoints = getAllEndpoints(requestId, req, performedBy).stream()
+                    .filter(e -> matchesQuery(e.getName(), query) ||
+                            matchesQuery(e.getDescription(), query) ||
+                            matchesQuery(e.getUrl(), query) ||
+                            matchesQuery(e.getMethod(), query))
+                    .map(e -> SearchResultDTO.builder()
+                            .id(e.getId())
+                            .type("endpoint")
+                            .title(e.getName() + " (" + e.getMethod() + ")")
+                            .description(e.getDescription())
+                            .url("/collections/" + e.getCollectionId() + "/requests/" + e.getId())
+                            .metadata(Map.of(
+                                    "method", e.getMethod(),
+                                    "collectionName", e.getCollectionName()
+                            ))
+                            .build())
+                    .collect(Collectors.toList());
+
+            countsByType.put("endpoints", (long) endpoints.size());
+            allResults.addAll(endpoints);
+        }
+
+        // Search users
+        if (searchTypes.contains("users")) {
+            // Implement user search logic here
+        }
+
+        // Apply pagination to combined results
+        int start = (int) pageable.getOffset();
+        int end = Math.min((start + pageable.getPageSize()), allResults.size());
+        List<SearchResultDTO> paginatedResults = start > allResults.size() ?
+                Collections.emptyList() : allResults.subList(start, end);
+
+        return SearchResponseDTO.builder()
+                .query(query)
+                .results(paginatedResults)
+                .totalResults(allResults.size())
+                .countsByType(countsByType)
+                .build();
+    }
+
+    // ============================================================
+    // PRIVATE HELPER METHODS
+    // ============================================================
+
+    private boolean matchesQuery(String field, String query) {
+        return field != null && field.toLowerCase().contains(query.toLowerCase());
+    }
+
+    private String getMostRecentDate(DashboardEndpointDTO endpoint) {
+        String lastUpdated = endpoint.getLastUpdated();
+        String createdAt = endpoint.getCreatedAt();
+        if (lastUpdated == null && createdAt == null) return null;
+        if (lastUpdated == null) return createdAt;
+        if (createdAt == null) return lastUpdated;
+        return lastUpdated.compareTo(createdAt) > 0 ? lastUpdated : createdAt;
+    }
+
+    private List<ActivityDTO> getAllActivities(String requestId, HttpServletRequest req, String performedBy) {
+        List<ActivityDTO> activities = new ArrayList<>();
+
+        try {
+            var userActivity = userManagementService.getUserActivity(requestId, performedBy, performedBy,
+                    Date.from(LocalDateTime.now().minusDays(7).atZone(java.time.ZoneId.systemDefault()).toInstant()),
+                    new Date());
+
+            for (var activity : userActivity.getActivities()) {
+                ActivityDTO dto = new ActivityDTO();
+                dto.setId("act-" + UUID.randomUUID().toString().substring(0, 8));
+                dto.setAction(activity.getAction());
+                dto.setDescription(activity.getDetails().toString());
+                dto.setUser(activity.getPerformedBy());
+                dto.setTimestamp(String.valueOf(activity.getTimestamp()));
+                dto.setTime(getTimeAgo(String.valueOf(activity.getTimestamp())));
+                dto.setIcon("user");
+                dto.setPriority(activity.getSeverity() != null ? activity.getSeverity() : "low");
+                activities.add(dto);
+            }
+        } catch (Exception e) {
+            log.error("Failed to get user activities: {}", e.getMessage());
+        }
+
+        activities.sort((a, b) -> b.getTimestamp().compareTo(a.getTimestamp()));
+        return activities;
+    }
+
+    // ============================================================
+    // PRIVATE HELPER METHODS - getAllEndpoints (SIMPLIFIED)
+    // ============================================================
+
+    private List<DashboardEndpointDTO> getAllEndpoints(String requestId, HttpServletRequest req, String performedBy) {
+        List<DashboardEndpointDTO> endpoints = new ArrayList<>();
+
+        var collections = collectionsService.getCollectionsList(requestId, req, performedBy);
+
+        for (var collection : collections.getCollections()) {
+            try {
+                var collectionDetails = collectionsService.getCollectionDetails(requestId, req, performedBy, collection.getId());
+
+                for (var folder : collectionDetails.getFolders()) {
+                    for (var request : folder.getRequests()) {
+                        DashboardEndpointDTO dto = new DashboardEndpointDTO();
+
+                        // Basic fields
+                        dto.setId(request.getId());
+
+                        // TRY TO GET API ID FROM GENERATED API REPOSITORY
+                        String apiId = null;
+                        try {
+                            var generatedApiOpt = generatedAPIRepository.findByRequestId(request.getId());
+                            if (generatedApiOpt.isPresent()) {
+                                apiId = generatedApiOpt.get().getId();
+                            }
+                        } catch (Exception e) {
+                            log.debug("No generated API found for request: {}", request.getId());
+                        }
+                        dto.setApiId(apiId);
+
+                        dto.setName(request.getName());
+                        dto.setMethod(request.getMethod());
+                        dto.setUrl(request.getUrl());
+                        dto.setDescription(request.getDescription());
+                        dto.setCollectionId(collection.getId());
+                        dto.setCollectionName(collection.getName());
+                        dto.setFolderId(folder.getId());
+                        dto.setFolderName(folder.getName());
+                        dto.setLastUpdated(request.getLastModified());
+                        dto.setCreatedAt(request.getCreatedAt());
+                        dto.setTimeAgo(calculateTimeAgo(getMostRecentDateFromRequest(request)));
+                        dto.setStatus("active");
+                        dto.setVersion(collection.getVersion() != null ? collection.getVersion() : "v1");
+                        dto.setOwner(collection.getOwner() != null ? collection.getOwner() : "System");
+
+                        // Mock performance data
+                        dto.setCalls(generateRandomCalls(request.getId()));
+                        dto.setLatency("42ms");
+                        dto.setSuccessRate("98.5%");
+                        dto.setErrors(generateRandomErrors(request.getId()));
+                        dto.setAvgResponseTime("42ms");
+
+                        endpoints.add(dto);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Could not get endpoints for collection {}: {}", collection.getId(), e.getMessage());
+            }
+        }
+
+        return endpoints;
+    }
+
+    private String getMostRecentDateFromRequest(Object request) {
+        // Implement logic to get most recent date from request object
+        // This depends on your actual request object structure
+        return LocalDateTime.now().toString();
     }
 }

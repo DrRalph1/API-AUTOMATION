@@ -19,10 +19,10 @@ import java.time.LocalDateTime;
 public class LanguageConfigEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
+//    @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
-    @Column(name = "generated_api_id")
+    @Column(name = "api_id")
     private String generatedApiId;
 
     @Column(nullable = false, unique = true)
@@ -47,8 +47,8 @@ public class LanguageConfigEntity {
     @Column(name = "formatter_name")
     private String formatterName;
 
-    @Column(columnDefinition = "jsonb")
-    private String components;
+//    @Column(columnDefinition = "jsonb")
+//    private String components;
 
     @Column(name = "is_active")
     private Boolean isActive = true;

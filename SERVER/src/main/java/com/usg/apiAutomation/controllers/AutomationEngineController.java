@@ -194,6 +194,43 @@ public class AutomationEngineController {
         }
     }
 
+
+
+    @GetMapping("/gen/api/{apiId}")
+    @Operation(summary = "Get Full Generated API details", description = "Get full details of a generated API")
+    public ResponseEntity<?> getGeneratedApiDetails(
+            @PathVariable String apiId,
+            HttpServletRequest req) {
+
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting API details");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            loggingHelper.logGetApiDetails(requestId, apiId, performedBy);
+
+            GeneratedAPIDTO details = automationEngineService.getGeneratedApiDetails(requestId, apiId);
+
+            return responseBuilderHelper.buildSuccessResponse(
+                    requestId,
+                    "API details retrieved successfully",
+                    details);
+
+        } catch (Exception e) {
+            loggingHelper.logError(requestId, "getting API details", e.getMessage(), e);
+            return responseBuilderHelper.buildErrorResponse(
+                    requestId,
+                    "An error occurred while getting API details: " + e.getMessage(),
+                    HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+
+
     @GetMapping("/gen-engine/{apiId}/analytics")
     @Operation(summary = "Get API analytics", description = "Get analytics for a generated API")
     public ResponseEntity<?> getApiAnalytics(

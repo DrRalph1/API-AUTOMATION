@@ -7,6 +7,7 @@ import java.util.List;
 @Data
 public class CollectionDetailsResponseDTO {
     private String collectionId;
+    private String apiId;
     private String name;
     private String description;
     private String createdAt;

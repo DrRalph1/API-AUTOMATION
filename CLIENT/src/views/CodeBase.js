@@ -1564,224 +1564,323 @@ useEffect(() => {
     );
   };
 
-  const renderImplementationContent = () => {
-    const currentLanguage = availableLanguages.find(lang => lang.id === selectedLanguage);
-    const implementation = getCurrentImplementation();
-    const hasImplementation = implementation && Object.keys(implementation).length > 0;
+  // Add this function to your CodeBase component to regenerate implementation with all headers
+const regenerateImplementationWithAllHeaders = async () => {
+  if (!selectedCollection || !selectedRequest) {
+    showToast('Please select a request first', 'warning');
+    return;
+  }
+
+  setIsGeneratingCode(true);
+  
+  try {
+    // Create a generate request that includes all headers
+    const generateRequest = {
+      requestId: selectedRequest.id,
+      collectionId: selectedCollection.id,
+      language: selectedLanguage,
+      components: ['controller', 'service', 'model'],
+      includeAllHeaders: true, // Add this flag to tell backend to include all headers
+      headers: selectedRequest.headers // Pass the actual headers from the request
+    };
     
-    return (
-      <div className="flex-1 overflow-auto p-8">
-        <div className="max-w-6xl mx-auto">
-          {/* Header */}
-          <div className="mb-8">
-            {selectedRequest ? (
-              <>
-                <div className="flex items-center gap-3 mb-2">
-                  {selectedRequest.method && (
-                    <div className="px-3 py-1 rounded text-sm font-medium" style={{ 
-                      backgroundColor: getMethodColor(selectedRequest.method),
-                      color: 'white'
-                    }}>
-                      {selectedRequest.method}
-                    </div>
-                  )}
-                  <code className="text-lg font-mono" style={{ color: colors.text }}>
-                    {selectedRequest.url || ''}
-                  </code>
-                </div>
-                <h1 className="text-2xl font-semibold mb-4" style={{ color: colors.text }}>
-                  {selectedRequest.name}
-                </h1>
-                <p className="text-base mb-6" style={{ color: colors.textSecondary }}>
-                  {selectedRequest.description || 'No description available'}
-                </p>
-                
-                <div className="flex flex-wrap items-center gap-4 text-sm mb-6">
-                  {selectedCollection && (
-                    <div style={{ color: colors.textTertiary }}>
-                      <Folder size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
-                      {selectedCollection.name}
-                    </div>
-                  )}
-                  {selectedRequest.tags && selectedRequest.tags.length > 0 && (
-                    <div className="flex items-center gap-2">
-                      {selectedRequest.tags.map(tag => (
-                        <span key={tag} className="text-xs px-2 py-1 rounded" style={{ 
-                          backgroundColor: colors.hover,
-                          color: colors.textSecondary
-                        }}>
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {selectedRequest.lastModified && (
-                    <div style={{ color: colors.textTertiary }}>
-                      <Clock size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
-                      Last updated: {selectedRequest.lastModified}
-                    </div>
-                  )}
-                </div>
-              </>
-            ) : (
-              <div className="text-center py-12">
-                <Code size={48} className="mx-auto mb-4 opacity-50" style={{ color: colors.textSecondary }} />
-                <h2 className="text-2xl font-semibold mb-4" style={{ color: colors.text }}>Select an API Endpoint</h2>
-                <p className="text-base mb-6" style={{ color: colors.textSecondary }}>
-                  Choose an endpoint from the left sidebar to view its implementation
-                </p>
-              </div>
-            )}
-          </div>
+    const results = await generateImplementationAPI(generateRequest);
+    
+    if (results?.success) {
+      showToast('Implementation regenerated with all headers!', 'success');
+      // Reload implementation details
+      await fetchImplementationDetails(
+        selectedCollection.id, 
+        selectedRequest.id, 
+        selectedLanguage, 
+        selectedComponent
+      );
+      
+      // Also reload all implementations to update the cache
+      await fetchAllImplementations(selectedCollection.id, selectedRequest.id);
+    } else {
+      showToast('Failed to regenerate implementation', 'error');
+    }
+  } catch (error) {
+    console.error('Error regenerating implementation:', error);
+    showToast(error.message || 'Failed to regenerate implementation', 'error');
+  } finally {
+    setIsGeneratingCode(false);
+  }
+};
 
-          {selectedRequest && (
+// Also update the renderImplementationContent function to show headers
+const renderImplementationContent = () => {
+  const currentLanguage = availableLanguages.find(lang => lang.id === selectedLanguage);
+  const implementation = getCurrentImplementation();
+  const hasImplementation = implementation && Object.keys(implementation).length > 0;
+  
+  return (
+    <div className="flex-1 overflow-auto p-8">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          {selectedRequest ? (
             <>
-              {/* Language & Framework Selection */}
-              <div className="mb-8 p-6 rounded-xl border hover-lift" style={{ 
-                backgroundColor: colors.card,
-                borderColor: colors.border
-              }}>
-                <h2 className="text-lg font-semibold mb-4" style={{ color: colors.text }}>Select Implementation Language</h2>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                  {availableLanguages.map(lang => (
-                    <button
-                      key={lang.id}
-                      onClick={() => {
-                        setSelectedLanguage(lang.id);
-                        setSelectedComponent('controller');
-                        
-                        // Load implementation for the new language
-                        if (selectedCollection && selectedRequest) {
-                          fetchImplementationDetails(
-                            selectedCollection.id, 
-                            selectedRequest.id, 
-                            lang.id, 
-                            'controller'
-                          );
-                        }
-                      }}
-                      className={`p-4 rounded-xl text-sm text-center hover-lift transition-all ${
-                        selectedLanguage === lang.id ? 'ring-2 ring-offset-1' : ''
-                      }`}
-                      style={{ 
-                        backgroundColor: selectedLanguage === lang.id ? colors.selected : colors.hover,
-                        border: `1px solid ${selectedLanguage === lang.id ? colors.primary : colors.border}`,
-                        color: colors.text,
-                        boxShadow: selectedLanguage === lang.id ? `0 0 0 2px ${colors.primary}40` : 'none'
-                      }}
-                    >
-                      <div className="flex flex-col items-center">
-                        {getLanguageIcon(lang.id)}
-                        <span className="mt-2 font-medium">{lang.name}</span>
-                        <span className="text-xs mt-1" style={{ color: colors.textSecondary }}>{lang.framework}</span>
-                        {selectedLanguage === lang.id && (
-                          <Check size={16} className="mt-2" style={{ color: colors.primary }} />
-                        )}
-                      </div>
-                    </button>
-                  ))}
-                </div>
+              <div className="flex items-center gap-3 mb-2">
+                {selectedRequest.method && (
+                  <div className="px-3 py-1 rounded text-sm font-medium" style={{ 
+                    backgroundColor: getMethodColor(selectedRequest.method),
+                    color: 'white'
+                  }}>
+                    {selectedRequest.method}
+                  </div>
+                )}
+                <code className="text-lg font-mono" style={{ color: colors.text }}>
+                  {selectedRequest.url || ''}
+                </code>
+              </div>
+              <h1 className="text-2xl font-semibold mb-4" style={{ color: colors.text }}>
+                {selectedRequest.name}
+              </h1>
+              <p className="text-base mb-6" style={{ color: colors.textSecondary }}>
+                {selectedRequest.description || 'No description available'}
+              </p>
+              
+              <div className="flex flex-wrap items-center gap-4 text-sm mb-6">
+                {selectedCollection && (
+                  <div style={{ color: colors.textTertiary }}>
+                    <Folder size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
+                    {selectedCollection.name}
+                  </div>
+                )}
+                {selectedRequest.tags && selectedRequest.tags.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    {selectedRequest.tags.map(tag => (
+                      <span key={tag} className="text-xs px-2 py-1 rounded" style={{ 
+                        backgroundColor: colors.hover,
+                        color: colors.textSecondary
+                      }}>
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {selectedRequest.lastModified && (
+                  <div style={{ color: colors.textTertiary }}>
+                    <Clock size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
+                    Last updated: {selectedRequest.lastModified}
+                  </div>
+                )}
               </div>
 
-              {/* Implementation Content */}
-              {hasImplementation ? (
-                <div className="border rounded-xl overflow-hidden hover-lift" style={{ 
-                  borderColor: colors.border,
-                  backgroundColor: colors.card
-                }}>
-                  <div className="px-4 py-3 flex items-center justify-between" style={{ 
-                    borderBottomColor: colors.border
-                  }}>
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2">
-                        {getLanguageIcon(selectedLanguage)}
-                        <span className="font-medium" style={{ color: colors.text }}>
-                          {currentLanguage?.name || 'Java'} Implementation
-                        </span>
-                        <span className="text-xs px-2 py-0.5 rounded" style={{ 
-                          backgroundColor: `${currentLanguage?.color || '#f89820'}20`,
-                          color: currentLanguage?.color || '#f89820'
-                        }}>
-                          {currentLanguage?.framework || 'Spring Boot'}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => copyToClipboard(getCurrentCode())}
-                        className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift"
-                        style={{ backgroundColor: colors.hover, color: colors.text }}
-                      >
-                        <Copy size={12} />
-                        Copy
-                      </button>
-                    </div>
-                  </div>
-                  <div className="p-4" style={{ backgroundColor: colors.codeBg }}>
-                    <SyntaxHighlighter 
-                      language={selectedLanguage}
-                      code={getCurrentCode()}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center p-12" style={{ color: colors.textSecondary }}>
-                  <Code size={48} className="mx-auto mb-4 opacity-50" />
-                  <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>Implementation Not Available</h3>
-                  <p className="mb-6">Complete implementation for {selectedLanguage} is not yet available for this endpoint.</p>
-                  <button 
-                    className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-                    onClick={async () => {
-                      if (!selectedCollection || !selectedRequest) {
-                        showToast('Please select a collection and request first', 'warning');
-                        return;
-                      }
-                      
-                      try {
-                        setIsGeneratingCode(true);
-                        const generateRequest = {
-                          requestId: selectedRequest.id,
-                          collectionId: selectedCollection.id,
-                          language: selectedLanguage,
-                          components: ['controller', 'service', 'model']
-                        };
-                        
-                        const results = await generateImplementationAPI(generateRequest);
-                        
-                        if (results?.success) {
-                          showToast('Implementation generated successfully!', 'success');
-                          // Reload implementation details
-                          await fetchImplementationDetails(
-                            selectedCollection.id, 
-                            selectedRequest.id, 
-                            selectedLanguage, 
-                            selectedComponent
-                          );
-                        } else {
-                          showToast('Failed to generate implementation', 'error');
-                        }
-                      } catch (error) {
-                        console.error('Error generating implementation:', error);
-                        showToast(error.message || 'Failed to generate implementation', 'error');
-                      } finally {
-                        setIsGeneratingCode(false);
-                      }
-                    }}
-                    disabled={isGeneratingCode}
-                    style={{ 
-                      backgroundColor: isGeneratingCode ? colors.textTertiary : colors.primaryDark, 
-                      color: colors.white 
-                    }}>
-                    {isGeneratingCode ? 'Generating...' : 'Generate Implementation'}
-                  </button>
-                </div>
-              )}
+              
             </>
+          ) : (
+            <div className="text-center py-12">
+              <Code size={48} className="mx-auto mb-4 opacity-50" style={{ color: colors.textSecondary }} />
+              <h2 className="text-2xl font-semibold mb-4" style={{ color: colors.text }}>Select an API Endpoint</h2>
+              <p className="text-base mb-6" style={{ color: colors.textSecondary }}>
+                Choose an endpoint from the left sidebar to view its implementation
+              </p>
+            </div>
           )}
         </div>
+
+        {selectedRequest && (
+          <>
+
+          {/* Display Headers */}
+              {selectedRequest.headers && selectedRequest.headers.length > 0 && (
+                <div className="mb-6 p-4 rounded-lg" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
+                  <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Request Headers</h3>
+                  <div className="space-y-2">
+                    {selectedRequest.headers.map((header, index) => (
+                      <div key={index} className="flex items-start gap-2 text-sm">
+                        <span className="font-medium" style={{ color: colors.textSecondary, minWidth: '120px' }}>
+                          {header.key}:
+                        </span>
+                        <span style={{ color: colors.text }}>
+                          {header.value}
+                          {header.disabled && (
+                            <span className="ml-2 text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: colors.error + '20', color: colors.error }}>
+                              Disabled
+                            </span>
+                          )}
+                          {header.required && (
+                            <span className="ml-2 text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: colors.primary + '20', color: colors.primary }}>
+                              Required
+                            </span>
+                          )}
+                        </span>
+                        {header.description && (
+                          <span className="text-xs" style={{ color: colors.textTertiary }}>
+                            - {header.description}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+            {/* Language & Framework Selection */}
+            <div className="mb-8 p-6 rounded-xl border hover-lift" style={{ 
+              backgroundColor: colors.card,
+              borderColor: colors.border
+            }}>
+              <h2 className="text-lg font-semibold mb-4" style={{ color: colors.text }}>Select Implementation Language</h2>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {availableLanguages.map(lang => (
+                  <button
+                    key={lang.id}
+                    onClick={() => {
+                      setSelectedLanguage(lang.id);
+                      setSelectedComponent('controller');
+                      
+                      // Load implementation for the new language
+                      if (selectedCollection && selectedRequest) {
+                        fetchImplementationDetails(
+                          selectedCollection.id, 
+                          selectedRequest.id, 
+                          lang.id, 
+                          'controller'
+                        );
+                      }
+                    }}
+                    className={`p-4 rounded-xl text-sm text-center hover-lift transition-all ${
+                      selectedLanguage === lang.id ? 'ring-2 ring-offset-1' : ''
+                    }`}
+                    style={{ 
+                      backgroundColor: selectedLanguage === lang.id ? colors.selected : colors.hover,
+                      border: `1px solid ${selectedLanguage === lang.id ? colors.primary : colors.border}`,
+                      color: colors.text,
+                      boxShadow: selectedLanguage === lang.id ? `0 0 0 2px ${colors.primary}40` : 'none'
+                    }}
+                  >
+                    <div className="flex flex-col items-center">
+                      {getLanguageIcon(lang.id)}
+                      <span className="mt-2 font-medium">{lang.name}</span>
+                      <span className="text-xs mt-1" style={{ color: colors.textSecondary }}>{lang.framework}</span>
+                      {selectedLanguage === lang.id && (
+                        <Check size={16} className="mt-2" style={{ color: colors.primary }} />
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Implementation Content */}
+            {hasImplementation ? (
+              <div className="border rounded-xl overflow-hidden hover-lift" style={{ 
+                borderColor: colors.border,
+                backgroundColor: colors.card
+              }}>
+                <div className="px-4 py-3 flex items-center justify-between" style={{ 
+                  borderBottomColor: colors.border
+                }}>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      {getLanguageIcon(selectedLanguage)}
+                      <span className="font-medium" style={{ color: colors.text }}>
+                        {currentLanguage?.name || 'Java'} Implementation
+                      </span>
+                      <span className="text-xs px-2 py-0.5 rounded" style={{ 
+                        backgroundColor: `${currentLanguage?.color || '#f89820'}20`,
+                        color: currentLanguage?.color || '#f89820'
+                      }}>
+                        {currentLanguage?.framework || 'Spring Boot'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => copyToClipboard(getCurrentCode())}
+                      className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift"
+                      style={{ backgroundColor: colors.hover, color: colors.text }}
+                    >
+                      <Copy size={12} />
+                      Copy
+                    </button>
+                    {/* Add regenerate button */}
+                    <button
+                      onClick={regenerateImplementationWithAllHeaders}
+                      disabled={isGeneratingCode}
+                      className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-2 hover-lift"
+                      style={{ backgroundColor: colors.hover, color: colors.text }}
+                    >
+                      {isGeneratingCode ? (
+                        <RefreshCw size={12} className="animate-spin" />
+                      ) : (
+                        <RefreshCw size={12} />
+                      )}
+                      Regenerate
+                    </button>
+                  </div>
+                </div>
+                <div className="p-4" style={{ backgroundColor: colors.codeBg }}>
+                  <SyntaxHighlighter 
+                    language={selectedLanguage}
+                    code={getCurrentCode()}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="text-center p-12" style={{ color: colors.textSecondary }}>
+                <Code size={48} className="mx-auto mb-4 opacity-50" />
+                <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text }}>Implementation Not Available</h3>
+                <p className="mb-6">Complete implementation for {selectedLanguage} is not yet available for this endpoint.</p>
+                <button 
+                  className="px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                  onClick={async () => {
+                    if (!selectedCollection || !selectedRequest) {
+                      showToast('Please select a collection and request first', 'warning');
+                      return;
+                    }
+                    
+                    try {
+                      setIsGeneratingCode(true);
+                      const generateRequest = {
+                        requestId: selectedRequest.id,
+                        collectionId: selectedCollection.id,
+                        language: selectedLanguage,
+                        components: ['controller', 'service', 'model'],
+                        includeAllHeaders: true,
+                        headers: selectedRequest.headers
+                      };
+                      
+                      const results = await generateImplementationAPI(generateRequest);
+                      
+                      if (results?.success) {
+                        showToast('Implementation generated successfully!', 'success');
+                        // Reload implementation details
+                        await fetchImplementationDetails(
+                          selectedCollection.id, 
+                          selectedRequest.id, 
+                          selectedLanguage, 
+                          selectedComponent
+                        );
+                      } else {
+                        showToast('Failed to generate implementation', 'error');
+                      }
+                    } catch (error) {
+                      console.error('Error generating implementation:', error);
+                      showToast(error.message || 'Failed to generate implementation', 'error');
+                    } finally {
+                      setIsGeneratingCode(false);
+                    }
+                  }}
+                  disabled={isGeneratingCode}
+                  style={{ 
+                    backgroundColor: isGeneratingCode ? colors.textTertiary : colors.primaryDark, 
+                    color: colors.white 
+                  }}>
+                  {isGeneratingCode ? 'Generating...' : 'Generate Implementation'}
+                </button>
+              </div>
+            )}
+          </>
+        )}
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   const renderMainContent = () => {
     switch (activeTab) {

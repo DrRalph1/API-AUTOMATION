@@ -2531,194 +2531,237 @@ const handleUsedByPageSizeChange = useCallback((newSize) => {
   }, []);
 
   // Handle Object Select - UPDATED to load used by data
-  const handleObjectSelect = useCallback(async (object, type) => {
-    if (!authToken || !object) {
-      console.error('Cannot select object: missing authToken or object', { authToken: !!authToken, object });
-      return;
+const handleObjectSelect = useCallback(async (object, type) => {
+  if (!authToken || !object) {
+    console.error('Cannot select object: missing authToken or object', { authToken: !!authToken, object });
+    return;
+  }
+
+  Logger.info('SchemaBrowser', 'handleObjectSelect', `Selecting ${object.name} (${type})`);
+  
+  const objectId = object.id || `${object.owner || 'unknown'}_${object.name}`;
+  
+  setLoading(true);
+  setTableDataLoading(false);
+  setObjectDetails(null);
+  setObjectDDL('');
+  setTableData(null);
+  setDdlLoading(false);
+  
+  setActiveTab('properties');
+  
+  const enrichedObject = {
+    ...object,
+    id: objectId,
+    type: type
+  };
+  
+  setActiveObject(enrichedObject);
+  
+  // Set the object for API generation with basic info first
+  setSelectedForApiGeneration(enrichedObject);
+  
+  const tabId = `${type}_${object.owner || 'unknown'}_${object.name}`;
+  const existingTab = tabs.find(t => t.id === tabId);
+  
+  if (existingTab) {
+    setTabs(tabs.map(t => ({ ...t, isActive: t.id === tabId })));
+  } else {
+    setTabs(prev => [...prev.slice(-4), {
+      id: tabId,
+      name: object.name,
+      type,
+      objectId: objectId,
+      owner: object.owner,
+      isActive: true
+    }].map(t => ({ ...t, isActive: t.id === tabId })));
+  }
+
+  try {
+    Logger.debug('SchemaBrowser', 'handleObjectSelect', `Loading details for ${object.name}`);
+    
+    const isSynonym = object.objectType === 'SYNONYM' || 
+                      object.type === 'SYNONYM' ||
+                      object.isSynonym === true ||
+                      object.synonym_name === object.name;
+
+    let apiObjectType;
+    let apiObjectName = object.name;
+    
+    if (isSynonym) {
+      apiObjectType = 'SYNONYM';
+      Logger.debug('SchemaBrowser', 'handleObjectSelect', `Object is a synonym, using type: SYNONYM`);
+    } else {
+      apiObjectType = type;
     }
 
-    Logger.info('SchemaBrowser', 'handleObjectSelect', `Selecting ${object.name} (${type})`);
+    setObType(apiObjectType);
     
-    const objectId = object.id || `${object.owner || 'unknown'}_${object.name}`;
+    const response = await getObjectDetails(authToken, { 
+      objectType: apiObjectType, 
+      objectName: apiObjectName 
+    });
     
-    setLoading(true);
-    setTableDataLoading(false);
-    setObjectDetails(null);
-    setObjectDDL('');
-    setTableData(null);
-    setDdlLoading(false);
+    const processedResponse = handleSchemaBrowserResponse(response);
+    const responseData = processedResponse.data || processedResponse;
     
-    setActiveTab('properties');
-    
-    const enrichedObject = {
-      ...object,
-      id: objectId,
-      type: type
+    const enrichedResponseData = {
+      ...responseData,
+      name: responseData.name || object.name,
+      type: responseData.type || type,
+      isSynonym: isSynonym
     };
     
-    setActiveObject(enrichedObject);
-    setSelectedForApiGeneration(enrichedObject);
+    setObjectDetails(enrichedResponseData);
     
-    const tabId = `${type}_${object.owner || 'unknown'}_${object.name}`;
-    const existingTab = tabs.find(t => t.id === tabId);
+    const upperType = type.toUpperCase();
+    let effectiveType = upperType;
+    let targetType = null;
+    let targetName = object.name;
+    let targetOwner = null;
     
-    if (existingTab) {
-      setTabs(tabs.map(t => ({ ...t, isActive: t.id === tabId })));
+    // Extract parameters based on the object type
+    let parameters = [];
+    let columns = [];
+    
+    if (isSynonym && responseData?.targetDetails) {
+      targetType = responseData.targetDetails.OBJECT_TYPE || responseData.targetDetails.objectType;
+      targetName = responseData.TARGET_NAME || object.name;
+      targetOwner = responseData.TARGET_OWNER || responseData.targetDetails.OWNER;
+      
+      if (targetType) {
+        effectiveType = targetType;
+      }
+      
+      // Extract parameters from target details
+      if (responseData.targetDetails.parameters && Array.isArray(responseData.targetDetails.parameters)) {
+        parameters = responseData.targetDetails.parameters;
+        console.log(`📦 Extracted ${parameters.length} parameters from target details for ${object.name}`);
+      }
+      
+      if (responseData.targetDetails.columns && Array.isArray(responseData.targetDetails.columns)) {
+        columns = responseData.targetDetails.columns;
+        console.log(`📦 Extracted ${columns.length} columns from target details for ${object.name}`);
+      }
     } else {
-      setTabs(prev => [...prev.slice(-4), {
-        id: tabId,
-        name: object.name,
-        type,
-        objectId: objectId,
-        owner: object.owner, // Add this line to store owner
-        isActive: true
-      }].map(t => ({ ...t, isActive: t.id === tabId })));
+      // Direct object (not synonym)
+      if (responseData.parameters && Array.isArray(responseData.parameters)) {
+        parameters = responseData.parameters;
+        console.log(`📦 Extracted ${parameters.length} parameters from response for ${object.name}`);
+      }
+      
+      if (responseData.columns && Array.isArray(responseData.columns)) {
+        columns = responseData.columns;
+        console.log(`📦 Extracted ${columns.length} columns from response for ${object.name}`);
+      }
+    }
+    
+    // CRITICAL: Update selectedForApiGeneration with full details including parameters
+    const apiObject = {
+      ...object,
+      ...responseData,
+      name: object.name,
+      type: effectiveType,
+      owner: object.owner,
+      parameters: parameters,
+      columns: columns,
+      isSynonym: isSynonym,
+      targetDetails: responseData.targetDetails
+    };
+    
+    console.log(`🎯 Setting selectedForApiGeneration with ${parameters.length} parameters and ${columns.length} columns`);
+    setSelectedForApiGeneration(apiObject);
+    
+    // Load table/view data if applicable
+    if (effectiveType === 'TABLE') {
+      if (isSynonym && targetType === 'TABLE') {
+        loadTableData(targetName).catch(err => console.error('Background table load error:', err));
+      } else {
+        loadTableData(object.name).catch(err => console.error('Background table load error:', err));
+      }
     }
 
-    try {
-      Logger.debug('SchemaBrowser', 'handleObjectSelect', `Loading details for ${object.name}`);
-      
-      const isSynonym = true ||
-        object.objectType === 'SYNONYM' || 
-        object.type === 'SYNONYM' ||
-        object.isSynonym === true ||
-        object.synonym_name === object.name;
-
-      let apiObjectType;
-      let apiObjectName = object.name;
-      
-      if (isSynonym) {
-        apiObjectType = 'SYNONYM';
-        Logger.debug('SchemaBrowser', 'handleObjectSelect', `Object is a synonym, using type: SYNONYM`);
+    if (effectiveType === 'VIEW') {
+      if (isSynonym && targetType === 'VIEW') {
+        loadViewData(targetName).catch(err => console.error('Background view load error:', err));
       } else {
-        apiObjectType = type;
+        loadViewData(object.name).catch(err => console.error('Background view load error:', err));
       }
-
-      setObType(apiObjectType);
-      
-      const response = await getObjectDetails(authToken, { 
-        objectType: apiObjectType, 
-        objectName: apiObjectName 
-      });
-      
-      const processedResponse = handleSchemaBrowserResponse(response);
-      const responseData = processedResponse.data || processedResponse;
-      
-      const enrichedResponseData = {
-        ...responseData,
-        name: responseData.name || object.name,
-        type: responseData.type || type,
-        isSynonym: isSynonym
-      };
-      
-      setObjectDetails(enrichedResponseData);
-      
-      const upperType = type.toUpperCase();
-      let effectiveType = upperType;
-      let targetType = null;
-      let targetName = object.name;
-      let targetOwner = null;
-      
-      if (isSynonym && responseData?.targetDetails) {
-        targetType = responseData.targetDetails.OBJECT_TYPE || responseData.targetDetails.objectType;
-        targetName = responseData.TARGET_NAME || object.name;
-        targetOwner = responseData.TARGET_OWNER || responseData.targetDetails.OWNER;
-        
-        if (targetType) {
-          effectiveType = targetType;
-        }
-      }
-      
-      // Load table/view data if applicable
-      if (effectiveType === 'TABLE') {
-        if (isSynonym && targetType === 'TABLE') {
-          loadTableData(targetName).catch(err => console.error('Background table load error:', err));
-        } else {
-          loadTableData(object.name).catch(err => console.error('Background table load error:', err));
-        }
-      }
-
-      if (effectiveType === 'VIEW') {
-        if (isSynonym && targetType === 'VIEW') {
-          loadViewData(targetName).catch(err => console.error('Background view load error:', err));
-        } else {
-          loadViewData(object.name).catch(err => console.error('Background view load error:', err));
-        }
-      }
-      
-      // NEW: Load used by data in background
-      loadUsedByData(
-        object.name, 
-        effectiveType, 
-        targetOwner || object.owner, 
-        1, 
-        10
-      ).catch(err => console.error('Background used by load error:', err));
-      
-      // Load DDL for applicable types
-      const ddlTypes = ['TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'PACKAGE', 'TRIGGER', 'SEQUENCE'];
-      if (ddlTypes.includes(effectiveType)) {
-        (async () => {
-          try {
-            setDdlLoading(true);
+    }
+    
+    // Load used by data in background
+    loadUsedByData(
+      object.name, 
+      effectiveType, 
+      targetOwner || object.owner, 
+      1, 
+      10
+    ).catch(err => console.error('Background used by load error:', err));
+    
+    // Load DDL for applicable types
+    const ddlTypes = ['TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'PACKAGE', 'TRIGGER', 'SEQUENCE'];
+    if (ddlTypes.includes(effectiveType)) {
+      (async () => {
+        try {
+          setDdlLoading(true);
+          
+          let ddlObjectType = effectiveType.toLowerCase();
+          let ddlObjectName = targetName || object.name;
+          
+          if (isSynonym && targetType) {
+            ddlObjectType = targetType.toLowerCase();
+            ddlObjectName = targetName;
+          }
+          
+          const ddlResponse = await getObjectDDL(authToken, { 
+            objectType: ddlObjectType, 
+            objectName: ddlObjectName 
+          });
+          
+          if (ddlResponse && ddlResponse.data) {
+            const ddlData = ddlResponse.data;
+            let ddlText = '';
             
-            let ddlObjectType = effectiveType.toLowerCase();
-            let ddlObjectName = targetName || object.name;
-            
-            if (isSynonym && targetType) {
-              ddlObjectType = targetType.toLowerCase();
-              ddlObjectName = targetName;
+            if (typeof ddlData === 'string') {
+              ddlText = ddlData;
+            } else if (ddlData.ddl) {
+              ddlText = ddlData.ddl;
+            } else if (ddlData.text) {
+              ddlText = ddlData.text;
+            } else if (ddlData.sql) {
+              ddlText = ddlData.sql;
+            } else {
+              ddlText = JSON.stringify(ddlData, null, 2);
             }
             
-            const ddlResponse = await getObjectDDL(authToken, { 
-              objectType: ddlObjectType, 
-              objectName: ddlObjectName 
-            });
-            
-            if (ddlResponse && ddlResponse.data) {
-              const ddlData = ddlResponse.data;
-              let ddlText = '';
-              
-              if (typeof ddlData === 'string') {
-                ddlText = ddlData;
-              } else if (ddlData.ddl) {
-                ddlText = ddlData.ddl;
-              } else if (ddlData.text) {
-                ddlText = ddlData.text;
-              } else if (ddlData.sql) {
-                ddlText = ddlData.sql;
-              } else {
-                ddlText = JSON.stringify(ddlData, null, 2);
-              }
-              
-              if (ddlText && ddlText !== '{}') {
-                setObjectDDL(ddlText);
-              } else {
-                setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName || object.name}`);
-              }
+            if (ddlText && ddlText !== '{}') {
+              setObjectDDL(ddlText);
             } else {
               setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName || object.name}`);
             }
-          } catch (ddlError) {
-            console.error('Background DDL fetch error:', ddlError);
-            setObjectDDL(`-- Error loading DDL for ${effectiveType} ${targetName || object.name}\n-- ${ddlError.message}`);
-          } finally {
-            setDdlLoading(false);
+          } else {
+            setObjectDDL(`-- No DDL available for ${effectiveType} ${targetName || object.name}`);
           }
-        })();
-      }
-      
-    } catch (err) {
-      Logger.error('SchemaBrowser', 'handleObjectSelect', `Error loading details for ${object.name}`, err);
-      setError(`Failed to load object details: ${err.message}`);
-    } finally {
-      setLoading(false);
+        } catch (ddlError) {
+          console.error('Background DDL fetch error:', ddlError);
+          setObjectDDL(`-- Error loading DDL for ${effectiveType} ${targetName || object.name}\n-- ${ddlError.message}`);
+        } finally {
+          setDdlLoading(false);
+        }
+      })();
     }
+    
+  } catch (err) {
+    Logger.error('SchemaBrowser', 'handleObjectSelect', `Error loading details for ${object.name}`, err);
+    setError(`Failed to load object details: ${err.message}`);
+  } finally {
+    setLoading(false);
+  }
 
-    if (window.innerWidth < 768) {
-      setIsLeftSidebarVisible(false);
-    }
-  }, [authToken, tabs, loadTableData, loadViewData, loadUsedByData]);
+  if (window.innerWidth < 768) {
+    setIsLeftSidebarVisible(false);
+  }
+}, [authToken, tabs, loadTableData, loadViewData, loadUsedByData]);
 
   // ============================================================
   // RENDER FUNCTIONS FOR EACH TAB
@@ -4024,16 +4067,17 @@ useEffect(() => {
       {showContextMenu && renderContextMenu()}
 
       {showApiModal && (
-        <ApiGenerationModal
-          isOpen={showApiModal}
-          onClose={() => setShowApiModal(false)}
-          selectedObject={selectedForApiGeneration || activeObject}
-          colors={colors}
-          obType={obType}
-          theme={theme}
-          authToken={authToken}
-        />
-      )}
+  <ApiGenerationModal
+    isOpen={showApiModal}
+    onClose={() => setShowApiModal(false)}
+    selectedObject={selectedForApiGeneration} // This now has full details
+    colors={colors}
+    obType={obType}
+    theme={theme}
+    authToken={authToken}
+    isEditing={false} // Explicitly false for new API
+  />
+)}
     </div>
   );
 };

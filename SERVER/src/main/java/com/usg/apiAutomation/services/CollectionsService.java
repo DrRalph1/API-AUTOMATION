@@ -422,7 +422,7 @@ public class CollectionsService {
             try {
                 String apiId = generatedApiOpt.get().getId();
                 Optional<ApiAuthConfigEntity> authConfigOpt = generatedAPIRepository.findAuthConfigByApiId(apiId);
-                if (authConfigOpt.isPresent() && "API_KEY".equals(authConfigOpt.get().getAuthType())) {
+                if (authConfigOpt.isPresent() && "apiKey".equals(authConfigOpt.get().getAuthType())) {
                     isApiKeyAuth = true;
                 }
             } catch (Exception e) {

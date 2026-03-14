@@ -32,7 +32,7 @@ public class ApiExecutionHelper {
             CollectionInfoDTO collectionInfo,
             String endpointPath,
             String performedBy,
-            String requestId,
+            String requestId,  // This parameter might be renamed to generationRequestId for clarity
             GeneratedAPIRepository generatedAPIRepository,
             ObjectMapper objectMapper,
             ParameterGeneratorUtil parameterGenerator,
@@ -59,7 +59,7 @@ public class ApiExecutionHelper {
                 .sourceObjectInfo(sourceObjectDTO != null ?
                         objectMapper.convertValue(sourceObjectDTO, Map.class) : null)
                 .collectionInfo(objectMapper.convertValue(collectionInfo, Map.class))
-                .sourceRequestId(requestId)
+                // REMOVE THIS LINE: .sourceRequestId(requestId)
                 .build();
 
         // Save configurations

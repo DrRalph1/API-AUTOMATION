@@ -25,14 +25,14 @@ const buildQueryParams = (params = {}) => {
 // ============ DASHBOARD METHODS ============
 
 /**
- * Get lightweight dashboard data for initial load
+ * Get lightweight initial dashboard data for fast initial load
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response with minimal dashboard data
  */
-export const getLightweightDashboard = async (authorizationHeader) => {
+export const getInitialDashboard = async (authorizationHeader) => {
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/dashboard/lightweight`, {
+    (authHeader) => apiCall(`/dashboard/initial`, {
       method: 'GET',
       headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
@@ -54,15 +54,44 @@ export const getDashboardStats = async (authorizationHeader) => {
   );
 };
 
+
+
 /**
- * Get dashboard collections
+ * Get details of a generated API by ID
  * @param {string} authorizationHeader - Bearer token
+ * @param {string} apiId - The ID of the generated API
  * @returns {Promise} API response
  */
-export const getDashboardCollections = async (authorizationHeader) => {
+export const getGeneratedApiDetails = async (authorizationHeader, apiId) => {
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/dashboard/collections`, {
+    (authHeader) => apiCall(`/gen/api/${apiId}`, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+
+/**
+ * Get collections with pagination
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} pagination - Pagination parameters
+ * @param {number} pagination.page - Page number (0-based, default: 0)
+ * @param {number} pagination.size - Page size (default: 10)
+ * @param {string} pagination.sortBy - Sort field (default: 'name')
+ * @param {string} pagination.sortDir - Sort direction 'asc' or 'desc' (default: 'asc')
+ * @returns {Promise} API response
+ */
+export const getDashboardCollections = async (authorizationHeader, pagination = {}) => {
+  const { page = 0, size = 10, sortBy = 'name', sortDir = 'asc' } = pagination;
+  
+  const queryString = buildQueryParams({ page, size, sortBy, sortDir });
+  const url = `/dashboard/collections${queryString ? `?${queryString}` : ''}`;
+  
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(url, {
       method: 'GET',
       headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
@@ -70,14 +99,44 @@ export const getDashboardCollections = async (authorizationHeader) => {
 };
 
 /**
- * Get dashboard endpoints
+ * Get endpoints with pagination and filtering
  * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Query parameters
+ * @param {number} params.page - Page number (0-based, default: 0)
+ * @param {number} params.size - Page size (default: 10)
+ * @param {string} params.collectionId - Filter by collection ID
+ * @param {string} params.method - Filter by HTTP method
+ * @param {string} params.search - Search term
+ * @param {string} params.sortBy - Sort field (default: 'lastUpdated')
+ * @param {string} params.sortDir - Sort direction (default: 'desc')
  * @returns {Promise} API response
  */
-export const getDashboardEndpoints = async (authorizationHeader) => {
+export const getDashboardEndpoints = async (authorizationHeader, params = {}) => {
+  const { 
+    page = 0, 
+    size = 10, 
+    collectionId, 
+    method, 
+    search,
+    sortBy = 'lastUpdated', 
+    sortDir = 'desc' 
+  } = params;
+  
+  const queryString = buildQueryParams({ 
+    page, 
+    size, 
+    collectionId, 
+    method, 
+    search,
+    sortBy, 
+    sortDir 
+  });
+  
+  const url = `/dashboard/endpoints${queryString ? `?${queryString}` : ''}`;
+  
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/dashboard/endpoints`, {
+    (authHeader) => apiCall(url, {
       method: 'GET',
       headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
@@ -85,74 +144,24 @@ export const getDashboardEndpoints = async (authorizationHeader) => {
 };
 
 /**
- * Get rate limit rules
+ * Get recent activities with pagination
  * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Query parameters
+ * @param {number} params.page - Page number (0-based, default: 0)
+ * @param {number} params.size - Page size (default: 20)
+ * @param {string} params.from - Start date (ISO datetime)
+ * @param {string} params.to - End date (ISO datetime)
  * @returns {Promise} API response
  */
-export const getDashboardRateLimitRules = async (authorizationHeader) => {
+export const getDashboardActivities = async (authorizationHeader, params = {}) => {
+  const { page = 0, size = 20, from, to } = params;
+  
+  const queryString = buildQueryParams({ page, size, from, to });
+  const url = `/dashboard/activities${queryString ? `?${queryString}` : ''}`;
+  
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/dashboard/rate-limit-rules`, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
-};
-
-/**
- * Get IP whitelist
- * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response
- */
-export const getDashboardIpWhitelist = async (authorizationHeader) => {
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(`/dashboard/ip-whitelist`, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
-};
-
-/**
- * Get load balancers
- * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response
- */
-export const getDashboardLoadBalancers = async (authorizationHeader) => {
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(`/dashboard/load-balancers`, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
-};
-
-/**
- * Get security events
- * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response
- */
-export const getDashboardSecurityEvents = async (authorizationHeader) => {
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(`/dashboard/security-events`, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
-};
-
-/**
- * Get security alerts
- * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response
- */
-export const getDashboardSecurityAlerts = async (authorizationHeader) => {
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(`/dashboard/security-alerts`, {
+    (authHeader) => apiCall(url, {
       method: 'GET',
       headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
@@ -167,7 +176,7 @@ export const getDashboardSecurityAlerts = async (authorizationHeader) => {
 export const getDashboardSecuritySummary = async (authorizationHeader) => {
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/dashboard/security-summary`, {
+    (authHeader) => apiCall(`/dashboard/security/summary`, {
       method: 'GET',
       headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
@@ -190,59 +199,6 @@ export const getDashboardLanguages = async (authorizationHeader) => {
 };
 
 /**
- * Get code implementations
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} pagination - Pagination parameters
- * @param {number} pagination.page - Page number (default: 1)
- * @param {number} pagination.size - Page size (default: 10)
- * @returns {Promise} API response
- */
-export const getDashboardImplementations = async (authorizationHeader, pagination = {}) => {
-  const { page = 1, size = 10 } = pagination;
-  
-  const queryString = buildQueryParams({ page, size });
-  const url = `/dashboard/implementations${queryString ? `?${queryString}` : ''}`;
-  
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(url, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
-};
-
-/**
- * Get code generation summary
- * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response
- */
-export const getDashboardCodeGenerationSummary = async (authorizationHeader) => {
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(`/dashboard/code-generation-summary`, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
-};
-
-/**
- * Get documentation overview
- * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response
- */
-export const getDashboardDocumentation = async (authorizationHeader) => {
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(`/dashboard/documentation`, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
-};
-
-/**
  * Get environments overview
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
@@ -258,79 +214,23 @@ export const getDashboardEnvironments = async (authorizationHeader) => {
 };
 
 /**
- * Get users overview
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} pagination - Pagination parameters
- * @param {number} pagination.page - Page number (default: 1)
- * @param {number} pagination.size - Page size (default: 10)
- * @returns {Promise} API response
- */
-export const getDashboardUsers = async (authorizationHeader, pagination = {}) => {
-  const { page = 1, size = 10 } = pagination;
-  
-  const queryString = buildQueryParams({ page, size });
-  const url = `/dashboard/users${queryString ? `?${queryString}` : ''}`;
-  
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(url, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
-};
-
-/**
- * Get user activities
- * @param {string} authorizationHeader - Bearer token
- * @param {number} limit - Number of activities to return (default: 10)
- * @returns {Promise} API response
- */
-export const getDashboardUserActivities = async (authorizationHeader, limit = 10) => {
-  const queryString = buildQueryParams({ limit });
-  const url = `/dashboard/user-activities${queryString ? `?${queryString}` : ''}`;
-  
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(url, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
-};
-
-/**
- * Get comprehensive dashboard data
- * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response with all dashboard data
- */
-export const getComprehensiveDashboard = async (authorizationHeader) => {
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(`/dashboard/comprehensive`, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  );
-};
-
-/**
- * Search across dashboard
+ * Global search across dashboard
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} searchParams - Search parameters
- * @param {string} searchParams.query - Search query (required)
- * @param {string} searchParams.type - Type to search (all, collections, endpoints, users)
- * @param {number} searchParams.limit - Maximum results (default: 10)
+ * @param {string} searchParams.q - Search query (required)
+ * @param {string} searchParams.types - Comma-separated types to search (collections,endpoints,users)
+ * @param {number} searchParams.page - Page number (0-based, default: 0)
+ * @param {number} searchParams.size - Page size (default: 20)
  * @returns {Promise} API response
  */
-export const searchDashboard = async (authorizationHeader, searchParams = {}) => {
-  const { query, type, limit = 10 } = searchParams;
+export const globalDashboardSearch = async (authorizationHeader, searchParams = {}) => {
+  const { q, types, page = 0, size = 20 } = searchParams;
   
-  if (!query) {
-    throw new Error('Search query is required');
+  if (!q) {
+    throw new Error('Search query (q) is required');
   }
   
-  const queryString = buildQueryParams({ query, type, limit });
+  const queryString = buildQueryParams({ q, types, page, size });
   const url = `/dashboard/search${queryString ? `?${queryString}` : ''}`;
   
   return apiCallWithTokenRefresh(
@@ -354,14 +254,16 @@ export const handleDashboardResponse = (response) => {
     throw new Error('No response received from dashboard service');
   }
 
+  // The Java controller returns responses with responseCode field
   const responseCode = response.responseCode || response.status;
   
-  if (responseCode === 200 || responseCode === 201) {
+  if (responseCode === 200) {
     return {
       ...response,
       data: response.data || {},
       responseCode: responseCode,
-      requestId: response.requestId
+      requestId: response.requestId,
+      timestamp: response.timestamp
     };
   }
 
@@ -383,27 +285,20 @@ export const handleDashboardResponse = (response) => {
 };
 
 /**
- * Extract dashboard statistics from response
+ * Extract paginated response data
  * @param {Object} response - API response
- * @returns {Object} Dashboard statistics
+ * @returns {Object} Paginated data structure
  */
-export const extractDashboardStats = (response) => {
-  if (!response || !response.data) return null;
-  return response.data;
-};
-
-/**
- * Extract comprehensive dashboard data
- * @param {Object} response - API response
- * @returns {Object} Comprehensive dashboard data structure
- */
-export const extractComprehensiveDashboard = (response) => {
+export const extractPaginatedData = (response) => {
   if (!response || !response.data) return null;
   
   return {
-    ...response.data,
-    lastUpdated: response.data.lastUpdated || new Date().toISOString(),
-    generatedFor: response.data.generatedFor || 'Unknown',
+    content: response.data.content || [],
+    pageNumber: response.data.pageNumber || 0,
+    pageSize: response.data.pageSize || 0,
+    totalElements: response.data.totalElements || 0,
+    totalPages: response.data.totalPages || 0,
+    last: response.data.last || true,
     requestId: response.requestId
   };
 };
@@ -416,31 +311,29 @@ export const extractComprehensiveDashboard = (response) => {
 export const validateDashboardSearchParams = (searchParams) => {
   const errors = [];
   
-  if (!searchParams.query || searchParams.query.trim() === '') {
+  if (!searchParams.q || searchParams.q.trim() === '') {
     errors.push('Search query is required');
   }
   
-  if (searchParams.limit !== undefined && (searchParams.limit < 1 || searchParams.limit > 100)) {
-    errors.push('Limit must be between 1 and 100');
+  if (searchParams.page !== undefined && (searchParams.page < 0 || !Number.isInteger(searchParams.page))) {
+    errors.push('Page must be a non-negative integer');
   }
   
-  if (searchParams.type && !['all', 'collections', 'endpoints', 'users'].includes(searchParams.type)) {
-    errors.push('Type must be one of: all, collections, endpoints, users');
+  if (searchParams.size !== undefined && (searchParams.size < 1 || searchParams.size > 100)) {
+    errors.push('Size must be between 1 and 100');
+  }
+  
+  if (searchParams.types) {
+    const validTypes = ['collections', 'endpoints', 'users'];
+    const types = searchParams.types.split(',');
+    const invalidTypes = types.filter(type => !validTypes.includes(type));
+    if (invalidTypes.length > 0) {
+      errors.push(`Invalid types: ${invalidTypes.join(', ')}. Valid types: ${validTypes.join(', ')}`);
+    }
   }
   
   return errors;
 };
-
-/**
- * Build pagination parameters
- * @param {number} page - Page number (default: 1)
- * @param {number} size - Page size (default: 10)
- * @returns {Object} Pagination parameters
- */
-export const buildPaginationParams = (page = 1, size = 10) => ({
-  page,
-  size
-});
 
 /**
  * Format date for display
@@ -462,94 +355,52 @@ export const formatDateForDisplay = (date) => {
 };
 
 /**
- * Refresh all dashboard data (comprehensive)
+ * Refresh initial dashboard data (lightweight)
  * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} Combined dashboard data
+ * @returns {Promise} Initial dashboard data
  */
-export const refreshDashboard = async (authorizationHeader) => {
+export const refreshInitialDashboard = async (authorizationHeader) => {
   try {
-    const comprehensiveResponse = await getComprehensiveDashboard(authorizationHeader);
-    return handleDashboardResponse(comprehensiveResponse);
+    const response = await getInitialDashboard(authorizationHeader);
+    return handleDashboardResponse(response);
   } catch (error) {
-    throw new Error(`Failed to refresh dashboard: ${error.message}`);
+    throw new Error(`Failed to refresh initial dashboard: ${error.message}`);
   }
-};
-
-// Keep these utility functions but update names to match backend:
-export const buildDashboardSearchDTO = (criteria = {}) => {
-  return {
-    query: criteria.query || '',
-    type: criteria.type || 'all',
-    limit: criteria.limit || 10
-  };
 };
 
 /**
  * Format dashboard data for display
  * @param {Object} dashboardData - Raw dashboard data
- * @returns {Object} Formatted dashboard data
+ * @returns {Object} Formatted dashboard data with date strings
  */
 export const formatDashboardData = (dashboardData) => {
   if (!dashboardData) return {};
   
   const formatted = { ...dashboardData };
   
-  // Format dates for display
-  if (formatted.lastUpdated) {
-    formatted.formattedLastUpdated = formatDateForDisplay(formatted.lastUpdated);
+  // Format timestamps in the response
+  if (formatted.timestamp) {
+    formatted.formattedTimestamp = formatDateForDisplay(formatted.timestamp);
   }
   
   return formatted;
 };
 
-/**
- * Export dashboard data for reporting
- * @param {string} authorizationHeader - Bearer token
- * @param {string} format - Export format ('json' or 'csv')
- * @returns {Promise} Export data
- */
-export const exportDashboardData = async (authorizationHeader, format = 'json') => {
-  const dashboardData = await refreshDashboard(authorizationHeader);
-  
-  if (format.toLowerCase() === 'csv') {
-    const csvData = convertDashboardToCSV(dashboardData.data);
-    return {
-      ...dashboardData,
-      format: 'csv',
-      csvData: csvData
-    };
-  }
-  
-  return {
-    ...dashboardData,
-    format: 'json'
-  };
-};
-
-/**
- * Convert dashboard data to CSV format
- * @param {Object} dashboardData - Dashboard data
- * @returns {string} CSV string
- */
-const convertDashboardToCSV = (dashboardData) => {
-  if (!dashboardData) return '';
-  
-  const rows = [];
-  rows.push(['Section', 'Metric', 'Value', 'Timestamp'].join(','));
-  
-  // Helper to flatten object
-  const flattenObject = (obj, prefix = '') => {
-    Object.keys(obj).forEach(key => {
-      if (obj[key] && typeof obj[key] === 'object' && !Array.isArray(obj[key])) {
-        flattenObject(obj[key], `${prefix}${key}.`);
-      } else if (Array.isArray(obj[key])) {
-        rows.push([prefix.slice(0, -1), key, `Array(${obj[key].length})`, new Date().toISOString()]);
-      } else {
-        rows.push([prefix.slice(0, -1), key, obj[key], new Date().toISOString()]);
-      }
-    });
-  };
-  
-  flattenObject(dashboardData);
-  return rows.join('\n');
+// Export all methods with consistent naming
+export default {
+  getInitialDashboard,
+  getDashboardStats,
+  getDashboardCollections,
+  getDashboardEndpoints,
+  getDashboardActivities,
+  getDashboardSecuritySummary,
+  getDashboardLanguages,
+  getDashboardEnvironments,
+  globalDashboardSearch,
+  handleDashboardResponse,
+  extractPaginatedData,
+  validateDashboardSearchParams,
+  formatDateForDisplay,
+  refreshInitialDashboard,
+  formatDashboardData
 };

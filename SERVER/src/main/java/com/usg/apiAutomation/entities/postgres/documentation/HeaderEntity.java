@@ -14,13 +14,13 @@ public class HeaderEntity {
 //    @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
-    @Column(name = "generated_api_id")
+    @Column(name = "api_id")
     private String generatedApiId;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private String key;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private String value;
 
     private String description;

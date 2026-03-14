@@ -57,12 +57,13 @@ public interface GeneratedAPIRepository extends JpaRepository<GeneratedApiEntity
     @Query(value = "SELECT * FROM tb_eng_generated_apis WHERE collection_info @> jsonb_build_object('requestId', :requestId)", nativeQuery = true)
     Optional<GeneratedApiEntity> findByCollectionInfoRequestId(@Param("requestId") String requestId);
 
-    @Query(value = "SELECT g.* FROM tb_eng_generated_apis g " +
-            "JOIN tb_col_requests r ON r.id = :requestId " +
-            "WHERE r.collection_id::text = g.collection_info ->> 'collectionId' " +
-            "AND (r.folder_id::text = g.collection_info ->> 'folderId' OR " +
-            "    (r.folder_id IS NULL AND g.collection_info ->> 'folderId' IS NULL)) " +
-            "AND r.name LIKE '%' || (g.source_object_info ->> 'objectName') || '%'",
+    @Query(value = "SELECT g.*, " +
+            "r.name as request_name, " +
+            "r.method as request_method, " +
+            "r.url as request_url " +
+            "FROM tb_eng_generated_apis g " +
+            "LEFT JOIN tb_col_requests r ON r.id = g.source_request_id " +
+            "WHERE g.source_request_id = :requestId",
             nativeQuery = true)
     Optional<GeneratedApiEntity> findByRequestId(@Param("requestId") String requestId);
 

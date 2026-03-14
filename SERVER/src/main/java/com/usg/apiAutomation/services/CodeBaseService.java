@@ -2,7 +2,9 @@ package com.usg.apiAutomation.services;
 
 import com.usg.apiAutomation.dtos.codeBase.*;
 import com.usg.apiAutomation.entities.postgres.codeBase.*;
+import com.usg.apiAutomation.entities.postgres.collections.AuthConfigEntity;
 import com.usg.apiAutomation.repositories.postgres.codeBase.*;
+import com.usg.apiAutomation.repositories.postgres.collections.AuthConfigRepository;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import com.usg.apiAutomation.utils.ModelMapperUtil;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,16 +39,7 @@ public class CodeBaseService {
     private ImplementationRepository implementationRepository;
 
     @Autowired
-    private ExportJobRepository exportJobRepository;
-
-    @Autowired
-    private ImportJobRepository importJobRepository;
-
-    @Autowired
-    private SearchHistoryRepository searchHistoryRepository;
-
-    @Autowired
-    private TestResultRepository testResultRepository;
+    private AuthConfigRepository authConfigRepository;
 
     @Autowired
     private ModelMapperUtil modelMapper;
@@ -238,18 +231,14 @@ public class CodeBaseService {
             RequestEntity request = requestRepository.findById(requestIdParam)
                     .orElseThrow(() -> new RuntimeException("Request not found: " + requestIdParam));
 
+            // Log the request metadata for debugging
+            loggerUtil.log("codebase", "Request ID: " + requestId +
+                    ", Request metadata: " + request.getMetadata());
+
             // Verify collection matches
             if (!request.getCollection().getId().equals(collectionId)) {
                 throw new RuntimeException("Request does not belong to the specified collection");
             }
-
-            // Verify ownership
-//            if (!request.getCollection().getOwner().equals(performedBy)) {
-//                loggerUtil.log("codebase", "Request ID: " + requestId +
-//                        ", User " + performedBy + " attempted to access request " + requestIdParam +
-//                        " owned by " + request.getCollection().getOwner());
-//                throw new SecurityException("Access denied to request: " + requestIdParam);
-//            }
 
             RequestDetailsResponse response = new RequestDetailsResponse();
             response.setId(request.getId());
@@ -262,9 +251,117 @@ public class CodeBaseService {
             response.setLastModified(formatDate(request.getUpdatedAt()));
             response.setTags(request.getTags());
 
-            // Convert headers from JSON
+            // ============= EXTRACT API ID FROM GENERATED_API_ID OR METADATA =============
+            String apiId = null;
+
+            // First check: Try to get API ID from generatedApiId direct field
+            if (request.getGeneratedApiId() != null && !request.getGeneratedApiId().isEmpty()) {
+                apiId = request.getGeneratedApiId();
+                loggerUtil.log("codebase", "Request ID: " + requestId +
+                        ", Found generatedApiId directly: " + apiId);
+            }
+            // Second check: If generatedApiId is null, try to extract from metadata
+            else if (request.getMetadata() != null) {
+                try {
+                    Map<String, Object> metadata = request.getMetadata();
+                    loggerUtil.log("codebase", "Request ID: " + requestId +
+                            ", Checking metadata for API ID. Metadata keys: " + metadata.keySet());
+
+                    // Check for apiId in metadata
+                    if (metadata.containsKey("apiId")) {
+                        apiId = (String) metadata.get("apiId");
+                        loggerUtil.log("codebase", "Request ID: " + requestId +
+                                ", Found apiId in metadata: " + apiId);
+                    }
+                    // Check for other possible field names
+                    else if (metadata.containsKey("generatedApiId")) {
+                        apiId = (String) metadata.get("generatedApiId");
+                        loggerUtil.log("codebase", "Request ID: " + requestId +
+                                ", Found generatedApiId in metadata: " + apiId);
+                    }
+                    else if (metadata.containsKey("api_id")) {
+                        apiId = (String) metadata.get("api_id");
+                        loggerUtil.log("codebase", "Request ID: " + requestId +
+                                ", Found api_id in metadata: " + apiId);
+                    }
+
+                    // Log any gen-related fields for debugging
+                    if (metadata.containsKey("genPath")) {
+                        loggerUtil.log("codebase", "Request ID: " + requestId +
+                                ", genPath from metadata: " + metadata.get("genPath"));
+                    }
+                    if (metadata.containsKey("fullGenUrl")) {
+                        loggerUtil.log("codebase", "Request ID: " + requestId +
+                                ", fullGenUrl from metadata: " + metadata.get("fullGenUrl"));
+                    }
+                    if (metadata.containsKey("genUrlPattern")) {
+                        loggerUtil.log("codebase", "Request ID: " + requestId +
+                                ", genUrlPattern from metadata: " + metadata.get("genUrlPattern"));
+                    }
+
+                } catch (Exception e) {
+                    loggerUtil.log("codebase", "Request ID: " + requestId +
+                            ", Error extracting API ID from metadata: " + e.getMessage());
+                }
+            }
+
+            // ============= CHECK IF AUTH TYPE IS API KEY =============
+            boolean isApiKeyAuth = false;
+
+            // Check for auth config in the database using the apiId
+            if (apiId != null && !apiId.isEmpty()) {
+                try {
+                    // Try to find auth config for this API
+                    // You'll need to inject the appropriate repository
+                    Optional<AuthConfigEntity> authConfigOpt = authConfigRepository.findByGeneratedApiId(apiId);
+
+                    if (authConfigOpt.isPresent()) {
+                        AuthConfigEntity authConfig = authConfigOpt.get();
+                        if ("apiKey".equalsIgnoreCase(authConfig.getType())) {
+                            isApiKeyAuth = true;
+                            loggerUtil.log("codebase", "Request ID: " + requestId +
+                                    ", Found apiKey auth config in database for API ID: " + apiId);
+                        }
+                    }
+                } catch (Exception e) {
+                    loggerUtil.log("codebase", "Request ID: " + requestId +
+                            ", Error checking auth config in database: " + e.getMessage());
+                }
+            }
+
+            // If not found in database, check metadata as fallback
+            if (!isApiKeyAuth && request.getMetadata() != null) {
+                Map<String, Object> metadata = request.getMetadata();
+
+                // Check for auth type in metadata
+                if (metadata.containsKey("authType") && "apiKey".equals(metadata.get("authType"))) {
+                    isApiKeyAuth = true;
+                    loggerUtil.log("codebase", "Request ID: " + requestId +
+                            ", Found apiKey auth type in metadata");
+                }
+
+                // Check for auth config object
+                if (metadata.containsKey("authConfig")) {
+                    try {
+                        Map<String, Object> authConfig = (Map<String, Object>) metadata.get("authConfig");
+                        if (authConfig != null && "apiKey".equals(authConfig.get("type"))) {
+                            isApiKeyAuth = true;
+                            loggerUtil.log("codebase", "Request ID: " + requestId +
+                                    ", Found apiKey auth config in metadata");
+                        }
+                    } catch (Exception e) {
+                        loggerUtil.log("codebase", "Request ID: " + requestId +
+                                ", Error parsing auth config from metadata: " + e.getMessage());
+                    }
+                }
+            }
+
+            // Convert headers from JSON - create a mutable list
+            List<HeaderItem> headers = new ArrayList<>();
+
+            // Add existing headers from the request
             if (request.getHeaders() != null) {
-                List<HeaderItem> headers = request.getHeaders().stream()
+                headers.addAll(request.getHeaders().stream()
                         .map(headerMap -> {
                             HeaderItem header = new HeaderItem();
                             header.setKey((String) headerMap.get("key"));
@@ -274,20 +371,59 @@ public class CodeBaseService {
                             header.setDisabled((Boolean) headerMap.getOrDefault("disabled", false));
                             return header;
                         })
-                        .collect(Collectors.toList());
-                response.setHeaders(headers);
+                        .collect(Collectors.toList()));
             }
+
+            // ============= INJECT API KEY HEADERS IF AUTH TYPE IS API KEY =============
+            if (isApiKeyAuth) {
+                loggerUtil.log("codebase", "Request ID: " + requestId +
+                        ", Auth type is API Key, injecting X-Api-Key and X-Api-Secret headers");
+
+                // Check if X-Api-Key header already exists
+                boolean hasApiKeyHeader = headers.stream()
+                        .anyMatch(h -> "X-Api-Key".equalsIgnoreCase(h.getKey()));
+
+                if (!hasApiKeyHeader) {
+                    HeaderItem apiKeyHeader = new HeaderItem();
+                    apiKeyHeader.setKey("X-Api-Key");
+                    apiKeyHeader.setValue("{{api_key}}"); // Placeholder that will be replaced at runtime
+                    apiKeyHeader.setDescription("API Key for authentication");
+                    apiKeyHeader.setRequired(true);
+                    apiKeyHeader.setDisabled(false);
+                    headers.add(apiKeyHeader);
+                    loggerUtil.log("codebase", "Request ID: " + requestId +
+                            ", Added X-Api-Key header");
+                }
+
+                // Check if X-Api-Secret header already exists
+                boolean hasApiSecretHeader = headers.stream()
+                        .anyMatch(h -> "X-Api-Secret".equalsIgnoreCase(h.getKey()));
+
+                if (!hasApiSecretHeader) {
+                    HeaderItem apiSecretHeader = new HeaderItem();
+                    apiSecretHeader.setKey("X-Api-Secret");
+                    apiSecretHeader.setValue("{{api_secret}}"); // Placeholder that will be replaced at runtime
+                    apiSecretHeader.setDescription("API Secret for authentication");
+                    apiSecretHeader.setRequired(true);
+                    apiSecretHeader.setDisabled(false);
+                    headers.add(apiSecretHeader);
+                    loggerUtil.log("codebase", "Request ID: " + requestId +
+                            ", Added X-Api-Secret header");
+                }
+            }
+
+            response.setHeaders(headers);
 
             response.setBody(request.getRequestBody());
             response.setResponseExample(request.getResponseExample());
 
-            // Convert path parameters
+            // Convert path parameters - Using ParameterItem DTO
             if (request.getPathParameters() != null) {
                 List<ParameterItem> pathParams = request.getPathParameters().stream()
                         .map(paramMap -> {
                             ParameterItem param = new ParameterItem();
                             param.setName((String) paramMap.get("name"));
-                            param.setType((String) paramMap.get("type"));
+                            param.setType("path");
                             param.setRequired((Boolean) paramMap.getOrDefault("required", false));
                             param.setDescription((String) paramMap.get("description"));
                             param.setKey((String) paramMap.get("key"));
@@ -298,6 +434,25 @@ public class CodeBaseService {
                 response.setPathParameters(pathParams);
             }
 
+            // Convert query parameters if they exist - Using ParameterItem DTO
+            if (request.getQueryParameters() != null) {
+                List<ParameterItem> queryParams = request.getQueryParameters().stream()
+                        .map(paramMap -> {
+                            ParameterItem param = new ParameterItem();
+                            param.setName((String) paramMap.get("name"));
+                            param.setType("query");
+                            param.setRequired((Boolean) paramMap.getOrDefault("required", false));
+                            param.setDescription((String) paramMap.get("description"));
+                            param.setKey((String) paramMap.get("key"));
+                            param.setValue((String) paramMap.get("value"));
+                            return param;
+                        })
+                        .collect(Collectors.toList());
+
+                // If you have a queryParameters field in your response DTO, set it here
+                // response.setQueryParameters(queryParams);
+            }
+
             // Get implementations from database
             List<ImplementationEntity> implementations = implementationRepository.findByRequestId(requestIdParam);
             Map<String, Map<String, String>> implementationMap = new HashMap<>();
@@ -305,9 +460,27 @@ public class CodeBaseService {
             for (ImplementationEntity impl : implementations) {
                 implementationMap.computeIfAbsent(impl.getLanguage(), k -> new HashMap<>())
                         .put(impl.getComponent(), impl.getCode());
+
+                // Update implementation with generatedApiId if available and not already set
+                if (apiId != null && !apiId.isEmpty() && impl.getGeneratedApiId() == null) {
+                    impl.setGeneratedApiId(apiId);
+                    implementationRepository.save(impl);
+                    loggerUtil.log("codebase", "Request ID: " + requestId +
+                            ", Updated implementation " + impl.getId() + " with generatedApiId: " + apiId);
+                }
             }
 
             response.setImplementations(implementationMap);
+
+            // Set baseUrl if available in metadata
+            if (request.getMetadata() != null && request.getMetadata().containsKey("baseUrl")) {
+                response.setBaseUrl((String) request.getMetadata().get("baseUrl"));
+            }
+
+            // Set requestGroupId if available
+            if (request.getMetadata() != null && request.getMetadata().containsKey("requestGroupId")) {
+                response.setRequestGroupId((String) request.getMetadata().get("requestGroupId"));
+            }
 
             return response;
 
@@ -495,95 +668,6 @@ public class CodeBaseService {
         }
     }
 
-    // ============================================================
-    // 8. EXPORT IMPLEMENTATION
-    // ============================================================
-    @Transactional
-    public ExportResponse exportImplementation(String requestId, String performedBy,
-                                               ExportRequest exportRequest) {
-        try {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Exporting implementation in format: " + exportRequest.getFormat());
-
-            // Get implementations from database
-            List<ImplementationEntity> implementations;
-            if (exportRequest.getRequestId() != null) {
-                // Verify access to request
-                RequestEntity request = requestRepository.findById(exportRequest.getRequestId())
-                        .orElseThrow(() -> new RuntimeException("Request not found: " + exportRequest.getRequestId()));
-
-//                if (!request.getCollection().getOwner().equals(performedBy)) {
-//                    throw new SecurityException("Access denied to request: " + exportRequest.getRequestId());
-//                }
-
-                implementations = implementationRepository.findByRequestIdAndLanguage(
-                        exportRequest.getRequestId(), exportRequest.getLanguage());
-            } else if (exportRequest.getCollectionId() != null) {
-                // Verify access to collection
-                CollectionEntity collection = collectionRepository.findById(exportRequest.getCollectionId())
-                        .orElseThrow(() -> new RuntimeException("Collection not found: " + exportRequest.getCollectionId()));
-
-//                if (!collection.getOwner().equals(performedBy)) {
-//                    throw new SecurityException("Access denied to collection: " + exportRequest.getCollectionId());
-//                }
-
-                implementations = implementationRepository.findByCollectionId(exportRequest.getCollectionId());
-            } else {
-                throw new RuntimeException("Either requestId or collectionId must be provided");
-            }
-
-            // Generate export data based on actual implementations
-            Map<String, Object> exportData = new HashMap<>();
-            exportData.put("packageName", "api-implementation-" + exportRequest.getLanguage());
-            exportData.put("version", "1.0.0");
-            exportData.put("filesCount", implementations.size());
-
-            String downloadId = UUID.randomUUID().toString();
-            String downloadUrl = "/downloads/" + downloadId + ".zip";
-
-            exportData.put("downloadUrl", downloadUrl);
-            exportData.put("downloadId", downloadId);
-            exportData.put("expiresAt", new Date(System.currentTimeMillis() + 24 * 60 * 60 * 1000));
-
-            // Calculate total size
-            long totalSize = implementations.stream()
-                    .mapToLong(impl -> impl.getCode().getBytes().length)
-                    .sum();
-            exportData.put("totalSize", String.format("%.1f KB", totalSize / 1024.0));
-
-            // Save export job
-            ExportJobEntity exportJob = ExportJobEntity.builder()
-                    .language(exportRequest.getLanguage())
-                    .format(exportRequest.getFormat())
-                    .requestId(exportRequest.getRequestId())
-                    .collectionId(exportRequest.getCollectionId())
-                    .exportData(exportData)
-                    .downloadUrl(downloadUrl)
-                    .fileSize((String) exportData.get("totalSize"))
-                    .status("READY")
-                    .expiresAt(LocalDateTime.now().plusDays(1))
-                    .build();
-
-            exportJob = exportJobRepository.save(exportJob);
-
-            ExportResponse response = new ExportResponse();
-            response.setFormat(exportRequest.getFormat());
-            response.setLanguage(exportRequest.getLanguage());
-            response.setExportedAt(new Date());
-            response.setStatus("ready");
-            response.setExportData(exportData);
-            response.setDownloadUrl(downloadUrl);
-            response.setFileSize((String) exportData.get("totalSize"));
-            response.setExportId(exportJob.getId());
-
-            return response;
-
-        } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Error exporting implementation: " + e.getMessage());
-            throw e;
-        }
-    }
 
     // ============================================================
     // 9. GET LANGUAGES
@@ -623,164 +707,6 @@ public class CodeBaseService {
         } catch (Exception e) {
             loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Error getting languages: " + e.getMessage());
-            throw e;
-        }
-    }
-
-    // ============================================================
-    // 10. SEARCH IMPLEMENTATIONS
-    // ============================================================
-    public SearchResponse searchImplementations(String requestId, String performedBy,
-                                                SearchRequest searchRequest) {
-        try {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Searching implementations for query: " + searchRequest.getQuery());
-
-            // Save search history
-            SearchHistoryEntity searchHistory = SearchHistoryEntity.builder()
-                    .query(searchRequest.getQuery())
-                    .performedBy(performedBy)
-                    .build();
-            searchHistoryRepository.save(searchHistory);
-
-            // Search in database
-            int page = searchRequest.getPage() != null ? searchRequest.getPage() : 0;
-            int pageSize = searchRequest.getPageSize() != null ? searchRequest.getPageSize() : 10;
-
-            Pageable pageable = PageRequest.of(page, pageSize);
-            Page<RequestEntity> requestPage = requestRepository.searchRequests(
-                    searchRequest.getQuery(), pageable);
-
-            List<SearchResult> results = new ArrayList<>();
-
-            for (RequestEntity request : requestPage.getContent()) {
-                // Verify user has access to this request
-//                if (!request.getCollection().getOwner().equals(performedBy)) {
-//                    continue; // Skip if user doesn't have access
-//                }
-
-                List<String> languages = implementationRepository.findLanguagesByRequestId(request.getId());
-
-                SearchResult result = new SearchResult();
-                result.setId(request.getId());
-                result.setName(request.getName());
-                result.setDescription(request.getDescription());
-                result.setMethod(request.getMethod());
-                result.setUrl(request.getUrl());
-                result.setCollection(request.getCollection().getName());
-                result.setFolder(request.getFolder() != null ? request.getFolder().getName() : null);
-                result.setLanguages(languages);
-                result.setLastModified(formatDate(request.getUpdatedAt()));
-                result.setImplementations(languages.size());
-                result.setMatchType("name");
-
-                results.add(result);
-            }
-
-            SearchResponse response = new SearchResponse();
-            response.setQuery(searchRequest.getQuery());
-            response.setSearchAt(new Date());
-            response.setResults(results);
-            response.setTotal((int) requestPage.getTotalElements());
-            response.setPage(page);
-            response.setPageSize(pageSize);
-            response.setTotalPages(requestPage.getTotalPages());
-
-            return response;
-
-        } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Error searching implementations: " + e.getMessage());
-            throw e;
-        }
-    }
-
-    // ============================================================
-    // 11. IMPORT SPECIFICATION
-    // ============================================================
-    @Transactional
-    public ImportSpecResponse importSpecification(String requestId, String performedBy,
-                                                  ImportSpecRequest importRequest) {
-        try {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Importing specification from source: " + importRequest.getSource());
-
-            // Create import job
-            ImportJobEntity importJob = ImportJobEntity.builder()
-                    .source(importRequest.getSource())
-                    .format(importRequest.getFormat())
-                    .status("PROCESSING")
-                    .build();
-            importJob = importJobRepository.save(importJob);
-
-            // Create new collection from import
-            CollectionEntity collection = CollectionEntity.builder()
-                    .name(importRequest.getCollectionName() != null ?
-                            importRequest.getCollectionName() : "Imported Collection")
-                    .description(importRequest.getDescription())
-                    .owner(performedBy)
-                    .isFavorite(false)
-                    .isExpanded(false)
-                    .build();
-
-            collection = collectionRepository.save(collection);
-
-            // Process import based on source (simplified - in reality you'd parse the actual file)
-            Map<String, Object> importData = new HashMap<>();
-            importData.put("format", importRequest.getFormat() != null ?
-                    importRequest.getFormat() : "Unknown");
-            importData.put("collectionId", collection.getId());
-            importData.put("name", collection.getName());
-            importData.put("description", collection.getDescription());
-
-            int endpointsImported = 0;
-            int implementationsGenerated = 0;
-
-            // If generate implementations is true, create sample implementations
-            if (importRequest.getGenerateImplementations() != null &&
-                    importRequest.getGenerateImplementations()) {
-
-                if (importRequest.getTargetLanguages() != null) {
-                    for (String language : importRequest.getTargetLanguages()) {
-                        // Create sample implementation
-                        ImplementationEntity impl = ImplementationEntity.builder()
-                                .language(language)
-                                .component("controller")
-                                .code("// Generated from import")
-                                .linesOfCode(1)
-                                .request(null) // You'd link to actual requests
-                                .build();
-                        implementationRepository.save(impl);
-                        implementationsGenerated++;
-                    }
-                }
-            }
-
-            // Update import job
-            importJob.setStatus("COMPLETED");
-            importJob.setImportData(importData);
-            importJob.setCollectionId(collection.getId());
-            importJob.setEndpointsImported(endpointsImported);
-            importJob.setImplementationsGenerated(implementationsGenerated);
-            importJob.setCompletedAt(LocalDateTime.now());
-            importJobRepository.save(importJob);
-
-            ImportSpecResponse response = new ImportSpecResponse();
-            response.setSource(importRequest.getSource());
-            response.setFormat(importData.get("format").toString());
-            response.setImportedAt(new Date());
-            response.setStatus("imported");
-            response.setImportData(importData);
-            response.setCollectionId(collection.getId());
-            response.setImportId(importJob.getId());
-            response.setEndpointsImported(endpointsImported);
-            response.setImplementationsGenerated(implementationsGenerated);
-
-            return response;
-
-        } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Error importing specification: " + e.getMessage());
             throw e;
         }
     }
@@ -869,107 +795,6 @@ public class CodeBaseService {
         } catch (Exception e) {
             loggerUtil.log("codebase", "Request ID: " + requestId +
                     ", Error validating implementation: " + e.getMessage());
-            throw e;
-        }
-    }
-
-    // ============================================================
-    // 13. TEST IMPLEMENTATION
-    // ============================================================
-    @Transactional
-    public TestResponse testImplementation(String requestId, String performedBy,
-                                           TestImplementationRequest testRequest) {
-        try {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Testing implementation for request: " + testRequest.getRequestId());
-
-            // Verify access to request
-            RequestEntity request = requestRepository.findById(testRequest.getRequestId())
-                    .orElseThrow(() -> new RuntimeException("Request not found: " + testRequest.getRequestId()));
-
-//            if (!request.getCollection().getOwner().equals(performedBy)) {
-//                throw new SecurityException("Access denied to request: " + testRequest.getRequestId());
-//            }
-
-            // Get implementations to test
-            List<ImplementationEntity> implementations;
-            if (testRequest.getComponents() != null && !testRequest.getComponents().isEmpty()) {
-                implementations = new ArrayList<>();
-                for (String component : testRequest.getComponents()) {
-                    implementationRepository
-                            .findByRequestIdAndLanguageAndComponent(
-                                    testRequest.getRequestId(),
-                                    testRequest.getLanguage(),
-                                    component)
-                            .ifPresent(implementations::add);
-                }
-            } else {
-                implementations = implementationRepository.findByRequestIdAndLanguage(
-                        testRequest.getRequestId(), testRequest.getLanguage());
-            }
-
-            // Run tests (simplified - in reality you'd execute actual tests)
-            List<TestResult> testResults = new ArrayList<>();
-            int passed = 0;
-            int failed = 0;
-
-            for (ImplementationEntity impl : implementations) {
-                boolean passed_test = runTestForImplementation(impl, testRequest);
-
-                TestResult result = TestResult.builder()
-                        .name(impl.getComponent() + " Test")
-                        .status(passed_test ? "PASSED" : "FAILED")
-                        .duration(String.format("%.1fs", Math.random() * 2))
-                        .component(impl.getComponent())
-                        .passed(passed_test)
-                        .executionTime(String.valueOf(Math.random() * 2))
-                        .build();
-
-                testResults.add(result);
-
-                if (passed_test) {
-                    passed++;
-                } else {
-                    failed++;
-                }
-            }
-
-            // Calculate coverage (simplified)
-            String coverage = String.format("%d%%", 70 + (int)(Math.random() * 25));
-
-            // Save test results
-            TestResultEntity testResultEntity = TestResultEntity.builder()
-                    .requestId(testRequest.getRequestId())
-                    .language(testRequest.getLanguage())
-                    .testResults(Collections.singletonMap("results", testResults))
-                    .testsPassed(passed)
-                    .testsFailed(failed)
-                    .totalTests(implementations.size())
-                    .coverage(coverage)
-                    .executionTime(String.format("%.1fs", testResults.stream()
-                            .mapToDouble(r -> Double.parseDouble(r.getExecutionTime() != null ? r.getExecutionTime() : "0"))
-                            .sum()))
-                    .status(failed == 0 ? "PASSED" : "FAILED")
-                    .build();
-            testResultRepository.save(testResultEntity);
-
-            TestResponse response = new TestResponse();
-            response.setRequestId(testRequest.getRequestId());
-            response.setLanguage(testRequest.getLanguage());
-            response.setTestedAt(new Date());
-            response.setTestResults(testResults);
-            response.setTestsPassed(passed);
-            response.setTestsFailed(failed);
-            response.setTotalTests(implementations.size());
-            response.setCoverage(coverage);
-            response.setExecutionTime(testResultEntity.getExecutionTime());
-            response.setStatus(testResultEntity.getStatus());
-
-            return response;
-
-        } catch (Exception e) {
-            loggerUtil.log("codebase", "Request ID: " + requestId +
-                    ", Error testing implementation: " + e.getMessage());
             throw e;
         }
     }

@@ -20,7 +20,7 @@ public class APICollectionEntity {
 //    @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
-    @Column(name = "generated_api_id")
+    @Column(name = "api_id")
     private String generatedApiId;
 
     @Column(nullable = false)

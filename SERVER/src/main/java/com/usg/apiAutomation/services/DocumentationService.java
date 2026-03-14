@@ -1,7 +1,12 @@
 package com.usg.apiAutomation.services;
 
 import com.usg.apiAutomation.dtos.documentation.*;
+import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiAuthConfigEntity;
+import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
+import com.usg.apiAutomation.entities.postgres.collections.AuthConfigEntity;
 import com.usg.apiAutomation.entities.postgres.documentation.*;
+import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.GeneratedAPIRepository;
+import com.usg.apiAutomation.repositories.postgres.collections.AuthConfigRepository;
 import com.usg.apiAutomation.repositories.postgres.documentation.*;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -51,6 +56,10 @@ public class DocumentationService {
     private final PublishedDocumentationRepository publishedDocumentationRepository;
     private final DocumentationSettingsRepository settingsRepository;
     private final SearchHistoryRepository searchHistoryRepository;
+
+    private final GeneratedAPIRepository generatedAPIRepository;
+
+    private final AuthConfigRepository authConfigRepository;
 
     @PostConstruct
     public void init() {
@@ -630,7 +639,176 @@ public class DocumentationService {
             APIEndpointEntity endpoint = endpointRepository.findById(endpointId)
                     .orElseThrow(() -> new RuntimeException("Endpoint not found"));
 
+            // Log the endpoint metadata for debugging
+            log.info("Request ID: {}, Endpoint metadata: {}", requestId, endpoint.getMetaData());
+
             EndpointDetailResponseDTO details = convertToEndpointDetailResponseDTO(endpoint);
+
+            // ============= INJECT API KEY HEADERS IF AUTH TYPE IS API KEY =============
+            // Check if auth config exists and is of type API Key
+            boolean isApiKeyAuth = false;
+            String apiId = null;
+
+            // First check: Try to get API ID from generatedApiId
+            if (endpoint.getGeneratedApiId() != null && !endpoint.getGeneratedApiId().isEmpty()) {
+                apiId = endpoint.getGeneratedApiId();
+                log.info("Request ID: {}, Found generatedApiId directly: {}", requestId, apiId);
+            }
+            // Second check: If generatedApiId is null, try to extract from metadata
+            else if (endpoint.getMetaData() != null) {
+                try {
+                    Map<String, Object> metadata = endpoint.getMetaData();
+                    log.info("Request ID: {}, Checking metadata for API ID. Metadata keys: {}",
+                            requestId, metadata.keySet());
+
+                    // Check for apiId in metadata (based on your sample)
+                    if (metadata.containsKey("apiId")) {
+                        apiId = (String) metadata.get("apiId");
+                        log.info("Request ID: {}, Found apiId in metadata: {}", requestId, apiId);
+                    }
+                    // Also check for other possible field names
+                    else if (metadata.containsKey("generatedApiId")) {
+                        apiId = (String) metadata.get("generatedApiId");
+                        log.info("Request ID: {}, Found generatedApiId in metadata: {}", requestId, apiId);
+                    }
+                    else if (metadata.containsKey("api_id")) {
+                        apiId = (String) metadata.get("api_id");
+                        log.info("Request ID: {}, Found api_id in metadata: {}", requestId, apiId);
+                    }
+
+                    // Log the genPath if available for debugging
+                    if (metadata.containsKey("genPath")) {
+                        log.info("Request ID: {}, genPath from metadata: {}", requestId, metadata.get("genPath"));
+                    }
+                    if (metadata.containsKey("fullGenUrl")) {
+                        log.info("Request ID: {}, fullGenUrl from metadata: {}", requestId, metadata.get("fullGenUrl"));
+                    }
+
+                } catch (Exception e) {
+                    log.warn("Request ID: {}, Error extracting API ID from metadata: {}",
+                            requestId, e.getMessage());
+                }
+            }
+
+            // Now check auth config using the found API ID
+            if (apiId != null && !apiId.isEmpty()) {
+                try {
+                    log.info("Request ID: {}, Checking GeneratedApi auth config for API ID: {}", requestId, apiId);
+
+                    Optional<ApiAuthConfigEntity> authConfigOpt = generatedAPIRepository.findAuthConfigByApiId(apiId);
+                    System.out.println("authConfigOpt from GeneratedApi:::::::::" + authConfigOpt);
+
+                    if (authConfigOpt.isPresent()) {
+                        log.info("Request ID: {}, Found auth config with type: {}", requestId, authConfigOpt.get().getAuthType());
+                        if ("apiKey".equals(authConfigOpt.get().getAuthType())) {
+                            isApiKeyAuth = true;
+                            log.info("Request ID: {}, Found API Key auth config in GeneratedApi for API ID: {}",
+                                    requestId, apiId);
+                        }
+                    } else {
+                        log.info("Request ID: {}, No auth config found in GeneratedApi for API ID: {}", requestId, apiId);
+                    }
+                } catch (Exception e) {
+                    log.warn("Request ID: {}, Error checking auth config from GeneratedApi for API Key type: {}",
+                            requestId, e.getMessage());
+                }
+            } else {
+                log.info("Request ID: {}, Could not find API ID in generatedApiId or metadata", requestId);
+            }
+
+            // If not found in GeneratedApi, check collections auth config (like in getRequestDetails)
+            if (!isApiKeyAuth && apiId != null) {
+                log.info("Request ID: {}, Attempting to check collections auth config using API ID: {}", requestId, apiId);
+
+                try {
+                    // Try to get the sourceRequestId from the GeneratedApi
+                    log.info("Request ID: {}, Fetching GeneratedApi with ID: {}", requestId, apiId);
+
+                    Optional<GeneratedApiEntity> generatedApiOpt = generatedAPIRepository.findById(apiId);
+
+                    if (generatedApiOpt.isPresent()) {
+                        GeneratedApiEntity generatedApi = generatedApiOpt.get();
+                        log.info("Request ID: {}, Found GeneratedApi, sourceRequestId: {}",
+                                requestId, generatedApi.getSourceRequestId());
+
+                        // Check if the generated API has sourceRequestId
+                        if (generatedApi.getSourceRequestId() != null && !generatedApi.getSourceRequestId().isEmpty()) {
+                            String sourceRequestId = generatedApi.getSourceRequestId();
+                            log.info("Request ID: {}, Using sourceRequestId: {} to find auth config",
+                                    requestId, sourceRequestId);
+
+                            // Now try to find auth config by this request ID (EXACTLY like getRequestDetails)
+                            Optional<AuthConfigEntity> authConfigEntityOpt = authConfigRepository.findByRequestId(sourceRequestId);
+                            System.out.println("authConfigEntityOpt from sourceRequestId:::::::::" + authConfigEntityOpt);
+
+                            if (authConfigEntityOpt.isPresent()) {
+                                log.info("Request ID: {}, Found auth config with type: {}",
+                                        requestId, authConfigEntityOpt.get().getType());
+                                if ("apiKey".equals(authConfigEntityOpt.get().getType())) {
+                                    isApiKeyAuth = true;
+                                    log.info("Request ID: {}, Found API Key auth config from sourceRequestId: {}",
+                                            requestId, sourceRequestId);
+                                }
+                            } else {
+                                log.info("Request ID: {}, No auth config found for sourceRequestId: {}",
+                                        requestId, sourceRequestId);
+                            }
+                        } else {
+                            log.info("Request ID: {}, GeneratedApi has no sourceRequestId", requestId);
+                        }
+                    } else {
+                        log.info("Request ID: {}, No GeneratedApi found for ID: {}", requestId, apiId);
+                    }
+                } catch (Exception e) {
+                    log.warn("Request ID: {}, Error checking collections auth config for API Key type: {}",
+                            requestId, e.getMessage());
+                    e.printStackTrace();
+                }
+            }
+
+            // If auth type is API Key, inject X-Api-Key and X-Api-Secret headers
+            if (isApiKeyAuth) {
+                log.info("Request ID: {}, Auth type is API Key for endpoint: {}, injecting X-Api-Key and X-Api-Secret headers",
+                        requestId, endpointId);
+
+                // Get existing headers from the details object
+                List<HeaderDTO> headers = details.getHeaders();
+                if (headers == null) {
+                    headers = new ArrayList<>();
+                }
+
+                // Check if X-Api-Key header already exists
+                boolean hasApiKeyHeader = headers.stream()
+                        .anyMatch(h -> "X-Api-Key".equalsIgnoreCase(h.getKey()));
+
+                if (!hasApiKeyHeader) {
+                    HeaderDTO apiKeyHeader = new HeaderDTO();
+                    apiKeyHeader.setKey("X-Api-Key");
+                    apiKeyHeader.setValue("{{api_key}}"); // Placeholder that will be replaced at runtime
+                    apiKeyHeader.setDescription("API Key for authentication");
+                    apiKeyHeader.setRequired(true);
+                    headers.add(apiKeyHeader);
+                }
+
+                // Check if X-Api-Secret header already exists
+                boolean hasApiSecretHeader = headers.stream()
+                        .anyMatch(h -> "X-Api-Secret".equalsIgnoreCase(h.getKey()));
+
+                if (!hasApiSecretHeader) {
+                    HeaderDTO apiSecretHeader = new HeaderDTO();
+                    apiSecretHeader.setKey("X-Api-Secret");
+                    apiSecretHeader.setValue("{{api_secret}}"); // Placeholder that will be replaced at runtime
+                    apiSecretHeader.setDescription("API Secret for authentication");
+                    apiSecretHeader.setRequired(true);
+                    headers.add(apiSecretHeader);
+                }
+
+                // Set the headers back to the details object
+                details.setHeaders(headers);
+            } else {
+                log.info("Request ID: {}, Auth type is NOT API Key for endpoint: {}, no headers injected",
+                        requestId, endpointId);
+            }
 
             log.info("Request ID: {}, Retrieved details for endpoint: {}", requestId, endpointId);
             return details;
@@ -640,6 +818,8 @@ public class DocumentationService {
             return createFallbackEndpointDetails(endpointId);
         }
     }
+
+
 
     public APIEndpointDTO createEndpoint(String requestId, String collectionId, APIEndpointDTO endpointDto, String performedBy) {
         try {

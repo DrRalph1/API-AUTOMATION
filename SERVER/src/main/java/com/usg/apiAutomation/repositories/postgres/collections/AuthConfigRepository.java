@@ -19,5 +19,7 @@ public interface AuthConfigRepository extends JpaRepository<AuthConfigEntity, St
             "FROM AuthConfigsEntityCollections a WHERE a.request.id = :requestId")
     Optional<AuthConfigDTO> findAuthConfigDTOByRequestId(@Param("requestId") String requestId);
 
+    Optional<AuthConfigEntity> findByGeneratedApiId(String generatedApiId);
+
     void deleteByRequestId(String requestId);
 }

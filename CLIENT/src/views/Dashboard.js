@@ -1,5 +1,5 @@
 // Dashboard.jsx - FIXED VERSION
-import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense, useRef } from 'react';
 import {
   Database, FileCode, Activity, Zap, Settings,
   Search, RefreshCw, Plus, CheckCircle, AlertCircle, Users, Minus,
@@ -14,8 +14,14 @@ import {
 // Lazy load modal to reduce initial bundle size
 const ApiGenerationModal = lazy(() => import('@/components/modals/ApiGenerationModal.js'));
 
-// Import only what's needed
-import { getComprehensiveDashboard } from "../controllers/DashboardController.js";
+// Import the updated dashboard controller methods
+import { 
+  getDashboardStats, 
+  getDashboardCollections, 
+  getDashboardEndpoints, 
+  getGeneratedApiDetails,
+  handleDashboardResponse 
+} from "../controllers/DashboardController.js";
 
 // ============ CONSTANTS & CONFIG ============
 const STAT_CARDS = [
@@ -25,13 +31,9 @@ const STAT_CARDS = [
   { key: 'totalCollections', icon: FileCode, label: 'API Collections', colorKey: 'info' }
 ];
 
-const API_PAGINATION_OPTIONS = [5, 8, 10, 15, 20];
-
-const RECENT_ACTIVITY_ITEMS = [
-  { action: 'API Generated', name: 'User API', time: '2 min ago', icon: Zap, colorKey: 'success' },
-  { action: 'Collection Updated', name: 'Payment API', time: '15 min ago', icon: Database, colorKey: 'info' },
-  { action: 'Security Scan', name: 'Completed', time: '1 hour ago', icon: Shield, colorKey: 'accentPurple' }
-];
+const PAGINATION_OPTIONS = [5, 8, 10, 15, 20];
+const DEFAULT_PAGE_SIZE = 5;
+const DEFAULT_PAGE = 0; // 0-based for backend
 
 // ============ COLOR SCHEME FACTORY ============
 const getColorScheme = (isDark) => ({
@@ -108,7 +110,7 @@ const getMethodColor = (method, isDark) => {
 
 // ============ COMPONENTS ============
 
-// Stat Card - Memoized - FIXED: Added colors prop
+// Stat Card - Memoized
 const StatCard = React.memo(({ title, value, icon: Icon, change, color, onClick, colors }) => {
   const formattedValue = typeof value === 'number' ? value.toLocaleString() : value || '0';
   
@@ -154,18 +156,8 @@ const StatCard = React.memo(({ title, value, icon: Icon, change, color, onClick,
     );
 });
 
-
-// Connection Card - Memoized
-const ConnectionCard = React.memo(({ connection, colors, onClick }) => {
-  const getStatusColor = (status) => {
-    const statusMap = {
-      active: colors.connectionOnline,
-      idle: colors.warning,
-      offline: colors.connectionOffline
-    };
-    return statusMap[status] || colors.textSecondary;
-  };
-
+// Collection Card - For top collections by endpoints
+const CollectionCard = React.memo(({ collection, colors, onClick }) => {
   return (
     <div 
       className="border rounded-xl p-3 hover:translate-y-[-2px] transition-transform duration-200 cursor-pointer"
@@ -176,40 +168,46 @@ const ConnectionCard = React.memo(({ connection, colors, onClick }) => {
         <div className="flex items-center gap-2 min-w-0">
           <FileCode size={14} style={{ color: colors.textSecondary }} />
           <span className="text-sm font-medium truncate" style={{ color: colors.text }}>
-            {connection.name || 'Unnamed Connection'}
+            {collection.name || 'Unnamed Collection'}
           </span>
         </div>
-        <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: getStatusColor(connection.status) }} />
+        {collection.favorite && (
+          <span className="text-xs" style={{ color: colors.warning }}>★</span>
+        )}
       </div>
       
       <div className="grid grid-cols-2 gap-1 text-xs mb-2">
         <div style={{ color: colors.textSecondary }}>
-          Type: <span style={{ color: colors.text }}>{connection.type || 'N/A'}</span>
+          Type: <span style={{ color: colors.text }}>REST API</span>
         </div>
         <div style={{ color: colors.textSecondary }}>
-          Endpoints: <span style={{ color: colors.text }}>{connection.endpoints || 0}</span>
+          Endpoints: <span style={{ color: colors.text }}>{collection.requestsCount || 0}</span>
         </div>
       </div>
       
       <div className="flex items-center justify-between text-xs">
         <span style={{ color: colors.textSecondary }}>
-          Owner: <span style={{ color: colors.text }}>{connection.owner || 'System'}</span>
+          Owner: <span style={{ color: colors.text }}>{collection.owner || 'System'}</span>
         </span>
       </div>
     </div>
   );
 });
 
-// API Endpoint Item - Memoized
-const ApiEndpointItem = React.memo(({ api, colors, isDark, onEdit }) => {
+// API Endpoint Item
+const ApiEndpointItem = React.memo(({ api, colors, isDark, onClick }) => {
   const methodColorClass = getMethodColor(api?.method, isDark);
   
   return (
     <div 
       className="group p-3 cursor-pointer transition-all hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-lg"
-      onClick={() => onEdit(api)}
+      onClick={() => onClick(api)}
     >
-      <div className="flex-1 min-w-0">
+      <div className="flex items-start gap-3">
+        <span className={`px-2 py-1 rounded text-xs font-medium ${methodColorClass}`}>
+          {api.method || 'GET'}
+        </span>
+        <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-medium truncate" style={{ color: colors.text }}>
               {api.name}
@@ -227,11 +225,12 @@ const ApiEndpointItem = React.memo(({ api, colors, isDark, onEdit }) => {
             {api.collectionName}
           </div>
         </div>
+      </div>
     </div>
   );
 });
 
-// API Generation Card - Simplified
+// API Generation Card
 const ApiGenerationCard = React.memo(({ colors, onGenerate }) => (
   <div className="mb-2 w-full lg:w-full">
     <div 
@@ -274,12 +273,12 @@ const ApiGenerationCard = React.memo(({ colors, onGenerate }) => (
 ));
 
 // Search Input Component
-const SearchInput = React.memo(({ value, onChange, onClear, colors }) => (
+const SearchInput = React.memo(({ value, onChange, onClear, colors, placeholder = "Search..." }) => (
   <div className="flex items-center gap-2 px-3 py-2 rounded-lg border" style={{ borderColor: colors.border, backgroundColor: colors.inputBg }}>
     <SearchIcon size={14} style={{ color: colors.textSecondary }} />
     <input
       type="text"
-      placeholder="Search APIs..."
+      placeholder={placeholder}
       className="flex-1 bg-transparent outline-none text-sm"
       style={{ color: colors.text }}
       value={value}
@@ -332,10 +331,10 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
 
       <div className="flex-1 overflow-auto">
         <div className="p-4">
-          <div className="space-y-1">
-            <div className="text-xs font-medium mb-2 px-2" style={{ color: colors.textSecondary }}>
+          <div className="space-y-3">
+            {/* <div className="text-xs font-medium mb-2 px-2" style={{ color: colors.textSecondary }}>
               NAVIGATION
-            </div>
+            </div> */}
             
             {navigationItems.map((item, index) => (
               <button 
@@ -352,34 +351,6 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
               </button>
             ))}
           </div>
-
-          <div className="mt-6 pt-4 border-t" style={{ borderColor: colors.border }}>
-            <div className="flex items-center justify-between mb-3 px-2">
-              <span className="text-xs font-medium" style={{ color: colors.textSecondary }}>RECENT ACTIVITY</span>
-              <RefreshCw size={12} style={{ color: colors.textTertiary }} />
-            </div>
-            
-            <div className="space-y-3">
-              {RECENT_ACTIVITY_ITEMS.map((item, index) => {
-                const Icon = item.icon;
-                const color = colors[item.colorKey];
-                return (
-                  <div key={index} className="flex items-start gap-3 px-3 py-2 rounded-lg hover:translate-y-[-2px] transition-transform cursor-pointer" style={{ backgroundColor: colors.hover }}>
-                    <div className="p-1.5 rounded-md shrink-0" style={{ backgroundColor: `${color}20` }}>
-                      <Icon size={12} style={{ color }} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium truncate" style={{ color: colors.text }}>{item.action}</span>
-                        <span className="text-xs shrink-0" style={{ color: colors.textTertiary }}>{item.time}</span>
-                      </div>
-                      <span className="text-xs truncate" style={{ color: colors.textSecondary }}>{item.name}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -388,34 +359,51 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
 
 // ============ MAIN COMPONENT ============
 const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authToken }) => {
-  // State with safe initial values
-  const [loading, setLoading] = useState({ initialLoad: true, refresh: false });
+  // State
+  const [loading, setLoading] = useState({ initialLoad: true, refresh: false, endpointDetails: false });
   const [apiSearchQuery, setApiSearchQuery] = useState('');
   const [showApiModal, setShowApiModal] = useState(false);
   const [selectedForApiGeneration, setSelectedForApiGeneration] = useState(null);
-  const [apiPage, setApiPage] = useState(1);
-  const [apisPerPage, setApisPerPage] = useState(5);
-  const [dashboardData, setDashboardData] = useState({
-    stats: { 
-      totalConnections: 0, 
-      activeConnections: 0, 
-      totalApis: 0, 
-      totalDocumentationEndpoints: 0, 
-      totalCalls: 0, 
-      totalCollections: 0 
-    },
-    connections: [],
-    apis: [],
-    lastUpdated: null,
-    generatedFor: ''
+  
+  // Stats state
+  const [stats, setStats] = useState({
+    totalApis: 0,
+    totalDocumentationEndpoints: 0,
+    totalCalls: 0,
+    totalCollections: 0
   });
+  
+  // Top collections state (first 3 by endpoints)
+  const [topCollections, setTopCollections] = useState([]);
+  
+  // Endpoints pagination state
+  const [endpointPage, setEndpointPage] = useState(DEFAULT_PAGE);
+  const [endpointsPerPage, setEndpointsPerPage] = useState(DEFAULT_PAGE_SIZE);
+  const [endpointFilters, setEndpointFilters] = useState({
+    collectionId: null,
+    method: null,
+    search: ''
+  });
+  
+  // Store paginated endpoint data
+  const [endpointData, setEndpointData] = useState({
+    content: [],
+    pageNumber: 0,
+    pageSize: DEFAULT_PAGE_SIZE,
+    totalElements: 0,
+    totalPages: 0,
+    last: true
+  });
+  
   const [error, setError] = useState(null);
   const [isRightSidebarVisible, setIsRightSidebarVisible] = useState(false);
 
+  // Debounce timer
+  const endpointSearchTimer = useRef(null);
+
   const colors = useMemo(() => getColorScheme(isDark), [isDark]);
 
-
-  // Loading Overlay - UPDATED with improved design from sample
+  // Loading Overlay
   const LoadingOverlay = () => {
     const isLoading = loading.initialLoad || loading.refresh;
     
@@ -436,72 +424,182 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
           <p className="text-sm mb-2" style={{ color: colors.textSecondary }}>
             Please wait while we prepare your dashboard data
           </p>
-          {/* <p className="text-xs" style={{ color: colors.textTertiary }}>
-            {loading.initialLoad 
-              ? 'Fetching API collections, endpoints, and system metrics...' 
-              : 'Updating dashboard with latest information...'}
-          </p> */}
         </div>
       </div>
     );
   };
   
+  // ============ DATA FETCHING FUNCTIONS ============
 
-  // ============ DATA TRANSFORMATION ============
-  const transformApiData = useCallback((apiData) => {
-    if (!apiData?.data) return dashboardData;
-    
-    const data = apiData.data;
-    const stats = data.stats || {};
-    const collections = data.collections?.collections || [];
-    
-    const connectionsData = (collections || []).map(collection => ({
-      id: collection.id,
-      name: collection.name || 'Unnamed Collection',
-      type: 'REST API',
-      status: collection.favorite ? 'active' : 'idle',
-      endpoints: collection.requestsCount || 0,
-      folders: collection.folderCount || 0,
-      owner: collection.owner || 'System',
-      lastUpdated: collection.lastUpdated
-    }));
-    
-    const apisData = (data.endpoints?.endpoints || []).map(endpoint => ({
-      id: endpoint.id,
-      name: endpoint.name || 'Unnamed API',
-      description: endpoint.description,
-      method: endpoint.method || 'GET',
-      url: endpoint.url,
-      status: 'active',
-      owner: endpoint.owner || 'System',
-      collectionId: endpoint.collectionId,
-      collectionName: endpoint.collectionName,
-      folderName: endpoint.folderName,
-      lastUpdated: endpoint.lastUpdated,
-      parameters: endpoint.parameters || [],
-      responseMappings: endpoint.responseMappings || [],
-      tags: endpoint.tags || [],
-      headers: endpoint.headers || []
-    }));
-    
-    return {
-      stats: {
-        totalConnections: collections.length,
-        activeConnections: collections.filter(c => c.favorite).length,
-        totalApis: apisData.length,
-        totalDocumentationEndpoints: stats.totalDocumentationEndpoints || 0,
-        totalCalls: stats.totalApis || apisData.length * 500,
-        totalCollections: collections.length
-      },
-      connections: connectionsData,
-      apis: apisData,
-      lastUpdated: data.generatedAt || new Date().toISOString(),
-      generatedFor: data.generatedFor || 'User'
-    };
-  }, []);
+  // Fetch stats
+  const fetchStats = useCallback(async () => {
+    if (!authToken) return null;
 
-  // ============ DATA FETCHING ============
-  const fetchDashboardData = useCallback(async () => {
+    try {
+      const response = await getDashboardStats(authToken);
+      const handledResponse = handleDashboardResponse(response);
+      
+      if (handledResponse?.responseCode === 200 && handledResponse.data) {
+        setStats({
+          totalApis: handledResponse.data.totalApis || 0,
+          totalDocumentationEndpoints: handledResponse.data.totalDocumentationEndpoints || 0,
+          totalCalls: handledResponse.data.totalCalls || 0,
+          totalCollections: handledResponse.data.totalCollections || 0
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  }, [authToken]);
+
+  // Fetch top 3 collections by endpoints
+  const fetchTopCollections = useCallback(async () => {
+    if (!authToken) return;
+
+    try {
+      // Get first page with 10 items to find top 3 by endpoints
+      const params = {
+        page: 0,
+        size: 10,
+        sortBy: 'name',
+        sortDir: 'asc'
+      };
+
+      const response = await getDashboardCollections(authToken, params);
+      const handledResponse = handleDashboardResponse(response);
+      
+      if (handledResponse?.responseCode === 200 && handledResponse.data?.content) {
+        // Sort by requestsCount (endpoints) in descending order and take top 3
+        const sorted = [...handledResponse.data.content]
+          .sort((a, b) => (b.requestsCount || 0) - (a.requestsCount || 0))
+          .slice(0, 3)
+          .map(collection => ({
+            id: collection.id,
+            name: collection.name || 'Unnamed Collection',
+            description: collection.description,
+            type: 'REST API',
+            favorite: collection.favorite || false,
+            requestsCount: collection.requestsCount || 0,
+            folderCount: collection.folderCount || 0,
+            owner: collection.owner || 'System',
+            lastUpdated: collection.lastUpdated
+          }));
+
+        setTopCollections(sorted);
+      }
+    } catch (error) {
+      console.error('Error fetching top collections:', error);
+    }
+  }, [authToken]);
+
+  // Fetch paginated endpoints
+  const fetchEndpoints = useCallback(async (page, size, filters) => {
+    if (!authToken) return;
+
+    try {
+      const params = {
+        page,
+        size,
+        sortBy: 'lastUpdated',
+        sortDir: 'desc',
+        search: filters.search || undefined
+      };
+      
+      if (filters.collectionId) params.collectionId = filters.collectionId;
+      if (filters.method) params.method = filters.method;
+
+      const response = await getDashboardEndpoints(authToken, params);
+      const handledResponse = handleDashboardResponse(response);
+      
+      if (handledResponse?.responseCode === 200 && handledResponse.data) {
+        const transformedContent = (handledResponse.data.content || []).map(endpoint => ({
+          id: endpoint.id,
+          apiId: endpoint.apiId,
+          name: endpoint.name || 'Unnamed API',
+          description: endpoint.description,
+          method: endpoint.method || 'GET',
+          url: endpoint.url,
+          status: 'active',
+          owner: endpoint.owner || 'System',
+          collectionId: endpoint.collectionId,
+          collectionName: endpoint.collectionName,
+          folderName: endpoint.folderName,
+          lastUpdated: endpoint.lastUpdated,
+          parameters: endpoint.parameters || [],
+          responseMappings: endpoint.responseMappings || [],
+          tags: endpoint.tags || [],
+          headers: endpoint.headers || []
+        }));
+
+        setEndpointData({
+          content: transformedContent,
+          pageNumber: handledResponse.data.pageNumber || 0,
+          pageSize: handledResponse.data.pageSize || size,
+          totalElements: handledResponse.data.totalElements || 0,
+          totalPages: handledResponse.data.totalPages || 0,
+          last: handledResponse.data.last || true
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching endpoints:', error);
+    }
+  }, [authToken]);
+
+  // Fetch endpoint details by ID
+  const fetchEndpointDetails = useCallback(async (endpointId) => {
+    if (!authToken || !endpointId) return null;
+
+    setLoading(prev => ({ ...prev, endpointDetails: true }));
+    try {
+      // Get all endpoints with a larger page size and filter by ID
+      const params = {
+        page: 0,
+        size: 100,
+        sortBy: 'lastUpdated',
+        sortDir: 'desc'
+      };
+
+      const response = await getDashboardEndpoints(authToken, params);
+      const handledResponse = handleDashboardResponse(response);
+      
+      if (handledResponse?.responseCode === 200 && handledResponse.data?.content) {
+        const endpoint = handledResponse.data.content.find(e => e.id === endpointId);
+        if (endpoint) {
+          return {
+            id: endpoint.id,
+            name: endpoint.name || 'Unnamed API',
+            method: endpoint.method || 'GET',
+            description: endpoint.description || '',
+            url: endpoint.url || '',
+            collectionName: endpoint.collectionName || '',
+            collectionId: endpoint.collectionId || '',
+            folderName: endpoint.folderName || '',
+            parameters: (endpoint.parameters || []).map(p => ({ 
+              ...p, 
+              id: p.id || `param-${Date.now()}-${Math.random()}` 
+            })),
+            responseMappings: (endpoint.responseMappings || []).map(m => ({ 
+              ...m, 
+              id: m.id || `mapping-${Date.now()}-${Math.random()}` 
+            })),
+            tags: (endpoint.tags || []).map(t => 
+              typeof t === 'string' ? { id: `tag-${Date.now()}`, name: t, value: t } : t
+            ),
+            headers: endpoint.headers || []
+          };
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error('Error fetching endpoint details:', error);
+      return null;
+    } finally {
+      setLoading(prev => ({ ...prev, endpointDetails: false }));
+    }
+  }, [authToken]);
+
+  // Load all dashboard data
+  const loadAllDashboardData = useCallback(async () => {
     if (!authToken) {
       setError('Authentication required');
       setLoading(prev => ({ ...prev, initialLoad: false }));
@@ -509,60 +607,120 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
     }
 
     try {
-      const response = await getComprehensiveDashboard(authToken);
-      if (response?.responseCode === 200) {
-        const transformedData = transformApiData(response);
-        setDashboardData(transformedData);
-      } else {
-        throw new Error(response?.message || 'Failed to load dashboard');
-      }
+      // Fetch all three endpoints in parallel
+      await Promise.all([
+        fetchStats(),
+        fetchTopCollections(),
+        fetchEndpoints(DEFAULT_PAGE, endpointsPerPage, endpointFilters)
+      ]);
     } catch (error) {
-      console.error('Error fetching dashboard:', error);
+      console.error('Error loading dashboard data:', error);
       setError(error.message);
     } finally {
       setLoading(prev => ({ ...prev, initialLoad: false }));
     }
-  }, [authToken, transformApiData]);
+  }, [authToken, fetchStats, fetchTopCollections, endpointsPerPage, endpointFilters]);
 
-  // Refresh handler
+  // Refresh handler - calls the same three endpoints
   const handleRefresh = useCallback(async () => {
     if (!authToken) return;
     
     setLoading(prev => ({ ...prev, refresh: true }));
     try {
-      const response = await getComprehensiveDashboard(authToken);
-      if (response?.responseCode === 200) {
-        const transformedData = transformApiData(response);
-        setDashboardData(transformedData);
-      }
+      await Promise.all([
+        fetchStats(),
+        fetchTopCollections(),
+        fetchEndpoints(DEFAULT_PAGE, endpointsPerPage, { ...endpointFilters, search: apiSearchQuery })
+      ]);
+      
+      // Reset to first page
+      setEndpointPage(DEFAULT_PAGE);
     } catch (error) {
       console.error('Error refreshing:', error);
     } finally {
       setLoading(prev => ({ ...prev, refresh: false }));
     }
-  }, [authToken, transformApiData]);
+  }, [authToken, fetchStats, fetchTopCollections, endpointsPerPage, endpointFilters, apiSearchQuery]);
 
-  // ============ EVENT HANDLERS ============
+  
+  const handleEndpointClick = useCallback(async (endpoint) => {
+  console.log("endpoint:::::::" + JSON.stringify(endpoint));
+  
+  // Use the updated function name and pass both authToken and the API ID
+  const details = await getGeneratedApiDetails(authToken, endpoint.apiId);
+  
+  if (details) {
+    // The API response has the data wrapped in a 'data' property
+    // We need to pass the full response to maintain the structure
+    setSelectedForApiGeneration(details);  // This already has {data: {...}} structure
+  } else {
+    // Fallback - but we need to wrap it in a data property to match the API response structure
+    setSelectedForApiGeneration({ 
+      data: endpoint,  // Wrap in data property to match API response
+      requestId: 'local',
+      message: 'Local endpoint data',
+      responseCode: 200 
+    });
+  }
+  setShowApiModal(true);
+}, [authToken, getGeneratedApiDetails]);
+ 
+
+  // Handle collection click
+  const handleCollectionClick = useCallback((collection) => {
+    handleNavigate('api-collections');
+  }, [handleNavigate]);
+
+  // Endpoint pagination handlers - FIXED: These now directly call fetchEndpoints with current state
+  const handlePreviousPage = useCallback(() => {
+    if (endpointPage > 0) {
+      const newPage = endpointPage - 1;
+      setEndpointPage(newPage);
+      fetchEndpoints(newPage, endpointsPerPage, endpointFilters);
+    }
+  }, [endpointPage, endpointsPerPage, endpointFilters, fetchEndpoints]);
+
+  const handleNextPage = useCallback(() => {
+    if (!endpointData.last) {
+      const newPage = endpointPage + 1;
+      setEndpointPage(newPage);
+      fetchEndpoints(newPage, endpointsPerPage, endpointFilters);
+    }
+  }, [endpointPage, endpointsPerPage, endpointFilters, endpointData.last, fetchEndpoints]);
+
+  const handleEndpointsPerPageChange = useCallback((newSize) => {
+    setEndpointsPerPage(newSize);
+    setEndpointPage(DEFAULT_PAGE);
+    fetchEndpoints(DEFAULT_PAGE, newSize, endpointFilters);
+  }, [endpointFilters, fetchEndpoints]);
+
+  // Search handlers with debounce
+  const handleEndpointSearchChange = useCallback((e) => {
+    const query = e.target.value;
+    setApiSearchQuery(query);
+    
+    if (endpointSearchTimer.current) {
+      clearTimeout(endpointSearchTimer.current);
+    }
+    
+    endpointSearchTimer.current = setTimeout(() => {
+      const newFilters = { ...endpointFilters, search: query };
+      setEndpointFilters(newFilters);
+      setEndpointPage(DEFAULT_PAGE);
+      fetchEndpoints(DEFAULT_PAGE, endpointsPerPage, newFilters);
+    }, 500);
+  }, [endpointFilters, endpointsPerPage, fetchEndpoints]);
+
+  const handleEndpointSearchClear = useCallback(() => {
+    setApiSearchQuery('');
+    const newFilters = { ...endpointFilters, search: '' };
+    setEndpointFilters(newFilters);
+    setEndpointPage(DEFAULT_PAGE);
+    fetchEndpoints(DEFAULT_PAGE, endpointsPerPage, newFilters);
+  }, [endpointFilters, endpointsPerPage, fetchEndpoints]);
+
   const handleApiGeneration = useCallback(() => {
     setSelectedForApiGeneration(null);
-    setShowApiModal(true);
-  }, []);
-
-  const handleEditApi = useCallback((api) => {
-    setSelectedForApiGeneration({
-      id: api.id,
-      name: api.name || 'Unnamed API',
-      method: api.method || 'GET',
-      description: api.description || '',
-      url: api.url || '',
-      collectionName: api.collectionName || '',
-      collectionId: api.collectionId || '',
-      folderName: api.folderName || '',
-      parameters: (api.parameters || []).map(p => ({ ...p, id: p.id || `param-${Date.now()}-${Math.random()}` })),
-      responseMappings: (api.responseMappings || []).map(m => ({ ...m, id: m.id || `mapping-${Date.now()}-${Math.random()}` })),
-      tags: (api.tags || []).map(t => typeof t === 'string' ? { id: `tag-${Date.now()}`, name: t, value: t } : t),
-      headers: api.headers || []
-    });
     setShowApiModal(true);
   }, []);
 
@@ -576,52 +734,34 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
     setIsRightSidebarVisible(false);
   }, [setActiveTab]);
 
-  // Search handlers
-  const handleSearchChange = useCallback((e) => {
-    setApiSearchQuery(e.target.value);
-    setApiPage(1);
-  }, []);
-
-  const handleClearSearch = useCallback(() => {
-    setApiSearchQuery('');
-    setApiPage(1);
-  }, []);
-
   // ============ MEMOIZED VALUES ============
-  const filteredApis = useMemo(() => {
-    const apis = dashboardData.apis || [];
-    if (!apiSearchQuery.trim()) return apis;
-    
-    const query = apiSearchQuery.toLowerCase().trim();
-    return apis.filter(api => 
-      (api.name?.toLowerCase().includes(query)) ||
-      (api.description?.toLowerCase().includes(query)) ||
-      (api.method?.toLowerCase().includes(query)) ||
-      (api.collectionName?.toLowerCase().includes(query)) ||
-      (api.url?.toLowerCase().includes(query)) ||
-      (api.owner?.toLowerCase().includes(query))
-    );
-  }, [dashboardData.apis, apiSearchQuery]);
+  const currentPageApis = useMemo(() => endpointData.content || [], [endpointData.content]);
+  
+  const totalApiPages = useMemo(() => endpointData.totalPages || 0, [endpointData.totalPages]);
 
-  const currentPageApis = useMemo(() => {
-    const startIndex = (apiPage - 1) * apisPerPage;
-    return (filteredApis || []).slice(startIndex, startIndex + apisPerPage);
-  }, [filteredApis, apiPage, apisPerPage]);
+  const startItem = useMemo(() => {
+    if (endpointData.totalElements === 0) return 0;
+    return endpointData.pageNumber * endpointData.pageSize + 1;
+  }, [endpointData.pageNumber, endpointData.pageSize, endpointData.totalElements]);
 
-  const totalApiPages = useMemo(() => 
-    Math.ceil((filteredApis?.length || 0) / apisPerPage), 
-    [filteredApis?.length, apisPerPage]
-  );
+  const endItem = useMemo(() => {
+    if (endpointData.totalElements === 0) return 0;
+    return Math.min((endpointData.pageNumber + 1) * endpointData.pageSize, endpointData.totalElements);
+  }, [endpointData.pageNumber, endpointData.pageSize, endpointData.totalElements]);
 
   const hasData = useMemo(() => 
-    (dashboardData.stats?.totalConnections || 0) > 0 || (dashboardData.apis?.length || 0) > 0,
-    [dashboardData.stats?.totalConnections, dashboardData.apis?.length]
+    stats.totalCollections > 0 || endpointData.totalElements > 0,
+    [stats.totalCollections, endpointData.totalElements]
   );
 
   // ============ EFFECTS ============
   useEffect(() => {
-    fetchDashboardData();
-  }, [fetchDashboardData]);
+    loadAllDashboardData();
+    
+    return () => {
+      if (endpointSearchTimer.current) clearTimeout(endpointSearchTimer.current);
+    };
+  }, []); // Empty dependency array - only run once on mount
 
   // Add scrollbar styles
   useEffect(() => {
@@ -643,7 +783,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
           <AlertCircle size={16} style={{ color: colors.error }} />
           <div style={{ color: colors.error }}>{error}</div>
         </div>
-        <button onClick={fetchDashboardData} className="mt-2 px-3 py-1 rounded text-sm" style={{ backgroundColor: colors.hover, color: colors.text }}>
+        <button onClick={loadAllDashboardData} className="mt-2 px-3 py-1 rounded text-sm" style={{ backgroundColor: colors.hover, color: colors.text }}>
           Retry
         </button>
       </div>
@@ -653,7 +793,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
   return (
     <div className="flex flex-col h-screen relative overflow-hidden" style={{ backgroundColor: colors.bg, color: colors.text }}>
       
-      <LoadingOverlay isLoading={loading.initialLoad} colors={colors} />
+      <LoadingOverlay />
 
       <div className="flex-1 overflow-hidden flex z-20 relative">
         {isRightSidebarVisible && (
@@ -701,14 +841,19 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
                 <StatCard
                   key={key}
                   title={label}
-                  value={dashboardData.stats?.[key] || 0}
-                  change={dashboardData.stats?.[key] || 0}
+                  value={stats[key] || 0}
+                  change={stats[key] || 0}
                   icon={icon}
                   color={colors[colorKey]}
-                  onClick={() => key === 'totalApis' && handleNavigate('api-collections') || 
-                    key === 'totalCollections' && handleNavigate('api-collections') || 
-                    key === 'totalCalls' && handleNavigate('code-base') || 
-                    key === 'totalDocumentationEndpoints' && handleNavigate('api-docs')}
+                  onClick={() => {
+                    if (key === 'totalCollections' || key === 'totalApis') {
+                      handleNavigate('api-collections');
+                    } else if (key === 'totalCalls') {
+                      handleNavigate('code-base');
+                    } else if (key === 'totalDocumentationEndpoints') {
+                      handleNavigate('api-docs');
+                    }
+                  }}
                   colors={colors}
                 />
               ))}
@@ -716,51 +861,57 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
 
             {hasData ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Left Column */}
+                {/* Left Column - Top Collections */}
                 <div className="flex flex-col gap-6">
                   <ApiGenerationCard colors={colors} onGenerate={handleApiGeneration} />
 
-                  {(dashboardData.connections?.length || 0) > 0 && (
-                    <div className="border rounded-xl" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
-                      <div className="p-4 border-b" style={{ borderColor: colors.border }}>
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-sm font-semibold" style={{ color: colors.text }}>API Collections</h3>
-                          <span className="text-xs" style={{ color: colors.textSecondary }}>{dashboardData.connections?.length || 0} collections</span>
-                        </div>
-                      </div>
-                      <div className="p-4">
-                        <div className="space-y-3">
-                          {(dashboardData.connections || []).slice(0, 3).map(conn => (
-                            <ConnectionCard 
-                              key={conn.id} 
-                              connection={conn} 
+                  <div className="border rounded-xl" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
+                    <div className="p-4 border-b" style={{ borderColor: colors.border }}>
+                      <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
+                        Top 3 Collections by Endpoints
+                      </h3>
+                    </div>
+                    
+                    <div>
+                      {topCollections.length > 0 ? (
+                        <div className="p-4 space-y-3">
+                          {topCollections.map(collection => (
+                            <CollectionCard 
+                              key={collection.id} 
+                              collection={collection} 
                               colors={colors}
-                              onClick={() => handleNavigate('api-collections')}
+                              onClick={() => handleCollectionClick(collection)}
                             />
                           ))}
                         </div>
-                      </div>
+                      ) : (
+                        <div className="p-8 text-center">
+                          <DatabaseIcon size={32} style={{ color: colors.textTertiary }} className="mx-auto mb-2" />
+                          <div className="text-sm font-medium mb-1" style={{ color: colors.text }}>
+                            No collections available
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
 
-                {/* Right Column */}
+                {/* Right Column - Endpoints */}
                 <div className="flex flex-col gap-6">
                   <div className="border rounded-xl" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
                     <div className="p-4 border-b" style={{ borderColor: colors.border }}>
                       <div className="flex flex-col gap-3">
                         <div className="flex items-center justify-between">
-                          <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Recently Generated APIs</h3>
+                          <h3 className="text-sm font-semibold" style={{ color: colors.text }}>
+                            Recently Generated Endpoints
+                          </h3>
                           <select
-                            value={apisPerPage}
-                            onChange={(e) => {
-                              setApisPerPage(Number(e.target.value));
-                              setApiPage(1);
-                            }}
+                            value={endpointsPerPage}
+                            onChange={(e) => handleEndpointsPerPageChange(Number(e.target.value))}
                             className="text-xs px-2 py-1 rounded border bg-transparent"
                             style={{ borderColor: colors.border, background: colors.bg, color: colors.text }}
                           >
-                            {API_PAGINATION_OPTIONS.map(opt => (
+                            {PAGINATION_OPTIONS.map(opt => (
                               <option key={opt} value={opt}>{opt} per page</option>
                             ))}
                           </select>
@@ -768,9 +919,10 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
                         
                         <SearchInput
                           value={apiSearchQuery}
-                          onChange={handleSearchChange}
-                          onClear={handleClearSearch}
+                          onChange={handleEndpointSearchChange}
+                          onClear={handleEndpointSearchClear}
                           colors={colors}
+                          placeholder="Search endpoints..."
                         />
                       </div>
                     </div>
@@ -784,7 +936,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
                               api={api} 
                               colors={colors}
                               isDark={isDark}
-                              onEdit={handleEditApi}
+                              onClick={handleEndpointClick}
                             />
                           ))}
                         </div>
@@ -792,10 +944,10 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
                         <div className="p-8 text-center">
                           <SearchIcon size={32} style={{ color: colors.textTertiary }} className="mx-auto mb-2" />
                           <div className="text-sm font-medium mb-1" style={{ color: colors.text }}>
-                            {apiSearchQuery ? 'No APIs found' : 'No API endpoints available'}
+                            {apiSearchQuery ? 'No endpoints found' : 'No endpoints available'}
                           </div>
                           {apiSearchQuery && (
-                            <button onClick={handleClearSearch} className="mt-2 px-3 py-1.5 rounded text-xs" style={{ backgroundColor: colors.hover, color: colors.text }}>
+                            <button onClick={handleEndpointSearchClear} className="mt-2 px-3 py-1.5 rounded text-xs" style={{ backgroundColor: colors.hover, color: colors.text }}>
                               Clear search
                             </button>
                           )}
@@ -803,30 +955,38 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
                       )}
                     </div>
                     
-                    {filteredApis.length > 0 && totalApiPages > 1 && (
+                    {endpointData.totalElements > 0 && (
                       <div className="flex items-center justify-between p-3 border-t" style={{ borderColor: colors.border }}>
                         <div className="text-xs" style={{ color: colors.textSecondary }}>
-                          Showing {((apiPage - 1) * apisPerPage) + 1} - {Math.min(apiPage * apisPerPage, filteredApis.length)} of {filteredApis.length}
+                          Showing {startItem} - {endItem} of {endpointData.totalElements}
                         </div>
                         <div className="flex items-center gap-1">
                           <button
-                            onClick={() => setApiPage(p => Math.max(1, p - 1))}
-                            disabled={apiPage === 1}
-                            className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50"
-                            style={{ backgroundColor: apiPage === 1 ? 'transparent' : colors.hover, color: colors.text }}
+                            onClick={handlePreviousPage}
+                            disabled={endpointPage === 0}
+                            className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
+                            style={{ 
+                              backgroundColor: endpointPage === 0 ? 'transparent' : colors.hover, 
+                              color: colors.text,
+                              cursor: endpointPage === 0 ? 'not-allowed' : 'pointer'
+                            }}
                           >
                             <ChevronLeft size={14} />
                           </button>
                           
                           <span className="text-xs px-2" style={{ color: colors.text }}>
-                            {apiPage} / {totalApiPages}
+                            {endpointPage + 1} / {totalApiPages}
                           </span>
                           
                           <button
-                            onClick={() => setApiPage(p => Math.min(totalApiPages, p + 1))}
-                            disabled={apiPage === totalApiPages}
-                            className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50"
-                            style={{ backgroundColor: apiPage === totalApiPages ? 'transparent' : colors.hover, color: colors.text }}
+                            onClick={handleNextPage}
+                            disabled={endpointData.last}
+                            className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
+                            style={{ 
+                              backgroundColor: endpointData.last ? 'transparent' : colors.hover, 
+                              color: colors.text,
+                              cursor: endpointData.last ? 'not-allowed' : 'pointer'
+                            }}
                           >
                             <ChevronRightIcon size={14} />
                           </button>
@@ -865,21 +1025,21 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
       </div>
       <div className="md:hidden h-16"></div>
 
-      {/* API Generation Modal - Lazy Loaded */}
+      {/* API Generation Modal */}
       {showApiModal && (
-        <Suspense fallback={null}>
-          <ApiGenerationModal
-            isOpen={showApiModal}
-            onClose={handleCloseModal}
-            selectedObject={selectedForApiGeneration}
-            colors={colors}
-            theme={theme}
-            onGenerateAPI={() => Promise.resolve({ success: true })}
-            authToken={authToken}
-            isEditing={!!selectedForApiGeneration?.id}
-          />
-        </Suspense>
-      )}
+  <Suspense fallback={null}>
+    <ApiGenerationModal
+      isOpen={showApiModal}
+      onClose={handleCloseModal}
+      selectedObject={selectedForApiGeneration}
+      colors={colors}
+      theme={theme}
+      onGenerateAPI={() => Promise.resolve({ success: true })}
+      authToken={authToken}
+      isEditing={!!selectedForApiGeneration?.data?.id} // Check for data.id, not just id
+    />
+  </Suspense>
+)}
     </div>
   );
 };

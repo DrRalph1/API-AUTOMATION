@@ -20,13 +20,69 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CollectionsGeneratorUtil {
 
-    private final com.usg.apiAutomation.repositories.postgres.collections.CollectionRepository collectionsCollectionRepository;
-    private final com.usg.apiAutomation.repositories.postgres.collections.FolderRepository collectionsFolderRepository;
-    private final com.usg.apiAutomation.repositories.postgres.collections.RequestRepository collectionsRequestRepository;
+    private final CollectionRepository collectionsCollectionRepository;
+    private final FolderRepository collectionsFolderRepository;
+    private final RequestRepository collectionsRequestRepository;
     private final HeaderRepository collectionsHeaderRepository;
     private final ParameterRepository collectionsParameterRepository;
     private final AuthConfigRepository collectionsAuthConfigRepository;
+    private final EnvironmentRepository collectionsEnvironmentRepository;
+    private final EnvironmentVariableRepository environmentVariableRepository;
     private final GenUrlBuilderUtil genUrlBuilder;
+
+    /**
+     * Generate collections and return a map containing both collectionId and requestId
+     */
+    @Transactional
+    public Map<String, String> generateWithDetails(GeneratedApiEntity api, String performedBy,
+                                                   GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo) {
+        try {
+            log.info("Generating Collections for API: {} using collection: {}",
+                    api.getApiCode(), collectionInfo.getCollectionName());
+
+            String generatedApiId = api.getId();
+
+            // ============ COLLECTION ENTITY ============
+            CollectionEntity collection = createOrUpdateCollection(api, performedBy, collectionInfo, generatedApiId);
+
+            // ============ ENVIRONMENT ENTITIES ============
+            createEnvironments(api, performedBy, collection, generatedApiId);
+
+            // ============ FOLDER ENTITY ============
+            FolderEntity folder = createOrUpdateFolder(api, performedBy, collectionInfo, collection, generatedApiId);
+
+            // ============ REQUEST ENTITY ============
+            com.usg.apiAutomation.entities.postgres.collections.RequestEntity requestEntity =
+                    createRequest(api, performedBy, collection, folder, generatedApiId);
+
+            // ============ AUTH CONFIG ENTITY ============
+            createAuthConfig(api, requestEntity, generatedApiId);
+
+            // ============ HEADER ENTITIES ============
+            createHeaderEntities(api, requestEntity, generatedApiId);
+
+            // ============ PARAMETER ENTITIES ============
+            createParameterEntities(api, requestEntity, generatedApiId);
+
+            // Update folder request count
+            folder.setRequestCount(1);
+            collectionsFolderRepository.save(folder);
+
+            log.info("Collections generated successfully with Collection ID: {} and Request ID: {} using Folder: {}",
+                    collection.getId(), requestEntity.getId(), collectionInfo.getFolderName());
+
+            // Return both collection ID and request ID
+            Map<String, String> result = new HashMap<>();
+            result.put("collectionId", collection.getId());
+            result.put("requestId", requestEntity.getId());  // This is the tb_col_requests ID
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error generating Collections: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to generate Collections: " + e.getMessage(), e);
+        }
+    }
+
 
     @Transactional
     public String generate(GeneratedApiEntity api, String performedBy,
@@ -35,373 +91,355 @@ public class CollectionsGeneratorUtil {
             log.info("Generating Collections for API: {} using collection: {}",
                     api.getApiCode(), collectionInfo.getCollectionName());
 
-            CollectionEntity collection;
-            Optional<CollectionEntity> existingCollection = collectionsCollectionRepository
-                    .findById(collectionInfo.getCollectionId());
+            String generatedApiId = api.getId();
 
-            if (existingCollection.isPresent()) {
-                collection = existingCollection.get();
-                log.info("Found existing collection: {}", collection.getId());
+            // ============ COLLECTION ENTITY ============
+            CollectionEntity collection = createOrUpdateCollection(api, performedBy, collectionInfo, generatedApiId);
 
-                boolean needsUpdate = false;
+            // ============ ENVIRONMENT ENTITIES ============
+            createEnvironments(api, performedBy, collection, generatedApiId);
 
-                if (!collectionInfo.getCollectionName().equals(collection.getName())) {
-                    collection.setName(collectionInfo.getCollectionName());
-                    needsUpdate = true;
-                }
+            // ============ FOLDER ENTITY ============
+            FolderEntity folder = createOrUpdateFolder(api, performedBy, collectionInfo, collection, generatedApiId);
 
-                String newDescription = api.getDescription() != null ? api.getDescription() :
-                        "Collection for " + collectionInfo.getCollectionName();
-                if (!newDescription.equals(collection.getDescription())) {
-                    collection.setDescription(newDescription);
-                    needsUpdate = true;
-                }
-
-                collection.setLastActivity(LocalDateTime.now());
-                needsUpdate = true;
-
-                if (collection.getColor() == null) {
-                    collection.setColor(getRandomColor());
-                    needsUpdate = true;
-                }
-
-                if (collectionInfo.getCollectionType() != null) {
-                    Map<String, Object> metadata = collection.getMetadata() != null ?
-                            collection.getMetadata() : new HashMap<>();
-                    if (!collectionInfo.getCollectionType().equals(metadata.get("collectionType"))) {
-                        metadata.put("collectionType", collectionInfo.getCollectionType());
-                        collection.setMetadata(metadata);
-                        needsUpdate = true;
-                    }
-                }
-
-                if (needsUpdate) {
-                    collection.setUpdatedAt(LocalDateTime.now());
-                    collection = collectionsCollectionRepository.save(collection);
-                    log.debug("Updated collection: {}", collection.getId());
-                }
-            } else {
-                collection = new CollectionEntity();
-                collection.setId(collectionInfo.getCollectionId());
-                collection.setName(collectionInfo.getCollectionName());
-                collection.setDescription(api.getDescription() != null ? api.getDescription() :
-                        "Collection for " + collectionInfo.getCollectionName());
-                collection.setOwner(performedBy);
-                collection.setExpanded(false);
-                collection.setEditing(false);
-                collection.setFavorite(false);
-                collection.setLastActivity(LocalDateTime.now());
-                collection.setColor(getRandomColor());
-                collection.setCreatedAt(LocalDateTime.now());
-                collection.setUpdatedAt(LocalDateTime.now());
-
-                if (collectionInfo.getCollectionType() != null) {
-                    Map<String, Object> metadata = new HashMap<>();
-                    metadata.put("collectionType", collectionInfo.getCollectionType());
-                    collection.setMetadata(metadata);
-                }
-
-                log.info("Created new collection: {}", collection.getId());
-            }
-
-            if (collection.getVariables() == null || collection.getVariables().isEmpty()) {
-                List<VariableEntity> variables = new ArrayList<>();
-
-                if (api.getAuthConfig() != null) {
-                    if (api.getAuthConfig().getApiKeyValue() != null) {
-                        VariableEntity apiKeyVar = new VariableEntity();
-                        apiKeyVar.setId(UUID.randomUUID().toString());
-                        apiKeyVar.setKey("apiKey");
-                        apiKeyVar.setValue(api.getAuthConfig().getApiKeyValue());
-                        apiKeyVar.setType("string");
-                        apiKeyVar.setEnabled(true);
-                        variables.add(apiKeyVar);
-                    }
-                    if (api.getAuthConfig().getApiSecretValue() != null) {
-                        VariableEntity apiSecretVar = new VariableEntity();
-                        apiSecretVar.setId(UUID.randomUUID().toString());
-                        apiSecretVar.setKey("apiSecret");
-                        apiSecretVar.setValue(api.getAuthConfig().getApiSecretValue());
-                        apiSecretVar.setType("string");
-                        apiSecretVar.setEnabled(true);
-                        variables.add(apiSecretVar);
-                    }
-                }
-
-                VariableEntity baseUrlVar = new VariableEntity();
-                baseUrlVar.setId(UUID.randomUUID().toString());
-                baseUrlVar.setKey("baseUrl");
-                baseUrlVar.setValue("");
-                baseUrlVar.setType("string");
-                baseUrlVar.setEnabled(true);
-                variables.add(baseUrlVar);
-
-                // Add API ID as a variable
-                VariableEntity apiIdVar = new VariableEntity();
-                apiIdVar.setId(UUID.randomUUID().toString());
-                apiIdVar.setKey("apiId");
-                apiIdVar.setValue(api.getId());
-                apiIdVar.setType("string");
-                apiIdVar.setEnabled(true);
-                variables.add(apiIdVar);
-
-                // Add variables for path parameters
-                if (api.getParameters() != null) {
-                    for (ApiParameterEntity param : api.getParameters()) {
-                        if ("path".equals(param.getParameterType())) {
-                            VariableEntity pathVar = new VariableEntity();
-                            pathVar.setId(UUID.randomUUID().toString());
-                            pathVar.setKey(param.getKey());
-                            pathVar.setValue(param.getExample() != null ? param.getExample() : "");
-                            pathVar.setType("string");
-                            pathVar.setEnabled(true);
-                            variables.add(pathVar);
-                        }
-                    }
-                }
-
-                for (VariableEntity var : variables) {
-                    var.setCollection(collection);
-                }
-
-                collection.setVariables(variables);
-            }
-
-            CollectionEntity savedCollection = collectionsCollectionRepository.save(collection);
-            collectionsCollectionRepository.flush();
-
-            FolderEntity folder;
-            Optional<FolderEntity> existingFolder = collectionsFolderRepository
-                    .findById(collectionInfo.getFolderId());
-
-            if (existingFolder.isPresent()) {
-                folder = existingFolder.get();
-                log.info("Found existing folder: {}", folder.getId());
-
-                boolean folderNeedsUpdate = false;
-
-                if (!collectionInfo.getFolderName().equals(folder.getName())) {
-                    folder.setName(collectionInfo.getFolderName());
-                    folderNeedsUpdate = true;
-                }
-
-                String folderDescription = "Folder for " + collectionInfo.getFolderName();
-                if (!folderDescription.equals(folder.getDescription())) {
-                    folder.setDescription(folderDescription);
-                    folderNeedsUpdate = true;
-                }
-
-                if (folderNeedsUpdate) {
-                    folder.setUpdatedAt(LocalDateTime.now());
-                    folder = collectionsFolderRepository.save(folder);
-                    log.debug("Updated folder: {}", folder.getId());
-                }
-            } else {
-                folder = new FolderEntity();
-                folder.setId(collectionInfo.getFolderId());
-                folder.setName(collectionInfo.getFolderName());
-                folder.setDescription("Folder for " + collectionInfo.getFolderName());
-                folder.setExpanded(false);
-                folder.setEditing(false);
-                folder.setRequestCount(0);
-                folder.setCollection(savedCollection);
-                folder.setCreatedAt(LocalDateTime.now());
-                folder.setUpdatedAt(LocalDateTime.now());
-
-                log.info("Created new folder: {}", folder.getId());
-            }
-
-            FolderEntity savedFolder = collectionsFolderRepository.save(folder);
-            collectionsFolderRepository.flush();
-
-            // Use the full URL from GenUrlBuilderUtil
-            GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(api);
-            String endpointUrl = genUrlInfo.getFullUrl();
-            log.info("Built endpoint URL for collections: {}", endpointUrl);
-
-            String requestName = api.getApiName() + " - " + api.getHttpMethod();
-
+            // ============ REQUEST ENTITY ============
             com.usg.apiAutomation.entities.postgres.collections.RequestEntity requestEntity =
-                    new com.usg.apiAutomation.entities.postgres.collections.RequestEntity();
+                    createRequest(api, performedBy, collection, folder, generatedApiId);
 
-            requestEntity.setId(UUID.randomUUID().toString());
-            requestEntity.setName(requestName);
-            requestEntity.setMethod(api.getHttpMethod());
-            requestEntity.setUrl(endpointUrl);  // Use gen URL from centralized builder
-            requestEntity.setDescription(api.getDescription());
-            requestEntity.setLastModified(LocalDateTime.now());
-            requestEntity.setSaved(true);
-            requestEntity.setCollection(savedCollection);
-            requestEntity.setFolder(savedFolder);
+            // ============ AUTH CONFIG ENTITY ============
+            createAuthConfig(api, requestEntity, generatedApiId);
 
-            requestEntity.setHeaders(new ArrayList<>());
-            requestEntity.setParams(new ArrayList<>());
-            requestEntity.setAuthConfig(null);
+            // ============ HEADER ENTITIES ============
+            createHeaderEntities(api, requestEntity, generatedApiId);
 
-            requestEntity.setCreatedAt(LocalDateTime.now());
-            requestEntity.setUpdatedAt(LocalDateTime.now());
+            // ============ PARAMETER ENTITIES ============
+            createParameterEntities(api, requestEntity, generatedApiId);
 
-            log.info("Creating new request in folder: {} with name: {}", savedFolder.getName(), requestName);
-
-            com.usg.apiAutomation.entities.postgres.collections.RequestEntity savedRequest =
-                    collectionsRequestRepository.save(requestEntity);
-            collectionsRequestRepository.flush();
-
-            log.info("Saved new request entity with ID: {}", savedRequest.getId());
-
-            if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
-                AuthConfigEntity authConfig = new AuthConfigEntity();
-                authConfig.setId(UUID.randomUUID().toString());
-                authConfig.setRequest(savedRequest);
-                authConfig.setType(api.getAuthConfig().getAuthType());
-
-                switch (api.getAuthConfig().getAuthType()) {
-                    case "API_KEY":
-                        authConfig.setKey(api.getAuthConfig().getApiKeyHeader() != null ?
-                                api.getAuthConfig().getApiKeyHeader() : "X-API-Key");
-                        authConfig.setValue(api.getAuthConfig().getApiKeyValue() != null ?
-                                api.getAuthConfig().getApiKeyValue() : "{{apiKey}}");
-                        authConfig.setAddTo("header");
-                        break;
-                    case "BEARER":
-                    case "JWT":
-                        authConfig.setType("bearer");
-                        authConfig.setToken("{{jwtToken}}");
-                        break;
-                    case "BASIC":
-                        authConfig.setUsername("{{username}}");
-                        authConfig.setPassword("{{password}}");
-                        break;
-                    case "ORACLE_ROLES":
-                        authConfig.setType("oracle-roles");
-                        authConfig.setKey("X-Oracle-Session");
-                        authConfig.setValue("{{oracleSessionId}}");
-                        authConfig.setAddTo("header");
-                        break;
-                }
-
-                collectionsAuthConfigRepository.save(authConfig);
-
-                savedRequest.setAuthConfig(authConfig);
-                savedRequest = collectionsRequestRepository.save(savedRequest);
-
-                log.debug("Added auth config to request");
-            }
-
-            // Add header parameters
-            if (api.getParameters() != null) {
-                for (ApiParameterEntity apiParam : api.getParameters()) {
-                    if ("header".equals(apiParam.getParameterType())) {
-                        HeaderEntity header = new HeaderEntity();
-                        header.setId(UUID.randomUUID().toString());
-                        header.setKey(apiParam.getKey() != null ? apiParam.getKey() : "");
-                        header.setValue(apiParam.getExample() != null ? apiParam.getExample() : "{{" + apiParam.getKey() + "}}");
-                        header.setDescription(apiParam.getDescription() != null ? apiParam.getDescription() : "");
-                        header.setEnabled(apiParam.getRequired() != null ? apiParam.getRequired() : true);
-                        header.setRequest(savedRequest);
-
-                        collectionsHeaderRepository.save(header);
-
-                        savedRequest.getHeaders().add(header);
-                    }
-                }
-            }
-
-            // Add headers from headers array
-            if (api.getHeaders() != null) {
-                for (ApiHeaderEntity apiHeader : api.getHeaders()) {
-                    if (Boolean.TRUE.equals(apiHeader.getIsRequestHeader())) {
-                        HeaderEntity header = new HeaderEntity();
-                        header.setId(UUID.randomUUID().toString());
-                        header.setKey(apiHeader.getKey() != null ? apiHeader.getKey() : "");
-                        header.setValue(apiHeader.getValue() != null ? apiHeader.getValue() : "");
-                        header.setDescription(apiHeader.getDescription() != null ? apiHeader.getDescription() : "");
-                        header.setEnabled(apiHeader.getRequired() != null ? apiHeader.getRequired() : true);
-                        header.setRequest(savedRequest);
-
-                        collectionsHeaderRepository.save(header);
-
-                        savedRequest.getHeaders().add(header);
-                    }
-                }
-                savedRequest = collectionsRequestRepository.save(savedRequest);
-                log.debug("Added {} headers to request", savedRequest.getHeaders().size());
-            }
-
-            // Add all parameters (including path, query, body)
-            if (api.getParameters() != null && !api.getParameters().isEmpty()) {
-                for (ApiParameterEntity apiParam : api.getParameters()) {
-                    ParameterEntity param = new ParameterEntity();
-
-                    param.setId(UUID.randomUUID().toString());
-                    param.setKey(apiParam.getKey() != null ? apiParam.getKey() : "");
-                    param.setValue(apiParam.getExample() != null ? apiParam.getExample() : "");
-                    param.setDescription(apiParam.getDescription() != null ? apiParam.getDescription() : "");
-                    param.setEnabled(apiParam.getRequired() != null ? apiParam.getRequired() : true);
-
-                    param.setDbColumn(apiParam.getDbColumn());
-                    param.setDbParameter(apiParam.getDbParameter());
-                    param.setParameterType(apiParam.getParameterType());
-                    param.setOracleType(apiParam.getOracleType());
-                    param.setApiType(apiParam.getApiType());
-                    param.setParameterLocation(apiParam.getParameterLocation());
-                    param.setRequired(apiParam.getRequired());
-                    param.setValidationPattern(apiParam.getValidationPattern());
-                    param.setDefaultValue(apiParam.getDefaultValue());
-                    param.setInBody(apiParam.getInBody());
-                    param.setIsPrimaryKey(apiParam.getIsPrimaryKey());
-                    param.setParamMode(apiParam.getParamMode() != null ? apiParam.getParamMode() : "IN");
-                    param.setPosition(apiParam.getPosition() != null ? apiParam.getPosition() : 0);
-
-                    param.setRequest(savedRequest);
-
-                    collectionsParameterRepository.save(param);
-
-                    savedRequest.getParams().add(param);
-                }
-                savedRequest = collectionsRequestRepository.save(savedRequest);
-                log.debug("Added {} parameters to request", savedRequest.getParams().size());
-            }
-
-            // Set request body from body parameters
-            if (api.getParameters() != null) {
-                List<ApiParameterEntity> bodyParams = api.getParameters().stream()
-                        .filter(p -> "body".equals(p.getParameterType()))
-                        .collect(Collectors.toList());
-
-                if (!bodyParams.isEmpty()) {
-                    try {
-                        Map<String, Object> bodyMap = new HashMap<>();
-                        for (ApiParameterEntity param : bodyParams) {
-                            bodyMap.put(param.getKey(), param.getExample() != null ?
-                                    param.getExample() : "{{" + param.getKey() + "}}");
-                        }
-                        savedRequest.setBody(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(bodyMap));
-                    } catch (Exception e) {
-                        log.warn("Failed to create body from parameters: {}", e.getMessage());
-                    }
-                } else if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
-                    savedRequest.setBody(api.getRequestConfig().getSample());
-                }
-                savedRequest = collectionsRequestRepository.save(savedRequest);
-            }
-
-            collectionsRequestRepository.flush();
-
-            long requestCount = collectionsRequestRepository.countByFolderId(savedFolder.getId());
-            savedFolder.setRequestCount((int) requestCount);
-            collectionsFolderRepository.save(savedFolder);
-            collectionsFolderRepository.flush();
+            // Update folder request count
+            folder.setRequestCount(1);
+            collectionsFolderRepository.save(folder);
 
             log.info("Collections generated successfully with Collection ID: {} using Folder: {}",
-                    savedCollection.getId(), collectionInfo.getFolderName());
+                    collection.getId(), collectionInfo.getFolderName());
 
-            return savedCollection.getId();
+            return collection.getId();
 
         } catch (Exception e) {
             log.error("Error generating Collections: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to generate Collections: " + e.getMessage(), e);
         }
+    }
+
+    private CollectionEntity createOrUpdateCollection(GeneratedApiEntity api, String performedBy,
+                                                      CollectionInfoDTO collectionInfo, String generatedApiId) {
+        Optional<CollectionEntity> existing = collectionsCollectionRepository
+                .findById(collectionInfo.getCollectionId());
+
+        if (existing.isPresent()) {
+            CollectionEntity collection = existing.get();
+            boolean needsUpdate = false;
+
+            if (!collectionInfo.getCollectionName().equals(collection.getName())) {
+                collection.setName(collectionInfo.getCollectionName());
+                needsUpdate = true;
+            }
+            if (collection.getGeneratedApiId() == null) {
+                collection.setGeneratedApiId(generatedApiId);
+                needsUpdate = true;
+            }
+            if (needsUpdate) {
+                collection.setLastActivity(LocalDateTime.now());
+                collection.setUpdatedAt(LocalDateTime.now());
+                return collectionsCollectionRepository.save(collection);
+            }
+            return collection;
+        } else {
+            CollectionEntity collection = new CollectionEntity();
+            collection.setId(collectionInfo.getCollectionId());
+            collection.setGeneratedApiId(generatedApiId);
+            collection.setName(collectionInfo.getCollectionName());
+            collection.setDescription(api.getDescription() != null ? api.getDescription() :
+                    "Collection for " + collectionInfo.getCollectionName());
+            collection.setOwner(performedBy);
+            collection.setExpanded(false);
+            collection.setEditing(false);
+            collection.setFavorite(false);
+            collection.setLastActivity(LocalDateTime.now());
+            collection.setColor(getRandomColor());
+            collection.setCreatedAt(LocalDateTime.now());
+            collection.setUpdatedAt(LocalDateTime.now());
+
+            if (collectionInfo.getCollectionType() != null) {
+                Map<String, Object> metadata = new HashMap<>();
+                metadata.put("collectionType", collectionInfo.getCollectionType());
+                metadata.put("apiId", api.getId());
+                metadata.put("apiCode", api.getApiCode());
+                collection.setMetadata(metadata);
+            }
+
+            return collectionsCollectionRepository.save(collection);
+        }
+    }
+
+    private void createEnvironments(GeneratedApiEntity api, String performedBy,
+                                    CollectionEntity collection, String generatedApiId) {
+        // Create Development Environment
+        EnvironmentEntity devEnv = new EnvironmentEntity();
+        devEnv.setId(UUID.randomUUID().toString());
+        devEnv.setGeneratedApiId(generatedApiId);
+        devEnv.setName("Development");
+        devEnv.setActive(true);
+        devEnv.setOwner(performedBy);
+        devEnv.setCreatedAt(LocalDateTime.now());
+        devEnv.setUpdatedAt(LocalDateTime.now());
+
+        EnvironmentEntity savedDevEnv = collectionsEnvironmentRepository.save(devEnv);
+
+        // Create variables for dev environment
+        List<EnvironmentVariableEntity> devVariables = Arrays.asList(
+                createEnvironmentVariable(savedDevEnv, "baseUrl", "http://localhost:8080", "string", true, generatedApiId),
+                createEnvironmentVariable(savedDevEnv, "apiKey", "dev-api-key-123", "string", true, generatedApiId),
+                createEnvironmentVariable(savedDevEnv, "timeout", "30000", "number", true, generatedApiId)
+        );
+        environmentVariableRepository.saveAll(devVariables);
+
+        // Create Production Environment
+        EnvironmentEntity prodEnv = new EnvironmentEntity();
+        prodEnv.setId(UUID.randomUUID().toString());
+        prodEnv.setGeneratedApiId(generatedApiId);
+        prodEnv.setName("Production");
+        prodEnv.setActive(false);
+        prodEnv.setOwner(performedBy);
+        prodEnv.setCreatedAt(LocalDateTime.now());
+        prodEnv.setUpdatedAt(LocalDateTime.now());
+
+        EnvironmentEntity savedProdEnv = collectionsEnvironmentRepository.save(prodEnv);
+
+        // Create variables for prod environment
+        List<EnvironmentVariableEntity> prodVariables = Arrays.asList(
+                createEnvironmentVariable(savedProdEnv, "baseUrl", "https://api.example.com/v1", "string", true, generatedApiId),
+                createEnvironmentVariable(savedProdEnv, "apiKey", "{{prodApiKey}}", "string", true, generatedApiId),
+                createEnvironmentVariable(savedProdEnv, "timeout", "10000", "number", true, generatedApiId)
+        );
+        environmentVariableRepository.saveAll(prodVariables);
+
+        log.debug("Created environments for collection: {}", collection.getId());
+    }
+
+    private EnvironmentVariableEntity createEnvironmentVariable(EnvironmentEntity environment, String key,
+                                                                String value, String type, boolean enabled,
+                                                                String generatedApiId) {
+        EnvironmentVariableEntity variable = new EnvironmentVariableEntity();
+        variable.setId(UUID.randomUUID().toString());
+        variable.setGeneratedApiId(generatedApiId);
+        variable.setKey(key);
+        variable.setValue(value);
+        variable.setType(type);
+        variable.setEnabled(enabled);
+        variable.setEnvironment(environment);
+        return variable;
+    }
+
+    private FolderEntity createOrUpdateFolder(GeneratedApiEntity api, String performedBy,
+                                              CollectionInfoDTO collectionInfo, CollectionEntity collection,
+                                              String generatedApiId) {
+        Optional<FolderEntity> existing = collectionsFolderRepository
+                .findById(collectionInfo.getFolderId());
+
+        if (existing.isPresent()) {
+            FolderEntity folder = existing.get();
+            boolean needsUpdate = false;
+
+            if (!collectionInfo.getFolderName().equals(folder.getName())) {
+                folder.setName(collectionInfo.getFolderName());
+                needsUpdate = true;
+            }
+            if (folder.getGeneratedApiId() == null) {
+                folder.setGeneratedApiId(generatedApiId);
+                needsUpdate = true;
+            }
+            if (needsUpdate) {
+                folder.setUpdatedAt(LocalDateTime.now());
+                return collectionsFolderRepository.save(folder);
+            }
+            return folder;
+        } else {
+            FolderEntity folder = new FolderEntity();
+            folder.setId(collectionInfo.getFolderId());
+            folder.setGeneratedApiId(generatedApiId);
+            folder.setName(collectionInfo.getFolderName());
+            folder.setDescription("Folder for " + collectionInfo.getFolderName());
+            folder.setExpanded(false);
+            folder.setEditing(false);
+            folder.setRequestCount(0);
+            folder.setCollection(collection);
+            folder.setCreatedAt(LocalDateTime.now());
+            folder.setUpdatedAt(LocalDateTime.now());
+            return collectionsFolderRepository.save(folder);
+        }
+    }
+
+    private com.usg.apiAutomation.entities.postgres.collections.RequestEntity createRequest(
+            GeneratedApiEntity api, String performedBy, CollectionEntity collection,
+            FolderEntity folder, String generatedApiId) {
+
+        GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(api);
+
+        com.usg.apiAutomation.entities.postgres.collections.RequestEntity request =
+                new com.usg.apiAutomation.entities.postgres.collections.RequestEntity();
+
+        request.setId(UUID.randomUUID().toString());
+        request.setGeneratedApiId(generatedApiId);
+        request.setName(api.getApiName() + " - " + api.getHttpMethod());
+        request.setMethod(api.getHttpMethod());
+        request.setUrl(genUrlInfo.getFullUrl());
+        request.setDescription(api.getDescription());
+        request.setLastModified(LocalDateTime.now());
+        request.setSaved(true);
+        request.setCollection(collection);
+        request.setFolder(folder);
+        request.setHeaders(new ArrayList<>());
+        request.setParams(new ArrayList<>());
+        request.setCreatedAt(LocalDateTime.now());
+        request.setUpdatedAt(LocalDateTime.now());
+
+        // Set request body
+        if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
+            request.setBody(api.getRequestConfig().getSample());
+        }
+
+        // Set auth type
+        if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
+            request.setAuthType(api.getAuthConfig().getAuthType().toLowerCase());
+        }
+
+        return collectionsRequestRepository.save(request);
+    }
+
+    private void createAuthConfig(GeneratedApiEntity api,
+                                  com.usg.apiAutomation.entities.postgres.collections.RequestEntity request,
+                                  String generatedApiId) {
+        if (api.getAuthConfig() == null || "NONE".equals(api.getAuthConfig().getAuthType())) {
+            return;
+        }
+
+        AuthConfigEntity authConfig = new AuthConfigEntity();
+        authConfig.setId(UUID.randomUUID().toString());
+        authConfig.setGeneratedApiId(generatedApiId);
+        authConfig.setRequest(request);
+        authConfig.setType(api.getAuthConfig().getAuthType());
+
+        switch (api.getAuthConfig().getAuthType()) {
+            case "API_KEY":
+                authConfig.setKey(api.getAuthConfig().getApiKeyHeader() != null ?
+                        api.getAuthConfig().getApiKeyHeader() : "X-API-Key");
+                authConfig.setValue("{{apiKey}}");
+                authConfig.setAddTo("header");
+                break;
+            case "BEARER":
+            case "JWT":
+                authConfig.setType("bearer");
+                authConfig.setToken("{{jwtToken}}");
+                authConfig.setAddTo("header");
+                break;
+            case "BASIC":
+                authConfig.setUsername("{{username}}");
+                authConfig.setPassword("{{password}}");
+                authConfig.setAddTo("header");
+                break;
+            case "ORACLE_ROLES":
+                authConfig.setKey("X-Oracle-Session");
+                authConfig.setValue("{{oracleSessionId}}");
+                authConfig.setAddTo("header");
+                break;
+        }
+
+        collectionsAuthConfigRepository.save(authConfig);
+        request.setAuthConfig(authConfig);
+        collectionsRequestRepository.save(request);
+    }
+
+    private void createHeaderEntities(GeneratedApiEntity api,
+                                      com.usg.apiAutomation.entities.postgres.collections.RequestEntity request,
+                                      String generatedApiId) {
+        // Add headers from headers array
+        if (api.getHeaders() != null) {
+            for (ApiHeaderEntity apiHeader : api.getHeaders()) {
+                if (Boolean.TRUE.equals(apiHeader.getIsRequestHeader())) {
+                    HeaderEntity header = new HeaderEntity();
+                    header.setId(UUID.randomUUID().toString());
+                    header.setGeneratedApiId(generatedApiId);
+                    header.setKey(apiHeader.getKey());
+                    header.setValue(apiHeader.getValue() != null ? apiHeader.getValue() : "");
+                    header.setDescription(apiHeader.getDescription());
+                    header.setEnabled(apiHeader.getRequired() != null ? apiHeader.getRequired() : true);
+                    header.setRequest(request);
+
+                    collectionsHeaderRepository.save(header);
+                    request.getHeaders().add(header);
+                }
+            }
+        }
+
+        // Add header parameters
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity apiParam : api.getParameters()) {
+                if ("header".equals(apiParam.getParameterType())) {
+                    HeaderEntity header = new HeaderEntity();
+                    header.setId(UUID.randomUUID().toString());
+                    header.setGeneratedApiId(generatedApiId);
+                    header.setKey(apiParam.getKey());
+                    header.setValue(apiParam.getExample() != null ? apiParam.getExample() : "");
+                    header.setDescription(apiParam.getDescription());
+                    header.setEnabled(apiParam.getRequired() != null ? apiParam.getRequired() : true);
+                    header.setRequest(request);
+
+                    collectionsHeaderRepository.save(header);
+                    request.getHeaders().add(header);
+                }
+            }
+        }
+
+        if (!request.getHeaders().isEmpty()) {
+            collectionsRequestRepository.save(request);
+        }
+    }
+
+    private void createParameterEntities(GeneratedApiEntity api,
+                                         com.usg.apiAutomation.entities.postgres.collections.RequestEntity request,
+                                         String generatedApiId) {
+        if (api.getParameters() == null || api.getParameters().isEmpty()) {
+            return;
+        }
+
+        for (ApiParameterEntity apiParam : api.getParameters()) {
+            ParameterEntity param = new ParameterEntity();
+            param.setId(UUID.randomUUID().toString());
+            param.setGeneratedApiId(generatedApiId);
+            param.setKey(apiParam.getKey());
+            param.setValue(apiParam.getExample());
+            param.setDescription(apiParam.getDescription());
+            param.setEnabled(apiParam.getRequired() != null ? apiParam.getRequired() : true);
+            param.setDbColumn(apiParam.getDbColumn());
+            param.setDbParameter(apiParam.getDbParameter());
+            param.setParameterType(apiParam.getParameterType());
+            param.setOracleType(apiParam.getOracleType());
+            param.setApiType(apiParam.getApiType());
+            param.setParameterLocation(apiParam.getParameterLocation());
+            param.setRequired(apiParam.getRequired());
+            param.setValidationPattern(apiParam.getValidationPattern());
+            param.setDefaultValue(apiParam.getDefaultValue());
+            param.setInBody(apiParam.getInBody());
+            param.setIsPrimaryKey(apiParam.getIsPrimaryKey());
+            param.setParamMode(apiParam.getParamMode() != null ? apiParam.getParamMode() : "IN");
+            param.setPosition(apiParam.getPosition() != null ? apiParam.getPosition() : 0);
+            param.setRequest(request);
+
+            collectionsParameterRepository.save(param);
+            request.getParams().add(param);
+        }
+
+        collectionsRequestRepository.save(request);
     }
 
     private String getRandomColor() {

@@ -535,4 +535,303 @@ public class ApiConversionHelper {
         return 200;
     }
 
+
+    public GeneratedAPIDTO mapToGeneratedAPIDTO(GeneratedApiEntity entity, ObjectMapper objectMapper) {
+        if (entity == null) {
+            return null;
+        }
+
+        try {
+            return GeneratedAPIDTO.builder()
+                    // Core API Information
+                    .id(entity.getId())
+                    .apiName(entity.getApiName())
+                    .apiCode(entity.getApiCode())
+                    .description(entity.getDescription())
+                    .version(entity.getVersion())
+                    .status(entity.getStatus())
+                    .httpMethod(entity.getHttpMethod())
+                    .basePath(entity.getBasePath())
+                    .endpointPath(entity.getEndpointPath())
+                    .fullEndpoint((entity.getBasePath() != null ? entity.getBasePath() : "") +
+                            (entity.getEndpointPath() != null ? entity.getEndpointPath() : ""))
+                    .category(entity.getCategory())
+                    .owner(entity.getOwner())
+                    .isActive(entity.getIsActive())
+                    .tags(entity.getTags() != null ? entity.getTags() : new ArrayList<>())
+
+                    // Collection & Folder Information
+                    .collectionInfo(extractCollectionInfo(entity, objectMapper))
+
+                    // Source Object Information
+                    .sourceObject(extractSourceObject(entity, objectMapper))
+
+                    // Schema Configuration
+                    .schemaConfig(mapSchemaConfigToDTO(entity.getSchemaConfig()))
+
+                    // Authentication Configuration
+                    .authConfig(mapAuthConfigToDTO(entity.getAuthConfig()))
+
+                    // Parameters
+                    .parameters(mapParameterDTOs(entity.getParameters()))
+                    .parametersCount(entity.getParameters() != null ? entity.getParameters().size() : 0)
+
+                    // Response Mappings
+                    .responseMappings(mapResponseMappingDTOs(entity.getResponseMappings()))
+                    .responseMappingsCount(entity.getResponseMappings() != null ? entity.getResponseMappings().size() : 0)
+
+                    // Headers
+                    .headers(mapHeaderDTOs(entity.getHeaders()))
+                    .headersCount(entity.getHeaders() != null ? entity.getHeaders().size() : 0)
+
+                    // Request Body
+                    .requestBody(mapToRequestBodyConfigDTO(entity.getRequestConfig()))
+
+                    // Response Body
+                    .responseBody(mapToResponseBodyConfigDTO(entity.getResponseConfig()))
+
+                    // Tests - Aggregate all test configurations
+                    .tests(mapToTestsConfigDTO(entity.getTests()))
+
+                    // Settings
+                    .settings(mapSettingsToDTO(entity.getSettings()))
+
+                    // Generated Files
+                    .generatedFiles(new HashMap<>())
+
+                    // Validation Result
+                    .validation(extractValidationResult(entity))
+
+                    // With this:
+                    .metadata(new HashMap<String, Object>() {{
+                        put("sourceRequestId", entity.getSourceRequestId());
+                        put("createdAt", entity.getCreatedAt());
+                        put("updatedAt", entity.getUpdatedAt());
+                        put("createdBy", entity.getCreatedBy());
+                        put("updatedBy", entity.getUpdatedBy());
+                    }})
+
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Error mapping to GeneratedAPIDTO: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to map to GeneratedAPIDTO: " + e.getMessage(), e);
+        }
+    }
+
+
+    private List<GeneratedAPIDTO.ParameterDTO> mapParameterDTOs(List<ApiParameterEntity> parameters) {
+        if (parameters == null || parameters.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        return parameters.stream()
+                .sorted(Comparator.comparing(ApiParameterEntity::getPosition,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(param -> {
+                    ApiParameterDTO dto = mapParameterToDTO(param);
+                    if (dto == null) return null;
+
+                    return GeneratedAPIDTO.ParameterDTO.builder()
+                            .id(dto.getId())
+                            .key(dto.getKey())
+                            .dbColumn(dto.getDbColumn())
+                            .oracleType(dto.getOracleType())
+                            .apiType(dto.getApiType())
+                            .parameterLocation(dto.getParameterLocation())
+                            .required(dto.getRequired())
+                            .description(dto.getDescription())
+                            .example(dto.getExample())
+                            .validationPattern(dto.getValidationPattern())
+                            .defaultValue(dto.getDefaultValue())
+                            .inBody(dto.getInBody())
+                            .isPrimaryKey(dto.getIsPrimaryKey())
+                            .paramMode(dto.getParamMode())
+                            .bodyFormat(null) // Set based on request config if needed
+                            .build();
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    private List<GeneratedAPIDTO.ResponseMappingDTO> mapResponseMappingDTOs(List<ApiResponseMappingEntity> responseMappings) {
+        if (responseMappings == null || responseMappings.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        return responseMappings.stream()
+                .sorted(Comparator.comparing(ApiResponseMappingEntity::getPosition,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(mapping -> {
+                    ApiResponseMappingDTO dto = mapResponseMappingToDTO(mapping);
+                    if (dto == null) return null;
+
+                    return GeneratedAPIDTO.ResponseMappingDTO.builder()
+                            .id(mapping.getId())
+                            .apiField(dto.getApiField())
+                            .dbColumn(dto.getDbColumn())
+                            .oracleType(dto.getOracleType())
+                            .apiType(dto.getApiType())
+                            .format(dto.getFormat())
+                            .nullable(dto.getNullable())
+                            .isPrimaryKey(dto.getIsPrimaryKey())
+                            .includeInResponse(dto.getIncludeInResponse())
+                            .inResponse(dto.getInResponse())
+                            .paramMode(null)
+                            .build();
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    private List<GeneratedAPIDTO.HeaderDTO> mapHeaderDTOs(List<ApiHeaderEntity> headers) {
+        if (headers == null || headers.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        return headers.stream()
+                .map(header -> {
+                    ApiHeaderDTO dto = mapHeaderToDTO(header);
+                    if (dto == null) return null;
+
+                    return GeneratedAPIDTO.HeaderDTO.builder()
+                            .id(header.getId())
+                            .key(dto.getKey())
+                            .value(dto.getValue())
+                            .required(dto.getRequired())
+                            .description(dto.getDescription())
+                            .build();
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    private GeneratedAPIDTO.RequestBodyConfigDTO mapToRequestBodyConfigDTO(ApiRequestConfigEntity requestConfig) {
+        if (requestConfig == null) return null;
+
+        ApiRequestConfigDTO dto = mapRequestConfigToDTO(requestConfig);
+        if (dto == null) return null;
+
+        return GeneratedAPIDTO.RequestBodyConfigDTO.builder()
+                .bodyType(dto.getBodyType())
+                .sample(dto.getSample())
+                .requiredFields(dto.getRequiredFields())
+                .validateSchema(dto.getValidateSchema())
+                .maxSize(dto.getMaxSize() != null ? dto.getMaxSize().intValue() : null)
+                .allowedMediaTypes(dto.getAllowedMediaTypes())
+                .contentType(null) // Not in request config, can be derived from bodyType
+                .build();
+    }
+
+    private GeneratedAPIDTO.ResponseBodyConfigDTO mapToResponseBodyConfigDTO(ApiResponseConfigEntity responseConfig) {
+        if (responseConfig == null) return null;
+
+        ApiResponseConfigDTO dto = mapResponseConfigToDTO(responseConfig);
+        if (dto == null) return null;
+
+        return GeneratedAPIDTO.ResponseBodyConfigDTO.builder()
+                .successSchema(dto.getSuccessSchema())
+                .errorSchema(dto.getErrorSchema())
+                .includeMetadata(dto.getIncludeMetadata())
+                .metadataFields(dto.getMetadataFields())
+                .contentType(dto.getContentType())
+                .compression(dto.getCompression())
+                .build();
+    }
+
+    private GeneratedAPIDTO.TestsConfigDTO mapToTestsConfigDTO(List<ApiTestEntity> tests) {
+        if (tests == null || tests.isEmpty()) {
+            return GeneratedAPIDTO.TestsConfigDTO.builder().build();
+        }
+
+        // Use the first test entity as the source of truth for test configuration
+        ApiTestEntity testEntity = tests.get(0);
+
+        return GeneratedAPIDTO.TestsConfigDTO.builder()
+                // Database connectivity tests
+                .testConnection(testEntity.getTestConnection())
+                .testObjectAccess(testEntity.getTestObjectAccess())
+                .testPrivileges(testEntity.getTestPrivileges())
+
+                // Data validation tests
+                .testDataTypes(testEntity.getTestDataTypes())
+                .testNullConstraints(testEntity.getTestNullConstraints())
+                .testUniqueConstraints(testEntity.getTestUniqueConstraints())
+                .testForeignKeyReferences(testEntity.getTestForeignKeyReferences())
+
+                // Performance tests
+                .testQueryPerformance(testEntity.getTestQueryPerformance())
+                .performanceThreshold(testEntity.getPerformanceThreshold())
+                .testWithSampleData(testEntity.getTestWithSampleData())
+                .sampleDataRows(testEntity.getSampleDataRows())
+
+                // PL/SQL specific tests
+                .testProcedureExecution(testEntity.getTestProcedureExecution())
+                .testFunctionReturn(testEntity.getTestFunctionReturn())
+                .testExceptionHandling(testEntity.getTestExceptionHandling())
+
+                // Security tests
+                .testSQLInjection(testEntity.getTestSQLInjection())
+                .testAuthentication(testEntity.getTestAuthentication())
+                .testAuthorization(testEntity.getTestAuthorization())
+
+                // Test data and queries
+                .testData(testEntity.getTestData())
+                .testQueries(testEntity.getTestQueries())
+
+                .build();
+    }
+
+    private GeneratedAPIDTO.ValidationResultDTO extractValidationResult(GeneratedApiEntity entity) {
+        if (entity.getSourceObjectInfo() != null && entity.getSourceObjectInfo().containsKey("validation")) {
+            try {
+                Object validationObj = entity.getSourceObjectInfo().get("validation");
+                if (validationObj instanceof Map) {
+                    Map<String, Object> validationMap = (Map<String, Object>) validationObj;
+                    return GeneratedAPIDTO.ValidationResultDTO.builder()
+                            .valid((Boolean) validationMap.getOrDefault("valid", true))
+                            .message((String) validationMap.getOrDefault("message", ""))
+                            .errors((List<String>) validationMap.getOrDefault("errors", new ArrayList<>()))
+                            .warnings((List<String>) validationMap.getOrDefault("warnings", new ArrayList<>()))
+                            .build();
+                }
+            } catch (Exception e) {
+                log.warn("Failed to extract validation result: {}", e.getMessage());
+            }
+        }
+
+        // If no validation info in source object, check tests
+        if (entity.getTests() != null && !entity.getTests().isEmpty()) {
+            List<String> errors = new ArrayList<>();
+            List<String> warnings = new ArrayList<>();
+
+            for (ApiTestEntity test : entity.getTests()) {
+                if ("FAILED".equals(test.getStatus())) {
+                    errors.add("Test '" + test.getTestName() + "' failed");
+                } else if (test.getActualResponse() != null && test.getExpectedResponse() != null) {
+                    Map<String, Object> differences = test.getResponseDifferences();
+                    if (!differences.isEmpty()) {
+                        warnings.add("Test '" + test.getTestName() + "' has response differences");
+                    }
+                }
+            }
+
+            return GeneratedAPIDTO.ValidationResultDTO.builder()
+                    .valid(errors.isEmpty())
+                    .message(errors.isEmpty() ? "All tests passed" : "Some tests failed")
+                    .errors(errors)
+                    .warnings(warnings)
+                    .build();
+        }
+
+        // Default
+        return GeneratedAPIDTO.ValidationResultDTO.builder()
+                .valid(true)
+                .message("No validation results")
+                .errors(new ArrayList<>())
+                .warnings(new ArrayList<>())
+                .build();
+    }
+
+
 }
