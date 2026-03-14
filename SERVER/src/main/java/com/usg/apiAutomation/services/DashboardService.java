@@ -134,8 +134,8 @@ public class DashboardService {
     }
 
     // ============================================================
-    // 3. API ENDPOINTS OVERVIEW
-    // ============================================================
+// 3. API ENDPOINTS OVERVIEW - UPDATED WITH CREATED AT AND SORTING
+// ============================================================
     public DashboardEndpointsResponseDTO getDashboardEndpoints(String requestId, HttpServletRequest req, String performedBy) {
         log.info("Request ID: {}, Getting endpoints overview for user: {}", requestId, performedBy);
 
@@ -160,12 +160,19 @@ public class DashboardService {
                         dto.setDescription(request.getDescription());
                         dto.setCollectionId(collection.getId());
                         dto.setCollectionName(collection.getName());
-                        dto.setFolderId(folder.getId()); // Make sure this is set
-                        dto.setFolderName(folder.getName()); // Make sure this is set
-                        dto.setLastUpdated(request.getLastModified());
+                        dto.setFolderId(folder.getId());
+                        dto.setFolderName(folder.getName());
 
-                        // Calculate time ago
-                        dto.setTimeAgo(calculateTimeAgo(request.getLastModified()));
+                        // IMPORTANT: Set BOTH lastUpdated AND createdAt from request
+                        // If the request object has these fields, they'll be set here
+                        dto.setLastUpdated(request.getLastModified());
+                        dto.setCreatedAt(request.getCreatedAt());
+
+                        // Calculate time ago based on last updated (or created if not updated)
+                        String displayDate = request.getLastModified() != null ?
+                                request.getLastModified() :
+                                request.getCreatedAt();
+                        dto.setTimeAgo(calculateTimeAgo(displayDate));
 
                         // Set collectionInfo for easier access in UI
                         Map<String, Object> collectionInfo = new HashMap<>();
@@ -311,8 +318,57 @@ public class DashboardService {
             }
         }
 
-        log.info("Request ID: {}, Retrieved {} endpoints", requestId, endpoints.size());
+        // SORT ENDPOINTS IN DESCENDING ORDER BY MOST RECENT ACTIVITY
+        endpoints.sort((e1, e2) -> {
+            // Helper to get the most recent date (lastUpdated or createdAt)
+            String date1 = getMostRecentDate(e1);
+            String date2 = getMostRecentDate(e2);
+
+            // Handle null cases - put null dates at the end
+            if (date1 == null && date2 == null) return 0;
+            if (date1 == null) return 1;  // date1 null, put it after date2
+            if (date2 == null) return -1; // date2 null, put it after date1
+
+            try {
+                LocalDateTime time1 = LocalDateTime.parse(date1, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                LocalDateTime time2 = LocalDateTime.parse(date2, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                return time2.compareTo(time1); // Descending order (newest first)
+            } catch (Exception e) {
+                // If parsing fails, fall back to string comparison
+                return date2.compareTo(date1);
+            }
+        });
+
+        log.info("Request ID: {}, Retrieved {} endpoints (sorted in descending order by most recent activity)",
+                requestId, endpoints.size());
         return new DashboardEndpointsResponseDTO(endpoints);
+    }
+
+    // Helper method to get the most recent date between lastUpdated and createdAt
+    private String getMostRecentDate(DashboardEndpointDTO endpoint) {
+        String lastUpdated = endpoint.getLastUpdated();
+        String createdAt = endpoint.getCreatedAt();
+
+        // If both are null, return null
+        if (lastUpdated == null && createdAt == null) {
+            return null;
+        }
+
+        // If one is null, return the other
+        if (lastUpdated == null) return createdAt;
+        if (createdAt == null) return lastUpdated;
+
+        // Both are present, compare them
+        try {
+            LocalDateTime updateTime = LocalDateTime.parse(lastUpdated, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+            LocalDateTime createTime = LocalDateTime.parse(createdAt, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+
+            // Return the most recent (max) date
+            return updateTime.isAfter(createTime) ? lastUpdated : createdAt;
+        } catch (Exception e) {
+            // If parsing fails, return lastUpdated as default
+            return lastUpdated;
+        }
     }
 
     // Helper method to calculate time ago
@@ -971,7 +1027,7 @@ public class DashboardService {
                     endpointAuthConfig.put("ipWhitelist", authConfig.getIpWhitelist());
                     endpointAuthConfig.put("auditLevel", authConfig.getAuditLevel());
 
-                    endpoint.setAuthConfig(endpointAuthConfig);
+//                    endpoint.setAuthConfig(endpointAuthConfig);
 
                 } catch (Exception e) {
                     log.warn("Could not get auth config for endpoint {}: {}", endpoint.getId(), e.getMessage());

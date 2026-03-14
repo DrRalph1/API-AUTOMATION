@@ -2162,7 +2162,6 @@ const transformCollectionsData = (apiData) => {
   });
 };
 
-// Complete updated handleSelectRequest function
 const handleSelectRequest = useCallback(async (request, collectionId, folderId) => {
   console.log('🎯 [handleSelectRequest] Selected request:', {
     id: request.id,
@@ -2187,7 +2186,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     setTemplateUrl('');
     setRequestBody('');
     setRequestParams([]);
-    setRequestHeaders([]);
+    setRequestHeaders([]); // Reset headers
     setRequestPathParams([]);
     setFormData([]);
     setUrlEncodedData([]);
@@ -2228,6 +2227,31 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     return;
   }
 
+  // ============== FIX: Reset all states before loading new request ==============
+  console.log('🔄 Resetting states for new request');
+  
+  // Reset all form states to empty first
+  setRequestMethod('GET'); // Will be overridden by request.method later
+  setRequestUrl('');
+  setTemplateUrl('');
+  setRequestBody('');
+  setRequestParams([]);
+  setRequestHeaders([]); // CRITICAL: Reset headers to empty array
+  setRequestPathParams([]);
+  setFormData([]);
+  setUrlEncodedData([]);
+  setBinaryFile(null);
+  setGraphqlQuery('');
+  setGraphqlVariables('');
+  setAuthType('noauth');
+  setAuthConfig({ type: 'noauth', token: '', username: '', password: '', key: '', value: '', addTo: 'header', tokenType: 'Bearer' });
+  setResponse(null);
+  
+  // Reset body type to default
+  setRequestBodyType('none');
+  setRawBodyType('json');
+  // ============== END RESET ==============
+
   // First, set the initial request data from the tree
   console.log('📥 Setting initial request data from tree');
   
@@ -2262,9 +2286,6 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
   // Set request body and other params
   setRequestBody(request.body || '');
   setRequestParams(request.queryParams || []);
-  
-  // IMPORTANT: Reset headers - we'll add them properly from API details
-  setRequestHeaders([]);
   
   // Set path params - extract from URL first
   const pathParamsFromUrl = [];
@@ -2437,7 +2458,8 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
   
   // Set auth headers (but don't merge yet - will merge with other headers later)
   if (authHeaders.length > 0) {
-    setRequestHeaders(authHeaders);
+    // Instead of setting directly, we'll store these to merge later
+    // We'll handle this in the API details section
   }
   // ============== END FIX ==============
   
@@ -2482,202 +2504,475 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
   }
   
   // Then fetch additional details from API
-  if (authToken && request.id && collectionId) {
-    setLoading(prev => ({ ...prev, request: true }));
-    try {
-      const response = await getRequestDetails(authToken, collectionId, request.id);
-      if (!isMounted.current) return;
+if (authToken && request.id && collectionId) {
+  setLoading(prev => ({ ...prev, request: true }));
+  try {
+    const response = await getRequestDetails(authToken, collectionId, request.id);
+    if (!isMounted.current) return;
+    
+    const processedResponse = handleCollectionsResponse(response);
+    const details = extractRequestDetails(processedResponse);
+    
+    if (details) {
+      console.log('📦 [API Details] Received:', {
+        hasRequestBody: !!details.requestBody,
+        bodyType: details.requestBody?.bodyType,
+        parametersCount: details.parameters?.length,
+        authType: details.authType,
+        authConfig: details.authConfig,
+        headersCount: details.headers?.length
+      });
       
-      const processedResponse = handleCollectionsResponse(response);
-      const details = extractRequestDetails(processedResponse);
+      // ============== FIX: Declare apiAuthHeaders at the beginning ==============
+      let apiAuthHeaders = []; // <-- DECLARE IT HERE
+      // ============== END FIX ==============
       
-      if (details) {
-        console.log('📦 [API Details] Received:', {
-          hasRequestBody: !!details.requestBody,
-          bodyType: details.requestBody?.bodyType,
-          parametersCount: details.parameters?.length,
-          authType: details.authType,
-          authConfig: details.authConfig
-        });
+      // ============== FIXED: Update auth from API details ==============
+      if (details.authConfig) {
+        console.log('🔐 Updating auth config from API:', details.authConfig);
         
-        // ============== FIXED: Update auth from API details ==============
-        if (details.authConfig) {
-          console.log('🔐 Updating auth config from API:', details.authConfig);
+        const apiAuthType = details.authType || authTypeFromRequest;
+        
+        if (apiAuthType === 'apikey' || details.authConfig.authType === 'apiKey') {
+          // Handle API Key from API
+          const apiProcessedConfig = {
+            type: 'apikey',
+            key: details.authConfig.key || 
+                  details.authConfig.apiKey || 
+                  details.authConfig.apiKeyHeader || 
+                  processedAuthConfig.key || '',
+            value: details.authConfig.value || 
+                   details.authConfig.apiSecret || 
+                   details.authConfig.apiKeyValue || 
+                   details.authConfig.secret || 
+                   processedAuthConfig.value || '',
+            addTo: details.authConfig.addTo || processedAuthConfig.addTo || 'header'
+          };
+          console.log('🔐 Processing API Key config from API:', apiProcessedConfig);
           
-          const apiAuthType = details.authType || authTypeFromRequest;
-          let apiAuthHeaders = [];
+          // Keep authType as 'noauth' for the UI (API keys go in headers)
+          setAuthType('noauth');
           
-          if (apiAuthType === 'apikey' || details.authConfig.authType === 'apiKey') {
-            // Handle API Key from API
-            const apiProcessedConfig = {
-              type: 'apikey',
-              key: details.authConfig.key || 
-                    details.authConfig.apiKey || 
-                    details.authConfig.apiKeyHeader || 
-                    processedAuthConfig.key || '',
-              value: details.authConfig.value || 
-                     details.authConfig.apiSecret || 
-                     details.authConfig.apiKeyValue || 
-                     details.authConfig.secret || 
-                     processedAuthConfig.value || '',
-              addTo: details.authConfig.addTo || processedAuthConfig.addTo || 'header'
-            };
-            console.log('🔐 Processing API Key config from API:', apiProcessedConfig);
-            
-            // Keep authType as 'noauth' for the UI (API keys go in headers)
-            setAuthType('noauth');
-            
-            // Build API Key headers
-            if (apiProcessedConfig.key && apiProcessedConfig.value) {
-              apiAuthHeaders.push({
-                id: `auth-header-${Date.now()}-key`,
-                key: apiProcessedConfig.key,
-                value: apiProcessedConfig.value,
-                description: 'API Key authentication',
-                enabled: true,
-                required: true
-              });
-            }
-            
-            // Check for API Secret (if different from key)
-            if (details.authConfig.apiSecretHeader && details.authConfig.apiSecretValue) {
-              apiAuthHeaders.push({
-                id: `auth-header-${Date.now()}-secret`,
-                key: details.authConfig.apiSecretHeader,
-                value: details.authConfig.apiSecretValue,
-                description: 'API Secret authentication',
-                enabled: true,
-                required: true
-              });
-            }
-            
-            // Update the auth config in state
-            setAuthConfig(apiProcessedConfig);
-          } 
-          else if (apiAuthType === 'bearer') {
-            const apiProcessedConfig = {
-              type: 'bearer',
-              token: details.authConfig.token || details.authConfig.bearerToken || processedAuthConfig.token || '',
-              tokenType: details.authConfig.tokenType || processedAuthConfig.tokenType || 'Bearer'
-            };
-            console.log('🔐 Setting Bearer config from API:', apiProcessedConfig);
-            
-            setAuthType('bearer');
-            setAuthConfig(apiProcessedConfig);
-            
-            if (apiProcessedConfig.token) {
-              apiAuthHeaders.push({
-                id: `auth-header-${Date.now()}`,
-                key: 'Authorization',
-                value: `${apiProcessedConfig.tokenType} ${apiProcessedConfig.token}`,
-                description: 'Bearer token authentication',
-                enabled: true,
-                required: true
-              });
-            }
-          }
-          else if (apiAuthType === 'basic') {
-            const apiProcessedConfig = {
-              type: 'basic',
-              username: details.authConfig.username || processedAuthConfig.username || '',
-              password: details.authConfig.password || processedAuthConfig.password || ''
-            };
-            console.log('🔐 Setting Basic config from API:', apiProcessedConfig);
-            
-            setAuthType('basic');
-            setAuthConfig(apiProcessedConfig);
-            
-            if (apiProcessedConfig.username && apiProcessedConfig.password) {
-              const credentials = btoa(`${apiProcessedConfig.username}:${apiProcessedConfig.password}`);
-              apiAuthHeaders.push({
-                id: `auth-header-${Date.now()}`,
-                key: 'Authorization',
-                value: `Basic ${credentials}`,
-                description: 'Basic authentication',
-                enabled: true,
-                required: true
-              });
-            }
-          }
-          else if (apiAuthType === 'oauth2') {
-            const apiProcessedConfig = {
-              type: 'oauth2',
-              token: details.authConfig.token || processedAuthConfig.token || ''
-            };
-            console.log('🔐 Setting OAuth2 config from API:', apiProcessedConfig);
-            
-            setAuthType('oauth2');
-            setAuthConfig(apiProcessedConfig);
-            
-            if (apiProcessedConfig.token) {
-              apiAuthHeaders.push({
-                id: `auth-header-${Date.now()}`,
-                key: 'Authorization',
-                value: `Bearer ${apiProcessedConfig.token}`,
-                description: 'OAuth2 token authentication',
-                enabled: true,
-                required: true
-              });
-            }
+          // Build API Key headers
+          if (apiProcessedConfig.key && apiProcessedConfig.value) {
+            apiAuthHeaders.push({
+              id: `auth-header-${Date.now()}-key`,
+              key: apiProcessedConfig.key,
+              value: apiProcessedConfig.value,
+              description: 'API Key authentication',
+              enabled: true,
+              required: true
+            });
           }
           
-          // If we have API auth headers, update them (will merge with other headers later)
-          if (apiAuthHeaders.length > 0) {
-            // Store auth headers separately - we'll merge with other headers later
-            // For now, clear any existing headers and set these
-            setRequestHeaders(apiAuthHeaders);
+          // Check for API Secret (if different from key)
+          if (details.authConfig.apiSecretHeader && details.authConfig.apiSecretValue) {
+            apiAuthHeaders.push({
+              id: `auth-header-${Date.now()}-secret`,
+              key: details.authConfig.apiSecretHeader,
+              value: details.authConfig.apiSecretValue,
+              description: 'API Secret authentication',
+              enabled: true,
+              required: true
+            });
+          }
+          
+          // Update the auth config in state
+          setAuthConfig(apiProcessedConfig);
+        } 
+        else if (apiAuthType === 'bearer') {
+          const apiProcessedConfig = {
+            type: 'bearer',
+            token: details.authConfig.token || details.authConfig.bearerToken || processedAuthConfig.token || '',
+            tokenType: details.authConfig.tokenType || processedAuthConfig.tokenType || 'Bearer'
+          };
+          console.log('🔐 Setting Bearer config from API:', apiProcessedConfig);
+          
+          setAuthType('bearer');
+          setAuthConfig(apiProcessedConfig);
+          
+          if (apiProcessedConfig.token) {
+            apiAuthHeaders.push({
+              id: `auth-header-${Date.now()}`,
+              key: 'Authorization',
+              value: `${apiProcessedConfig.tokenType} ${apiProcessedConfig.token}`,
+              description: 'Bearer token authentication',
+              enabled: true,
+              required: true
+            });
           }
         }
-        // ============== END FIX ==============
+        else if (apiAuthType === 'basic') {
+          const apiProcessedConfig = {
+            type: 'basic',
+            username: details.authConfig.username || processedAuthConfig.username || '',
+            password: details.authConfig.password || processedAuthConfig.password || ''
+          };
+          console.log('🔐 Setting Basic config from API:', apiProcessedConfig);
+          
+          setAuthType('basic');
+          setAuthConfig(apiProcessedConfig);
+          
+          if (apiProcessedConfig.username && apiProcessedConfig.password) {
+            const credentials = btoa(`${apiProcessedConfig.username}:${apiProcessedConfig.password}`);
+            apiAuthHeaders.push({
+              id: `auth-header-${Date.now()}`,
+              key: 'Authorization',
+              value: `Basic ${credentials}`,
+              description: 'Basic authentication',
+              enabled: true,
+              required: true
+            });
+          }
+        }
+        else if (apiAuthType === 'oauth2') {
+          const apiProcessedConfig = {
+            type: 'oauth2',
+            token: details.authConfig.token || processedAuthConfig.token || ''
+          };
+          console.log('🔐 Setting OAuth2 config from API:', apiProcessedConfig);
+          
+          setAuthType('oauth2');
+          setAuthConfig(apiProcessedConfig);
+          
+          if (apiProcessedConfig.token) {
+            apiAuthHeaders.push({
+              id: `auth-header-${Date.now()}`,
+              key: 'Authorization',
+              value: `Bearer ${apiProcessedConfig.token}`,
+              description: 'OAuth2 token authentication',
+              enabled: true,
+              required: true
+            });
+          }
+        }
         
-        // Log body parameters specifically
+        // If we have API auth headers, store them for later merging
+        if (apiAuthHeaders.length > 0) {
+          console.log('📌 API auth headers prepared:', apiAuthHeaders);
+          // We'll merge these with other headers after processing parameters
+        }
+      }
+      // ============== END FIX ==============
+      
+      // Log body parameters specifically
+      const bodyParams = details.parameters?.filter(p => 
+        p.parameterLocation?.toLowerCase() === 'body'
+      ) || [];
+      console.log('📦 Body parameters found:', bodyParams.length, bodyParams);
+      
+      // IMPORTANT: Process body type and parameters from API details
+      if (details.requestBody && details.requestBody.bodyType) {
+        const bodyType = details.requestBody.bodyType;
+        console.log(`📦 Setting body type from API details: ${bodyType}`);
+        
+        // Get all body parameters
         const bodyParams = details.parameters?.filter(p => 
           p.parameterLocation?.toLowerCase() === 'body'
         ) || [];
-        console.log('📦 Body parameters found:', bodyParams.length, bodyParams);
         
-        // IMPORTANT: Process body type and parameters from API details
-        if (details.requestBody && details.requestBody.bodyType) {
-          const bodyType = details.requestBody.bodyType;
-          console.log(`📦 Setting body type from API details: ${bodyType}`);
+        console.log(`📦 Found ${bodyParams.length} body parameters for ${bodyType}`);
+        
+        if (bodyType === 'form-data') {
+          setRequestBodyType('form-data');
+          if (bodyParams.length > 0) {
+            const formDataArray = bodyParams.map((param, index) => ({
+              id: param.id || `form-${Date.now()}-${index}-${Math.random()}`,
+              key: param.key || '',
+              value: param.value || param.defaultValue || param.example || '',
+              type: param.bodyFormat === 'file' ? 'file' : 'text',
+              enabled: true,
+              description: param.description || '',
+              required: param.required || false
+            }));
+            setFormData(formDataArray);
+          }
+        } 
+        else if (bodyType === 'x-www-form-urlencoded' || bodyType === 'urlencoded') {
+          setRequestBodyType('x-www-form-urlencoded');
+          if (bodyParams.length > 0) {
+            const urlEncodedArray = bodyParams.map((param, index) => ({
+              id: param.id || `url-${Date.now()}-${index}-${Math.random()}`,
+              key: param.key || '',
+              value: param.value || param.defaultValue || param.example || '',
+              description: param.description || '',
+              enabled: true,
+              required: param.required || false
+            }));
+            setUrlEncodedData(urlEncodedArray);
+          }
+        } 
+        else if (bodyType === 'json' || bodyType === 'raw') {
+          setRequestBodyType('raw');
+          setRawBodyType('json');
           
-          // Get all body parameters
-          const bodyParams = details.parameters?.filter(p => 
-            p.parameterLocation?.toLowerCase() === 'body'
-          ) || [];
-          
-          console.log(`📦 Found ${bodyParams.length} body parameters for ${bodyType}`);
-          
-          if (bodyType === 'form-data') {
-            setRequestBodyType('form-data');
-            if (bodyParams.length > 0) {
-              const formDataArray = bodyParams.map((param, index) => ({
-                id: param.id || `form-${Date.now()}-${index}-${Math.random()}`,
-                key: param.key || '',
-                value: param.value || param.defaultValue || param.example || '',
-                type: param.bodyFormat === 'file' ? 'file' : 'text',
-                enabled: true,
-                description: param.description || '',
-                required: param.required || false
-              }));
-              setFormData(formDataArray);
+          if (bodyParams.length > 0) {
+            const jsonObject = {};
+            bodyParams.forEach(param => {
+              if (param.key) {
+                let value = param.value || param.defaultValue || param.example || '';
+                if (param.type === 'integer' || param.type === 'number') {
+                  const num = Number(value);
+                  if (!isNaN(num)) value = num;
+                } else if (param.type === 'boolean') {
+                  value = value === 'true' || value === true;
+                }
+                jsonObject[param.key] = value;
+              }
+            });
+            
+            if (details.requestBody.sample) {
+              try {
+                const existingBody = JSON.parse(details.requestBody.sample);
+                setRequestBody(JSON.stringify({ ...existingBody, ...jsonObject }, null, 2));
+              } catch {
+                setRequestBody(JSON.stringify(jsonObject, null, 2));
+              }
+            } else {
+              setRequestBody(JSON.stringify(jsonObject, null, 2));
             }
-          } 
-          else if (bodyType === 'x-www-form-urlencoded' || bodyType === 'urlencoded') {
-            setRequestBodyType('x-www-form-urlencoded');
-            if (bodyParams.length > 0) {
-              const urlEncodedArray = bodyParams.map((param, index) => ({
-                id: param.id || `url-${Date.now()}-${index}-${Math.random()}`,
-                key: param.key || '',
-                value: param.value || param.defaultValue || param.example || '',
-                description: param.description || '',
-                enabled: true,
-                required: param.required || false
-              }));
-              setUrlEncodedData(urlEncodedArray);
+          } else if (details.requestBody.sample) {
+            setRequestBody(details.requestBody.sample);
+          }
+        }
+      }
+      
+      if (details.method && details.method !== request.method) {
+        setRequestMethod(details.method);
+      }
+      
+      // Separate parameters based on location
+      if (details.parameters) {
+        const queryParams = [];
+        const pathParams = [];
+        const headerParams = [];
+        const bodyParams = [];
+        
+        console.log('📊 Processing parameters from API:', details.parameters.length);
+        
+        // First, collect all path parameters from the template URL
+        const templateUrlPathParams = [];
+        if (initialTemplateUrl) {
+          const placeholderRegex = /{([^}]+)}/g;
+          let match;
+          while ((match = placeholderRegex.exec(initialTemplateUrl)) !== null) {
+            templateUrlPathParams.push(match[1]);
+          }
+        }
+        
+        details.parameters.forEach(param => {
+          if (param && param.key) {
+            const paramObject = {
+              id: param.id || `${param.key}-${Date.now()}-${Math.random()}`,
+              key: param.key,
+              value: param.value || '',
+              description: param.description || '',
+              enabled: param.enabled !== false,
+              required: param.required || false,
+              parameterLocation: param.parameterLocation || 'query',
+              bodyFormat: param.bodyFormat || null,
+              type: param.type || 'string',
+              defaultValue: param.defaultValue || '',
+              example: param.example || ''
+            };
+            
+            console.log(`📍 [API] Parameter ${param.key}: location = ${param.parameterLocation}`);
+            
+            const location = (param.parameterLocation || '').toLowerCase();
+            
+            // CRITICAL FIX: Check if this is a path parameter based on URL
+            const isInTemplateUrl = templateUrlPathParams.includes(param.key);
+            
+            if (isInTemplateUrl || location === 'path') {
+              pathParams.push(paramObject);
+              console.log(`🛣️ Added to PATH params: ${param.key} (from URL template or location)`);
+            } else if (location === 'query') {
+              queryParams.push(paramObject);
+            } else if (location === 'header') {
+              headerParams.push(paramObject);
+              console.log(`📌 Added to HEADER params: ${param.key}`);
+            } else if (location === 'body') {
+              bodyParams.push(paramObject);
+              console.log(`📦 Body parameter: ${param.key}`);
+            } else {
+              // Default to query params
+              queryParams.push(paramObject);
+              console.log(`🔍 Defaulted to QUERY param: ${param.key}`);
             }
-          } 
-          else if (bodyType === 'json' || bodyType === 'raw') {
+          }
+        });
+        
+        console.log('📊 [Separated Parameters]', {
+          query: queryParams.length,
+          path: pathParams.length,
+          header: headerParams.length,
+          body: bodyParams.length,
+          templateUrlPathParams
+        });
+        
+        if (queryParams.length > 0) {
+          console.log('📝 Setting query params:', queryParams);
+          setRequestParams(queryParams);
+        }
+        
+        if (pathParams.length > 0) {
+          console.log('🛣️ Setting path params:', pathParams);
+          
+          // Add position information based on order in URL
+          const pathParamsWithPosition = pathParams.map((param, index) => ({
+            ...param,
+            position: index,
+            id: param.id || `path-${Date.now()}-${index}-${Math.random()}`
+          }));
+          
+          // CRITICAL FIX: Filter out any path params that have placeholder values
+          const cleanedPathParams = pathParamsWithPosition.map(param => {
+            // Check if the value contains any placeholder patterns
+            const value = param.value || '';
+            
+            // If the value contains {, }, or %7B, %7D (encoded curly braces), treat it as empty
+            const hasPlaceholder = value.includes('{') || value.includes('}') || 
+                                  value.includes('%7B') || value.includes('%7D');
+            
+            return {
+              ...param,
+              // Only keep the value if it's a real value (not a placeholder)
+              value: hasPlaceholder ? '' : value
+            };
+          });
+          
+          console.log('🧹 Cleaned path params with position:', cleanedPathParams);
+          setRequestPathParams(cleanedPathParams);
+          
+          // Build the URL with path params, but don't add extra placeholders
+          let updatedUrl = initialTemplateUrl;
+          
+          // Create a map of placeholders to values - only include real values
+          const paramValueMap = new Map();
+          pathParams.forEach(param => {
+            const value = param.value || '';
+            const hasPlaceholder = value.includes('{') || value.includes('}') || 
+                                  value.includes('%7B') || value.includes('%7D');
+            
+            // Only add to map if it's a real value (not a placeholder)
+            if (param.key && value && value.trim() !== '' && !hasPlaceholder) {
+              paramValueMap.set(param.key, value);
+            }
+          });
+          
+          // Replace placeholders with values
+          const placeholders = Array.from(paramValueMap.keys());
+          
+          placeholders.forEach(key => {
+            const value = paramValueMap.get(key);
+            const placeholder = `{${key}}`;
+            
+            if (updatedUrl.includes(placeholder)) {
+              const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+              updatedUrl = updatedUrl.replace(regex, value);
+            }
+          });
+          
+          // Add query params if they have values
+          const queryString = queryParams
+            .filter(p => p.enabled && p.key && p.key.trim() !== '' && p.value && p.value.trim() !== '')
+            .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
+            .join('&');
+          
+          const finalUrl = queryString ? `${updatedUrl}?${queryString}` : updatedUrl;
+          
+          console.log('✅ Updated URL with API path params and query params:', finalUrl);
+          setRequestUrl(finalUrl);
+        }
+        
+        // ============== SIMPLIFIED FIX: Include ALL headers without filtering ==============
+        // Collect all headers from API details
+        const allHeaders = [];
+        
+        // 1. Add header parameters (parameters with location='header')
+        if (headerParams.length > 0) {
+          console.log('📌 Adding header parameters to headers:', headerParams);
+          
+          headerParams.forEach(param => {
+            allHeaders.push({
+              id: param.id || `header-${Date.now()}-${Math.random()}`,
+              key: param.key,
+              value: param.value || '',
+              description: param.description || '',
+              enabled: param.enabled !== false,
+              required: param.required || false
+            });
+          });
+        }
+        
+        // 2. Add regular headers from details.headers array
+        if (details.headers && details.headers.length > 0) {
+          console.log('📌 Adding regular headers from details:', details.headers);
+          
+          details.headers.forEach((header, idx) => {
+            allHeaders.push({
+              id: header.id || `header-${Date.now()}-${idx}-${Math.random()}`,
+              key: header.key,
+              value: header.value || '',
+              description: header.description || '',
+              enabled: header.enabled !== false,
+              required: header.required || false
+            });
+          });
+        }
+        
+        // 3. Add any auth headers from the processed auth config
+        if (authHeaders.length > 0) {
+          console.log('📌 Adding auth headers:', authHeaders);
+          allHeaders.push(...authHeaders);
+        }
+        
+        // 4. Add any API auth headers from the auth config
+        if (apiAuthHeaders && apiAuthHeaders.length > 0) {
+          console.log('📌 Adding API auth headers:', apiAuthHeaders);
+          allHeaders.push(...apiAuthHeaders);
+        }
+        
+        // Remove duplicates by key (case-insensitive) - keep the first occurrence
+        const uniqueHeaders = [];
+        const headerKeys = new Set();
+        
+        // Process in order: auth headers should take precedence, so we add them first
+        // but since we're pushing them first in the array, they'll be kept when we dedupe
+        allHeaders.forEach(header => {
+          const keyLower = header.key?.toLowerCase();
+          if (keyLower && !headerKeys.has(keyLower)) {
+            headerKeys.add(keyLower);
+            uniqueHeaders.push(header);
+          } else {
+            console.log(`🔄 Skipping duplicate header: ${header.key}`);
+          }
+        });
+        
+        console.log('📌 Final headers (all included, no filtering):', uniqueHeaders);
+        setRequestHeaders(uniqueHeaders);
+        // ============== END SIMPLIFIED FIX ==============
+        
+        if (bodyParams.length > 0) {
+          console.log('📦 Body parameters found:', bodyParams);
+          
+          if (details.requestBody && details.requestBody.bodyType === 'xml') {
+            setRequestBodyType('xml');
+            
+            if (bodyParams.length > 0) {
+              const xmlBuilder = ['<?xml version="1.0" encoding="UTF-8"?>', '<request>'];
+              bodyParams.forEach(param => {
+                if (param.key) {
+                  xmlBuilder.push(`  <${param.key}>${param.value || param.defaultValue || ''}</${param.key}>`);
+                }
+              });
+              xmlBuilder.push('</request>');
+              setRequestBody(xmlBuilder.join('\n'));
+            } else if (details.requestBody.sample) {
+              setRequestBody(details.requestBody.sample);
+            }
+          }
+          else if (details.requestBody && details.requestBody.bodyType === 'json') {
             setRequestBodyType('raw');
             setRawBodyType('json');
             
@@ -2696,335 +2991,59 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
                 }
               });
               
-              if (details.requestBody.sample) {
-                try {
-                  const existingBody = JSON.parse(details.requestBody.sample);
-                  setRequestBody(JSON.stringify({ ...existingBody, ...jsonObject }, null, 2));
-                } catch {
-                  setRequestBody(JSON.stringify(jsonObject, null, 2));
-                }
-              } else {
+              if (Object.keys(jsonObject).length > 0) {
                 setRequestBody(JSON.stringify(jsonObject, null, 2));
-              }
-            } else if (details.requestBody.sample) {
-              setRequestBody(details.requestBody.sample);
-            }
-          }
-        }
-        
-        if (details.method && details.method !== request.method) {
-          setRequestMethod(details.method);
-        }
-        
-        // Separate parameters based on location
-        if (details.parameters) {
-          const queryParams = [];
-          const pathParams = [];
-          const headerParams = [];
-          const bodyParams = [];
-          
-          console.log('📊 Processing parameters from API:', details.parameters.length);
-          
-          // First, collect all path parameters from the template URL
-          const templateUrlPathParams = [];
-          if (initialTemplateUrl) {
-            const placeholderRegex = /{([^}]+)}/g;
-            let match;
-            while ((match = placeholderRegex.exec(initialTemplateUrl)) !== null) {
-              templateUrlPathParams.push(match[1]);
-            }
-          }
-          
-          details.parameters.forEach(param => {
-            if (param && param.key) {
-              const paramObject = {
-                id: param.id || `${param.key}-${Date.now()}-${Math.random()}`,
-                key: param.key,
-                value: param.value || '',
-                description: param.description || '',
-                enabled: param.enabled !== false,
-                required: param.required || false,
-                parameterLocation: param.parameterLocation || 'query',
-                bodyFormat: param.bodyFormat || null,
-                type: param.type || 'string',
-                defaultValue: param.defaultValue || '',
-                example: param.example || ''
-              };
-              
-              console.log(`📍 [API] Parameter ${param.key}: location = ${param.parameterLocation}`);
-              
-              const location = (param.parameterLocation || '').toLowerCase();
-              
-              // CRITICAL FIX: Check if this is a path parameter based on URL
-              const isInTemplateUrl = templateUrlPathParams.includes(param.key);
-              
-              if (isInTemplateUrl || location === 'path') {
-                pathParams.push(paramObject);
-                console.log(`🛣️ Added to PATH params: ${param.key} (from URL template or location)`);
-              } else if (location === 'query') {
-                queryParams.push(paramObject);
-              } else if (location === 'header') {
-                headerParams.push(paramObject);
-                console.log(`📌 Added to HEADER params: ${param.key}`);
-              } else if (location === 'body') {
-                bodyParams.push(paramObject);
-                console.log(`📦 Body parameter: ${param.key}`);
-              } else {
-                // Default to query params
-                queryParams.push(paramObject);
-                console.log(`🔍 Defaulted to QUERY param: ${param.key}`);
-              }
-            }
-          });
-          
-          console.log('📊 [Separated Parameters]', {
-            query: queryParams.length,
-            path: pathParams.length,
-            header: headerParams.length,
-            body: bodyParams.length,
-            templateUrlPathParams
-          });
-          
-          if (queryParams.length > 0) {
-            console.log('📝 Setting query params:', queryParams);
-            setRequestParams(queryParams);
-          }
-          
-          if (pathParams.length > 0) {
-            console.log('🛣️ Setting path params:', pathParams);
-            
-            // Add position information based on order in URL
-            const pathParamsWithPosition = pathParams.map((param, index) => ({
-              ...param,
-              position: index,
-              id: param.id || `path-${Date.now()}-${index}-${Math.random()}`
-            }));
-            
-            // CRITICAL FIX: Filter out any path params that have placeholder values
-            const cleanedPathParams = pathParamsWithPosition.map(param => {
-              // Check if the value contains any placeholder patterns
-              const value = param.value || '';
-              
-              // If the value contains {, }, or %7B, %7D (encoded curly braces), treat it as empty
-              const hasPlaceholder = value.includes('{') || value.includes('}') || 
-                                    value.includes('%7B') || value.includes('%7D');
-              
-              return {
-                ...param,
-                // Only keep the value if it's a real value (not a placeholder)
-                value: hasPlaceholder ? '' : value
-              };
-            });
-            
-            console.log('🧹 Cleaned path params with position:', cleanedPathParams);
-            setRequestPathParams(cleanedPathParams);
-            
-            // Build the URL with path params, but don't add extra placeholders
-            let updatedUrl = initialTemplateUrl;
-            
-            // Create a map of placeholders to values - only include real values
-            const paramValueMap = new Map();
-            pathParams.forEach(param => {
-              const value = param.value || '';
-              const hasPlaceholder = value.includes('{') || value.includes('}') || 
-                                    value.includes('%7B') || value.includes('%7D');
-              
-              // Only add to map if it's a real value (not a placeholder)
-              if (param.key && value && value.trim() !== '' && !hasPlaceholder) {
-                paramValueMap.set(param.key, value);
-              }
-            });
-            
-            // Replace placeholders with values
-            const placeholders = Array.from(paramValueMap.keys());
-            
-            placeholders.forEach(key => {
-              const value = paramValueMap.get(key);
-              const placeholder = `{${key}}`;
-              
-              if (updatedUrl.includes(placeholder)) {
-                const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-                updatedUrl = updatedUrl.replace(regex, value);
-              }
-            });
-            
-            // Add query params if they have values
-            const queryString = queryParams
-              .filter(p => p.enabled && p.key && p.key.trim() !== '' && p.value && p.value.trim() !== '')
-              .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
-              .join('&');
-            
-            const finalUrl = queryString ? `${updatedUrl}?${queryString}` : updatedUrl;
-            
-            console.log('✅ Updated URL with API path params and query params:', finalUrl);
-            setRequestUrl(finalUrl);
-          }
-          
-          // ============== FIXED: Handle headers from API details ==============
-          // Collect all non-auth headers to add
-          const nonAuthHeaders = [];
-          
-          // 1. Add header parameters (parameters with location='header')
-          if (headerParams.length > 0) {
-            console.log('📌 Adding header parameters to headers:', headerParams);
-            
-            headerParams.forEach(param => {
-              // Skip if it's an auth-related header
-              const key = param.key?.toLowerCase() || '';
-              if (key.includes('authorization') || key.includes('api-key') || key.includes('api-secret')) {
-                console.log(`⏭️ Skipping auth header from parameters: ${param.key}`);
-                return;
-              }
-              
-              nonAuthHeaders.push({
-                id: param.id || `header-${Date.now()}-${Math.random()}`,
-                key: param.key,
-                value: param.value || '',
-                description: param.description || '',
-                enabled: param.enabled !== false,
-                required: param.required || false
-              });
-            });
-          }
-          
-          // 2. Add regular headers from details
-          if (details.headers && details.headers.length > 0) {
-            console.log('📌 Adding regular headers from details:', details.headers);
-            
-            details.headers.forEach((header, idx) => {
-              // Skip if it's an auth header
-              const key = header.key?.toLowerCase() || '';
-              if (key.includes('authorization') || key.includes('api-key') || key.includes('api-secret')) {
-                console.log(`⏭️ Skipping auth header from headers list: ${header.key}`);
-                return;
-              }
-              
-              nonAuthHeaders.push({
-                id: header.id || `header-${Date.now()}-${idx}-${Math.random()}`,
-                key: header.key,
-                value: header.value || '',
-                description: header.description || '',
-                enabled: header.enabled !== false,
-                required: header.required || false
-              });
-            });
-          }
-          
-          // Remove duplicates (by key) - keep the first occurrence
-          const uniqueNonAuthHeaders = nonAuthHeaders.reduce((acc, current) => {
-            const exists = acc.some(h => h.key.toLowerCase() === current.key.toLowerCase());
-            if (!exists) {
-              acc.push(current);
-            }
-            return acc;
-          }, []);
-          
-          // Get current auth headers from state
-          const currentHeaders = Array.isArray(requestHeaders) ? requestHeaders : [];
-          const authHeaders = currentHeaders.filter(h => 
-            h.key.toLowerCase().includes('authorization') || 
-            h.key.toLowerCase().includes('api-key') || 
-            h.key.toLowerCase().includes('api-secret')
-          );
-          
-          // Merge auth headers with non-auth headers
-          const finalHeaders = [...authHeaders, ...uniqueNonAuthHeaders];
-          
-          console.log('📌 Final headers after merge:', finalHeaders);
-          setRequestHeaders(finalHeaders);
-          // ============== END FIX ==============
-          
-          if (bodyParams.length > 0) {
-            console.log('📦 Body parameters found:', bodyParams);
-            
-            if (details.requestBody && details.requestBody.bodyType === 'xml') {
-              setRequestBodyType('xml');
-              
-              if (bodyParams.length > 0) {
-                const xmlBuilder = ['<?xml version="1.0" encoding="UTF-8"?>', '<request>'];
-                bodyParams.forEach(param => {
-                  if (param.key) {
-                    xmlBuilder.push(`  <${param.key}>${param.value || param.defaultValue || ''}</${param.key}>`);
-                  }
-                });
-                xmlBuilder.push('</request>');
-                setRequestBody(xmlBuilder.join('\n'));
               } else if (details.requestBody.sample) {
                 setRequestBody(details.requestBody.sample);
               }
             }
-            else if (details.requestBody && details.requestBody.bodyType === 'json') {
-              setRequestBodyType('raw');
-              setRawBodyType('json');
-              
-              if (bodyParams.length > 0) {
-                const jsonObject = {};
-                bodyParams.forEach(param => {
-                  if (param.key) {
-                    let value = param.value || param.defaultValue || param.example || '';
-                    if (param.type === 'integer' || param.type === 'number') {
-                      const num = Number(value);
-                      if (!isNaN(num)) value = num;
-                    } else if (param.type === 'boolean') {
-                      value = value === 'true' || value === true;
-                    }
-                    jsonObject[param.key] = value;
-                  }
-                });
-                
-                if (Object.keys(jsonObject).length > 0) {
-                  setRequestBody(JSON.stringify(jsonObject, null, 2));
-                } else if (details.requestBody.sample) {
-                  setRequestBody(details.requestBody.sample);
-                }
-              }
+          }
+          else if (details.requestBody && details.requestBody.bodyType === 'form-data') {
+            setRequestBodyType('form-data');
+            if (bodyParams.length > 0) {
+              const formDataArray = bodyParams.map((param, index) => ({
+                id: param.id || `form-${Date.now()}-${index}-${Math.random()}`,
+                key: param.key || '',
+                value: param.value || param.defaultValue || param.example || '',
+                type: param.bodyFormat === 'file' ? 'file' : 'text',
+                enabled: true,
+                description: param.description || '',
+                required: param.required || false
+              }));
+              setFormData(formDataArray);
             }
-            else if (details.requestBody && details.requestBody.bodyType === 'form-data') {
-              setRequestBodyType('form-data');
-              if (bodyParams.length > 0) {
-                const formDataArray = bodyParams.map((param, index) => ({
-                  id: param.id || `form-${Date.now()}-${index}-${Math.random()}`,
-                  key: param.key || '',
-                  value: param.value || param.defaultValue || param.example || '',
-                  type: param.bodyFormat === 'file' ? 'file' : 'text',
-                  enabled: true,
-                  description: param.description || '',
-                  required: param.required || false
-                }));
-                setFormData(formDataArray);
-              }
-            }
-            else if (details.requestBody && details.requestBody.bodyType === 'x-www-form-urlencoded') {
-              setRequestBodyType('x-www-form-urlencoded');
-              if (bodyParams.length > 0) {
-                const urlEncodedArray = bodyParams.map((param, index) => ({
-                  id: param.id || `url-${Date.now()}-${index}-${Math.random()}`,
-                  key: param.key || '',
-                  value: param.value || param.defaultValue || param.example || '',
-                  description: param.description || '',
-                  enabled: true,
-                  required: param.required || false
-                }));
-                setUrlEncodedData(urlEncodedArray);
-              }
+          }
+          else if (details.requestBody && details.requestBody.bodyType === 'x-www-form-urlencoded') {
+            setRequestBodyType('x-www-form-urlencoded');
+            if (bodyParams.length > 0) {
+              const urlEncodedArray = bodyParams.map((param, index) => ({
+                id: param.id || `url-${Date.now()}-${index}-${Math.random()}`,
+                key: param.key || '',
+                value: param.value || param.defaultValue || param.example || '',
+                description: param.description || '',
+                enabled: true,
+                required: param.required || false
+              }));
+              setUrlEncodedData(urlEncodedArray);
             }
           }
         }
-        
-        // Determine which tab should be active
-        const newActiveTab = determineActiveTab();
-        if (newActiveTab !== activeTab) {
-          setActiveTab(newActiveTab);
-        }
       }
-    } catch (apiError) {
-      console.error('Error fetching request details from API:', apiError);
-    } finally {
-      if (isMounted.current) {
-        setLoading(prev => ({ ...prev, request: false }));
+      
+      // Determine which tab should be active
+      const newActiveTab = determineActiveTab();
+      if (newActiveTab !== activeTab) {
+        setActiveTab(newActiveTab);
       }
     }
+  } catch (apiError) {
+    console.error('Error fetching request details from API:', apiError);
+  } finally {
+    if (isMounted.current) {
+      setLoading(prev => ({ ...prev, request: false }));
+    }
   }
+}
 }, [authToken, determineActiveTab, requestUrl, authType, authConfig, activeTab, requestBodyType, formData.length, urlEncodedData.length, requestHeaders]);
 
 

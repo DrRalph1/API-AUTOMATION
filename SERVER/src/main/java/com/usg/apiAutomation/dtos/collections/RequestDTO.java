@@ -14,6 +14,7 @@ public class RequestDTO {
     private boolean isEditing;
     private String status;
     private String lastModified;
+    private String createdAt;
     private AuthConfigDTO auth;
     private List<ParameterDTO> params;
     private List<HeaderDTO> headers;

@@ -17,9 +17,10 @@ public interface RequestRepository extends JpaRepository<RequestEntity, String> 
 
     List<RequestEntity> findByFolderId(String folderId);
 
+    // In your RequestRepository.java
     @Query("SELECT new com.usg.apiAutomation.dtos.collections.RequestSummaryDTO(" +
-            "r.id, r.name, r.method, r.url, r.description, r.authType, " +
-            "r.body, r.tests, r.preRequestScript, r.isSaved) " +
+            "r.id, r.name, r.method, r.url, r.description, r.authType, r.body, " +
+            "r.tests, r.preRequestScript, r.isSaved, r.lastModified, r.createdAt) " + // Add createdAt
             "FROM RequestsEntityCollections r WHERE r.folder.id = :folderId")
     List<RequestSummaryDTO> findRequestSummariesByFolderId(@Param("folderId") String folderId);
 

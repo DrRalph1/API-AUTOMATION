@@ -84,13 +84,6 @@ public class CollectionsService {
         CollectionEntity collection = collectionRepository.findById(collectionId)
                 .orElseThrow(() -> new EntityNotFoundException("Collection not found: " + collectionId));
 
-        // Verify ownership
-//        if (!collection.getOwner().equals(performedBy)) {
-//            log.warn("Request ID: {}, User {} attempted to access collection {} owned by {}",
-//                    requestId, performedBy, collectionId, collection.getOwner());
-//            throw new SecurityException("Access denied to collection: " + collectionId);
-//        }
-
         // Create response DTO
         CollectionDetailsResponseDTO details = new CollectionDetailsResponseDTO();
         details.setCollectionId(collection.getId());
@@ -138,6 +131,14 @@ public class CollectionsService {
                 requestDTO.setSaved(summary.isSaved());
                 requestDTO.setCollectionId(collectionId);
                 requestDTO.setFolderId(folder.getId());
+
+                // IMPORTANT: Set both timestamps
+                if (summary.getLastModified() != null) {
+                    requestDTO.setLastModified(summary.getLastModified().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+                }
+                if (summary.getCreatedAt() != null) {
+                    requestDTO.setCreatedAt(summary.getCreatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+                }
 
                 // Fetch headers as DTOs
                 List<HeaderDTO> headers = headerRepository.findHeaderDTOsByRequestId(summary.getId());
@@ -410,6 +411,67 @@ public class CollectionsService {
             }
         } catch (Exception e) {
             log.warn("Error fetching headers for request {}: {}", requestIdParam, e.getMessage());
+        }
+
+        // ============= INJECT API KEY HEADERS IF AUTH TYPE IS API KEY =============
+        // Check if auth config exists and is of type API Key
+        boolean isApiKeyAuth = false;
+
+        // First check if we have auth config from GeneratedApi
+        if (generatedApiOpt.isPresent()) {
+            try {
+                String apiId = generatedApiOpt.get().getId();
+                Optional<ApiAuthConfigEntity> authConfigOpt = generatedAPIRepository.findAuthConfigByApiId(apiId);
+                if (authConfigOpt.isPresent() && "API_KEY".equals(authConfigOpt.get().getAuthType())) {
+                    isApiKeyAuth = true;
+                }
+            } catch (Exception e) {
+                log.warn("Error checking auth config for API Key type: {}", e.getMessage());
+            }
+        }
+
+        // If not found in GeneratedApi, check collections auth config
+        if (!isApiKeyAuth) {
+            try {
+                Optional<AuthConfigEntity> authConfigEntityOpt = authConfigRepository.findByRequestId(requestIdParam);
+                System.out.println("authConfigEntityOpt:::::::::" + authConfigEntityOpt);
+                if (authConfigEntityOpt.isPresent() && "apiKey".equals(authConfigEntityOpt.get().getType())) {
+                    isApiKeyAuth = true;
+                }
+            } catch (Exception e) {
+                log.warn("Error checking collections auth config for API Key type: {}", e.getMessage());
+            }
+        }
+
+        // If auth type is API Key, inject X-Api-Key and X-Api-Secret headers
+        if (isApiKeyAuth) {
+            log.info("Auth type is API Key for request: {}, injecting X-Api-Key and X-Api-Secret headers", requestIdParam);
+
+            // Check if X-Api-Key header already exists
+            boolean hasApiKeyHeader = headers.stream()
+                    .anyMatch(h -> "X-Api-Key".equalsIgnoreCase(h.getKey()));
+
+            if (!hasApiKeyHeader) {
+                ApiHeaderDTO apiKeyHeader = new ApiHeaderDTO();
+                apiKeyHeader.setKey("X-Api-Key");
+                apiKeyHeader.setValue("{{api_key}}"); // Placeholder that will be replaced at runtime
+                apiKeyHeader.setDescription("API Key for authentication");
+                apiKeyHeader.setRequired(true);
+                headers.add(apiKeyHeader);
+            }
+
+            // Check if X-Api-Secret header already exists
+            boolean hasApiSecretHeader = headers.stream()
+                    .anyMatch(h -> "X-Api-Secret".equalsIgnoreCase(h.getKey()));
+
+            if (!hasApiSecretHeader) {
+                ApiHeaderDTO apiSecretHeader = new ApiHeaderDTO();
+                apiSecretHeader.setKey("X-Api-Secret");
+                apiSecretHeader.setValue("{{api_secret}}"); // Placeholder that will be replaced at runtime
+                apiSecretHeader.setDescription("API Secret for authentication");
+                apiSecretHeader.setRequired(true);
+                headers.add(apiSecretHeader);
+            }
         }
 
         generateApiRequest.setHeaders(headers.isEmpty() ? null : headers);
@@ -1463,8 +1525,12 @@ public class CollectionsService {
         dto.setEditing(entity.isEditing());
         dto.setStatus(entity.getStatus());
 
+        // Set both timestamps
         if (entity.getLastModified() != null) {
             dto.setLastModified(entity.getLastModified().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        }
+        if (entity.getCreatedAt() != null) {
+            dto.setCreatedAt(entity.getCreatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         }
 
         dto.setBody(entity.getBody());

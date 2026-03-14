@@ -5328,7 +5328,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                         <select
                           value={authConfig.authType}
                           onChange={(e) => handleAuthConfigChange('authType', e.target.value)}
-                          className="w-full p-3 rounded-lg border-2 appearance-none cursor-pointer"
+                          className="w-full text-sm p-3 rounded-lg border-2 appearance-none cursor-pointer"
                           style={{
                             backgroundColor: themeColors.bg,
                             borderColor: themeColors.border,

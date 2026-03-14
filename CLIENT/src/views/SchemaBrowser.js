@@ -1470,7 +1470,7 @@ const [usedByData, setUsedByData] = useState({
   // Data view state
   const [dataView, setDataView] = useState({
     page: 1,
-    pageSize: 10,
+    pageSize: 15,
     sortColumn: '',
     sortDirection: 'ASC'
   });
@@ -2948,7 +2948,7 @@ useEffect(() => {
               onChange={(e) => handlePageSizeChange(parseInt(e.target.value))}
               disabled={tableDataLoading}
             >
-              <option value="10">10 rows</option>
+              <option value="15">15 rows</option>
               <option value="25">25 rows</option>
               <option value="50">50 rows</option>
               <option value="100">100 rows</option>

@@ -25,6 +25,21 @@ const buildQueryParams = (params = {}) => {
 // ============ DASHBOARD METHODS ============
 
 /**
+ * Get lightweight dashboard data for initial load
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response with minimal dashboard data
+ */
+export const getLightweightDashboard = async (authorizationHeader) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`/dashboard/lightweight`, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+/**
  * Get dashboard statistics
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
@@ -40,14 +55,14 @@ export const getDashboardStats = async (authorizationHeader) => {
 };
 
 /**
- * Get dashboard connections
+ * Get dashboard collections
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
  */
-export const getDashboardConnections = async (authorizationHeader) => {
+export const getDashboardCollections = async (authorizationHeader) => {
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/dashboard/connections`, {
+    (authHeader) => apiCall(`/dashboard/collections`, {
       method: 'GET',
       headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
@@ -55,14 +70,14 @@ export const getDashboardConnections = async (authorizationHeader) => {
 };
 
 /**
- * Get dashboard APIs
+ * Get dashboard endpoints
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
  */
-export const getDashboardApis = async (authorizationHeader) => {
+export const getDashboardEndpoints = async (authorizationHeader) => {
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/dashboard/apis`, {
+    (authHeader) => apiCall(`/dashboard/endpoints`, {
       method: 'GET',
       headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
@@ -70,18 +85,123 @@ export const getDashboardApis = async (authorizationHeader) => {
 };
 
 /**
- * Get dashboard activities
+ * Get rate limit rules
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getDashboardRateLimitRules = async (authorizationHeader) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`/dashboard/rate-limit-rules`, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+/**
+ * Get IP whitelist
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getDashboardIpWhitelist = async (authorizationHeader) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`/dashboard/ip-whitelist`, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+/**
+ * Get load balancers
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getDashboardLoadBalancers = async (authorizationHeader) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`/dashboard/load-balancers`, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+/**
+ * Get security events
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getDashboardSecurityEvents = async (authorizationHeader) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`/dashboard/security-events`, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+/**
+ * Get security alerts
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getDashboardSecurityAlerts = async (authorizationHeader) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`/dashboard/security-alerts`, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+/**
+ * Get security summary
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getDashboardSecuritySummary = async (authorizationHeader) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`/dashboard/security-summary`, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+/**
+ * Get supported programming languages
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getDashboardLanguages = async (authorizationHeader) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`/dashboard/languages`, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+/**
+ * Get code implementations
  * @param {string} authorizationHeader - Bearer token
  * @param {Object} pagination - Pagination parameters
  * @param {number} pagination.page - Page number (default: 1)
  * @param {number} pagination.size - Page size (default: 10)
  * @returns {Promise} API response
  */
-export const getDashboardActivities = async (authorizationHeader, pagination = {}) => {
+export const getDashboardImplementations = async (authorizationHeader, pagination = {}) => {
   const { page = 1, size = 10 } = pagination;
   
   const queryString = buildQueryParams({ page, size });
-  const url = `/dashboard/activities${queryString ? `?${queryString}` : ''}`;
+  const url = `/dashboard/implementations${queryString ? `?${queryString}` : ''}`;
   
   return apiCallWithTokenRefresh(
     authorizationHeader,
@@ -93,14 +213,14 @@ export const getDashboardActivities = async (authorizationHeader, pagination = {
 };
 
 /**
- * Get dashboard schema statistics
+ * Get code generation summary
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
  */
-export const getDashboardSchemaStats = async (authorizationHeader) => {
+export const getDashboardCodeGenerationSummary = async (authorizationHeader) => {
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/dashboard/schema-stats`, {
+    (authHeader) => apiCall(`/dashboard/code-generation-summary`, {
       method: 'GET',
       headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
@@ -108,14 +228,71 @@ export const getDashboardSchemaStats = async (authorizationHeader) => {
 };
 
 /**
- * Get code generation statistics
+ * Get documentation overview
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} API response
  */
-export const getCodeGenerationStats = async (authorizationHeader) => {
+export const getDashboardDocumentation = async (authorizationHeader) => {
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/dashboard/code-generation-stats`, {
+    (authHeader) => apiCall(`/dashboard/documentation`, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+/**
+ * Get environments overview
+ * @param {string} authorizationHeader - Bearer token
+ * @returns {Promise} API response
+ */
+export const getDashboardEnvironments = async (authorizationHeader) => {
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(`/dashboard/environments`, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+/**
+ * Get users overview
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} pagination - Pagination parameters
+ * @param {number} pagination.page - Page number (default: 1)
+ * @param {number} pagination.size - Page size (default: 10)
+ * @returns {Promise} API response
+ */
+export const getDashboardUsers = async (authorizationHeader, pagination = {}) => {
+  const { page = 1, size = 10 } = pagination;
+  
+  const queryString = buildQueryParams({ page, size });
+  const url = `/dashboard/users${queryString ? `?${queryString}` : ''}`;
+  
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(url, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
+    })
+  );
+};
+
+/**
+ * Get user activities
+ * @param {string} authorizationHeader - Bearer token
+ * @param {number} limit - Number of activities to return (default: 10)
+ * @returns {Promise} API response
+ */
+export const getDashboardUserActivities = async (authorizationHeader, limit = 10) => {
+  const queryString = buildQueryParams({ limit });
+  const url = `/dashboard/user-activities${queryString ? `?${queryString}` : ''}`;
+  
+  return apiCallWithTokenRefresh(
+    authorizationHeader,
+    (authHeader) => apiCall(url, {
       method: 'GET',
       headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
@@ -138,25 +315,29 @@ export const getComprehensiveDashboard = async (authorizationHeader) => {
 };
 
 /**
- * Search dashboard activities with filters
+ * Search across dashboard
  * @param {string} authorizationHeader - Bearer token
- * @param {Object} searchDTO - Search criteria
- * @param {string} searchDTO.userId - Filter by user ID
- * @param {string} searchDTO.action - Filter by action type
- * @param {string} searchDTO.operation - Filter by operation
- * @param {string} searchDTO.startDate - Start date filter
- * @param {string} searchDTO.endDate - End date filter
- * @param {number} searchDTO.page - Page number (default: 1)
- * @param {number} searchDTO.size - Page size (default: 10)
+ * @param {Object} searchParams - Search parameters
+ * @param {string} searchParams.query - Search query (required)
+ * @param {string} searchParams.type - Type to search (all, collections, endpoints, users)
+ * @param {number} searchParams.limit - Maximum results (default: 10)
  * @returns {Promise} API response
  */
-export const searchDashboardActivities = async (authorizationHeader, searchDTO = {}) => {
+export const searchDashboard = async (authorizationHeader, searchParams = {}) => {
+  const { query, type, limit = 10 } = searchParams;
+  
+  if (!query) {
+    throw new Error('Search query is required');
+  }
+  
+  const queryString = buildQueryParams({ query, type, limit });
+  const url = `/dashboard/search${queryString ? `?${queryString}` : ''}`;
+  
   return apiCallWithTokenRefresh(
     authorizationHeader,
-    (authHeader) => apiCall(`/dashboard/activities/search`, {
-      method: 'POST',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-      body: JSON.stringify(searchDTO)
+    (authHeader) => apiCall(url, {
+      method: 'GET',
+      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
     })
   );
 };
@@ -208,7 +389,6 @@ export const handleDashboardResponse = (response) => {
  */
 export const extractDashboardStats = (response) => {
   if (!response || !response.data) return null;
-  
   return response.data;
 };
 
@@ -220,111 +400,50 @@ export const extractDashboardStats = (response) => {
 export const extractComprehensiveDashboard = (response) => {
   if (!response || !response.data) return null;
   
-  const data = response.data;
   return {
-    stats: data.stats || {},
-    connections: data.connections || {},
-    apis: data.apis || {},
-    recentActivities: data.recentActivities || {},
-    schemaStats: data.schemaStats || {},
-    systemHealth: data.systemHealth || {},
-    codeGenerationStats: data.codeGenerationStats || {},
-    lastUpdated: data.lastUpdated || new Date().toISOString(),
-    generatedFor: data.generatedFor || 'Unknown'
+    ...response.data,
+    lastUpdated: response.data.lastUpdated || new Date().toISOString(),
+    generatedFor: response.data.generatedFor || 'Unknown',
+    requestId: response.requestId
   };
 };
 
 /**
- * Validate dashboard search criteria
- * @param {Object} searchCriteria - Search criteria to validate
+ * Validate dashboard search parameters
+ * @param {Object} searchParams - Search parameters to validate
  * @returns {Array} Array of validation errors
  */
-export const validateDashboardSearchCriteria = (searchCriteria) => {
+export const validateDashboardSearchParams = (searchParams) => {
   const errors = [];
   
-  // Validate date range
-  if (searchCriteria.startDate && searchCriteria.endDate) {
-    const start = new Date(searchCriteria.startDate);
-    const end = new Date(searchCriteria.endDate);
-    
-    if (start > end) {
-      errors.push('Start date cannot be after end date');
-    }
+  if (!searchParams.query || searchParams.query.trim() === '') {
+    errors.push('Search query is required');
   }
   
-  // Validate page and size
-  if (searchCriteria.page !== undefined && searchCriteria.page < 1) {
-    errors.push('Page number must be at least 1');
+  if (searchParams.limit !== undefined && (searchParams.limit < 1 || searchParams.limit > 100)) {
+    errors.push('Limit must be between 1 and 100');
   }
   
-  if (searchCriteria.size !== undefined && (searchCriteria.size < 1 || searchCriteria.size > 100)) {
-    errors.push('Page size must be between 1 and 100');
+  if (searchParams.type && !['all', 'collections', 'endpoints', 'users'].includes(searchParams.type)) {
+    errors.push('Type must be one of: all, collections, endpoints, users');
   }
   
   return errors;
 };
 
 /**
- * Build dashboard search DTO
- * @param {Object} criteria - Search criteria
- * @returns {Object} Search DTO
- */
-export const buildDashboardSearchDTO = (criteria = {}) => {
-  return {
-    userId: criteria.userId || '',
-    action: criteria.action || '',
-    operation: criteria.operation || '',
-    startDate: criteria.startDate || '',
-    endDate: criteria.endDate || '',
-    page: criteria.page || 1,
-    size: criteria.size || 10
-  };
-};
-
-/**
- * Build pagination parameters for dashboard activities
+ * Build pagination parameters
  * @param {number} page - Page number (default: 1)
  * @param {number} size - Page size (default: 10)
  * @returns {Object} Pagination parameters
  */
-export const buildDashboardPaginationParams = (page = 1, size = 10) => ({
+export const buildPaginationParams = (page = 1, size = 10) => ({
   page,
   size
 });
 
 /**
- * Format dashboard data for display
- * @param {Object} dashboardData - Raw dashboard data
- * @returns {Object} Formatted dashboard data
- */
-export const formatDashboardData = (dashboardData) => {
-  if (!dashboardData) return {};
-  
-  const formatted = { ...dashboardData };
-  
-  // Format dates for display
-  if (formatted.lastUpdated) {
-    formatted.formattedLastUpdated = formatDateForDisplay(formatted.lastUpdated);
-  }
-  
-  // Add human-readable metrics if needed
-  if (formatted.stats && typeof formatted.stats.totalConnections === 'number') {
-    formatted.stats.totalConnectionsFormatted = formatted.stats.totalConnections.toLocaleString();
-  }
-  
-  if (formatted.stats && typeof formatted.stats.totalApis === 'number') {
-    formatted.stats.totalApisFormatted = formatted.stats.totalApis.toLocaleString();
-  }
-  
-  if (formatted.stats && typeof formatted.stats.totalUsers === 'number') {
-    formatted.stats.totalUsersFormatted = formatted.stats.totalUsers.toLocaleString();
-  }
-  
-  return formatted;
-};
-
-/**
- * Format date for display (import from AuditController or define here)
+ * Format date for display
  * @param {string|Date} date - Date to format
  * @returns {string} Formatted date string
  */
@@ -343,81 +462,44 @@ export const formatDateForDisplay = (date) => {
 };
 
 /**
- * Get dashboard system health (if endpoint available)
- * @param {string} authorizationHeader - Bearer token
- * @returns {Promise} API response
- */
-export const getDashboardSystemHealth = async (authorizationHeader) => {
-  return apiCallWithTokenRefresh(
-    authorizationHeader,
-    (authHeader) => apiCall(`/dashboard/system-health`, {
-      method: 'GET',
-      headers: getAuthHeaders(authHeader.replace('Bearer ', ''))
-    })
-  ).catch(() => {
-    // If endpoint doesn't exist, return default health
-    return {
-      responseCode: 200,
-      data: {
-        status: 'UP',
-        uptime: 'Unknown',
-        database: 'Connected',
-        memoryUsage: 'Normal',
-        lastCheck: new Date().toISOString()
-      }
-    };
-  });
-};
-
-/**
  * Refresh all dashboard data (comprehensive)
  * @param {string} authorizationHeader - Bearer token
  * @returns {Promise} Combined dashboard data
  */
 export const refreshDashboard = async (authorizationHeader) => {
   try {
-    // Try to get comprehensive data first
     const comprehensiveResponse = await getComprehensiveDashboard(authorizationHeader);
-    const comprehensiveData = handleDashboardResponse(comprehensiveResponse);
-    
-    if (comprehensiveData && comprehensiveData.data) {
-      return comprehensiveData;
-    }
-    
-    // If comprehensive fails, fetch individual components
-    const [
-      statsResponse,
-      connectionsResponse,
-      apisResponse,
-      activitiesResponse
-    ] = await Promise.all([
-      getDashboardStats(authorizationHeader),
-      getDashboardConnections(authorizationHeader),
-      getDashboardApis(authorizationHeader),
-      getDashboardActivities(authorizationHeader, { page: 1, size: 5 })
-    ]);
-    
-    const stats = handleDashboardResponse(statsResponse);
-    const connections = handleDashboardResponse(connectionsResponse);
-    const apis = handleDashboardResponse(apisResponse);
-    const activities = handleDashboardResponse(activitiesResponse);
-    
-    return {
-      responseCode: 200,
-      message: 'Dashboard data refreshed successfully',
-      data: {
-        stats: stats.data,
-        connections: connections.data,
-        apis: apis.data,
-        recentActivities: activities.data,
-        lastUpdated: new Date().toISOString()
-      },
-      requestId: `refresh-${Date.now()}`
-    };
-    
+    return handleDashboardResponse(comprehensiveResponse);
   } catch (error) {
     throw new Error(`Failed to refresh dashboard: ${error.message}`);
   }
+};
+
+// Keep these utility functions but update names to match backend:
+export const buildDashboardSearchDTO = (criteria = {}) => {
+  return {
+    query: criteria.query || '',
+    type: criteria.type || 'all',
+    limit: criteria.limit || 10
+  };
+};
+
+/**
+ * Format dashboard data for display
+ * @param {Object} dashboardData - Raw dashboard data
+ * @returns {Object} Formatted dashboard data
+ */
+export const formatDashboardData = (dashboardData) => {
+  if (!dashboardData) return {};
+  
+  const formatted = { ...dashboardData };
+  
+  // Format dates for display
+  if (formatted.lastUpdated) {
+    formatted.formattedLastUpdated = formatDateForDisplay(formatted.lastUpdated);
+  }
+  
+  return formatted;
 };
 
 /**
@@ -430,7 +512,6 @@ export const exportDashboardData = async (authorizationHeader, format = 'json') 
   const dashboardData = await refreshDashboard(authorizationHeader);
   
   if (format.toLowerCase() === 'csv') {
-    // Convert to CSV format
     const csvData = convertDashboardToCSV(dashboardData.data);
     return {
       ...dashboardData,
@@ -439,7 +520,6 @@ export const exportDashboardData = async (authorizationHeader, format = 'json') 
     };
   }
   
-  // Default to JSON
   return {
     ...dashboardData,
     format: 'json'
@@ -455,55 +535,21 @@ const convertDashboardToCSV = (dashboardData) => {
   if (!dashboardData) return '';
   
   const rows = [];
+  rows.push(['Section', 'Metric', 'Value', 'Timestamp'].join(','));
   
-  // Add header
-  rows.push(['Metric', 'Value', 'Timestamp'].join(','));
-  
-  // Add stats
-  if (dashboardData.stats) {
-    Object.keys(dashboardData.stats).forEach(key => {
-      if (typeof dashboardData.stats[key] === 'number' || typeof dashboardData.stats[key] === 'string') {
-        rows.push([`stats.${key}`, dashboardData.stats[key], dashboardData.lastUpdated || ''].join(','));
+  // Helper to flatten object
+  const flattenObject = (obj, prefix = '') => {
+    Object.keys(obj).forEach(key => {
+      if (obj[key] && typeof obj[key] === 'object' && !Array.isArray(obj[key])) {
+        flattenObject(obj[key], `${prefix}${key}.`);
+      } else if (Array.isArray(obj[key])) {
+        rows.push([prefix.slice(0, -1), key, `Array(${obj[key].length})`, new Date().toISOString()]);
+      } else {
+        rows.push([prefix.slice(0, -1), key, obj[key], new Date().toISOString()]);
       }
     });
-  }
+  };
   
+  flattenObject(dashboardData);
   return rows.join('\n');
-};
-
-/**
- * Monitor dashboard metrics over time
- * @param {string} authorizationHeader - Bearer token
- * @param {number} intervalMinutes - Monitoring interval in minutes
- * @param {Function} callback - Callback function for metrics updates
- * @returns {Function} Function to stop monitoring
- */
-export const monitorDashboardMetrics = (authorizationHeader, intervalMinutes = 5, callback) => {
-  let isMonitoring = true;
-  
-  const monitor = async () => {
-    while (isMonitoring) {
-      try {
-        const dashboardData = await refreshDashboard(authorizationHeader);
-        if (callback) {
-          callback(dashboardData);
-        }
-      } catch (error) {
-        console.error('Dashboard monitoring error:', error);
-      }
-      
-      // Wait for the specified interval
-      await new Promise(resolve => 
-        setTimeout(resolve, intervalMinutes * 60 * 1000)
-      );
-    }
-  };
-  
-  // Start monitoring
-  monitor();
-  
-  // Return stop function
-  return () => {
-    isMonitoring = false;
-  };
 };

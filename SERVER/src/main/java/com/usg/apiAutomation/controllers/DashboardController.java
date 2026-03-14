@@ -17,9 +17,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
@@ -733,6 +736,89 @@ public class DashboardController {
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
             errorResponse.put("message", "An error occurred while searching dashboard: " + e.getMessage());
+            errorResponse.put("requestId", requestId);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+
+
+    // ============================================================
+// LIGHTWEIGHT DASHBOARD FOR INITIAL LOAD
+// ============================================================
+    @GetMapping("/lightweight")
+    @Operation(summary = "Get lightweight dashboard data for initial load", parameters = {
+            @Parameter(name = "Authorization", description = "JWT Token in format: Bearer {token}", required = true, in = ParameterIn.HEADER)
+    })
+    public ResponseEntity<?> getLightweightDashboard(HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting lightweight dashboard data");
+        if (authValidation != null) {
+            return authValidation;
+        }
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+
+            // Only fetch essential data for initial render
+            Map<String, Object> lightweightData = new HashMap<>();
+
+            // 1. Basic stats only (fast to fetch)
+            lightweightData.put("stats", dashboardService.getDashboardStats(requestId, req, performedBy));
+
+            // 2. Collections summary (without details)
+            var collections = dashboardService.getDashboardCollections(requestId, req, performedBy);
+            lightweightData.put("collections", collections);
+
+            // 3. Only first 5 endpoints with minimal fields (no parameters, mappings, etc.)
+            var allEndpoints = dashboardService.getDashboardEndpoints(requestId, req, performedBy);
+            List<Map<String, Object>> lightweightEndpoints = allEndpoints.getEndpoints().stream()
+                    .limit(5) // Only first 5
+                    .map(endpoint -> {
+                        Map<String, Object> minimal = new HashMap<>();
+                        minimal.put("id", endpoint.getId());
+                        minimal.put("name", endpoint.getName());
+                        minimal.put("method", endpoint.getMethod());
+                        minimal.put("url", endpoint.getUrl());
+                        minimal.put("description", endpoint.getDescription());
+                        minimal.put("collectionName", endpoint.getCollectionName());
+                        minimal.put("folderName", endpoint.getFolderName());
+                        minimal.put("lastUpdated", endpoint.getLastUpdated());
+                        minimal.put("createdAt", endpoint.getCreatedAt());
+                        minimal.put("timeAgo", endpoint.getTimeAgo());
+                        minimal.put("status", endpoint.getStatus());
+                        minimal.put("owner", endpoint.getOwner());
+                        // Exclude parameters, responseMappings, tags, authConfig - heavy data
+                        return minimal;
+                    })
+                    .collect(Collectors.toList());
+
+            Map<String, Object> endpointsResponse = new HashMap<>();
+            endpointsResponse.put("endpoints", lightweightEndpoints);
+            endpointsResponse.put("total", allEndpoints.getEndpoints().size());
+            lightweightData.put("endpoints", endpointsResponse);
+
+            // 4. Recent activity (minimal)
+            lightweightData.put("recentActivity", dashboardService.getDashboardUserActivities(requestId, req, performedBy, 5));
+
+            // 5. Metadata
+            lightweightData.put("generatedFor", performedBy);
+            lightweightData.put("requestId", requestId);
+            lightweightData.put("lastUpdated", LocalDateTime.now().toString());
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("responseCode", 200);
+            response.put("message", "Lightweight dashboard data retrieved successfully");
+            response.put("data", lightweightData);
+            response.put("requestId", requestId);
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 500);
+            errorResponse.put("message", "An error occurred: " + e.getMessage());
             errorResponse.put("requestId", requestId);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
