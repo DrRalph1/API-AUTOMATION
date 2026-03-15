@@ -69,7 +69,15 @@ import {
   SkipBack,
   RotateCcw,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Home,
+  BarChart2,
+  Users,
+  Shield,
+  Settings as SettingsIcon,
+  LogOut,
+  Menu,
+  Sidebar
 } from 'lucide-react';
 
 // Import APIRequestController functions
@@ -111,34 +119,133 @@ import {
 
 // Enhanced SyntaxHighlighter Component (reusing from CodeBase)
 const SyntaxHighlighter = ({ language, code }) => {
-  if (!code) return <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed">// No data available</pre>;
+  if (!code) return <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed">// No code available</pre>;
   
+  // Simple syntax highlighting using spans
   const highlightCode = (code, lang) => {
     const lines = String(code).split('\n');
     
     return lines.map((line, lineIndex) => {
+      // First escape HTML entities to prevent injection
       let highlightedLine = line
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
       
-      if (lang === 'json') {
-        // Highlight JSON
+      if (lang === 'java') {
+        // Handle multi-line comment boundaries
+        if (highlightedLine.includes('/*') || highlightedLine.includes('*/')) {
+          // For lines with comment markers, highlight the whole line as comment
+          // to avoid breaking the HTML structure
+          return (
+            <div key={lineIndex} className="text-gray-500">
+              {highlightedLine}
+            </div>
+          );
+        }
+        
+        // Highlight strings (double quotes) - do this first
         highlightedLine = highlightedLine.replace(/"([^"\\]*(\\.[^"\\]*)*)"/g, 
           '<span class="text-green-400">"$1"</span>');
         
-        highlightedLine = highlightedLine.replace(/\b(true|false)\b/g, 
+        // Highlight characters (single quotes)
+        highlightedLine = highlightedLine.replace(/'([^'\\]*(\\.[^'\\]*)*)'/g, 
+          '<span class="text-green-400">\'$1\'</span>');
+        
+        // Highlight single-line comments (but not inside strings)
+        // Only apply if the line doesn't contain a string that might have //
+        if (!highlightedLine.includes('class="text-green-400"')) {
+          highlightedLine = highlightedLine.replace(/(\/\/.*)/g, 
+            '<span class="text-gray-500">$1</span>');
+        }
+        
+        // Highlight annotations
+        highlightedLine = highlightedLine.replace(/(@\w+)/g, 
           '<span class="text-blue-400">$1</span>');
         
-        highlightedLine = highlightedLine.replace(/\b(null)\b/g, 
-          '<span class="text-gray-500">$1</span>');
+        // Highlight keywords - expanded list
+        const keywords = [
+          'public', 'private', 'protected', 'class', 'interface', 
+          'extends', 'implements', 'static', 'final', 'void', 
+          'return', 'new', 'if', 'else', 'for', 'while', 
+          'switch', 'case', 'break', 'continue', 'throw', 
+          'throws', 'try', 'catch', 'finally', 'import', 
+          'package', 'abstract', 'assert', 'boolean', 'byte',
+          'char', 'double', 'enum', 'float', 'int', 'long',
+          'short', 'super', 'synchronized', 'this', 'transient',
+          'volatile', 'instanceof', 'true', 'false', 'null'
+        ];
         
-        highlightedLine = highlightedLine.replace(/\b(\d+)\b/g, 
-          '<span class="text-orange-400">$1</span>');
+        keywords.forEach(keyword => {
+          // Use negative lookbehind to avoid matching inside existing spans
+          // But since not all browsers support lookbehind, we'll use a simpler approach
+          // Only replace if not inside an HTML tag
+          const keywordRegex = new RegExp('\\b(' + keyword + ')\\b(?!([^<]*>|[^>]*<\\/))', 'g');
+          highlightedLine = highlightedLine.replace(keywordRegex, 
+            '<span class="text-purple-400">$1</span>');
+        });
         
-        // Highlight keys
-        highlightedLine = highlightedLine.replace(/([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, 
-          '<span class="text-purple-400">$1</span>:');
+        // Highlight numbers - FIXED: Don't apply to numbers that are part of class names like "400"
+        if (!highlightedLine.includes('class="text-green-400"') && 
+            !highlightedLine.includes('class="text-gray-500"')) {
+          // Only highlight numbers that are standalone and not part of a class attribute
+          highlightedLine = highlightedLine.replace(/\b(\d+[lLfFdD]?)\b(?![^<]*>|[^>]*<\/)/g, 
+            '<span class="text-blue-400">$1</span>');
+        }
+        
+        // Fix any malformed spans - CRITICAL FIX
+        // This cleans up any incorrectly formatted span tags
+        highlightedLine = highlightedLine.replace(/class="([^"]*)"([^>]*?)>/g, 'class="$1"$2>');
+        
+      } else if (lang === 'javascript' || lang === 'nodejs') {
+        // JavaScript highlighting
+        highlightedLine = highlightedLine.replace(/("([^"\\]*(\\.[^"\\]*)*)"|'([^'\\]*(\\.[^'\\]*)*)')/g, 
+          '<span class="text-green-400">$1</span>');
+        
+        // Comments
+        if (!highlightedLine.includes('class="text-green-400"')) {
+          highlightedLine = highlightedLine.replace(/(\/\/.*)/g, 
+            '<span class="text-gray-500">$1</span>');
+        }
+        
+        // Keywords
+        const jsKeywords = [
+          'function', 'const', 'let', 'var', 'if', 'else', 
+          'for', 'while', 'return', 'class', 'import', 
+          'export', 'from', 'default', 'async', 'await', 
+          'try', 'catch', 'finally', 'throw', 'new', 'this',
+          'true', 'false', 'null', 'undefined', 'typeof',
+          'instanceof', 'in', 'of', 'yield', 'delete'
+        ];
+        
+        jsKeywords.forEach(keyword => {
+          const keywordRegex = new RegExp('\\b(' + keyword + ')\\b(?!([^<]*>|[^>]*<\\/))', 'g');
+          highlightedLine = highlightedLine.replace(keywordRegex, 
+            '<span class="text-purple-400">$1</span>');
+        });
+      } else if (lang === 'python') {
+        // Python highlighting
+        highlightedLine = highlightedLine.replace(/("([^"\\]*(\\.[^"\\]*)*)"|'([^'\\]*(\\.[^'\\]*)*)')/g, 
+          '<span class="text-green-400">$1</span>');
+        
+        if (!highlightedLine.includes('class="text-green-400"')) {
+          highlightedLine = highlightedLine.replace(/(#.*)/g, 
+            '<span class="text-gray-500">$1</span>');
+        }
+        
+        const pythonKeywords = [
+          'def', 'class', 'import', 'from', 'if', 'elif', 
+          'else', 'for', 'while', 'try', 'except', 'finally', 
+          'with', 'as', 'return', 'yield', 'async', 'await', 
+          'lambda', 'in', 'is', 'not', 'and', 'or', 'True', 
+          'False', 'None', 'pass', 'break', 'continue', 'raise'
+        ];
+        
+        pythonKeywords.forEach(keyword => {
+          const keywordRegex = new RegExp('\\b(' + keyword + ')\\b(?!([^<]*>|[^>]*<\\/))', 'g');
+          highlightedLine = highlightedLine.replace(keywordRegex, 
+            '<span class="text-purple-400">$1</span>');
+        });
       }
       
       return (
@@ -167,9 +274,13 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50">
-      <div className="absolute inset-0 bg-black bg-opacity-50" onClick={onClose} />
+      {/* Blurred Backdrop */}
+      <div 
+        className="absolute inset-0 backdrop-blur-sm bg-black/30" 
+        onClick={onClose} 
+      />
       <div className="relative w-3/4 max-w-4xl max-h-[80vh] rounded-lg overflow-hidden" style={{ 
-        backgroundColor: colors.modalBg,
+        backgroundColor: colors.bg,
         border: `1px solid ${colors.border}`
       }}>
         {/* Modal Header */}
@@ -200,7 +311,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
 
         {/* Modal Tabs */}
         <div className="flex items-center px-6 border-b" style={{ borderColor: colors.border }}>
-          {['request', 'response', 'headers', 'timeline'].map(tab => (
+          {['request', 'response', 'headers', 'timeline', 'summary'].map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -229,7 +340,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                   </div>
                   <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
                     <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Correlation ID</div>
-                    <div className="text-sm font-mono" style={{ color: colors.text }}>{request.correlationId}</div>
+                    <div className="text-xs font-mono break-all" style={{ color: colors.text }}>{request.correlationId}</div>
                   </div>
                   <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
                     <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>HTTP Method</div>
@@ -237,7 +348,15 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                   </div>
                   <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
                     <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>URL</div>
-                    <div className="text-sm font-mono truncate" style={{ color: colors.text }}>{request.url}</div>
+                    <div className="text-xs font-mono break-all" style={{ color: colors.text }}>{request.url}</div>
+                  </div>
+                  <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
+                    <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>API Name</div>
+                    <div className="text-sm" style={{ color: colors.text }}>{request.apiName}</div>
+                  </div>
+                  <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
+                    <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>API Code</div>
+                    <div className="text-sm font-mono" style={{ color: colors.text }}>{request.apiCode}</div>
                   </div>
                 </div>
               </div>
@@ -250,7 +369,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                     {Object.entries(request.pathParameters).map(([key, value]) => (
                       <div key={key} className="flex items-start gap-2 p-2 rounded" style={{ backgroundColor: colors.hover }}>
                         <span className="text-xs font-medium min-w-[120px]" style={{ color: colors.textSecondary }}>{key}:</span>
-                        <span className="text-xs font-mono" style={{ color: colors.text }}>{JSON.stringify(value)}</span>
+                        <span className="text-xs font-mono" style={{ color: colors.text }}>{String(value)}</span>
                       </div>
                     ))}
                   </div>
@@ -265,7 +384,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                     {Object.entries(request.queryParameters).map(([key, value]) => (
                       <div key={key} className="flex items-start gap-2 p-2 rounded" style={{ backgroundColor: colors.hover }}>
                         <span className="text-xs font-medium min-w-[120px]" style={{ color: colors.textSecondary }}>{key}:</span>
-                        <span className="text-xs font-mono" style={{ color: colors.text }}>{JSON.stringify(value)}</span>
+                        <span className="text-xs font-mono" style={{ color: colors.text }}>{String(value)}</span>
                       </div>
                     ))}
                   </div>
@@ -276,7 +395,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
               {request.requestBody && (
                 <div>
                   <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Request Body</h3>
-                  <div className="p-3 rounded" style={{ backgroundColor: colors.codeBg }}>
+                  <div className="p-3 rounded max-h-60 overflow-auto" style={{ backgroundColor: colors.codeBg }}>
                     <SyntaxHighlighter 
                       language="json"
                       code={JSON.stringify(request.requestBody, null, 2)}
@@ -311,7 +430,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
               {request.responseBody && (
                 <div>
                   <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Response Body</h3>
-                  <div className="p-3 rounded" style={{ backgroundColor: colors.codeBg }}>
+                  <div className="p-3 rounded max-h-96 overflow-auto" style={{ backgroundColor: colors.codeBg }}>
                     <SyntaxHighlighter 
                       language="json"
                       code={JSON.stringify(request.responseBody, null, 2)}
@@ -339,11 +458,11 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
               {request.headers && Object.keys(request.headers).length > 0 && (
                 <div>
                   <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Request Headers</h3>
-                  <div className="space-y-2">
+                  <div className="space-y-2 max-h-60 overflow-auto">
                     {Object.entries(request.headers).map(([key, value]) => (
                       <div key={key} className="flex items-start gap-2 p-2 rounded" style={{ backgroundColor: colors.hover }}>
                         <span className="text-xs font-medium min-w-[150px]" style={{ color: colors.textSecondary }}>{key}:</span>
-                        <span className="text-xs font-mono" style={{ color: colors.text }}>{value}</span>
+                        <span className="text-xs font-mono break-all" style={{ color: colors.text }}>{String(value)}</span>
                       </div>
                     ))}
                   </div>
@@ -354,13 +473,33 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
               {request.responseHeaders && Object.keys(request.responseHeaders).length > 0 && (
                 <div>
                   <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>Response Headers</h3>
-                  <div className="space-y-2">
+                  <div className="space-y-2 max-h-60 overflow-auto">
                     {Object.entries(request.responseHeaders).map(([key, value]) => (
                       <div key={key} className="flex items-start gap-2 p-2 rounded" style={{ backgroundColor: colors.hover }}>
                         <span className="text-xs font-medium min-w-[150px]" style={{ color: colors.textSecondary }}>{key}:</span>
-                        <span className="text-xs font-mono" style={{ color: colors.text }}>{value}</span>
+                        <span className="text-xs font-mono break-all" style={{ color: colors.text }}>{String(value)}</span>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Auth Type */}
+              {request.authType && (
+                <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
+                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Authentication Type</div>
+                  <div className="text-sm font-medium" style={{ color: colors.text }}>{request.authType}</div>
+                </div>
+              )}
+
+              {/* Curl Command */}
+              {request.curlCommand && (
+                <div>
+                  <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>CURL Command</h3>
+                  <div className="p-3 rounded max-h-40 overflow-auto" style={{ backgroundColor: colors.codeBg }}>
+                    <pre className="text-xs font-mono whitespace-pre-wrap break-all" style={{ color: colors.text }}>
+                      {request.curlCommand}
+                    </pre>
                   </div>
                 </div>
               )}
@@ -370,10 +509,10 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
           {activeTab === 'timeline' && (
             <div className="space-y-4">
               {/* Timeline */}
-              <div className="relative pl-8 space-y-4">
+              <div className="relative pl-8 space-y-6">
                 {/* Request Created */}
                 <div className="relative">
-                  <div className="absolute left-[-24px] top-0 w-2 h-2 rounded-full" style={{ backgroundColor: colors.success }} />
+                  <div className="absolute left-[-24px] top-0 w-3 h-3 rounded-full" style={{ backgroundColor: colors.info }} />
                   <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Request Created</div>
                   <div className="text-sm" style={{ color: colors.text }}>{formatRequestTimestamp(request.createdAt)}</div>
                 </div>
@@ -381,7 +520,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                 {/* Request Sent */}
                 {request.requestTimestamp && (
                   <div className="relative">
-                    <div className="absolute left-[-24px] top-0 w-2 h-2 rounded-full" style={{ backgroundColor: colors.info }} />
+                    <div className="absolute left-[-24px] top-0 w-3 h-3 rounded-full" style={{ backgroundColor: colors.primary }} />
                     <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Request Sent</div>
                     <div className="text-sm" style={{ color: colors.text }}>{formatRequestTimestamp(request.requestTimestamp)}</div>
                   </div>
@@ -390,7 +529,9 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                 {/* Response Received */}
                 {request.responseTimestamp && (
                   <div className="relative">
-                    <div className="absolute left-[-24px] top-0 w-2 h-2 rounded-full" style={{ backgroundColor: colors.primary }} />
+                    <div className="absolute left-[-24px] top-0 w-3 h-3 rounded-full" style={{ 
+                      backgroundColor: isRequestSuccessful(request) ? colors.success : colors.error 
+                    }} />
                     <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Response Received</div>
                     <div className="text-sm" style={{ color: colors.text }}>{formatRequestTimestamp(request.responseTimestamp)}</div>
                   </div>
@@ -399,10 +540,10 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
 
               {/* Duration */}
               {request.executionDurationMs && (
-                <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
+                <div className="p-4 rounded" style={{ backgroundColor: colors.hover }}>
                   <div className="flex items-center justify-between">
                     <span className="text-sm" style={{ color: colors.textSecondary }}>Total Duration:</span>
-                    <span className="text-lg font-semibold" style={{ color: colors.text }}>
+                    <span className="text-xl font-semibold" style={{ color: colors.text }}>
                       {formatExecutionTime(request.executionDurationMs)}
                     </span>
                   </div>
@@ -420,6 +561,68 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                   </div>
                 </div>
               )}
+
+              {/* Client Info */}
+              <div className="grid grid-cols-2 gap-4">
+                {request.clientIpAddress && (
+                  <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
+                    <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Client IP</div>
+                    <div className="text-sm font-mono" style={{ color: colors.text }}>{request.clientIpAddress}</div>
+                  </div>
+                )}
+                {request.userAgent && (
+                  <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
+                    <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>User Agent</div>
+                    <div className="text-xs break-all" style={{ color: colors.text }}>{request.userAgent}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'summary' && request.summary && (
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text }}>API Summary Statistics</h3>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded" style={{ backgroundColor: colors.hover }}>
+                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Total Requests (API)</div>
+                  <div className="text-2xl font-semibold" style={{ color: colors.text }}>{request.summary.totalRequestsForApi || 0}</div>
+                </div>
+                <div className="p-4 rounded" style={{ backgroundColor: colors.hover }}>
+                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Successful</div>
+                  <div className="text-2xl font-semibold" style={{ color: colors.success }}>{request.summary.successfulRequests || 0}</div>
+                </div>
+                <div className="p-4 rounded" style={{ backgroundColor: colors.hover }}>
+                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Failed</div>
+                  <div className="text-2xl font-semibold" style={{ color: colors.error }}>{request.summary.failedRequests || 0}</div>
+                </div>
+                <div className="p-4 rounded" style={{ backgroundColor: colors.hover }}>
+                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Today's Count</div>
+                  <div className="text-2xl font-semibold" style={{ color: colors.text }}>{request.summary.requestCountToday || 0}</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
+                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Response Time</div>
+                  <div className="text-lg font-semibold" style={{ color: colors.text }}>
+                    {formatExecutionTime(request.summary.averageResponseTime || 0)}
+                  </div>
+                </div>
+                <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
+                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Min Response Time</div>
+                  <div className="text-lg font-semibold" style={{ color: colors.text }}>
+                    {formatExecutionTime(request.summary.minResponseTime || 0)}
+                  </div>
+                </div>
+                <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
+                  <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Max Response Time</div>
+                  <div className="text-lg font-semibold" style={{ color: colors.text }}>
+                    {formatExecutionTime(request.summary.maxResponseTime || 0)}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -451,7 +654,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
 
 // Filter Modal Component
 const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
-  const [localFilters, setLocalFilters] = useState(filters);
+  const [localFilters, setLocalFilters] = useState(filters || {});
 
   if (!isOpen) return null;
 
@@ -517,6 +720,32 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
               value={localFilters.responseStatusCode || ''}
               onChange={(e) => setLocalFilters({ ...localFilters, responseStatusCode: e.target.value ? parseInt(e.target.value) : null })}
               placeholder="e.g., 200, 404, 500"
+              className="w-full px-3 py-2 rounded text-sm"
+              style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
+            />
+          </div>
+
+          {/* API ID Filter */}
+          <div>
+            <label className="text-xs mb-1 block" style={{ color: colors.textSecondary }}>API ID</label>
+            <input
+              type="text"
+              value={localFilters.apiId || ''}
+              onChange={(e) => setLocalFilters({ ...localFilters, apiId: e.target.value })}
+              placeholder="Filter by API ID"
+              className="w-full px-3 py-2 rounded text-sm"
+              style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
+            />
+          </div>
+
+          {/* Correlation ID Filter */}
+          <div>
+            <label className="text-xs mb-1 block" style={{ color: colors.textSecondary }}>Correlation ID</label>
+            <input
+              type="text"
+              value={localFilters.correlationId || ''}
+              onChange={(e) => setLocalFilters({ ...localFilters, correlationId: e.target.value })}
+              placeholder="Filter by Correlation ID"
               className="w-full px-3 py-2 rounded text-sm"
               style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
             />
@@ -839,6 +1068,218 @@ const ExportModal = ({ colors, isOpen, onClose, onExport }) => {
   );
 };
 
+// Stats Cards Component
+const StatsCards = ({ statistics, systemStats, colors, onRefresh }) => {
+  const stats = systemStats || statistics || {};
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="p-4 rounded-lg border hover:shadow-lg transition-all" style={{ 
+        backgroundColor: colors.card, 
+        borderColor: colors.border 
+      }}>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium" style={{ color: colors.textSecondary }}>Total Requests</span>
+          <Activity size={18} style={{ color: colors.info }} />
+        </div>
+        <div className="text-2xl font-bold" style={{ color: colors.text }}>
+          {stats.totalRequests?.toLocaleString() || 0}
+        </div>
+        <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+          Last 7 days
+        </div>
+      </div>
+
+      <div className="p-4 rounded-lg border hover:shadow-lg transition-all" style={{ 
+        backgroundColor: colors.card, 
+        borderColor: colors.border 
+      }}>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium" style={{ color: colors.textSecondary }}>Success Rate</span>
+          <CheckCircle size={18} style={{ color: colors.success }} />
+        </div>
+        <div className="text-2xl font-bold" style={{ color: colors.text }}>
+          {stats.successRate ? stats.successRate.toFixed(1) : 0}%
+        </div>
+        <div className="text-xs mt-1 flex items-center gap-1">
+          {stats.successRateChange > 0 ? (
+            <>
+              <TrendingUp size={12} style={{ color: colors.success }} />
+              <span style={{ color: colors.success }}>+{stats.successRateChange}%</span>
+            </>
+          ) : stats.successRateChange < 0 ? (
+            <>
+              <TrendingDown size={12} style={{ color: colors.error }} />
+              <span style={{ color: colors.error }}>{stats.successRateChange}%</span>
+            </>
+          ) : null}
+          <span style={{ color: colors.textSecondary }}>vs last period</span>
+        </div>
+      </div>
+
+      <div className="p-4 rounded-lg border hover:shadow-lg transition-all" style={{ 
+        backgroundColor: colors.card, 
+        borderColor: colors.border 
+      }}>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium" style={{ color: colors.textSecondary }}>Avg Response Time</span>
+          <ClockIcon size={18} style={{ color: colors.warning }} />
+        </div>
+        <div className="text-2xl font-bold" style={{ color: colors.text }}>
+          {formatExecutionTime(stats.averageResponseTime || 0)}
+        </div>
+        <div className="text-xs mt-1 flex items-center gap-1">
+          {stats.avgResponseChange < 0 ? (
+            <>
+              <TrendingDown size={12} style={{ color: colors.success }} />
+              <span style={{ color: colors.success }}>{Math.abs(stats.avgResponseChange)}ms</span>
+            </>
+          ) : stats.avgResponseChange > 0 ? (
+            <>
+              <TrendingUp size={12} style={{ color: colors.error }} />
+              <span style={{ color: colors.error }}>+{stats.avgResponseChange}ms</span>
+            </>
+          ) : null}
+          <span style={{ color: colors.textSecondary }}>change</span>
+        </div>
+      </div>
+
+      <div className="p-4 rounded-lg border hover:shadow-lg transition-all" style={{ 
+        backgroundColor: colors.card, 
+        borderColor: colors.border 
+      }}>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium" style={{ color: colors.textSecondary }}>Failed Requests</span>
+          <XCircle size={18} style={{ color: colors.error }} />
+        </div>
+        <div className="text-2xl font-bold" style={{ color: colors.text }}>
+          {stats.failedRequests?.toLocaleString() || 0}
+        </div>
+        <div className="text-xs mt-1 flex items-center gap-1">
+          {stats.failedPercentage ? (
+            <span style={{ color: colors.error }}>{stats.failedPercentage.toFixed(1)}%</span>
+          ) : null}
+          <span style={{ color: colors.textSecondary }}>of total</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Method Distribution Chart
+const MethodDistribution = ({ stats, colors }) => {
+  const methods = stats.methodDistribution || {};
+  const total = Object.values(methods).reduce((a, b) => a + b, 0);
+
+  return (
+    <div className="p-4 rounded-lg border" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
+      <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Request Methods</h3>
+      <div className="space-y-3">
+        {Object.entries(methods).map(([method, count]) => {
+          const percentage = total > 0 ? (count / total * 100).toFixed(1) : 0;
+          return (
+            <div key={method} className="space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium" style={{ color: colors.text }}>{method}</span>
+                <span style={{ color: colors.textSecondary }}>{count} ({percentage}%)</span>
+              </div>
+              <div className="w-full h-2 rounded-full" style={{ backgroundColor: colors.hover }}>
+                <div 
+                  className="h-2 rounded-full transition-all"
+                  style={{ 
+                    width: `${percentage}%`,
+                    backgroundColor: colors.method[method] || colors.primary
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })}
+        {Object.keys(methods).length === 0 && (
+          <div className="text-center py-4 text-sm" style={{ color: colors.textSecondary }}>
+            No method data available
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Status Code Distribution
+const StatusCodeDistribution = ({ stats, colors }) => {
+  const codes = stats.statusCodeDistribution || {};
+  
+  const getCodeCategory = (code) => {
+    if (code >= 200 && code < 300) return 'success';
+    if (code >= 300 && code < 400) return 'info';
+    if (code >= 400 && code < 500) return 'warning';
+    if (code >= 500) return 'error';
+    return 'textSecondary';
+  };
+
+  return (
+    <div className="p-4 rounded-lg border" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
+      <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Status Codes</h3>
+      <div className="space-y-2 max-h-60 overflow-auto pr-2">
+        {Object.entries(codes)
+          .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
+          .map(([code, count]) => (
+            <div key={code} className="flex items-center justify-between text-sm py-1">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors[getCodeCategory(parseInt(code))] }} />
+                <span style={{ color: colors.text }}>{code}</span>
+              </div>
+              <span style={{ color: colors.textSecondary }}>{count.toLocaleString()}</span>
+            </div>
+          ))}
+        {Object.keys(codes).length === 0 && (
+          <div className="text-center py-4 text-sm" style={{ color: colors.textSecondary }}>
+            No status code data available
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Time Series Chart (simplified)
+const TimeSeriesChart = ({ stats, colors }) => {
+  const timeSeries = stats.timeSeriesData || [];
+  const maxCount = Math.max(...timeSeries.map(d => d.requestCount), 1);
+
+  return (
+    <div className="p-4 rounded-lg border" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
+      <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Requests Over Time</h3>
+      <div className="space-y-2 max-h-60 overflow-auto">
+        {timeSeries.map((point, index) => (
+          <div key={index} className="space-y-1">
+            <div className="flex items-center justify-between text-xs">
+              <span style={{ color: colors.textSecondary }}>
+                {new Date(point.timestamp).toLocaleString()}
+              </span>
+              <span style={{ color: colors.text }}>{point.requestCount}</span>
+            </div>
+            <div className="w-full h-1.5 rounded-full" style={{ backgroundColor: colors.hover }}>
+              <div 
+                className="h-1.5 rounded-full transition-all"
+                style={{ 
+                  width: `${(point.requestCount / maxCount) * 100}%`,
+                  backgroundColor: colors.primary
+                }}
+              />
+            </div>
+          </div>
+        ))}
+        {timeSeries.length === 0 && (
+          <div className="text-center py-4 text-sm" style={{ color: colors.textSecondary }}>
+            No time series data available
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [activeTab, setActiveTab] = useState('all');
   const [showFilterModal, setShowFilterModal] = useState(false);
@@ -867,6 +1308,67 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     fromDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
     toDate: new Date().toISOString().slice(0, 16)
   });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [selectedApiId, setSelectedApiId] = useState(null);
+  const [apiSummary, setApiSummary] = useState(null);
+
+  const loadRequestsWithFilters = useCallback(async (customFilters = null) => {
+  if (!authToken) {
+    showToast('Authentication required', 'error');
+    return;
+  }
+
+  setIsLoading(prev => ({ ...prev, requests: true }));
+
+  try {
+    // Use custom filters if provided, otherwise use state filters
+    const filtersToUse = customFilters || filters;
+    
+    const filter = {
+      ...filtersToUse,
+      page: pagination.page,
+      size: pagination.size,
+      fromDate: dateRange.fromDate,
+      toDate: dateRange.toDate,
+      search: searchQuery,
+      apiId: selectedApiId
+    };
+
+    const response = await searchRequests(authToken, filter);
+    
+    if (response?.responseCode === 200) {
+      const data = response.data;
+      setRequests(data.content || []);
+      setPagination({
+        page: data.currentPage || 0,
+        size: data.pageSize || 20,
+        totalElements: data.totalElements || 0,
+        totalPages: data.totalPages || 0
+      });
+
+      // Set API summary from first request if available
+      if (data.content && data.content.length > 0 && data.content[0].summary) {
+        setApiSummary(data.content[0].summary);
+      } else {
+        setApiSummary(null);
+      }
+    } else {
+      showToast(response?.message || 'Failed to load requests', 'error');
+    }
+  } catch (error) {
+    console.error('Error loading requests:', error);
+    showToast(error.message || 'Failed to load requests', 'error');
+  } finally {
+    setIsLoading(prev => ({ ...prev, requests: false }));
+  }
+}, [authToken, filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId]);
+
+
+useEffect(() => {
+  if (authToken && activeTab === 'all') {
+    loadRequests();
+  }
+}, [filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId, authToken, activeTab]);
 
   // Color scheme (same as CodeBase)
   const colors = isDark ? {
@@ -950,22 +1452,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // Get status color
-  const getStatusColor = (status) => {
-    const colors_map = {
-      'SUCCESS': colors.success,
-      'FAILED': colors.error,
-      'TIMEOUT': colors.warning,
-      'PENDING': colors.info
-    };
-    return colors_map[status] || colors.textSecondary;
-  };
-
-  // Get method color
-  const getMethodColor = (method) => {
-    return colors.method[method] || colors.textSecondary;
-  };
-
   // Copy to clipboard
   const copyToClipboard = (text) => {
     if (!text) {
@@ -974,6 +1460,47 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     }
     navigator.clipboard.writeText(text);
     showToast('Copied to clipboard!', 'success');
+  };
+
+  // Get status color and text
+const getStatusColor = (status) => {
+  const colors_map = {
+    'SUCCESS': colors.success,
+    'FAILED': colors.error,
+    'TIMEOUT': colors.warning,
+    'PENDING': colors.info,
+    'ERROR': colors.error,
+    'CANCELLED': colors.textSecondary,
+    'RETRY': colors.warning
+  };
+  return colors_map[status] || colors.textSecondary;
+};
+
+const getStatusText = (status) => {
+  if (!status) return 'UNKNOWN';
+  // Convert to proper case (e.g., 'SUCCESS' -> 'Success', 'TIMEOUT' -> 'Timeout')
+  return status.charAt(0) + status.slice(1).toLowerCase();
+};
+
+  // Get method color
+  const getMethodColor = (method) => {
+    return colors.method[method] || colors.textSecondary;
+  };
+
+  // Format timestamp
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return '';
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleString();
+    } catch (e) {
+      return timestamp;
+    }
+  };
+
+  // Check if request was successful
+  const isRequestSuccessful = (request) => {
+    return request?.responseStatusCode >= 200 && request?.responseStatusCode < 300;
   };
 
   // Load requests with filters
@@ -992,13 +1519,14 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
         size: pagination.size,
         fromDate: dateRange.fromDate,
         toDate: dateRange.toDate,
-        search: searchQuery
+        search: searchQuery,
+        apiId: selectedApiId
       };
 
       const response = await searchRequests(authToken, filter);
       
       if (response?.responseCode === 200) {
-        const data = extractSearchResults(response);
+        const data = response.data;
         setRequests(data.content || []);
         setPagination({
           page: data.currentPage || 0,
@@ -1006,6 +1534,13 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
           totalElements: data.totalElements || 0,
           totalPages: data.totalPages || 0
         });
+
+        // Set API summary from first request if available
+        if (data.content && data.content.length > 0 && data.content[0].summary) {
+          setApiSummary(data.content[0].summary);
+        } else {
+          setApiSummary(null);
+        }
       } else {
         showToast(response?.message || 'Failed to load requests', 'error');
       }
@@ -1015,7 +1550,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     } finally {
       setIsLoading(prev => ({ ...prev, requests: false }));
     }
-  }, [authToken, filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery]);
+  }, [authToken, filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId]);
 
   // Load statistics
   const loadStatistics = useCallback(async () => {
@@ -1032,7 +1567,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
       );
       
       if (systemResponse?.responseCode === 200) {
-        setSystemStats(extractStatistics(systemResponse));
+        setSystemStats(systemResponse.data);
       }
 
       // Load dashboard stats
@@ -1074,7 +1609,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     try {
       const response = await exportRequests(
         authToken,
-        filters.apiId || 'all',
+        filters.apiId || selectedApiId || 'all',
         dateRange.fromDate,
         dateRange.toDate,
         config.format,
@@ -1082,9 +1617,9 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
       );
 
       if (response?.responseCode === 200) {
-        const exportData = extractExportData(response);
+        const exportData = response.data;
         if (exportData.downloadUrl) {
-          downloadExportedRequests(exportData);
+          window.open(exportData.downloadUrl, '_blank');
           showToast('Export started successfully', 'success');
         } else {
           showToast('Export completed', 'success');
@@ -1172,164 +1707,193 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     }
   };
 
+  // Handle API selection from sidebar
+  const handleApiSelect = (apiId) => {
+    setSelectedApiId(apiId);
+    setPagination(prev => ({ ...prev, page: 0 }));
+    // Load requests immediately after selecting API
+    setTimeout(() => loadRequests(), 0);
+  };
+
+  // Handle search with debounce
+  const handleSearchChange = (e) => {
+  const query = e.target.value;
+  setSearchQuery(query);
+  setPagination(prev => ({ ...prev, page: 0 }));
+  
+  if (searchTimer.current) {
+    clearTimeout(searchTimer.current);
+  }
+  
+  searchTimer.current = setTimeout(() => {
+    // This will now work because searchQuery state is updated
+    loadRequests();
+  }, 500);
+};
+
+  const searchTimer = useRef(null);
+
   // Initial load
   useEffect(() => {
     if (authToken) {
-      if (activeTab === 'all') {
+      // Load statistics on initial page load
+      loadStatistics();
+      
+      if (activeTab === 'all' || activeTab === 'recent') {
         loadRequests();
-      } else if (activeTab === 'statistics') {
-        loadStatistics();
-      } else if (activeTab === 'recent') {
-        loadRecentRequests();
       }
     }
-  }, [authToken, activeTab, loadRequests, loadStatistics, loadRecentRequests]);
 
-  // Render statistics tab
-  const renderStatistics = () => {
-    const stats = systemStats || statistics || {};
+    return () => {
+      if (searchTimer.current) {
+        clearTimeout(searchTimer.current);
+      }
+    };
+  }, [authToken]); // Only run once on mount
 
+  // Handle tab changes
+  useEffect(() => {
+    if (!authToken) return;
+
+    if (activeTab === 'statistics') {
+      loadStatistics();
+    } else if (activeTab === 'all') {
+      loadRequests();
+    } else if (activeTab === 'recent') {
+      loadRecentRequests();
+    }
+  }, [activeTab, authToken, loadStatistics, loadRequests, loadRecentRequests]);
+
+  // Get unique APIs from requests
+  const uniqueApis = React.useMemo(() => {
+    const apis = {};
+    requests.forEach(req => {
+      if (req.apiId && !apis[req.apiId]) {
+        apis[req.apiId] = {
+          id: req.apiId,
+          name: req.apiName,
+          code: req.apiCode,
+          count: 0,
+          successCount: 0,
+          failedCount: 0
+        };
+      }
+      if (req.apiId && apis[req.apiId]) {
+        apis[req.apiId].count++;
+        if (isRequestSuccessful(req)) {
+          apis[req.apiId].successCount++;
+        } else {
+          apis[req.apiId].failedCount++;
+        }
+      }
+    });
+    return Object.values(apis);
+  }, [requests]);
+
+  // Render sidebar
+  const renderSidebar = () => {
     return (
-      <div className="flex-1 overflow-auto p-6">
-        <div className="max-w-6xl mx-auto space-y-6">
-          {/* Date Range Selector */}
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold" style={{ color: colors.text }}>Request Statistics</h2>
-            <div className="flex items-center gap-3">
-              <input
-                type="datetime-local"
-                value={dateRange.fromDate}
-                onChange={(e) => setDateRange({ ...dateRange, fromDate: e.target.value })}
-                className="px-3 py-1.5 rounded text-sm"
-                style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-              />
-              <span style={{ color: colors.textSecondary }}>to</span>
-              <input
-                type="datetime-local"
-                value={dateRange.toDate}
-                onChange={(e) => setDateRange({ ...dateRange, toDate: e.target.value })}
-                className="px-3 py-1.5 rounded text-sm"
-                style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-              />
-              <button
-                onClick={loadStatistics}
-                className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
-                style={{ backgroundColor: colors.primaryDark, color: 'white' }}
-              >
-                Apply
-              </button>
-            </div>
+    <div 
+      className="h-full border-r transition-all duration-300 flex flex-col"
+      style={{ 
+        width: sidebarCollapsed ? '60px' : '350px',
+        backgroundColor: colors.sidebar,
+        borderColor: colors.border
+      }}
+    >
+      {/* Sidebar Header */}
+      <div className="flex items-center justify-between p-3 border-b" style={{ borderColor: colors.border }}>
+        {!sidebarCollapsed && (
+          <span className="text-xs font-semibold uppercase" style={{ color: colors.textSecondary }}>APIs</span>
+        )}
+        <button
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          className="p-1 rounded hover:bg-opacity-50 transition-colors ml-auto"
+          style={{ backgroundColor: colors.hover }}
+        >
+          <Sidebar size={14} style={{ color: colors.textSecondary }} />
+        </button>
+      </div>
+
+        {/* Sidebar Content */}
+        <div className="flex-1 overflow-auto p-2">
+          {/* All Requests Option */}
+          <div
+            onClick={() => handleApiSelect(null)}
+            className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors mb-1 ${
+              !selectedApiId ? 'ring-1' : ''
+            }`}
+            style={{ 
+              backgroundColor: !selectedApiId ? colors.selected : 'transparent',
+              color: !selectedApiId ? colors.primary : colors.text,
+              borderColor: !selectedApiId ? colors.primary : 'transparent'
+            }}
+          >
+            <Home size={16} style={{ color: !selectedApiId ? colors.primary : colors.textSecondary }} />
+            {!sidebarCollapsed && (
+              <>
+                <span className="text-sm flex-1">All Requests</span>
+                <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: colors.hover }}>
+                  {pagination.totalElements}
+                </span>
+              </>
+            )}
           </div>
 
-          {/* Summary Cards */}
-          <div className="grid grid-cols-4 gap-4">
-            <div className="p-4 rounded-lg" style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}>
-              <div className="flex items-center justify-between mb-2">
-                <span style={{ color: colors.textSecondary }}>Total Requests</span>
-                <Activity size={16} style={{ color: colors.info }} />
-              </div>
-              <div className="text-2xl font-semibold" style={{ color: colors.text }}>{stats.totalRequests || 0}</div>
-            </div>
-
-            <div className="p-4 rounded-lg" style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}>
-              <div className="flex items-center justify-between mb-2">
-                <span style={{ color: colors.textSecondary }}>Success Rate</span>
-                <CheckCircle size={16} style={{ color: colors.success }} />
-              </div>
-              <div className="text-2xl font-semibold" style={{ color: colors.text }}>
-                {stats.successRate ? stats.successRate.toFixed(1) : 0}%
-              </div>
-            </div>
-
-            <div className="p-4 rounded-lg" style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}>
-              <div className="flex items-center justify-between mb-2">
-                <span style={{ color: colors.textSecondary }}>Avg Response</span>
-                <ClockIcon size={16} style={{ color: colors.warning }} />
-              </div>
-              <div className="text-2xl font-semibold" style={{ color: colors.text }}>
-                {formatExecutionTime(stats.averageResponseTime || 0)}
-              </div>
-            </div>
-
-            <div className="p-4 rounded-lg" style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}>
-              <div className="flex items-center justify-between mb-2">
-                <span style={{ color: colors.textSecondary }}>Failed</span>
-                <XCircle size={16} style={{ color: colors.error }} />
-              </div>
-              <div className="text-2xl font-semibold" style={{ color: colors.text }}>{stats.failedRequests || 0}</div>
-            </div>
-          </div>
-
-          {/* Status Distribution */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="p-4 rounded-lg" style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}>
-              <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Status Distribution</h3>
-              <div className="space-y-2">
-                {stats.statusDistribution && Object.entries(stats.statusDistribution).map(([status, count]) => (
-                  <div key={status} className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(status) }} />
-                    <span className="text-sm flex-1" style={{ color: colors.text }}>{status}</span>
-                    <span className="text-sm font-medium" style={{ color: colors.text }}>{count}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="p-4 rounded-lg" style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}>
-              <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Method Distribution</h3>
-              <div className="space-y-2">
-                {stats.methodDistribution && Object.entries(stats.methodDistribution).map(([method, count]) => (
-                  <div key={method} className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getMethodColor(method) }} />
-                    <span className="text-sm flex-1" style={{ color: colors.text }}>{method}</span>
-                    <span className="text-sm font-medium" style={{ color: colors.text }}>{count}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Status Code Distribution */}
-          <div className="p-4 rounded-lg" style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}>
-            <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Status Code Distribution</h3>
-            <div className="space-y-2">
-              {stats.statusCodeDistribution && Object.entries(stats.statusCodeDistribution).map(([code, count]) => (
-                <div key={code} className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusCodeColor(parseInt(code), colors) }} />
-                  <span className="text-sm flex-1" style={{ color: colors.text }}>{code}</span>
-                  <span className="text-sm font-medium" style={{ color: colors.text }}>{count}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Time Series Data */}
-          {stats.timeSeriesData && stats.timeSeriesData.length > 0 && (
-            <div className="p-4 rounded-lg" style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}>
-              <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Requests Over Time</h3>
-              <div className="space-y-2 max-h-60 overflow-auto">
-                {stats.timeSeriesData.map((point, index) => (
-                  <div key={index} className="flex items-center gap-4 text-sm">
-                    <span style={{ color: colors.textSecondary, minWidth: '150px' }}>
-                      {new Date(point.timestamp).toLocaleString()}
+          {/* API List */}
+          {uniqueApis.map(api => (
+            <div
+              key={api.id}
+              onClick={() => handleApiSelect(api.id)}
+              className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors mb-1 ${
+                selectedApiId === api.id ? 'ring-1' : ''
+              }`}
+              style={{ 
+                backgroundColor: selectedApiId === api.id ? colors.selected : 'transparent',
+                color: selectedApiId === api.id ? colors.primary : colors.text,
+                borderColor: selectedApiId === api.id ? colors.primary : 'transparent'
+              }}
+            >
+              <DatabaseIcon size={14} style={{ color: selectedApiId === api.id ? colors.primary : colors.textSecondary }} />
+              {!sidebarCollapsed && (
+                <>
+                  <span className="text-sm flex-1 truncate" title={api.name}>
+                    {api.name}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: `${colors.success}20`, color: colors.success }}>
+                      {api.successCount}
                     </span>
-                    <div className="flex-1 h-2 rounded-full" style={{ backgroundColor: colors.hover }}>
-                      <div 
-                        className="h-2 rounded-full" 
-                        style={{ 
-                          width: `${(point.requestCount / Math.max(...stats.timeSeriesData.map(p => p.requestCount))) * 100}%`,
-                          backgroundColor: colors.primary
-                        }}
-                      />
-                    </div>
-                    <span style={{ color: colors.text, minWidth: '50px', textAlign: 'right' }}>
-                      {point.requestCount}
+                    <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: `${colors.error}20`, color: colors.error }}>
+                      {api.failedCount}
                     </span>
                   </div>
-                ))}
-              </div>
+                </>
+              )}
+            </div>
+          ))}
+
+          {uniqueApis.length === 0 && !sidebarCollapsed && (
+            <div className="text-center p-4" style={{ color: colors.textSecondary }}>
+              <DatabaseIcon size={20} className="mx-auto mb-2 opacity-50" />
+              <p className="text-xs">No APIs found</p>
             </div>
           )}
+        </div>
+
+        {/* Sidebar Footer */}
+        <div className="p-2 border-t" style={{ borderColor: colors.border }}>
+          <div className="flex items-center gap-2 p-2 rounded" style={{ backgroundColor: colors.hover }}>
+            {!sidebarCollapsed ? (
+              <>
+                <Activity size={14} style={{ color: colors.textSecondary }} />
+                <span className="text-xs flex-1" style={{ color: colors.textSecondary }}>Total Requests</span>
+                <span className="text-xs font-medium" style={{ color: colors.text }}>{pagination.totalElements}</span>
+              </>
+            ) : (
+              <Activity size={14} className="mx-auto" style={{ color: colors.textSecondary }} />
+            )}
+          </div>
         </div>
       </div>
     );
@@ -1342,98 +1906,118 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
         <table className="w-full" style={{ borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
+              {/* Add # column */}
+              <th className="text-left py-3 px-4 text-xs font-medium w-12" style={{ color: colors.textSecondary }}>#</th>
               <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status</th>
               <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Method</th>
               <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Request Name</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>URL</th>
+              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>API</th>
               <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status Code</th>
               <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Duration</th>
               <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Timestamp</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Requested By</th>
+              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Correlation ID</th>
               <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {requests.map((request, index) => (
-              <tr 
-                key={request.id || index}
-                className="hover:bg-opacity-50 transition-colors cursor-pointer"
-                style={{ borderBottom: `1px solid ${colors.border}`, backgroundColor: 'transparent' }}
-                onClick={() => handleViewDetails(request)}
-              >
-                <td className="py-3 px-4">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(request.requestStatus) }} />
-                </td>
-                <td className="py-3 px-4">
-                  <span className="text-xs font-medium px-2 py-1 rounded" style={{ 
-                    backgroundColor: getMethodColor(request.httpMethod),
-                    color: 'white'
-                  }}>
-                    {request.httpMethod}
-                  </span>
-                </td>
-                <td className="py-3 px-4">
-                  <span className="text-sm" style={{ color: colors.text }}>{request.requestName}</span>
-                </td>
-                <td className="py-3 px-4">
-                  <span className="text-xs font-mono truncate max-w-xs" style={{ color: colors.textSecondary }}>
-                    {request.url}
-                  </span>
-                </td>
-                <td className="py-3 px-4">
-                  <span className="text-sm" style={{ color: getStatusCodeColor(request.responseStatusCode, colors) }}>
-                    {request.responseStatusCode || '-'}
-                  </span>
-                </td>
-                <td className="py-3 px-4">
-                  <span className="text-sm" style={{ color: colors.text }}>
-                    {formatExecutionTime(request.executionDurationMs)}
-                  </span>
-                </td>
-                <td className="py-3 px-4">
-                  <span className="text-sm" style={{ color: colors.textSecondary }}>
-                    {formatRequestTimestamp(request.requestTimestamp)}
-                  </span>
-                </td>
-                <td className="py-3 px-4">
-                  <span className="text-sm" style={{ color: colors.text }}>{request.requestedBy || '-'}</span>
-                </td>
-                <td className="py-3 px-4">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleViewDetails(request);
-                      }}
-                      className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                      style={{ backgroundColor: colors.hover }}
-                    >
-                      <Eye size={12} style={{ color: colors.textSecondary }} />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        copyToClipboard(JSON.stringify(request, null, 2));
-                      }}
-                      className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                      style={{ backgroundColor: colors.hover }}
-                    >
-                      <Copy size={12} style={{ color: colors.textSecondary }} />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteRequest(request.id);
-                      }}
-                      className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                      style={{ backgroundColor: colors.hover }}
-                    >
-                      <Trash2 size={12} style={{ color: colors.error }} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+            {requests.map((request, index) => {
+              // Calculate the sequential number based on current page and index
+              const sequentialNumber = (pagination.page * pagination.size) + index + 1;
+              const statusColor = getStatusColor(request.requestStatus);
+              const statusText = getStatusText(request.requestStatus);
+              
+              return (
+                <tr 
+                  key={request.id || index}
+                  className="hover:bg-opacity-50 transition-colors cursor-pointer"
+                  style={{ borderBottom: `1px solid ${colors.border}`, backgroundColor: 'transparent' }}
+                  onClick={() => handleViewDetails(request)}
+                >
+                  {/* Add # column with sequential number */}
+                  <td className="py-3 px-4">
+                    <span className="text-sm font-mono" style={{ color: colors.textSecondary }}>
+                      {sequentialNumber}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColor }} />
+                      <span className="text-xs font-medium" style={{ color: statusColor }}>
+                        {statusText}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-xs font-medium px-2 py-1 rounded" style={{ 
+                      backgroundColor: getMethodColor(request.httpMethod),
+                      color: 'white'
+                    }}>
+                      {request.httpMethod}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-sm" style={{ color: colors.text }}>{request.requestName}</span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-xs" style={{ color: colors.textSecondary }}>{request.apiCode}</span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-sm font-medium" style={{ color: getStatusCodeColor(request.responseStatusCode, colors) }}>
+                      {request.responseStatusCode || '-'}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-sm" style={{ color: colors.text }}>
+                      {formatExecutionTime(request.executionDurationMs)}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-xs" style={{ color: colors.textSecondary }}>
+                      {formatTimestamp(request.requestTimestamp)}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-xs font-mono" style={{ color: colors.textSecondary }}>
+                      {request.correlationId?.substring(0, 8)}...
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewDetails(request);
+                        }}
+                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                        style={{ backgroundColor: colors.hover }}
+                      >
+                        <Eye size={12} style={{ color: colors.textSecondary }} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copyToClipboard(JSON.stringify(request, null, 2));
+                        }}
+                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                        style={{ backgroundColor: colors.hover }}
+                      >
+                        <Copy size={12} style={{ color: colors.textSecondary }} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteRequest(request.id);
+                        }}
+                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                        style={{ backgroundColor: colors.hover }}
+                      >
+                        <Trash2 size={12} style={{ color: colors.error }} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
 
@@ -1458,7 +2042,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   };
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden" style={{ 
+    <div className="flex h-screen overflow-hidden" style={{ 
       backgroundColor: colors.bg,
       color: colors.text,
       fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
@@ -1510,174 +2094,217 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
         }
       `}</style>
 
-      {/* TOP NAVIGATION */}
-      <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
-        backgroundColor: colors.header,
-        borderColor: colors.border
-      }}>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1 -ml-3 text-nowrap">
-            <span className="px-3 py-1.5 text-sm font-medium rounded transition-colors uppercase" style={{ color: colors.text }}>
-              API Request Monitor
-            </span>
-          </div>
-        </div>
+      {/* Sidebar */}
+      {renderSidebar()}
 
-        <div className="flex items-center gap-2">
-          {/* Filter Button */}
-          <button 
-            onClick={() => setShowFilterModal(true)}
-            className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-            style={{ backgroundColor: colors.hover }}>
-            <Filter size={14} style={{ color: colors.textSecondary }} />
-          </button>
-
-          {/* Export Button */}
-          <button 
-            onClick={() => setShowExportModal(true)}
-            className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-            style={{ backgroundColor: colors.hover }}>
-            <DownloadCloud size={14} style={{ color: colors.textSecondary }} />
-          </button>
-
-          {/* Refresh Button */}
-          <button 
-            className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-            onClick={loadRequests}
-            disabled={isLoading.requests}
-            style={{ backgroundColor: colors.hover }}>
-            <RefreshCw size={14} className={isLoading.requests ? 'animate-spin' : ''} style={{ color: colors.textSecondary }} />
-          </button>
-
-          {/* Cleanup Button */}
-          <button 
-            className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-            onClick={handleCleanup}
-            style={{ backgroundColor: colors.hover }}>
-            <Trash2 size={14} style={{ color: colors.textSecondary }} />
-          </button>
-        </div>
-      </div>
-
-      {/* TABS */}
-      <div className="flex items-center border-b h-9" style={{ 
-        backgroundColor: colors.card,
-        borderColor: colors.border
-      }}>
-        <div className="flex items-center px-2">
-          {['all', 'recent', 'statistics'].map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors hover-lift capitalize ${
-                activeTab === tab ? '' : 'hover:bg-opacity-50'
-              }`}
-              style={{ 
-                borderBottomColor: activeTab === tab ? colors.primary : 'transparent',
-                color: activeTab === tab ? colors.primary : colors.textSecondary,
-                backgroundColor: 'transparent'
-              }}>
-              {tab} {tab === 'all' && `(${pagination.totalElements})`}
-            </button>
-          ))}
-        </div>
-
-        {/* Search Bar */}
-        <div className="flex-1 px-4">
-          <div className="relative max-w-md ml-auto">
-            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2" size={12} style={{ color: colors.textSecondary }} />
-            <input 
-              type="text" 
-              placeholder="Search requests..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && loadRequests()}
-              className="w-full pl-8 pr-3 py-1.5 rounded text-sm focus:outline-none hover-lift"
-              style={{ 
-                backgroundColor: colors.inputBg, 
-                border: `1px solid ${colors.border}`, 
-                color: colors.text 
-              }} 
-            />
-            {searchQuery && (
-              <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                <button onClick={() => setSearchQuery('')} className="p-0.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.hover }}>
-                  <X size={10} style={{ color: colors.textSecondary }} />
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* MAIN CONTENT */}
-      {activeTab === 'statistics' ? renderStatistics() : (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Date Range Bar */}
-          <div className="flex items-center gap-4 px-4 py-2 border-b" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
-            <div className="flex items-center gap-2">
-              <Calendar size={14} style={{ color: colors.textSecondary }} />
-              <span className="text-sm" style={{ color: colors.textSecondary }}>Date Range:</span>
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        
+        {/* TOP NAVIGATION */}
+        <div className="flex items-center justify-between h-10 px-4 border-b" style={{ 
+          backgroundColor: colors.header,
+          borderColor: colors.border
+        }}>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1 -ml-3 text-nowrap">
+              <span className="px-3 py-1.5 text-sm font-medium rounded transition-colors uppercase" style={{ color: colors.text }}>
+                API Request Monitor
+              </span>
             </div>
-            <input
-              type="datetime-local"
-              value={dateRange.fromDate}
-              onChange={(e) => setDateRange({ ...dateRange, fromDate: e.target.value })}
-              className="px-2 py-1 rounded text-sm"
-              style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-            />
-            <span style={{ color: colors.textSecondary }}>to</span>
-            <input
-              type="datetime-local"
-              value={dateRange.toDate}
-              onChange={(e) => setDateRange({ ...dateRange, toDate: e.target.value })}
-              className="px-2 py-1 rounded text-sm"
-              style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-            />
-            <button
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Filter Button */}
+            <button 
+              onClick={() => setShowFilterModal(true)}
+              className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+              style={{ backgroundColor: colors.hover }}>
+              <Filter size={14} style={{ color: colors.textSecondary }} />
+            </button>
+
+            {/* Export Button */}
+            <button 
+              onClick={() => setShowExportModal(true)}
+              className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+              style={{ backgroundColor: colors.hover }}>
+              <DownloadCloud size={14} style={{ color: colors.textSecondary }} />
+            </button>
+
+            {/* Refresh Button */}
+            <button 
+              className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
               onClick={loadRequests}
-              className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
-              style={{ backgroundColor: colors.primaryDark, color: 'white' }}
-            >
-              Apply
+              disabled={isLoading.requests}
+              style={{ backgroundColor: colors.hover }}>
+              <RefreshCw size={14} className={isLoading.requests ? 'animate-spin' : ''} style={{ color: colors.textSecondary }} />
+            </button>
+
+            {/* Cleanup Button */}
+            <button 
+              className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
+              onClick={handleCleanup}
+              style={{ backgroundColor: colors.hover }}>
+              <Trash2 size={14} style={{ color: colors.textSecondary }} />
             </button>
           </div>
+        </div>
 
-          {/* Requests Table */}
-          {renderRequestsTable()}
 
-          {/* Pagination */}
-          {pagination.totalPages > 1 && (
-            <div className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
-              <div className="text-sm" style={{ color: colors.textSecondary }}>
-                Showing {pagination.page * pagination.size + 1} - {Math.min((pagination.page + 1) * pagination.size, pagination.totalElements)} of {pagination.totalElements}
+        <div className="w-full p-4 mt-2 -mb-2 space-y-6">
+          {/* Date Range Selector */}
+          {/* <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold" style={{ color: colors.text }}>Request Statistics</h2>
+            <div className="flex items-center gap-3">
+              <input
+                type="datetime-local"
+                value={dateRange.fromDate}
+                onChange={(e) => setDateRange({ ...dateRange, fromDate: e.target.value })}
+                className="px-3 py-1.5 rounded text-sm"
+                style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
+              />
+              <span style={{ color: colors.textSecondary }}>to</span>
+              <input
+                type="datetime-local"
+                value={dateRange.toDate}
+                onChange={(e) => setDateRange({ ...dateRange, toDate: e.target.value })}
+                className="px-3 py-1.5 rounded text-sm"
+                style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
+              />
+              <button
+                onClick={loadStatistics}
+                className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-1"
+                style={{ backgroundColor: colors.primaryDark, color: 'white' }}
+              >
+                <RefreshCw size={14} />
+                Apply
+              </button>
+            </div>
+          </div> */}
+
+          {/* Stats Cards */}
+          <StatsCards 
+            statistics={statistics}
+            systemStats={systemStats}
+            colors={colors}
+            onRefresh={loadStatistics}
+          />
+
+          {/* Charts Grid */}
+          {/* <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <MethodDistribution stats={systemStats || {}} colors={colors} />
+            <StatusCodeDistribution stats={systemStats || {}} colors={colors} />
+          </div> */}
+
+          {/* Time Series */}
+          {/* <TimeSeriesChart stats={systemStats || {}} colors={colors} /> */}
+        </div>
+
+        {/* API Summary Bar (if API selected) */}
+        {selectedApiId && apiSummary && (
+          <div className="flex items-center gap-4 px-4 py-2 border-b" style={{ 
+            borderColor: colors.border, 
+            backgroundColor: colors.hover
+          }}>
+            <span className="text-xs font-medium" style={{ color: colors.textSecondary }}>API Summary:</span>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1">
+                <CheckCircle size={12} style={{ color: colors.success }} />
+                <span className="text-xs" style={{ color: colors.text }}>Success: {apiSummary.successfulRequests}</span>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setPagination({ ...pagination, page: pagination.page - 1 })}
-                  disabled={pagination.page === 0}
-                  className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50"
-                  style={{ backgroundColor: colors.hover, color: colors.text }}
-                >
-                  Previous
-                </button>
-                <span className="text-sm" style={{ color: colors.text }}>
-                  Page {pagination.page + 1} of {pagination.totalPages}
-                </span>
-                <button
-                  onClick={() => setPagination({ ...pagination, page: pagination.page + 1 })}
-                  disabled={pagination.page >= pagination.totalPages - 1}
-                  className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50"
-                  style={{ backgroundColor: colors.hover, color: colors.text }}
-                >
-                  Next
-                </button>
+              <div className="flex items-center gap-1">
+                <XCircle size={12} style={{ color: colors.error }} />
+                <span className="text-xs" style={{ color: colors.text }}>Failed: {apiSummary.failedRequests}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <ClockIcon size={12} style={{ color: colors.warning }} />
+                <span className="text-xs" style={{ color: colors.text }}>Avg: {formatExecutionTime(apiSummary.averageResponseTime)}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Activity size={12} style={{ color: colors.info }} />
+                <span className="text-xs" style={{ color: colors.text }}>Today: {apiSummary.requestCountToday}</span>
               </div>
             </div>
-          )}
+          </div>
+        )}
+
+        {/* Date Range Bar */}
+        <div className="flex items-center gap-4 px-4 py-2 border-b" style={{ 
+          borderColor: colors.border, 
+          backgroundColor: colors.card
+        }}>
+          <div className="flex items-center gap-2">
+            <Calendar size={14} style={{ color: colors.textSecondary }} />
+            <span className="text-sm" style={{ color: colors.textSecondary }}>Date Range:</span>
+          </div>
+          <input
+            type="datetime-local"
+            value={dateRange.fromDate}
+            onChange={(e) => setDateRange({ ...dateRange, fromDate: e.target.value })}
+            className="px-2 py-1 rounded text-sm"
+            style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
+          />
+          <span style={{ color: colors.textSecondary }}>to</span>
+          <input
+            type="datetime-local"
+            value={dateRange.toDate}
+            onChange={(e) => setDateRange({ ...dateRange, toDate: e.target.value })}
+            className="px-2 py-1 rounded text-sm"
+            style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
+          />
+          <button
+            onClick={() => {
+              setPagination(prev => ({ ...prev, page: 0 }));
+              loadRequests();
+            }}
+            className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
+            style={{ backgroundColor: colors.primaryDark, color: 'white' }}
+          >
+            Apply
+          </button>
         </div>
-      )}
+
+        {/* MAIN CONTENT */}
+        {renderRequestsTable()}
+
+        {/* Pagination */}
+        {activeTab !== 'statistics' && pagination.totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t" style={{ 
+            borderColor: colors.border, 
+            backgroundColor: colors.card
+          }}>
+            <div className="text-sm" style={{ color: colors.textSecondary }}>
+              Showing {pagination.page * pagination.size + 1} - {Math.min((pagination.page + 1) * pagination.size, pagination.totalElements)} of {pagination.totalElements}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setPagination(prev => ({ ...prev, page: prev.page - 1 }));
+                  loadRequests();
+                }}
+                disabled={pagination.page === 0}
+                className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+              >
+                Previous
+              </button>
+              <span className="text-sm" style={{ color: colors.text }}>
+                Page {pagination.page + 1} of {pagination.totalPages}
+              </span>
+              <button
+                onClick={() => {
+                  setPagination(prev => ({ ...prev, page: prev.page + 1 }));
+                  loadRequests();
+                }}
+                disabled={pagination.page >= pagination.totalPages - 1}
+                className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Modals */}
       <RequestDetailsModal
@@ -1695,8 +2322,8 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
         onClose={() => setShowFilterModal(false)}
         onApply={(newFilters) => {
           setFilters(newFilters);
-          setPagination({ ...pagination, page: 0 });
-          loadRequests();
+          setPagination(prev => ({ ...prev, page: 0 }));
+          // No need to call loadRequests here - useEffect will handle it
         }}
       />
 
