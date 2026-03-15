@@ -1666,9 +1666,9 @@ const renderImplementationContent = () => {
                 )}
               </div>
               
-              <p className="text-base mb-4 mt-4" style={{ color: colors.textSecondary }}>
+              {/* <p className="text-base mb-4 mt-4" style={{ color: colors.textSecondary }}>
                 {selectedRequest.description || 'No description available'}
-              </p>
+              </p> */}
               
             </>
           ) : (

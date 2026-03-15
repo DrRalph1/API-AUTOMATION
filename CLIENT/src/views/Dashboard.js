@@ -417,14 +417,17 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
                           <Shield size={14} style={{ color: colors.warning }} />
                           <span className="text-xs" style={{ color: colors.textSecondary }}>Security Rules</span>
                         </div>
-                        <div className="flex gap-3">
+                        {/* <div className="flex gap-3">
                           <span className="text-xs" style={{ color: colors.text }}>
                             Rate: <span style={{ color: colors.warning }}>{stats.totalRateLimitRules || 0}</span>
                           </span>
                           <span className="text-xs" style={{ color: colors.text }}>
                             IP: <span style={{ color: colors.success }}>{stats.totalIpWhitelistEntries || 0}</span>
                           </span>
-                        </div>
+                        </div> */}
+                        <span className="text-xs" style={{ color: colors.text }}>
+                            <span style={{ color: colors.success }}>{stats.totalIpWhitelistEntries || 0}</span> IP Whitelisted
+                          </span>
                       </div>
 
                       {/* Security Alert - only if needed */}
@@ -443,30 +446,36 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
                           <Code size={14} style={{ color: colors.info }} />
                           <span className="text-xs" style={{ color: colors.textSecondary }}>Code Base</span>
                         </div>
-                        <div className="flex gap-3">
+                        {/* <div className="flex gap-3">
                           <span className="text-xs" style={{ color: colors.text }}>
                             Impl: <span style={{ color: colors.warning }}>{stats.totalCodeImplementations?.toLocaleString() || 0}</span>
                           </span>
                           <span className="text-xs" style={{ color: colors.text }}>
                             Lang: <span style={{ color: colors.info }}>{stats.supportedLanguages || 0}</span>
                           </span>
-                        </div>
+                        </div> */}
+                        <span className="text-xs" style={{ color: colors.text }}>
+                          <span style={{ color: colors.success }}>{stats.totalCodeImplementations?.toLocaleString() || 0}</span> Implementations
+                        </span>
                       </div>
 
                       {/* Users */}
                       <div className="flex items-center justify-between py-1.5">
                         <div className="flex items-center gap-2">
-                          <Users size={14} style={{ color: colors.primary }} />
+                          <Users size={14} style={{ color: colors.text }} />
                           <span className="text-xs" style={{ color: colors.textSecondary }}>Users</span>
                         </div>
-                        <div className="flex gap-3">
+                        {/* <div className="flex gap-3">
                           <span className="text-xs" style={{ color: colors.text }}>
                             Total: <span style={{ color: colors.primary }}>{stats.totalUsers || 0}</span>
                           </span>
                           <span className="text-xs" style={{ color: colors.text }}>
                             Active: <span style={{ color: colors.success }}>{stats.activeUsers || 0}</span>
                           </span>
-                        </div>
+                        </div> */}
+                        <span className="text-xs" style={{ color: colors.text }}>
+                          <span style={{ color: colors.success }}>{stats.activeUsers || 0}</span> Active Users
+                        </span>
                       </div>
 
                       {/* Documentation */}
@@ -475,14 +484,17 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
                           <BookOpen size={14} style={{ color: colors.info }} />
                           <span className="text-xs" style={{ color: colors.textSecondary }}>Documentation</span>
                         </div>
-                        <div className="flex gap-3">
+                        {/* <div className="flex gap-3">
                           <span className="text-xs" style={{ color: colors.text }}>
                             Total: <span style={{ color: colors.info }}>{stats.totalDocumentationEndpoints || 0}</span>
                           </span>
                           <span className="text-xs" style={{ color: colors.text }}>
                             Pub: <span style={{ color: colors.success }}>{stats.publishedDocumentation || 0}</span>
                           </span>
-                        </div>
+                        </div> */}
+                        <span className="text-xs" style={{ color: colors.text }}>
+                          <span style={{ color: colors.success }}>{stats.publishedDocumentation || 0}</span> Published
+                        </span>
                       </div>
                     </div>
 
