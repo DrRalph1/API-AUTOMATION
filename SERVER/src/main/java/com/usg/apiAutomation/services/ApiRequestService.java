@@ -386,19 +386,25 @@ public class ApiRequestService {
                             filter.getFromDate(),
                             filter.getToDate()
                     );
-                    // Manual pagination (simplified - in production use proper pagination)
+
+                    // Calculate summary statistics for all requests (not just paginated)
+                    ApiRequestResponseDTO.ApiRequestSummaryDTO summary = calculateSummaryStatistics(requests);
+
+                    // Manual pagination
                     int start = (int) pageable.getOffset();
                     int end = Math.min(start + pageable.getPageSize(), requests.size());
                     List<ApiRequestEntity> pagedContent = start < requests.size() ?
                             requests.subList(start, end) : new ArrayList<>();
 
-                    return new org.springframework.data.domain.PageImpl<>(
-                            pagedContent.stream()
-                                    .map(req -> mapToResponseDTO(req, req.getGeneratedApi()))
-                                    .collect(Collectors.toList()),
-                            pageable,
-                            requests.size()
-                    );
+                    List<ApiRequestResponseDTO> dtoList = pagedContent.stream()
+                            .map(req -> {
+                                ApiRequestResponseDTO dto = mapToResponseDTO(req, req.getGeneratedApi());
+                                dto.setSummary(summary); // Set the same summary for all items
+                                return dto;
+                            })
+                            .collect(Collectors.toList());
+
+                    return new org.springframework.data.domain.PageImpl<>(dtoList, pageable, requests.size());
                 } else {
                     // Simple query by API ID
                     requestsPage = apiRequestRepository.findByGeneratedApiId(filter.getApiId(), pageable);
@@ -408,24 +414,142 @@ public class ApiRequestService {
             } else if (filter.getCorrelationId() != null) {
                 Optional<ApiRequestEntity> request = apiRequestRepository.findByCorrelationId(filter.getCorrelationId());
                 List<ApiRequestEntity> requestList = request.map(List::of).orElseGet(List::of);
-                return new org.springframework.data.domain.PageImpl<>(
-                        requestList.stream()
-                                .map(req -> mapToResponseDTO(req, req.getGeneratedApi()))
-                                .collect(Collectors.toList()),
-                        pageable,
-                        requestList.size()
-                );
+
+                // Calculate summary for single request
+                ApiRequestResponseDTO.ApiRequestSummaryDTO summary = calculateSummaryStatistics(requestList);
+
+                List<ApiRequestResponseDTO> dtoList = requestList.stream()
+                        .map(req -> {
+                            ApiRequestResponseDTO dto = mapToResponseDTO(req, req.getGeneratedApi());
+                            dto.setSummary(summary);
+                            return dto;
+                        })
+                        .collect(Collectors.toList());
+
+                return new org.springframework.data.domain.PageImpl<>(dtoList, pageable, requestList.size());
             } else {
                 requestsPage = apiRequestRepository.findAllByOrderByRequestTimestampDesc(pageable);
             }
 
-            return requestsPage.map(req -> mapToResponseDTO(req, req.getGeneratedApi()));
+            // For paginated results, we need to get all requests to calculate accurate summary
+            // This might be expensive - consider a separate query for summary stats
+            if (requestsPage != null && requestsPage.hasContent()) {
+                // Get all requests for this API/filter to calculate accurate summary
+                List<ApiRequestEntity> allRequests = fetchAllRequestsForSummary(filter);
+                ApiRequestResponseDTO.ApiRequestSummaryDTO summary = calculateSummaryStatistics(allRequests);
+
+                return requestsPage.map(req -> {
+                    ApiRequestResponseDTO dto = mapToResponseDTO(req, req.getGeneratedApi());
+                    dto.setSummary(summary);
+                    return dto;
+                });
+            }
+
+            return new org.springframework.data.domain.PageImpl<>(new ArrayList<>(), pageable, 0);
 
         } catch (Exception e) {
             loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Error searching requests: " + e.getMessage());
             throw new RuntimeException("Failed to search requests: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Calculate summary statistics from a list of requests
+     */
+    private ApiRequestResponseDTO.ApiRequestSummaryDTO calculateSummaryStatistics(List<ApiRequestEntity> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return ApiRequestResponseDTO.ApiRequestSummaryDTO.builder()
+                    .totalRequestsForApi(0L)
+                    .successfulRequests(0L)
+                    .failedRequests(0L)
+                    .averageResponseTime(0.0)
+                    .minResponseTime(0L)
+                    .maxResponseTime(0L)
+                    .requestCountToday(0)
+                    .build();
+        }
+
+        long totalRequests = requests.size();
+        long successfulRequests = requests.stream()
+                .filter(req -> "SUCCESS".equals(req.getRequestStatus()))
+                .count();
+        long failedRequests = requests.stream()
+                .filter(req -> "FAILED".equals(req.getRequestStatus()) || "TIMEOUT".equals(req.getRequestStatus()))
+                .count();
+
+        // Calculate response time statistics
+        List<Long> responseTimes = requests.stream()
+                .map(ApiRequestEntity::getExecutionDurationMs)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+
+        Double averageResponseTime = responseTimes.stream()
+                .mapToLong(Long::longValue)
+                .average()
+                .orElse(0.0);
+
+        Long minResponseTime = responseTimes.stream()
+                .mapToLong(Long::longValue)
+                .min()
+                .orElse(0L);
+
+        Long maxResponseTime = responseTimes.stream()
+                .mapToLong(Long::longValue)
+                .max()
+                .orElse(0L);
+
+        // Count requests from today
+        LocalDateTime today = LocalDateTime.now().toLocalDate().atStartOfDay();
+        int requestCountToday = (int) requests.stream()
+                .filter(req -> req.getRequestTimestamp() != null &&
+                        req.getRequestTimestamp().isAfter(today))
+                .count();
+
+        return ApiRequestResponseDTO.ApiRequestSummaryDTO.builder()
+                .totalRequestsForApi(totalRequests)
+                .successfulRequests(successfulRequests)
+                .failedRequests(failedRequests)
+                .averageResponseTime(averageResponseTime)
+                .minResponseTime(minResponseTime)
+                .maxResponseTime(maxResponseTime)
+                .requestCountToday(requestCountToday)
+                .build();
+    }
+
+    /**
+     * Fetch all requests based on filter for summary calculation
+     */
+    private List<ApiRequestEntity> fetchAllRequestsForSummary(ApiRequestFilterDTO filter) {
+        if (filter == null) {
+            return Collections.emptyList();
+        }
+
+        // You might want to add repository methods to fetch all matching requests
+        // without pagination for summary calculation
+        if (filter.getApiId() != null && !filter.getApiId().isEmpty()) {
+            if (filter.getFromDate() != null && filter.getToDate() != null) {
+                return apiRequestRepository.findApiRequestsByStatusAndDateRange(
+                        filter.getApiId(),
+                        filter.getRequestStatus() != null ? filter.getRequestStatus() : "",
+                        filter.getFromDate(),
+                        filter.getToDate()
+                );
+            } else {
+                // You'll need to add a method to fetch all by API ID
+                return apiRequestRepository.findAllByGeneratedApiId(filter.getApiId());
+            }
+        } else if (filter.getRequestStatus() != null) {
+            // Add method to fetch all by status
+            return apiRequestRepository.findAllByRequestStatus(filter.getRequestStatus());
+        } else if (filter.getCorrelationId() != null) {
+            return apiRequestRepository.findByCorrelationId(filter.getCorrelationId())
+                    .map(List::of)
+                    .orElseGet(List::of);
+        }
+
+        // For all requests, you might want to limit this or use a different approach
+        return apiRequestRepository.findAll(); // Be careful with this!
     }
 
 

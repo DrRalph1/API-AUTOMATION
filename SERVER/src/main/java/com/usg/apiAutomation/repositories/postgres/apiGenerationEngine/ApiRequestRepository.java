@@ -289,4 +289,10 @@ public interface ApiRequestRepository extends JpaRepository<ApiRequestEntity, St
             LocalDateTime start,
             LocalDateTime end);
 
+
+    // Add these methods for summary calculation
+    List<ApiRequestEntity> findAllByGeneratedApiId(String apiId);
+
+    List<ApiRequestEntity> findAllByRequestStatus(String requestStatus);
+
 }
