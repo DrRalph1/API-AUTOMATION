@@ -561,6 +561,7 @@ import UserMangement from "./UserMangement.js";
 import Dashboard from "./Dashboard.js";
 import Documentation from "./Documentation.js";
 import SchemaBrowser from "./SchemaBrowser.js";
+import APIRequests from "./APIRequests.js";
 
 import ConnectionDetailsModal from "@/components/modals/ConnectionDetailsModal";
 import APIDetailsModal from "@/components/modals/APIDetailsModal";
@@ -858,7 +859,8 @@ export default function EntryPage() {
     { id: "api-docs", label: "Documenation", icon: Activity, component: <Documentation authToken={`Bearer ${token}`} /> },
     { id: "code-base", label: "Code Base", icon: Code, component: <CodeBase authToken={`Bearer ${token}`} /> },
     { id: "security", label: "API Security", icon: Shield, component: <APISecurity authToken={`Bearer ${token}`} /> },
-    { id: "user-mgt", label: "User Mgt", icon: UserCog, component: <UserMangement authToken={`Bearer ${token}`} /> },
+    // { id: "user-mgt", label: "User Mgt", icon: UserCog, component: <UserMangement authToken={`Bearer ${token}`} /> },
+    { id: "api-requests", label: "API Requests", icon: FileCode, component: <APIRequests authToken={`Bearer ${token}`} /> },
   ];
 
   // Quick actions

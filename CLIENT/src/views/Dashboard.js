@@ -301,6 +301,7 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
     { label: 'API Code Base', icon: Code, onClick: () => onNavigate('code-base'), color: colors.warning },
     { label: 'API Security', icon: Shield, onClick: () => onNavigate('security'), color: colors.error },
     { label: 'User Management', icon: UserCog, onClick: () => onNavigate('user-mgt'), color: colors.accentPurple },
+    // { label: 'API Requests', icon: TrendingUp, onClick: () => onNavigate('api-requests'), color: colors.accentCyan },
   ], [colors, onNavigate]);
 
   // Format stats data for display
@@ -1016,7 +1017,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
                     if (key === 'totalCollections' || key === 'totalApis') {
                       handleNavigate('api-collections');
                     } else if (key === 'totalCalls') {
-                      handleNavigate('code-base');
+                      handleNavigate('api-requests');
                     } else if (key === 'totalDocumentationEndpoints') {
                       handleNavigate('api-docs');
                     }

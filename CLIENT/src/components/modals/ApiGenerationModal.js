@@ -1641,6 +1641,8 @@ export default function ApiGenerationModal({
   const [loading, setLoading] = useState(false);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
+
+  const [showApiSecret, setShowApiSecret] = useState(false);
   
   // NEW: Track if API code already exists - only relevant for new APIs
   const [apiCodeExists, setApiCodeExists] = useState(false);
@@ -5739,18 +5741,32 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                               <label className="text-xs font-medium" style={{ color: themeColors.text }}>
                                 API Secret Value (for testing)
                               </label>
-                              <input
-                                type="password"
-                                value={authConfig.apiSecretValue}
-                                onChange={(e) => handleAuthConfigChange('apiSecretValue', e.target.value)}
-                                className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                                style={{ 
-                                  backgroundColor: themeColors.card,
-                                  borderColor: themeColors.border,
-                                  color: themeColors.text
-                                }}
-                                placeholder="your-api-secret"
-                              />
+                              <div className="relative">
+                                <input
+                                  type={showApiSecret ? 'text' : 'password'}
+                                  value={authConfig.apiSecretValue}
+                                  onChange={(e) => handleAuthConfigChange('apiSecretValue', e.target.value)}
+                                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift pr-10"
+                                  style={{ 
+                                    backgroundColor: themeColors.card,
+                                    borderColor: themeColors.border,
+                                    color: themeColors.text
+                                  }}
+                                  placeholder="your-api-secret"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setShowApiSecret(!showApiSecret)}
+                                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded transition-colors hover-lift"
+                                  style={{ 
+                                    backgroundColor: 'transparent',
+                                    color: themeColors.textSecondary
+                                  }}
+                                  title={showApiSecret ? 'Hide secret' : 'Show secret'}
+                                >
+                                  {showApiSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>
