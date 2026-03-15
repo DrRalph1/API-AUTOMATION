@@ -1,5 +1,5 @@
-// components/modals/ApiGenerationModal.js - COMPLETE FIXED VERSION WITH ALL HANDLERS
-import React, { useState, useEffect } from 'react';
+// components/modals/ApiGenerationModal.js - COMPLETE FIXED VERSION WITH OBJECT SELECTOR FOR DASHBOARD
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   X, Plus, Trash2, Save, Copy, Code, Globe, Lock, FileText, 
   Settings, Database, Map, FileJson, TestTube, Wrench, 
@@ -11,7 +11,7 @@ import {
   BellOff, ShieldOff, Clock as ClockIcon, BarChart, Cpu as CpuIcon,
   Server, Cloud, CloudOff, FileCode, BookOpen, FileKey, GitBranch,
   Folder, FolderOpen, FolderTree, Layers as LayersIcon, Archive,
-  Edit, Edit3, Asterisk
+  Edit, Edit3, Asterisk, Table, ChevronLeft
 } from 'lucide-react';
 
 // Import the API Generation Engine controller functions
@@ -26,7 +26,7 @@ import {
   canExecuteApi,
   canEditApi,
   downloadGeneratedFile,
-  updateApi // Add this import
+  updateApi
 } from "../../controllers/APIGenerationEngineController.js";
 
 // Mock collections data for banking system
@@ -217,6 +217,246 @@ const REQUIRED_FIELDS = {
     bearer: ['jwtIssuer'],
     basic: ['basicUsername', 'basicPassword']
   }
+};
+
+// ==================== OBJECT SELECTOR MODAL ====================
+const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken }) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Debounced search
+  useEffect(() => {
+    let timeoutId;
+    
+    const performSearch = async () => {
+      if (!authToken || searchTerm.length < 2) {
+        setSearchResults([]);
+        return;
+      }
+
+      setSearching(true);
+      setError(null);
+
+      try {
+        // Dynamically import the search function
+        const { searchObjectsPaginated } = await import('../../controllers/OracleSchemaController.js');
+        
+        const response = await searchObjectsPaginated(authToken, {
+          query: searchTerm,
+          page: 1,
+          pageSize: 20
+        });
+
+        const results = [];
+        const responseData = response?.data || {};
+        const items = responseData.items || responseData.results || [];
+
+        items.forEach(item => {
+          const objectType = (item.object_type || item.type || item.OBJECT_TYPE || '').toUpperCase();
+          const objectName = item.name || item.OBJECT_NAME || item.TABLE_NAME || item.PROCEDURE_NAME || '';
+          
+          if (!objectName || !objectType) return;
+
+          results.push({
+            id: item.id || `${item.owner}_${objectName}`,
+            name: objectName,
+            owner: item.owner || item.OWNER,
+            type: objectType,
+            isSynonym: objectType === 'SYNONYM',
+            targetType: item.targetType || item.TARGET_TYPE,
+            targetName: item.targetName || item.TARGET_NAME,
+            status: item.status || item.STATUS || 'VALID'
+          });
+        });
+
+        setSearchResults(results);
+      } catch (err) {
+        console.error('Error searching objects:', err);
+        setError(err.message);
+      } finally {
+        setSearching(false);
+      }
+    };
+
+    if (searchTerm.length >= 2) {
+      timeoutId = setTimeout(performSearch, 500);
+    } else {
+      setSearchResults([]);
+    }
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, authToken]);
+
+  if (!isOpen) return null;
+
+  const getObjectIcon = (type) => {
+    switch(type) {
+      case 'TABLE': return <Table size={16} style={{ color: colors.objectType?.table || colors.primary }} />;
+      case 'VIEW': return <FileText size={16} style={{ color: colors.objectType?.view || colors.success }} />;
+      case 'PROCEDURE': return <Terminal size={16} style={{ color: colors.objectType?.procedure || colors.warning }} />;
+      case 'FUNCTION': return <Code size={16} style={{ color: colors.objectType?.function || colors.info }} />;
+      case 'PACKAGE': return <Package size={16} style={{ color: colors.objectType?.package || colors.textSecondary }} />;
+      case 'SYNONYM': return <Link size={16} style={{ color: colors.objectType?.synonym || colors.accentCyan }} />;
+      case 'SEQUENCE': return <Hash size={16} style={{ color: colors.objectType?.sequence || colors.textTertiary }} />;
+      case 'TRIGGER': return <Zap size={16} style={{ color: colors.objectType?.trigger || colors.error }} />;
+      default: return <Database size={16} style={{ color: colors.textSecondary }} />;
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[1100] p-4">
+      <div className="rounded-xl shadow-2xl w-3xl max-w-3xl max-h-[80vh] flex flex-col" style={{ 
+        backgroundColor: colors.bg,
+        width: "650px",
+        border: `1px solid ${colors.modalBorder || colors.border}`
+      }}>
+        {/* Header */}
+        <div className="px-6 py-4 border-b flex items-center justify-between" style={{ 
+          borderColor: colors.border,
+          backgroundColor: colors.card
+        }}>
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg" style={{ backgroundColor: colors.primary + '20' }}>
+              <Database className="h-5 w-5" style={{ color: colors.primary }} />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold" style={{ color: colors.text }}>Select Database Object &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</h2>
+              <p className="text-xs" style={{ color: colors.textSecondary }}>
+                Search and select an object to generate API from
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg transition-colors hover-lift"
+            style={{ backgroundColor: colors.hover, color: colors.textSecondary }}
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Search Input */}
+        <div className="p-4 border-b" style={{ borderColor: colors.border }}>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2" size={16} style={{ color: colors.textSecondary }} />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 rounded-lg text-sm"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                // borderColor: colors.backgroundColor,
+                color: colors.text
+              }}
+              placeholder="Search for tables, views, procedures, functions..."
+              autoFocus
+            />
+            {searching && (
+              <Loader className="absolute right-3 top-1/2 transform -translate-y-1/2 animate-spin" size={16} style={{ color: colors.primary }} />
+            )}
+          </div>
+          {searchTerm.length < 2 && searchTerm.length > 0 && (
+            <p className="text-xs mt-2" style={{ color: colors.warning }}>
+              Enter at least 2 characters to search
+            </p>
+          )}
+          {error && (
+            <p className="text-xs mt-2 flex items-center gap-1" style={{ color: colors.error }}>
+              <AlertCircle size={12} />
+              {error}
+            </p>
+          )}
+        </div>
+
+        {/* Results */}
+        <div className="flex-1 overflow-auto p-4">
+          {searching ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <Loader className="animate-spin mb-4" size={32} style={{ color: colors.primary }} />
+              <p className="text-sm" style={{ color: colors.text }}>Searching database objects...</p>
+            </div>
+          ) : searchResults.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <Database size={48} style={{ color: colors.textTertiary, opacity: 0.5 }} />
+              <p className="text-sm mt-4" style={{ color: colors.textSecondary }}>
+                {searchTerm.length >= 2 ? 'No objects found' : 'Type to search for objects'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {searchResults.map(obj => (
+                <button
+                  key={obj.id}
+                  onClick={() => onSelect(obj)}
+                  className="w-full p-4 rounded-lg border text-left hover:bg-opacity-50 transition-colors"
+                  style={{ 
+                    backgroundColor: colors.card,
+                    borderColor: colors.border
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    {getObjectIcon(obj.type)}
+                    
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium" style={{ color: colors.text }}>{obj.name}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full" style={{ 
+                          backgroundColor: colors.objectType?.[obj.type?.toLowerCase()] + '20' || colors.info + '20',
+                          color: colors.objectType?.[obj.type?.toLowerCase()] || colors.info
+                        }}>
+                          {obj.type}
+                        </span>
+                        {obj.isSynonym && (
+                          <span className="text-xs px-2 py-0.5 rounded-full" style={{ 
+                            backgroundColor: colors.info + '20',
+                            color: colors.info
+                          }}>
+                            → {obj.targetType}: {obj.targetName}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 text-xs" style={{ color: colors.textSecondary }}>
+                        <span>{obj.owner}</span>
+                        {obj.status && obj.status !== 'VALID' && (
+                          <span className="px-2 py-0.5 rounded-full" style={{ 
+                            backgroundColor: colors.error + '20',
+                            color: colors.error
+                          }}>
+                            {obj.status}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <ChevronRight size={16} style={{ color: colors.textTertiary }} />
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t" style={{ borderColor: colors.border }}>
+          <div className="flex items-center justify-end gap-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 border rounded-lg transition-colors hover-lift"
+              style={{ 
+                backgroundColor: colors.hover,
+                borderColor: colors.border,
+                color: colors.text
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 // New component for the preview modal
@@ -1391,7 +1631,8 @@ export default function ApiGenerationModal({
   obType,
   theme = 'dark',
   authToken = null,
-  isEditing = false
+  isEditing = false,
+  fromDashboard = false // NEW: Flag to indicate if modal is opened from dashboard
 }) {
 
   console.log("selectedObject::::::::" + JSON.stringify(selectedObject));
@@ -1414,6 +1655,11 @@ export default function ApiGenerationModal({
   const [newCollectionDescription, setNewCollectionDescription] = useState('');
   const [newCollectionType, setNewCollectionType] = useState('core');
   const [showAddFolderModal, setShowAddFolderModal] = useState(false);
+
+  // NEW: Object selector state for dashboard generation
+  const [showObjectSelector, setShowObjectSelector] = useState(false);
+  const [selectedDbObject, setSelectedDbObject] = useState(null);
+  const [objectSelectorError, setObjectSelectorError] = useState(null);
 
   // Validation errors state
   const [validationErrors, setValidationErrors] = useState({});
@@ -1854,6 +2100,223 @@ export default function ApiGenerationModal({
     setSettings(prev => ({ ...prev, [field]: value }));
   };
 
+  // ==================== OBJECT SELECTOR FUNCTIONS ====================
+
+  // Function to load object details after selection
+  // Function to load object details after selection
+const loadSelectedObjectDetails = useCallback(async (object) => {
+  if (!authToken || !object) return;
+
+  setLoading(true); // This sets loading to true
+  setObjectSelectorError(null);
+
+  try {
+    // Dynamically import the function
+    const { getObjectDetails } = await import('../../controllers/OracleSchemaController.js');
+    
+    const response = await getObjectDetails(authToken, {
+      objectType: object.type,
+      objectName: object.name,
+      owner: object.owner
+    });
+
+    const responseData = response?.data || {};
+    let parameters = [];
+    let columns = [];
+
+    // Extract parameters for procedures/functions
+    if (object.type === 'PROCEDURE' || object.type === 'FUNCTION') {
+      if (responseData.parameters && Array.isArray(responseData.parameters)) {
+        parameters = responseData.parameters;
+      } else if (responseData.arguments && Array.isArray(responseData.arguments)) {
+        parameters = responseData.arguments;
+      }
+    }
+
+    // Extract columns for tables/views
+    if (object.type === 'TABLE' || object.type === 'VIEW') {
+      if (responseData.columns && Array.isArray(responseData.columns)) {
+        columns = responseData.columns;
+      } else if (responseData.targetObjectDetails?.columns) {
+        columns = responseData.targetObjectDetails.columns;
+      }
+    }
+
+    // Create a selected object with all details
+    const detailedObject = {
+      ...object,
+      ...responseData,
+      parameters: parameters,
+      columns: columns,
+      comment: responseData.comment || responseData.COMMENTS
+    };
+
+    setSelectedDbObject(detailedObject);
+    setShowObjectSelector(false);
+    
+    // Auto-populate form fields
+    populateFormFromObject(detailedObject);
+    
+  } catch (error) {
+    console.error('Error loading object details:', error);
+    setObjectSelectorError('Failed to load object details');
+  } finally {
+    setLoading(false); // This sets loading back to false
+  }
+}, [authToken]);
+
+  // Function to populate form from selected object
+  const populateFormFromObject = useCallback((object) => {
+    const objectType = object.type?.toUpperCase();
+    const baseName = object.name?.toLowerCase() || '';
+    const endpointPath = baseName ? `/${baseName.replace(/_/g, '-').toLowerCase()}` : '';
+
+    // Set API details
+    setApiDetails(prev => ({
+      ...prev,
+      apiName: object.name ? `${object.name} API` : 'New API',
+      apiCode: objectType ? `${objectType.slice(0, 3)}_${object.name || 'API'}` : 'API',
+      description: object.comment || (object.name ? `API for ${object.name}` : ''),
+      endpointPath: endpointPath,
+      owner: object.owner || 'HR',
+      httpMethod: objectType === 'PROCEDURE' || objectType === 'FUNCTION' ? 'POST' : 'GET'
+    }));
+
+    // Set schema config
+    setSchemaConfig(prev => ({
+      ...prev,
+      schemaName: object.owner || 'HR',
+      objectType: object.type || 'TABLE',
+      objectName: object.name || '',
+      operation: objectType === 'PROCEDURE' || objectType === 'FUNCTION' ? 'EXECUTE' : 'SELECT',
+      primaryKeyColumn: ''
+    }));
+
+    // Generate parameters
+    const newParameters = [];
+    const newMappings = [];
+
+    if (object.parameters && object.parameters.length > 0) {
+      object.parameters.forEach((param, index) => {
+        const paramName = param.ARGUMENT_NAME || param.argument_name || param.name || `param_${index + 1}`;
+        const paramType = param.DATA_TYPE || param.data_type || param.type || 'VARCHAR2';
+        const paramMode = param.IN_OUT || param.in_out || param.mode || 'IN';
+        
+        const cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
+        
+        if (paramMode === 'IN' || paramMode === 'IN/OUT') {
+          newParameters.push({
+            id: `param-${Date.now()}-${index}`,
+            key: cleanKey,
+            dbColumn: paramName,
+            oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 'VARCHAR2',
+            apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
+            parameterLocation: paramMode === 'IN/OUT' ? 'body' : 'query',
+            required: true,
+            description: `${paramName} (${paramMode})`,
+            example: paramType.includes('NUMBER') ? '1' : 'sample',
+            validationPattern: '',
+            defaultValue: param.DATA_DEFAULT || '',
+            inBody: paramMode === 'IN/OUT',
+            isPrimaryKey: false,
+            paramMode: paramMode
+          });
+        }
+
+        if (paramMode === 'OUT' || paramMode === 'IN/OUT') {
+          newMappings.push({
+            id: `mapping-${Date.now()}-out-${index}`,
+            apiField: cleanKey,
+            dbColumn: paramName,
+            oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 'VARCHAR2',
+            apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
+            format: paramType.includes('DATE') ? 'date-time' : '',
+            nullable: true,
+            isPrimaryKey: false,
+            includeInResponse: true,
+            inResponse: true,
+            paramMode: paramMode
+          });
+        }
+      });
+    }
+
+    if (object.columns && object.columns.length > 0) {
+      object.columns.forEach((col, index) => {
+        const colName = col.name || col.COLUMN_NAME || col.column_name;
+        const colType = col.type || col.DATA_TYPE || col.data_type || 'VARCHAR2';
+        const colNullable = col.nullable || col.NULLABLE || 'Y';
+        const isPrimaryKey = col.key === 'PK' || col.CONSTRAINT_TYPE === 'P' || col.isPrimaryKey;
+        
+        if (colName) {
+          const cleanKey = colName.toLowerCase();
+          
+          newParameters.push({
+            id: `param-${Date.now()}-${index}`,
+            key: cleanKey,
+            dbColumn: colName,
+            oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 'VARCHAR2',
+            apiType: colType.includes('NUMBER') ? 'integer' : 'string',
+            parameterLocation: isPrimaryKey ? 'path' : 'query',
+            required: isPrimaryKey || colNullable === 'N',
+            description: `From ${object.name}.${colName}`,
+            example: colName.includes('ID') ? '1' : 'sample',
+            validationPattern: '',
+            defaultValue: col.DATA_DEFAULT || '',
+            inBody: false,
+            isPrimaryKey: isPrimaryKey,
+            paramMode: null
+          });
+
+          newMappings.push({
+            id: `mapping-${Date.now()}-${index}`,
+            apiField: cleanKey,
+            dbColumn: colName,
+            oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 'VARCHAR2',
+            apiType: colType.includes('NUMBER') ? 'integer' : 'string',
+            format: colType.includes('DATE') ? 'date-time' : '',
+            nullable: colNullable === 'Y',
+            isPrimaryKey: isPrimaryKey,
+            includeInResponse: true,
+            inResponse: true,
+            paramMode: null
+          });
+        }
+      });
+    }
+
+    setParameters(newParameters);
+    setResponseMappings(newMappings);
+    
+    // Generate sample response
+    if (newMappings.length > 0) {
+      const sampleData = {};
+      newMappings.slice(0, 50).forEach(mapping => {
+        if (mapping.apiType === 'integer') {
+          sampleData[mapping.apiField] = 123;
+        } else if (mapping.apiType === 'string') {
+          sampleData[mapping.apiField] = mapping.apiField === 'id' ? 1 : 'sample';
+        }
+      });
+      
+      const successSchema = JSON.stringify({
+        success: true,
+        data: sampleData,
+        message: 'Request processed successfully',
+        metadata: {
+          timestamp: '{{timestamp}}',
+          apiVersion: apiDetails.version,
+          requestId: '{{requestId}}'
+        }
+      }, null, 2);
+      
+      setResponseBody(prev => ({
+        ...prev,
+        successSchema
+      }));
+    }
+  }, [apiDetails.version]);
+
   // ==================== VALIDATION FUNCTIONS ====================
 
   // Validation function
@@ -1880,7 +2343,7 @@ export default function ApiGenerationModal({
     } 
 
     // For new APIs (not editing), check schema config
-    if (!isEditing) {
+    if (!isEditing && selectedDbObject) {
       if (!schemaConfig.schemaName?.trim()) {
         errors.schemaName = 'Schema Name is required';
       }
@@ -2048,621 +2511,634 @@ export default function ApiGenerationModal({
 
   // ==================== INITIALIZATION EFFECTS ====================
 
-// Initialize parameters and mappings based on selected object
-useEffect(() => {
-  const initializeFromObject = async () => {
-    if (!selectedObject) {
-      console.log('ℹ️ ApiGenerationModal - No selected object provided, showing empty form');
-      return;
+  // Show object selector when modal opens from dashboard AND no object is selected
+  useEffect(() => {
+    if (isOpen && fromDashboard && !selectedObject && !isEditing && !selectedDbObject) {
+      setShowObjectSelector(true);
     }
+  }, [isOpen, fromDashboard, selectedObject, isEditing, selectedDbObject]);
 
-    setLoading(true);
-    
-    // Check if we're in edit mode - either from prop OR from data structure
-    const isEditMode = isEditing || (selectedObject?.data && selectedObject.data.id);
-    
-    console.log('🔍 ApiGenerationModal - Initializing with selected object:', {
-      name: selectedObject?.name,
-      type: selectedObject?.type,
-      owner: selectedObject?.owner,
-      isEditing: isEditing,
-      isEditMode: isEditMode,
-      hasDataWrapper: !!selectedObject?.data,
-      hasDataId: !!(selectedObject?.data?.id),
-      hasParameters: !!(selectedObject?.data?.parameters && selectedObject.data.parameters.length > 0),
-      hasResponseMappings: !!(selectedObject?.data?.responseMappings && selectedObject.data.responseMappings.length > 0),
-      fullObject: selectedObject
-    });
-
-    try {
-      // Skip validation for API objects (when in edit mode)
-      if (!isEditMode && selectedObject?.type !== 'API' && selectedObject?.type !== 'CONNECTION') {
-        // First, validate the source object
-        await validateObject(selectedObject, selectedObject.type);
-      } else {
-        console.log('ℹ️ Skipping validation for API object - edit mode detected');
-        setValidationResult({ valid: true, message: 'API object - validation skipped' });
-      }
-
-      // For API objects (editing mode), populate from the selectedObject directly
-      if (isEditMode || selectedObject?.type === 'API' || selectedObject?.type === 'CONNECTION') {
-        console.log('📝 Populating form for API editing with data:', selectedObject);
-        
-        // Extract the actual data object if it's wrapped in a data property
-        const apiData = selectedObject.data || selectedObject;
-        
-        console.log('📝 Extracted apiData:', apiData);
-        console.log('📝 Parameters from data:', apiData.parameters);
-        console.log('📝 ResponseMappings from data:', apiData.responseMappings);
-        
-        // API DETAILS TAB
-        setApiDetails({
-          apiName: apiData.apiName || apiData.name || '',
-          apiCode: apiData.apiCode || apiData.id || '',
-          description: apiData.description || '',
-          version: apiData.version || '1.0.0',
-          status: apiData.status || 'ACTIVE',
-          httpMethod: apiData.httpMethod || apiData.method || 'GET',
-          basePath: apiData.basePath || '/api/v1',
-          endpointPath: apiData.endpointPath || apiData.url || '',
-          tags: apiData.tags || ['default'],
-          category: apiData.category || 'general',
-          owner: apiData.owner || 'HR',
-        });
-
-        // SCHEMA TAB
-        if (apiData.schemaConfig) {
-          console.log('📊 Setting schemaConfig from selectedObject:', apiData.schemaConfig);
-          setSchemaConfig(apiData.schemaConfig);
-        } else if (apiData.sourceObject) {
-          // Try to get schema config from sourceObject
-          setSchemaConfig({
-            schemaName: apiData.sourceObject.owner || 'HR',
-            objectType: apiData.sourceObject.type || 'TABLE',
-            objectName: apiData.sourceObject.name || '',
-            operation: apiData.sourceObject.operation || 'SELECT',
-            primaryKeyColumn: apiData.sourceObject.primaryKeyColumn || '',
-            sequenceName: apiData.sourceObject.sequenceName || '',
-            enablePagination: apiData.sourceObject.enablePagination !== undefined ? apiData.sourceObject.enablePagination : true,
-            pageSize: apiData.sourceObject.pageSize || 10,
-            enableSorting: apiData.sourceObject.enableSorting !== undefined ? apiData.sourceObject.enableSorting : true,
-            defaultSortColumn: apiData.sourceObject.defaultSortColumn || '',
-            defaultSortDirection: apiData.sourceObject.defaultSortDirection || 'ASC'
-          });
-        } else {
-          // Default values if no schema config found
-          setSchemaConfig({
-            schemaName: 'HR',
-            objectType: 'TABLE',
-            objectName: apiData.name?.replace(/\s+/g, '_').toUpperCase() || 'OBJECT',
-            operation: apiData.method === 'GET' ? 'SELECT' : 
-                      apiData.method === 'POST' ? 'INSERT' :
-                      apiData.method === 'PUT' ? 'UPDATE' :
-                      apiData.method === 'DELETE' ? 'DELETE' : 'SELECT',
-            primaryKeyColumn: '',
-            sequenceName: '',
-            enablePagination: true,
-            pageSize: 10,
-            enableSorting: true,
-            defaultSortColumn: '',
-            defaultSortDirection: 'ASC'
-          });
-        }
-
-        // PARAMETERS TAB - load parameters (should be IN parameters)
-        if (apiData.parameters && apiData.parameters.length > 0) {
-          console.log('📦 Loading parameters for editing:', apiData.parameters);
-          
-          // Map existing parameters to ensure they have proper structure
-          const mappedParams = apiData.parameters.map(param => ({
-            id: param.id || `param-${Date.now()}-${Math.random()}`,
-            key: param.key || param.name || '',
-            dbColumn: param.dbColumn || param.column || '',
-            oracleType: param.oracleType || param.type || 'VARCHAR2',
-            apiType: param.apiType || (param.oracleType?.includes('NUMBER') ? 'integer' : 'string'),
-            parameterLocation: param.parameterLocation || param.location || 'query',
-            required: param.required || false,
-            description: param.description || '',
-            example: param.example || '',
-            validationPattern: param.validationPattern || '',
-            defaultValue: param.defaultValue || '',
-            inBody: param.inBody || param.parameterLocation === 'body' || false,
-            isPrimaryKey: param.isPrimaryKey || false,
-            paramMode: param.paramMode || 'IN'
-          }));
-          
-          console.log('📦 Mapped parameters for editing (count: ' + mappedParams.length + '):', mappedParams);
-          setParameters(mappedParams);
-        } else {
-          console.log('📦 No parameters found in selected object');
-          setParameters([]);
-        }
-
-        // MAPPING TAB - load response mappings (should include OUT parameters)
-        if (apiData.responseMappings && apiData.responseMappings.length > 0) {
-          console.log('📋 Loading response mappings for editing:', apiData.responseMappings);
-          
-          const mappedMappings = apiData.responseMappings.map(mapping => ({
-            id: mapping.id || `mapping-${Date.now()}-${Math.random()}`,
-            apiField: mapping.apiField || mapping.field || '',
-            dbColumn: mapping.dbColumn || mapping.column || '',
-            oracleType: mapping.oracleType || mapping.type || 'VARCHAR2',
-            apiType: mapping.apiType || (mapping.oracleType?.includes('NUMBER') ? 'integer' : 'string'),
-            format: mapping.format || (mapping.oracleType?.includes('DATE') ? 'date-time' : ''),
-            nullable: mapping.nullable !== undefined ? mapping.nullable : true,
-            isPrimaryKey: mapping.isPrimaryKey || false,
-            includeInResponse: mapping.includeInResponse !== undefined ? mapping.includeInResponse : true,
-            inResponse: mapping.inResponse !== undefined ? mapping.inResponse : true,
-            paramMode: mapping.paramMode || 'OUT'
-          }));
-          
-          console.log('📋 Mapped response mappings for editing (count: ' + mappedMappings.length + '):', mappedMappings);
-          setResponseMappings(mappedMappings);
-        } else {
-          console.log('📋 No response mappings found in selected object');
-          setResponseMappings([]);
-        }
-
-        // AUTHENTICATION TAB
-        if (apiData.authConfig) {
-          console.log('🔐 Loading auth config:', apiData.authConfig);
-          setAuthConfig(apiData.authConfig);
-        } else {
-          setAuthConfig({
-            authType: 'none',
-            apiKeyHeader: 'X-API-Key',
-            apiKeyValue: '',
-            apiSecretHeader: 'X-API-Secret',
-            apiSecretValue: '',
-            jwtToken: '',
-            jwtIssuer: 'api.example.com',
-            basicUsername: '',
-            basicPassword: '',
-            ipWhitelist: '',
-            rateLimitRequests: 100,
-            rateLimitPeriod: 'minute',
-            enableRateLimiting: false,
-            corsOrigins: ['*'],
-            auditLevel: 'standard'
-          });
-        }
-
-        // REQUEST TAB
-        if (apiData.requestBody) {
-          console.log('📤 Loading request body:', apiData.requestBody);
-          setRequestBody(apiData.requestBody);
-        } else {
-          setRequestBody({
-            bodyType: 'json',
-            sample: null,
-            requiredFields: [],
-            validateSchema: true,
-            maxSize: 1048576,
-            allowedMediaTypes: ['application/json']
-          });
-        }
-
-        // RESPONSE TAB
-        if (apiData.responseBody) {
-          console.log('📥 Loading response body:', apiData.responseBody);
-          setResponseBody(apiData.responseBody);
-        } else {
-          // Generate sample response from mappings if available
-          let successSchema = JSON.stringify({
-            success: true,
-            data: {},
-            message: "Request processed successfully",
-            metadata: {
-              timestamp: "{{timestamp}}",
-              apiVersion: apiData.version || "1.0.0",
-              requestId: "{{requestId}}"
-            }
-          }, null, 2);
-          
-          setResponseBody({
-            successSchema: successSchema,
-            errorSchema: JSON.stringify({
-              success: false,
-              error: {
-                code: "ERROR_CODE",
-                message: "Error description",
-                details: {}
-              }
-            }, null, 2),
-            includeMetadata: true,
-            metadataFields: ['timestamp', 'apiVersion', 'requestId'],
-            contentType: 'application/json',
-            compression: 'gzip'
-          });
-        }
-
-        // HEADERS
-        if (apiData.headers && apiData.headers.length > 0) {
-          console.log('📌 Loading headers:', apiData.headers);
-          setHeaders(apiData.headers);
-        } else {
-          setHeaders([
-            { id: '1', key: 'Content-Type', value: 'application/json', required: true, description: 'Response content type' },
-            { id: '2', key: 'Cache-Control', value: 'no-cache', required: false, description: 'Cache control header' }
-          ]);
-        }
-
-        // DATABASE TESTS TAB
-        if (apiData.tests) {
-          console.log('🧪 Loading tests:', apiData.tests);
-          setTests(apiData.tests);
-        } else {
-          setTests({
-            testConnection: true,
-            testObjectAccess: true,
-            testPrivileges: true,
-            testDataTypes: true,
-            testNullConstraints: true,
-            testUniqueConstraints: false,
-            testForeignKeyReferences: false,
-            testQueryPerformance: true,
-            performanceThreshold: 1000,
-            testWithSampleData: true,
-            sampleDataRows: 10,
-            testProcedureExecution: true,
-            testFunctionReturn: true,
-            testExceptionHandling: true,
-            testSQLInjection: true,
-            testAuthentication: true,
-            testAuthorization: true,
-            testData: '',
-            testQueries: []
-          });
-        }
-
-        // SETTINGS TAB
-        if (apiData.settings) {
-          console.log('⚙️ Loading settings:', apiData.settings);
-          setSettings(apiData.settings);
-        } else {
-          setSettings({
-            timeout: 30000,
-            maxRecords: 1000,
-            enableLogging: true,
-            logLevel: 'INFO',
-            enableCaching: false,
-            cacheTtl: 300,
-            generateSwagger: true,
-            generatePostman: true,
-            generateClientSDK: true,
-            enableMonitoring: true,
-            enableAlerts: false,
-            alertEmail: '',
-            enableTracing: false,
-            corsEnabled: true
-          });
-        }
-
-        // COLLECTION & FOLDER INFO
-        if (apiData.collectionInfo) {
-          console.log('📁 Loading collection info:', apiData.collectionInfo);
-          const collectionId = apiData.collectionInfo.collectionId;
-          const folderId = apiData.collectionInfo.folderId;
-          const folderName = apiData.collectionInfo.folderName;
-          
-          if (collectionId) {
-            // Find the collection by ID
-            const collection = collections.find(c => c.id === collectionId);
-            if (collection) {
-              setSelectedCollection(collection);
-              
-              // Get folders for this collection
-              if (collection.folders && Array.isArray(collection.folders)) {
-                setFolders(collection.folders);
-                
-                // If we have a folder ID or name, find the folder
-                if (folderId) {
-                  const folder = collection.folders.find(f => f.id === folderId);
-                  if (folder) {
-                    console.log('📁 Found folder by ID:', folder);
-                    setSelectedFolder(folder);
-                  }
-                } else if (folderName) {
-                  const folder = collection.folders.find(f => 
-                    f.name === folderName || f.folderName === folderName
-                  );
-                  if (folder) {
-                    console.log('📁 Found folder by name:', folder);
-                    setSelectedFolder(folder);
-                  }
-                }
-              }
-            } else {
-              console.log('📁 Collection not found with ID:', collectionId);
-            }
-          }
-        }
-
-        console.log('✅ Editing initialization complete:', {
-          parametersCount: parameters.length,
-          responseMappingsCount: responseMappings.length,
-          apiDetails: apiDetails,
-          schemaConfig: schemaConfig
-        });
-
-        setLoading(false);
+  // Initialize parameters and mappings based on selected object
+  useEffect(() => {
+    const initializeFromObject = async () => {
+      // If we're on dashboard and have selectedDbObject, use that
+      if (fromDashboard && selectedDbObject) {
+        console.log('📝 Using dashboard-selected object:', selectedDbObject);
         return;
       }
 
-      // FOR DATABASE OBJECTS (NEW API GENERATION)
-      
-      // Determine operation and HTTP method
-      let operation = 'SELECT';
-      let httpMethod = 'GET';
-      
-      const normalizedType = (selectedObject?.type || '').toUpperCase();
-      
-      if (normalizedType === 'PROCEDURE' || normalizedType === 'FUNCTION') {
-        operation = 'EXECUTE';
-        httpMethod = 'POST';
-      } else if (normalizedType === 'PACKAGE') {
-        operation = 'EXECUTE';
-        httpMethod = 'POST';
-      } else if (normalizedType === 'VIEW') {
-        operation = 'SELECT';
-        httpMethod = 'GET';
-      } else if (normalizedType === 'TABLE') {
-        operation = 'SELECT';
-        httpMethod = 'GET';
-      } else if (normalizedType === 'SEQUENCE') {
-        operation = 'SELECT';
-        httpMethod = 'GET';
-      } else if (normalizedType === 'TRIGGER') {
-        operation = 'EXECUTE';
-        httpMethod = 'POST';
+      if (!selectedObject) {
+        console.log('ℹ️ ApiGenerationModal - No selected object provided, showing empty form');
+        return;
       }
 
-      // Set API details
-      const baseName = selectedObject?.name?.toLowerCase() || '';
-      const endpointPath = baseName ? `/${baseName.replace(/_/g, '-').toLowerCase()}` : '';
+      setLoading(true);
       
-      setApiDetails(prev => ({
-        ...prev,
-        apiName: selectedObject?.name ? `${selectedObject.name} API` : 'New API',
-        apiCode: normalizedType ? `${normalizedType.slice(0, 3)}_${selectedObject?.name || 'API'}` : 'API',
-        description: selectedObject?.comment || (selectedObject?.name ? `API for ${selectedObject.name}` : ''),
-        endpointPath: endpointPath,
-        owner: selectedObject?.owner || 'HR',
-        httpMethod: httpMethod
-      }));
-
-      setSchemaConfig(prev => ({
-        ...prev,
-        schemaName: selectedObject?.owner || 'HR',
-        objectType: selectedObject?.type || 'TABLE',
-        objectName: selectedObject?.name || '',
-        operation: operation,
-        primaryKeyColumn: ''
-      }));
-
-      // Generate parameters and response mappings with proper separation
-      const newParameters = [];
-      const newMappings = [];
-
-      // Check for parameters (procedures/functions)
-      if (selectedObject?.parameters && selectedObject.parameters.length > 0) {
-        // Generate parameters from procedure/function
-        selectedObject.parameters.forEach((param, index) => {
-          const paramName = param.ARGUMENT_NAME || param.argument_name || param.name || param.NAME || `param_${index + 1}`;
-          const paramType = param.DATA_TYPE || param.data_type || param.type || param.TYPE || 'VARCHAR2';
-          const paramMode = param.IN_OUT || param.in_out || param.mode || param.MODE || 'IN';
-          
-          // Generate a clean key name
-          let cleanKey = paramName;
-          if (typeof paramName === 'string') {
-            cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
-          } else {
-            cleanKey = `param_${index + 1}`;
-          }
-          
-          // Determine parameter location based on mode
-          let parameterLocation = 'query';
-          if (paramMode === 'IN' && (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH')) {
-            parameterLocation = 'body';
-          } else if (paramMode === 'IN' && httpMethod === 'GET') {
-            parameterLocation = 'query';
-          } else if (paramMode === 'IN/OUT') {
-            parameterLocation = 'body'; // IN OUT goes to body
-          }
-
-          // For OUT parameters, don't add to parameters list - only add to mappings
-          if (paramMode === 'IN' || paramMode === 'IN/OUT') {
-            newParameters.push({
-              id: `proc-param-${Date.now()}-${index}`,
-              key: cleanKey,
-              dbColumn: paramName,
-              oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
-                         paramType.includes('NUMBER') ? 'NUMBER' :
-                         paramType.includes('DATE') ? 'DATE' : 
-                         paramType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
-              apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
-              parameterLocation: parameterLocation,
-              required: paramMode === 'IN' || paramMode === 'IN/OUT',
-              description: `${paramName} (${paramMode})`,
-              example: paramType.includes('NUMBER') ? '1' : 
-                      paramType.includes('DATE') ? '2024-01-01' : '',
-              validationPattern: '',
-              defaultValue: param.DATA_DEFAULT || param.defaultValue || '',
-              inBody: parameterLocation === 'body',
-              isPrimaryKey: false,
-              paramMode: paramMode
-            });
-          }
-
-          // Add to response mappings for OUT parameters (and IN OUT parameters as they appear in both)
-          if (paramMode === 'OUT' || paramMode === 'IN/OUT') {
-            newMappings.push({
-              id: `mapping-${Date.now()}-out-${index}`,
-              apiField: cleanKey,
-              dbColumn: paramName,
-              oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
-                         paramType.includes('NUMBER') ? 'NUMBER' :
-                         paramType.includes('DATE') ? 'DATE' : 'VARCHAR2',
-              apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
-              format: paramType.includes('DATE') ? 'date-time' : '',
-              nullable: true,
-              isPrimaryKey: false,
-              includeInResponse: true,
-              inResponse: true,
-              paramMode: paramMode
-            });
-          }
-        });
-        
-        // If there's a return type for functions, add it to mappings
-        const returnType = selectedObject.RETURN_TYPE || selectedObject.return_type || selectedObject.returnType;
-        if (returnType && normalizedType === 'FUNCTION') {
-          newMappings.push({
-            id: `mapping-${Date.now()}-return`,
-            apiField: 'result',
-            dbColumn: 'RETURN_VALUE',
-            oracleType: returnType.includes('VARCHAR') ? 'VARCHAR2' : 
-                       returnType.includes('NUMBER') ? 'NUMBER' :
-                       returnType.includes('DATE') ? 'DATE' : 'VARCHAR2',
-            apiType: returnType.includes('NUMBER') ? 'integer' : 'string',
-            format: '',
-            nullable: false,
-            isPrimaryKey: false,
-            includeInResponse: true,
-            inResponse: true,
-            paramMode: 'OUT'
-          });
-        }
-      }
-
-      // Check for columns (tables/views)
-      if (selectedObject?.columns && selectedObject.columns.length > 0) {
-        selectedObject.columns.forEach((col, index) => {
-          const colName = col.name || col.COLUMN_NAME || col.column_name;
-          const colType = col.type || col.DATA_TYPE || col.data_type || 'VARCHAR2';
-          const colNullable = col.nullable || col.NULLABLE || 'Y';
-          const isPrimaryKey = col.key === 'PK' || col.CONSTRAINT_TYPE === 'P' || col.isPrimaryKey;
-          
-          if (colName) {
-            // Clean up column name for API key
-            const cleanKey = typeof colName === 'string' ? colName.toLowerCase() : `column_${index + 1}`;
-            
-            // Determine parameter location
-            let parameterLocation = 'query';
-            if (isPrimaryKey && (httpMethod === 'GET' || httpMethod === 'PUT' || httpMethod === 'DELETE')) {
-              parameterLocation = 'path';
-            } else if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
-              parameterLocation = 'body';
-            }
-            
-            // For tables/views, all columns go to both parameters and mappings
-            newParameters.push({
-              id: `param-${Date.now()}-${index}`,
-              key: cleanKey,
-              dbColumn: colName,
-              oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
-                        colType.includes('NUMBER') ? 'NUMBER' :
-                        colType.includes('DATE') ? 'DATE' : 
-                        colType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
-              apiType: colType.includes('NUMBER') ? 'integer' : 'string',
-              parameterLocation: parameterLocation,
-              required: isPrimaryKey || colNullable === 'N',
-              description: col.comment || col.COMMENTS || `From ${selectedObject.name}.${colName}`,
-              example: colName.includes('ID') ? '1' : 
-                      colName.includes('DATE') ? '2024-01-01' :
-                      colName.includes('NAME') ? 'Sample' : '',
-              validationPattern: '',
-              defaultValue: col.DATA_DEFAULT || col.defaultValue || '',
-              inBody: parameterLocation === 'body',
-              isPrimaryKey: isPrimaryKey,
-              paramMode: null
-            });
-
-            newMappings.push({
-              id: `mapping-${Date.now()}-${index}`,
-              apiField: cleanKey,
-              dbColumn: colName,
-              oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
-                        colType.includes('NUMBER') ? 'NUMBER' :
-                        colType.includes('DATE') ? 'DATE' : 'VARCHAR2',
-              apiType: colType.includes('NUMBER') ? 'integer' : 'string',
-              format: colType.includes('DATE') ? 'date-time' : '',
-              nullable: colNullable === 'Y',
-              isPrimaryKey: isPrimaryKey,
-              includeInResponse: true,
-              inResponse: true,
-              paramMode: null
-            });
-          }
-        });
-      }
-
-      setParameters(newParameters);
-      setResponseMappings(newMappings);
+      // Check if we're in edit mode - either from prop OR from data structure
+      const isEditMode = isEditing || (selectedObject?.data && selectedObject.data.id);
       
-      // Generate sample response based on mappings
-      if (newMappings.length > 0) {
-        const sampleData = {};
-        newMappings.slice(0, 50).forEach(mapping => {
-          if (mapping.apiType === 'integer') {
-            sampleData[mapping.apiField] = 123;
-          } else if (mapping.apiType === 'string') {
-            if (mapping.format === 'date-time') {
-              sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
-            } else {
-              sampleData[mapping.apiField] = mapping.apiField === 'id' ? 1 : 'sample';
-            }
-          } else if (mapping.apiType === 'boolean') {
-            sampleData[mapping.apiField] = true;
-          }
-        });
-        
-        const successSchema = JSON.stringify({
-          success: true,
-          data: sampleData,
-          message: 'Request processed successfully',
-          metadata: {
-            timestamp: '{{timestamp}}',
-            apiVersion: apiDetails.version,
-            requestId: '{{requestId}}'
-          }
-        }, null, 2);
-        
-        const errorSchema = JSON.stringify({
-          success: false,
-          error: {
-            code: 'ERR_001',
-            message: 'Error processing request',
-            details: {
-              field: 'field_name',
-              reason: 'Invalid value'
-            }
-          }
-        }, null, 2);
-        
-        setResponseBody(prev => ({
-          ...prev,
-          successSchema,
-          errorSchema
-        }));
-      }
-      
-      console.log('✅ ApiGenerationModal - Initialization complete:', {
-        inParametersCount: newParameters.length,
-        outMappingsCount: newMappings.length
+      console.log('🔍 ApiGenerationModal - Initializing with selected object:', {
+        name: selectedObject?.name,
+        type: selectedObject?.type,
+        owner: selectedObject?.owner,
+        isEditing: isEditing,
+        isEditMode: isEditMode,
+        hasDataWrapper: !!selectedObject?.data,
+        hasDataId: !!(selectedObject?.data?.id),
+        hasParameters: !!(selectedObject?.data?.parameters && selectedObject.data.parameters.length > 0),
+        hasResponseMappings: !!(selectedObject?.data?.responseMappings && selectedObject.data.responseMappings.length > 0),
+        fullObject: selectedObject
       });
 
-    } catch (error) {
-      console.error('❌ Error initializing modal:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+      try {
+        // Skip validation for API objects (when in edit mode)
+        if (!isEditMode && selectedObject?.type !== 'API' && selectedObject?.type !== 'CONNECTION') {
+          // First, validate the source object
+          await validateObject(selectedObject, selectedObject.type);
+        } else {
+          console.log('ℹ️ Skipping validation for API object - edit mode detected');
+          setValidationResult({ valid: true, message: 'API object - validation skipped' });
+        }
 
-  if (isOpen) {
-    initializeFromObject();
-  }
-}, [selectedObject, isOpen, authToken, obType, isEditing, collections]);
+        // For API objects (editing mode), populate from the selectedObject directly
+        if (isEditMode || selectedObject?.type === 'API' || selectedObject?.type === 'CONNECTION') {
+          console.log('📝 Populating form for API editing with data:', selectedObject);
+          
+          // Extract the actual data object if it's wrapped in a data property
+          const apiData = selectedObject.data || selectedObject;
+          
+          console.log('📝 Extracted apiData:', apiData);
+          console.log('📝 Parameters from data:', apiData.parameters);
+          console.log('📝 ResponseMappings from data:', apiData.responseMappings);
+          
+          // API DETAILS TAB
+          setApiDetails({
+            apiName: apiData.apiName || apiData.name || '',
+            apiCode: apiData.apiCode || apiData.id || '',
+            description: apiData.description || '',
+            version: apiData.version || '1.0.0',
+            status: apiData.status || 'ACTIVE',
+            httpMethod: apiData.httpMethod || apiData.method || 'GET',
+            basePath: apiData.basePath || '/api/v1',
+            endpointPath: apiData.endpointPath || apiData.url || '',
+            tags: apiData.tags || ['default'],
+            category: apiData.category || 'general',
+            owner: apiData.owner || 'HR',
+          });
+
+          // SCHEMA TAB
+          if (apiData.schemaConfig) {
+            console.log('📊 Setting schemaConfig from selectedObject:', apiData.schemaConfig);
+            setSchemaConfig(apiData.schemaConfig);
+          } else if (apiData.sourceObject) {
+            // Try to get schema config from sourceObject
+            setSchemaConfig({
+              schemaName: apiData.sourceObject.owner || 'HR',
+              objectType: apiData.sourceObject.type || 'TABLE',
+              objectName: apiData.sourceObject.name || '',
+              operation: apiData.sourceObject.operation || 'SELECT',
+              primaryKeyColumn: apiData.sourceObject.primaryKeyColumn || '',
+              sequenceName: apiData.sourceObject.sequenceName || '',
+              enablePagination: apiData.sourceObject.enablePagination !== undefined ? apiData.sourceObject.enablePagination : true,
+              pageSize: apiData.sourceObject.pageSize || 10,
+              enableSorting: apiData.sourceObject.enableSorting !== undefined ? apiData.sourceObject.enableSorting : true,
+              defaultSortColumn: apiData.sourceObject.defaultSortColumn || '',
+              defaultSortDirection: apiData.sourceObject.defaultSortDirection || 'ASC'
+            });
+          } else {
+            // Default values if no schema config found
+            setSchemaConfig({
+              schemaName: 'HR',
+              objectType: 'TABLE',
+              objectName: apiData.name?.replace(/\s+/g, '_').toUpperCase() || 'OBJECT',
+              operation: apiData.method === 'GET' ? 'SELECT' : 
+                        apiData.method === 'POST' ? 'INSERT' :
+                        apiData.method === 'PUT' ? 'UPDATE' :
+                        apiData.method === 'DELETE' ? 'DELETE' : 'SELECT',
+              primaryKeyColumn: '',
+              sequenceName: '',
+              enablePagination: true,
+              pageSize: 10,
+              enableSorting: true,
+              defaultSortColumn: '',
+              defaultSortDirection: 'ASC'
+            });
+          }
+
+          // PARAMETERS TAB - load parameters (should be IN parameters)
+          if (apiData.parameters && apiData.parameters.length > 0) {
+            console.log('📦 Loading parameters for editing:', apiData.parameters);
+            
+            // Map existing parameters to ensure they have proper structure
+            const mappedParams = apiData.parameters.map(param => ({
+              id: param.id || `param-${Date.now()}-${Math.random()}`,
+              key: param.key || param.name || '',
+              dbColumn: param.dbColumn || param.column || '',
+              oracleType: param.oracleType || param.type || 'VARCHAR2',
+              apiType: param.apiType || (param.oracleType?.includes('NUMBER') ? 'integer' : 'string'),
+              parameterLocation: param.parameterLocation || param.location || 'query',
+              required: param.required || false,
+              description: param.description || '',
+              example: param.example || '',
+              validationPattern: param.validationPattern || '',
+              defaultValue: param.defaultValue || '',
+              inBody: param.inBody || param.parameterLocation === 'body' || false,
+              isPrimaryKey: param.isPrimaryKey || false,
+              paramMode: param.paramMode || 'IN'
+            }));
+            
+            console.log('📦 Mapped parameters for editing (count: ' + mappedParams.length + '):', mappedParams);
+            setParameters(mappedParams);
+          } else {
+            console.log('📦 No parameters found in selected object');
+            setParameters([]);
+          }
+
+          // MAPPING TAB - load response mappings (should include OUT parameters)
+          if (apiData.responseMappings && apiData.responseMappings.length > 0) {
+            console.log('📋 Loading response mappings for editing:', apiData.responseMappings);
+            
+            const mappedMappings = apiData.responseMappings.map(mapping => ({
+              id: mapping.id || `mapping-${Date.now()}-${Math.random()}`,
+              apiField: mapping.apiField || mapping.field || '',
+              dbColumn: mapping.dbColumn || mapping.column || '',
+              oracleType: mapping.oracleType || mapping.type || 'VARCHAR2',
+              apiType: mapping.apiType || (mapping.oracleType?.includes('NUMBER') ? 'integer' : 'string'),
+              format: mapping.format || (mapping.oracleType?.includes('DATE') ? 'date-time' : ''),
+              nullable: mapping.nullable !== undefined ? mapping.nullable : true,
+              isPrimaryKey: mapping.isPrimaryKey || false,
+              includeInResponse: mapping.includeInResponse !== undefined ? mapping.includeInResponse : true,
+              inResponse: mapping.inResponse !== undefined ? mapping.inResponse : true,
+              paramMode: mapping.paramMode || 'OUT'
+            }));
+            
+            console.log('📋 Mapped response mappings for editing (count: ' + mappedMappings.length + '):', mappedMappings);
+            setResponseMappings(mappedMappings);
+          } else {
+            console.log('📋 No response mappings found in selected object');
+            setResponseMappings([]);
+          }
+
+          // AUTHENTICATION TAB
+          if (apiData.authConfig) {
+            console.log('🔐 Loading auth config:', apiData.authConfig);
+            setAuthConfig(apiData.authConfig);
+          } else {
+            setAuthConfig({
+              authType: 'none',
+              apiKeyHeader: 'X-API-Key',
+              apiKeyValue: '',
+              apiSecretHeader: 'X-API-Secret',
+              apiSecretValue: '',
+              jwtToken: '',
+              jwtIssuer: 'api.example.com',
+              basicUsername: '',
+              basicPassword: '',
+              ipWhitelist: '',
+              rateLimitRequests: 100,
+              rateLimitPeriod: 'minute',
+              enableRateLimiting: false,
+              corsOrigins: ['*'],
+              auditLevel: 'standard'
+            });
+          }
+
+          // REQUEST TAB
+          if (apiData.requestBody) {
+            console.log('📤 Loading request body:', apiData.requestBody);
+            setRequestBody(apiData.requestBody);
+          } else {
+            setRequestBody({
+              bodyType: 'json',
+              sample: null,
+              requiredFields: [],
+              validateSchema: true,
+              maxSize: 1048576,
+              allowedMediaTypes: ['application/json']
+            });
+          }
+
+          // RESPONSE TAB
+          if (apiData.responseBody) {
+            console.log('📥 Loading response body:', apiData.responseBody);
+            setResponseBody(apiData.responseBody);
+          } else {
+            // Generate sample response from mappings if available
+            let successSchema = JSON.stringify({
+              success: true,
+              data: {},
+              message: "Request processed successfully",
+              metadata: {
+                timestamp: "{{timestamp}}",
+                apiVersion: apiData.version || "1.0.0",
+                requestId: "{{requestId}}"
+              }
+            }, null, 2);
+            
+            setResponseBody({
+              successSchema: successSchema,
+              errorSchema: JSON.stringify({
+                success: false,
+                error: {
+                  code: "ERROR_CODE",
+                  message: "Error description",
+                  details: {}
+                }
+              }, null, 2),
+              includeMetadata: true,
+              metadataFields: ['timestamp', 'apiVersion', 'requestId'],
+              contentType: 'application/json',
+              compression: 'gzip'
+            });
+          }
+
+          // HEADERS
+          if (apiData.headers && apiData.headers.length > 0) {
+            console.log('📌 Loading headers:', apiData.headers);
+            setHeaders(apiData.headers);
+          } else {
+            setHeaders([
+              { id: '1', key: 'Content-Type', value: 'application/json', required: true, description: 'Response content type' },
+              { id: '2', key: 'Cache-Control', value: 'no-cache', required: false, description: 'Cache control header' }
+            ]);
+          }
+
+          // DATABASE TESTS TAB
+          if (apiData.tests) {
+            console.log('🧪 Loading tests:', apiData.tests);
+            setTests(apiData.tests);
+          } else {
+            setTests({
+              testConnection: true,
+              testObjectAccess: true,
+              testPrivileges: true,
+              testDataTypes: true,
+              testNullConstraints: true,
+              testUniqueConstraints: false,
+              testForeignKeyReferences: false,
+              testQueryPerformance: true,
+              performanceThreshold: 1000,
+              testWithSampleData: true,
+              sampleDataRows: 10,
+              testProcedureExecution: true,
+              testFunctionReturn: true,
+              testExceptionHandling: true,
+              testSQLInjection: true,
+              testAuthentication: true,
+              testAuthorization: true,
+              testData: '',
+              testQueries: []
+            });
+          }
+
+          // SETTINGS TAB
+          if (apiData.settings) {
+            console.log('⚙️ Loading settings:', apiData.settings);
+            setSettings(apiData.settings);
+          } else {
+            setSettings({
+              timeout: 30000,
+              maxRecords: 1000,
+              enableLogging: true,
+              logLevel: 'INFO',
+              enableCaching: false,
+              cacheTtl: 300,
+              generateSwagger: true,
+              generatePostman: true,
+              generateClientSDK: true,
+              enableMonitoring: true,
+              enableAlerts: false,
+              alertEmail: '',
+              enableTracing: false,
+              corsEnabled: true
+            });
+          }
+
+          // COLLECTION & FOLDER INFO
+          if (apiData.collectionInfo) {
+            console.log('📁 Loading collection info:', apiData.collectionInfo);
+            const collectionId = apiData.collectionInfo.collectionId;
+            const folderId = apiData.collectionInfo.folderId;
+            const folderName = apiData.collectionInfo.folderName;
+            
+            if (collectionId) {
+              // Find the collection by ID
+              const collection = collections.find(c => c.id === collectionId);
+              if (collection) {
+                setSelectedCollection(collection);
+                
+                // Get folders for this collection
+                if (collection.folders && Array.isArray(collection.folders)) {
+                  setFolders(collection.folders);
+                  
+                  // If we have a folder ID or name, find the folder
+                  if (folderId) {
+                    const folder = collection.folders.find(f => f.id === folderId);
+                    if (folder) {
+                      console.log('📁 Found folder by ID:', folder);
+                      setSelectedFolder(folder);
+                    }
+                  } else if (folderName) {
+                    const folder = collection.folders.find(f => 
+                      f.name === folderName || f.folderName === folderName
+                    );
+                    if (folder) {
+                      console.log('📁 Found folder by name:', folder);
+                      setSelectedFolder(folder);
+                    }
+                  }
+                }
+              } else {
+                console.log('📁 Collection not found with ID:', collectionId);
+              }
+            }
+          }
+
+          console.log('✅ Editing initialization complete:', {
+            parametersCount: parameters.length,
+            responseMappingsCount: responseMappings.length,
+            apiDetails: apiDetails,
+            schemaConfig: schemaConfig
+          });
+
+          setLoading(false);
+          return;
+        }
+
+        // FOR DATABASE OBJECTS (NEW API GENERATION)
+        
+        // Determine operation and HTTP method
+        let operation = 'SELECT';
+        let httpMethod = 'GET';
+        
+        const normalizedType = (selectedObject?.type || '').toUpperCase();
+        
+        if (normalizedType === 'PROCEDURE' || normalizedType === 'FUNCTION') {
+          operation = 'EXECUTE';
+          httpMethod = 'POST';
+        } else if (normalizedType === 'PACKAGE') {
+          operation = 'EXECUTE';
+          httpMethod = 'POST';
+        } else if (normalizedType === 'VIEW') {
+          operation = 'SELECT';
+          httpMethod = 'GET';
+        } else if (normalizedType === 'TABLE') {
+          operation = 'SELECT';
+          httpMethod = 'GET';
+        } else if (normalizedType === 'SEQUENCE') {
+          operation = 'SELECT';
+          httpMethod = 'GET';
+        } else if (normalizedType === 'TRIGGER') {
+          operation = 'EXECUTE';
+          httpMethod = 'POST';
+        }
+
+        // Set API details
+        const baseName = selectedObject?.name?.toLowerCase() || '';
+        const endpointPath = baseName ? `/${baseName.replace(/_/g, '-').toLowerCase()}` : '';
+        
+        setApiDetails(prev => ({
+          ...prev,
+          apiName: selectedObject?.name ? `${selectedObject.name} API` : 'New API',
+          apiCode: normalizedType ? `${normalizedType.slice(0, 3)}_${selectedObject?.name || 'API'}` : 'API',
+          description: selectedObject?.comment || (selectedObject?.name ? `API for ${selectedObject.name}` : ''),
+          endpointPath: endpointPath,
+          owner: selectedObject?.owner || 'HR',
+          httpMethod: httpMethod
+        }));
+
+        setSchemaConfig(prev => ({
+          ...prev,
+          schemaName: selectedObject?.owner || 'HR',
+          objectType: selectedObject?.type || 'TABLE',
+          objectName: selectedObject?.name || '',
+          operation: operation,
+          primaryKeyColumn: ''
+        }));
+
+        // Generate parameters and response mappings with proper separation
+        const newParameters = [];
+        const newMappings = [];
+
+        // Check for parameters (procedures/functions)
+        if (selectedObject?.parameters && selectedObject.parameters.length > 0) {
+          // Generate parameters from procedure/function
+          selectedObject.parameters.forEach((param, index) => {
+            const paramName = param.ARGUMENT_NAME || param.argument_name || param.name || param.NAME || `param_${index + 1}`;
+            const paramType = param.DATA_TYPE || param.data_type || param.type || param.TYPE || 'VARCHAR2';
+            const paramMode = param.IN_OUT || param.in_out || param.mode || param.MODE || 'IN';
+            
+            // Generate a clean key name
+            let cleanKey = paramName;
+            if (typeof paramName === 'string') {
+              cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
+            } else {
+              cleanKey = `param_${index + 1}`;
+            }
+            
+            // Determine parameter location based on mode
+            let parameterLocation = 'query';
+            if (paramMode === 'IN' && (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH')) {
+              parameterLocation = 'body';
+            } else if (paramMode === 'IN' && httpMethod === 'GET') {
+              parameterLocation = 'query';
+            } else if (paramMode === 'IN/OUT') {
+              parameterLocation = 'body'; // IN OUT goes to body
+            }
+
+            // For OUT parameters, don't add to parameters list - only add to mappings
+            if (paramMode === 'IN' || paramMode === 'IN/OUT') {
+              newParameters.push({
+                id: `proc-param-${Date.now()}-${index}`,
+                key: cleanKey,
+                dbColumn: paramName,
+                oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
+                           paramType.includes('NUMBER') ? 'NUMBER' :
+                           paramType.includes('DATE') ? 'DATE' : 
+                           paramType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
+                apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
+                parameterLocation: parameterLocation,
+                required: paramMode === 'IN' || paramMode === 'IN/OUT',
+                description: `${paramName} (${paramMode})`,
+                example: paramType.includes('NUMBER') ? '1' : 
+                        paramType.includes('DATE') ? '2024-01-01' : '',
+                validationPattern: '',
+                defaultValue: param.DATA_DEFAULT || param.defaultValue || '',
+                inBody: parameterLocation === 'body',
+                isPrimaryKey: false,
+                paramMode: paramMode
+              });
+            }
+
+            // Add to response mappings for OUT parameters (and IN OUT parameters as they appear in both)
+            if (paramMode === 'OUT' || paramMode === 'IN/OUT') {
+              newMappings.push({
+                id: `mapping-${Date.now()}-out-${index}`,
+                apiField: cleanKey,
+                dbColumn: paramName,
+                oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
+                           paramType.includes('NUMBER') ? 'NUMBER' :
+                           paramType.includes('DATE') ? 'DATE' : 'VARCHAR2',
+                apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
+                format: paramType.includes('DATE') ? 'date-time' : '',
+                nullable: true,
+                isPrimaryKey: false,
+                includeInResponse: true,
+                inResponse: true,
+                paramMode: paramMode
+              });
+            }
+          });
+          
+          // If there's a return type for functions, add it to mappings
+          const returnType = selectedObject.RETURN_TYPE || selectedObject.return_type || selectedObject.returnType;
+          if (returnType && normalizedType === 'FUNCTION') {
+            newMappings.push({
+              id: `mapping-${Date.now()}-return`,
+              apiField: 'result',
+              dbColumn: 'RETURN_VALUE',
+              oracleType: returnType.includes('VARCHAR') ? 'VARCHAR2' : 
+                         returnType.includes('NUMBER') ? 'NUMBER' :
+                         returnType.includes('DATE') ? 'DATE' : 'VARCHAR2',
+              apiType: returnType.includes('NUMBER') ? 'integer' : 'string',
+              format: '',
+              nullable: false,
+              isPrimaryKey: false,
+              includeInResponse: true,
+              inResponse: true,
+              paramMode: 'OUT'
+            });
+          }
+        }
+
+        // Check for columns (tables/views)
+        if (selectedObject?.columns && selectedObject.columns.length > 0) {
+          selectedObject.columns.forEach((col, index) => {
+            const colName = col.name || col.COLUMN_NAME || col.column_name;
+            const colType = col.type || col.DATA_TYPE || col.data_type || 'VARCHAR2';
+            const colNullable = col.nullable || col.NULLABLE || 'Y';
+            const isPrimaryKey = col.key === 'PK' || col.CONSTRAINT_TYPE === 'P' || col.isPrimaryKey;
+            
+            if (colName) {
+              // Clean up column name for API key
+              const cleanKey = typeof colName === 'string' ? colName.toLowerCase() : `column_${index + 1}`;
+              
+              // Determine parameter location
+              let parameterLocation = 'query';
+              if (isPrimaryKey && (httpMethod === 'GET' || httpMethod === 'PUT' || httpMethod === 'DELETE')) {
+                parameterLocation = 'path';
+              } else if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
+                parameterLocation = 'body';
+              }
+              
+              // For tables/views, all columns go to both parameters and mappings
+              newParameters.push({
+                id: `param-${Date.now()}-${index}`,
+                key: cleanKey,
+                dbColumn: colName,
+                oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
+                          colType.includes('NUMBER') ? 'NUMBER' :
+                          colType.includes('DATE') ? 'DATE' : 
+                          colType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
+                apiType: colType.includes('NUMBER') ? 'integer' : 'string',
+                parameterLocation: parameterLocation,
+                required: isPrimaryKey || colNullable === 'N',
+                description: col.comment || col.COMMENTS || `From ${selectedObject.name}.${colName}`,
+                example: colName.includes('ID') ? '1' : 
+                        colName.includes('DATE') ? '2024-01-01' :
+                        colName.includes('NAME') ? 'Sample' : '',
+                validationPattern: '',
+                defaultValue: col.DATA_DEFAULT || col.defaultValue || '',
+                inBody: parameterLocation === 'body',
+                isPrimaryKey: isPrimaryKey,
+                paramMode: null
+              });
+
+              newMappings.push({
+                id: `mapping-${Date.now()}-${index}`,
+                apiField: cleanKey,
+                dbColumn: colName,
+                oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
+                          colType.includes('NUMBER') ? 'NUMBER' :
+                          colType.includes('DATE') ? 'DATE' : 'VARCHAR2',
+                apiType: colType.includes('NUMBER') ? 'integer' : 'string',
+                format: colType.includes('DATE') ? 'date-time' : '',
+                nullable: colNullable === 'Y',
+                isPrimaryKey: isPrimaryKey,
+                includeInResponse: true,
+                inResponse: true,
+                paramMode: null
+              });
+            }
+          });
+        }
+
+        setParameters(newParameters);
+        setResponseMappings(newMappings);
+        
+        // Generate sample response based on mappings
+        if (newMappings.length > 0) {
+          const sampleData = {};
+          newMappings.slice(0, 50).forEach(mapping => {
+            if (mapping.apiType === 'integer') {
+              sampleData[mapping.apiField] = 123;
+            } else if (mapping.apiType === 'string') {
+              if (mapping.format === 'date-time') {
+                sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
+              } else {
+                sampleData[mapping.apiField] = mapping.apiField === 'id' ? 1 : 'sample';
+              }
+            } else if (mapping.apiType === 'boolean') {
+              sampleData[mapping.apiField] = true;
+            }
+          });
+          
+          const successSchema = JSON.stringify({
+            success: true,
+            data: sampleData,
+            message: 'Request processed successfully',
+            metadata: {
+              timestamp: '{{timestamp}}',
+              apiVersion: apiDetails.version,
+              requestId: '{{requestId}}'
+            }
+          }, null, 2);
+          
+          const errorSchema = JSON.stringify({
+            success: false,
+            error: {
+              code: 'ERR_001',
+              message: 'Error processing request',
+              details: {
+                field: 'field_name',
+                reason: 'Invalid value'
+              }
+            }
+          }, null, 2);
+          
+          setResponseBody(prev => ({
+            ...prev,
+            successSchema,
+            errorSchema
+          }));
+        }
+        
+        console.log('✅ ApiGenerationModal - Initialization complete:', {
+          inParametersCount: newParameters.length,
+          outMappingsCount: newMappings.length
+        });
+
+      } catch (error) {
+        console.error('❌ Error initializing modal:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (isOpen) {
+      initializeFromObject();
+    }
+  }, [selectedObject, isOpen, authToken, obType, isEditing, collections]);
 
   // Add this useEffect after your initialization useEffect - FIXED VERSION
   useEffect(() => {
@@ -3382,6 +3858,9 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
     // Extract the actual data if we're in editing mode and selectedObject has a data wrapper
     const sourceData = (isEditing && selectedObject?.data) ? selectedObject.data : selectedObject;
 
+    // Use selectedDbObject for dashboard generation, otherwise use sourceData
+    const effectiveSource = fromDashboard && selectedDbObject ? selectedDbObject : sourceData;
+
     const apiData = {
       id: isEditing ? sourceData?.id || selectedObject?.id : `api-${Date.now()}`,
       ...apiDetails,
@@ -3407,11 +3886,11 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
       tests,
       createdAt: new Date().toISOString(),
       sourceObject: isEditing ? sourceData?.sourceObject : {
-        name: selectedObject?.name,
-        type: selectedObject?.type,
-        owner: selectedObject?.owner,
-        columns: selectedObject?.columns?.length,
-        parameters: selectedObject?.parameters?.length,
+        name: effectiveSource?.name,
+        type: effectiveSource?.type,
+        owner: effectiveSource?.owner,
+        columns: effectiveSource?.columns?.length,
+        parameters: effectiveSource?.parameters?.length,
         isSynonym: sourceObjectInfo.isSynonym,
         targetType: sourceObjectInfo.targetType,
         targetName: sourceObjectInfo.targetName,
@@ -3672,7 +4151,18 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
     success: theme === 'dark' ? 'rgb(16 185 129)' : '#10b981',
     warning: theme === 'dark' ? 'rgb(245 158 11)' : '#f59e0b',
     info: theme === 'dark' ? 'rgb(59 130 246)' : '#3b82f6',
-    white: '#ffffff'
+    white: '#ffffff',
+    objectType: {
+      table: theme === 'dark' ? 'rgb(96 165 250)' : '#3b82f6',
+      view: theme === 'dark' ? 'rgb(52 211 153)' : '#10b981',
+      procedure: theme === 'dark' ? 'rgb(167 139 250)' : '#8b5cf6',
+      function: theme === 'dark' ? 'rgb(251 191 36)' : '#f59e0b',
+      package: theme === 'dark' ? 'rgb(148 163 184)' : '#6b7280',
+      sequence: theme === 'dark' ? 'rgb(100 116 139)' : '#64748b',
+      synonym: theme === 'dark' ? 'rgb(34 211 238)' : '#06b6d4',
+      type: theme === 'dark' ? 'rgb(139 92 246)' : '#6366f1',
+      trigger: theme === 'dark' ? 'rgb(244 114 182)' : '#ec4899'
+    }
   };
 
   // Tab definitions
@@ -3729,30 +4219,41 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
           backgroundColor: themeColors.bg,
           border: `1px solid ${themeColors.modalBorder}`
         }}>
-          {/* Header - UPDATED with apiCodeExists warning */}
+          {/* Header - UPDATED with apiCodeExists warning and dashboard selection indicator */}
           <div className="px-6 py-4 border-b flex items-center justify-between" style={{ 
             borderColor: themeColors.border,
             backgroundColor: themeColors.card
           }}>
             <div className="flex items-center gap-3">
-              {isEditing ? (
-                <Edit className="h-6 w-6" style={{ color: themeColors.warning }} />
-              ) : (
-                selectedObject?.type === 'TABLE' ? <Database className="h-6 w-6" style={{ color: themeColors.info }} /> :
-                selectedObject?.type === 'VIEW' ? <FileText className="h-6 w-6" style={{ color: themeColors.success }} /> :
-                selectedObject?.type === 'PROCEDURE' ? <Terminal className="h-6 w-6" style={{ color: themeColors.info }} /> :
-                selectedObject?.type === 'FUNCTION' ? <Code className="h-6 w-6" style={{ color: themeColors.warning }} /> :
-                selectedObject?.type === 'PACKAGE' ? <Package className="h-6 w-6" style={{ color: themeColors.textSecondary }} /> :
-                selectedObject?.type === 'TRIGGER' ? <Zap className="h-6 w-6" style={{ color: themeColors.error }} /> :
-                selectedObject?.type === 'SYNONYM' ? <Link className="h-6 w-6" style={{ color: themeColors.info }} /> :
-                <Globe className="h-6 w-6" style={{ color: themeColors.info }} />
-              )}
-              <div>
+                {isEditing ? (
+                  <Edit className="h-6 w-6" style={{ color: themeColors.warning }} />
+                ) : fromDashboard && !selectedDbObject ? (
+                  <Search className="h-6 w-6" style={{ color: themeColors.info }} />
+                ) : selectedObject?.type === 'TABLE' ? (
+                  <Database className="h-6 w-6" style={{ color: themeColors.info }} />
+                ) : selectedObject?.type === 'VIEW' ? (
+                  <FileText className="h-6 w-6" style={{ color: themeColors.success }} />
+                ) : selectedObject?.type === 'PROCEDURE' ? (
+                  <Terminal className="h-6 w-6" style={{ color: themeColors.info }} />
+                ) : selectedObject?.type === 'FUNCTION' ? (
+                  <Code className="h-6 w-6" style={{ color: themeColors.warning }} />
+                ) : selectedObject?.type === 'PACKAGE' ? (
+                  <Package className="h-6 w-6" style={{ color: themeColors.textSecondary }} />
+                ) : selectedObject?.type === 'TRIGGER' ? (
+                  <Zap className="h-6 w-6" style={{ color: themeColors.error }} />
+                ) : selectedObject?.type === 'SYNONYM' ? (
+                  <Link className="h-6 w-6" style={{ color: themeColors.info }} />
+                ) : (
+                  <Globe className="h-6 w-6" style={{ color: themeColors.info }} />
+                )}
+                <div>
                 <h2 className="text-lg font-bold" style={{ color: themeColors.text }}>
-                  {isEditing ? 'Edit API' : 'Generate API'} {selectedObject?.name ? 
-                    (isEditing ? `: ${selectedObject?.name}` : 
-                    ' from ' + (selectedObject?.type || 'Object') + ': ' + selectedObject?.name || '') : 
-                    'Form'}
+                  {isEditing ? 'Edit API' : 
+                   fromDashboard && !selectedDbObject ? 'Generate API - Select Object' :
+                   fromDashboard && selectedDbObject ? 'Generate API from Selected Object' :
+                   'Generate API'} 
+                  {selectedObject?.name && !isEditing && !fromDashboard ? 
+                    ' from ' + (selectedObject?.type || 'Object') + ': ' + selectedObject?.name : ''}
                 </h2>
                 {selectedObject?.name && !isEditing && (
                   <>
@@ -3783,6 +4284,23 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                     <CheckCircle className="h-3 w-3 inline mr-1" />
                     Editing existing API
                   </p>
+                )}
+                
+                {/* Dashboard selected object indicator */}
+                {fromDashboard && selectedDbObject && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-xs" style={{ color: themeColors.success }}>
+                      <CheckCircle className="h-3 w-3 inline mr-1" />
+                      Selected: {selectedDbObject.owner}.{selectedDbObject.name} ({selectedDbObject.type})
+                    </p>
+                    <button
+                      onClick={() => setShowObjectSelector(true)}
+                      className="text-xs underline hover:no-underline"
+                      style={{ color: themeColors.info }}
+                    >
+                      Change object
+                    </button>
+                  </div>
                 )}
                 
                 {/* UPDATED: API Code Already Exists Warning - Using apiCodeExists state */}
@@ -4354,28 +4872,28 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                         <div>
                           <span style={{ color: themeColors.textSecondary }}>Object:</span>
                           <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                            {selectedObject?.owner}.{selectedObject?.name}
+                            {selectedDbObject?.owner || selectedObject?.owner}.{selectedDbObject?.name || selectedObject?.name}
                           </span>
                         </div>
                         <div>
                           <span style={{ color: themeColors.textSecondary }}>Type:</span>
                           <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                            {selectedObject?.type}
+                            {selectedDbObject?.type || selectedObject?.type}
                           </span>
                         </div>
-                        {selectedObject?.columns && (
+                        {selectedDbObject?.columns && (
                           <div>
                             <span style={{ color: themeColors.textSecondary }}>Columns:</span>
                             <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                              {selectedObject.columns.length}
+                              {selectedDbObject.columns.length}
                             </span>
                           </div>
                         )}
-                        {selectedObject?.parameters && (
+                        {selectedDbObject?.parameters && (
                           <div>
                             <span style={{ color: themeColors.textSecondary }}>Parameters:</span>
                             <span className="ml-2 font-medium" style={{ color: themeColors.text }}>
-                              {selectedObject.parameters.length}
+                              {selectedDbObject.parameters.length}
                             </span>
                           </div>
                         )}
@@ -4392,13 +4910,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       </div>
 
                       {/* Show parameters from selected object - only show IN parameters in this preview */}
-                      {selectedObject?.parameters && selectedObject.parameters.length > 0 && (
+                      {selectedDbObject?.parameters && selectedDbObject.parameters.length > 0 && (
                         <div className="mt-4">
                           <h5 className="text-xs font-medium mb-2" style={{ color: themeColors.text }}>
                             Object Parameters (IN/IN OUT only):
                           </h5>
                           <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
-                            {selectedObject.parameters
+                            {selectedDbObject.parameters
                               .filter(p => {
                                 const mode = p.mode || p.IN_OUT || p.in_out;
                                 return !mode || mode === 'IN' || mode === 'IN/OUT';
@@ -4437,7 +4955,7 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                           </div>
                           
                           {/* Show OUT parameters separately in a note */}
-                          {selectedObject.parameters.some(p => {
+                          {selectedDbObject.parameters.some(p => {
                             const mode = p.mode || p.IN_OUT || p.in_out;
                             return mode === 'OUT' || mode === 'IN/OUT';
                           }) && (
@@ -4449,13 +4967,13 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                       )}
 
                       {/* Show columns from selected object */}
-                      {selectedObject?.columns && selectedObject.columns.length > 0 && (
+                      {selectedDbObject?.columns && selectedDbObject.columns.length > 0 && (
                         <div className="mt-4">
                           <h5 className="text-xs font-medium mb-2" style={{ color: themeColors.text }}>
                             Object Columns (Auto-generated as parameters):
                           </h5>
                           <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
-                            {selectedObject.columns.slice(0, 8).map((col, index) => (
+                            {selectedDbObject.columns.slice(0, 8).map((col, index) => (
                               <div key={index} className="flex items-center justify-between text-xs p-2 rounded" 
                                 style={{ backgroundColor: themeColors.hover }}>
                                 <div>
@@ -4484,10 +5002,10 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
                                 </div>
                               </div>
                             ))}
-                            {selectedObject.columns.length > 8 && (
+                            {selectedDbObject.columns.length > 8 && (
                               <div className="text-center pt-2">
                                 <span className="text-xs" style={{ color: themeColors.textSecondary }}>
-                                  + {selectedObject.columns.length - 8} more columns
+                                  + {selectedDbObject.columns.length - 8} more columns
                                 </span>
                               </div>
                             )}
@@ -5463,189 +5981,189 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
 
                 {/* Request Tab */}
                 {activeTab === 'request' && (
-  <div className="space-y-6">
-    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
-      Request Configuration
-    </h3>
-    
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-            Body Type
-          </label>
-          <select
-            value={requestBody.bodyType}
-            onChange={(e) => handleRequestBodyChange('bodyType', e.target.value)}
-            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-            style={{ 
-              backgroundColor: themeColors.bg,
-              borderColor: themeColors.border,
-              color: themeColors.text
-            }}
-          >
-            {BODY_TYPES.map(type => (
-              <option key={type.value} value={type.value}>{type.label}</option>
-            ))}
-          </select>
-          {requestBody.bodyType === 'none' && (
-            <p className="text-xs mt-2" style={{ color: themeColors.warning }}>
-              <AlertCircle className="h-3 w-3 inline mr-1" />
-              No request body will be sent. Only GET and DELETE methods typically use no body.
-            </p>
-          )}
-        </div>
+                  <div className="space-y-6">
+                    <h3 className="text-lg font-semibold" style={{ color: themeColors.text }}>
+                      Request Configuration
+                    </h3>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                            Body Type
+                          </label>
+                          <select
+                            value={requestBody.bodyType}
+                            onChange={(e) => handleRequestBodyChange('bodyType', e.target.value)}
+                            className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                            style={{ 
+                              backgroundColor: themeColors.bg,
+                              borderColor: themeColors.border,
+                              color: themeColors.text
+                            }}
+                          >
+                            {BODY_TYPES.map(type => (
+                              <option key={type.value} value={type.value}>{type.label}</option>
+                            ))}
+                          </select>
+                          {requestBody.bodyType === 'none' && (
+                            <p className="text-xs mt-2" style={{ color: themeColors.warning }}>
+                              <AlertCircle className="h-3 w-3 inline mr-1" />
+                              No request body will be sent. Only GET and DELETE methods typically use no body.
+                            </p>
+                          )}
+                        </div>
 
-        {/* Only show these fields if body type is not 'none' */}
-        {requestBody.bodyType !== 'none' && (
-          <>
-            <div className="space-y-2">
-              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                Max Request Size (bytes)
-              </label>
-              <input
-                type="number"
-                value={requestBody.maxSize}
-                onChange={(e) => handleRequestBodyChange('maxSize', parseInt(e.target.value))}
-                className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-                style={{ 
-                  backgroundColor: themeColors.card,
-                  borderColor: themeColors.border,
-                  color: themeColors.text
-                }}
-                min="1024"
-                max="10485760"
-              />
-            </div>
+                        {/* Only show these fields if body type is not 'none' */}
+                        {requestBody.bodyType !== 'none' && (
+                          <>
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                                Max Request Size (bytes)
+                              </label>
+                              <input
+                                type="number"
+                                value={requestBody.maxSize}
+                                onChange={(e) => handleRequestBodyChange('maxSize', parseInt(e.target.value))}
+                                className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                                style={{ 
+                                  backgroundColor: themeColors.card,
+                                  borderColor: themeColors.border,
+                                  color: themeColors.text
+                                }}
+                                min="1024"
+                                max="10485760"
+                              />
+                            </div>
 
-            <div className="space-y-2">
-              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-                Validate Schema
-              </label>
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={requestBody.validateSchema}
-                  onChange={(e) => handleRequestBodyChange('validateSchema', e.target.checked)}
-                  className="h-4 w-4 rounded"
-                  style={{ accentColor: themeColors.info }}
-                />
-                <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
-                  Validate request body against schema
-                </span>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                                Validate Schema
+                              </label>
+                              <div className="flex items-center">
+                                <input
+                                  type="checkbox"
+                                  checked={requestBody.validateSchema}
+                                  onChange={(e) => handleRequestBodyChange('validateSchema', e.target.checked)}
+                                  className="h-4 w-4 rounded"
+                                  style={{ accentColor: themeColors.info }}
+                                />
+                                <span className="ml-2 text-xs" style={{ color: themeColors.textSecondary }}>
+                                  Validate request body against schema
+                                </span>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
 
-      {requestBody.bodyType !== 'none' && (
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-              Allowed Media Types
-            </label>
-            <input
-              type="text"
-              value={requestBody.allowedMediaTypes.join(', ')}
-              onChange={(e) => handleRequestBodyChange('allowedMediaTypes', e.target.value.split(',').map(type => type.trim()))}
-              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-              style={{ 
-                backgroundColor: themeColors.card,
-                borderColor: themeColors.border,
-                color: themeColors.text
-              }}
-              placeholder="application/json, application/xml"
-            />
-          </div>
+                      {requestBody.bodyType !== 'none' && (
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                              Allowed Media Types
+                            </label>
+                            <input
+                              type="text"
+                              value={requestBody.allowedMediaTypes.join(', ')}
+                              onChange={(e) => handleRequestBodyChange('allowedMediaTypes', e.target.value.split(',').map(type => type.trim()))}
+                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                              style={{ 
+                                backgroundColor: themeColors.card,
+                                borderColor: themeColors.border,
+                                color: themeColors.text
+                              }}
+                              placeholder="application/json, application/xml"
+                            />
+                          </div>
 
-          <div className="space-y-2">
-            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
-              Required Fields (in body)
-            </label>
-            <input
-              type="text"
-              value={requestBody.requiredFields.join(', ')}
-              onChange={(e) => handleRequestBodyChange('requiredFields', e.target.value.split(',').map(field => field.trim()))}
-              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
-              style={{ 
-                backgroundColor: themeColors.card,
-                borderColor: themeColors.border,
-                color: themeColors.text
-              }}
-              placeholder="id, name, email"
-            />
-          </div>
-        </div>
-      )}
-    </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium" style={{ color: themeColors.text }}>
+                              Required Fields (in body)
+                            </label>
+                            <input
+                              type="text"
+                              value={requestBody.requiredFields.join(', ')}
+                              onChange={(e) => handleRequestBodyChange('requiredFields', e.target.value.split(',').map(field => field.trim()))}
+                              className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                              style={{ 
+                                backgroundColor: themeColors.card,
+                                borderColor: themeColors.border,
+                                color: themeColors.text
+                              }}
+                              placeholder="id, name, email"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
 
-    {/* Request Body Sample - Only show if body type is not 'none' */}
-    {requestBody.bodyType !== 'none' && (
-      <div className="space-y-4">
-        <h4 className="font-semibold" style={{ color: themeColors.text }}>
-          Request Body Sample
-        </h4>
-        <div className="border rounded-lg" style={{ 
-          borderColor: themeColors.border,
-          backgroundColor: themeColors.card
-        }}>
-          <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: themeColors.border }}>
-            <span className="text-xs font-medium" style={{ color: themeColors.text }}>
-              Sample {requestBody.bodyType.toUpperCase()}
-            </span>
-            <button
-              onClick={() => {
-                const sample = {};
-                const bodyParams = getInParameters().filter(p => p.parameterLocation === 'body');
-                bodyParams.forEach(p => {
-                  sample[p.key] = p.example || (p.apiType === 'integer' ? 123 : 'sample');
-                });
-                handleRequestBodyChange('sample', JSON.stringify(sample, null, 2));
-              }}
-              className="px-3 py-1 text-xs rounded border transition-colors hover-lift"
-              style={{ 
-                backgroundColor: themeColors.hover,
-                borderColor: themeColors.border,
-                color: themeColors.text
-              }}
-            >
-              Generate from Parameters
-            </button>
-          </div>
-          <textarea
-            value={requestBody.sample || ''}
-            onChange={(e) => handleRequestBodyChange('sample', e.target.value)}
-            className="w-full h-48 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
-            style={{ 
-              backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
-              color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
-            }}
-            placeholder={requestBody.bodyType === 'json' ? '{\n  "key": "value"\n}' : 
-                       requestBody.bodyType === 'xml' ? '<request>\n  <key>value</key>\n</request>' :
-                       'Enter request body...'}
-          />
-        </div>
-      </div>
-    )}
+                    {/* Request Body Sample - Only show if body type is not 'none' */}
+                    {requestBody.bodyType !== 'none' && (
+                      <div className="space-y-4">
+                        <h4 className="font-semibold" style={{ color: themeColors.text }}>
+                          Request Body Sample
+                        </h4>
+                        <div className="border rounded-lg" style={{ 
+                          borderColor: themeColors.border,
+                          backgroundColor: themeColors.card
+                        }}>
+                          <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: themeColors.border }}>
+                            <span className="text-xs font-medium" style={{ color: themeColors.text }}>
+                              Sample {requestBody.bodyType.toUpperCase()}
+                            </span>
+                            <button
+                              onClick={() => {
+                                const sample = {};
+                                const bodyParams = getInParameters().filter(p => p.parameterLocation === 'body');
+                                bodyParams.forEach(p => {
+                                  sample[p.key] = p.example || (p.apiType === 'integer' ? 123 : 'sample');
+                                });
+                                handleRequestBodyChange('sample', JSON.stringify(sample, null, 2));
+                              }}
+                              className="px-3 py-1 text-xs rounded border transition-colors hover-lift"
+                              style={{ 
+                                backgroundColor: themeColors.hover,
+                                borderColor: themeColors.border,
+                                color: themeColors.text
+                              }}
+                            >
+                              Generate from Parameters
+                            </button>
+                          </div>
+                          <textarea
+                            value={requestBody.sample || ''}
+                            onChange={(e) => handleRequestBodyChange('sample', e.target.value)}
+                            className="w-full h-48 px-4 py-3 text-xs font-mono resize-none focus:outline-none"
+                            style={{ 
+                              backgroundColor: theme === 'dark' ? '#1a202c' : '#f8fafc',
+                              color: theme === 'dark' ? '#e2e8f0' : '#1e293b'
+                            }}
+                            placeholder={requestBody.bodyType === 'json' ? '{\n  "key": "value"\n}' : 
+                                       requestBody.bodyType === 'xml' ? '<request>\n  <key>value</key>\n</request>' :
+                                       'Enter request body...'}
+                          />
+                        </div>
+                      </div>
+                    )}
 
-    {/* Show message when no body */}
-    {requestBody.bodyType === 'none' && (
-      <div className="p-8 text-center border rounded-lg" style={{ 
-        borderColor: themeColors.border,
-        backgroundColor: themeColors.hover
-      }}>
-        <FileText className="h-12 w-12 mx-auto mb-3" style={{ color: themeColors.textSecondary }} />
-        <p style={{ color: themeColors.textSecondary }}>
-          No request body will be sent with this API.
-        </p>
-        <p className="text-xs mt-2" style={{ color: themeColors.info }}>
-          This is typical for GET and DELETE operations.
-        </p>
-      </div>
-    )}
-  </div>
-)}
+                    {/* Show message when no body */}
+                    {requestBody.bodyType === 'none' && (
+                      <div className="p-8 text-center border rounded-lg" style={{ 
+                        borderColor: themeColors.border,
+                        backgroundColor: themeColors.hover
+                      }}>
+                        <FileText className="h-12 w-12 mx-auto mb-3" style={{ color: themeColors.textSecondary }} />
+                        <p style={{ color: themeColors.textSecondary }}>
+                          No request body will be sent with this API.
+                        </p>
+                        <p className="text-xs mt-2" style={{ color: themeColors.info }}>
+                          This is typical for GET and DELETE operations.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Response Tab */}
                 {activeTab === 'response' && (
@@ -6514,6 +7032,24 @@ WHERE ROWNUM <= 100;` : ''}`}
           </div>
         </div>
       </div>
+
+      {/* Add the object selector modal - ONLY for dashboard generation */}
+      {fromDashboard && (
+        <ObjectSelectorModal
+          isOpen={showObjectSelector}
+          onClose={() => {
+            setShowObjectSelector(false);
+            if (!selectedDbObject) {
+              onClose(); // Close the main modal if no object selected
+            }
+          }}
+          onSelect={(obj) => {
+            loadSelectedObjectDetails(obj);
+          }}
+          colors={themeColors}
+          authToken={authToken}
+        />
+      )}
 
       {/* Add the preview modal */}
       <ApiPreviewModal

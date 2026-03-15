@@ -301,7 +301,7 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
     { label: 'API Code Base', icon: Code, onClick: () => onNavigate('code-base'), color: colors.warning },
     { label: 'API Security', icon: Shield, onClick: () => onNavigate('security'), color: colors.error },
     { label: 'User Management', icon: UserCog, onClick: () => onNavigate('user-mgt'), color: colors.accentPurple },
-    { label: 'API Requests', icon: TrendingUp, onClick: () => onNavigate('api-requests'), color: colors.secondary }
+    // { label: 'API Requests', icon: TrendingUp, onClick: () => onNavigate('api-requests'), color: colors.secondary }
   ], [colors, onNavigate]);
 
   return (
@@ -1035,6 +1035,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
       selectedObject={selectedForApiGeneration}
       colors={colors}
       theme={theme}
+      fromDashboard={true}
       onGenerateAPI={() => Promise.resolve({ success: true })}
       authToken={authToken}
       isEditing={!!selectedForApiGeneration?.data?.id} // Check for data.id, not just id
