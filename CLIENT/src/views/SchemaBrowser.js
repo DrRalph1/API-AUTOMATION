@@ -3589,109 +3589,146 @@ const renderParametersTab = useCallback(() => {
   };
 
   // Render Properties Tab
-  const renderPropertiesTab = () => {
+ // Render Properties Tab - Clean and simple
+const renderPropertiesTab = () => {
     const details = objectDetails || activeObject || {};
-    const targetDetails = details.targetDetails;
-    const targetObjectDetails = details.targetObjectDetails || {};
+    const responseData = details; // Data is directly in objectDetails
     
-    if (details.objectType === 'SYNONYM' && targetDetails) {
+    // Simple status badge
+    const renderStatusBadge = (status) => {
+        const isValid = status === 'VALID' || status === 'ENABLED';
+        return (
+            <span className={`px-2 py-0.5 rounded text-xs ${
+                isValid ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+            }`}>
+                {status || '-'}
+            </span>
+        );
+    };
+
+    // Simple property item
+    const renderPropertyItem = (label, value, isStatus = false) => (
+        <div className="space-y-1">
+            <div className="text-xs" style={{ color: colors.textSecondary }}>{label}</div>
+            <div className="text-sm truncate" style={{ color: colors.text }}>
+                {isStatus ? renderStatusBadge(value) : (value || '-')}
+            </div>
+        </div>
+    );
+
+    // For synonyms
+    if (responseData.objectType === 'SYNONYM') {
+      const targetBasicInfo = responseData.targetBasicInfo || {};
+      const targetDetails = responseData.targetObjectDetails || {};
+      
       return (
-        <div className="flex-1 overflow-auto">
-          <div className="border rounded p-4 space-y-4" style={{ borderColor: colors.border }}>
-            <div>
+        <div className="flex-1 overflow-auto p-4">
+          <div className="border rounded" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
+            
+            {/* Synonym Properties */}
+            <div className="p-4 border-b" style={{ borderColor: colors.border }}>
               <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Synonym Properties</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Synonym Name</div>
-                  <div className="text-sm truncate" style={{ color: colors.text }}>{details.SYNONYM_NAME || details.name || '-'}</div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Synonym Owner</div>
-                  <div className="text-sm truncate" style={{ color: colors.text }}>{details.owner || '-'}</div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Target Owner</div>
-                  <div className="text-sm truncate" style={{ color: colors.text }}>{details.TARGET_OWNER || targetDetails?.OWNER || '-'}</div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Target Name</div>
-                  <div className="text-sm truncate" style={{ color: colors.text }}>{details.TARGET_NAME || targetDetails?.OBJECT_NAME || targetDetails?.objectName || '-'}</div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Target Type</div>
-                  <div className="text-sm truncate" style={{ color: colors.text }}>{details.TARGET_TYPE || targetDetails?.OBJECT_TYPE || targetDetails?.objectType || '-'}</div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Target Status</div>
-                  <div className="text-sm truncate">
-                    <span className={`px-2 py-0.5 rounded text-xs ${
-                      (details.TARGET_STATUS || targetDetails?.STATUS) === 'VALID' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
-                    }`}>
-                      {details.TARGET_STATUS || targetDetails?.STATUS || '-'}
-                    </span>
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Target Created</div>
-                  <div className="text-sm truncate" style={{ color: colors.text }}>
-                    {details.TARGET_CREATED ? formatDateForDisplay(details.TARGET_CREATED) : 
-                    targetDetails?.CREATED ? formatDateForDisplay(targetDetails.CREATED) : '-'}
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>Target Modified</div>
-                  <div className="text-sm truncate" style={{ color: colors.text }}>
-                    {details.TARGET_MODIFIED ? formatDateForDisplay(details.TARGET_MODIFIED) : 
-                    targetDetails?.LAST_DDL_TIME ? formatDateForDisplay(targetDetails.LAST_DDL_TIME) : '-'}
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs" style={{ color: colors.textSecondary }}>DB Link</div>
-                  <div className="text-sm truncate" style={{ color: colors.text }}>{details.DB_LINK || '-'}</div>
-                </div>
+                {renderPropertyItem("Synonym Name", responseData.SYNONYM_NAME || responseData.objectName || responseData.name)}
+                {renderPropertyItem("Synonym Owner", responseData.owner || responseData.OWNER)}
+                {renderPropertyItem("Target Owner", responseData.TARGET_OWNER || targetBasicInfo.OWNER || targetDetails.OWNER)}
+                {renderPropertyItem("Target Name", responseData.TARGET_NAME || targetBasicInfo.OBJECT_NAME || targetDetails.OBJECT_NAME)}
+                {renderPropertyItem("Target Type", responseData.TARGET_TYPE || targetBasicInfo.OBJECT_TYPE || targetDetails.OBJECT_TYPE)}
+                {renderPropertyItem(
+                  "Target Status", 
+                  responseData.TARGET_STATUS || targetBasicInfo.STATUS || targetDetails.STATUS,
+                  true
+                )}
+                {renderPropertyItem(
+                  "Target Created", 
+                  responseData.TARGET_CREATED ? formatDateForDisplay(responseData.TARGET_CREATED) : 
+                   targetBasicInfo.CREATED ? formatDateForDisplay(targetBasicInfo.CREATED) : 
+                   targetDetails.CREATED ? formatDateForDisplay(targetDetails.CREATED) : '-'
+                )}
+                {renderPropertyItem(
+                  "Target Modified", 
+                  responseData.TARGET_MODIFIED ? formatDateForDisplay(responseData.TARGET_MODIFIED) : 
+                   targetBasicInfo.LAST_DDL_TIME ? formatDateForDisplay(targetBasicInfo.LAST_DDL_TIME) : 
+                   targetDetails.LAST_DDL_TIME ? formatDateForDisplay(targetDetails.LAST_DDL_TIME) : '-'
+                )}
+                {renderPropertyItem("DB Link", responseData.DB_LINK)}
+                {renderPropertyItem("Temporary", responseData.TARGET_TEMPORARY || targetBasicInfo.TEMPORARY || targetDetails.TEMPORARY || 'N')}
+                {renderPropertyItem("Generated", responseData.TARGET_GENERATED || targetBasicInfo.GENERATED || targetDetails.GENERATED || 'N')}
+                {renderPropertyItem("Secondary", responseData.TARGET_SECONDARY || targetBasicInfo.SECONDARY || targetDetails.SECONDARY || 'N')}
               </div>
             </div>
 
-            {targetDetails && (
-              <div className="border-t pt-4" style={{ borderColor: colors.border }}>
-                <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Target Object Properties</h3>
+            {/* Target Object Properties */}
+            {targetDetails && Object.keys(targetDetails).length > 0 && (
+              <div className="p-4">
+                <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>
+                  Target Object Details ({targetBasicInfo.OBJECT_TYPE || responseData.TARGET_TYPE || targetDetails.OBJECT_TYPE})
+                </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>Object Name</div>
-                    <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.OBJECT_NAME || targetDetails.objectName || targetDetails.TABLE_NAME || '-'}</div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>Owner</div>
-                    <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.OWNER || targetDetails.owner || '-'}</div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>Object Type</div>
-                    <div className="text-sm truncate" style={{ color: colors.text }}>{targetDetails.OBJECT_TYPE || targetDetails.objectType || '-'}</div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>Status</div>
-                    <div className="text-sm truncate">
-                      <span className={`px-2 py-0.5 rounded text-xs ${
-                        (targetDetails.STATUS || targetDetails.OBJECT_STATUS || targetDetails.TABLE_STATUS) === 'VALID' ? 
-                        'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
-                      }`}>
-                        {targetDetails.STATUS || targetDetails.OBJECT_STATUS || targetDetails.TABLE_STATUS || '-'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>Created</div>
-                    <div className="text-sm truncate" style={{ color: colors.text }}>
-                      {targetDetails.CREATED ? formatDateForDisplay(targetDetails.CREATED) : '-'}
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-xs" style={{ color: colors.textSecondary }}>Last Modified</div>
-                    <div className="text-sm truncate" style={{ color: colors.text }}>
-                      {targetDetails.LAST_DDL_TIME ? formatDateForDisplay(targetDetails.LAST_DDL_TIME) : '-'}
-                    </div>
-                  </div>
+                  {renderPropertyItem(
+                    "Object Name", 
+                    targetDetails.VIEW_NAME || targetDetails.TABLE_NAME || targetDetails.OBJECT_NAME || targetBasicInfo.OBJECT_NAME
+                  )}
+                  {renderPropertyItem("Owner", targetDetails.OWNER || targetBasicInfo.OWNER)}
+                  {renderPropertyItem("Object Type", targetBasicInfo.OBJECT_TYPE || responseData.TARGET_TYPE || targetDetails.OBJECT_TYPE)}
+                  {renderPropertyItem(
+                    "Status", 
+                    targetDetails.STATUS || targetDetails.OBJECT_STATUS || targetDetails.TABLE_STATUS || targetBasicInfo.STATUS,
+                    true
+                  )}
+                  {renderPropertyItem(
+                    "Created", 
+                    targetDetails.CREATED ? formatDateForDisplay(targetDetails.CREATED) : 
+                     targetBasicInfo.CREATED ? formatDateForDisplay(targetBasicInfo.CREATED) : '-'
+                  )}
+                  {renderPropertyItem(
+                    "Last Modified", 
+                    targetDetails.LAST_DDL_TIME ? formatDateForDisplay(targetDetails.LAST_DDL_TIME) : 
+                     targetBasicInfo.LAST_DDL_TIME ? formatDateForDisplay(targetBasicInfo.LAST_DDL_TIME) : '-'
+                  )}
+                  
+                  {/* Table properties */}
+                  {(targetBasicInfo.OBJECT_TYPE === 'TABLE' || responseData.TARGET_TYPE === 'TABLE' || targetDetails.OBJECT_TYPE === 'TABLE') && (
+                    <>
+                      {renderPropertyItem("Row Count", targetDetails.NUM_ROWS ? targetDetails.NUM_ROWS.toLocaleString() : '-')}
+                      {renderPropertyItem("Size", targetDetails.size_bytes !== undefined ? formatBytes(targetDetails.size_bytes) : '-')}
+                      {renderPropertyItem("Tablespace", targetDetails.TABLESPACE_NAME)}
+                      {renderPropertyItem("Blocks", targetDetails.BLOCKS)}
+                      {renderPropertyItem("Avg Row Length", targetDetails.AVG_ROW_LEN)}
+                      {renderPropertyItem(
+                        "Last Analyzed", 
+                        targetDetails.LAST_ANALYZED ? formatDateForDisplay(targetDetails.LAST_ANALYZED) : '-'
+                      )}
+                      {renderPropertyItem("Row Movement", targetDetails.ROW_MOVEMENT || 'DISABLED')}
+                      {renderPropertyItem("Cache", targetDetails.CACHE || 'N')}
+                      {renderPropertyItem("Column Count", targetDetails.column_count || targetDetails.COLUMN_COUNT)}
+                    </>
+                  )}
+
+                  {/* View properties */}
+                  {(targetBasicInfo.OBJECT_TYPE === 'VIEW' || responseData.TARGET_TYPE === 'VIEW' || targetDetails.OBJECT_TYPE === 'VIEW') && (
+                    <>
+                      {renderPropertyItem("Text Length", targetDetails.TEXT_LENGTH)}
+                      {renderPropertyItem("Read Only", targetDetails.READ_ONLY || 'N')}
+                      {renderPropertyItem("Column Count", targetDetails.COLUMN_COUNT || targetDetails.column_count)}
+                    </>
+                  )}
                 </div>
+
+                {/* Comment */}
+                {targetDetails.comments && (
+                  <div className="mt-4 p-3 rounded" style={{ backgroundColor: colors.hover }}>
+                    <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Comment</div>
+                    <div className="text-sm" style={{ color: colors.text }}>{targetDetails.comments}</div>
+                  </div>
+                )}
+
+                {/* Fallback notice */}
+                {responseData.fallbackUsed && (
+                  <div className="mt-4 p-2 rounded text-xs" style={{ backgroundColor: 'rgba(251, 191, 36, 0.1)', color: colors.warning }}>
+                    ⚠️ Using fallback data - details may be limited
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -3699,46 +3736,35 @@ const renderParametersTab = useCallback(() => {
       );
     }
     
-    // For regular objects (including tables)
+    // For regular objects
     const properties = [
-      { label: 'Name', value: details.name || details.OBJECT_NAME || details.objectName || details.SYNONYM_NAME || '-' },
-      { label: 'Owner', value: details.owner || details.OWNER || '-' },
-      { label: 'Type', value: details.type || details.OBJECT_TYPE || details.objectType || details.TARGET_TYPE || '-' },
-      { label: 'Status', value: details.status || details.STATUS || details.TARGET_STATUS || targetObjectDetails?.STATUS || targetObjectDetails?.TABLE_STATUS || 'VALID' },
-      { label: 'Created', value: details.created || details.CREATED || details.TARGET_CREATED || targetObjectDetails?.CREATED ? formatDateForDisplay(details.created || details.CREATED || details.TARGET_CREATED || targetObjectDetails?.CREATED) : '-' },
-      { label: 'Last Modified', value: details.last_ddl_time || details.LAST_DDL_TIME || details.TARGET_MODIFIED || targetObjectDetails?.LAST_DDL_TIME ? formatDateForDisplay(details.last_ddl_time || details.LAST_DDL_TIME || details.TARGET_MODIFIED || targetObjectDetails?.LAST_DDL_TIME) : '-' },
-    ];
+      { label: 'Name', value: responseData.objectName || responseData.name || responseData.OBJECT_NAME },
+      { label: 'Owner', value: responseData.owner || responseData.OWNER },
+      { label: 'Type', value: responseData.objectType || responseData.type || responseData.OBJECT_TYPE },
+      { label: 'Status', value: responseData.status || responseData.STATUS || 'VALID', isStatus: true },
+      { 
+        label: 'Created', 
+        value: (responseData.created || responseData.CREATED) ? 
+               formatDateForDisplay(responseData.created || responseData.CREATED) : null
+      },
+      { 
+        label: 'Last Modified', 
+        value: (responseData.last_ddl_time || responseData.LAST_DDL_TIME) ? 
+               formatDateForDisplay(responseData.last_ddl_time || responseData.LAST_DDL_TIME) : null
+      },
+    ].filter(p => p.value !== null && p.value !== undefined); // Remove null/undefined values
 
-    // Add table-specific properties
-    if (details.TARGET_TYPE === 'TABLE' || details.type === 'TABLE' || targetObjectDetails?.TABLE_NAME) {
-      properties.push(
-        { label: 'Row Count', value: targetObjectDetails?.NUM_ROWS ? targetObjectDetails.NUM_ROWS.toLocaleString() : details.num_rows ? details.num_rows.toLocaleString() : '-' },
-        { label: 'Size (Bytes)', value: targetObjectDetails?.size_bytes ? formatBytes(targetObjectDetails.size_bytes) : details.bytes ? formatBytes(details.bytes) : '-' },
-        { label: 'Tablespace', value: targetObjectDetails?.TABLESPACE_NAME || details.tablespace_name || '-' },
-        { label: 'Blocks', value: targetObjectDetails?.BLOCKS || details.blocks || '-' },
-        { label: 'Avg Row Length', value: targetObjectDetails?.AVG_ROW_LEN || details.avg_row_len || '-' },
-        { label: 'Last Analyzed', value: targetObjectDetails?.LAST_ANALYZED ? formatDateForDisplay(targetObjectDetails.LAST_ANALYZED) : details.last_analyzed ? formatDateForDisplay(details.last_analyzed) : '-' },
-        { label: 'Row Movement', value: targetObjectDetails?.ROW_MOVEMENT || details.row_movement || 'DISABLED' },
-        { label: 'Cache', value: targetObjectDetails?.CACHE || details.cache || 'N' }
-      );
-    }
-
-    // Add comment if available
-    if (targetObjectDetails?.comments || details.comments || details.COMMENTS) {
-      properties.push({ 
-        label: 'Comment', 
-        value: targetObjectDetails?.comments || details.comments || details.COMMENTS 
-      });
-    }
-    
     return (
-      <div className="flex-1 overflow-auto">
-        <div className="border rounded p-4" style={{ borderColor: colors.border }}>
+      <div className="flex-1 overflow-auto p-4">
+        <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
+          <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Properties</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {properties.map((prop, i) => (
               <div key={i} className="space-y-1">
                 <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
-                <div className="text-sm truncate" style={{ color: colors.text }}>{prop.value || '-'}</div>
+                <div className="text-sm truncate" style={{ color: colors.text }}>
+                  {prop.isStatus ? renderStatusBadge(prop.value) : (prop.value || '-')}
+                </div>
               </div>
             ))}
           </div>
