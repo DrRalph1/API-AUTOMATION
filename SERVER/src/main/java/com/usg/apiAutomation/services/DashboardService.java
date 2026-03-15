@@ -7,6 +7,7 @@ import com.usg.apiAutomation.dtos.userManagement.SearchUsersRequestDTO;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiAuthConfigEntity;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
 import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.ApiAuthConfigRepository;
+import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.ApiRequestRepository;
 import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.GeneratedAPIRepository;
 import com.usg.apiAutomation.utils.LoggerUtil;
 import jakarta.annotation.PostConstruct;
@@ -44,6 +45,7 @@ public class DashboardService {
     private final UserManagementService userManagementService;
     private final ApiAuthConfigRepository authConfigRepository;
     private final GeneratedAPIRepository generatedAPIRepository;
+    private final ApiRequestRepository apiRequestRepository;
 
     @PostConstruct
     public void init() {
@@ -66,6 +68,10 @@ public class DashboardService {
                 .sum();
         stats.setTotalApis(totalApis);
         stats.setTotalCollections(collections.getCollections().size());
+
+        // Total API Requests made through the system
+        long totalApiRequests = apiRequestRepository.count();
+        stats.setTotalApiRequests(totalApiRequests);
 
         // Security stats
         var rateLimitRules = apiSecurityService.getRateLimitRules(requestId, performedBy);
@@ -98,7 +104,7 @@ public class DashboardService {
         // Timestamp
         stats.setLastUpdated(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
 
-        log.info("Request ID: {}, Retrieved dashboard statistics", requestId);
+        log.info("Request ID: {}, Retrieved dashboard statistics. Total API Requests: {}", requestId, totalApiRequests);
         return stats;
     }
 

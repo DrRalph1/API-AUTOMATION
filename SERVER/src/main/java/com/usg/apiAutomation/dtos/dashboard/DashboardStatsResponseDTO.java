@@ -21,6 +21,9 @@ public class DashboardStatsResponseDTO {
     private int totalUsers;
     private int activeUsers;
 
+    // API Requests
+    private long totalApiRequests;
+
     // Documentation stats
     private int totalDocumentationEndpoints;
     private int publishedDocumentation;

@@ -610,7 +610,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
         setStats({
           totalApis: handledResponse.data.totalApis || 0,
           totalDocumentationEndpoints: handledResponse.data.totalDocumentationEndpoints || 0,
-          totalCalls: handledResponse.data.totalCalls || 0,
+          totalCalls: handledResponse.data.totalApiRequests || 0,
           totalCollections: handledResponse.data.totalCollections || 0
         });
       }
