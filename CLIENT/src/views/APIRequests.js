@@ -78,7 +78,8 @@ import {
   Settings as SettingsIcon,
   LogOut,
   Menu,
-  Sidebar
+  Sidebar,
+  LayoutDashboard
 } from 'lucide-react';
 
 // Import APIRequestController functions
@@ -1354,6 +1355,46 @@ const TimeSeriesChart = ({ stats, colors }) => {
   );
 };
 
+// ============ LOADING OVERLAY COMPONENT ============
+const LoadingOverlay = ({ isLoading, loadingType, colors }) => {
+  if (!isLoading) return null;
+  
+  const getLoadingMessage = () => {
+    if (loadingType === 'initialLoad') return 'Loading Request Monitor';
+    if (loadingType === 'refresh') return 'Refreshing Request Data';
+    if (loadingType === 'export') return 'Exporting Requests';
+    if (loadingType === 'delete') return 'Deleting Requests';
+    return 'Loading...';
+  };
+  
+  const getLoadingDescription = () => {
+    if (loadingType === 'initialLoad') return 'Please wait while we load your request data';
+    if (loadingType === 'refresh') return 'Fetching the latest request information';
+    if (loadingType === 'export') return 'Preparing your export for download';
+    if (loadingType === 'delete') return 'Processing your request';
+    return 'Please wait...';
+  };
+
+  return (
+    <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: colors.bg }}>
+      <div className="text-center">
+        <div className="relative">
+          <Loader className="animate-spin mx-auto mb-6" size={64} style={{ color: colors.primary }} />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <LayoutDashboard size={32} style={{ color: colors.primary, opacity: 0.3 }} />
+          </div>
+        </div>
+        <h3 className="text-xl font-semibold mb-2" style={{ color: colors.text }}>
+          {getLoadingMessage()}
+        </h3>
+        <p className="text-sm mb-2" style={{ color: colors.textSecondary }}>
+          {getLoadingDescription()}
+        </p>
+      </div>
+    </div>
+  );
+};
+
 const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [activeTab, setActiveTab] = useState('all');
   const [showFilterModal, setShowFilterModal] = useState(false);
@@ -1366,12 +1407,16 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [apiSummaries, setApiSummaries] = useState([]);
   const [statistics, setStatistics] = useState(null);
   const [systemStats, setSystemStats] = useState(null);
-  const [isLoading, setIsLoading] = useState({
-    requests: false,
-    statistics: false,
-    export: false,
-    delete: false
+  
+  // ============ UPDATED LOADING STATE ============
+  const [loading, setLoading] = useState({ 
+    initialLoad: true, 
+    refresh: false, 
+    export: false, 
+    delete: false,
+    statistics: false
   });
+  
   const [toast, setToast] = useState(null);
   const [pagination, setPagination] = useState({
     page: 0,
@@ -1547,74 +1592,77 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   };
 
   // Load requests with filters
-  // Load requests with filters
-const loadRequests = useCallback(async () => {
-  if (!authToken) {
-    showToast('Authentication required', 'error');
-    return;
-  }
-
-  setIsLoading(prev => ({ ...prev, requests: true }));
-
-  try {
-    const filter = {
-      ...filters,
-      page: pagination.page,
-      size: pagination.size,
-      fromDate: dateRange.fromDate,
-      toDate: dateRange.toDate,
-      search: searchQuery || undefined,
-      apiId: selectedApiId || undefined
-    };
-
-    // Remove undefined values
-    Object.keys(filter).forEach(key => filter[key] === undefined && delete filter[key]);
-
-    const response = await searchRequests(authToken, filter);
-    
-    if (response?.responseCode === 200) {
-      const responseData = response.data;
-      
-      // Log to debug
-      console.log('API Response:', responseData);
-      
-      // Extract data correctly from the response structure
-      setRequests(responseData.content || []);
-      
-      // IMPORTANT: apiSummaries is directly in responseData, not in data.data
-      setApiSummaries(responseData.apiSummaries || []);
-
-      // console.log("responseData::::" + JSON.stringify(responseData));
-      // console.log("apiSummaries::::" + JSON.stringify(responseData.apiSummaries));
-      
-      setPagination({
-        page: responseData.currentPage || 0,
-        size: responseData.pageSize || 15,
-        totalElements: responseData.totalElements || 0,
-        totalPages: responseData.totalPages || 0
-      });
-
-      // If an API is selected, update its summary
-      if (selectedApiId && responseData.apiSummaries) {
-        const summary = responseData.apiSummaries.find(api => api.apiId === selectedApiId);
-        setSelectedApiSummary(summary);
-      }
-    } else {
-      showToast(response?.message || 'Failed to load requests', 'error');
+  const loadRequests = useCallback(async (isRefresh = false) => {
+    if (!authToken) {
+      showToast('Authentication required', 'error');
+      return;
     }
-  } catch (error) {
-    console.error('Error loading requests:', error);
-    showToast(error.message || 'Failed to load requests', 'error');
-  } finally {
-    setIsLoading(prev => ({ ...prev, requests: false }));
-  }
-}, [authToken, filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId]);
+
+    if (isRefresh) {
+      setLoading(prev => ({ ...prev, refresh: true }));
+    }
+
+    try {
+      const filter = {
+        ...filters,
+        page: pagination.page,
+        size: pagination.size,
+        fromDate: dateRange.fromDate,
+        toDate: dateRange.toDate,
+        search: searchQuery || undefined,
+        apiId: selectedApiId || undefined
+      };
+
+      // Remove undefined values
+      Object.keys(filter).forEach(key => filter[key] === undefined && delete filter[key]);
+
+      const response = await searchRequests(authToken, filter);
+      
+      if (response?.responseCode === 200) {
+        const responseData = response.data;
+        
+        // Log to debug
+        console.log('API Response:', responseData);
+        
+        // Extract data correctly from the response structure
+        setRequests(responseData.content || []);
+        
+        // IMPORTANT: apiSummaries is directly in responseData, not in data.data
+        setApiSummaries(responseData.apiSummaries || []);
+
+        // console.log("responseData::::" + JSON.stringify(responseData));
+        // console.log("apiSummaries::::" + JSON.stringify(responseData.apiSummaries));
+        
+        setPagination({
+          page: responseData.currentPage || 0,
+          size: responseData.pageSize || 15,
+          totalElements: responseData.totalElements || 0,
+          totalPages: responseData.totalPages || 0
+        });
+
+        // If an API is selected, update its summary
+        if (selectedApiId && responseData.apiSummaries) {
+          const summary = responseData.apiSummaries.find(api => api.apiId === selectedApiId);
+          setSelectedApiSummary(summary);
+        }
+      } else {
+        showToast(response?.message || 'Failed to load requests', 'error');
+      }
+    } catch (error) {
+      console.error('Error loading requests:', error);
+      showToast(error.message || 'Failed to load requests', 'error');
+    } finally {
+      if (isRefresh) {
+        setLoading(prev => ({ ...prev, refresh: false }));
+      }
+    }
+  }, [authToken, filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId]);
 
   // Load statistics
   const loadStatistics = useCallback(async () => {
     if (!authToken) return;
 
-    setIsLoading(prev => ({ ...prev, statistics: true }));
+    setLoading(prev => ({ ...prev, statistics: true }));
 
     try {
       // Load system statistics
@@ -1637,7 +1685,7 @@ const loadRequests = useCallback(async () => {
     } catch (error) {
       console.error('Error loading statistics:', error);
     } finally {
-      setIsLoading(prev => ({ ...prev, statistics: false }));
+      setLoading(prev => ({ ...prev, statistics: false }));
     }
   }, [authToken, dateRange.fromDate, dateRange.toDate]);
 
@@ -1662,7 +1710,7 @@ const loadRequests = useCallback(async () => {
       return;
     }
 
-    setIsLoading(prev => ({ ...prev, export: true }));
+    setLoading(prev => ({ ...prev, export: true }));
 
     try {
       const response = await exportRequests(
@@ -1689,7 +1737,7 @@ const loadRequests = useCallback(async () => {
       console.error('Error exporting requests:', error);
       showToast(error.message || 'Failed to export requests', 'error');
     } finally {
-      setIsLoading(prev => ({ ...prev, export: false }));
+      setLoading(prev => ({ ...prev, export: false }));
     }
   };
 
@@ -1701,7 +1749,7 @@ const loadRequests = useCallback(async () => {
       return;
     }
 
-    setIsLoading(prev => ({ ...prev, delete: true }));
+    setLoading(prev => ({ ...prev, delete: true }));
 
     try {
       const response = await deleteRequest(authToken, requestId);
@@ -1716,7 +1764,7 @@ const loadRequests = useCallback(async () => {
       console.error('Error deleting request:', error);
       showToast(error.message || 'Failed to delete request', 'error');
     } finally {
-      setIsLoading(prev => ({ ...prev, delete: false }));
+      setLoading(prev => ({ ...prev, delete: false }));
     }
   };
 
@@ -1727,7 +1775,7 @@ const loadRequests = useCallback(async () => {
     const date = prompt('Enter date to delete requests older than (YYYY-MM-DD):');
     if (!date) return;
 
-    setIsLoading(prev => ({ ...prev, delete: true }));
+    setLoading(prev => ({ ...prev, delete: true }));
 
     try {
       const response = await cleanupOldRequests(authToken, date);
@@ -1742,7 +1790,7 @@ const loadRequests = useCallback(async () => {
       console.error('Error cleaning up requests:', error);
       showToast(error.message || 'Failed to cleanup requests', 'error');
     } finally {
-      setIsLoading(prev => ({ ...prev, delete: false }));
+      setLoading(prev => ({ ...prev, delete: false }));
     }
   };
 
@@ -1777,6 +1825,9 @@ const loadRequests = useCallback(async () => {
     } else {
       setSelectedApiSummary(null);
     }
+    
+    // Reload requests with the selected API filter
+    loadRequests();
   };
 
   // Handle search with debounce
@@ -1794,6 +1845,17 @@ const loadRequests = useCallback(async () => {
     }, 500);
   };
 
+  // Handle refresh button click
+  const handleRefresh = useCallback(() => {
+    if (activeTab === 'statistics') {
+      loadStatistics();
+    } else if (activeTab === 'all') {
+      loadRequests(true); // Pass true for refresh
+    } else if (activeTab === 'recent') {
+      loadRecentRequests();
+    }
+  }, [activeTab, loadStatistics, loadRequests, loadRecentRequests]);
+
   // Initial load
   useEffect(() => {
     if (authToken) {
@@ -1801,8 +1863,14 @@ const loadRequests = useCallback(async () => {
       loadStatistics();
       
       if (activeTab === 'all' || activeTab === 'recent') {
-        loadRequests();
+        loadRequests().finally(() => {
+          setLoading(prev => ({ ...prev, initialLoad: false }));
+        });
+      } else {
+        setLoading(prev => ({ ...prev, initialLoad: false }));
       }
+    } else {
+      setLoading(prev => ({ ...prev, initialLoad: false }));
     }
 
     return () => {
@@ -1827,10 +1895,10 @@ const loadRequests = useCallback(async () => {
 
   // Handle filter changes
   useEffect(() => {
-    if (authToken && activeTab === 'all') {
+    if (authToken && activeTab === 'all' && !loading.initialLoad) {
       loadRequests();
     }
-  }, [filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId, authToken, activeTab, loadRequests]);
+  }, [filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId, authToken, activeTab]);
 
   // Update selected API summary when apiSummaries change
   useEffect(() => {
@@ -1979,196 +2047,203 @@ const loadRequests = useCallback(async () => {
 
   // Render requests table
   const renderRequestsTable = () => {
-  return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Table container with scroll */}
-      <div className="flex-1 overflow-auto">
-        <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-          <thead className="sticky top-0" style={{ backgroundColor: colors.card, zIndex: 10 }}>
-            <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
-              <th className="text-left py-3 px-4 text-xs font-medium w-12" style={{ color: colors.textSecondary }}>#</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Method</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Request Name</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>API</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status Code</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Duration</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Timestamp</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Correlation ID</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {requests.map((request, index) => {
-              const sequentialNumber = (pagination.page * pagination.size) + index + 1;
-              const statusColor = getStatusColor(request.requestStatus);
-              const statusText = getStatusText(request.requestStatus);
-              
-              return (
-                <tr 
-                  key={request.id || index}
-                  className="hover:bg-opacity-50 transition-colors cursor-pointer"
-                  style={{ borderBottom: `1px solid ${colors.border}`, backgroundColor: 'transparent' }}
-                  onClick={() => handleViewDetails(request)}
-                >
-                  <td className="py-3 px-4">
-                    <span className="text-sm font-mono" style={{ color: colors.textSecondary }}>
-                      {sequentialNumber}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColor }} />
-                      <span className="text-xs font-medium" style={{ color: statusColor }}>
-                        {statusText}
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Table container with scroll */}
+        <div className="flex-1 overflow-auto">
+          <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+            <thead className="sticky top-0" style={{ backgroundColor: colors.card, zIndex: 10 }}>
+              <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
+                <th className="text-left py-3 px-4 text-xs font-medium w-12" style={{ color: colors.textSecondary }}>#</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Method</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Request Name</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>API</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status Code</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Duration</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Timestamp</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Correlation ID</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {requests.map((request, index) => {
+                const sequentialNumber = (pagination.page * pagination.size) + index + 1;
+                const statusColor = getStatusColor(request.requestStatus);
+                const statusText = getStatusText(request.requestStatus);
+                
+                return (
+                  <tr 
+                    key={request.id || index}
+                    className="hover:bg-opacity-50 transition-colors cursor-pointer"
+                    style={{ borderBottom: `1px solid ${colors.border}`, backgroundColor: 'transparent' }}
+                    onClick={() => handleViewDetails(request)}
+                  >
+                    <td className="py-3 px-4">
+                      <span className="text-sm font-mono" style={{ color: colors.textSecondary }}>
+                        {sequentialNumber}
                       </span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs font-medium px-2 py-1 rounded" style={{ 
-                      backgroundColor: getMethodColor(request.httpMethod),
-                      color: 'white'
-                    }}>
-                      {request.httpMethod}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-sm" style={{ color: colors.text }}>{request.requestName || 'N/A'}</span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs" style={{ color: colors.textSecondary }}>{request.apiCode || 'N/A'}</span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-sm font-medium" style={{ color: getStatusCodeColorHelper(request.responseStatusCode) }}>
-                      {request.responseStatusCode || '-'}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-sm" style={{ color: colors.text }}>
-                      {formatExecutionTimeHelper(request.executionDurationMs)}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs" style={{ color: colors.textSecondary }}>
-                      {formatTimestamp(request.requestTimestamp)}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs font-mono" style={{ color: colors.textSecondary }}>
-                      {request.correlationId?.substring(0, 8)}...
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleViewDetails(request);
-                        }}
-                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                        style={{ backgroundColor: colors.hover }}
-                      >
-                        <Eye size={12} style={{ color: colors.textSecondary }} />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          copyToClipboard(JSON.stringify(request, null, 2));
-                        }}
-                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                        style={{ backgroundColor: colors.hover }}
-                      >
-                        <Copy size={12} style={{ color: colors.textSecondary }} />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteRequest(request.id);
-                        }}
-                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                        style={{ backgroundColor: colors.hover }}
-                      >
-                        <Trash2 size={12} style={{ color: colors.error }} />
-                      </button>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColor }} />
+                        <span className="text-xs font-medium" style={{ color: statusColor }}>
+                          {statusText}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs font-medium px-2 py-1 rounded" style={{ 
+                        backgroundColor: getMethodColor(request.httpMethod),
+                        color: 'white'
+                      }}>
+                        {request.httpMethod}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-sm" style={{ color: colors.text }}>{request.requestName || 'N/A'}</span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs" style={{ color: colors.textSecondary }}>{request.apiCode || 'N/A'}</span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-sm font-medium" style={{ color: getStatusCodeColorHelper(request.responseStatusCode) }}>
+                        {request.responseStatusCode || '-'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-sm" style={{ color: colors.text }}>
+                        {formatExecutionTimeHelper(request.executionDurationMs)}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs" style={{ color: colors.textSecondary }}>
+                        {formatTimestamp(request.requestTimestamp)}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs font-mono" style={{ color: colors.textSecondary }}>
+                        {request.correlationId?.substring(0, 8)}...
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewDetails(request);
+                          }}
+                          className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                          style={{ backgroundColor: colors.hover }}
+                        >
+                          <Eye size={12} style={{ color: colors.textSecondary }} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyToClipboard(JSON.stringify(request, null, 2));
+                          }}
+                          className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                          style={{ backgroundColor: colors.hover }}
+                        >
+                          <Copy size={12} style={{ color: colors.textSecondary }} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteRequest(request.id);
+                          }}
+                          className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                          style={{ backgroundColor: colors.hover }}
+                        >
+                          <Trash2 size={12} style={{ color: colors.error }} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              
+              {/* Pagination row - only shown when not on statistics tab */}
+              {activeTab !== 'statistics' && pagination.totalPages > 0 && (
+                <tr style={{ backgroundColor: colors.card }}>
+                  <td colSpan="10" className="py-3 px-4">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm" style={{ color: colors.textSecondary }}>
+                        Showing {requests.length > 0 ? pagination.page * pagination.size + 1 : 0} - {Math.min((pagination.page + 1) * pagination.size, pagination.totalElements)} of {pagination.totalElements}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setPagination(prev => ({ ...prev, page: prev.page - 1 }));
+                          }}
+                          disabled={pagination.page === 0}
+                          className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
+                          style={{ backgroundColor: colors.hover, color: colors.text }}
+                        >
+                          <ChevronLeft size={14} />
+                          Previous
+                        </button>
+                        <div className="flex items-center gap-1 px-2">
+                          <span className="text-sm font-medium" style={{ color: colors.text }}>
+                            {pagination.page + 1}
+                          </span>
+                          <span className="text-sm" style={{ color: colors.textSecondary }}>
+                            of {pagination.totalPages}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setPagination(prev => ({ ...prev, page: prev.page + 1 }));
+                          }}
+                          disabled={pagination.page >= pagination.totalPages - 1}
+                          className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
+                          style={{ backgroundColor: colors.hover, color: colors.text }}
+                        >
+                          Next
+                          <ChevronRight size={14} />
+                        </button>
+                      </div>
                     </div>
                   </td>
                 </tr>
-              );
-            })}
-            
-            {/* Pagination row - only shown when not on statistics tab */}
-            {activeTab !== 'statistics' && pagination.totalPages > 0 && (
-              <tr style={{ backgroundColor: colors.card }}>
-                <td colSpan="10" className="py-3 px-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm" style={{ color: colors.textSecondary }}>
-                      Showing {requests.length > 0 ? pagination.page * pagination.size + 1 : 0} - {Math.min((pagination.page + 1) * pagination.size, pagination.totalElements)} of {pagination.totalElements}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => {
-                          setPagination(prev => ({ ...prev, page: prev.page - 1 }));
-                        }}
-                        disabled={pagination.page === 0}
-                        className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
-                        style={{ backgroundColor: colors.hover, color: colors.text }}
-                      >
-                        <ChevronLeft size={14} />
-                        Previous
-                      </button>
-                      <div className="flex items-center gap-1 px-2">
-                        <span className="text-sm font-medium" style={{ color: colors.text }}>
-                          {pagination.page + 1}
-                        </span>
-                        <span className="text-sm" style={{ color: colors.textSecondary }}>
-                          of {pagination.totalPages}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setPagination(prev => ({ ...prev, page: prev.page + 1 }));
-                        }}
-                        disabled={pagination.page >= pagination.totalPages - 1}
-                        className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
-                        style={{ backgroundColor: colors.hover, color: colors.text }}
-                      >
-                        Next
-                        <ChevronRight size={14} />
-                      </button>
-                    </div>
-                  </div>
-                </td>
-              </tr>
-            )}
+              )}
 
-            {/* Empty state row */}
-            {requests.length === 0 && !isLoading.requests && (
-              <tr>
-                <td colSpan="10" className="text-center py-12">
-                  <FileText size={48} className="mx-auto mb-4 opacity-50" style={{ color: colors.textSecondary }} />
-                  <p className="text-lg mb-2" style={{ color: colors.text }}>No Requests Found</p>
-                  <p className="text-sm" style={{ color: colors.textSecondary }}>
-                    Try adjusting your filters or date range
-                  </p>
-                </td>
-              </tr>
-            )}
+              {/* Empty state row */}
+              {requests.length === 0 && !loading.initialLoad && !loading.refresh && (
+                <tr>
+                  <td colSpan="10" className="text-center py-12">
+                    <FileText size={48} className="mx-auto mb-4 opacity-50" style={{ color: colors.textSecondary }} />
+                    <p className="text-lg mb-2" style={{ color: colors.text }}>No Requests Found</p>
+                    <p className="text-sm" style={{ color: colors.textSecondary }}>
+                      Try adjusting your filters or date range
+                    </p>
+                  </td>
+                </tr>
+              )}
 
-            {/* Loading state row */}
-            {isLoading.requests && (
-              <tr>
-                <td colSpan="10" className="text-center py-12">
-                  <RefreshCw size={32} className="animate-spin mx-auto mb-4" style={{ color: colors.textSecondary }} />
-                  <p className="text-sm" style={{ color: colors.textSecondary }}>Loading requests...</p>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              {/* Loading state row - only shown when not in full overlay mode */}
+              {loading.refresh && requests.length === 0 && (
+                <tr>
+                  <td colSpan="10" className="text-center py-12">
+                    <RefreshCw size={32} className="animate-spin mx-auto mb-4" style={{ color: colors.textSecondary }} />
+                    <p className="text-sm" style={{ color: colors.textSecondary }}>Loading requests...</p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
+
+  // Determine which loading overlay to show
+  const showFullOverlay = loading.initialLoad || loading.export || loading.delete;
+  const loadingType = loading.initialLoad ? 'initialLoad' : 
+                     loading.export ? 'export' : 
+                     loading.delete ? 'delete' : 
+                     loading.refresh ? 'refresh' : '';
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ 
@@ -2223,6 +2298,13 @@ const loadRequests = useCallback(async () => {
         }
       `}</style>
 
+      {/* ============ LOADING OVERLAY ============ */}
+      <LoadingOverlay 
+        isLoading={showFullOverlay} 
+        loadingType={loadingType} 
+        colors={colors} 
+      />
+
       {/* Sidebar */}
       {renderSidebar()}
 
@@ -2260,7 +2342,9 @@ const loadRequests = useCallback(async () => {
             <button 
               onClick={() => setShowFilterModal(true)}
               className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-              style={{ backgroundColor: colors.hover }}>
+              style={{ backgroundColor: colors.hover }}
+              disabled={loading.initialLoad || loading.refresh}
+            >
               <Filter size={14} style={{ color: colors.textSecondary }} />
             </button>
 
@@ -2268,17 +2352,20 @@ const loadRequests = useCallback(async () => {
             <button 
               onClick={() => setShowExportModal(true)}
               className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-              style={{ backgroundColor: colors.hover }}>
+              style={{ backgroundColor: colors.hover }}
+              disabled={loading.initialLoad || loading.refresh}
+            >
               <DownloadCloud size={14} style={{ color: colors.textSecondary }} />
             </button>
 
             {/* Refresh Button */}
             <button 
               className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-              onClick={loadRequests}
-              disabled={isLoading.requests}
-              style={{ backgroundColor: colors.hover }}>
-              <RefreshCw size={14} className={isLoading.requests ? 'animate-spin' : ''} style={{ color: colors.textSecondary }} />
+              onClick={handleRefresh}
+              disabled={loading.initialLoad || loading.refresh}
+              style={{ backgroundColor: colors.hover }}
+            >
+              <RefreshCw size={14} className={loading.refresh ? 'animate-spin' : ''} style={{ color: colors.textSecondary }} />
             </button>
           </div>
         </div>
@@ -2342,6 +2429,7 @@ const loadRequests = useCallback(async () => {
             onChange={(e) => setDateRange({ ...dateRange, fromDate: e.target.value })}
             className="px-2 py-1 rounded text-sm"
             style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
+            disabled={loading.initialLoad || loading.refresh}
           />
           <span style={{ color: colors.textSecondary }}>to</span>
           <input
@@ -2350,6 +2438,7 @@ const loadRequests = useCallback(async () => {
             onChange={(e) => setDateRange({ ...dateRange, toDate: e.target.value })}
             className="px-2 py-1 rounded text-sm"
             style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
+            disabled={loading.initialLoad || loading.refresh}
           />
           <button
             onClick={() => {
@@ -2358,6 +2447,7 @@ const loadRequests = useCallback(async () => {
             }}
             className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors"
             style={{ backgroundColor: colors.primaryDark, color: 'white' }}
+            disabled={loading.initialLoad || loading.refresh}
           >
             Apply
           </button>

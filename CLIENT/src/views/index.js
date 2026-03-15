@@ -864,7 +864,7 @@ export default function EntryPage() {
   ];
 
   // Filter navigation items for UI display (hide user-mgt)
-  const visibleNavItems = navItems.filter(item => item.id !== "user-mgt");
+  const visibleNavItems = navItems.filter(item => item.id !== "user-mgt" && item.id !== "security");
 
   // Quick actions
   const quickActions = [
