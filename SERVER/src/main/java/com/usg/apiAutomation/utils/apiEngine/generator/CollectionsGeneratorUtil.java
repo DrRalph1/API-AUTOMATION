@@ -217,7 +217,7 @@ public class CollectionsGeneratorUtil {
 
         // Create variables for prod environment
         List<EnvironmentVariableEntity> prodVariables = Arrays.asList(
-                createEnvironmentVariable(savedProdEnv, "baseUrl", "https://api.example.com/v1", "string", true, generatedApiId),
+                createEnvironmentVariable(savedProdEnv, "baseUrl", "{{baseUrl}}", "string", true, generatedApiId),
                 createEnvironmentVariable(savedProdEnv, "apiKey", "{{prodApiKey}}", "string", true, generatedApiId),
                 createEnvironmentVariable(savedProdEnv, "timeout", "10000", "number", true, generatedApiId)
         );

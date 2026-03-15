@@ -293,7 +293,7 @@ const SearchInput = React.memo(({ value, onChange, onClear, colors, placeholder 
 ));
 
 // Right Sidebar Component
-const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigate, onGenerate }) => {
+const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigate, onGenerate, statsData }) => {
   const navigationItems = useMemo(() => [
     { label: 'Schema Browser', icon: FileCode, onClick: () => onNavigate('schema-browser'), color: colors.primary },
     { label: 'API Collections', icon: Database, onClick: () => onNavigate('api-collections'), color: colors.success },
@@ -301,8 +301,29 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
     { label: 'API Code Base', icon: Code, onClick: () => onNavigate('code-base'), color: colors.warning },
     { label: 'API Security', icon: Shield, onClick: () => onNavigate('security'), color: colors.error },
     { label: 'User Management', icon: UserCog, onClick: () => onNavigate('user-mgt'), color: colors.accentPurple },
-    // { label: 'API Requests', icon: TrendingUp, onClick: () => onNavigate('api-requests'), color: colors.secondary }
   ], [colors, onNavigate]);
+
+  // Format stats data for display
+  const stats = useMemo(() => {
+    if (!statsData?.data) return null;
+    return statsData.data;
+  }, [statsData]);
+
+  // Format date for display
+  const formattedDate = useMemo(() => {
+    if (!stats?.lastUpdated) return 'N/A';
+    try {
+      const date = new Date(stats.lastUpdated);
+      return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return 'N/A';
+    }
+  }, [stats?.lastUpdated]);
 
   return (
     <div className={`w-full md:w-80 border-l flex flex-col fixed md:relative inset-y-0 right-0 z-40 transform transition-transform duration-300 ease-in-out ${
@@ -323,7 +344,7 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
           <div className="p-1.5 rounded-lg" style={{ backgroundColor: `${colors.primary}20` }}>
             <Sliders size={14} style={{ color: colors.primary }} />
           </div>
-          <h3 className="text-sm font-semibold" style={{ color: colors.text }}>Quick Actions</h3>
+          <h3 className="text-sm font-semibold uppercase" style={{ color: colors.text }}>Quick Actions</h3>
         </div>
         <button onClick={onClose} className="md:hidden p-1.5 rounded-lg hover:bg-opacity-50 transition-colors" style={{ backgroundColor: colors.hover }}>
           <X size={16} style={{ color: colors.text }} />
@@ -333,10 +354,7 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
       <div className="flex-1 overflow-auto">
         <div className="p-4">
           <div className="space-y-3">
-            {/* <div className="text-xs font-medium mb-2 px-2" style={{ color: colors.textSecondary }}>
-              NAVIGATION
-            </div> */}
-            
+            {/* Navigation Items */}
             {navigationItems.map((item, index) => (
               <button 
                 key={index}
@@ -351,6 +369,134 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
                 <ChevronRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: colors.textSecondary }} />
               </button>
             ))}
+
+            <br />
+
+            {/* Stats Card - appears right after navigation items */}
+            {stats && (
+              <div className="mt-6 border-t">
+                {/* Simple header */}
+                <div className="pb-4 pt-4 pr-4 border-b flex items-center justify-between" style={{ 
+                  borderColor: colors.border,
+                  background: `linear-gradient(90deg, ${colors.primary}10, transparent)`
+                }}>
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg" style={{ backgroundColor: `${colors.primary}20` }}>
+                      <Sliders size={14} style={{ color: colors.primary }} />
+                    </div>
+                    <h3 className="text-sm font-semibold uppercase" style={{ color: colors.text }}>System Statistics</h3>
+                  </div>
+                  <button onClick={onClose} className="md:hidden p-1.5 rounded-lg hover:bg-opacity-50 transition-colors" style={{ backgroundColor: colors.hover }}>
+                    <X size={16} style={{ color: colors.text }} />
+                  </button>
+                </div>
+                
+                {/* Stats Card */}
+                <div 
+                  className="border rounded-xl overflow-hidden"
+                  style={{ borderColor: colors.border, backgroundColor: colors.card }}
+                >
+                  <div className="p-4 space-y-4">
+                    {/* Quick Stats - 2 columns */}
+                    {/* <div className="grid grid-cols-2 gap-3">
+                      <div className="text-center p-2 rounded-lg" style={{ backgroundColor: `${colors.primary}10` }}>
+                        <div className="text-xs" style={{ color: colors.textSecondary }}>Total APIs</div>
+                        <div className="text-xl font-bold" style={{ color: colors.primary }}>{stats.totalApis || 0}</div>
+                      </div>
+                      <div className="text-center p-2 rounded-lg" style={{ backgroundColor: `${colors.success}10` }}>
+                        <div className="text-xs" style={{ color: colors.textSecondary }}>Collections</div>
+                        <div className="text-xl font-bold" style={{ color: colors.success }}>{stats.totalCollections || 0}</div>
+                      </div>
+                    </div> */}
+
+                    {/* Stats rows - each on its own line */}
+                    <div className="space-y-2">
+                      {/* Security */}
+                      <div className="flex items-center justify-between py-1.5">
+                        <div className="flex items-center gap-2">
+                          <Shield size={14} style={{ color: colors.warning }} />
+                          <span className="text-xs" style={{ color: colors.textSecondary }}>Security Rules</span>
+                        </div>
+                        <div className="flex gap-3">
+                          <span className="text-xs" style={{ color: colors.text }}>
+                            Rate: <span style={{ color: colors.warning }}>{stats.totalRateLimitRules || 0}</span>
+                          </span>
+                          <span className="text-xs" style={{ color: colors.text }}>
+                            IP: <span style={{ color: colors.success }}>{stats.totalIpWhitelistEntries || 0}</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Security Alert - only if needed */}
+                      {stats.unreadSecurityAlerts > 0 && (
+                        <div className="flex items-center gap-2 py-1.5 px-2 rounded-lg" style={{ backgroundColor: `${colors.error}15` }}>
+                          <AlertCircle size={12} style={{ color: colors.error }} />
+                          <span className="text-xs" style={{ color: colors.error }}>
+                            {stats.unreadSecurityAlerts} unread alert{stats.unreadSecurityAlerts > 1 ? 's' : ''}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Code Base */}
+                      <div className="flex items-center justify-between py-1.5">
+                        <div className="flex items-center gap-2">
+                          <Code size={14} style={{ color: colors.info }} />
+                          <span className="text-xs" style={{ color: colors.textSecondary }}>Code Base</span>
+                        </div>
+                        <div className="flex gap-3">
+                          <span className="text-xs" style={{ color: colors.text }}>
+                            Impl: <span style={{ color: colors.warning }}>{stats.totalCodeImplementations?.toLocaleString() || 0}</span>
+                          </span>
+                          <span className="text-xs" style={{ color: colors.text }}>
+                            Lang: <span style={{ color: colors.info }}>{stats.supportedLanguages || 0}</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Users */}
+                      <div className="flex items-center justify-between py-1.5">
+                        <div className="flex items-center gap-2">
+                          <Users size={14} style={{ color: colors.primary }} />
+                          <span className="text-xs" style={{ color: colors.textSecondary }}>Users</span>
+                        </div>
+                        <div className="flex gap-3">
+                          <span className="text-xs" style={{ color: colors.text }}>
+                            Total: <span style={{ color: colors.primary }}>{stats.totalUsers || 0}</span>
+                          </span>
+                          <span className="text-xs" style={{ color: colors.text }}>
+                            Active: <span style={{ color: colors.success }}>{stats.activeUsers || 0}</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Documentation */}
+                      <div className="flex items-center justify-between py-1.5">
+                        <div className="flex items-center gap-2">
+                          <BookOpen size={14} style={{ color: colors.info }} />
+                          <span className="text-xs" style={{ color: colors.textSecondary }}>Documentation</span>
+                        </div>
+                        <div className="flex gap-3">
+                          <span className="text-xs" style={{ color: colors.text }}>
+                            Total: <span style={{ color: colors.info }}>{stats.totalDocumentationEndpoints || 0}</span>
+                          </span>
+                          <span className="text-xs" style={{ color: colors.text }}>
+                            Pub: <span style={{ color: colors.success }}>{stats.publishedDocumentation || 0}</span>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Last Updated - subtle separator */}
+                    <div className="pt-2 mt-1 border-t" style={{ borderColor: colors.border }}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs" style={{ color: colors.textTertiary }}>Last updated</span>
+                        <span className="text-xs" style={{ color: colors.textSecondary }}>{formattedDate}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -373,6 +519,9 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
     totalCalls: 0,
     totalCollections: 0
   });
+
+  // Add a new state for complete stats data:
+  const [completeStats, setCompleteStats] = useState(null);
   
   // Top collections state (first 3 by endpoints)
   const [topCollections, setTopCollections] = useState([]);
@@ -441,6 +590,10 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
       const handledResponse = handleDashboardResponse(response);
       
       if (handledResponse?.responseCode === 200 && handledResponse.data) {
+        // Store the complete response for the sidebar
+        setCompleteStats(handledResponse);
+        
+        // Store the 4 main stats for the cards
         setStats({
           totalApis: handledResponse.data.totalApis || 0,
           totalDocumentationEndpoints: handledResponse.data.totalDocumentationEndpoints || 0,
@@ -808,6 +961,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
           onClose={() => setIsRightSidebarVisible(false)}
           onNavigate={handleNavigate}
           onGenerate={handleApiGeneration}
+          statsData={completeStats} // Pass the complete stats, not the filtered stats
         />
 
         <div className="flex-1 overflow-auto p-4 h-full relative z-10">

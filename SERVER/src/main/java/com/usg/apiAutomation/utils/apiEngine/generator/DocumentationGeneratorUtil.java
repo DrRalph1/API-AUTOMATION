@@ -304,7 +304,7 @@ public class DocumentationGeneratorUtil {
         prodEnv.setId(UUID.randomUUID().toString());
         prodEnv.setGeneratedApiId(generatedApiId);
         prodEnv.setName("Production");
-        prodEnv.setBaseUrl("https://api.example.com/v1");
+        prodEnv.setBaseUrl("{{baseUrl}}");
         prodEnv.setActive(false);
         prodEnv.setDescription("Production environment");
         prodEnv.setCreatedBy(performedBy);

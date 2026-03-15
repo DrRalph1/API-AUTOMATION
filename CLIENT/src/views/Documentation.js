@@ -1921,10 +1921,10 @@ const fetchEndpointDetails = useCallback(async (collectionId, endpointId) => {
     const url = selectedRequest.url || selectedRequest.path || '';
     
     const examples = {
-      curl: `curl -X ${selectedRequest.method} "${baseUrl}${url}" \\
+      curl: `curl -X ${selectedRequest.method} "${url}" \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"`,
-      javascript: `fetch('${baseUrl}${url}', {
+      javascript: `fetch('${url}', {
   method: '${selectedRequest.method}',
   headers: {
     'Content-Type': 'application/json',
@@ -1938,7 +1938,7 @@ headers = {
     'Authorization': 'Bearer YOUR_ACCESS_TOKEN'
 }
 
-response = requests.${selectedRequest.method.toLowerCase()}('${baseUrl}${url}', 
+response = requests.${selectedRequest.method.toLowerCase()}('${url}', 
                         headers=headers)`,
       nodejs: `const https = require('https');
 
@@ -2201,6 +2201,9 @@ req.end();`
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="mb-8">
+          <h1 className="text-2xl font-semibold mb-4" style={{ color: colors.text }}>
+            {selectedRequest.name}
+          </h1>
           <div className="flex items-center gap-3 mb-2">
             <div className="px-3 py-1 rounded text-sm font-medium" style={{ 
               backgroundColor: getMethodColor(selectedRequest.method),
@@ -2209,17 +2212,11 @@ req.end();`
               {selectedRequest.method}
             </div>
             <code className="text-lg font-mono" style={{ color: colors.text }}>
-              {activeEnv?.baseUrl || ''}{selectedRequest.path || selectedRequest.url || ''}
+              {selectedRequest.path || selectedRequest.url || ''}
             </code>
           </div>
-          <h1 className="text-2xl font-semibold mb-4" style={{ color: colors.text }}>
-            {selectedRequest.name}
-          </h1>
-          <p className="text-base mb-6" style={{ color: colors.textSecondary }}>
-            {selectedRequest.description || endpointDetails.description}
-          </p>
           
-          <div className="flex flex-wrap items-center gap-4 text-sm mb-6">
+          <div className="flex flex-wrap items-center gap-4 text-sm mb-4 mt-4">
             <div style={{ color: colors.textTertiary }}>
               <Folder size={12} className="inline mr-1" />
               {selectedCollection?.name} › {selectedRequest.category || 'API'}
@@ -2257,6 +2254,10 @@ req.end();`
               </div>
             )}
           </div>
+
+          <p className="text-base mb-4 mt-4" style={{ color: colors.textSecondary }}>
+            {selectedRequest.description || endpointDetails.description}
+          </p>
         </div>
 
         {/* Request Details */}
