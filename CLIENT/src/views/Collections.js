@@ -695,6 +695,8 @@ const Collections = ({ theme, isDark, customTheme, toggleTheme, authToken }) => 
   const fetchInProgressRef = useRef(false);
   const lastRebuiltUrlRef = useRef('');
 
+  const [abortController, setAbortController] = useState(null);
+
   // Add these memoized callbacks near the top of the Collections component
   const memoizedSetSelectedLanguage = useCallback((lang) => {
     setSelectedLanguage(lang);
@@ -5790,6 +5792,15 @@ const renderBodyTab = () => {
     );
   };
 
+
+  // Add this function to cancel the request
+  const handleCancelRequest = useCallback(() => {
+    if (abortController) {
+      console.log('🛑 Cancelling request...');
+      abortController.abort();
+      setAbortController(null);
+    }
+  }, [abortController]);
  
   const handleExecuteRequest = useCallback(async () => {
   const validationErrors = validateExecuteRequest({
@@ -5802,6 +5813,10 @@ const renderBodyTab = () => {
     return;
   }
 
+  // Create new AbortController for this request
+  const controller = new AbortController();
+  setAbortController(controller);
+  
   setLoading(prev => ({ ...prev, execute: true }));
   setIsSending(true);
   setResponse(null);
@@ -5824,7 +5839,6 @@ const renderBodyTab = () => {
 
     // Replace path parameters in the URL
     if (pathParamsArray.length > 0) {
-      // First try to replace {param} placeholders
       pathParamsArray.forEach(param => {
         const placeholder = `{${param.key}}`;
         const colonPlaceholder = `:${param.key}`;
@@ -5839,23 +5853,12 @@ const renderBodyTab = () => {
           console.log(`✅ Replaced ${colonPlaceholder} with ${param.value}`);
         }
       });
-
-      // Check if any placeholders remain
-      const hasUnresolved = pathParamsArray.some(param => {
-        return finalUrl.includes(`{${param.key}}`) || finalUrl.includes(`:${param.key}`);
-      });
-
-      // If there are still placeholders, something's wrong
-      if (hasUnresolved) {
-        console.warn('⚠️ Some path parameters could not be resolved in URL:', finalUrl);
-      }
     }
 
     // ============== STEP 2: BUILD THE REQUEST BODY ==============
     let body = null;
     let contentType = '';
 
-    // CRITICAL FIX: Only build body if there are actual parameters to send
     const hasBodyParams = requestBodyType === 'raw' && requestBody && requestBody.trim() !== '' ||
                           requestBodyType === 'form-data' && formData.some(f => f.enabled && f.key && f.key.trim() !== '') ||
                           requestBodyType === 'x-www-form-urlencoded' && urlEncodedData.some(u => u.enabled && u.key && u.key.trim() !== '') ||
@@ -5870,13 +5873,13 @@ const renderBodyTab = () => {
             contentType = 'application/json';
             if (requestBody && requestBody.trim()) {
               try {
-                // Validate JSON but keep as string
                 JSON.parse(requestBody);
                 body = requestBody;
               } catch (e) {
                 showToast('Invalid JSON in request body', 'error');
                 setLoading(prev => ({ ...prev, execute: false }));
                 setIsSending(false);
+                setAbortController(null);
                 return;
               }
             }
@@ -5944,6 +5947,7 @@ const renderBodyTab = () => {
             showToast('Invalid GraphQL variables JSON', 'error');
             setLoading(prev => ({ ...prev, execute: false }));
             setIsSending(false);
+            setAbortController(null);
             return;
           }
         }
@@ -5959,12 +5963,10 @@ const renderBodyTab = () => {
     // ============== STEP 3: BUILD HEADERS ==============
     const headers = {};
     
-    // Add headers from Headers tab
     requestHeaders.filter(h => h.enabled && h.key && h.key.trim() !== '').forEach(header => {
       headers[header.key.trim()] = header.value || '';
     });
 
-    // Add authentication headers
     const hasApiKeyConfig = authConfig && (authConfig.type === 'apikey' || authConfig.authType === 'apikey');
     
     if (hasApiKeyConfig) {
@@ -5991,41 +5993,37 @@ const renderBodyTab = () => {
       headers['Authorization'] = `Bearer ${authConfig.token}`;
     }
 
-    // Set Content-Type header only if we have a body and it's not FormData
     if (body && !(body instanceof FormData)) {
       if (!headers['Content-Type'] && contentType) {
         headers['Content-Type'] = contentType;
       }
     }
 
-    // Set Accept header if not present
     if (!headers['Accept']) {
       headers['Accept'] = '*/*';
     }
 
-    // For GET and HEAD requests, ensure body is null
     if (requestMethod === 'GET' || requestMethod === 'HEAD') {
       body = null;
     }
 
-    // ============== STEP 4: LOG THE FINAL REQUEST ==============
     console.log('📤 Final Request Details:', {
       method: requestMethod,
       url: finalUrl,
       headers: headers,
       hasBody: !!body,
       bodyType: body instanceof FormData ? 'FormData' : (body ? typeof body : 'none'),
-      bodyContent: body ? (typeof body === 'string' ? body.substring(0, 200) : '[object]') : null,
       pathParams: pathParamsArray
     });
 
-    // ============== STEP 5: MAKE THE REQUEST ==============
+    // ============== STEP 4: MAKE THE REQUEST WITH ABORT CONTROLLER ==============
     const fetchOptions = {
       method: requestMethod,
       headers: headers,
       mode: 'cors',
       credentials: 'omit',
-      redirect: 'follow'
+      redirect: 'follow',
+      signal: controller.signal // Add the abort signal
     };
 
     if (body) {
@@ -6038,13 +6036,11 @@ const renderBodyTab = () => {
     
     const responseTime = Date.now() - startTime;
 
-    // Get response headers
     const responseHeaders = [];
     fetchResponse.headers.forEach((value, key) => {
       responseHeaders.push({ key, value });
     });
 
-    // Get response body based on content type
     let responseBody = '';
     const responseContentType = fetchResponse.headers.get('content-type') || '';
 
@@ -6068,7 +6064,6 @@ const renderBodyTab = () => {
       }
     }
 
-    // Format the response for display
     const formattedResponse = {
       responseBody,
       statusCode: fetchResponse.status,
@@ -6081,7 +6076,6 @@ const renderBodyTab = () => {
 
     setResponse(formattedResponse);
 
-    // Show appropriate toast based on status code
     if (fetchResponse.ok) {
       showToast(`✓ ${requestMethod} ${fetchResponse.status}`, 'success');
     } else if (fetchResponse.status >= 400 && fetchResponse.status < 500) {
@@ -6091,31 +6085,50 @@ const renderBodyTab = () => {
     }
 
   } catch (error) {
-    console.error('Error executing request:', error);
-    
-    const responseTime = Date.now() - startTime;
-    
-    setResponse({
-      responseBody: JSON.stringify({
-        error: error.message,
-        name: error.name,
-        message: error.message,
-        timestamp: new Date().toISOString(),
-        url: requestUrl,
-        method: requestMethod
-      }, null, 2),
-      statusCode: 0,
-      statusText: error.name || 'Request Failed',
-      headers: [],
-      responseTime,
-      responseSize: 0,
-      data: { error: error.message }
-    });
-    
-    showToast(`❌ Request failed: ${error.message}`, 'error');
+    // Check if this was an abort error
+    if (error.name === 'AbortError' || error.message === 'The user aborted a request.') {
+      console.log('🛑 Request cancelled by user');
+      setResponse({
+        responseBody: JSON.stringify({
+          message: 'Request was cancelled',
+          timestamp: new Date().toISOString(),
+          url: requestUrl,
+          method: requestMethod
+        }, null, 2),
+        statusCode: 0,
+        statusText: 'Cancelled',
+        headers: [],
+        responseTime: Date.now() - startTime,
+        responseSize: 0,
+        data: { message: 'Request was cancelled' }
+      });
+      showToast('Request cancelled', 'info');
+    } else {
+      console.error('Error executing request:', error);
+      
+      setResponse({
+        responseBody: JSON.stringify({
+          error: error.message,
+          name: error.name,
+          message: error.message,
+          timestamp: new Date().toISOString(),
+          url: requestUrl,
+          method: requestMethod
+        }, null, 2),
+        statusCode: 0,
+        statusText: error.name || 'Request Failed',
+        headers: [],
+        responseTime: Date.now() - startTime,
+        responseSize: 0,
+        data: { error: error.message }
+      });
+      
+      showToast(`❌ Request failed: ${error.message}`, 'error');
+    }
   } finally {
     setLoading(prev => ({ ...prev, execute: false }));
     setIsSending(false);
+    setAbortController(null);
   }
 }, [authToken, requestMethod, requestUrl, requestHeaders, requestBody, requestParams, requestPathParams, 
     authType, authConfig, requestBodyType, rawBodyType, formData, urlEncodedData, binaryFile, 
@@ -7468,62 +7481,110 @@ const renderResponseContent = () => {
 
           {/* REQUEST BUILDER */}
           <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-            {/* URL BAR */}
-            <div className="flex items-center gap-2 p-4 shrink-0" style={{ 
-              backgroundColor: colors.card
-            }}>
-              <select 
-                value={requestMethod} 
-                onChange={(e) => setRequestMethod(e.target.value)}
-                className="px-3 py-2 rounded text-sm font-medium focus:outline-none hover-lift shrink-0"
-                style={{ 
-                  backgroundColor: colors.inputBg,
-                  color: getMethodColor(requestMethod),
-                  border: `1px solid ${colors.inputborder}`,
-                  width: '100px'
-                }}>
-                {['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].map(method => (
-                  <option key={method} value={method}>{method}</option>
-                ))}
-              </select>
-              
-              {/* URL input */}
-              <div className="flex-1 flex items-center rounded overflow-hidden hover-lift min-w-0" style={{ 
-                border: `1px solid ${colors.inputborder}`
+           {/* URL BAR */}
+          <div className="flex items-center gap-2 p-4 shrink-0" style={{ 
+            backgroundColor: colors.card
+          }}>
+            <select 
+              value={requestMethod} 
+              onChange={(e) => setRequestMethod(e.target.value)}
+              className="px-3 py-2 rounded text-sm font-medium focus:outline-none hover-lift shrink-0"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                color: getMethodColor(requestMethod),
+                border: `1px solid ${colors.inputborder}`,
+                width: '100px'
               }}>
-                <input 
-                  ref={urlInputRef}
-                  type="text" 
-                  value={requestUrl} 
-                  onChange={handleUrlChange}
-                  onPaste={handleUrlPaste}
-                  className="flex-1 px-3 py-2 text-sm focus:outline-none min-w-0"
-                  style={{ backgroundColor: colors.inputBg, color: colors.text }}
-                  placeholder="Enter request URL" 
+              {['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].map(method => (
+                <option key={method} value={method}>{method}</option>
+              ))}
+            </select>
+            
+            {/* URL input with loading indicator */}
+            <div className="flex-1 flex items-center rounded overflow-hidden hover-lift min-w-0 relative" style={{ 
+              border: `1px solid ${isSending ? colors.primary : colors.inputborder}`,
+              boxShadow: isSending ? `0 0 0 2px ${colors.primary}20` : 'none',
+              transition: 'all 0.2s ease'
+            }}>
+              <input 
+                ref={urlInputRef}
+                type="text" 
+                value={requestUrl} 
+                onChange={handleUrlChange}
+                onPaste={handleUrlPaste}
+                disabled={isSending}
+                className="flex-1 px-3 py-2 text-sm focus:outline-none min-w-0 disabled:opacity-70"
+                style={{ 
+                  backgroundColor: colors.inputBg, 
+                  color: colors.text,
+                  cursor: isSending ? 'wait' : 'text'
+                }}
+                placeholder="Enter request URL" 
+              />
+              {isSending && (
+                <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
+                  <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0ms' }}></div>
+                  <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '150ms' }}></div>
+                  <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '300ms' }}></div>
+                </div>
+              )}
+            </div>
+            
+            {/* Send/Cancel button with enhanced states */}
+            <button 
+              type="button"
+              onClick={isSending ? handleCancelRequest : handleExecuteRequest} 
+              disabled={!isSending && (!requestUrl || loading.execute)}
+              className={`px-4 py-2 rounded text-sm font-medium flex items-center gap-2 transition-all hover-lift shrink-0 ${
+                (!isSending && (!requestUrl || loading.execute)) ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'
+              }`}
+              style={{ 
+                backgroundColor: isSending ? colors.success : colors.primaryDark, 
+                color: colors.white, 
+                minWidth: '100px',
+                position: 'relative',
+                overflow: 'hidden'
+              }}>
+              
+              {/* Background animation for sending state */}
+              {isSending && (
+                <div 
+                  className="absolute inset-0 bg-white opacity-10"
+                  style={{
+                    animation: 'shimmer 1.5s infinite linear',
+                    background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent)',
+                    transform: 'translateX(-100%)'
+                  }}
                 />
-              </div>
+              )}
               
-              <button 
-                type="button"
-                onClick={handleExecuteRequest} 
-                disabled={isSending || !requestUrl || loading.execute}
-                className={`px-4 py-2 rounded text-sm font-medium flex items-center gap-2 transition-colors hover-lift shrink-0 ${
-                  isSending || !requestUrl || loading.execute ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'
-                }`}
-                style={{ backgroundColor: colors.primaryDark, color: colors.white, minWidth: '80px' }}>
-                {loading.execute ? (
-                  <>
-                    <RefreshCw size={12} className="animate-spin" />
-                    <span>Sending...</span>
-                  </>
-                ) : (
-                  <>
-                    <Send size={12} />
-                    <span>Send</span>
-                  </>
-                )}
-              </button>
-              
+              {loading.execute && !isSending ? (
+                <>
+                  <RefreshCw size={12} className="animate-spin" />
+                  <span>Sending...</span>
+                </>
+              ) : isSending ? (
+                // <>
+                //   <div className="flex items-center gap-1">
+                //     <X size={12} />
+                //     <span>Cancel</span>
+                //   </div>
+                //   <span className="text-xs opacity-75 ml-1">(sending...)</span>
+                // </>
+                <>
+                  <RefreshCw size={12} className="animate-spin" />
+                  <span>Sending...</span>
+                </>
+              ) : (
+                <>
+                  <Send size={12} />
+                  <span>Send</span>
+                </>
+              )}
+            </button>
+            
+            {/* Save button - only show for unsaved requests */}
+            {selectedRequest && !selectedRequest.isSaved && (
               <button 
                 type="button"
                 className="px-3 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift shrink-0"
@@ -7534,7 +7595,7 @@ const renderResponseContent = () => {
                   minWidth: '60px'
                 }}
                 onClick={handleSaveRequest}
-                disabled={!selectedRequest || loading.save}>
+                disabled={loading.save}>
                 {loading.save ? (
                   <div className="flex items-center gap-2">
                     <RefreshCw size={12} className="animate-spin" />
@@ -7544,7 +7605,43 @@ const renderResponseContent = () => {
                   'Save'
                 )}
               </button>
+            )}
+          </div>
+
+          {/* Add this to your style section in the component */}
+          <style>{`
+            @keyframes shimmer {
+              0% { transform: translateX(-100%); }
+              100% { transform: translateX(100%); }
+            }
+            
+            .animate-shimmer {
+              animation: shimmer 1.5s infinite;
+            }
+          `}</style>
+
+          {/* Optional: Add a status bar at the top of response panel when sending */}
+          {isSending && (
+            <div 
+              className="px-4 py-2 text-sm flex items-center gap-2 border-t"
+              style={{ 
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                color: colors.textSecondary
+              }}
+            >
+              <RefreshCw size={12} className="animate-spin" style={{ color: colors.primary }} />
+              <span>Sending <span style={{ color: colors.primary }}>{requestMethod}</span> request to <span style={{ color: colors.primary }}>{requestUrl || 'URL'}</span>...</span>
+              <button
+                type="button"
+                onClick={handleCancelRequest}
+                className="ml-auto text-xs px-2 py-1 rounded hover:bg-opacity-50 transition-colors"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+              >
+                Cancel
+              </button>
             </div>
+          )}
 
             {/* REQUEST TABS (Params, Auth, Headers, etc.) */}
             <div className="flex items-center border-t border-b shrink-0" style={{ 

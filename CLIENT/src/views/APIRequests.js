@@ -272,6 +272,58 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
 
   const [activeTab, setActiveTab] = useState('request');
 
+  // Helper function for status code color
+  const getStatusCodeColorHelper = (code, colors) => {
+    if (!code) return colors.textSecondary;
+    if (code >= 200 && code < 300) return colors.success;
+    if (code >= 300 && code < 400) return colors.info;
+    if (code >= 400 && code < 500) return colors.warning;
+    if (code >= 500) return colors.error;
+    return colors.textSecondary;
+  };
+
+  // Helper function for request status color
+  const getRequestStatusColorHelper = (status, colors) => {
+    const statusMap = {
+      'SUCCESS': colors.success,
+      'FAILED': colors.error,
+      'TIMEOUT': colors.warning,
+      'PENDING': colors.info,
+      'ERROR': colors.error,
+      'CANCELLED': colors.textSecondary,
+      'RETRY': colors.warning
+    };
+    return statusMap[status] || colors.textSecondary;
+  };
+
+  // Helper function to check if request was successful
+  const isRequestSuccessfulHelper = (request) => {
+    return request?.responseStatusCode >= 200 && request?.responseStatusCode < 300;
+  };
+
+  // Helper function to format request timestamp
+  const formatRequestTimestampHelper = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    try {
+      return new Date(timestamp).toLocaleString();
+    } catch (e) {
+      return timestamp;
+    }
+  };
+
+  // Helper function to format execution time
+  const formatExecutionTimeHelper = (ms) => {
+    if (!ms) return 'N/A';
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
+    return `${(ms / 60000).toFixed(2)}m`;
+  };
+
+  // Helper function to copy to clipboard
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+  };
+
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50">
       {/* Blurred Backdrop */}
@@ -291,14 +343,14 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
             </h2>
             <div className="flex items-center gap-2">
               <span className="text-xs px-2 py-1 rounded" style={{ 
-                backgroundColor: getStatusCodeColor(request.responseStatusCode, colors),
+                backgroundColor: getStatusCodeColorHelper(request.responseStatusCode, colors),
                 color: 'white'
               }}>
                 {request.responseStatusCode || 'Pending'}
               </span>
               <span className="text-xs px-2 py-1 rounded" style={{ 
-                backgroundColor: `${getRequestStatusColor(request.requestStatus, colors)}20`,
-                color: getRequestStatusColor(request.requestStatus, colors)
+                backgroundColor: `${getRequestStatusColorHelper(request.requestStatus, colors)}20`,
+                color: getRequestStatusColorHelper(request.requestStatus, colors)
               }}>
                 {request.requestStatus || 'PENDING'}
               </span>
@@ -336,27 +388,27 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
                     <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Request Name</div>
-                    <div className="text-sm font-medium" style={{ color: colors.text }}>{request.requestName}</div>
+                    <div className="text-sm font-medium" style={{ color: colors.text }}>{request.requestName || 'N/A'}</div>
                   </div>
                   <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
                     <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Correlation ID</div>
-                    <div className="text-xs font-mono break-all" style={{ color: colors.text }}>{request.correlationId}</div>
+                    <div className="text-xs font-mono break-all" style={{ color: colors.text }}>{request.correlationId || 'N/A'}</div>
                   </div>
                   <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
                     <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>HTTP Method</div>
-                    <div className="text-sm font-medium" style={{ color: colors.text }}>{request.httpMethod}</div>
+                    <div className="text-sm font-medium" style={{ color: colors.text }}>{request.httpMethod || 'N/A'}</div>
                   </div>
                   <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
                     <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>URL</div>
-                    <div className="text-xs font-mono break-all" style={{ color: colors.text }}>{request.url}</div>
+                    <div className="text-xs font-mono break-all" style={{ color: colors.text }}>{request.url || 'N/A'}</div>
                   </div>
                   <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
                     <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>API Name</div>
-                    <div className="text-sm" style={{ color: colors.text }}>{request.apiName}</div>
+                    <div className="text-sm" style={{ color: colors.text }}>{request.apiName || 'N/A'}</div>
                   </div>
                   <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
                     <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>API Code</div>
-                    <div className="text-sm font-mono" style={{ color: colors.text }}>{request.apiCode}</div>
+                    <div className="text-sm font-mono" style={{ color: colors.text }}>{request.apiCode || 'N/A'}</div>
                   </div>
                 </div>
               </div>
@@ -398,7 +450,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                   <div className="p-3 rounded max-h-60 overflow-auto" style={{ backgroundColor: colors.codeBg }}>
                     <SyntaxHighlighter 
                       language="json"
-                      code={JSON.stringify(request.requestBody, null, 2)}
+                      code={typeof request.requestBody === 'object' ? JSON.stringify(request.requestBody, null, 2) : String(request.requestBody)}
                     />
                   </div>
                 </div>
@@ -433,7 +485,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                   <div className="p-3 rounded max-h-96 overflow-auto" style={{ backgroundColor: colors.codeBg }}>
                     <SyntaxHighlighter 
                       language="json"
-                      code={JSON.stringify(request.responseBody, null, 2)}
+                      code={typeof request.responseBody === 'object' ? JSON.stringify(request.responseBody, null, 2) : String(request.responseBody)}
                     />
                   </div>
                 </div>
@@ -514,7 +566,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                 <div className="relative">
                   <div className="absolute left-[-24px] top-0 w-3 h-3 rounded-full" style={{ backgroundColor: colors.info }} />
                   <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Request Created</div>
-                  <div className="text-sm" style={{ color: colors.text }}>{formatRequestTimestamp(request.createdAt)}</div>
+                  <div className="text-sm" style={{ color: colors.text }}>{formatRequestTimestampHelper(request.createdAt)}</div>
                 </div>
 
                 {/* Request Sent */}
@@ -522,7 +574,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                   <div className="relative">
                     <div className="absolute left-[-24px] top-0 w-3 h-3 rounded-full" style={{ backgroundColor: colors.primary }} />
                     <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Request Sent</div>
-                    <div className="text-sm" style={{ color: colors.text }}>{formatRequestTimestamp(request.requestTimestamp)}</div>
+                    <div className="text-sm" style={{ color: colors.text }}>{formatRequestTimestampHelper(request.requestTimestamp)}</div>
                   </div>
                 )}
 
@@ -530,10 +582,10 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                 {request.responseTimestamp && (
                   <div className="relative">
                     <div className="absolute left-[-24px] top-0 w-3 h-3 rounded-full" style={{ 
-                      backgroundColor: isRequestSuccessful(request) ? colors.success : colors.error 
+                      backgroundColor: isRequestSuccessfulHelper(request) ? colors.success : colors.error 
                     }} />
                     <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Response Received</div>
-                    <div className="text-sm" style={{ color: colors.text }}>{formatRequestTimestamp(request.responseTimestamp)}</div>
+                    <div className="text-sm" style={{ color: colors.text }}>{formatRequestTimestampHelper(request.responseTimestamp)}</div>
                   </div>
                 )}
               </div>
@@ -544,7 +596,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                   <div className="flex items-center justify-between">
                     <span className="text-sm" style={{ color: colors.textSecondary }}>Total Duration:</span>
                     <span className="text-xl font-semibold" style={{ color: colors.text }}>
-                      {formatExecutionTime(request.executionDurationMs)}
+                      {formatExecutionTimeHelper(request.executionDurationMs)}
                     </span>
                   </div>
                 </div>
@@ -607,19 +659,19 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
                 <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
                   <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Avg Response Time</div>
                   <div className="text-lg font-semibold" style={{ color: colors.text }}>
-                    {formatExecutionTime(request.summary.averageResponseTime || 0)}
+                    {formatExecutionTimeHelper(request.summary.averageResponseTime || 0)}
                   </div>
                 </div>
                 <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
                   <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Min Response Time</div>
                   <div className="text-lg font-semibold" style={{ color: colors.text }}>
-                    {formatExecutionTime(request.summary.minResponseTime || 0)}
+                    {formatExecutionTimeHelper(request.summary.minResponseTime || 0)}
                   </div>
                 </div>
                 <div className="p-3 rounded" style={{ backgroundColor: colors.hover }}>
                   <div className="text-xs mb-1" style={{ color: colors.textSecondary }}>Max Response Time</div>
                   <div className="text-lg font-semibold" style={{ color: colors.text }}>
-                    {formatExecutionTime(request.summary.maxResponseTime || 0)}
+                    {formatExecutionTimeHelper(request.summary.maxResponseTime || 0)}
                   </div>
                 </div>
               </div>
@@ -656,6 +708,11 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
 const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
   const [localFilters, setLocalFilters] = useState(filters || {});
 
+  // Update local filters when prop changes
+  useEffect(() => {
+    setLocalFilters(filters || {});
+  }, [filters]);
+
   if (!isOpen) return null;
 
   return (
@@ -680,7 +737,7 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
             <label className="text-xs mb-1 block" style={{ color: colors.textSecondary }}>Status</label>
             <select
               value={localFilters.requestStatus || ''}
-              onChange={(e) => setLocalFilters({ ...localFilters, requestStatus: e.target.value })}
+              onChange={(e) => setLocalFilters({ ...localFilters, requestStatus: e.target.value || undefined })}
               className="w-full px-3 py-2 rounded text-sm"
               style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
             >
@@ -697,7 +754,7 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
             <label className="text-xs mb-1 block" style={{ color: colors.textSecondary }}>HTTP Method</label>
             <select
               value={localFilters.httpMethod || ''}
-              onChange={(e) => setLocalFilters({ ...localFilters, httpMethod: e.target.value })}
+              onChange={(e) => setLocalFilters({ ...localFilters, httpMethod: e.target.value || undefined })}
               className="w-full px-3 py-2 rounded text-sm"
               style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
             >
@@ -718,7 +775,7 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
             <input
               type="number"
               value={localFilters.responseStatusCode || ''}
-              onChange={(e) => setLocalFilters({ ...localFilters, responseStatusCode: e.target.value ? parseInt(e.target.value) : null })}
+              onChange={(e) => setLocalFilters({ ...localFilters, responseStatusCode: e.target.value ? parseInt(e.target.value) : undefined })}
               placeholder="e.g., 200, 404, 500"
               className="w-full px-3 py-2 rounded text-sm"
               style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
@@ -731,7 +788,7 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
             <input
               type="text"
               value={localFilters.apiId || ''}
-              onChange={(e) => setLocalFilters({ ...localFilters, apiId: e.target.value })}
+              onChange={(e) => setLocalFilters({ ...localFilters, apiId: e.target.value || undefined })}
               placeholder="Filter by API ID"
               className="w-full px-3 py-2 rounded text-sm"
               style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
@@ -744,7 +801,7 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
             <input
               type="text"
               value={localFilters.correlationId || ''}
-              onChange={(e) => setLocalFilters({ ...localFilters, correlationId: e.target.value })}
+              onChange={(e) => setLocalFilters({ ...localFilters, correlationId: e.target.value || undefined })}
               placeholder="Filter by Correlation ID"
               className="w-full px-3 py-2 rounded text-sm"
               style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
@@ -758,14 +815,14 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
               <input
                 type="datetime-local"
                 value={localFilters.fromDate || ''}
-                onChange={(e) => setLocalFilters({ ...localFilters, fromDate: e.target.value })}
+                onChange={(e) => setLocalFilters({ ...localFilters, fromDate: e.target.value || undefined })}
                 className="px-3 py-2 rounded text-sm"
                 style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
               />
               <input
                 type="datetime-local"
                 value={localFilters.toDate || ''}
-                onChange={(e) => setLocalFilters({ ...localFilters, toDate: e.target.value })}
+                onChange={(e) => setLocalFilters({ ...localFilters, toDate: e.target.value || undefined })}
                 className="px-3 py-2 rounded text-sm"
                 style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
               />
@@ -779,7 +836,7 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
               <input
                 type="number"
                 value={localFilters.minDuration || ''}
-                onChange={(e) => setLocalFilters({ ...localFilters, minDuration: e.target.value ? parseInt(e.target.value) : null })}
+                onChange={(e) => setLocalFilters({ ...localFilters, minDuration: e.target.value ? parseInt(e.target.value) : undefined })}
                 placeholder="Min"
                 className="px-3 py-2 rounded text-sm"
                 style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
@@ -787,7 +844,7 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
               <input
                 type="number"
                 value={localFilters.maxDuration || ''}
-                onChange={(e) => setLocalFilters({ ...localFilters, maxDuration: e.target.value ? parseInt(e.target.value) : null })}
+                onChange={(e) => setLocalFilters({ ...localFilters, maxDuration: e.target.value ? parseInt(e.target.value) : undefined })}
                 placeholder="Max"
                 className="px-3 py-2 rounded text-sm"
                 style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
@@ -801,7 +858,7 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
             <input
               type="text"
               value={localFilters.clientIpAddress || ''}
-              onChange={(e) => setLocalFilters({ ...localFilters, clientIpAddress: e.target.value })}
+              onChange={(e) => setLocalFilters({ ...localFilters, clientIpAddress: e.target.value || undefined })}
               placeholder="e.g., 192.168.1.1"
               className="w-full px-3 py-2 rounded text-sm"
               style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
@@ -813,7 +870,7 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
             <input
               type="text"
               value={localFilters.sourceApplication || ''}
-              onChange={(e) => setLocalFilters({ ...localFilters, sourceApplication: e.target.value })}
+              onChange={(e) => setLocalFilters({ ...localFilters, sourceApplication: e.target.value || undefined })}
               placeholder="e.g., web, mobile, api"
               className="w-full px-3 py-2 rounded text-sm"
               style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
@@ -825,7 +882,7 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
             <input
               type="text"
               value={localFilters.requestedBy || ''}
-              onChange={(e) => setLocalFilters({ ...localFilters, requestedBy: e.target.value })}
+              onChange={(e) => setLocalFilters({ ...localFilters, requestedBy: e.target.value || undefined })}
               placeholder="Username"
               className="w-full px-3 py-2 rounded text-sm"
               style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
@@ -1072,6 +1129,14 @@ const ExportModal = ({ colors, isOpen, onClose, onExport }) => {
 const StatsCards = ({ statistics, systemStats, colors, onRefresh }) => {
   const stats = systemStats || statistics || {};
 
+  // Helper function to format execution time
+  const formatExecutionTimeHelper = (ms) => {
+    if (!ms) return 'N/A';
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
+    return `${(ms / 60000).toFixed(2)}m`;
+  };
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
       <div className="p-4 rounded-lg border hover:shadow-lg transition-all" style={{ 
@@ -1126,7 +1191,7 @@ const StatsCards = ({ statistics, systemStats, colors, onRefresh }) => {
           <ClockIcon size={18} style={{ color: colors.warning }} />
         </div>
         <div className="text-2xl font-bold" style={{ color: colors.text }}>
-          {formatExecutionTime(stats.averageResponseTime || 0)}
+          {formatExecutionTimeHelper(stats.averageResponseTime || 0)}
         </div>
         <div className="text-xs mt-1 flex items-center gap-1">
           {stats.avgResponseChange < 0 ? (
@@ -1255,15 +1320,15 @@ const TimeSeriesChart = ({ stats, colors }) => {
           <div key={index} className="space-y-1">
             <div className="flex items-center justify-between text-xs">
               <span style={{ color: colors.textSecondary }}>
-                {new Date(point.timestamp).toLocaleString()}
+                {point.timestamp ? new Date(point.timestamp).toLocaleString() : 'N/A'}
               </span>
-              <span style={{ color: colors.text }}>{point.requestCount}</span>
+              <span style={{ color: colors.text }}>{point.requestCount || 0}</span>
             </div>
             <div className="w-full h-1.5 rounded-full" style={{ backgroundColor: colors.hover }}>
               <div 
                 className="h-1.5 rounded-full transition-all"
                 style={{ 
-                  width: `${(point.requestCount / maxCount) * 100}%`,
+                  width: `${((point.requestCount || 0) / maxCount) * 100}%`,
                   backgroundColor: colors.primary
                 }}
               />
@@ -1300,7 +1365,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [toast, setToast] = useState(null);
   const [pagination, setPagination] = useState({
     page: 0,
-    size: 20,
+    size: 10,
     totalElements: 0,
     totalPages: 0
   });
@@ -1312,63 +1377,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [selectedApiId, setSelectedApiId] = useState(null);
   const [apiSummary, setApiSummary] = useState(null);
 
-  const loadRequestsWithFilters = useCallback(async (customFilters = null) => {
-  if (!authToken) {
-    showToast('Authentication required', 'error');
-    return;
-  }
-
-  setIsLoading(prev => ({ ...prev, requests: true }));
-
-  try {
-    // Use custom filters if provided, otherwise use state filters
-    const filtersToUse = customFilters || filters;
-    
-    const filter = {
-      ...filtersToUse,
-      page: pagination.page,
-      size: pagination.size,
-      fromDate: dateRange.fromDate,
-      toDate: dateRange.toDate,
-      search: searchQuery,
-      apiId: selectedApiId
-    };
-
-    const response = await searchRequests(authToken, filter);
-    
-    if (response?.responseCode === 200) {
-      const data = response.data;
-      setRequests(data.content || []);
-      setPagination({
-        page: data.currentPage || 0,
-        size: data.pageSize || 20,
-        totalElements: data.totalElements || 0,
-        totalPages: data.totalPages || 0
-      });
-
-      // Set API summary from first request if available
-      if (data.content && data.content.length > 0 && data.content[0].summary) {
-        setApiSummary(data.content[0].summary);
-      } else {
-        setApiSummary(null);
-      }
-    } else {
-      showToast(response?.message || 'Failed to load requests', 'error');
-    }
-  } catch (error) {
-    console.error('Error loading requests:', error);
-    showToast(error.message || 'Failed to load requests', 'error');
-  } finally {
-    setIsLoading(prev => ({ ...prev, requests: false }));
-  }
-}, [authToken, filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId]);
-
-
-useEffect(() => {
-  if (authToken && activeTab === 'all') {
-    loadRequests();
-  }
-}, [filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId, authToken, activeTab]);
+  const searchTimer = useRef(null);
 
   // Color scheme (same as CodeBase)
   const colors = isDark ? {
@@ -1463,24 +1472,24 @@ useEffect(() => {
   };
 
   // Get status color and text
-const getStatusColor = (status) => {
-  const colors_map = {
-    'SUCCESS': colors.success,
-    'FAILED': colors.error,
-    'TIMEOUT': colors.warning,
-    'PENDING': colors.info,
-    'ERROR': colors.error,
-    'CANCELLED': colors.textSecondary,
-    'RETRY': colors.warning
+  const getStatusColor = (status) => {
+    const colors_map = {
+      'SUCCESS': colors.success,
+      'FAILED': colors.error,
+      'TIMEOUT': colors.warning,
+      'PENDING': colors.info,
+      'ERROR': colors.error,
+      'CANCELLED': colors.textSecondary,
+      'RETRY': colors.warning
+    };
+    return colors_map[status] || colors.textSecondary;
   };
-  return colors_map[status] || colors.textSecondary;
-};
 
-const getStatusText = (status) => {
-  if (!status) return 'UNKNOWN';
-  // Convert to proper case (e.g., 'SUCCESS' -> 'Success', 'TIMEOUT' -> 'Timeout')
-  return status.charAt(0) + status.slice(1).toLowerCase();
-};
+  const getStatusText = (status) => {
+    if (!status) return 'UNKNOWN';
+    // Convert to proper case (e.g., 'SUCCESS' -> 'Success', 'TIMEOUT' -> 'Timeout')
+    return status.charAt(0) + status.slice(1).toLowerCase();
+  };
 
   // Get method color
   const getMethodColor = (method) => {
@@ -1499,8 +1508,26 @@ const getStatusText = (status) => {
   };
 
   // Check if request was successful
-  const isRequestSuccessful = (request) => {
+  const isRequestSuccessfulHelper = (request) => {
     return request?.responseStatusCode >= 200 && request?.responseStatusCode < 300;
+  };
+
+  // Format execution time
+  const formatExecutionTimeHelper = (ms) => {
+    if (!ms) return 'N/A';
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
+    return `${(ms / 60000).toFixed(2)}m`;
+  };
+
+  // Get status code color
+  const getStatusCodeColorHelper = (code) => {
+    if (!code) return colors.textSecondary;
+    if (code >= 200 && code < 300) return colors.success;
+    if (code >= 300 && code < 400) return colors.info;
+    if (code >= 400 && code < 500) return colors.warning;
+    if (code >= 500) return colors.error;
+    return colors.textSecondary;
   };
 
   // Load requests with filters
@@ -1519,9 +1546,12 @@ const getStatusText = (status) => {
         size: pagination.size,
         fromDate: dateRange.fromDate,
         toDate: dateRange.toDate,
-        search: searchQuery,
-        apiId: selectedApiId
+        search: searchQuery || undefined,
+        apiId: selectedApiId || undefined
       };
+
+      // Remove undefined values
+      Object.keys(filter).forEach(key => filter[key] === undefined && delete filter[key]);
 
       const response = await searchRequests(authToken, filter);
       
@@ -1530,7 +1560,7 @@ const getStatusText = (status) => {
         setRequests(data.content || []);
         setPagination({
           page: data.currentPage || 0,
-          size: data.pageSize || 20,
+          size: data.pageSize || 10,
           totalElements: data.totalElements || 0,
           totalPages: data.totalPages || 0
         });
@@ -1711,27 +1741,22 @@ const getStatusText = (status) => {
   const handleApiSelect = (apiId) => {
     setSelectedApiId(apiId);
     setPagination(prev => ({ ...prev, page: 0 }));
-    // Load requests immediately after selecting API
-    setTimeout(() => loadRequests(), 0);
   };
 
   // Handle search with debounce
   const handleSearchChange = (e) => {
-  const query = e.target.value;
-  setSearchQuery(query);
-  setPagination(prev => ({ ...prev, page: 0 }));
-  
-  if (searchTimer.current) {
-    clearTimeout(searchTimer.current);
-  }
-  
-  searchTimer.current = setTimeout(() => {
-    // This will now work because searchQuery state is updated
-    loadRequests();
-  }, 500);
-};
-
-  const searchTimer = useRef(null);
+    const query = e.target.value;
+    setSearchQuery(query);
+    setPagination(prev => ({ ...prev, page: 0 }));
+    
+    if (searchTimer.current) {
+      clearTimeout(searchTimer.current);
+    }
+    
+    searchTimer.current = setTimeout(() => {
+      loadRequests();
+    }, 500);
+  };
 
   // Initial load
   useEffect(() => {
@@ -1764,6 +1789,13 @@ const getStatusText = (status) => {
     }
   }, [activeTab, authToken, loadStatistics, loadRequests, loadRecentRequests]);
 
+  // Handle filter changes
+  useEffect(() => {
+    if (authToken && activeTab === 'all') {
+      loadRequests();
+    }
+  }, [filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId, authToken, activeTab, loadRequests]);
+
   // Get unique APIs from requests
   const uniqueApis = React.useMemo(() => {
     const apis = {};
@@ -1780,7 +1812,7 @@ const getStatusText = (status) => {
       }
       if (req.apiId && apis[req.apiId]) {
         apis[req.apiId].count++;
-        if (isRequestSuccessful(req)) {
+        if (isRequestSuccessfulHelper(req)) {
           apis[req.apiId].successCount++;
         } else {
           apis[req.apiId].failedCount++;
@@ -1956,19 +1988,19 @@ const getStatusText = (status) => {
                     </span>
                   </td>
                   <td className="py-3 px-4">
-                    <span className="text-sm" style={{ color: colors.text }}>{request.requestName}</span>
+                    <span className="text-sm" style={{ color: colors.text }}>{request.requestName || 'N/A'}</span>
                   </td>
                   <td className="py-3 px-4">
-                    <span className="text-xs" style={{ color: colors.textSecondary }}>{request.apiCode}</span>
+                    <span className="text-xs" style={{ color: colors.textSecondary }}>{request.apiCode || 'N/A'}</span>
                   </td>
                   <td className="py-3 px-4">
-                    <span className="text-sm font-medium" style={{ color: getStatusCodeColor(request.responseStatusCode, colors) }}>
+                    <span className="text-sm font-medium" style={{ color: getStatusCodeColorHelper(request.responseStatusCode) }}>
                       {request.responseStatusCode || '-'}
                     </span>
                   </td>
                   <td className="py-3 px-4">
                     <span className="text-sm" style={{ color: colors.text }}>
-                      {formatExecutionTime(request.executionDurationMs)}
+                      {formatExecutionTimeHelper(request.executionDurationMs)}
                     </span>
                   </td>
                   <td className="py-3 px-4">
@@ -2114,6 +2146,19 @@ const getStatusText = (status) => {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Search Input */}
+            <div className="relative">
+              <Search size={14} className="absolute left-2 top-1/2 transform -translate-y-1/2" style={{ color: colors.textSecondary }} />
+              <input
+                type="text"
+                placeholder="Search requests..."
+                value={searchQuery}
+                onChange={handleSearchChange}
+                className="pl-8 pr-3 py-1.5 rounded text-sm w-64"
+                style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
+              />
+            </div>
+
             {/* Filter Button */}
             <button 
               onClick={() => setShowFilterModal(true)}
@@ -2151,36 +2196,6 @@ const getStatusText = (status) => {
 
 
         <div className="w-full p-4 mt-2 -mb-2 space-y-6">
-          {/* Date Range Selector */}
-          {/* <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold" style={{ color: colors.text }}>Request Statistics</h2>
-            <div className="flex items-center gap-3">
-              <input
-                type="datetime-local"
-                value={dateRange.fromDate}
-                onChange={(e) => setDateRange({ ...dateRange, fromDate: e.target.value })}
-                className="px-3 py-1.5 rounded text-sm"
-                style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-              />
-              <span style={{ color: colors.textSecondary }}>to</span>
-              <input
-                type="datetime-local"
-                value={dateRange.toDate}
-                onChange={(e) => setDateRange({ ...dateRange, toDate: e.target.value })}
-                className="px-3 py-1.5 rounded text-sm"
-                style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text }}
-              />
-              <button
-                onClick={loadStatistics}
-                className="px-3 py-1.5 rounded text-sm font-medium hover:bg-opacity-50 transition-colors flex items-center gap-1"
-                style={{ backgroundColor: colors.primaryDark, color: 'white' }}
-              >
-                <RefreshCw size={14} />
-                Apply
-              </button>
-            </div>
-          </div> */}
-
           {/* Stats Cards */}
           <StatsCards 
             statistics={statistics}
@@ -2188,15 +2203,6 @@ const getStatusText = (status) => {
             colors={colors}
             onRefresh={loadStatistics}
           />
-
-          {/* Charts Grid */}
-          {/* <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <MethodDistribution stats={systemStats || {}} colors={colors} />
-            <StatusCodeDistribution stats={systemStats || {}} colors={colors} />
-          </div> */}
-
-          {/* Time Series */}
-          {/* <TimeSeriesChart stats={systemStats || {}} colors={colors} /> */}
         </div>
 
         {/* API Summary Bar (if API selected) */}
@@ -2209,19 +2215,19 @@ const getStatusText = (status) => {
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1">
                 <CheckCircle size={12} style={{ color: colors.success }} />
-                <span className="text-xs" style={{ color: colors.text }}>Success: {apiSummary.successfulRequests}</span>
+                <span className="text-xs" style={{ color: colors.text }}>Success: {apiSummary.successfulRequests || 0}</span>
               </div>
               <div className="flex items-center gap-1">
                 <XCircle size={12} style={{ color: colors.error }} />
-                <span className="text-xs" style={{ color: colors.text }}>Failed: {apiSummary.failedRequests}</span>
+                <span className="text-xs" style={{ color: colors.text }}>Failed: {apiSummary.failedRequests || 0}</span>
               </div>
               <div className="flex items-center gap-1">
                 <ClockIcon size={12} style={{ color: colors.warning }} />
-                <span className="text-xs" style={{ color: colors.text }}>Avg: {formatExecutionTime(apiSummary.averageResponseTime)}</span>
+                <span className="text-xs" style={{ color: colors.text }}>Avg: {formatExecutionTimeHelper(apiSummary.averageResponseTime)}</span>
               </div>
               <div className="flex items-center gap-1">
                 <Activity size={12} style={{ color: colors.info }} />
-                <span className="text-xs" style={{ color: colors.text }}>Today: {apiSummary.requestCountToday}</span>
+                <span className="text-xs" style={{ color: colors.text }}>Today: {apiSummary.requestCountToday || 0}</span>
               </div>
             </div>
           </div>
@@ -2279,7 +2285,6 @@ const getStatusText = (status) => {
               <button
                 onClick={() => {
                   setPagination(prev => ({ ...prev, page: prev.page - 1 }));
-                  loadRequests();
                 }}
                 disabled={pagination.page === 0}
                 className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50"
@@ -2293,7 +2298,6 @@ const getStatusText = (status) => {
               <button
                 onClick={() => {
                   setPagination(prev => ({ ...prev, page: prev.page + 1 }));
-                  loadRequests();
                 }}
                 disabled={pagination.page >= pagination.totalPages - 1}
                 className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50"
@@ -2323,7 +2327,6 @@ const getStatusText = (status) => {
         onApply={(newFilters) => {
           setFilters(newFilters);
           setPagination(prev => ({ ...prev, page: 0 }));
-          // No need to call loadRequests here - useEffect will handle it
         }}
       />
 

@@ -448,7 +448,7 @@ export const searchRequests = async (authorizationHeader, filter = {}) => {
                 totalElements: 0,
                 totalPages: 0,
                 currentPage: 0,
-                pageSize: 20
+                pageSize: 10
             },
             requestId
         };
@@ -1355,7 +1355,7 @@ export const buildFilterFromQuery = (queryParams = {}) => {
         requestedBy: queryParams.requestedBy,
         sourceApplication: queryParams.source,
         page: queryParams.page ? parseInt(queryParams.page) : 0,
-        size: queryParams.size ? parseInt(queryParams.size) : 20,
+        size: queryParams.size ? parseInt(queryParams.size) : 10,
         sortBy: queryParams.sortBy || 'requestTimestamp',
         sortDirection: queryParams.sortDir || 'DESC'
     };
