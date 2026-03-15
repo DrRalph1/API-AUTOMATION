@@ -338,7 +338,7 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken }) =
         </div>
 
         {/* Search Input */}
-        <div className="p-4 border-b" style={{ borderColor: colors.border }}>
+        <div className="p-4" style={{ borderColor: colors.border }}>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2" size={16} style={{ color: colors.textSecondary }} />
             <input
@@ -2102,12 +2102,15 @@ export default function ApiGenerationModal({
 
   // ==================== OBJECT SELECTOR FUNCTIONS ====================
 
-  // Function to load object details after selection
-  // Function to load object details after selection
+ // Update loadSelectedObjectDetails to close modal first
 const loadSelectedObjectDetails = useCallback(async (object) => {
   if (!authToken || !object) return;
 
-  setLoading(true); // This sets loading to true
+  // Close the selector modal immediately
+  setShowObjectSelector(false);
+  
+  // Show loading in main modal
+  setLoading(true);
   setObjectSelectorError(null);
 
   try {
@@ -2151,19 +2154,17 @@ const loadSelectedObjectDetails = useCallback(async (object) => {
       comment: responseData.comment || responseData.COMMENTS
     };
 
+    // Set the selected object and populate form
     setSelectedDbObject(detailedObject);
-    setShowObjectSelector(false);
-    
-    // Auto-populate form fields
     populateFormFromObject(detailedObject);
     
   } catch (error) {
     console.error('Error loading object details:', error);
     setObjectSelectorError('Failed to load object details');
   } finally {
-    setLoading(false); // This sets loading back to false
+    setLoading(false);
   }
-}, [authToken]);
+}, [authToken, populateFormFromObject]);
 
   // Function to populate form from selected object
   const populateFormFromObject = useCallback((object) => {
