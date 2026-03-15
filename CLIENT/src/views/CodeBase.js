@@ -1622,6 +1622,9 @@ const renderImplementationContent = () => {
         <div className="mb-8">
           {selectedRequest ? (
             <>
+              <h1 className="text-2xl font-semibold mb-4" style={{ color: colors.text }}>
+                {selectedRequest.name}
+              </h1>
               <div className="flex items-center gap-3 mb-2">
                 {selectedRequest.method && (
                   <div className="px-3 py-1 rounded text-sm font-medium" style={{ 
@@ -1635,14 +1638,8 @@ const renderImplementationContent = () => {
                   {selectedRequest.url || ''}
                 </code>
               </div>
-              <h1 className="text-2xl font-semibold mb-4" style={{ color: colors.text }}>
-                {selectedRequest.name}
-              </h1>
-              <p className="text-base mb-6" style={{ color: colors.textSecondary }}>
-                {selectedRequest.description || 'No description available'}
-              </p>
               
-              <div className="flex flex-wrap items-center gap-4 text-sm mb-6">
+              <div className="flex flex-wrap items-center gap-4 text-sm mb-4 mt-4">
                 {selectedCollection && (
                   <div style={{ color: colors.textTertiary }}>
                     <Folder size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
@@ -1668,7 +1665,10 @@ const renderImplementationContent = () => {
                   </div>
                 )}
               </div>
-
+              
+              <p className="text-base mb-4 mt-4" style={{ color: colors.textSecondary }}>
+                {selectedRequest.description || 'No description available'}
+              </p>
               
             </>
           ) : (
