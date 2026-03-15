@@ -1134,14 +1134,31 @@ const ExportModal = ({ colors, isOpen, onClose, onExport }) => {
   );
 };
 
-// Stats Cards Component
-const StatsCards = ({ statistics, systemStats, colors, onRefresh }) => {
-  const stats = systemStats || statistics || {};
-
-  // Helper function to format execution time
+// Stats Cards Component - Now using data from search API
+const StatsCards = ({ requests, apiSummaries, colors }) => {
+  // Calculate stats from the available data
+  const totalRequests = requests?.length || 0;
+  
+  // Calculate success rate from current page data (simplified)
+  const successfulRequests = requests?.filter(r => 
+    r.responseStatusCode >= 200 && r.responseStatusCode < 300
+  ).length || 0;
+  
+  const successRate = totalRequests > 0 ? (successfulRequests / totalRequests * 100) : 0;
+  
+  // Calculate average response time
+  const totalDuration = requests?.reduce((sum, r) => sum + (r.executionDurationMs || 0), 0) || 0;
+  const avgResponseTime = totalRequests > 0 ? totalDuration / totalRequests : 0;
+  
+  // Count failed requests
+  const failedRequests = requests?.filter(r => 
+    r.responseStatusCode >= 400 || r.requestStatus === 'FAILED'
+  ).length || 0;
+  
+  // Format execution time
   const formatExecutionTimeHelper = (ms) => {
     if (!ms) return 'N/A';
-    if (ms < 1000) return `${ms}ms`;
+    if (ms < 1000) return `${Math.round(ms)}ms`;
     if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
     return `${(ms / 60000).toFixed(2)}m`;
   };
@@ -1153,14 +1170,14 @@ const StatsCards = ({ statistics, systemStats, colors, onRefresh }) => {
         borderColor: colors.border 
       }}>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium" style={{ color: colors.textSecondary }}>Total Requests</span>
+          <span className="text-sm font-medium" style={{ color: colors.textSecondary }}>Total Requests (Page)</span>
           <Activity size={18} style={{ color: colors.info }} />
         </div>
         <div className="text-2xl font-bold" style={{ color: colors.text }}>
-          {stats.totalRequests?.toLocaleString() || 0}
+          {totalRequests.toLocaleString()}
         </div>
         <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
-          Last 7 days
+          Current page
         </div>
       </div>
 
@@ -1173,21 +1190,10 @@ const StatsCards = ({ statistics, systemStats, colors, onRefresh }) => {
           <CheckCircle size={18} style={{ color: colors.success }} />
         </div>
         <div className="text-2xl font-bold" style={{ color: colors.text }}>
-          {stats.successRate ? stats.successRate.toFixed(1) : 0}%
+          {successRate.toFixed(1)}%
         </div>
-        <div className="text-xs mt-1 flex items-center gap-1">
-          {stats.successRateChange > 0 ? (
-            <>
-              <TrendingUp size={12} style={{ color: colors.success }} />
-              <span style={{ color: colors.success }}>+{stats.successRateChange}%</span>
-            </>
-          ) : stats.successRateChange < 0 ? (
-            <>
-              <TrendingDown size={12} style={{ color: colors.error }} />
-              <span style={{ color: colors.error }}>{stats.successRateChange}%</span>
-            </>
-          ) : null}
-          <span style={{ color: colors.textSecondary }}>vs last period</span>
+        <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+          Current page
         </div>
       </div>
 
@@ -1200,21 +1206,10 @@ const StatsCards = ({ statistics, systemStats, colors, onRefresh }) => {
           <ClockIcon size={18} style={{ color: colors.warning }} />
         </div>
         <div className="text-2xl font-bold" style={{ color: colors.text }}>
-          {formatExecutionTimeHelper(stats.averageResponseTime || 0)}
+          {formatExecutionTimeHelper(avgResponseTime)}
         </div>
-        <div className="text-xs mt-1 flex items-center gap-1">
-          {stats.avgResponseChange < 0 ? (
-            <>
-              <TrendingDown size={12} style={{ color: colors.success }} />
-              <span style={{ color: colors.success }}>{Math.abs(stats.avgResponseChange)}ms</span>
-            </>
-          ) : stats.avgResponseChange > 0 ? (
-            <>
-              <TrendingUp size={12} style={{ color: colors.error }} />
-              <span style={{ color: colors.error }}>+{stats.avgResponseChange}ms</span>
-            </>
-          ) : null}
-          <span style={{ color: colors.textSecondary }}>change</span>
+        <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+          Current page
         </div>
       </div>
 
@@ -1227,128 +1222,11 @@ const StatsCards = ({ statistics, systemStats, colors, onRefresh }) => {
           <XCircle size={18} style={{ color: colors.error }} />
         </div>
         <div className="text-2xl font-bold" style={{ color: colors.text }}>
-          {stats.failedRequests?.toLocaleString() || 0}
+          {failedRequests.toLocaleString()}
         </div>
-        <div className="text-xs mt-1 flex items-center gap-1">
-          {stats.failedPercentage ? (
-            <span style={{ color: colors.error }}>{stats.failedPercentage.toFixed(1)}%</span>
-          ) : null}
-          <span style={{ color: colors.textSecondary }}>of total</span>
+        <div className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+          Current page
         </div>
-      </div>
-    </div>
-  );
-};
-
-// Method Distribution Chart
-const MethodDistribution = ({ stats, colors }) => {
-  const methods = stats.methodDistribution || {};
-  const total = Object.values(methods).reduce((a, b) => a + b, 0);
-
-  return (
-    <div className="p-4 rounded-lg border" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
-      <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Request Methods</h3>
-      <div className="space-y-3">
-        {Object.entries(methods).map(([method, count]) => {
-          const percentage = total > 0 ? (count / total * 100).toFixed(1) : 0;
-          return (
-            <div key={method} className="space-y-1">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-medium" style={{ color: colors.text }}>{method}</span>
-                <span style={{ color: colors.textSecondary }}>{count} ({percentage}%)</span>
-              </div>
-              <div className="w-full h-2 rounded-full" style={{ backgroundColor: colors.hover }}>
-                <div 
-                  className="h-2 rounded-full transition-all"
-                  style={{ 
-                    width: `${percentage}%`,
-                    backgroundColor: colors.method[method] || colors.primary
-                  }}
-                />
-              </div>
-            </div>
-          );
-        })}
-        {Object.keys(methods).length === 0 && (
-          <div className="text-center py-4 text-sm" style={{ color: colors.textSecondary }}>
-            No method data available
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// Status Code Distribution
-const StatusCodeDistribution = ({ stats, colors }) => {
-  const codes = stats.statusCodeDistribution || {};
-  
-  const getCodeCategory = (code) => {
-    if (code >= 200 && code < 300) return 'success';
-    if (code >= 300 && code < 400) return 'info';
-    if (code >= 400 && code < 500) return 'warning';
-    if (code >= 500) return 'error';
-    return 'textSecondary';
-  };
-
-  return (
-    <div className="p-4 rounded-lg border" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
-      <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Status Codes</h3>
-      <div className="space-y-2 max-h-60 overflow-auto pr-2">
-        {Object.entries(codes)
-          .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
-          .map(([code, count]) => (
-            <div key={code} className="flex items-center justify-between text-sm py-1">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors[getCodeCategory(parseInt(code))] }} />
-                <span style={{ color: colors.text }}>{code}</span>
-              </div>
-              <span style={{ color: colors.textSecondary }}>{count.toLocaleString()}</span>
-            </div>
-          ))}
-        {Object.keys(codes).length === 0 && (
-          <div className="text-center py-4 text-sm" style={{ color: colors.textSecondary }}>
-            No status code data available
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// Time Series Chart (simplified)
-const TimeSeriesChart = ({ stats, colors }) => {
-  const timeSeries = stats.timeSeriesData || [];
-  const maxCount = Math.max(...timeSeries.map(d => d.requestCount), 1);
-
-  return (
-    <div className="p-4 rounded-lg border" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
-      <h3 className="text-sm font-semibold mb-4" style={{ color: colors.text }}>Requests Over Time</h3>
-      <div className="space-y-2 max-h-60 overflow-auto">
-        {timeSeries.map((point, index) => (
-          <div key={index} className="space-y-1">
-            <div className="flex items-center justify-between text-xs">
-              <span style={{ color: colors.textSecondary }}>
-                {point.timestamp ? new Date(point.timestamp).toLocaleString() : 'N/A'}
-              </span>
-              <span style={{ color: colors.text }}>{point.requestCount || 0}</span>
-            </div>
-            <div className="w-full h-1.5 rounded-full" style={{ backgroundColor: colors.hover }}>
-              <div 
-                className="h-1.5 rounded-full transition-all"
-                style={{ 
-                  width: `${((point.requestCount || 0) / maxCount) * 100}%`,
-                  backgroundColor: colors.primary
-                }}
-              />
-            </div>
-          </div>
-        ))}
-        {timeSeries.length === 0 && (
-          <div className="text-center py-4 text-sm" style={{ color: colors.textSecondary }}>
-            No time series data available
-          </div>
-        )}
       </div>
     </div>
   );
@@ -1364,11 +1242,8 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [filters, setFilters] = useState({});
   const [requests, setRequests] = useState([]);
   const [apiSummaries, setApiSummaries] = useState([]);
-  const [statistics, setStatistics] = useState(null);
-  const [systemStats, setSystemStats] = useState(null);
   const [isLoading, setIsLoading] = useState({
     requests: false,
-    statistics: false,
     export: false,
     delete: false
   });
@@ -1388,6 +1263,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [selectedApiSummary, setSelectedApiSummary] = useState(null);
 
   const searchTimer = useRef(null);
+  const initialLoadDone = useRef(false);
 
   // Color scheme (same as CodeBase)
   const colors = isDark ? {
@@ -1530,12 +1406,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     return `${(ms / 60000).toFixed(2)}m`;
   };
 
-  // Format formatted duration
-  const getFormattedDuration = (request) => {
-    if (request.formattedDuration) return request.formattedDuration;
-    return formatExecutionTimeHelper(request.executionDurationMs);
-  };
-
   // Get status code color
   const getStatusCodeColorHelper = (code) => {
     if (!code) return colors.textSecondary;
@@ -1546,109 +1416,86 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     return colors.textSecondary;
   };
 
-  // Load requests with filters
-  // Load requests with filters
-const loadRequests = useCallback(async () => {
-  if (!authToken) {
-    showToast('Authentication required', 'error');
-    return;
-  }
-
-  setIsLoading(prev => ({ ...prev, requests: true }));
-
-  try {
-    const filter = {
-      ...filters,
-      page: pagination.page,
-      size: pagination.size,
-      fromDate: dateRange.fromDate,
-      toDate: dateRange.toDate,
-      search: searchQuery || undefined,
-      apiId: selectedApiId || undefined
-    };
-
-    // Remove undefined values
-    Object.keys(filter).forEach(key => filter[key] === undefined && delete filter[key]);
-
-    const response = await searchRequests(authToken, filter);
-    
-    if (response?.responseCode === 200) {
-      const responseData = response.data;
-      
-      // Log to debug
-      console.log('API Response:', responseData);
-      
-      // Extract data correctly from the response structure
-      setRequests(responseData.content || []);
-      
-      // IMPORTANT: apiSummaries is directly in responseData, not in data.data
-      setApiSummaries(responseData.apiSummaries || []);
-
-      // console.log("responseData::::" + JSON.stringify(responseData));
-      // console.log("apiSummaries::::" + JSON.stringify(responseData.apiSummaries));
-      
-      setPagination({
-        page: responseData.currentPage || 0,
-        size: responseData.pageSize || 15,
-        totalElements: responseData.totalElements || 0,
-        totalPages: responseData.totalPages || 0
-      });
-
-      // If an API is selected, update its summary
-      if (selectedApiId && responseData.apiSummaries) {
-        const summary = responseData.apiSummaries.find(api => api.apiId === selectedApiId);
-        setSelectedApiSummary(summary);
-      }
-    } else {
-      showToast(response?.message || 'Failed to load requests', 'error');
+  // Load requests with filters - ONLY SEARCH API
+  const loadRequests = useCallback(async (isInitialLoad = false) => {
+    if (!authToken) {
+      showToast('Authentication required', 'error');
+      return;
     }
-  } catch (error) {
-    console.error('Error loading requests:', error);
-    showToast(error.message || 'Failed to load requests', 'error');
-  } finally {
-    setIsLoading(prev => ({ ...prev, requests: false }));
-  }
-}, [authToken, filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId]);
 
-  // Load statistics
-  const loadStatistics = useCallback(async () => {
-    if (!authToken) return;
+    // Prevent multiple loads
+    if (isInitialLoad && initialLoadDone.current) {
+      return;
+    }
 
-    setIsLoading(prev => ({ ...prev, statistics: true }));
+    setIsLoading(prev => ({ ...prev, requests: true }));
 
     try {
-      // Load system statistics
-      const systemResponse = await getSystemStatistics(
-        authToken,
-        dateRange.fromDate,
-        dateRange.toDate
-      );
-      
-      if (systemResponse?.responseCode === 200) {
-        setSystemStats(systemResponse.data);
-      }
+      const filter = {
+        ...filters,
+        page: pagination.page,
+        size: pagination.size,
+        fromDate: dateRange.fromDate,
+        toDate: dateRange.toDate,
+        search: searchQuery || undefined,
+        apiId: selectedApiId || undefined
+      };
 
-      // Load dashboard stats
-      const dashboardResponse = await getRequestDashboardStats(authToken);
+      // Remove undefined values
+      Object.keys(filter).forEach(key => filter[key] === undefined && delete filter[key]);
+
+      console.log('Loading requests with filter:', filter);
+      const response = await searchRequests(authToken, filter);
       
-      if (dashboardResponse?.responseCode === 200) {
-        setStatistics(dashboardResponse.data);
+      if (response?.responseCode === 200) {
+        const responseData = response.data;
+        
+        // Extract data correctly from the response structure
+        setRequests(responseData.content || []);
+        setApiSummaries(responseData.apiSummaries || []);
+        
+        setPagination({
+          page: responseData.currentPage || 0,
+          size: responseData.pageSize || 15,
+          totalElements: responseData.totalElements || 0,
+          totalPages: responseData.totalPages || 0
+        });
+
+        // If an API is selected, update its summary
+        if (selectedApiId && responseData.apiSummaries) {
+          const summary = responseData.apiSummaries.find(api => api.apiId === selectedApiId);
+          setSelectedApiSummary(summary);
+        }
+        
+        if (isInitialLoad) {
+          initialLoadDone.current = true;
+        }
+      } else {
+        showToast(response?.message || 'Failed to load requests', 'error');
       }
     } catch (error) {
-      console.error('Error loading statistics:', error);
+      console.error('Error loading requests:', error);
+      showToast(error.message || 'Failed to load requests', 'error');
     } finally {
-      setIsLoading(prev => ({ ...prev, statistics: false }));
+      setIsLoading(prev => ({ ...prev, requests: false }));
     }
-  }, [authToken, dateRange.fromDate, dateRange.toDate]);
+  }, [authToken, filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId]);
 
-  // Load recent requests
+  // Load recent requests - using search API with sorting
   const loadRecentRequests = useCallback(async () => {
     if (!authToken) return;
 
     try {
-      const response = await getRecentRequests(authToken, 10);
+      const filter = {
+        page: 0,
+        size: 10,
+        sortBy: 'requestTimestamp',
+        sortDirection: 'DESC'
+      };
+
+      const response = await searchRequests(authToken, filter);
       if (response?.responseCode === 200) {
-        setRequests(response.data || []);
+        setRequests(response.data?.content || []);
       }
     } catch (error) {
       console.error('Error loading recent requests:', error);
@@ -1769,6 +1616,7 @@ const loadRequests = useCallback(async () => {
   const handleApiSelect = (apiId) => {
     setSelectedApiId(apiId);
     setPagination(prev => ({ ...prev, page: 0 }));
+    loadRequests(); // This will reload with the selected API ID
     
     // Find and set the API summary for the selected API
     if (apiId && apiSummaries.length > 0) {
@@ -1794,15 +1642,11 @@ const loadRequests = useCallback(async () => {
     }, 500);
   };
 
-  // Initial load
+  // SINGLE LOAD - Only on initial mount
   useEffect(() => {
-    if (authToken) {
-      // Load statistics on initial page load
-      loadStatistics();
-      
-      if (activeTab === 'all' || activeTab === 'recent') {
-        loadRequests();
-      }
+    if (authToken && !initialLoadDone.current) {
+      console.log('Initial page load - calling search API once');
+      loadRequests(true);
     }
 
     return () => {
@@ -1810,27 +1654,35 @@ const loadRequests = useCallback(async () => {
         clearTimeout(searchTimer.current);
       }
     };
-  }, [authToken]); // Only run once on mount
+  }, [authToken]); // Only run when authToken changes
 
-  // Handle tab changes
+  // Handle tab changes - update the view but don't reload data unnecessarily
   useEffect(() => {
     if (!authToken) return;
 
-    if (activeTab === 'statistics') {
-      loadStatistics();
-    } else if (activeTab === 'all') {
-      loadRequests();
+    // Only load data if we're switching to a tab that needs data
+    // and we don't already have data
+    if (activeTab === 'all') {
+      if (requests.length === 0) {
+        loadRequests();
+      }
     } else if (activeTab === 'recent') {
-      loadRecentRequests();
+      if (requests.length === 0) {
+        loadRecentRequests();
+      }
     }
-  }, [activeTab, authToken, loadStatistics, loadRequests, loadRecentRequests]);
+  }, [activeTab, authToken]); // Remove dependencies that cause reloads
 
-  // Handle filter changes
+  // Handle filter changes - only when filters actually change and not on initial load
   useEffect(() => {
-    if (authToken && activeTab === 'all') {
-      loadRequests();
+    if (authToken && activeTab === 'all' && initialLoadDone.current) {
+      // Don't reload on initial filter setup
+      const hasFilters = Object.keys(filters).length > 0;
+      if (hasFilters || pagination.page > 0) {
+        loadRequests();
+      }
     }
-  }, [filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId, authToken, activeTab, loadRequests]);
+  }, [filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId]);
 
   // Update selected API summary when apiSummaries change
   useEffect(() => {
@@ -1972,203 +1824,202 @@ const loadRequests = useCallback(async () => {
             )
           )}
         </div>
-        
       </div>
     );
   };
 
   // Render requests table
   const renderRequestsTable = () => {
-  return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Table container with scroll */}
-      <div className="flex-1 overflow-auto">
-        <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-          <thead className="sticky top-0" style={{ backgroundColor: colors.card, zIndex: 10 }}>
-            <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
-              <th className="text-left py-3 px-4 text-xs font-medium w-12" style={{ color: colors.textSecondary }}>#</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Method</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Request Name</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>API</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status Code</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Duration</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Timestamp</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Correlation ID</th>
-              <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {requests.map((request, index) => {
-              const sequentialNumber = (pagination.page * pagination.size) + index + 1;
-              const statusColor = getStatusColor(request.requestStatus);
-              const statusText = getStatusText(request.requestStatus);
-              
-              return (
-                <tr 
-                  key={request.id || index}
-                  className="hover:bg-opacity-50 transition-colors cursor-pointer"
-                  style={{ borderBottom: `1px solid ${colors.border}`, backgroundColor: 'transparent' }}
-                  onClick={() => handleViewDetails(request)}
-                >
-                  <td className="py-3 px-4">
-                    <span className="text-sm font-mono" style={{ color: colors.textSecondary }}>
-                      {sequentialNumber}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColor }} />
-                      <span className="text-xs font-medium" style={{ color: statusColor }}>
-                        {statusText}
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Table container with scroll */}
+        <div className="flex-1 overflow-auto">
+          <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+            <thead className="sticky top-0" style={{ backgroundColor: colors.card, zIndex: 10 }}>
+              <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
+                <th className="text-left py-3 px-4 text-xs font-medium w-12" style={{ color: colors.textSecondary }}>#</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Method</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Request Name</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>API</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status Code</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Duration</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Timestamp</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Correlation ID</th>
+                <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {requests.map((request, index) => {
+                const sequentialNumber = (pagination.page * pagination.size) + index + 1;
+                const statusColor = getStatusColor(request.requestStatus);
+                const statusText = getStatusText(request.requestStatus);
+                
+                return (
+                  <tr 
+                    key={request.id || index}
+                    className="hover:bg-opacity-50 transition-colors cursor-pointer"
+                    style={{ borderBottom: `1px solid ${colors.border}`, backgroundColor: 'transparent' }}
+                    onClick={() => handleViewDetails(request)}
+                  >
+                    <td className="py-3 px-4">
+                      <span className="text-sm font-mono" style={{ color: colors.textSecondary }}>
+                        {sequentialNumber}
                       </span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs font-medium px-2 py-1 rounded" style={{ 
-                      backgroundColor: getMethodColor(request.httpMethod),
-                      color: 'white'
-                    }}>
-                      {request.httpMethod}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-sm" style={{ color: colors.text }}>{request.requestName || 'N/A'}</span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs" style={{ color: colors.textSecondary }}>{request.apiCode || 'N/A'}</span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-sm font-medium" style={{ color: getStatusCodeColorHelper(request.responseStatusCode) }}>
-                      {request.responseStatusCode || '-'}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-sm" style={{ color: colors.text }}>
-                      {formatExecutionTimeHelper(request.executionDurationMs)}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs" style={{ color: colors.textSecondary }}>
-                      {formatTimestamp(request.requestTimestamp)}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs font-mono" style={{ color: colors.textSecondary }}>
-                      {request.correlationId?.substring(0, 8)}...
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleViewDetails(request);
-                        }}
-                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                        style={{ backgroundColor: colors.hover }}
-                      >
-                        <Eye size={12} style={{ color: colors.textSecondary }} />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          copyToClipboard(JSON.stringify(request, null, 2));
-                        }}
-                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                        style={{ backgroundColor: colors.hover }}
-                      >
-                        <Copy size={12} style={{ color: colors.textSecondary }} />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteRequest(request.id);
-                        }}
-                        className="p-1 rounded hover:bg-opacity-50 transition-colors"
-                        style={{ backgroundColor: colors.hover }}
-                      >
-                        <Trash2 size={12} style={{ color: colors.error }} />
-                      </button>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColor }} />
+                        <span className="text-xs font-medium" style={{ color: statusColor }}>
+                          {statusText}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs font-medium px-2 py-1 rounded" style={{ 
+                        backgroundColor: getMethodColor(request.httpMethod),
+                        color: 'white'
+                      }}>
+                        {request.httpMethod}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-sm" style={{ color: colors.text }}>{request.requestName || 'N/A'}</span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs" style={{ color: colors.textSecondary }}>{request.apiCode || 'N/A'}</span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-sm font-medium" style={{ color: getStatusCodeColorHelper(request.responseStatusCode) }}>
+                        {request.responseStatusCode || '-'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-sm" style={{ color: colors.text }}>
+                        {formatExecutionTimeHelper(request.executionDurationMs)}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs" style={{ color: colors.textSecondary }}>
+                        {formatTimestamp(request.requestTimestamp)}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs font-mono" style={{ color: colors.textSecondary }}>
+                        {request.correlationId?.substring(0, 8)}...
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewDetails(request);
+                          }}
+                          className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                          style={{ backgroundColor: colors.hover }}
+                        >
+                          <Eye size={12} style={{ color: colors.textSecondary }} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyToClipboard(JSON.stringify(request, null, 2));
+                          }}
+                          className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                          style={{ backgroundColor: colors.hover }}
+                        >
+                          <Copy size={12} style={{ color: colors.textSecondary }} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteRequest(request.id);
+                          }}
+                          className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                          style={{ backgroundColor: colors.hover }}
+                        >
+                          <Trash2 size={12} style={{ color: colors.error }} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              
+              {/* Pagination row */}
+              {pagination.totalPages > 0 && (
+                <tr style={{ backgroundColor: colors.card }}>
+                  <td colSpan="10" className="py-3 px-4">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm" style={{ color: colors.textSecondary }}>
+                        Showing {requests.length > 0 ? pagination.page * pagination.size + 1 : 0} - {Math.min((pagination.page + 1) * pagination.size, pagination.totalElements)} of {pagination.totalElements}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setPagination(prev => ({ ...prev, page: prev.page - 1 }));
+                          }}
+                          disabled={pagination.page === 0}
+                          className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
+                          style={{ backgroundColor: colors.hover, color: colors.text }}
+                        >
+                          <ChevronLeft size={14} />
+                          Previous
+                        </button>
+                        <div className="flex items-center gap-1 px-2">
+                          <span className="text-sm font-medium" style={{ color: colors.text }}>
+                            {pagination.page + 1}
+                          </span>
+                          <span className="text-sm" style={{ color: colors.textSecondary }}>
+                            of {pagination.totalPages}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setPagination(prev => ({ ...prev, page: prev.page + 1 }));
+                          }}
+                          disabled={pagination.page >= pagination.totalPages - 1}
+                          className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
+                          style={{ backgroundColor: colors.hover, color: colors.text }}
+                        >
+                          Next
+                          <ChevronRight size={14} />
+                        </button>
+                      </div>
                     </div>
                   </td>
                 </tr>
-              );
-            })}
-            
-            {/* Pagination row - only shown when not on statistics tab */}
-            {activeTab !== 'statistics' && pagination.totalPages > 0 && (
-              <tr style={{ backgroundColor: colors.card }}>
-                <td colSpan="10" className="py-3 px-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm" style={{ color: colors.textSecondary }}>
-                      Showing {requests.length > 0 ? pagination.page * pagination.size + 1 : 0} - {Math.min((pagination.page + 1) * pagination.size, pagination.totalElements)} of {pagination.totalElements}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => {
-                          setPagination(prev => ({ ...prev, page: prev.page - 1 }));
-                        }}
-                        disabled={pagination.page === 0}
-                        className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
-                        style={{ backgroundColor: colors.hover, color: colors.text }}
-                      >
-                        <ChevronLeft size={14} />
-                        Previous
-                      </button>
-                      <div className="flex items-center gap-1 px-2">
-                        <span className="text-sm font-medium" style={{ color: colors.text }}>
-                          {pagination.page + 1}
-                        </span>
-                        <span className="text-sm" style={{ color: colors.textSecondary }}>
-                          of {pagination.totalPages}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setPagination(prev => ({ ...prev, page: prev.page + 1 }));
-                        }}
-                        disabled={pagination.page >= pagination.totalPages - 1}
-                        className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
-                        style={{ backgroundColor: colors.hover, color: colors.text }}
-                      >
-                        Next
-                        <ChevronRight size={14} />
-                      </button>
-                    </div>
-                  </div>
-                </td>
-              </tr>
-            )}
+              )}
 
-            {/* Empty state row */}
-            {requests.length === 0 && !isLoading.requests && (
-              <tr>
-                <td colSpan="10" className="text-center py-12">
-                  <FileText size={48} className="mx-auto mb-4 opacity-50" style={{ color: colors.textSecondary }} />
-                  <p className="text-lg mb-2" style={{ color: colors.text }}>No Requests Found</p>
-                  <p className="text-sm" style={{ color: colors.textSecondary }}>
-                    Try adjusting your filters or date range
-                  </p>
-                </td>
-              </tr>
-            )}
+              {/* Empty state row */}
+              {requests.length === 0 && !isLoading.requests && (
+                <tr>
+                  <td colSpan="10" className="text-center py-12">
+                    <FileText size={48} className="mx-auto mb-4 opacity-50" style={{ color: colors.textSecondary }} />
+                    <p className="text-lg mb-2" style={{ color: colors.text }}>No Requests Found</p>
+                    <p className="text-sm" style={{ color: colors.textSecondary }}>
+                      Try adjusting your filters or date range
+                    </p>
+                  </td>
+                </tr>
+              )}
 
-            {/* Loading state row */}
-            {isLoading.requests && (
-              <tr>
-                <td colSpan="10" className="text-center py-12">
-                  <RefreshCw size={32} className="animate-spin mx-auto mb-4" style={{ color: colors.textSecondary }} />
-                  <p className="text-sm" style={{ color: colors.textSecondary }}>Loading requests...</p>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              {/* Loading state row */}
+              {isLoading.requests && (
+                <tr>
+                  <td colSpan="10" className="text-center py-12">
+                    <RefreshCw size={32} className="animate-spin mx-auto mb-4" style={{ color: colors.textSecondary }} />
+                    <p className="text-sm" style={{ color: colors.textSecondary }}>Loading requests...</p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ 
@@ -2234,13 +2085,13 @@ const loadRequests = useCallback(async () => {
           backgroundColor: colors.header,
           borderColor: colors.border
         }}>
-          {/* <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4">
             <div className="flex items-center gap-1 -ml-3 text-nowrap">
               <span className="px-3 py-1.5 text-sm font-medium rounded transition-colors uppercase" style={{ color: colors.text }}>
-                API Request Monitor
+                &nbsp;
               </span>
             </div>
-          </div> */}
+          </div>
 
           <div className="flex items-center gap-2">
             {/* Search Input */}
@@ -2283,13 +2134,12 @@ const loadRequests = useCallback(async () => {
           </div>
         </div>
 
+        {/* Stats Cards - Now using data from the current requests */}
         <div className="w-full p-4 mt-2 -mb-2 space-y-6">
-          {/* Stats Cards */}
           <StatsCards 
-            statistics={statistics}
-            systemStats={systemStats}
+            requests={requests}
+            apiSummaries={apiSummaries}
             colors={colors}
-            onRefresh={loadStatistics}
           />
         </div>
 
