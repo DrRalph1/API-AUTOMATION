@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
-  ChevronRight, 
   ChevronDown,
   Search,
   Plus,
@@ -21,6 +20,8 @@ import {
   RefreshCw,
   Coffee,
   Box,
+  ChevronLeft,
+  ChevronRight,
   Package,
   Terminal,
   Server,
@@ -718,8 +719,12 @@ const FilterModal = ({ filters, colors, isOpen, onClose, onApply }) => {
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50">
       <div className="absolute inset-0 bg-black bg-opacity-50" onClick={onClose} />
+      <div 
+        className="absolute inset-0 backdrop-blur-sm bg-black/30" 
+        onClick={onClose} 
+      />
       <div className="relative w-96 rounded-lg overflow-hidden" style={{ 
-        backgroundColor: colors.modalBg,
+        backgroundColor: colors.bg,
         border: `1px solid ${colors.border}`
       }}>
         {/* Modal Header */}
@@ -968,8 +973,12 @@ const ExportModal = ({ colors, isOpen, onClose, onExport }) => {
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50">
       <div className="absolute inset-0 bg-black bg-opacity-50" onClick={onClose} />
+      <div 
+        className="absolute inset-0 backdrop-blur-sm bg-black/30" 
+        onClick={onClose} 
+      />
       <div className="relative w-96 rounded-lg overflow-hidden" style={{ 
-        backgroundColor: colors.modalBg,
+        backgroundColor: colors.bg,
         border: `1px solid ${colors.border}`
       }}>
         {/* Modal Header */}
@@ -1354,6 +1363,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState({});
   const [requests, setRequests] = useState([]);
+  const [apiSummaries, setApiSummaries] = useState([]);
   const [statistics, setStatistics] = useState(null);
   const [systemStats, setSystemStats] = useState(null);
   const [isLoading, setIsLoading] = useState({
@@ -1365,7 +1375,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [toast, setToast] = useState(null);
   const [pagination, setPagination] = useState({
     page: 0,
-    size: 10,
+    size: 12,
     totalElements: 0,
     totalPages: 0
   });
@@ -1375,7 +1385,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedApiId, setSelectedApiId] = useState(null);
-  const [apiSummary, setApiSummary] = useState(null);
+  const [selectedApiSummary, setSelectedApiSummary] = useState(null);
 
   const searchTimer = useRef(null);
 
@@ -1520,6 +1530,12 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     return `${(ms / 60000).toFixed(2)}m`;
   };
 
+  // Format formatted duration
+  const getFormattedDuration = (request) => {
+    if (request.formattedDuration) return request.formattedDuration;
+    return formatExecutionTimeHelper(request.executionDurationMs);
+  };
+
   // Get status code color
   const getStatusCodeColorHelper = (code) => {
     if (!code) return colors.textSecondary;
@@ -1531,56 +1547,68 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   };
 
   // Load requests with filters
-  const loadRequests = useCallback(async () => {
-    if (!authToken) {
-      showToast('Authentication required', 'error');
-      return;
-    }
+  // Load requests with filters
+const loadRequests = useCallback(async () => {
+  if (!authToken) {
+    showToast('Authentication required', 'error');
+    return;
+  }
 
-    setIsLoading(prev => ({ ...prev, requests: true }));
+  setIsLoading(prev => ({ ...prev, requests: true }));
 
-    try {
-      const filter = {
-        ...filters,
-        page: pagination.page,
-        size: pagination.size,
-        fromDate: dateRange.fromDate,
-        toDate: dateRange.toDate,
-        search: searchQuery || undefined,
-        apiId: selectedApiId || undefined
-      };
+  try {
+    const filter = {
+      ...filters,
+      page: pagination.page,
+      size: pagination.size,
+      fromDate: dateRange.fromDate,
+      toDate: dateRange.toDate,
+      search: searchQuery || undefined,
+      apiId: selectedApiId || undefined
+    };
 
-      // Remove undefined values
-      Object.keys(filter).forEach(key => filter[key] === undefined && delete filter[key]);
+    // Remove undefined values
+    Object.keys(filter).forEach(key => filter[key] === undefined && delete filter[key]);
 
-      const response = await searchRequests(authToken, filter);
+    const response = await searchRequests(authToken, filter);
+    
+    if (response?.responseCode === 200) {
+      const responseData = response.data;
       
-      if (response?.responseCode === 200) {
-        const data = response.data;
-        setRequests(data.content || []);
-        setPagination({
-          page: data.currentPage || 0,
-          size: data.pageSize || 10,
-          totalElements: data.totalElements || 0,
-          totalPages: data.totalPages || 0
-        });
+      // Log to debug
+      console.log('API Response:', responseData);
+      
+      // Extract data correctly from the response structure
+      setRequests(responseData.content || []);
+      
+      // IMPORTANT: apiSummaries is directly in responseData, not in data.data
+      setApiSummaries(responseData.apiSummaries || []);
 
-        // Set API summary from first request if available
-        if (data.content && data.content.length > 0 && data.content[0].summary) {
-          setApiSummary(data.content[0].summary);
-        } else {
-          setApiSummary(null);
-        }
-      } else {
-        showToast(response?.message || 'Failed to load requests', 'error');
+      // console.log("responseData::::" + JSON.stringify(responseData));
+      // console.log("apiSummaries::::" + JSON.stringify(responseData.apiSummaries));
+      
+      setPagination({
+        page: responseData.currentPage || 0,
+        size: responseData.pageSize || 15,
+        totalElements: responseData.totalElements || 0,
+        totalPages: responseData.totalPages || 0
+      });
+
+      // If an API is selected, update its summary
+      if (selectedApiId && responseData.apiSummaries) {
+        const summary = responseData.apiSummaries.find(api => api.apiId === selectedApiId);
+        setSelectedApiSummary(summary);
       }
-    } catch (error) {
-      console.error('Error loading requests:', error);
-      showToast(error.message || 'Failed to load requests', 'error');
-    } finally {
-      setIsLoading(prev => ({ ...prev, requests: false }));
+    } else {
+      showToast(response?.message || 'Failed to load requests', 'error');
     }
-  }, [authToken, filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId]);
+  } catch (error) {
+    console.error('Error loading requests:', error);
+    showToast(error.message || 'Failed to load requests', 'error');
+  } finally {
+    setIsLoading(prev => ({ ...prev, requests: false }));
+  }
+}, [authToken, filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId]);
 
   // Load statistics
   const loadStatistics = useCallback(async () => {
@@ -1741,6 +1769,14 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const handleApiSelect = (apiId) => {
     setSelectedApiId(apiId);
     setPagination(prev => ({ ...prev, page: 0 }));
+    
+    // Find and set the API summary for the selected API
+    if (apiId && apiSummaries.length > 0) {
+      const summary = apiSummaries.find(api => api.apiId === apiId);
+      setSelectedApiSummary(summary || null);
+    } else {
+      setSelectedApiSummary(null);
+    }
   };
 
   // Handle search with debounce
@@ -1796,63 +1832,52 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
     }
   }, [filters, pagination.page, pagination.size, dateRange.fromDate, dateRange.toDate, searchQuery, selectedApiId, authToken, activeTab, loadRequests]);
 
-  // Get unique APIs from requests
-  const uniqueApis = React.useMemo(() => {
-    const apis = {};
-    requests.forEach(req => {
-      if (req.apiId && !apis[req.apiId]) {
-        apis[req.apiId] = {
-          id: req.apiId,
-          name: req.apiName,
-          code: req.apiCode,
-          count: 0,
-          successCount: 0,
-          failedCount: 0
-        };
-      }
-      if (req.apiId && apis[req.apiId]) {
-        apis[req.apiId].count++;
-        if (isRequestSuccessfulHelper(req)) {
-          apis[req.apiId].successCount++;
-        } else {
-          apis[req.apiId].failedCount++;
-        }
-      }
-    });
-    return Object.values(apis);
-  }, [requests]);
+  // Update selected API summary when apiSummaries change
+  useEffect(() => {
+    if (selectedApiId && apiSummaries.length > 0) {
+      const summary = apiSummaries.find(api => api.apiId === selectedApiId);
+      setSelectedApiSummary(summary || null);
+    } else if (!selectedApiId) {
+      setSelectedApiSummary(null);
+    }
+  }, [selectedApiId, apiSummaries]);
 
   // Render sidebar
   const renderSidebar = () => {
+    // Calculate totals from apiSummaries
+    const totalRequests = apiSummaries.reduce((sum, api) => sum + api.totalRequests, 0);
+    const totalSuccess = apiSummaries.reduce((sum, api) => sum + api.successCount, 0);
+    const totalFailed = apiSummaries.reduce((sum, api) => sum + api.failedCount, 0);
+
     return (
-    <div 
-      className="h-full border-r transition-all duration-300 flex flex-col"
-      style={{ 
-        width: sidebarCollapsed ? '60px' : '350px',
-        backgroundColor: colors.sidebar,
-        borderColor: colors.border
-      }}
-    >
-      {/* Sidebar Header */}
-      <div className="flex items-center justify-between p-3 border-b" style={{ borderColor: colors.border }}>
-        {!sidebarCollapsed && (
-          <span className="text-xs font-semibold uppercase" style={{ color: colors.textSecondary }}>APIs</span>
-        )}
-        <button
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          className="p-1 rounded hover:bg-opacity-50 transition-colors ml-auto"
-          style={{ backgroundColor: colors.hover }}
-        >
-          <Sidebar size={14} style={{ color: colors.textSecondary }} />
-        </button>
-      </div>
+      <div 
+        className="h-full border-r transition-all duration-300 flex flex-col"
+        style={{ 
+          width: sidebarCollapsed ? '60px' : '350px',
+          backgroundColor: colors.sidebar,
+          borderColor: colors.border
+        }}
+      >
+        {/* Sidebar Header */}
+        <div className="flex items-center justify-between p-3 border-b" style={{ borderColor: colors.border }}>
+          {!sidebarCollapsed && (
+            <span className="text-xs font-semibold uppercase" style={{ color: colors.textSecondary }}>API Request Monitor</span>
+          )}
+          <button
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            className="p-1 rounded hover:bg-opacity-50 transition-colors ml-auto"
+            style={{ backgroundColor: colors.hover }}
+          >
+            <Sidebar size={14} style={{ color: colors.textSecondary }} />
+          </button>
+        </div>
 
         {/* Sidebar Content */}
         <div className="flex-1 overflow-auto p-2">
           {/* All Requests Option */}
           <div
             onClick={() => handleApiSelect(null)}
-            className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors mb-1 ${
+            className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors mb-2 ${
               !selectedApiId ? 'ring-1' : ''
             }`}
             style={{ 
@@ -1866,79 +1891,101 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
               <>
                 <span className="text-sm flex-1">All Requests</span>
                 <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: colors.hover }}>
-                  {pagination.totalElements}
+                  {totalRequests}
                 </span>
               </>
             )}
           </div>
 
-          {/* API List */}
-          {uniqueApis.map(api => (
-            <div
-              key={api.id}
-              onClick={() => handleApiSelect(api.id)}
-              className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors mb-1 ${
-                selectedApiId === api.id ? 'ring-1' : ''
-              }`}
-              style={{ 
-                backgroundColor: selectedApiId === api.id ? colors.selected : 'transparent',
-                color: selectedApiId === api.id ? colors.primary : colors.text,
-                borderColor: selectedApiId === api.id ? colors.primary : 'transparent'
-              }}
-            >
-              <DatabaseIcon size={14} style={{ color: selectedApiId === api.id ? colors.primary : colors.textSecondary }} />
-              {!sidebarCollapsed && (
-                <>
-                  <span className="text-sm flex-1 truncate" title={api.name}>
-                    {api.name}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: `${colors.success}20`, color: colors.success }}>
-                      {api.successCount}
-                    </span>
-                    <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: `${colors.error}20`, color: colors.error }}>
-                      {api.failedCount}
-                    </span>
+          {/* API List from apiSummaries */}
+          {apiSummaries.length > 0 ? (
+            apiSummaries.map(api => (
+              <div
+                key={api.apiId}
+                onClick={() => handleApiSelect(api.apiId)}
+                className={`flex items-start gap-2 p-2 rounded cursor-pointer transition-colors mb-2 ${
+                  selectedApiId === api.apiId ? 'ring-1' : ''
+                }`}
+                style={{ 
+                  backgroundColor: selectedApiId === api.apiId ? colors.selected : 'transparent',
+                  color: selectedApiId === api.apiId ? colors.primary : colors.text,
+                  borderColor: selectedApiId === api.apiId ? colors.primary : 'transparent'
+                }}
+              >
+                <DatabaseIcon size={14} style={{ color: selectedApiId === api.apiId ? colors.primary : colors.textSecondary }} className="mt-1" />
+                {!sidebarCollapsed && (
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium truncate" title={api.apiName}>
+                        {api.apiName}
+                      </span>
+                      <span className="text-xs px-1.5 py-0.5 rounded ml-2" style={{ backgroundColor: colors.hover }}>
+                        {api.totalRequests}
+                      </span>
+                    </div>
+                    
+                    {/* API Code */}
+                    <div className="text-xs mt-1 font-mono" style={{ color: colors.textTertiary }}>
+                      {api.apiCode}
+                    </div>
+                    
+                    {/* Success/Failed counts */}
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs" style={{ color: colors.success }}>✓ {api.successCount}</span>
+                      <span className="text-xs" style={{ color: colors.error }}>✗ {api.failedCount}</span>
+                      <span className="text-xs" style={{ color: colors.warning }}>
+                        {api.successRate.toFixed(1)}%
+                      </span>
+                    </div>
+                    
+                    {/* Last request info */}
+                    {api.lastRequestTime && (
+                      <div className="flex items-center gap-1 mt-1 text-xs" style={{ color: colors.textTertiary }}>
+                        <Clock size={10} />
+                        <span className="truncate">{new Date(api.lastRequestTime).toLocaleString()}</span>
+                        <span className="ml-1 px-1 rounded text-[10px]" style={{ 
+                          backgroundColor: api.lastRequestStatus === 'SUCCESS' ? `${colors.success}20` : `${colors.error}20`,
+                          color: api.lastRequestStatus === 'SUCCESS' ? colors.success : colors.error
+                        }}>
+                          {api.lastRequestStatus}
+                        </span>
+                      </div>
+                    )}
+                    
+                    {/* Average response time */}
+                    {api.averageResponseTimeMs && (
+                      <div className="flex items-center gap-1 mt-1 text-xs" style={{ color: colors.textTertiary }}>
+                        <ClockIcon size={10} />
+                        <span>Avg: {formatExecutionTimeHelper(api.averageResponseTimeMs)}</span>
+                      </div>
+                    )}
                   </div>
-                </>
-              )}
-            </div>
-          ))}
-
-          {uniqueApis.length === 0 && !sidebarCollapsed && (
-            <div className="text-center p-4" style={{ color: colors.textSecondary }}>
-              <DatabaseIcon size={20} className="mx-auto mb-2 opacity-50" />
-              <p className="text-xs">No APIs found</p>
-            </div>
+                )}
+              </div>
+            ))
+          ) : (
+            !sidebarCollapsed && (
+              <div className="text-center p-4" style={{ color: colors.textSecondary }}>
+                <DatabaseIcon size={20} className="mx-auto mb-2 opacity-50" />
+                <p className="text-xs">No APIs found</p>
+              </div>
+            )
           )}
         </div>
-
-        {/* Sidebar Footer */}
-        <div className="p-2 border-t" style={{ borderColor: colors.border }}>
-          <div className="flex items-center gap-2 p-2 rounded" style={{ backgroundColor: colors.hover }}>
-            {!sidebarCollapsed ? (
-              <>
-                <Activity size={14} style={{ color: colors.textSecondary }} />
-                <span className="text-xs flex-1" style={{ color: colors.textSecondary }}>Total Requests</span>
-                <span className="text-xs font-medium" style={{ color: colors.text }}>{pagination.totalElements}</span>
-              </>
-            ) : (
-              <Activity size={14} className="mx-auto" style={{ color: colors.textSecondary }} />
-            )}
-          </div>
-        </div>
+        
       </div>
     );
   };
 
   // Render requests table
   const renderRequestsTable = () => {
-    return (
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Table container with scroll */}
       <div className="flex-1 overflow-auto">
         <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-          <thead>
+          <thead className="sticky top-0" style={{ backgroundColor: colors.card, zIndex: 10 }}>
             <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
-              {/* Add # column */}
               <th className="text-left py-3 px-4 text-xs font-medium w-12" style={{ color: colors.textSecondary }}>#</th>
               <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Status</th>
               <th className="text-left py-3 px-4 text-xs font-medium" style={{ color: colors.textSecondary }}>Method</th>
@@ -1953,7 +2000,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
           </thead>
           <tbody>
             {requests.map((request, index) => {
-              // Calculate the sequential number based on current page and index
               const sequentialNumber = (pagination.page * pagination.size) + index + 1;
               const statusColor = getStatusColor(request.requestStatus);
               const statusText = getStatusText(request.requestStatus);
@@ -1965,7 +2011,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
                   style={{ borderBottom: `1px solid ${colors.border}`, backgroundColor: 'transparent' }}
                   onClick={() => handleViewDetails(request)}
                 >
-                  {/* Add # column with sequential number */}
                   <td className="py-3 px-4">
                     <span className="text-sm font-mono" style={{ color: colors.textSecondary }}>
                       {sequentialNumber}
@@ -2050,28 +2095,80 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
                 </tr>
               );
             })}
+            
+            {/* Pagination row - only shown when not on statistics tab */}
+            {activeTab !== 'statistics' && pagination.totalPages > 0 && (
+              <tr style={{ backgroundColor: colors.card }}>
+                <td colSpan="10" className="py-3 px-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm" style={{ color: colors.textSecondary }}>
+                      Showing {requests.length > 0 ? pagination.page * pagination.size + 1 : 0} - {Math.min((pagination.page + 1) * pagination.size, pagination.totalElements)} of {pagination.totalElements}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setPagination(prev => ({ ...prev, page: prev.page - 1 }));
+                        }}
+                        disabled={pagination.page === 0}
+                        className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
+                        style={{ backgroundColor: colors.hover, color: colors.text }}
+                      >
+                        <ChevronLeft size={14} />
+                        Previous
+                      </button>
+                      <div className="flex items-center gap-1 px-2">
+                        <span className="text-sm font-medium" style={{ color: colors.text }}>
+                          {pagination.page + 1}
+                        </span>
+                        <span className="text-sm" style={{ color: colors.textSecondary }}>
+                          of {pagination.totalPages}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setPagination(prev => ({ ...prev, page: prev.page + 1 }));
+                        }}
+                        disabled={pagination.page >= pagination.totalPages - 1}
+                        className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50 flex items-center gap-1"
+                        style={{ backgroundColor: colors.hover, color: colors.text }}
+                      >
+                        Next
+                        <ChevronRight size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            )}
+
+            {/* Empty state row */}
+            {requests.length === 0 && !isLoading.requests && (
+              <tr>
+                <td colSpan="10" className="text-center py-12">
+                  <FileText size={48} className="mx-auto mb-4 opacity-50" style={{ color: colors.textSecondary }} />
+                  <p className="text-lg mb-2" style={{ color: colors.text }}>No Requests Found</p>
+                  <p className="text-sm" style={{ color: colors.textSecondary }}>
+                    Try adjusting your filters or date range
+                  </p>
+                </td>
+              </tr>
+            )}
+
+            {/* Loading state row */}
+            {isLoading.requests && (
+              <tr>
+                <td colSpan="10" className="text-center py-12">
+                  <RefreshCw size={32} className="animate-spin mx-auto mb-4" style={{ color: colors.textSecondary }} />
+                  <p className="text-sm" style={{ color: colors.textSecondary }}>Loading requests...</p>
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
-
-        {requests.length === 0 && !isLoading.requests && (
-          <div className="text-center py-12">
-            <FileText size={48} className="mx-auto mb-4 opacity-50" style={{ color: colors.textSecondary }} />
-            <p className="text-lg mb-2" style={{ color: colors.text }}>No Requests Found</p>
-            <p className="text-sm" style={{ color: colors.textSecondary }}>
-              Try adjusting your filters or date range
-            </p>
-          </div>
-        )}
-
-        {isLoading.requests && (
-          <div className="text-center py-12">
-            <RefreshCw size={32} className="animate-spin mx-auto mb-4" style={{ color: colors.textSecondary }} />
-            <p className="text-sm" style={{ color: colors.textSecondary }}>Loading requests...</p>
-          </div>
-        )}
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ 
@@ -2137,13 +2234,13 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
           backgroundColor: colors.header,
           borderColor: colors.border
         }}>
-          <div className="flex items-center gap-4">
+          {/* <div className="flex items-center gap-4">
             <div className="flex items-center gap-1 -ml-3 text-nowrap">
               <span className="px-3 py-1.5 text-sm font-medium rounded transition-colors uppercase" style={{ color: colors.text }}>
                 API Request Monitor
               </span>
             </div>
-          </div>
+          </div> */}
 
           <div className="flex items-center gap-2">
             {/* Search Input */}
@@ -2183,17 +2280,8 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
               style={{ backgroundColor: colors.hover }}>
               <RefreshCw size={14} className={isLoading.requests ? 'animate-spin' : ''} style={{ color: colors.textSecondary }} />
             </button>
-
-            {/* Cleanup Button */}
-            <button 
-              className="p-1.5 rounded hover:bg-opacity-50 transition-colors hover-lift"
-              onClick={handleCleanup}
-              style={{ backgroundColor: colors.hover }}>
-              <Trash2 size={14} style={{ color: colors.textSecondary }} />
-            </button>
           </div>
         </div>
-
 
         <div className="w-full p-4 mt-2 -mb-2 space-y-6">
           {/* Stats Cards */}
@@ -2206,7 +2294,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
         </div>
 
         {/* API Summary Bar (if API selected) */}
-        {selectedApiId && apiSummary && (
+        {selectedApiId && selectedApiSummary && (
           <div className="flex items-center gap-4 px-4 py-2 border-b" style={{ 
             borderColor: colors.border, 
             backgroundColor: colors.hover
@@ -2215,20 +2303,26 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1">
                 <CheckCircle size={12} style={{ color: colors.success }} />
-                <span className="text-xs" style={{ color: colors.text }}>Success: {apiSummary.successfulRequests || 0}</span>
+                <span className="text-xs" style={{ color: colors.text }}>Success: {selectedApiSummary.successCount || 0}</span>
               </div>
               <div className="flex items-center gap-1">
                 <XCircle size={12} style={{ color: colors.error }} />
-                <span className="text-xs" style={{ color: colors.text }}>Failed: {apiSummary.failedRequests || 0}</span>
+                <span className="text-xs" style={{ color: colors.text }}>Failed: {selectedApiSummary.failedCount || 0}</span>
               </div>
               <div className="flex items-center gap-1">
                 <ClockIcon size={12} style={{ color: colors.warning }} />
-                <span className="text-xs" style={{ color: colors.text }}>Avg: {formatExecutionTimeHelper(apiSummary.averageResponseTime)}</span>
+                <span className="text-xs" style={{ color: colors.text }}>Avg: {formatExecutionTimeHelper(selectedApiSummary.averageResponseTimeMs)}</span>
               </div>
               <div className="flex items-center gap-1">
                 <Activity size={12} style={{ color: colors.info }} />
-                <span className="text-xs" style={{ color: colors.text }}>Today: {apiSummary.requestCountToday || 0}</span>
+                <span className="text-xs" style={{ color: colors.text }}>Total: {selectedApiSummary.totalRequests || 0}</span>
               </div>
+              {selectedApiSummary.successRate !== undefined && (
+                <div className="flex items-center gap-1">
+                  <PieChart size={12} style={{ color: colors.primary }} />
+                  <span className="text-xs" style={{ color: colors.text }}>Success Rate: {selectedApiSummary.successRate.toFixed(1)}%</span>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2272,42 +2366,6 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
         {/* MAIN CONTENT */}
         {renderRequestsTable()}
 
-        {/* Pagination */}
-        {activeTab !== 'statistics' && pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t" style={{ 
-            borderColor: colors.border, 
-            backgroundColor: colors.card
-          }}>
-            <div className="text-sm" style={{ color: colors.textSecondary }}>
-              Showing {pagination.page * pagination.size + 1} - {Math.min((pagination.page + 1) * pagination.size, pagination.totalElements)} of {pagination.totalElements}
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  setPagination(prev => ({ ...prev, page: prev.page - 1 }));
-                }}
-                disabled={pagination.page === 0}
-                className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50"
-                style={{ backgroundColor: colors.hover, color: colors.text }}
-              >
-                Previous
-              </button>
-              <span className="text-sm" style={{ color: colors.text }}>
-                Page {pagination.page + 1} of {pagination.totalPages}
-              </span>
-              <button
-                onClick={() => {
-                  setPagination(prev => ({ ...prev, page: prev.page + 1 }));
-                }}
-                disabled={pagination.page >= pagination.totalPages - 1}
-                className="px-3 py-1 rounded text-sm font-medium hover:bg-opacity-50 transition-colors disabled:opacity-50"
-                style={{ backgroundColor: colors.hover, color: colors.text }}
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Modals */}

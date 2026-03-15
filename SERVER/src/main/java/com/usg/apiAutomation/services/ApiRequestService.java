@@ -428,6 +428,115 @@ public class ApiRequestService {
         }
     }
 
+
+    public List<ApiNavSummaryDTO> getDistinctApiSummaries(String requestId, ApiRequestFilterDTO filter) {
+        try {
+            // Get ALL requests (unpaged) based on filters to build accurate summaries
+            List<ApiRequestEntity> allRequests;
+
+            if (filter.getApiId() != null && !filter.getApiId().isEmpty()) {
+                if (filter.getFromDate() != null && filter.getToDate() != null) {
+                    allRequests = apiRequestRepository.findApiRequestsByStatusAndDateRange(
+                            filter.getApiId(),
+                            filter.getRequestStatus() != null ? filter.getRequestStatus() : "",
+                            filter.getFromDate(),
+                            filter.getToDate()
+                    );
+                } else {
+                    allRequests = apiRequestRepository.findByGeneratedApiId(
+                            filter.getApiId(), Pageable.unpaged()).getContent();
+                }
+            } else if (filter.getRequestStatus() != null) {
+                allRequests = apiRequestRepository.findByRequestStatus(
+                        filter.getRequestStatus(), Pageable.unpaged()).getContent();
+            } else if (filter.getCorrelationId() != null) {
+                Optional<ApiRequestEntity> request = apiRequestRepository.findByCorrelationId(filter.getCorrelationId());
+                allRequests = request.map(List::of).orElseGet(ArrayList::new);
+            } else {
+                allRequests = apiRequestRepository.findAllByOrderByRequestTimestampDesc(Pageable.unpaged()).getContent();
+            }
+
+            // Build distinct API summaries
+            Map<String, ApiNavSummaryDTO> apiSummariesMap = new HashMap<>();
+            buildApiNavSummaries(allRequests, apiSummariesMap);
+
+            // Convert to list and sort
+            List<ApiNavSummaryDTO> sortedSummaries = new ArrayList<>(apiSummariesMap.values());
+            sortedSummaries.sort(Comparator.comparing(ApiNavSummaryDTO::getApiName));
+
+            return sortedSummaries;
+
+        } catch (Exception e) {
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
+                    ", Error getting API summaries: " + e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    // Helper method to build API summaries for navigation drawer
+    private void buildApiNavSummaries(List<ApiRequestEntity> requests, Map<String, ApiNavSummaryDTO> apiSummariesMap) {
+        for (ApiRequestEntity request : requests) {
+            if (request.getGeneratedApi() != null) {
+                String apiId = request.getGeneratedApi().getId();
+                String apiName = request.getGeneratedApi().getApiName();
+                String apiCode = request.getGeneratedApi().getApiCode();
+
+                ApiNavSummaryDTO summary = apiSummariesMap.get(apiId);
+
+                if (summary == null) {
+                    summary = ApiNavSummaryDTO.builder()
+                            .apiId(apiId)
+                            .apiName(apiName)
+                            .apiCode(apiCode)
+                            .totalRequests(0)
+                            .successCount(0)
+                            .failedCount(0)
+                            .averageResponseTimeMs(0)
+                            .build();
+                    apiSummariesMap.put(apiId, summary);
+                }
+
+                // Update counts
+                summary.setTotalRequests(summary.getTotalRequests() + 1);
+
+                // Check if request was successful (status code 2xx)
+                if (request.getResponseStatusCode() != null &&
+                        request.getResponseStatusCode() >= 200 &&
+                        request.getResponseStatusCode() < 300) {
+                    summary.setSuccessCount(summary.getSuccessCount() + 1);
+                } else if (request.getResponseStatusCode() != null) {
+                    summary.setFailedCount(summary.getFailedCount() + 1);
+                }
+
+                // Track average response time
+                if (request.getExecutionDurationMs() != null) {
+                    int currentAvg = summary.getAverageResponseTimeMs() != null ? summary.getAverageResponseTimeMs() : 0;
+                    int newAvg = (currentAvg * (summary.getTotalRequests() - 1) + request.getExecutionDurationMs().intValue()) / summary.getTotalRequests();
+                    summary.setAverageResponseTimeMs(newAvg);
+                }
+
+                // Track latest request time and status
+                if (request.getRequestTimestamp() != null) {
+                    String timestamp = request.getRequestTimestamp().toString();
+                    if (summary.getLastRequestTime() == null ||
+                            timestamp.compareTo(summary.getLastRequestTime()) > 0) {
+                        summary.setLastRequestTime(timestamp);
+                        summary.setLastRequestStatus(request.getRequestStatus());
+                    }
+                }
+            }
+        }
+
+        // Calculate success rates
+        for (ApiNavSummaryDTO summary : apiSummariesMap.values()) {
+            if (summary.getTotalRequests() > 0) {
+                double successRate = (double) summary.getSuccessCount() / summary.getTotalRequests() * 100.0;
+                successRate = Math.round(successRate * 10.0) / 10.0;
+                summary.setSuccessRate(successRate);
+            }
+        }
+    }
+
     // =====================================================
     // STATISTICS AND ANALYTICS METHODS
     // =====================================================

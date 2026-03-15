@@ -971,6 +971,8 @@ const transformSearchRequestsResponse = (response) => {
             sourceApplication: req.sourceApplication,
             isMockRequest: req.isMockRequest || false
         })),
+        // ADD THIS LINE - preserve apiSummaries from the response
+        apiSummaries: data.apiSummaries || [],
         totalElements: data.totalElements || 0,
         totalPages: data.totalPages || 0,
         currentPage: data.currentPage || 0,

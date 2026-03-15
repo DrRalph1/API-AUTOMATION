@@ -384,15 +384,19 @@ public class ApiRequestController {
             String performedBy = jwtHelper.extractPerformedBy(req);
             loggingHelper.logInfo(requestId, "Searching requests with filter");
 
+            // Get paginated requests
             Page<ApiRequestResponseDTO> requestsPage = apiRequestService.searchRequests(requestId, filter);
 
-            Map<String, Object> data = Map.of(
-                    "content", requestsPage.getContent(),
-                    "totalElements", requestsPage.getTotalElements(),
-                    "totalPages", requestsPage.getTotalPages(),
-                    "currentPage", requestsPage.getNumber(),
-                    "pageSize", requestsPage.getSize()
-            );
+            // Get distinct API summaries (this should come from a separate service method)
+            List<ApiNavSummaryDTO> apiSummaries = apiRequestService.getDistinctApiSummaries(requestId, filter);
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("content", requestsPage.getContent());
+            data.put("totalElements", requestsPage.getTotalElements());
+            data.put("totalPages", requestsPage.getTotalPages());
+            data.put("currentPage", requestsPage.getNumber());
+            data.put("pageSize", requestsPage.getSize());
+            data.put("apiSummaries", apiSummaries); // Single array at root level
 
             return responseBuilderHelper.buildSuccessResponse(
                     requestId,
