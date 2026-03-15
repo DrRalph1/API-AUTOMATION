@@ -17,7 +17,8 @@ public class ExecuteApiResponseDTO {
 //    private Map<String, String> headers;
     private Object data;
 //    private Map<String, Object> metadata;
-//    private Long executionTimeMs;
+    private Long executionTimeMs;
+    private String correlationId;
     private Boolean success;
     private String message;
     private Integer responseCode;

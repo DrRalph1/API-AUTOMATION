@@ -90,6 +90,9 @@ public class AutomationEngineService {
     private final CodeLanguageGeneratorUtil codeLanguageGeneratorUtil;
     private final ParameterGeneratorUtil parameterGeneratorUtil;
 
+    // ==================== API REQUEST LOGGING ====================
+    private final ApiRequestService apiRequestService;
+
     // ==================== EXTERNAL DEPENDENCIES ====================
     private final ObjectMapper objectMapper;
     private final LoggerUtil loggerUtil;
@@ -107,7 +110,7 @@ public class AutomationEngineService {
     public GeneratedApiResponseDTO generateApi(String requestId, String performedBy, GenerateApiRequestDTO request) {
         long startTime = System.currentTimeMillis();
         try {
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Generating API: " + request.getApiName() + " by: " + performedBy);
 
             // Validate API code uniqueness
@@ -150,7 +153,7 @@ public class AutomationEngineService {
                     savedApi, genUrlInfo, codeBaseRequestId, collectionId, docCollectionId,
                     collectionInfo, genUrlBuilder, conversionHelper, this::generateApiCode);
 
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", API generated successfully with ID: " + savedApi.getId() +
                     ", Source Request ID (tb_col_requests): " + collectionsRequestId +
                     " in " + (System.currentTimeMillis() - startTime) + "ms");
@@ -158,7 +161,7 @@ public class AutomationEngineService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Error generating API: " + e.getMessage());
             log.error("Error generating API", e);
             throw new RuntimeException("Failed to generate API: " + e.getMessage(), e);
@@ -170,7 +173,7 @@ public class AutomationEngineService {
     public GeneratedApiResponseDTO updateApi(String requestId, String apiId, String performedBy,
                                              GenerateApiRequestDTO request) {
         try {
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Updating API: " + apiId + " by: " + performedBy);
 
             GeneratedApiEntity api = executionHelper.getApiEntity(generatedAPIRepository, apiId);
@@ -203,13 +206,13 @@ public class AutomationEngineService {
                     this::updateCodeBase, this::updateCollections, this::updateDocumentation,
                     this::getCodeBaseRequestId, this::getCollectionsCollectionId);
 
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", API updated successfully: " + savedApi.getId());
 
             return conversionHelper.mapToResponse(savedApi);
 
         } catch (Exception e) {
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Error updating API: " + e.getMessage());
             throw new RuntimeException("Failed to update API: " + e.getMessage(), e);
         }
@@ -223,9 +226,11 @@ public class AutomationEngineService {
                                             HttpServletRequest httpServletRequest) {
 
         long startTime = System.currentTimeMillis();
+        String capturedRequestId = null;
+        ApiRequestResponseDTO capturedRequest = null;
 
         try {
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Executing API: " + apiId + " by: " + performedBy);
 
             // 1. Get the API entity
@@ -248,18 +253,39 @@ public class AutomationEngineService {
             if (httpServletRequest != null) {
                 httpMethod = httpServletRequest.getMethod();
                 log.info("HTTP method from HttpServletRequest: {}", httpMethod);
-
-                // Set it directly in the DTO
                 executeRequest.setHttpMethod(httpMethod);
             }
 
             // 5. Prepare and validate the request
             ExecuteApiRequestDTO validatedRequest = executionHelper.prepareValidatedRequest(api, executeRequest);
 
-            // 6. Ensure HTTP method is preserved (in case prepareValidatedRequest cleared it)
+            // 6. Ensure HTTP method is preserved
             if (validatedRequest.getHttpMethod() == null && httpMethod != null) {
                 validatedRequest.setHttpMethod(httpMethod);
                 log.info("Re-set HTTP method in validatedRequest: {}", httpMethod);
+            }
+
+            // ============= CAPTURE REQUEST BEFORE EXECUTION =============
+            try {
+                // Convert ExecuteApiRequestDTO to ApiRequestDTO for capture
+                ApiRequestDTO requestDTO = convertExecuteRequestToApiRequestDTO(validatedRequest, api);
+                requestDTO.setClientIpAddress(clientIp);
+                requestDTO.setUserAgent(userAgent);
+                requestDTO.setRequestedBy(performedBy);
+                requestDTO.setCorrelationId(executeRequest.getRequestId());
+
+                // Capture the request
+                capturedRequest = apiRequestService.captureRequest(
+                        requestId,
+                        apiId,
+                        requestDTO,
+                        performedBy,
+                        httpServletRequest
+                );
+                capturedRequestId = capturedRequest.getId();
+                log.info("Request captured successfully with ID: {}", capturedRequestId);
+            } catch (Exception e) {
+                log.error("Failed to capture request, but continuing with execution: {}", e.getMessage());
             }
 
             // 7. Validate HTTP method
@@ -269,6 +295,12 @@ public class AutomationEngineService {
                                 validatedRequest.getHttpMethod() : "null");
 
                 log.warn("HTTP method mismatch. {}", errorMsg);
+
+                // Update captured request with error if it was captured
+                if (capturedRequestId != null) {
+                    updateCapturedRequestWithError(requestId, capturedRequestId, 405, errorMsg,
+                            System.currentTimeMillis() - startTime);
+                }
 
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, 405, System.currentTimeMillis() - startTime,
@@ -287,6 +319,13 @@ public class AutomationEngineService {
                         authResult.isAuthenticated(), authResult.getReason());
 
                 if (!authResult.isAuthenticated()) {
+                    // Update captured request with auth error
+                    if (capturedRequestId != null) {
+                        updateCapturedRequestWithError(requestId, capturedRequestId, 401,
+                                "Authentication failed: " + authResult.getReason(),
+                                System.currentTimeMillis() - startTime);
+                    }
+
                     executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                             null, 401, System.currentTimeMillis() - startTime,
                             performedBy, clientIp, userAgent,
@@ -298,7 +337,7 @@ public class AutomationEngineService {
                 log.info("=== STEP 8: Authentication validation completed successfully ===");
             } catch (Exception e) {
                 log.error("Exception during authentication validation: {}", e.getMessage(), e);
-                throw e; // or handle appropriately
+                throw e;
             }
 
             // 9. Get all API parameters and log them
@@ -308,7 +347,7 @@ public class AutomationEngineService {
                     log.info("  - {}: type={}, location={}, required={}",
                             p.getKey(), p.getParameterType(), p.getParameterLocation(), p.getRequired()));
 
-            // 10. Create consolidated params using the enhanced method that includes headers
+            // 10. Create consolidated params
             Map<String, Object> consolidatedParams = createConsolidatedParamsWithHeaders(validatedRequest);
 
             // 11. AUTO-ADD CONTENT-TYPE HEADER IF MISSING BUT REQUIRED
@@ -322,10 +361,8 @@ public class AutomationEngineService {
                 String contentTypeValue = "application/json";
                 log.info("Auto-adding missing required Content-Type header with value: {}", contentTypeValue);
 
-                // Add to consolidated params with original case
                 consolidatedParams.put("Content-Type", contentTypeValue);
 
-                // Also add to the request headers for proper execution
                 if (validatedRequest.getHeaders() == null) {
                     validatedRequest.setHeaders(new HashMap<>());
                 }
@@ -335,18 +372,19 @@ public class AutomationEngineService {
             }
 
             log.info("Consolidated params after extraction: {}", consolidatedParams);
-            log.info("Request path params after extraction: {}", validatedRequest.getPathParams());
-            log.info("Request query params: {}", validatedRequest.getQueryParams());
-            log.info("Request headers: {}", validatedRequest.getHeaders() != null ?
-                    validatedRequest.getHeaders().keySet() : "null");
-            log.info("Request body: {}", validatedRequest.getBody());
-            log.info("Final path params in request: {}", validatedRequest.getPathParams());
 
-            // 12. Validate required parameters - USING ENHANCED METHOD
+            // 12. Validate required parameters
             Map<String, String> validationErrors = validateRequiredParametersEnhanced(api, consolidatedParams, validatedRequest);
 
             if (!validationErrors.isEmpty()) {
                 String missingParams = String.join(", ", validationErrors.keySet());
+
+                // Update captured request with validation error
+                if (capturedRequestId != null) {
+                    updateCapturedRequestWithError(requestId, capturedRequestId, 400,
+                            "Required parameter(s) missing: " + missingParams,
+                            System.currentTimeMillis() - startTime);
+                }
 
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, 400, System.currentTimeMillis() - startTime,
@@ -359,6 +397,13 @@ public class AutomationEngineService {
 
             // 13. Authorization check
             if (!validatorService.validateAuthorization(api, performedBy)) {
+                // Update captured request with authorization error
+                if (capturedRequestId != null) {
+                    updateCapturedRequestWithError(requestId, capturedRequestId, 403,
+                            "User not authorized to access this API",
+                            System.currentTimeMillis() - startTime);
+                }
+
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, 403, System.currentTimeMillis() - startTime,
                         performedBy, clientIp, userAgent,
@@ -370,6 +415,13 @@ public class AutomationEngineService {
 
             // 14. Rate limiting check
             if (!validatorService.checkRateLimit(api, clientIp)) {
+                // Update captured request with rate limit error
+                if (capturedRequestId != null) {
+                    updateCapturedRequestWithError(requestId, capturedRequestId, 429,
+                            "Rate limit exceeded",
+                            System.currentTimeMillis() - startTime);
+                }
+
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, 429, System.currentTimeMillis() - startTime,
                         performedBy, clientIp, userAgent,
@@ -387,6 +439,7 @@ public class AutomationEngineService {
 
             // 17. Execute against Oracle
             Object result;
+            long executionTime;
             try {
                 result = executionHelper.executeAgainstOracle(
                         api,
@@ -402,49 +455,106 @@ public class AutomationEngineService {
                         packageExecutorUtil,
                         this::generateSampleResponse
                 );
+
+                executionTime = System.currentTimeMillis() - startTime;
+
+                // 18. Format the response
+                Object formattedResponse = responseHelper.formatResponse(api, result);
+
+                // ============= UPDATE CAPTURED REQUEST WITH SUCCESS RESPONSE =============
+                if (capturedRequestId != null) {
+                    try {
+                        ExecuteApiResponseDTO successResponse = ExecuteApiResponseDTO.builder()
+                                .responseCode(200)
+                                .message("Success")
+                                .data(formattedResponse)
+                                .executionTimeMs(executionTime)
+                                .correlationId(executeRequest.getRequestId())
+                                .build();
+
+                        apiRequestService.updateRequestWithResponse(
+                                requestId,
+                                capturedRequestId,
+                                successResponse,
+                                200,
+                                "Success",
+                                executionTime
+                        );
+                        log.info("Captured request updated with success response");
+                    } catch (Exception e) {
+                        log.error("Failed to update captured request with response: {}", e.getMessage());
+                    }
+                }
+
+                // 19. Update API statistics
+                executionHelper.updateApiStats(api, generatedAPIRepository);
+
+                // 20. Log the successful execution
+                executionHelper.logExecution(executionLogRepository, api, validatedRequest,
+                        formattedResponse, 200, executionTime, performedBy,
+                        clientIp, userAgent, null, objectMapper);
+
+                // 21. Build success response
+                ExecuteApiResponseDTO response = responseHelper.buildSuccessResponse(
+                        formattedResponse, executionTime, api);
+
+                loggerUtil.log("apiAutomation", "Request ID: " + requestId +
+                        ", API executed successfully: " + apiId +
+                        " - Time: " + executionTime + "ms");
+
+                return response;
+
             } catch (Exception e) {
+                executionTime = System.currentTimeMillis() - startTime;
                 log.error("Oracle execution failed: {}", e.getMessage(), e);
 
+                // ============= UPDATE CAPTURED REQUEST WITH ERROR RESPONSE =============
+                if (capturedRequestId != null) {
+                    try {
+                        apiRequestService.updateRequestWithError(
+                                requestId,
+                                capturedRequestId,
+                                500,
+                                "Database execution error: " + e.getMessage(),
+                                executionTime
+                        );
+                        log.info("Captured request updated with error response");
+                    } catch (Exception updateError) {
+                        log.error("Failed to update captured request with error: {}", updateError.getMessage());
+                    }
+                }
+
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
-                        null, 500, System.currentTimeMillis() - startTime,
-                        performedBy, clientIp, userAgent,
+                        null, 500, executionTime, performedBy, clientIp, userAgent,
                         "Database execution error: " + e.getMessage(), objectMapper);
 
                 return responseHelper.createErrorResponse(500,
                         "Database execution error: " + e.getMessage(), startTime);
             }
 
-            // 18. Format the response
-            Object formattedResponse = responseHelper.formatResponse(api, result);
-
-            long executionTime = System.currentTimeMillis() - startTime;
-
-            // 19. Update API statistics
-            executionHelper.updateApiStats(api, generatedAPIRepository);
-
-            // 20. Log the successful execution
-            executionHelper.logExecution(executionLogRepository, api, validatedRequest,
-                    formattedResponse, 200, executionTime, performedBy,
-                    clientIp, userAgent, null, objectMapper);
-
-            // 21. Build success response
-            ExecuteApiResponseDTO response = responseHelper.buildSuccessResponse(
-                    formattedResponse, executionTime, api);
-
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
-                    ", API executed successfully: " + apiId +
-                    " - Time: " + executionTime + "ms");
-
-            return response;
-
         } catch (Exception e) {
             long executionTime = System.currentTimeMillis() - startTime;
 
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Error executing API: " + e.getMessage());
             log.error("Error executing API: {}", e.getMessage(), e);
 
-            // Try to log the error
+            // ============= UPDATE CAPTURED REQUEST WITH GENERAL ERROR =============
+            if (capturedRequestId != null) {
+                try {
+                    apiRequestService.updateRequestWithError(
+                            requestId,
+                            capturedRequestId,
+                            500,
+                            "Execution error: " + e.getMessage(),
+                            executionTime
+                    );
+                } catch (Exception updateError) {
+                    log.error("Failed to update captured request with error: {}", updateError.getMessage());
+                }
+            }
+
+            // Try to log the error in execution log
             try {
                 GeneratedApiEntity api = null;
                 try {
@@ -462,6 +572,60 @@ public class AutomationEngineService {
 
             return responseHelper.createSafeErrorResponse(e, startTime);
         }
+    }
+
+    /**
+     * Helper method to update captured request with error
+     */
+    private void updateCapturedRequestWithError(String requestId, String capturedRequestId,
+                                                int statusCode, String errorMessage,
+                                                long executionDurationMs) {
+        try {
+            apiRequestService.updateRequestWithError(
+                    requestId,
+                    capturedRequestId,
+                    statusCode,
+                    errorMessage,
+                    executionDurationMs
+            );
+        } catch (Exception e) {
+            log.error("Failed to update captured request with error: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Convert ExecuteApiRequestDTO to ApiRequestDTO
+     */
+    private ApiRequestDTO convertExecuteRequestToApiRequestDTO(ExecuteApiRequestDTO executeRequest, GeneratedApiEntity api) {
+        ApiRequestDTO dto = new ApiRequestDTO();
+
+        dto.setRequestName("Execution: " + api.getApiName());
+        dto.setDescription("API execution request");
+        dto.setHttpMethod(executeRequest.getHttpMethod());
+        dto.setUrl(executeRequest.getUrl());
+        dto.setBasePath(api.getBasePath());
+        dto.setEndpointPath(api.getEndpointPath());
+        dto.setRequestTimeoutSeconds(executeRequest.getTimeoutSeconds());
+
+        // Set request components
+        dto.setPathParameters(executeRequest.getPathParams());
+        dto.setQueryParameters(executeRequest.getQueryParams());
+        dto.setHeaders(executeRequest.getHeaders());
+        dto.setRequestBody(executeRequest.getBody() instanceof Map ?
+                (Map<String, Object>) executeRequest.getBody() : null);
+
+        // Set correlation ID
+        dto.setCorrelationId(executeRequest.getRequestId());
+
+        // Set metadata
+        dto.setMetadata(executeRequest.getMetadata());
+
+        // Set auth type from API (will be populated from request if available)
+        if (api.getAuthConfig() != null) {
+            dto.setAuthType(api.getAuthConfig().getAuthType());
+        }
+
+        return dto;
     }
 
     /**
@@ -498,7 +662,7 @@ public class AutomationEngineService {
     public ApiTestResultDTO testApi(String requestId, String performedBy,
                                     String apiId, ApiTestRequestDTO testRequest, HttpServletRequest req) {
         try {
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Testing API: " + apiId + " with test: " + testRequest.getTestName());
 
             GeneratedApiEntity api = executionHelper.getApiEntity(generatedAPIRepository, apiId);
@@ -523,7 +687,7 @@ public class AutomationEngineService {
                     executionResult.getResponseCode(), executionResult.getData());
 
         } catch (Exception e) {
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Error testing API: " + e.getMessage());
             throw new RuntimeException("Failed to test API: " + e.getMessage(), e);
         }
@@ -546,7 +710,7 @@ public class AutomationEngineService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Error getting API details: " + e.getMessage());
             throw new RuntimeException("Failed to get API details: " + e.getMessage(), e);
         }
@@ -567,7 +731,7 @@ public class AutomationEngineService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Error getting API details: " + e.getMessage());
             throw new RuntimeException("Failed to get API details: " + e.getMessage(), e);
         }
@@ -577,7 +741,7 @@ public class AutomationEngineService {
 
     public ApiDetailsResponseDTO getCompleteApiDetails(String requestId, String apiId) {
         try {
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Fetching complete API details for: " + apiId);
 
             GeneratedApiEntity api = generatedAPIRepository.findByIdWithConfigs(apiId)
@@ -608,7 +772,7 @@ public class AutomationEngineService {
             return response;
 
         } catch (Exception e) {
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Error fetching complete API details: " + e.getMessage());
             throw new RuntimeException("Failed to fetch complete API details: " + e.getMessage(), e);
         }
@@ -658,7 +822,7 @@ public class AutomationEngineService {
     public GeneratedApiResponseDTO partialUpdateApi(String requestId, String apiId, String performedBy,
                                                     Map<String, Object> updates) {
         try {
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Partially updating API: " + apiId + " by: " + performedBy);
 
             // Get existing API
@@ -696,13 +860,13 @@ public class AutomationEngineService {
             // Save updated API
             GeneratedApiEntity savedApi = generatedAPIRepository.save(api);
 
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", API partially updated successfully: " + savedApi.getId());
 
             return conversionHelper.mapToResponse(savedApi);
 
         } catch (Exception e) {
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Error partially updating API: " + e.getMessage());
             throw new RuntimeException("Failed to partially update API: " + e.getMessage(), e);
         }
@@ -722,7 +886,7 @@ public class AutomationEngineService {
 
             GeneratedApiEntity updatedApi = generatedAPIRepository.save(api);
 
-            loggerUtil.log("apiGeneration", "API status updated: " + apiId +
+            loggerUtil.log("apiAutomation", "API status updated: " + apiId +
                     " to " + status + " by: " + performedBy);
 
             return conversionHelper.mapToResponse(updatedApi);
@@ -741,7 +905,7 @@ public class AutomationEngineService {
             return metadataHelper.buildApiAnalytics(
                     executionLogRepository, apiId, startDate, endDate);
         } catch (Exception e) {
-            loggerUtil.log("apiGeneration", "Request ID: " + requestId +
+            loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Error getting API analytics: " + e.getMessage());
             throw new RuntimeException("Failed to get API analytics: " + e.getMessage(), e);
         }

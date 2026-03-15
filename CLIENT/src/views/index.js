@@ -851,17 +851,20 @@ export default function EntryPage() {
     poolUtilization: "78%"
   };
 
-  // Navigation items with icons
+  // Navigation items with icons - Keep all items including user-mgt
   const navItems = [
     { id: "overview", label: "Dashboard", icon: LayoutDashboard, component: <Dashboard setActiveTab={setActiveTab} authToken={`Bearer ${token}`} /> },
     { id: "schema-browser", label: "Schema Browser", icon: DatabaseBackup, component: <SchemaBrowser authToken={`Bearer ${token}`} /> },
     { id: "api-collections", label: "Collections", icon: FileCode, component: <Collections authToken={`Bearer ${token}`} /> },
-    { id: "api-docs", label: "Documenation", icon: Activity, component: <Documentation authToken={`Bearer ${token}`} /> },
+    { id: "api-docs", label: "Documentation", icon: Activity, component: <Documentation authToken={`Bearer ${token}`} /> },
     { id: "code-base", label: "Code Base", icon: Code, component: <CodeBase authToken={`Bearer ${token}`} /> },
     { id: "security", label: "API Security", icon: Shield, component: <APISecurity authToken={`Bearer ${token}`} /> },
-    // { id: "user-mgt", label: "User Mgt", icon: UserCog, component: <UserMangement authToken={`Bearer ${token}`} /> },
+    { id: "user-mgt", label: "User Mgt", icon: UserCog, component: <UserMangement authToken={`Bearer ${token}`} /> },
     { id: "api-requests", label: "API Requests", icon: FileCode, component: <APIRequests authToken={`Bearer ${token}`} /> },
   ];
+
+  // Filter navigation items for UI display (hide user-mgt)
+  const visibleNavItems = navItems.filter(item => item.id !== "user-mgt");
 
   // Quick actions
   const quickActions = [
@@ -1047,9 +1050,9 @@ export default function EntryPage() {
               </button>
             </div>
 
-            {/* Mobile Navigation */}
+            {/* Mobile Navigation - Use visibleNavItems to hide user-mgt */}
             <nav className="space-y-1 mb-8">
-              {navItems.map(item => {
+              {visibleNavItems.map(item => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
                 return (
@@ -1205,7 +1208,7 @@ export default function EntryPage() {
                         isDark 
                           ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500 focus:border-orange-500' 
                           : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-orange-500'
-                    }`}
+                      }`}
                     />
                   </div>
                   <div>
@@ -1219,7 +1222,7 @@ export default function EntryPage() {
                         isDark 
                           ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500 focus:border-orange-500' 
                           : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-orange-500'
-                    }`}
+                      }`}
                     />
                   </div>
                 </div>
@@ -1533,9 +1536,9 @@ export default function EntryPage() {
               </div>
             </div>
 
-            {/* Center Navigation - Desktop */}
+            {/* Center Navigation - Desktop - Use visibleNavItems to hide user-mgt */}
             <div className="hidden lg:flex items-center gap-1">
-              {navItems.map(item => {
+              {visibleNavItems.map(item => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
                 return (
@@ -1712,11 +1715,11 @@ export default function EntryPage() {
         isMobile={isMobile}
       />
 
-      {/* Mobile Bottom Navigation */}
+      {/* Mobile Bottom Navigation - Use visibleNavItems to hide user-mgt */}
       {isMobile && (
         <div className={`fixed bottom-0 left-0 right-0 ${isDark ? 'bg-gray-900/95 backdrop-blur-xl' : 'bg-white/95 backdrop-blur-xl'} border-t ${isDark ? 'border-gray-800' : 'border-gray-300'} z-30`}>
           <div className="flex items-center justify-around py-2">
-            {navItems.slice(0, 4).map(item => {
+            {visibleNavItems.slice(0, 4).map(item => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
               return (

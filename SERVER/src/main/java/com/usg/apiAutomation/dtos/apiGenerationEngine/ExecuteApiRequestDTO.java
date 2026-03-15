@@ -19,4 +19,6 @@ public class ExecuteApiRequestDTO {
     private Object body;
     private String requestId;
     private String httpMethod;
+    private Integer timeoutSeconds;
+    private Map<String, Object> metadata;
 }

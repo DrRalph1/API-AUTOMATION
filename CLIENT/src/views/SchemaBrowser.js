@@ -3360,16 +3360,32 @@ const renderParametersTab = useCallback(() => {
 
   // Render Constraints Tab
   const renderConstraintsTab = () => {
-    const constraints = objectDetails?.constraints || 
-                        objectDetails?.targetDetails?.constraints || 
-                        activeObject?.constraints || 
-                        [];
+    // Check multiple locations for constraints
+    let constraints = [];
+    
+    // For synonyms pointing to tables, constraints are in targetObjectDetails.constraints
+    if (objectDetails?.targetObjectDetails?.constraints) {
+      constraints = objectDetails.targetObjectDetails.constraints;
+      console.log('📊 Found constraints in targetObjectDetails:', constraints.length);
+    }
+    // Check other possible locations
+    else if (objectDetails?.constraints) {
+      constraints = objectDetails.constraints;
+    }
+    else if (objectDetails?.targetDetails?.constraints) {
+      constraints = objectDetails.targetDetails.constraints;
+    }
+    else if (activeObject?.constraints) {
+      constraints = activeObject.constraints;
+    }
+    
+    console.log('📊 Constraints found:', constraints.length);
     
     if (!constraints || constraints.length === 0) {
       return (
         <div className="flex-1 overflow-auto p-4">
           <div className="text-center" style={{ color: colors.textSecondary }}>
-            No constraints found
+            No constraints found for this object
           </div>
         </div>
       );
@@ -3377,7 +3393,7 @@ const renderParametersTab = useCallback(() => {
     
     return (
       <div className="flex-1 overflow-auto">
-        <div className="border rounded" style={{ borderColor: colors.gridBorder }}>
+        <div className="border rounded" style={{ borderColor: colors.gridBorder, backgroundColor: colors.card }}>
           <div className="p-2 border-b" style={{ borderColor: colors.gridBorder }}>
             <div className="text-sm font-medium" style={{ color: colors.text }}>
               Constraints ({constraints.length})
@@ -3390,34 +3406,63 @@ const renderParametersTab = useCallback(() => {
                   <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Name</th>
                   <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Type</th>
                   <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Status</th>
+                  <th className="text-left p-2 text-xs hidden md:table-cell" style={{ color: colors.textSecondary }}>Columns</th>
+                  <th className="text-left p-2 text-xs hidden lg:table-cell" style={{ color: colors.textSecondary }}>Validated</th>
+                  <th className="text-left p-2 text-xs hidden lg:table-cell" style={{ color: colors.textSecondary }}>Deferrable</th>
                 </tr>
               </thead>
               <tbody>
-                {constraints.map((con, i) => (
-                  <tr key={con.name || con.CONSTRAINT_NAME || i} style={{ 
-                    backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                    borderBottom: `1px solid ${colors.gridBorder}`
-                  }}>
-                    <td className="p-2 text-xs" style={{ color: colors.text }}>{con.name || con.CONSTRAINT_NAME}</td>
-                    <td className="p-2 text-xs">
-                      <span className={`px-2 py-0.5 rounded text-xs ${
-                        (con.constraint_type || con.CONSTRAINT_TYPE) === 'P' ? 'bg-blue-500/10 text-blue-400' :
-                        (con.constraint_type || con.CONSTRAINT_TYPE) === 'R' ? 'bg-purple-500/10 text-purple-400' :
-                        (con.constraint_type || con.CONSTRAINT_TYPE) === 'U' ? 'bg-green-500/10 text-green-400' :
-                        'bg-yellow-500/10 text-yellow-400'
-                      }`}>
-                        {con.constraint_type || con.CONSTRAINT_TYPE}
-                      </span>
-                    </td>
-                    <td className="p-2 text-xs">
-                      <span className={`px-2 py-0.5 rounded text-xs ${
-                        (con.status || con.STATUS) === 'ENABLED' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
-                      }`}>
-                        {con.status || con.STATUS}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {constraints.map((con, i) => {
+                  // Handle both uppercase and lowercase field names
+                  const constraintName = con.CONSTRAINT_NAME || con.name || '-';
+                  const constraintType = con.CONSTRAINT_TYPE || con.type || '-';
+                  const constraintStatus = con.CONSTRAINT_STATUS || con.status || '-';
+                  const columns = con.COLUMNS || con.columns || '-';
+                  const validated = con.VALIDATED || con.validated || '-';
+                  const deferrable = con.DEFERRABLE || con.deferrable || '-';
+                  
+                  // Format constraint type for display
+                  let typeDisplay = constraintType;
+                  if (constraintType === 'C') typeDisplay = 'Check';
+                  else if (constraintType === 'P') typeDisplay = 'Primary Key';
+                  else if (constraintType === 'R') typeDisplay = 'Foreign Key';
+                  else if (constraintType === 'U') typeDisplay = 'Unique';
+                  
+                  return (
+                    <tr key={constraintName + i} style={{ 
+                      backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                      borderBottom: `1px solid ${colors.gridBorder}`
+                    }}>
+                      <td className="p-2 text-xs" style={{ color: colors.text }}>{constraintName}</td>
+                      <td className="p-2 text-xs">
+                        <span className={`px-2 py-0.5 rounded text-xs ${
+                          constraintType === 'P' ? 'bg-blue-500/10 text-blue-400' :
+                          constraintType === 'R' ? 'bg-purple-500/10 text-purple-400' :
+                          constraintType === 'U' ? 'bg-green-500/10 text-green-400' :
+                          'bg-yellow-500/10 text-yellow-400'
+                        }`}>
+                          {typeDisplay}
+                        </span>
+                      </td>
+                      <td className="p-2 text-xs">
+                        <span className={`px-2 py-0.5 rounded text-xs ${
+                          constraintStatus === 'ENABLED' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                        }`}>
+                          {constraintStatus}
+                        </span>
+                      </td>
+                      <td className="p-2 text-xs hidden md:table-cell" style={{ color: colors.textSecondary }}>
+                        {columns}
+                      </td>
+                      <td className="p-2 text-xs hidden lg:table-cell" style={{ color: colors.textSecondary }}>
+                        {validated}
+                      </td>
+                      <td className="p-2 text-xs hidden lg:table-cell" style={{ color: colors.textSecondary }}>
+                        {deferrable}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -3724,11 +3769,11 @@ const renderPropertiesTab = () => {
                 )}
 
                 {/* Fallback notice */}
-                {responseData.fallbackUsed && (
+                {/* {responseData.fallbackUsed && (
                   <div className="mt-4 p-2 rounded text-xs" style={{ backgroundColor: 'rgba(251, 191, 36, 0.1)', color: colors.warning }}>
                     ⚠️ Using fallback data - details may be limited
                   </div>
-                )}
+                )} */}
               </div>
             )}
           </div>

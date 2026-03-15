@@ -2578,7 +2578,62 @@ public class OracleSchemaRepository {
             return result;
         }
 
-        return getObjectDetailsPaginated(objectName, objectType, owner, page, pageSize, true);
+        Map<String, Object> result = getObjectDetailsPaginated(objectName, objectType, owner, page, pageSize, true);
+
+        // Add constraint details for TABLE objects
+        if ("TABLE".equalsIgnoreCase(objectType)) {
+            try {
+                String resolvedOwner = owner != null && !owner.isEmpty() ? owner : getCurrentUser();
+                List<Map<String, Object>> constraints = getTableConstraints(resolvedOwner, objectName);
+
+                // Add constraints to the result
+                if (constraints != null && !constraints.isEmpty()) {
+                    result.put("constraints", constraints);
+                    result.put("constraintsCount", constraints.size());
+
+                    // Also add transformed constraints for frontend if needed
+                    List<Map<String, Object>> transformedConstraints = transformConstraintsForFrontend(constraints);
+                    result.put("constraintsFormatted", transformedConstraints);
+                } else {
+                    result.put("constraints", new ArrayList<>());
+                    result.put("constraintsCount", 0);
+                }
+            } catch (Exception e) {
+                log.warn("Could not fetch constraints for table {}: {}", objectName, e.getMessage());
+                result.put("constraints", new ArrayList<>());
+                result.put("constraintsCount", 0);
+                result.put("constraintsError", e.getMessage());
+            }
+        }
+
+        // Optionally add constraint details for VIEW objects as well (some views can have constraints)
+        else if ("VIEW".equalsIgnoreCase(objectType)) {
+            try {
+                String resolvedOwner = owner != null && !owner.isEmpty() ? owner : getCurrentUser();
+                // Check if the view has any constraints (views can have WITH CHECK OPTION constraints)
+                String sql = "SELECT " +
+                        "    constraint_name, " +
+                        "    constraint_type, " +
+                        "    status, " +
+                        "    deferrable, " +
+                        "    deferred, " +
+                        "    validated " +
+                        "FROM all_constraints " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?) " +
+                        "AND constraint_type IN ('V', 'O')"; // V = Check option on view, O = Read-only view
+
+                List<Map<String, Object>> viewConstraints = oracleJdbcTemplate.queryForList(sql, resolvedOwner, objectName);
+
+                if (viewConstraints != null && !viewConstraints.isEmpty()) {
+                    result.put("constraints", viewConstraints);
+                    result.put("constraintsCount", viewConstraints.size());
+                }
+            } catch (Exception e) {
+                log.debug("Could not fetch constraints for view {}: {}", objectName, e.getMessage());
+            }
+        }
+
+        return result;
     }
 
     // ============================================================

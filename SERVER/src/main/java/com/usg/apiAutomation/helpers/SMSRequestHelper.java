@@ -449,7 +449,7 @@ public class SMSRequestHelper {
                 file.flush();
             }
             System.out.println("[SMSRequestHelper] Message saved to offline data file: " + logFilePath);
-            loggerUtil.log(Level.INFO, "ap-gateway", "SMSRequestHelper.saveMessagetoFile", "Message saved to offline data file");
+            loggerUtil.log(Level.INFO, "api-automation", "SMSRequestHelper.saveMessagetoFile", "Message saved to offline data file");
         } catch (IOException e) {
             System.out.println("[SMSRequestHelper] Error saving message to offline file: " + e.getMessage());
             loggerUtil.log(Level.INFO, "api-automation", "SMSRequestHelper.saveMessagetoFile",
