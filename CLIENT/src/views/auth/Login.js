@@ -231,7 +231,7 @@ export default function Login() {
           {/* Card Header */}
           <div className="p-7 pb-4">
             <div className="flex items-center justify-between mb-1">
-              <div>
+              <div onClick={() => {}}>
                 <h2 className="text-xl font-bold" style={{ color: colors.text }}>
                   {requiresPasswordReset ? '' : showOtp ? '' : 'Welcome Back'}
                 </h2>

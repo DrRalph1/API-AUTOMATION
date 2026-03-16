@@ -15,7 +15,6 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Repository
-@Slf4j
 public class OracleSchemaRepository {
 
     @Autowired
@@ -3168,44 +3167,210 @@ public class OracleSchemaRepository {
 
             int offset = (page - 1) * pageSize;
 
-            // Get total count
+            // First, check if this is a synonym and resolve it
+            Map<String, Object> resolved = resolveSynonymIfNeeded(procedureName, owner);
+
+            String actualOwner;
+            String actualProcedureName;
+            boolean isSynonym = false;
+
+            if (resolved != null && !resolved.isEmpty()) {
+                actualOwner = (String) resolved.get("target_owner");
+                actualProcedureName = (String) resolved.get("target_name");
+                isSynonym = true;
+                log.info("Resolved synonym {} to target {}.{}", procedureName, actualOwner, actualProcedureName);
+            } else {
+                actualOwner = owner;
+                actualProcedureName = procedureName;
+            }
+
+            // Try to get parameters from database first
             String countSql = "SELECT COUNT(*) FROM all_arguments " +
                     "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
                     "AND package_name IS NULL AND argument_name IS NOT NULL";
 
-            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class, owner, procedureName);
+            int totalCount = 0;
+            List<Map<String, Object>> parameters = new ArrayList<>();
+            boolean fromSource = false;
 
-            // Get paginated parameters
-            String paramSql = "SELECT " +
-                    "    argument_name, " +
-                    "    position, " +
-                    "    sequence, " +
-                    "    data_type, " +
-                    "    in_out, " +
-                    "    data_length, " +
-                    "    data_precision, " +
-                    "    data_scale, " +
-                    "    defaulted " +
-                    "FROM all_arguments " +
-                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
-                    "AND package_name IS NULL AND argument_name IS NOT NULL " +
-                    "ORDER BY position, sequence " +
-                    "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+            try {
+                totalCount = oracleJdbcTemplate.queryForObject(
+                        countSql, Integer.class, actualOwner, actualProcedureName);
 
-            List<Map<String, Object>> parameters = oracleJdbcTemplate.queryForList(
-                    paramSql, owner, procedureName, offset, pageSize);
+                if (totalCount > 0) {
+                    // Get paginated parameters from database
+                    String paramSql = "SELECT " +
+                            "    argument_name, " +
+                            "    position, " +
+                            "    sequence, " +
+                            "    data_type, " +
+                            "    in_out, " +
+                            "    data_length, " +
+                            "    data_precision, " +
+                            "    data_scale, " +
+                            "    defaulted " +
+                            "FROM all_arguments " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                            "AND package_name IS NULL AND argument_name IS NOT NULL " +
+                            "ORDER BY position, sequence " +
+                            "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
 
-            result.put("parameters", parameters);
+                    parameters = oracleJdbcTemplate.queryForList(
+                            paramSql, actualOwner, actualProcedureName, offset, pageSize);
+                }
+            } catch (Exception e) {
+                log.debug("Error querying all_arguments for {}.{}: {}",
+                        actualOwner, actualProcedureName, e.getMessage());
+            }
+
+            // If no parameters found in database, try parsing from source
+            if (parameters.isEmpty()) {
+                log.info("No parameters found in database for {}.{}, attempting to parse from source",
+                        actualOwner, actualProcedureName);
+
+                List<Map<String, Object>> allParams = parseProcedureParametersFromSource(
+                        actualOwner, actualProcedureName);
+
+                totalCount = allParams.size();
+
+                // Apply pagination to the parsed parameters
+                if (!allParams.isEmpty() && offset < allParams.size()) {
+                    int endIndex = Math.min(offset + pageSize, allParams.size());
+                    parameters = allParams.subList(offset, endIndex);
+                }
+
+                fromSource = true;
+                log.info("Parsed {} parameters from source for {}.{}",
+                        totalCount, actualOwner, actualProcedureName);
+            }
+
+            result.put("items", parameters);
             result.put("totalCount", totalCount);
             result.put("page", page);
             result.put("pageSize", pageSize);
             result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
 
+            if (isSynonym) {
+                result.put("isSynonym", true);
+                result.put("originalOwner", owner);
+                result.put("originalName", procedureName);
+                result.put("resolvedOwner", actualOwner);
+                result.put("resolvedName", actualProcedureName);
+            }
+
+            if (fromSource) {
+                result.put("fromSource", true);
+                result.put("message", "Parameters parsed from source code");
+            }
+
             return result;
 
         } catch (Exception e) {
-            log.error("Error in getProcedureParametersPaginated for {}.{}: {}", owner, procedureName, e.getMessage(), e);
+            log.error("Error in getProcedureParametersPaginated for {}.{}: {}",
+                    owner, procedureName, e.getMessage(), e);
             throw new RuntimeException("Failed to retrieve procedure parameters: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Parse procedure parameters from source code
+     */
+    private List<Map<String, Object>> parseProcedureParametersFromSource(String owner, String procedureName) {
+        List<Map<String, Object>> params = new ArrayList<>();
+
+        try {
+            // Get source from ALL_SOURCE
+            String sourceSql = "SELECT text FROM all_source " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(name) = UPPER(?) " +
+                    "AND UPPER(type) IN ('PROCEDURE', 'PACKAGE', 'PACKAGE BODY') " +
+                    "ORDER BY line";
+
+            List<String> sourceLines = oracleJdbcTemplate.queryForList(
+                    sourceSql, String.class, owner, procedureName);
+
+            if (sourceLines.isEmpty()) {
+                log.info("No source found for {}.{}", owner, procedureName);
+                return params;
+            }
+
+            // Combine source lines
+            StringBuilder fullSource = new StringBuilder();
+            for (String line : sourceLines) {
+                fullSource.append(line).append(" ");
+            }
+
+            String source = fullSource.toString();
+
+            // Look for procedure signature
+            // Pattern 1: PROCEDURE procedure_name ( ... ) [IS|AS]
+            String pattern1 = "PROCEDURE\\s+" + procedureName + "\\s*\\((.*?)\\)\\s*(?:IS|AS)";
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                    pattern1,
+                    java.util.regex.Pattern.DOTALL | java.util.regex.Pattern.CASE_INSENSITIVE
+            );
+
+            java.util.regex.Matcher matcher = pattern.matcher(source);
+
+            if (!matcher.find()) {
+                // Pattern 2: Without IS/AS requirement
+                pattern1 = "PROCEDURE\\s+" + procedureName + "\\s*\\((.*?)\\)";
+                pattern = java.util.regex.Pattern.compile(
+                        pattern1,
+                        java.util.regex.Pattern.DOTALL | java.util.regex.Pattern.CASE_INSENSITIVE
+                );
+                matcher = pattern.matcher(source);
+            }
+
+            if (matcher.find()) {
+                String paramsStr = matcher.group(1).trim();
+                log.info("Found parameter section for {}: {}", procedureName, paramsStr);
+
+                if (!paramsStr.isEmpty()) {
+                    // Split parameters by comma, handling nested parentheses
+                    List<String> paramDefs = splitParameters(paramsStr);
+
+                    int position = 1;
+                    for (String paramDef : paramDefs) {
+                        Map<String, Object> param = parseSingleParameterFromSource(paramDef, position);
+                        if (param != null && !param.isEmpty()) {
+                            params.add(param);
+                            position++;
+                        }
+                    }
+                }
+            } else {
+                log.info("No procedure signature found in source for {}.{}", owner, procedureName);
+            }
+
+        } catch (Exception e) {
+            log.error("Error parsing parameters from source for {}.{}: {}",
+                    owner, procedureName, e.getMessage());
+        }
+
+        return params;
+    }
+
+
+
+    /**
+     * Helper method to resolve synonyms
+     */
+    private Map<String, Object> resolveSynonymIfNeeded(String objectName, String owner) {
+        try {
+            String sql = "SELECT " +
+                    "    synonym_name, " +
+                    "    table_owner as target_owner, " +
+                    "    table_name as target_name, " +
+                    "    db_link " +
+                    "FROM all_synonyms " +
+                    "WHERE UPPER(synonym_name) = UPPER(?) AND UPPER(owner) = UPPER(?)";
+
+            return oracleJdbcTemplate.queryForMap(sql, objectName, owner);
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        } catch (Exception e) {
+            log.debug("Error checking if {} is a synonym: {}", objectName, e.getMessage());
+            return null;
         }
     }
 
@@ -3418,26 +3583,28 @@ public class OracleSchemaRepository {
 
             int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class, owner, tableName);
 
-            // Get paginated columns
-            String colSql = "SELECT " +
-                    "    column_id, " +
-                    "    column_name, " +
-                    "    data_type, " +
-                    "    data_length, " +
-                    "    data_precision, " +
-                    "    data_scale, " +
-                    "    nullable, " +
-                    "    data_default, " +
-                    "    char_length, " +
-                    "    char_used, " +
-                    "    virtual_column " +
-                    "FROM all_tab_columns " +
-                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?) " +
-                    "ORDER BY column_id " +
-                    "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+            // Get paginated columns - REMOVED virtual_column which doesn't exist in older Oracle versions
+            String colSql = "SELECT * FROM ( " +
+                    "  SELECT a.*, ROWNUM rnum FROM ( " +
+                    "    SELECT " +
+                    "        column_id, " +
+                    "        column_name, " +
+                    "        data_type, " +
+                    "        data_length, " +
+                    "        data_precision, " +
+                    "        data_scale, " +
+                    "        nullable, " +
+                    "        data_default, " +
+                    "        char_length, " +
+                    "        char_used " +
+                    "    FROM all_tab_columns " +
+                    "    WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?) " +
+                    "    ORDER BY column_id " +
+                    "  ) a WHERE ROWNUM <= ? " +
+                    ") WHERE rnum > ?";
 
             List<Map<String, Object>> columns = oracleJdbcTemplate.queryForList(
-                    colSql, owner, tableName, offset, pageSize);
+                    colSql, owner, tableName, offset + pageSize, offset);
 
             result.put("items", columns);
             result.put("totalCount", totalCount);
@@ -4091,7 +4258,7 @@ public class OracleSchemaRepository {
 
     // ==================== HELPER METHODS FOR SYNONYM HANDLING ====================
 
-    private Map<String, Object> checkIfSynonymAndGetTarget(String objectName, String expectedTargetType) {
+    public Map<String, Object> checkIfSynonymAndGetTarget(String objectName, String expectedTargetType) {
         Map<String, Object> result = new HashMap<>();
         result.put("isSynonym", false);
 
@@ -4408,7 +4575,7 @@ public class OracleSchemaRepository {
     /**
      * Get basic object information from all_objects
      */
-    private Map<String, Object> getBasicObjectInfo(String owner, String objectName, String objectType) {
+    public Map<String, Object> getBasicObjectInfo(String owner, String objectName, String objectType) {
         try {
             String sql = "SELECT " +
                     "    owner, " +
@@ -4439,7 +4606,7 @@ public class OracleSchemaRepository {
     /**
      * Get table details with owner
      */
-    private Map<String, Object> getTableDetails(String owner, String tableName) {
+    public Map<String, Object> getTableDetails(String owner, String tableName) {
         Map<String, Object> details = new HashMap<>();
         try {
             String sql;
@@ -4598,7 +4765,7 @@ public class OracleSchemaRepository {
     /**
      * Get view details with owner
      */
-    private Map<String, Object> getViewDetails(String owner, String viewName) {
+    public Map<String, Object> getViewDetails(String owner, String viewName) {
         Map<String, Object> details = new HashMap<>();
         try {
             String sql;
@@ -4714,7 +4881,7 @@ public class OracleSchemaRepository {
     /**
      * Get procedure details with owner - FIXED to handle invalid procedures
      */
-    private Map<String, Object> getProcedureDetails(String owner, String procedureName) {
+    public Map<String, Object> getProcedureDetails(String owner, String procedureName) {
         Map<String, Object> details = new HashMap<>();
 
         try {
@@ -5170,7 +5337,7 @@ public class OracleSchemaRepository {
     /**
      * Get package details with owner
      */
-    private Map<String, Object> getPackageDetails(String owner, String packageName) {
+    public Map<String, Object> getPackageDetails(String owner, String packageName) {
         Map<String, Object> details = new HashMap<>();
 
         try {
@@ -5783,7 +5950,7 @@ public class OracleSchemaRepository {
     /**
      * Get sequence details with owner
      */
-    private Map<String, Object> getSequenceDetails(String owner, String sequenceName) {
+    public Map<String, Object> getSequenceDetails(String owner, String sequenceName) {
         Map<String, Object> details = new HashMap<>();
         try {
             String sql;
@@ -6421,7 +6588,7 @@ public class OracleSchemaRepository {
     /**
      * Get table constraints with owner
      */
-    private List<Map<String, Object>> getTableConstraints(String owner, String tableName) {
+    public List<Map<String, Object>> getTableConstraints(String owner, String tableName) {
         try {
             String sql;
             if (owner.equalsIgnoreCase(getCurrentUser())) {
@@ -11046,4 +11213,7 @@ public class OracleSchemaRepository {
             return 0;
         }
     }
+
+
+
 }

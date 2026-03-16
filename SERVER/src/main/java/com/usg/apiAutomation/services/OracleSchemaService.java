@@ -5,8 +5,14 @@ import com.usg.apiAutomation.utils.LoggerUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -19,6 +25,10 @@ public class OracleSchemaService {
 
     private final OracleSchemaRepository oracleSchemaRepository;
     private final LoggerUtil loggerUtil;
+
+    @Autowired
+    @Qualifier("oracleJdbcTemplate")
+    private JdbcTemplate oracleJdbcTemplate;
 
     // ============================================================
     // 1. CURRENT SCHEMA INFO (ORIGINAL)
@@ -1035,14 +1045,16 @@ public class OracleSchemaService {
             result.put("requestId", requestId);
             result.put("timestamp", java.time.Instant.now().toString());
 
+            // Fix: Use "items" instead of "parameters" to match what the repository returns
+            List<?> items = (List<?>) parameters.get("items");
             log.info("RequestEntity ID: {}, Retrieved {} parameters for procedure: {}",
-                    requestId, ((List<?>) parameters.get("parameters")).size(), procedureName);
+                    requestId, items != null ? items.size() : 0, procedureName);
 
             return result;
 
         } catch (Exception e) {
             log.error("RequestEntity ID: {}, Error getting parameters for procedure {}: {}",
-                    requestId, procedureName, e.getMessage());
+                    requestId, procedureName, e.getMessage(), e);
 
             Map<String, Object> errorData = new HashMap<>();
             errorData.put("parameters", new ArrayList<>());
@@ -1733,6 +1745,702 @@ public class OracleSchemaService {
             return createErrorResponse(requestId, e.getMessage());
         }
     }
+
+
+
+    public Map<String, Object> resolveSynonymCustom(String requestId, String synonymName,
+                                              String owner, String performedBy) {
+        log.info("Resolving synonym: {}", synonymName);
+
+        try {
+            Map<String, Object> result = oracleSchemaRepository.getSynonymDetails(synonymName);
+
+            // Add full path for easy reference
+            if (result.containsKey("target_owner") && result.containsKey("target_name")) {
+                String fullPath = result.get("target_owner") + "." + result.get("target_name");
+                if (result.containsKey("db_link") && result.get("db_link") != null) {
+                    fullPath += "@" + result.get("db_link");
+                }
+                result.put("fullPath", fullPath);
+            }
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("data", result);
+            response.put("responseCode", 200);
+            response.put("message", "Synonym resolved successfully");
+            response.put("requestId", requestId);
+            response.put("timestamp", Instant.now().toString());
+
+            return response;
+
+        } catch (Exception e) {
+            log.error("Error resolving synonym: {}", e.getMessage());
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+
+    public Map<String, Object> getObjectProperties(String requestId, String objectName,
+                                                   String objectType, String owner, String performedBy) {
+        log.info("Getting properties for {}: {}", objectType, objectName);
+
+        try {
+            String resolvedOwner = resolveOwner(owner);
+            Map<String, Object> properties = new HashMap<>();
+
+            switch (objectType.toUpperCase()) {
+                case "TABLE":
+                    properties = oracleSchemaRepository.getTableDetails(resolvedOwner, objectName);
+                    // Remove large data that belongs to other endpoints
+                    properties.remove("columns");
+                    properties.remove("constraints");
+                    properties.remove("indexes");
+                    break;
+
+                case "VIEW":
+                    properties = oracleSchemaRepository.getViewDetails(resolvedOwner, objectName);
+                    properties.remove("columns");
+                    break;
+
+                case "PROCEDURE":
+                case "FUNCTION":
+                    Map<String, Object> procDetails = oracleSchemaRepository.getProcedureDetails(
+                            resolvedOwner, objectName);
+                    properties.putAll(procDetails);
+                    properties.remove("parameters");
+                    properties.remove("source");
+                    break;
+
+                case "PACKAGE":
+                    properties = oracleSchemaRepository.getPackageDetails(resolvedOwner, objectName);
+                    properties.remove("procedures");
+                    properties.remove("functions");
+                    properties.remove("specSource");
+                    properties.remove("bodySource");
+                    break;
+
+                case "SEQUENCE":
+                    properties = oracleSchemaRepository.getSequenceDetails(resolvedOwner, objectName);
+                    break;
+
+                case "SYNONYM":
+                    Map<String, Object> synonymDetails = oracleSchemaRepository.getSynonymDetails(objectName);
+                    properties.putAll(synonymDetails);
+                    break;
+
+                default:
+                    properties = oracleSchemaRepository.getBasicObjectInfo(resolvedOwner, objectName, objectType);
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", properties);
+            result.put("responseCode", 200);
+            result.put("message", "Properties retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", Instant.now().toString());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error getting properties: {}", e.getMessage());
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+
+
+    public Map<String, Object> getObjectColumnsPaginated(String requestId, String objectName,
+                                                         String objectType, String owner,
+                                                         int page, int pageSize, String performedBy) {
+        log.info("Getting {} columns for {}: {}, page: {}", objectType, objectType, objectName, page);
+
+        try {
+            String resolvedOwner = resolveOwner(owner);
+            String upperType = objectType.toUpperCase();
+            Map<String, Object> result = new HashMap<>();
+
+            // Check if it's a synonym that points to a table/view/procedure
+            Map<String, Object> synonymInfo = oracleSchemaRepository.checkIfSynonymAndGetTarget(
+                    objectName, upperType);
+
+            if ((boolean) synonymInfo.getOrDefault("isSynonym", false) &&
+                    !(boolean) synonymInfo.getOrDefault("isRemote", false)) {
+
+                resolvedOwner = (String) synonymInfo.get("targetOwner");
+                objectName = (String) synonymInfo.get("targetName");
+                upperType = (String) synonymInfo.get("targetType");
+            }
+
+            if (upperType.equals("TABLE") || upperType.equals("VIEW")) {
+                // Get columns for table/view
+                Map<String, Object> columnsResult = oracleSchemaRepository.getTableColumnsPaginated(
+                        objectName, resolvedOwner, page, pageSize);
+                result.putAll(columnsResult);
+                result.put("itemType", "column");
+
+            } else if (upperType.equals("PROCEDURE") || upperType.equals("FUNCTION")) {
+                // Get parameters for procedure/function
+                Map<String, Object> paramsResult = oracleSchemaRepository.getProcedureParametersPaginated(
+                        objectName, resolvedOwner, page, pageSize);
+                result.putAll(paramsResult);
+                result.put("itemType", "parameter");
+
+            } else if (upperType.equals("PACKAGE")) {
+                // Get package items
+                Map<String, Object> packageItems = oracleSchemaRepository.getPackageItemsPaginated(
+                        objectName, resolvedOwner, "ALL", page, pageSize);
+                result.putAll(packageItems);
+                result.put("itemType", "package_item");
+            }
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("data", result);
+            response.put("responseCode", 200);
+            response.put("message", "Columns retrieved successfully");
+            response.put("requestId", requestId);
+            response.put("timestamp", Instant.now().toString());
+
+            return response;
+
+        } catch (Exception e) {
+            log.error("Error getting columns: {}", e.getMessage());
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+
+    public Map<String, Object> getObjectBasicInfo(String requestId, String objectName,
+                                                  String objectType, String owner, String performedBy) {
+        log.info("Getting basic info for {}: {}", objectType, objectName);
+
+        try {
+            Map<String, Object> details = new HashMap<>();
+            String resolvedOwner = resolveOwner(owner);
+
+            // Add request metadata
+            details.put("objectName", objectName);
+            details.put("objectType", objectType);
+            details.put("owner", resolvedOwner);
+            details.put("queryTime", Instant.now().toString());
+            details.put("performedBy", performedBy);
+
+            // Check if it's a synonym first
+            Map<String, Object> synonymCheck = checkIfSynonym(objectName);
+            if ((boolean) synonymCheck.getOrDefault("isSynonym", false)) {
+                details.put("isSynonym", true);
+                details.put("synonymName", synonymCheck.get("synonymName"));
+                details.put("targetOwner", synonymCheck.get("targetOwner"));
+                details.put("targetName", synonymCheck.get("targetName"));
+                details.put("targetType", synonymCheck.get("targetType"));
+                details.put("targetStatus", synonymCheck.get("targetStatus"));
+                details.put("dbLink", synonymCheck.get("dbLink"));
+                details.put("isRemote", synonymCheck.get("dbLink") != null);
+                details.put("fullPath", synonymCheck.get("dbLink") != null ?
+                        synonymCheck.get("targetOwner") + "." + synonymCheck.get("targetName") + "@" + synonymCheck.get("dbLink") :
+                        synonymCheck.get("targetOwner") + "." + synonymCheck.get("targetName"));
+            }
+
+            // Get basic object info from ALL_OBJECTS
+            String sql = "SELECT owner, object_name, object_type, status, created, " +
+                    "last_ddl_time, timestamp, temporary, generated, secondary, " +
+                    "namespace, edition_name, sharing, editionable, oracle_maintained " +
+                    "FROM all_objects WHERE UPPER(owner) = UPPER(?) " +
+                    "AND UPPER(object_name) = UPPER(?) AND object_type = ?";
+
+            try {
+                Map<String, Object> basicInfo = oracleJdbcTemplate.queryForMap(
+                        sql, resolvedOwner, objectName, objectType);
+                details.putAll(basicInfo);
+            } catch (EmptyResultDataAccessException e) {
+                // Try without object type
+                sql = "SELECT owner, object_name, object_type, status, created, last_ddl_time, " +
+                        "timestamp, temporary, generated, secondary " +
+                        "FROM all_objects WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?)";
+                Map<String, Object> basicInfo = oracleJdbcTemplate.queryForMap(sql, resolvedOwner, objectName);
+                details.putAll(basicInfo);
+            }
+
+            // Get object size information
+            try {
+                Map<String, Object> sizeInfo = getObjectSize(objectName, objectType);
+                details.put("size", sizeInfo);
+            } catch (Exception e) {
+                log.debug("Could not get size info for {}.{}: {}", resolvedOwner, objectName, e.getMessage());
+            }
+
+            // Get object comments/description
+            try {
+                String comment = getObjectComment(resolvedOwner, objectName, objectType);
+                if (comment != null && !comment.isEmpty()) {
+                    details.put("comment", comment);
+                }
+            } catch (Exception e) {
+                log.debug("Could not get comment for {}.{}", resolvedOwner, objectName);
+            }
+
+            // Get dependency counts
+            try {
+                // Objects that depend on this
+                String usedByCount = "SELECT COUNT(*) FROM all_dependencies " +
+                        "WHERE UPPER(referenced_owner) = UPPER(?) AND UPPER(referenced_name) = UPPER(?) " +
+                        "AND UPPER(referenced_type) = UPPER(?)";
+                int dependents = oracleJdbcTemplate.queryForObject(
+                        usedByCount, Integer.class, resolvedOwner, objectName, objectType);
+                details.put("dependentCount", dependents);
+
+                // Objects that this depends on
+                String dependsOnCount = "SELECT COUNT(*) FROM all_dependencies " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(name) = UPPER(?) " +
+                        "AND UPPER(type) = UPPER(?)";
+                int dependencies = oracleJdbcTemplate.queryForObject(
+                        dependsOnCount, Integer.class, resolvedOwner, objectName, objectType);
+                details.put("dependencyCount", dependencies);
+            } catch (Exception e) {
+                log.debug("Could not get dependency counts for {}.{}", resolvedOwner, objectName);
+            }
+
+            // Get privileges
+            try {
+                List<Map<String, Object>> privileges = getObjectPrivileges(resolvedOwner, objectName, objectType);
+                if (!privileges.isEmpty()) {
+                    details.put("privileges", privileges);
+                    details.put("privilegeCount", privileges.size());
+                }
+            } catch (Exception e) {
+                log.debug("Could not get privileges for {}.{}", resolvedOwner, objectName);
+            }
+
+            // Get object statistics
+            try {
+                Map<String, Object> stats = getObjectStatistics(resolvedOwner, objectName, objectType);
+                if (!stats.isEmpty()) {
+                    details.put("statistics", stats);
+                }
+            } catch (Exception e) {
+                log.debug("Could not get statistics for {}.{}", resolvedOwner, objectName);
+            }
+
+            // Get partition info if applicable
+            try {
+                if (objectType.equalsIgnoreCase("TABLE") || objectType.equalsIgnoreCase("INDEX")) {
+                    String partitionSql = "SELECT COUNT(*) FROM all_part_tables " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?)";
+                    int partitionCount = oracleJdbcTemplate.queryForObject(
+                            partitionSql, Integer.class, resolvedOwner, objectName);
+                    if (partitionCount > 0) {
+                        details.put("isPartitioned", true);
+                        details.put("partitionCount", partitionCount);
+
+                        // Get partition details
+                        List<Map<String, Object>> partitions = getObjectPartitions(resolvedOwner, objectName, objectType);
+                        details.put("partitions", partitions);
+                    } else {
+                        details.put("isPartitioned", false);
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Could not get partition info for {}.{}", resolvedOwner, objectName);
+            }
+
+            // Get type-specific additional info
+            String upperType = objectType.toUpperCase();
+
+            // TABLE specific info
+            if (upperType.equals("TABLE")) {
+                try {
+                    // Get table-specific metadata
+                    String tableSql = "SELECT " +
+                            "    tablespace_name, " +
+                            "    num_rows, " +
+                            "    blocks, " +
+                            "    empty_blocks, " +
+                            "    avg_space, " +
+                            "    chain_cnt, " +
+                            "    avg_row_len, " +
+                            "    sample_size, " +
+                            "    last_analyzed, " +
+                            "    degree, " +
+                            "    instances, " +
+                            "    cache, " +
+                            "    table_lock, " +
+                            "    row_movement, " +
+                            "    compression, " +
+                            "    compress_for, " +
+                            "    dropped " +
+                            "FROM all_tables " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?)";
+
+                    Map<String, Object> tableInfo = oracleJdbcTemplate.queryForMap(tableSql, resolvedOwner, objectName);
+                    details.put("tableInfo", tableInfo);
+
+                    // Get column count
+                    String colCount = "SELECT COUNT(*) FROM all_tab_columns " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?)";
+                    int columnCount = oracleJdbcTemplate.queryForObject(colCount, Integer.class, resolvedOwner, objectName);
+                    details.put("columnCount", columnCount);
+
+                    // Get constraint counts by type
+                    String constraintSql = "SELECT constraint_type, COUNT(*) as count " +
+                            "FROM all_constraints " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?) " +
+                            "GROUP BY constraint_type";
+                    List<Map<String, Object>> constraintCounts = oracleJdbcTemplate.queryForList(
+                            constraintSql, resolvedOwner, objectName);
+                    if (!constraintCounts.isEmpty()) {
+                        details.put("constraintCounts", constraintCounts);
+                    }
+
+                    // Get index count
+                    String idxCount = "SELECT COUNT(*) FROM all_indexes " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?)";
+                    int indexCount = oracleJdbcTemplate.queryForObject(idxCount, Integer.class, resolvedOwner, objectName);
+                    details.put("indexCount", indexCount);
+
+                    // Get trigger count
+                    String trigCount = "SELECT COUNT(*) FROM all_triggers " +
+                            "WHERE UPPER(table_owner) = UPPER(?) AND UPPER(table_name) = UPPER(?)";
+                    int triggerCount = oracleJdbcTemplate.queryForObject(trigCount, Integer.class, resolvedOwner, objectName);
+                    details.put("triggerCount", triggerCount);
+
+                } catch (Exception e) {
+                    log.debug("Could not get table-specific info for {}.{}", resolvedOwner, objectName);
+                }
+            }
+
+            // VIEW specific info
+            else if (upperType.equals("VIEW")) {
+                try {
+                    String viewSql = "SELECT text_length, text, read_only " +
+                            "FROM all_views " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(view_name) = UPPER(?)";
+                    Map<String, Object> viewInfo = oracleJdbcTemplate.queryForMap(viewSql, resolvedOwner, objectName);
+                    details.put("viewInfo", viewInfo);
+
+                    // Get column count
+                    String colCount = "SELECT COUNT(*) FROM all_tab_columns " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?)";
+                    int columnCount = oracleJdbcTemplate.queryForObject(colCount, Integer.class, resolvedOwner, objectName);
+                    details.put("columnCount", columnCount);
+
+                } catch (Exception e) {
+                    log.debug("Could not get view-specific info for {}.{}", resolvedOwner, objectName);
+                }
+            }
+
+            // PROCEDURE/FUNCTION specific info
+            else if (upperType.equals("PROCEDURE") || upperType.equals("FUNCTION")) {
+                try {
+                    // Get parameter count
+                    String paramCount = "SELECT COUNT(*) FROM all_arguments " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                            "AND package_name IS NULL AND argument_name IS NOT NULL";
+                    int parameterCount = oracleJdbcTemplate.queryForObject(
+                            paramCount, Integer.class, resolvedOwner, objectName);
+                    details.put("parameterCount", parameterCount);
+
+                    // Get return type for functions
+                    if (upperType.equals("FUNCTION")) {
+                        String returnSql = "SELECT data_type FROM all_arguments " +
+                                "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                                "AND package_name IS NULL AND argument_name IS NULL AND position = 0";
+                        try {
+                            String returnType = oracleJdbcTemplate.queryForObject(
+                                    returnSql, String.class, resolvedOwner, objectName);
+                            details.put("returnType", returnType);
+                        } catch (EmptyResultDataAccessException ex) {
+                            // No return type found
+                        }
+                    }
+
+                    // Check if it's part of a package
+                    String packageCheck = "SELECT DISTINCT package_name FROM all_arguments " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                            "AND package_name IS NOT NULL";
+                    List<String> packages = oracleJdbcTemplate.queryForList(
+                            packageCheck, String.class, resolvedOwner, objectName);
+                    if (!packages.isEmpty()) {
+                        details.put("packageName", packages.get(0));
+                        details.put("isPackageMember", true);
+                    }
+
+                } catch (Exception e) {
+                    log.debug("Could not get procedure/function info for {}.{}", resolvedOwner, objectName);
+                }
+            }
+
+            // PACKAGE specific info
+            else if (upperType.equals("PACKAGE")) {
+                try {
+                    // Get spec status
+                    String specStatus = "SELECT status FROM all_objects " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                            "AND object_type = 'PACKAGE'";
+                    String status = oracleJdbcTemplate.queryForObject(specStatus, String.class, resolvedOwner, objectName);
+                    details.put("specStatus", status);
+
+                    // Get body status
+                    try {
+                        String bodyStatus = "SELECT status FROM all_objects " +
+                                "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                                "AND object_type = 'PACKAGE BODY'";
+                        String bodyStat = oracleJdbcTemplate.queryForObject(bodyStatus, String.class, resolvedOwner, objectName);
+                        details.put("bodyStatus", bodyStat);
+                        details.put("hasBody", true);
+                    } catch (EmptyResultDataAccessException ex) {
+                        details.put("hasBody", false);
+                    }
+
+                    // Get procedure count
+                    String procCount = "SELECT COUNT(DISTINCT procedure_name) FROM all_arguments " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(package_name) = UPPER(?) " +
+                            "AND procedure_name IS NOT NULL";
+                    int procedureCount = oracleJdbcTemplate.queryForObject(
+                            procCount, Integer.class, resolvedOwner, objectName);
+                    details.put("procedureCount", procedureCount);
+
+                } catch (Exception e) {
+                    log.debug("Could not get package info for {}.{}", resolvedOwner, objectName);
+                }
+            }
+
+            // SEQUENCE specific info
+            else if (upperType.equals("SEQUENCE")) {
+                try {
+                    String seqSql = "SELECT min_value, max_value, increment_by, cycle_flag, " +
+                            "order_flag, cache_size, last_number " +
+                            "FROM all_sequences " +
+                            "WHERE UPPER(sequence_owner) = UPPER(?) AND UPPER(sequence_name) = UPPER(?)";
+                    Map<String, Object> seqInfo = oracleJdbcTemplate.queryForMap(seqSql, resolvedOwner, objectName);
+                    details.put("sequenceInfo", seqInfo);
+                } catch (Exception e) {
+                    log.debug("Could not get sequence info for {}.{}", resolvedOwner, objectName);
+                }
+            }
+
+            // INDEX specific info
+            else if (upperType.equals("INDEX")) {
+                try {
+                    String idxSql = "SELECT index_type, table_owner, table_name, table_type, " +
+                            "uniqueness, compression, prefix_length, tablespace_name, " +
+                            "visibility, status, partitioned, temporary, generated, " +
+                            "secondary, join_index, dropped " +
+                            "FROM all_indexes " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(index_name) = UPPER(?)";
+                    Map<String, Object> idxInfo = oracleJdbcTemplate.queryForMap(idxSql, resolvedOwner, objectName);
+                    details.put("indexInfo", idxInfo);
+
+                    // Get indexed columns
+                    String colSql = "SELECT column_name, column_position, descend " +
+                            "FROM all_ind_columns " +
+                            "WHERE UPPER(index_owner) = UPPER(?) AND UPPER(index_name) = UPPER(?) " +
+                            "ORDER BY column_position";
+                    List<Map<String, Object>> columns = oracleJdbcTemplate.queryForList(
+                            colSql, resolvedOwner, objectName);
+                    if (!columns.isEmpty()) {
+                        details.put("indexedColumns", columns);
+                        details.put("indexedColumnCount", columns.size());
+                    }
+
+                } catch (Exception e) {
+                    log.debug("Could not get index info for {}.{}", resolvedOwner, objectName);
+                }
+            }
+
+            // TRIGGER specific info
+            else if (upperType.equals("TRIGGER")) {
+                try {
+                    String trigSql = "SELECT trigger_type, triggering_event, table_owner, " +
+                            "table_name, referencing_names, when_clause, status, " +
+                            "description, trigger_body, crossedition, before_statement, " +
+                            "before_row, after_row, instead_of_row, fire_once " +
+                            "FROM all_triggers " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(trigger_name) = UPPER(?)";
+                    Map<String, Object> trigInfo = oracleJdbcTemplate.queryForMap(trigSql, resolvedOwner, objectName);
+                    details.put("triggerInfo", trigInfo);
+                } catch (Exception e) {
+                    log.debug("Could not get trigger info for {}.{}", resolvedOwner, objectName);
+                }
+            }
+
+            // SYNONYM specific info
+            else if (upperType.equals("SYNONYM")) {
+                try {
+                    String synSql = "SELECT table_owner, table_name, db_link " +
+                            "FROM all_synonyms " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(synonym_name) = UPPER(?)";
+                    Map<String, Object> synInfo = oracleJdbcTemplate.queryForMap(synSql, resolvedOwner, objectName);
+                    details.putAll(synInfo);
+                    details.put("isSynonym", true);
+                    details.put("targetFullPath", synInfo.get("db_link") != null ?
+                            synInfo.get("table_owner") + "." + synInfo.get("table_name") + "@" + synInfo.get("db_link") :
+                            synInfo.get("table_owner") + "." + synInfo.get("table_name"));
+                } catch (Exception e) {
+                    log.debug("Could not get synonym info for {}.{}", resolvedOwner, objectName);
+                }
+            }
+
+            // Get DDL availability
+            try {
+                boolean hasDDL = checkDDLAvailability(resolvedOwner, objectName, objectType);
+                details.put("hasDDL", hasDDL);
+            } catch (Exception e) {
+                details.put("hasDDL", false);
+            }
+
+            // Get source availability (for code objects)
+            if (isCodeObject(objectType)) {
+                try {
+                    String sourceCheck = "SELECT COUNT(*) FROM all_source " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(name) = UPPER(?) " +
+                            "AND UPPER(type) = UPPER(?)";
+                    int sourceLines = oracleJdbcTemplate.queryForObject(
+                            sourceCheck, Integer.class, resolvedOwner, objectName, objectType);
+                    details.put("hasSource", sourceLines > 0);
+                    details.put("sourceLineCount", sourceLines);
+                } catch (Exception e) {
+                    details.put("hasSource", false);
+                }
+            }
+
+            // Build final response
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", details);
+            result.put("responseCode", 200);
+            result.put("message", "Comprehensive object info retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", Instant.now().toString());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error getting comprehensive object info for {}.{}: {}",
+                    owner, objectName, e.getMessage(), e);
+            return createErrorResponse(requestId, "Failed to retrieve object info: " + e.getMessage());
+        }
+    }
+
+// Helper methods needed for the above
+
+    private Map<String, Object> getObjectSize(String objectName, String objectType) {
+        Map<String, Object> sizeInfo = new HashMap<>();
+        try {
+            String sql = "SELECT bytes, blocks, extents FROM all_segments " +
+                    "WHERE UPPER(segment_name) = UPPER(?) AND UPPER(segment_type) = UPPER(?)";
+            Map<String, Object> result = oracleJdbcTemplate.queryForMap(sql, objectName, objectType);
+
+            Long bytes = getLongValue(result.get("bytes"));
+            sizeInfo.put("bytes", bytes);
+            sizeInfo.put("readable", formatBytes(bytes));
+            sizeInfo.put("blocks", result.get("blocks"));
+            sizeInfo.put("extents", result.get("extents"));
+
+        } catch (EmptyResultDataAccessException e) {
+            sizeInfo.put("bytes", 0);
+            sizeInfo.put("readable", "0 Bytes");
+        }
+        return sizeInfo;
+    }
+
+    private String getObjectComment(String owner, String objectName, String objectType) {
+        try {
+            if (objectType.equalsIgnoreCase("TABLE") || objectType.equalsIgnoreCase("VIEW")) {
+                String sql = "SELECT comments FROM all_tab_comments " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?)";
+                return oracleJdbcTemplate.queryForObject(sql, String.class, owner, objectName);
+            } else if (objectType.equalsIgnoreCase("COLUMN")) {
+                String sql = "SELECT comments FROM all_col_comments " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?)";
+                return oracleJdbcTemplate.queryForObject(sql, String.class, owner, objectName);
+            }
+        } catch (EmptyResultDataAccessException e) {
+            // No comment found
+        }
+        return null;
+    }
+
+    private List<Map<String, Object>> getObjectPrivileges(String owner, String objectName, String objectType) {
+        String sql = "SELECT grantee, privilege, grantable, common, type " +
+                "FROM all_tab_privs " +
+                "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?) " +
+                "ORDER BY grantee, privilege";
+        return oracleJdbcTemplate.queryForList(sql, owner, objectName);
+    }
+
+    private Map<String, Object> getObjectStatistics(String owner, String objectName, String objectType) {
+        Map<String, Object> stats = new HashMap<>();
+        try {
+            if (objectType.equalsIgnoreCase("TABLE")) {
+                String sql = "SELECT num_rows, blocks, empty_blocks, avg_space, " +
+                        "chain_cnt, avg_row_len, sample_size, last_analyzed " +
+                        "FROM all_tab_statistics " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?)";
+                stats = oracleJdbcTemplate.queryForMap(sql, owner, objectName);
+            } else if (objectType.equalsIgnoreCase("INDEX")) {
+                String sql = "SELECT blevel, leaf_blocks, distinct_keys, avg_leaf_blocks_per_key, " +
+                        "avg_data_blocks_per_key, clustering_factor, num_rows, sample_size, last_analyzed " +
+                        "FROM all_ind_statistics " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(index_name) = UPPER(?)";
+                stats = oracleJdbcTemplate.queryForMap(sql, owner, objectName);
+            }
+        } catch (EmptyResultDataAccessException e) {
+            // No statistics found
+        }
+        return stats;
+    }
+
+    private List<Map<String, Object>> getObjectPartitions(String owner, String objectName, String objectType) {
+        try {
+            if (objectType.equalsIgnoreCase("TABLE")) {
+                String sql = "SELECT partition_name, subpartition_count, high_value, " +
+                        "partition_position, tablespace_name, num_rows, last_analyzed " +
+                        "FROM all_tab_partitions " +
+                        "WHERE UPPER(table_owner) = UPPER(?) AND UPPER(table_name) = UPPER(?) " +
+                        "ORDER BY partition_position";
+                return oracleJdbcTemplate.queryForList(sql, owner, objectName);
+            } else if (objectType.equalsIgnoreCase("INDEX")) {
+                String sql = "SELECT partition_name, high_value, partition_position, " +
+                        "tablespace_name, status, num_rows, last_analyzed " +
+                        "FROM all_ind_partitions " +
+                        "WHERE UPPER(index_owner) = UPPER(?) AND UPPER(index_name) = UPPER(?) " +
+                        "ORDER BY partition_position";
+                return oracleJdbcTemplate.queryForList(sql, owner, objectName);
+            }
+        } catch (Exception e) {
+            log.debug("Could not get partitions: {}", e.getMessage());
+        }
+        return new ArrayList<>();
+    }
+
+    private boolean checkDDLAvailability(String owner, String objectName, String objectType) {
+        try {
+            String sql = "SELECT COUNT(*) FROM all_objects " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                    "AND object_type = ? AND status = 'VALID'";
+            int count = oracleJdbcTemplate.queryForObject(sql, Integer.class, owner, objectName, objectType);
+            return count > 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean isCodeObject(String objectType) {
+        String upper = objectType.toUpperCase();
+        return upper.equals("PROCEDURE") || upper.equals("FUNCTION") ||
+                upper.equals("PACKAGE") || upper.equals("PACKAGE BODY") ||
+                upper.equals("TYPE") || upper.equals("TYPE BODY") ||
+                upper.equals("TRIGGER") || upper.equals("JAVA SOURCE");
+    }
+
+
+    private String formatBytes(long bytes) {
+        if (bytes == 0) return "0 Bytes";
+        String[] sizes = {"Bytes", "KB", "MB", "GB", "TB"};
+        int i = (int) (Math.log(bytes) / Math.log(1024));
+        return String.format("%.2f %s", bytes / Math.pow(1024, i), sizes[i]);
+    }
+
+
+
 
     public Map<String, Object> validateObject(String requestId, HttpServletRequest req,
                                               String performedBy, String objectName,
@@ -3658,5 +4366,171 @@ public class OracleSchemaService {
             log.error("Error getting current schema: {}", e.getMessage());
             return "UNKNOWN";
         }
+    }
+
+
+    public Map<String, Object> getTableConstraints(String requestId, String tableName,
+                                                   String owner, String performedBy) {
+        log.info("Getting constraints for table: {}", tableName);
+
+        try {
+            String resolvedOwner = resolveOwner(owner);
+
+            // Check if it's a synonym that points to a table
+            Map<String, Object> synonymInfo = oracleSchemaRepository.checkIfSynonymAndGetTarget(
+                    tableName, "TABLE");
+
+            if ((boolean) synonymInfo.getOrDefault("isSynonym", false) &&
+                    !(boolean) synonymInfo.getOrDefault("isRemote", false)) {
+                resolvedOwner = (String) synonymInfo.get("targetOwner");
+                tableName = (String) synonymInfo.get("targetName");
+            }
+
+            List<Map<String, Object>> constraints = oracleSchemaRepository.getTableConstraints(
+                    resolvedOwner, tableName);
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("constraints", constraints);
+            data.put("count", constraints.size());
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", data);
+            result.put("responseCode", 200);
+            result.put("message", "Constraints retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", Instant.now().toString());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error getting constraints: {}", e.getMessage());
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+
+    public Map<String, Object> getObjectCounts(String requestId, String objectName,
+                                               String objectType, String owner, String performedBy) {
+        log.info("Getting counts for {}: {}", objectType, objectName);
+
+        try {
+            String resolvedOwner = resolveOwner(owner);
+            Map<String, Object> counts = new HashMap<>();
+
+            String upperType = objectType.toUpperCase();
+
+            // Column count for tables/views
+            if (upperType.equals("TABLE") || upperType.equals("VIEW")) {
+                String colSql = "SELECT COUNT(*) FROM all_tab_columns " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(table_name) = UPPER(?)";
+                int columnCount = oracleJdbcTemplate.queryForObject(
+                        colSql, Integer.class, resolvedOwner, objectName);
+                counts.put("columnCount", columnCount);
+            }
+
+            // Parameter count for procedures/functions/packages
+            if (upperType.equals("PROCEDURE") || upperType.equals("FUNCTION") ||
+                    upperType.equals("PACKAGE")) {
+                String paramSql = "SELECT COUNT(*) FROM all_arguments " +
+                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                        "AND argument_name IS NOT NULL";
+                int parameterCount = oracleJdbcTemplate.queryForObject(
+                        paramSql, Integer.class, resolvedOwner, objectName);
+                counts.put("parameterCount", parameterCount);
+            }
+
+            // Dependency count
+            String depSql = "SELECT COUNT(*) FROM all_dependencies " +
+                    "WHERE UPPER(referenced_owner) = UPPER(?) " +
+                    "AND UPPER(referenced_name) = UPPER(?) " +
+                    "AND UPPER(referenced_type) = UPPER(?)";
+            int dependencyCount = oracleJdbcTemplate.queryForObject(
+                    depSql, Integer.class, resolvedOwner, objectName, objectType);
+            counts.put("dependencyCount", dependencyCount);
+
+            // Synonym check
+            String synSql = "SELECT COUNT(*) FROM all_synonyms " +
+                    "WHERE UPPER(synonym_name) = UPPER(?)";
+            int isSynonym = oracleJdbcTemplate.queryForObject(synSql, Integer.class, objectName);
+            counts.put("isSynonym", isSynonym > 0);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", counts);
+            result.put("responseCode", 200);
+            result.put("message", "Counts retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", Instant.now().toString());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error getting counts: {}", e.getMessage());
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+
+    public Map<String, Object> getObjectDDL(String requestId, String objectName,
+                                            String objectType, String owner, String performedBy) {
+        log.info("Getting DDL for {}: {}", objectType, objectName);
+
+        try {
+            String resolvedOwner = resolveOwner(owner);
+
+            // Check if it's a synonym
+            Map<String, Object> synonymInfo = oracleSchemaRepository.checkIfSynonymAndGetTarget(
+                    objectName, objectType);
+
+            Map<String, Object> ddlResult;
+            if ((boolean) synonymInfo.getOrDefault("isSynonym", false) &&
+                    !(boolean) synonymInfo.getOrDefault("isRemote", false)) {
+                // Get DDL of target object
+                ddlResult = oracleSchemaRepository.getObjectDDLForFrontend(
+                        (String) synonymInfo.get("targetName"),
+                        (String) synonymInfo.get("targetType"));
+            } else {
+                ddlResult = oracleSchemaRepository.getObjectDDLForFrontend(objectName, objectType);
+            }
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("ddl", ddlResult.get("ddl"));
+            data.put("status", ddlResult.get("status"));
+            data.put("method", ddlResult.get("method"));
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", data);
+            result.put("responseCode", 200);
+            result.put("message", "DDL retrieved successfully");
+            result.put("requestId", requestId);
+            result.put("timestamp", Instant.now().toString());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error getting DDL: {}", e.getMessage());
+            return createErrorResponse(requestId, e.getMessage());
+        }
+    }
+
+
+
+    private String resolveOwner(String owner) {
+        if (owner != null && !owner.isEmpty()) {
+            return owner;
+        }
+        return oracleSchemaRepository.getCurrentUser();
+    }
+
+    private Map<String, Object> checkIfSynonym(String objectName) {
+        return oracleSchemaRepository.checkIfSynonymAndGetTarget(objectName, null);
+    }
+
+    public ResponseEntity<Map<String, Object>> createErrorResponse(String requestId, String message, int statusCode) {
+        Map<String, Object> errorResponse = new HashMap<>();
+        errorResponse.put("responseCode", statusCode);
+        errorResponse.put("message", message);
+        errorResponse.put("requestId", requestId);
+        errorResponse.put("timestamp", Instant.now().toString());
+        return ResponseEntity.status(statusCode).body(errorResponse);
     }
 }

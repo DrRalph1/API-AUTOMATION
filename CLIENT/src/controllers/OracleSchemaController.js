@@ -1933,6 +1933,806 @@ export const getObjectCountsOnly = async (authorizationHeader, params = {}) => {
     });
 };
 
+
+
+// ============================================================
+// NEW: USED BY / DEPENDENT OBJECTS ENDPOINTS
+// ============================================================
+
+/**
+ * Get all objects that depend on (use) the specified object
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)
+ * @param {string} params.objectName - Object name
+ * @param {string} params.owner - Object owner (optional)
+ * @returns {Promise} API response
+ */
+export const getUsedBy = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectType, objectName, owner } = params;
+    
+    const queryParams = buildQueryParams({ owner });
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/used-by${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformUsedByResponse(response);
+    });
+};
+
+/**
+ * Get paginated objects that depend on (use) the specified object
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)
+ * @param {string} params.objectName - Object name
+ * @param {string} params.owner - Object owner (optional)
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Number of items per page
+ * @returns {Promise} API response
+ */
+export const getUsedByPaginated = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectType, objectName, owner, page = 1, pageSize = 10 } = params;
+    
+    const queryParams = buildQueryParams({ owner, page, pageSize });
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/used-by/paginated${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedUsedByResponse(response);
+    });
+};
+
+/**
+ * Get complete dependency hierarchy for an object
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)
+ * @param {string} params.objectName - Object name
+ * @param {string} params.owner - Object owner (optional)
+ * @returns {Promise} API response
+ */
+export const getDependencyHierarchy = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectType, objectName, owner } = params;
+    
+    const queryParams = buildQueryParams({ owner });
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/dependency-hierarchy${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformDependencyHierarchyResponse(response);
+    });
+};
+
+/**
+ * Get count of objects that depend on (use) the specified object
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)
+ * @param {string} params.objectName - Object name
+ * @param {string} params.owner - Object owner (optional)
+ * @returns {Promise} API response
+ */
+export const getUsedByCount = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectType, objectName, owner } = params;
+    
+    const queryParams = buildQueryParams({ owner });
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/used-by/count${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformUsedByCountResponse(response);
+    });
+};
+
+/**
+ * Get used by summary grouped by object type
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)
+ * @param {string} params.objectName - Object name
+ * @param {string} params.owner - Object owner (optional)
+ * @returns {Promise} API response
+ */
+export const getUsedBySummary = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectType, objectName, owner } = params;
+    
+    const queryParams = buildQueryParams({ owner });
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/used-by/summary${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformUsedBySummaryResponse(response);
+    });
+};
+
+// ============================================================
+// CONVENIENCE ENDPOINTS FOR SPECIFIC OBJECT TYPES
+// ============================================================
+
+/**
+ * Get objects that depend on a table
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.tableName - Table name
+ * @param {string} params.owner - Table owner (optional)
+ * @returns {Promise} API response
+ */
+export const getTableUsedBy = async (authorizationHeader, params = {}) => {
+    const { tableName, owner } = params;
+    return getUsedBy(authorizationHeader, { 
+        objectType: 'TABLE', 
+        objectName: tableName, 
+        owner 
+    });
+};
+
+/**
+ * Get objects that depend on a procedure
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.procedureName - Procedure name
+ * @param {string} params.owner - Procedure owner (optional)
+ * @returns {Promise} API response
+ */
+export const getProcedureUsedBy = async (authorizationHeader, params = {}) => {
+    const { procedureName, owner } = params;
+    return getUsedBy(authorizationHeader, { 
+        objectType: 'PROCEDURE', 
+        objectName: procedureName, 
+        owner 
+    });
+};
+
+/**
+ * Get objects that depend on a function
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.functionName - Function name
+ * @param {string} params.owner - Function owner (optional)
+ * @returns {Promise} API response
+ */
+export const getFunctionUsedBy = async (authorizationHeader, params = {}) => {
+    const { functionName, owner } = params;
+    return getUsedBy(authorizationHeader, { 
+        objectType: 'FUNCTION', 
+        objectName: functionName, 
+        owner 
+    });
+};
+
+/**
+ * Get objects that depend on a package
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.packageName - Package name
+ * @param {string} params.owner - Package owner (optional)
+ * @returns {Promise} API response
+ */
+export const getPackageUsedBy = async (authorizationHeader, params = {}) => {
+    const { packageName, owner } = params;
+    return getUsedBy(authorizationHeader, { 
+        objectType: 'PACKAGE', 
+        objectName: packageName, 
+        owner 
+    });
+};
+
+/**
+ * Get objects that depend on a view
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.viewName - View name
+ * @param {string} params.owner - View owner (optional)
+ * @returns {Promise} API response
+ */
+export const getViewUsedBy = async (authorizationHeader, params = {}) => {
+    const { viewName, owner } = params;
+    return getUsedBy(authorizationHeader, { 
+        objectType: 'VIEW', 
+        objectName: viewName, 
+        owner 
+    });
+};
+
+/**
+ * Get objects that depend on a trigger
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.triggerName - Trigger name
+ * @param {string} params.owner - Trigger owner (optional)
+ * @returns {Promise} API response
+ */
+export const getTriggerUsedBy = async (authorizationHeader, params = {}) => {
+    const { triggerName, owner } = params;
+    return getUsedBy(authorizationHeader, { 
+        objectType: 'TRIGGER', 
+        objectName: triggerName, 
+        owner 
+    });
+};
+
+// ============================================================
+// NEW: SEARCH ACROSS MULTIPLE OBJECT TYPES WITH PAGINATION
+// ============================================================
+
+/**
+ * Search across multiple object types (e.g., procedures AND synonyms)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.query - Search query
+ * @param {string[]} params.types - Array of object types (e.g., ['PROCEDURE', 'SYNONYM'])
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Items per page
+ * @returns {Promise} API response
+ */
+export const searchCombinedTypes = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { query, types = [], page = 1, pageSize = 100 } = params;
+    
+    const queryParams = buildQueryParams({
+        query,
+        types: types.join(','),
+        page,
+        pageSize
+    });
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/search/combined?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
+// ============================================================
+// NEW: SEARCH PROCEDURES AND THEIR SYNONYMS TOGETHER
+// ============================================================
+
+/**
+ * Search for procedures AND synonyms that target procedures
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.query - Search query
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Items per page
+ * @returns {Promise} API response
+ */
+export const searchProceduresWithSynonyms = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { query, page = 1, pageSize = 100 } = params;
+    
+    const queryParams = buildQueryParams({ query, page, pageSize });
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/procedures/with-synonyms/search?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
+// ============================================================
+// NEW: GET COUNT FOR SEARCH RESULTS (Fast)
+// ============================================================
+
+/**
+ * Get only the count of search results (very fast)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.query - Search query
+ * @param {string[]} params.types - Array of object types
+ * @returns {Promise<number>} Count of matches
+ */
+export const getSearchCount = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { query, types = [] } = params;
+    
+    const queryParams = buildQueryParams({
+        query,
+        types: types.join(',')
+    });
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(`/oracle/schema/frontend/search/count?${queryParams.toString()}`, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return response.data?.count || 0;
+    });
+};
+
+// ============================================================
+// NEW: OBJECT BASIC INFO ENDPOINT
+// ============================================================
+
+/**
+ * Get basic object info (owner, status, timestamps)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type
+ * @param {string} params.objectName - Object name
+ * @param {string} params.owner - Object owner (optional)
+ * @returns {Promise} API response
+ */
+export const getObjectBasicInfo = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectType, objectName, owner } = params;
+    
+    const queryParams = buildQueryParams({ owner });
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/info${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformObjectBasicInfoResponse(response);
+    });
+};
+
+// ============================================================
+// NEW: RESOLVE SYNONYM ENDPOINT
+// ============================================================
+
+/**
+ * Resolve a synonym to its target object with full details
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectName - Synonym name
+ * @param {string} params.owner - Synonym owner (optional)
+ * @returns {Promise} API response
+ */
+export const resolveSynonymCustom = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectName, owner } = params;
+    
+    const queryParams = buildQueryParams({ owner });
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectName)}/synonym-resolution${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformResolveSynonymResponse(response);
+    });
+};
+
+// ============================================================
+// NEW: OBJECT PROPERTIES ENDPOINT
+// ============================================================
+
+/**
+ * Get all properties of an Oracle object
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type
+ * @param {string} params.objectName - Object name
+ * @param {string} params.owner - Object owner (optional)
+ * @returns {Promise} API response
+ */
+export const getObjectProperties = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectType, objectName, owner } = params;
+    
+    const queryParams = buildQueryParams({ owner });
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/properties${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformObjectPropertiesResponse(response);
+    });
+};
+
+// ============================================================
+// NEW: OBJECT COLUMNS/PARAMETERS ENDPOINT
+// ============================================================
+
+/**
+ * Get columns (for tables/views) or parameters (for procedures/functions)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type
+ * @param {string} params.objectName - Object name
+ * @param {string} params.owner - Object owner (optional)
+ * @param {number} params.page - Page number (1-based)
+ * @param {number} params.pageSize - Items per page
+ * @returns {Promise} API response
+ */
+export const getObjectColumns = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectType, objectName, owner, page = 1, pageSize = 50 } = params;
+    
+    const queryParams = buildQueryParams({ owner, page, pageSize });
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/columns${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformPaginatedResponse(response);
+    });
+};
+
+// ============================================================
+// NEW: TABLE CONSTRAINTS ENDPOINT
+// ============================================================
+
+/**
+ * Get constraints for a table
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.tableName - Table name
+ * @param {string} params.owner - Table owner (optional)
+ * @returns {Promise} API response
+ */
+export const getTableConstraints = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { tableName, owner } = params;
+    
+    const queryParams = buildQueryParams({ owner });
+    const url = `/oracle/schema/objects/TABLE/${encodeURIComponent(tableName)}/constraints${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformTableConstraintsResponse(response);
+    });
+};
+
+// ============================================================
+// NEW: GET OBJECT DDL (Alternative)
+// ============================================================
+
+/**
+ * Get object DDL (alternative endpoint)
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type
+ * @param {string} params.objectName - Object name
+ * @param {string} params.owner - Object owner (optional)
+ * @returns {Promise} API response
+ */
+export const getObjectDDLNew = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectType, objectName, owner } = params;
+    
+    const queryParams = buildQueryParams({ owner });
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/ddl-new${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformDDLResponse(response);
+    }).catch(error => {
+        console.error('Error fetching DDL:', error);
+        return {
+            responseCode: error.response?.status || 500,
+            message: error.message || 'Failed to fetch DDL',
+            data: {
+                ddl: `-- Error fetching DDL for ${objectType} ${objectName}\n-- ${error.message}`,
+                objectName,
+                objectType,
+                error: error.message
+            },
+            requestId
+        };
+    });
+};
+
+// ============================================================
+// NEW: GET OBJECT COUNTS (Alternative)
+// ============================================================
+
+/**
+ * Get object counts (columns, parameters, dependencies) for an object
+ * @param {string} authorizationHeader - Bearer token
+ * @param {Object} params - Parameters
+ * @param {string} params.objectType - Object type
+ * @param {string} params.objectName - Object name
+ * @param {string} params.owner - Object owner (optional)
+ * @returns {Promise} API response
+ */
+export const getObjectCountsNew = async (authorizationHeader, params = {}) => {
+    const requestId = generateRequestId();
+    const { objectType, objectName, owner } = params;
+    
+    const queryParams = buildQueryParams({ owner });
+    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/counts-new${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    return apiCallWithTokenRefresh(
+        authorizationHeader,
+        (authHeader) => apiCall(url, {
+            method: 'GET',
+            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
+            requestId: requestId
+        })
+    ).then(response => {
+        return transformObjectCountsNewResponse(response);
+    });
+};
+
+// ============================================================
+// NEW TRANSFORM FUNCTIONS FOR ADDED ENDPOINTS
+// ============================================================
+
+
+
+// ============================================================
+// NEW TRANSFORM FUNCTIONS FOR ADDED ENDPOINTS
+// ============================================================
+
+/**
+ * Transform object basic info response - FIXED to preserve ALL fields
+ */
+const transformObjectBasicInfoResponse = (response) => {
+    const data = response.data || {};
+    
+    // Instead of creating a new object with only specific fields,
+    // spread the original data and add/override the transformed fields
+    const transformedData = {
+        // Keep ALL original fields
+        ...data,
+        
+        // Add/override with our normalized field names
+        objectName: data.object_name || data.name,
+        objectType: data.object_type || data.type,
+        owner: data.owner,
+        status: data.status,
+        created: data.created,
+        lastModified: data.last_ddl_time || data.last_modified,
+        temporary: data.temporary,
+        generated: data.generated,
+        secondary: data.secondary,
+        
+        // Also preserve all original field names for direct access
+        OBJECT_NAME: data.OBJECT_NAME || data.object_name || data.name,
+        OBJECT_TYPE: data.OBJECT_TYPE || data.object_type || data.type,
+        OWNER: data.OWNER || data.owner,
+        STATUS: data.STATUS || data.status,
+        CREATED: data.CREATED || data.created,
+        LAST_DDL_TIME: data.LAST_DDL_TIME || data.last_ddl_time || data.lastModified,
+        TEMPORARY: data.TEMPORARY || data.temporary,
+        GENERATED: data.GENERATED || data.generated,
+        SECONDARY: data.SECONDARY || data.secondary,
+        
+        // Synonym-specific fields - make sure these are preserved
+        isSynonym: data.isSynonym === true,
+        synonymName: data.synonymName || data.SYNONYM_NAME,
+        targetName: data.targetName || data.TARGET_NAME,
+        targetOwner: data.targetOwner || data.TARGET_OWNER,
+        targetType: data.targetType || data.TARGET_TYPE,
+        targetStatus: data.targetStatus || data.TARGET_STATUS,
+        
+        // Keep all the other fields
+        fullPath: data.fullPath,
+        hasSource: data.hasSource,
+        sourceLineCount: data.sourceLineCount,
+        isRemote: data.isRemote,
+        parameterCount: data.parameterCount,
+        dependencyCount: data.dependencyCount,
+        dependentCount: data.dependentCount,
+        performedBy: data.performedBy,
+        queryTime: data.queryTime,
+        TIMESTAMP: data.TIMESTAMP,
+        hasDDL: data.hasDDL,
+        dbLink: data.dbLink
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+/**
+ * Transform object properties response
+ */
+const transformObjectPropertiesResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        properties: data.properties || {},
+        objectName: data.object_name,
+        objectType: data.object_type,
+        owner: data.owner
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+
+
+/**
+ * Transform table constraints response - FIXED for uppercase fields
+ */
+const transformTableConstraintsResponse = (response) => {
+    const data = response.data || [];
+    
+    // Handle both direct array or nested structure
+    let constraintsArray = [];
+    
+    if (Array.isArray(data)) {
+        constraintsArray = data;
+    } else if (data.constraints && Array.isArray(data.constraints)) {
+        constraintsArray = data.constraints;
+    } else {
+        constraintsArray = [];
+    }
+    
+    console.log('📊 transformTableConstraintsResponse - raw constraints:', constraintsArray);
+    
+    const transformedData = constraintsArray.map((con, index) => ({
+        id: `constraint-${index + 1}`,
+        // Use uppercase field names from the API
+        name: con.CONSTRAINT_NAME || '-',
+        type: con.CONSTRAINT_TYPE || '-',
+        typeFormatted: formatConstraintType(con.CONSTRAINT_TYPE || '-'),
+        columns: con.COLUMNS ? (Array.isArray(con.COLUMNS) ? con.COLUMNS : [con.COLUMNS]) : [],
+        columnsString: con.COLUMNS || '-',
+        searchCondition: con.SEARCH_CONDITION,
+        rOwner: con.REFERENCES_OWNER,
+        rConstraintName: con.REFERENCES_CONSTRAINT,
+        deleteRule: con.DELETE_RULE,
+        status: con.CONSTRAINT_STATUS || '-',
+        validated: con.VALIDATED || '-',
+        indexOwner: con.INDEX_OWNER,
+        indexName: con.INDEX_NAME,
+        deferrable: con.DEFERRABLE,
+        deferred: con.DEFERRED,
+        columnCount: con.COLUMN_COUNT
+    }));
+
+    console.log('📊 transformTableConstraintsResponse - transformed data:', transformedData);
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+
+/**
+ * Transform object counts new response
+ */
+const transformObjectCountsNewResponse = (response) => {
+    const data = response.data || {};
+    
+    const transformedData = {
+        columns: data.columns || 0,
+        parameters: data.parameters || 0,
+        dependencies: data.dependencies || 0,
+        triggers: data.triggers || 0,
+        indexes: data.indexes || 0,
+        constraints: data.constraints || 0,
+        rows: data.rows || 0,
+        objectName: data.object_name,
+        objectType: data.object_type,
+        owner: data.owner
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+
+
+/**
+ * Extract object basic info from response
+ */
+export const extractObjectBasicInfo = (response) => {
+    return response?.data || {};
+};
+
+/**
+ * Extract object properties from response
+ */
+export const extractObjectProperties = (response) => {
+    return response?.data?.properties || {};
+};
+
+/**
+ * Extract table constraints from response
+ */
+export const extractTableConstraints = (response) => {
+    return response?.data || [];
+};
+
+/**
+ * Extract object counts new from response
+ */
+export const extractObjectCountsNew = (response) => {
+    return response?.data || {
+        columns: 0,
+        parameters: 0,
+        dependencies: 0,
+        triggers: 0,
+        indexes: 0,
+        constraints: 0,
+        rows: 0
+    };
+};
+
+
+
 /**
  * Validate object existence and accessibility
  * @param {string} authorizationHeader - Bearer token
@@ -2563,259 +3363,6 @@ export const getSupportedObjectTypes = async (authorizationHeader) => {
 
 
 
-// ============================================================
-// NEW: USED BY / DEPENDENT OBJECTS ENDPOINTS
-// ============================================================
-
-/**
- * Get all objects that depend on (use) the specified object
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)
- * @param {string} params.objectName - Object name
- * @param {string} params.owner - Object owner (optional)
- * @returns {Promise} API response
- */
-export const getUsedBy = async (authorizationHeader, params = {}) => {
-    const requestId = generateRequestId();
-    const { objectType, objectName, owner } = params;
-    
-    const queryParams = buildQueryParams({ owner });
-    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/used-by${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(url, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformUsedByResponse(response);
-    });
-};
-
-/**
- * Get paginated objects that depend on (use) the specified object
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)
- * @param {string} params.objectName - Object name
- * @param {string} params.owner - Object owner (optional)
- * @param {number} params.page - Page number (1-based)
- * @param {number} params.pageSize - Number of items per page
- * @returns {Promise} API response
- */
-export const getUsedByPaginated = async (authorizationHeader, params = {}) => {
-    const requestId = generateRequestId();
-    const { objectType, objectName, owner, page = 1, pageSize = 10 } = params;
-    
-    const queryParams = buildQueryParams({ owner, page, pageSize });
-    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/used-by/paginated${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(url, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        // return transformPaginatedUsedByResponse(response);
-        return response;
-    });
-};
-
-/**
- * Get complete dependency hierarchy for an object
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)
- * @param {string} params.objectName - Object name
- * @param {string} params.owner - Object owner (optional)
- * @returns {Promise} API response
- */
-export const getDependencyHierarchy = async (authorizationHeader, params = {}) => {
-    const requestId = generateRequestId();
-    const { objectType, objectName, owner } = params;
-    
-    const queryParams = buildQueryParams({ owner });
-    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/dependency-hierarchy${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(url, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformDependencyHierarchyResponse(response);
-    });
-};
-
-/**
- * Get count of objects that depend on (use) the specified object
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)
- * @param {string} params.objectName - Object name
- * @param {string} params.owner - Object owner (optional)
- * @returns {Promise} API response
- */
-export const getUsedByCount = async (authorizationHeader, params = {}) => {
-    const requestId = generateRequestId();
-    const { objectType, objectName, owner } = params;
-    
-    const queryParams = buildQueryParams({ owner });
-    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/used-by/count${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(url, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformUsedByCountResponse(response);
-    });
-};
-
-/**
- * Get used by summary grouped by object type
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.objectType - Object type (TABLE, VIEW, PROCEDURE, FUNCTION, PACKAGE, etc.)
- * @param {string} params.objectName - Object name
- * @param {string} params.owner - Object owner (optional)
- * @returns {Promise} API response
- */
-export const getUsedBySummary = async (authorizationHeader, params = {}) => {
-    const requestId = generateRequestId();
-    const { objectType, objectName, owner } = params;
-    
-    const queryParams = buildQueryParams({ owner });
-    const url = `/oracle/schema/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectName)}/used-by/summary${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(url, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return response;
-    });
-};
-
-// ============================================================
-// CONVENIENCE ENDPOINTS FOR SPECIFIC OBJECT TYPES
-// ============================================================
-
-/**
- * Get objects that depend on a table
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.tableName - Table name
- * @param {string} params.owner - Table owner (optional)
- * @returns {Promise} API response
- */
-export const getTableUsedBy = async (authorizationHeader, params = {}) => {
-    const { tableName, owner } = params;
-    return getUsedBy(authorizationHeader, { 
-        objectType: 'TABLE', 
-        objectName: tableName, 
-        owner 
-    });
-};
-
-/**
- * Get objects that depend on a procedure
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.procedureName - Procedure name
- * @param {string} params.owner - Procedure owner (optional)
- * @returns {Promise} API response
- */
-export const getProcedureUsedBy = async (authorizationHeader, params = {}) => {
-    const { procedureName, owner } = params;
-    return getUsedBy(authorizationHeader, { 
-        objectType: 'PROCEDURE', 
-        objectName: procedureName, 
-        owner 
-    });
-};
-
-/**
- * Get objects that depend on a function
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.functionName - Function name
- * @param {string} params.owner - Function owner (optional)
- * @returns {Promise} API response
- */
-export const getFunctionUsedBy = async (authorizationHeader, params = {}) => {
-    const { functionName, owner } = params;
-    return getUsedBy(authorizationHeader, { 
-        objectType: 'FUNCTION', 
-        objectName: functionName, 
-        owner 
-    });
-};
-
-/**
- * Get objects that depend on a package
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.packageName - Package name
- * @param {string} params.owner - Package owner (optional)
- * @returns {Promise} API response
- */
-export const getPackageUsedBy = async (authorizationHeader, params = {}) => {
-    const { packageName, owner } = params;
-    return getUsedBy(authorizationHeader, { 
-        objectType: 'PACKAGE', 
-        objectName: packageName, 
-        owner 
-    });
-};
-
-/**
- * Get objects that depend on a view
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.viewName - View name
- * @param {string} params.owner - View owner (optional)
- * @returns {Promise} API response
- */
-export const getViewUsedBy = async (authorizationHeader, params = {}) => {
-    const { viewName, owner } = params;
-    return getUsedBy(authorizationHeader, { 
-        objectType: 'VIEW', 
-        objectName: viewName, 
-        owner 
-    });
-};
-
-/**
- * Get objects that depend on a trigger
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.triggerName - Trigger name
- * @param {string} params.owner - Trigger owner (optional)
- * @returns {Promise} API response
- */
-export const getTriggerUsedBy = async (authorizationHeader, params = {}) => {
-    const { triggerName, owner } = params;
-    return getUsedBy(authorizationHeader, { 
-        objectType: 'TRIGGER', 
-        objectName: triggerName, 
-        owner 
-    });
-};
-
 /**
  * Get objects that depend on a synonym
  * @param {string} authorizationHeader - Bearer token
@@ -2965,24 +3512,29 @@ const transformUsedByCountResponse = (response) => {
 };
 
 /**
- * Transform used by summary response
+ * Transform used by summary response - FIXED to handle uppercase fields
  */
 const transformUsedBySummaryResponse = (response) => {
     const data = response.data || {};
     
+    console.log('📊 transformUsedBySummaryResponse - raw data:', data);
+    
     const transformedData = {
         byType: (data.byType || []).map(item => ({
-            dependentType: item.dependent_type,
-            count: item.count,
-            validCount: item.valid_count || 0,
-            invalidCount: item.invalid_count || 0
+            // Handle both uppercase and lowercase field names
+            dependentType: item.DEPENDENT_TYPE || item.dependentType || item.dependent_type || 'Unknown',
+            count: item.COUNT || item.count || 0,
+            validCount: item.VALID_COUNT || item.validCount || item.valid_count || 0,
+            invalidCount: item.INVALID_COUNT || item.invalidCount || item.invalid_count || 0
         })),
-        totalCount: data.totalCount || 0,
-        objectName: data.objectName || '',
-        objectType: data.objectType || '',
+        totalCount: data.totalCount || data.total_count || 0,
+        objectName: data.objectName || data.object_name || '',
+        objectType: data.objectType || data.object_type || '',
         owner: data.owner || '',
-        generatedAt: data.generatedAt || new Date().toISOString()
+        generatedAt: data.generatedAt || data.generated_at || new Date().toISOString()
     };
+
+    console.log('📊 transformUsedBySummaryResponse - transformed data:', transformedData);
 
     return {
         ...response,
@@ -3024,6 +3576,7 @@ export const extractDependencyHierarchy = (response) => {
  * Extract used by summary from response
  */
 export const extractUsedBySummary = (response) => {
+    // The data is already transformed in transformUsedBySummaryResponse
     return response?.data || {
         byType: [],
         totalCount: 0
@@ -3367,109 +3920,6 @@ export const getComprehensiveSchemaData = async (authorizationHeader, params = {
             requestId
         };
     }
-};
-
-
-
-// ============================================================
-// NEW: SEARCH ACROSS MULTIPLE TYPES
-// ============================================================
-
-/**
- * Search across multiple object types (e.g., procedures AND synonyms)
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.query - Search query
- * @param {string[]} params.types - Array of object types (e.g., ['PROCEDURE', 'SYNONYM'])
- * @param {number} params.page - Page number (1-based)
- * @param {number} params.pageSize - Items per page
- * @returns {Promise} API response
- */
-export const searchCombinedTypes = async (authorizationHeader, params = {}) => {
-    const requestId = generateRequestId();
-    const { query, types = [], page = 1, pageSize = 10 } = params;
-    
-    const queryParams = buildQueryParams({
-        query,
-        types: types.join(','),
-        page,
-        pageSize
-    });
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/search/combined?${queryParams.toString()}`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformPaginatedResponse(response);
-    });
-};
-
-// ============================================================
-// NEW: SEARCH PROCEDURES WITH SYNONYMS (Specific)
-// ============================================================
-
-/**
- * Search for procedures AND synonyms that target procedures
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.query - Search query
- * @param {number} params.page - Page number (1-based)
- * @param {number} params.pageSize - Items per page
- * @returns {Promise} API response
- */
-export const searchProceduresWithSynonyms = async (authorizationHeader, params = {}) => {
-    const requestId = generateRequestId();
-    const { query, page = 1, pageSize = 10 } = params;
-    
-    const queryParams = buildQueryParams({ query, page, pageSize });
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/procedures/with-synonyms/search?${queryParams.toString()}`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return transformPaginatedResponse(response);
-    });
-};
-
-// ============================================================
-// NEW: GET SEARCH COUNT (Fast)
-// ============================================================
-
-/**
- * Get only the count of search results (very fast)
- * @param {string} authorizationHeader - Bearer token
- * @param {Object} params - Parameters
- * @param {string} params.query - Search query
- * @param {string[]} params.types - Array of object types
- * @returns {Promise<number>} Count of matches
- */
-export const getSearchCount = async (authorizationHeader, params = {}) => {
-    const requestId = generateRequestId();
-    const { query, types = [] } = params;
-    
-    const queryParams = buildQueryParams({
-        query,
-        types: types.join(',')
-    });
-    
-    return apiCallWithTokenRefresh(
-        authorizationHeader,
-        (authHeader) => apiCall(`/oracle/schema/frontend/search/count?${queryParams.toString()}`, {
-            method: 'GET',
-            headers: getAuthHeaders(authHeader.replace('Bearer ', '')),
-            requestId: requestId
-        })
-    ).then(response => {
-        return response.data?.count || 0;
-    });
 };
 
 

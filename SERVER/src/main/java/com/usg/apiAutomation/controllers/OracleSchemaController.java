@@ -3692,6 +3692,9 @@ public class OracleSchemaController {
         }
     }
 
+
+
+
     @GetMapping("/objects/{objectType}/{objectName}/details/paginated")
     @Operation(summary = "Get paginated object details",
             description = "Retrieves detailed information about a specific Oracle object with pagination support",
@@ -4957,4 +4960,187 @@ public class OracleSchemaController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
+
+
+    @GetMapping("/objects/{objectType}/{objectName}/info")
+    @Operation(summary = "Get basic object info",
+            description = "Retrieves basic information about an Oracle object (owner, status, timestamps)")
+    public ResponseEntity<?> getObjectBasicInfo(
+            @PathVariable String objectType,
+            @PathVariable String objectName,
+            @RequestParam(required = false) String owner,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting basic object info");
+        if (authValidation != null) return authValidation;
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            Map<String, Object> result = oracleSchemaService.getObjectBasicInfo(
+                    requestId, objectName, objectType, owner, performedBy);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return oracleSchemaService.createErrorResponse(requestId, e.getMessage(), 500);
+        }
+    }
+
+
+
+
+    @GetMapping("/objects/{objectName}/synonym-resolution")
+    @Operation(summary = "Resolve synonym",
+            description = "Resolves a synonym to its target object with full details")
+    public ResponseEntity<?> resolveSynonym(
+            @PathVariable String objectName,
+            @RequestParam(required = false) String owner,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "resolving synonym");
+        if (authValidation != null) return authValidation;
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            Map<String, Object> result = oracleSchemaService.resolveSynonymCustom(
+                    requestId, objectName, owner, performedBy);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return oracleSchemaService.createErrorResponse(requestId, e.getMessage(), 500);
+        }
+    }
+
+
+
+    @GetMapping("/objects/{objectType}/{objectName}/properties")
+    @Operation(summary = "Get object properties",
+            description = "Retrieves all properties of an Oracle object")
+    public ResponseEntity<?> getObjectProperties(
+            @PathVariable String objectType,
+            @PathVariable String objectName,
+            @RequestParam(required = false) String owner,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting object properties");
+        if (authValidation != null) return authValidation;
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            Map<String, Object> result = oracleSchemaService.getObjectProperties(
+                    requestId, objectName, objectType, owner, performedBy);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return oracleSchemaService.createErrorResponse(requestId, e.getMessage(), 500);
+        }
+    }
+
+
+
+
+    @GetMapping("/objects/{objectType}/{objectName}/columns")
+    @Operation(summary = "Get columns or parameters",
+            description = "Retrieves columns (for tables/views) or parameters (for procedures/functions)")
+    public ResponseEntity<?> getObjectColumns(
+            @PathVariable String objectType,
+            @PathVariable String objectName,
+            @RequestParam(required = false) String owner,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "50") int pageSize,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting columns");
+        if (authValidation != null) return authValidation;
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            Map<String, Object> result = oracleSchemaService.getObjectColumnsPaginated(
+                    requestId, objectName, objectType, owner, page, pageSize, performedBy);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return oracleSchemaService.createErrorResponse(requestId, e.getMessage(), 500);
+        }
+    }
+
+
+    @GetMapping("/objects/{objectType}/{objectName}/constraints")
+    @Operation(summary = "Get table constraints",
+            description = "Retrieves constraints for a table")
+    public ResponseEntity<?> getTableConstraints(
+            @PathVariable String objectType,
+            @PathVariable String objectName,
+            @RequestParam(required = false) String owner,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        if (!"TABLE".equalsIgnoreCase(objectType)) {
+            return oracleSchemaService.createErrorResponse(requestId, "Constraints are only available for tables", 400);
+        }
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting constraints");
+        if (authValidation != null) return authValidation;
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            Map<String, Object> result = oracleSchemaService.getTableConstraints(
+                    requestId, objectName, owner, performedBy);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return oracleSchemaService.createErrorResponse(requestId, e.getMessage(), 500);
+        }
+    }
+
+
+
+    @GetMapping("/objects/{objectType}/{objectName}/ddl-new")
+    @Operation(summary = "Get object DDL",
+            description = "Retrieves the DDL or source code for an object")
+    public ResponseEntity<?> getObjectDDL(
+            @PathVariable String objectType,
+            @PathVariable String objectName,
+            @RequestParam(required = false) String owner,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting DDL");
+        if (authValidation != null) return authValidation;
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            Map<String, Object> result = oracleSchemaService.getObjectDDL(
+                    requestId, objectName, objectType, owner, performedBy);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return oracleSchemaService.createErrorResponse(requestId, e.getMessage(), 500);
+        }
+    }
+
+
+
+    @GetMapping("/objects/{objectType}/{objectName}/counts-new")
+    @Operation(summary = "Get object counts",
+            description = "Retrieves only the counts (columns, parameters, dependencies) for an object")
+    public ResponseEntity<?> getObjectCounts(
+            @PathVariable String objectType,
+            @PathVariable String objectName,
+            @RequestParam(required = false) String owner,
+            HttpServletRequest req) {
+        String requestId = UUID.randomUUID().toString();
+
+        ResponseEntity<?> authValidation = jwtHelper.validateAuthorizationHeader(req, "getting counts");
+        if (authValidation != null) return authValidation;
+
+        try {
+            String performedBy = jwtHelper.extractPerformedBy(req);
+            Map<String, Object> result = oracleSchemaService.getObjectCounts(
+                    requestId, objectName, objectType, owner, performedBy);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return oracleSchemaService.createErrorResponse(requestId, e.getMessage(), 500);
+        }
+    }
+
+
+
 }
