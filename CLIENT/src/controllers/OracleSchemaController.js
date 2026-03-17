@@ -3788,6 +3788,7 @@ export const exportDependencyReport = async (authorizationHeader, params) => {
 // COMPREHENSIVE SCHEMA DATA (Enhanced)
 // ============================================================
 
+
 /**
  * Get comprehensive schema data including all object types
  * @param {string} authorizationHeader - Bearer token

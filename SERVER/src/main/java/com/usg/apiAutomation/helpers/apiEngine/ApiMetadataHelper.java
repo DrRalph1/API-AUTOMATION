@@ -7,6 +7,7 @@ import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.GeneratedApiResponseDTO;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiExecutionLogEntity;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
+import com.usg.apiAutomation.repositories.oracle.OracleSchemaRepository;
 import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.ApiExecutionLogRepository;
 import com.usg.apiAutomation.services.OracleSchemaService;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +21,12 @@ import java.util.stream.Collectors;
 @Slf4j
 @Component
 public class ApiMetadataHelper {
+
+    private final OracleSchemaRepository oracleSchemaRepository;
+
+    public ApiMetadataHelper(OracleSchemaRepository oracleSchemaRepository) {
+        this.oracleSchemaRepository = oracleSchemaRepository;
+    }
 
     public void addAverageExecutionTime(GeneratedApiResponseDTO response, Double avgTime) {
         Map<String, Object> metadata = response.getMetadata() != null ?
@@ -116,33 +123,131 @@ public class ApiMetadataHelper {
                     break;
 
                 case "PROCEDURE":
-                    Map<String, Object> procDetails = oracleSchemaService.getProcedureDetails(
-                            UUID.randomUUID().toString(),
-                            null,
-                            "system",
-                            targetName
-                    );
+                    // Call repository directly
+                    Map<String, Object> procDetails = oracleSchemaRepository.getProcedureDetails(targetName);
 
-                    Map<String, Object> procData = (Map<String, Object>) procDetails.get("data");
-                    if (procData != null) {
-                        details.put("parameters", procData.get("parameters"));
-                        details.put("parameterCount", procData.get("parameterCount"));
+                    if (procDetails != null && !procDetails.isEmpty()) {
+                        // Get parameters from the procedure details
+                        List<Map<String, Object>> parameters = (List<Map<String, Object>>) procDetails.get("parameters");
+
+                        if (parameters != null && !parameters.isEmpty()) {
+                            // Count IN, OUT, and IN/OUT parameters
+                            int inCount = 0;
+                            int outCount = 0;
+                            int inOutCount = 0;
+
+                            for (Map<String, Object> param : parameters) {
+                                String inOut = (String) param.get("in_out");
+                                if (inOut == null) {
+                                    inOut = (String) param.get("IN_OUT");
+                                }
+
+                                if (inOut != null) {
+                                    String upperInOut = inOut.toUpperCase();
+                                    if (upperInOut.contains("IN") && upperInOut.contains("OUT")) {
+                                        inOutCount++;
+                                    } else if (upperInOut.contains("OUT")) {
+                                        outCount++;
+                                    } else if (upperInOut.contains("IN")) {
+                                        inCount++;
+                                    }
+                                }
+                            }
+
+                            details.put("parameters", parameters);
+                            details.put("parameterCount", parameters.size());
+                            details.put("inParameterCount", inCount);
+                            details.put("outParameterCount", outCount);
+                            details.put("inOutParameterCount", inOutCount);
+
+                            // Add source code if available
+                            if (procDetails.containsKey("source")) {
+                                details.put("sourceCode", procDetails.get("source"));
+                            }
+
+                            // Add procedure metadata
+                            details.put("status", procDetails.get("status"));
+                            details.put("created", procDetails.get("created"));
+                            details.put("lastModified", procDetails.get("last_ddl_time"));
+
+                            // Check if it's a package procedure
+                            if (procDetails.containsKey("package_name")) {
+                                details.put("packageName", procDetails.get("package_name"));
+                                details.put("isPackageProcedure", true);
+                            }
+                        }
                     }
                     break;
 
                 case "FUNCTION":
-                    Map<String, Object> funcDetails = oracleSchemaService.getFunctionDetails(
-                            UUID.randomUUID().toString(),
-                            null,
-                            "system",
-                            targetName
-                    );
+                    // Call repository directly
+                    Map<String, Object> funcDetails = oracleSchemaRepository.getFunctionDetails(targetName);
 
-                    Map<String, Object> funcData = (Map<String, Object>) funcDetails.get("data");
-                    if (funcData != null) {
-                        details.put("parameters", funcData.get("parameters"));
-                        details.put("returnType", funcData.get("returnType"));
-                        details.put("parameterCount", funcData.get("parameterCount"));
+                    if (funcDetails != null && !funcDetails.isEmpty()) {
+                        // Get parameters from the function details
+                        List<Map<String, Object>> parameters = (List<Map<String, Object>>) funcDetails.get("parameters");
+
+                        if (parameters != null && !parameters.isEmpty()) {
+                            // Count IN, OUT, and IN/OUT parameters
+                            int inCount = 0;
+                            int outCount = 0;
+                            int inOutCount = 0;
+
+                            for (Map<String, Object> param : parameters) {
+                                String inOut = (String) param.get("in_out");
+                                if (inOut == null) {
+                                    inOut = (String) param.get("IN_OUT");
+                                }
+
+                                if (inOut != null) {
+                                    String upperInOut = inOut.toUpperCase();
+                                    if (upperInOut.contains("IN") && upperInOut.contains("OUT")) {
+                                        inOutCount++;
+                                    } else if (upperInOut.contains("OUT")) {
+                                        outCount++;
+                                    } else if (upperInOut.contains("IN")) {
+                                        inCount++;
+                                    }
+                                }
+                            }
+
+                            details.put("parameters", parameters);
+                            details.put("parameterCount", parameters.size());
+                            details.put("inParameterCount", inCount);
+                            details.put("outParameterCount", outCount);
+                            details.put("inOutParameterCount", inOutCount);
+
+                            // Add return type
+                            details.put("returnType", funcDetails.get("returnType"));
+
+                            // Add source code if available
+                            if (funcDetails.containsKey("source")) {
+                                details.put("sourceCode", funcDetails.get("source"));
+                            }
+
+                            // Add function metadata
+                            details.put("status", funcDetails.get("status"));
+                            details.put("created", funcDetails.get("created"));
+                            details.put("lastModified", funcDetails.get("last_ddl_time"));
+                        }
+                    }
+                    break;
+
+                case "PACKAGE":
+                    // Call repository directly
+                    Map<String, Object> pkgDetails = oracleSchemaRepository.getPackageDetails(targetName);
+
+                    if (pkgDetails != null && !pkgDetails.isEmpty()) {
+                        details.put("procedures", pkgDetails.get("procedures"));
+                        details.put("functions", pkgDetails.get("functions"));
+                        details.put("procedureCount", pkgDetails.get("procedureCount"));
+                        details.put("functionCount", pkgDetails.get("functionCount"));
+                        details.put("specification", pkgDetails.get("specification"));
+                        details.put("body", pkgDetails.get("body"));
+
+                        if (pkgDetails.containsKey("specSource")) {
+                            details.put("sourceCode", pkgDetails.get("specSource"));
+                        }
                     }
                     break;
             }
@@ -154,6 +259,8 @@ public class ApiMetadataHelper {
 
         return details;
     }
+
+
 
     public String getCodeBaseRequestId(GeneratedApiEntity api) {
         try {

@@ -12,6 +12,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Repository
@@ -3276,78 +3278,424 @@ public class OracleSchemaRepository {
      * Parse procedure parameters from source code
      */
     private List<Map<String, Object>> parseProcedureParametersFromSource(String owner, String procedureName) {
-        List<Map<String, Object>> params = new ArrayList<>();
+        List<Map<String, Object>> parameters = new ArrayList<>();
 
         try {
-            // Get source from ALL_SOURCE
+            // Get the source code lines in order
             String sourceSql = "SELECT text FROM all_source " +
                     "WHERE UPPER(owner) = UPPER(?) AND UPPER(name) = UPPER(?) " +
-                    "AND UPPER(type) IN ('PROCEDURE', 'PACKAGE', 'PACKAGE BODY') " +
-                    "ORDER BY line";
+                    "AND type = 'PROCEDURE' ORDER BY line";
 
-            List<String> sourceLines = oracleJdbcTemplate.queryForList(
-                    sourceSql, String.class, owner, procedureName);
+            List<String> sourceLines = oracleJdbcTemplate.queryForList(sourceSql, String.class, owner, procedureName);
 
             if (sourceLines.isEmpty()) {
-                log.info("No source found for {}.{}", owner, procedureName);
-                return params;
+                log.warn("No source found for {}.{}", owner, procedureName);
+                return parameters;
             }
 
-            // Combine source lines
-            StringBuilder fullSource = new StringBuilder();
+            // Build the full source
+            StringBuilder fullSourceBuilder = new StringBuilder();
             for (String line : sourceLines) {
-                fullSource.append(line).append(" ");
+                fullSourceBuilder.append(line).append(" ");
             }
+            String fullSource = fullSourceBuilder.toString();
 
-            String source = fullSource.toString();
-
-            // Look for procedure signature
-            // Pattern 1: PROCEDURE procedure_name ( ... ) [IS|AS]
-            String pattern1 = "PROCEDURE\\s+" + procedureName + "\\s*\\((.*?)\\)\\s*(?:IS|AS)";
-            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
-                    pattern1,
-                    java.util.regex.Pattern.DOTALL | java.util.regex.Pattern.CASE_INSENSITIVE
+            // Extract everything between the procedure name and IS/AS
+            Pattern procPattern = Pattern.compile(
+                    "PROCEDURE\\s+" + procedureName + "\\s*\\((.*?)\\)\\s*(?:IS|AS)",
+                    Pattern.CASE_INSENSITIVE | Pattern.DOTALL
             );
 
-            java.util.regex.Matcher matcher = pattern.matcher(source);
+            Matcher procMatcher = procPattern.matcher(fullSource);
 
-            if (!matcher.find()) {
-                // Pattern 2: Without IS/AS requirement
-                pattern1 = "PROCEDURE\\s+" + procedureName + "\\s*\\((.*?)\\)";
-                pattern = java.util.regex.Pattern.compile(
-                        pattern1,
-                        java.util.regex.Pattern.DOTALL | java.util.regex.Pattern.CASE_INSENSITIVE
-                );
-                matcher = pattern.matcher(source);
-            }
+            if (procMatcher.find()) {
+                String paramsSection = procMatcher.group(1);
 
-            if (matcher.find()) {
-                String paramsStr = matcher.group(1).trim();
-                log.info("Found parameter section for {}: {}", procedureName, paramsStr);
+                // First, remove all single-line comments (--) from the parameters section
+                // This is the key fix - remove comments before parsing
+                paramsSection = removeComments(paramsSection);
 
-                if (!paramsStr.isEmpty()) {
-                    // Split parameters by comma, handling nested parentheses
-                    List<String> paramDefs = splitParameters(paramsStr);
+                // Split by commas, but be careful with commas inside parentheses
+                List<String> paramDeclarations = splitParametersByComma(paramsSection);
 
-                    int position = 1;
-                    for (String paramDef : paramDefs) {
-                        Map<String, Object> param = parseSingleParameterFromSource(paramDef, position);
-                        if (param != null && !param.isEmpty()) {
-                            params.add(param);
-                            position++;
-                        }
+                // Parse each parameter declaration
+                int position = 1;
+                for (String paramDecl : paramDeclarations) {
+                    paramDecl = paramDecl.trim();
+                    if (paramDecl.isEmpty()) {
+                        continue;
+                    }
+
+                    Map<String, Object> param = parseParameterFromString(paramDecl, position++);
+                    if (param != null && !param.isEmpty()) {
+                        parameters.add(param);
+                        log.debug("Parsed parameter: {} - {} - {}",
+                                param.get("argument_name"),
+                                param.get("in_out"),
+                                param.get("data_type"));
                     }
                 }
-            } else {
-                log.info("No procedure signature found in source for {}.{}", owner, procedureName);
+            }
+
+            log.info("Parsed {} parameters from source for {}.{}",
+                    parameters.size(), owner, procedureName);
+
+            // Debug log each found parameter
+            for (Map<String, Object> param : parameters) {
+                log.debug("Found parameter: {} - {} - {}",
+                        param.get("argument_name"),
+                        param.get("in_out"),
+                        param.get("data_type"));
             }
 
         } catch (Exception e) {
-            log.error("Error parsing parameters from source for {}.{}: {}",
-                    owner, procedureName, e.getMessage());
+            log.error("Error parsing source for {}.{}: {}",
+                    owner, procedureName, e.getMessage(), e);
         }
 
-        return params;
+        return parameters;
+    }
+
+    /**
+     * Remove all SQL comments (--) from the string
+     */
+    private String removeComments(String text) {
+        StringBuilder result = new StringBuilder();
+        String[] lines = text.split("\\n");
+
+        for (String line : lines) {
+            // Find the position of '--' that is not inside quotes
+            boolean inQuotes = false;
+            int commentStart = -1;
+
+            for (int i = 0; i < line.length(); i++) {
+                char c = line.charAt(i);
+
+                if (c == '\'') {
+                    inQuotes = !inQuotes;
+                } else if (!inQuotes && c == '-' && i + 1 < line.length() && line.charAt(i + 1) == '-') {
+                    commentStart = i;
+                    break;
+                }
+            }
+
+            if (commentStart != -1) {
+                // Add everything before the comment
+                result.append(line.substring(0, commentStart));
+            } else {
+                result.append(line);
+            }
+
+            result.append(" ");
+        }
+
+        return result.toString();
+    }
+
+    /**
+     * Split parameters by commas, respecting parentheses
+     */
+    private List<String> splitParametersByComma(String text) {
+        List<String> parameters = new ArrayList<>();
+        StringBuilder currentParam = new StringBuilder();
+        int parenCount = 0;
+        boolean inQuotes = false;
+
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+
+            if (c == '\'') {
+                inQuotes = !inQuotes;
+            }
+
+            if (!inQuotes) {
+                if (c == '(') {
+                    parenCount++;
+                } else if (c == ')') {
+                    parenCount--;
+                } else if (c == ',' && parenCount == 0) {
+                    // End of parameter
+                    String param = currentParam.toString().trim();
+                    if (!param.isEmpty()) {
+                        parameters.add(param);
+                    }
+                    currentParam = new StringBuilder();
+                    continue;
+                }
+            }
+
+            currentParam.append(c);
+        }
+
+        // Add the last parameter
+        String lastParam = currentParam.toString().trim();
+        if (!lastParam.isEmpty()) {
+            parameters.add(lastParam);
+        }
+
+        return parameters;
+    }
+
+    private Map<String, Object> parseParameterFromString(String paramDecl, int position) {
+        Map<String, Object> param = new HashMap<>();
+
+        try {
+            // First, remove any remaining comment markers
+            paramDecl = paramDecl.replaceAll("--.*$", "").trim();
+
+            // Pattern for Oracle parameter: name [IN|OUT|IN OUT] type [DEFAULT|:= value]
+            Pattern paramPattern = Pattern.compile(
+                    "^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s+" +  // parameter name
+                            "(?:(IN|OUT|IN\\s+OUT)\\s+)?" +        // direction (optional)
+                            "([a-zA-Z_][a-zA-Z0-9_]*" +            // data type
+                            "(?:\\s*\\(" +
+                            "[^)]*" +
+                            "\\))?)" +                               // optional size/precision
+                            "(?:\\s+(?:DEFAULT|:=)\\s+(.+))?",      // default value (optional)
+                    Pattern.CASE_INSENSITIVE
+            );
+
+            Matcher matcher = paramPattern.matcher(paramDecl);
+
+            if (matcher.find()) {
+                String paramName = matcher.group(1);
+                String direction = matcher.group(2);
+                String dataType = matcher.group(3);
+                String defaultValue = matcher.group(4);
+
+                // Clean up data type
+                dataType = dataType.trim().toUpperCase();
+
+                param.put("argument_name", paramName);
+                param.put("position", position);
+                param.put("sequence", position);
+                param.put("data_type", dataType);
+                param.put("in_out", direction != null ? direction.toUpperCase().replace(" ", "_") : "IN");
+                param.put("data_length", extractLength(dataType));
+                param.put("data_precision", extractPrecision(dataType));
+                param.put("data_scale", extractScale(dataType));
+                param.put("defaulted", defaultValue != null ? "YES" : "NO");
+
+                log.debug("Successfully parsed: {} {} {}", paramName, direction, dataType);
+            } else {
+                // Try alternative simpler pattern if the first one fails
+                Pattern simplePattern = Pattern.compile(
+                        "^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s+" +
+                                "(?:IN|OUT|IN\\s+OUT)\\s+" +
+                                "([a-zA-Z_][a-zA-Z0-9_]*" +
+                                "(?:\\s*\\(" +
+                                "[^)]*" +
+                                "\\))?)",
+                        Pattern.CASE_INSENSITIVE
+                );
+
+                Matcher simpleMatcher = simplePattern.matcher(paramDecl);
+                if (simpleMatcher.find()) {
+                    String paramName = simpleMatcher.group(1);
+                    String dataType = simpleMatcher.group(2);
+
+                    // Extract direction by looking for IN/OUT in the string
+                    String direction = "IN";
+                    if (paramDecl.toUpperCase().contains("OUT")) {
+                        if (paramDecl.toUpperCase().contains("IN OUT")) {
+                            direction = "IN_OUT";
+                        } else {
+                            direction = "OUT";
+                        }
+                    }
+
+                    param.put("argument_name", paramName);
+                    param.put("position", position);
+                    param.put("sequence", position);
+                    param.put("data_type", dataType.trim().toUpperCase());
+                    param.put("in_out", direction);
+                    param.put("data_length", null);
+                    param.put("data_precision", null);
+                    param.put("data_scale", null);
+                    param.put("defaulted", "NO");
+
+                    log.debug("Simple parse: {} {} {}", paramName, direction, dataType);
+                } else {
+                    log.debug("Could not parse: '{}'", paramDecl);
+                }
+            }
+
+        } catch (Exception e) {
+            log.debug("Error parsing '{}': {}", paramDecl, e.getMessage());
+        }
+
+        return param;
+    }
+
+    private Integer extractLength(String dataType) {
+        if (dataType == null) return null;
+
+        Pattern pattern = Pattern.compile("\\((\\d+)\\)");
+        Matcher matcher = pattern.matcher(dataType);
+
+        if (matcher.find()) {
+            return Integer.parseInt(matcher.group(1));
+        }
+
+        return null;
+    }
+
+    private Integer extractPrecision(String dataType) {
+        if (dataType == null) return null;
+
+        Pattern pattern = Pattern.compile("\\((\\d+),\\s*\\d+\\)");
+        Matcher matcher = pattern.matcher(dataType);
+
+        if (matcher.find()) {
+            return Integer.parseInt(matcher.group(1));
+        }
+
+        return null;
+    }
+
+    private Integer extractScale(String dataType) {
+        if (dataType == null) return null;
+
+        Pattern pattern = Pattern.compile("\\(\\d+,\\s*(\\d+)\\)");
+        Matcher matcher = pattern.matcher(dataType);
+
+        if (matcher.find()) {
+            return Integer.parseInt(matcher.group(1));
+        }
+
+        return null;
+    }
+
+    private Integer getDataTypeLength(String dataType) {
+        if (dataType == null) return null;
+
+        Pattern pattern = Pattern.compile("\\((\\d+)\\)");
+        Matcher matcher = pattern.matcher(dataType);
+
+        if (matcher.find()) {
+            return Integer.parseInt(matcher.group(1));
+        }
+
+        return null;
+    }
+
+    private Integer getDataTypePrecision(String dataType) {
+        if (dataType == null) return null;
+
+        Pattern pattern = Pattern.compile("\\((\\d+),\\s*\\d+\\)");
+        Matcher matcher = pattern.matcher(dataType);
+
+        if (matcher.find()) {
+            return Integer.parseInt(matcher.group(1));
+        }
+
+        return null;
+    }
+
+    private Integer getDataTypeScale(String dataType) {
+        if (dataType == null) return null;
+
+        Pattern pattern = Pattern.compile("\\(\\d+,\\s*(\\d+)\\)");
+        Matcher matcher = pattern.matcher(dataType);
+
+        if (matcher.find()) {
+            return Integer.parseInt(matcher.group(1));
+        }
+
+        return null;
+    }
+
+    private List<String> splitParameters(String paramsSection) {
+        List<String> parameters = new ArrayList<>();
+        StringBuilder currentParam = new StringBuilder();
+        boolean inComment = false;
+        int parenthesisLevel = 0;
+
+        for (int i = 0; i < paramsSection.length(); i++) {
+            char c = paramsSection.charAt(i);
+
+            // Handle comments
+            if (c == '-' && i + 1 < paramsSection.length() && paramsSection.charAt(i + 1) == '-') {
+                inComment = true;
+                currentParam.append(c);
+            } else if (c == '\n' && inComment) {
+                inComment = false;
+                currentParam.append(c);
+            } else if (c == '(') {
+                parenthesisLevel++;
+                currentParam.append(c);
+            } else if (c == ')') {
+                parenthesisLevel--;
+                currentParam.append(c);
+            } else if (c == ',' && parenthesisLevel == 0 && !inComment) {
+                // End of parameter
+                String param = currentParam.toString().trim();
+                if (!param.isEmpty() && !param.startsWith("--")) {
+                    parameters.add(param);
+                }
+                currentParam = new StringBuilder();
+            } else {
+                currentParam.append(c);
+            }
+        }
+
+        // Add the last parameter
+        String lastParam = currentParam.toString().trim();
+        if (!lastParam.isEmpty() && !lastParam.startsWith("--")) {
+            parameters.add(lastParam);
+        }
+
+        return parameters;
+    }
+
+    private Map<String, Object> parseParameterDeclaration(String paramDecl, int position) {
+        Map<String, Object> param = new HashMap<>();
+
+        try {
+            // Remove SQL comments and extra spaces
+            paramDecl = paramDecl.replaceAll("--.*$", "").trim();
+
+            if (paramDecl.isEmpty()) {
+                return null;
+            }
+
+            // Pattern for parameter: name [IN|OUT|IN OUT] type [DEFAULT value]
+            Pattern paramPattern = Pattern.compile(
+                    "^(\\w+)\\s+(?:(IN|OUT|IN\\s+OUT)\\s+)?([\\w\\[\\]\\(\\)]+)(?:\\s+DEFAULT\\s+(.+))?",
+                    Pattern.CASE_INSENSITIVE
+            );
+
+            Matcher matcher = paramPattern.matcher(paramDecl);
+
+            if (matcher.find()) {
+                String paramName = matcher.group(1);
+                String inOut = matcher.group(2);
+                String dataType = matcher.group(3);
+                String defaultValue = matcher.group(4);
+
+                param.put("argument_name", paramName);
+                param.put("position", position);
+                param.put("sequence", position);
+                param.put("data_type", dataType.toUpperCase());
+                param.put("in_out", inOut != null ? inOut.toUpperCase() : "IN");
+                param.put("data_length", null);
+                param.put("data_precision", null);
+                param.put("data_scale", null);
+                param.put("defaulted", defaultValue != null ? "YES" : "NO");
+
+                // Handle special case for CLOB
+                if (dataType.equalsIgnoreCase("CLOB")) {
+                    param.put("data_type", "CLOB");
+                }
+            } else {
+                log.debug("Could not parse parameter declaration: {}", paramDecl);
+            }
+
+        } catch (Exception e) {
+            log.debug("Error parsing parameter '{}': {}", paramDecl, e.getMessage());
+        }
+
+        return param;
     }
 
 
@@ -10605,54 +10953,6 @@ public class OracleSchemaRepository {
         return params;
     }
 
-    private List<String> splitParameters(String paramsStr) {
-        List<String> params = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        int parenCount = 0;
-        boolean inComment = false;
-
-        for (int i = 0; i < paramsStr.length(); i++) {
-            char c = paramsStr.charAt(i);
-
-            // Check for comment start
-            if (c == '-' && i + 1 < paramsStr.length() && paramsStr.charAt(i + 1) == '-') {
-                inComment = true;
-            }
-
-            // If we're in a comment, skip until end of line or comma
-            if (inComment) {
-                if (c == '\n' || c == '\r') {
-                    inComment = false;
-                }
-                continue;
-            }
-
-            if (c == '(') {
-                parenCount++;
-                current.append(c);
-            } else if (c == ')') {
-                parenCount--;
-                current.append(c);
-            } else if (c == ',' && parenCount == 0) {
-                // End of parameter
-                String param = current.toString().trim();
-                if (!param.isEmpty() && !param.startsWith("--")) {
-                    params.add(param);
-                }
-                current = new StringBuilder();
-            } else {
-                current.append(c);
-            }
-        }
-
-        // Add last parameter
-        String lastParam = current.toString().trim();
-        if (!lastParam.isEmpty() && !lastParam.startsWith("--")) {
-            params.add(lastParam);
-        }
-
-        return params;
-    }
 
     private Map<String, Object> parseSingleParameter(String paramDef, int position) {
         Map<String, Object> param = new HashMap<>();
