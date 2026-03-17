@@ -17,6 +17,9 @@ import {
 } from "../controllers/OTPController.js";
 import { showError, showSuccess, showWarning } from "@/lib/sweetAlert";
 
+// ADD THIS IMPORT
+import { API_CONFIG } from "@/config/APIConfig";
+
 export const useLogin = () => {
   const { loginWithUserData, user } = useAuth();
   const navigate = useNavigate();
@@ -34,7 +37,7 @@ export const useLogin = () => {
     showOtp: false,
     otp: ["", "", "", "", "", ""],
     loginData: null,
-    userType: "teller",
+    userType: "postgres",
     portalValidationError: "",
     lastAttemptedRole: "",
     resendCountdown: 0,
@@ -75,16 +78,25 @@ export const useLogin = () => {
   const setForgotLoading = (value) => setState(prev => ({ ...prev, forgotLoading: value }));
   const setIsMobile = (value) => setState(prev => ({ ...prev, isMobile: value }));
 
-  // Helper function to get user role for alerts
+  // Helper function to get user role for alerts - FIXED
   const getUserRoleForAlert = () => {
+    let role = state.userType; // Default to selected portal
+    
     if (state.showOtp && state.loginData?.role) {
-      const role = state.loginData.role.toLowerCase();
-      return role === "oracle" ? "oracle" : "teller";
+      role = state.loginData.role;
     }
-    return state.userType;
+    
+    // Ensure role is a string before calling toLowerCase
+    if (role && typeof role === 'string') {
+      return role.toLowerCase() === "oracle" ? "oracle" : "postgres";
+    }
+    
+    // If role is not a string, return a safe default
+    console.log("⚠️ getUserRoleForAlert: role is not a string, defaulting to postgres", role);
+    return "postgres"; // Default to postgres for safety
   };
 
-  // Alert functions
+  // Alert functions - FIXED to use the safe getUserRoleForAlert
   const showCustomError = (title, message) => {
     const userRole = getUserRoleForAlert();
     showError(title, message, userRole, {
@@ -124,60 +136,60 @@ export const useLogin = () => {
     });
   };
 
-  // Portal validation
+  // Portal validation - FIXED with type checking
   const validatePortalAccess = (userRole, selectedPortal) => {
-  console.log(`🔍 Portal Validation: User Role = "${userRole}", Selected Portal = "${selectedPortal}"`);
-  
-  setLastAttemptedRole(userRole || 'undefined');
-  
-  // Clean and normalize the role
-  const normalizedRole = userRole ? userRole.toLowerCase().trim() : '';
-  const normalizedPortal = selectedPortal ? selectedPortal.toLowerCase().trim() : '';
-  
-  console.log(`🔍 Normalized: Role = "${normalizedRole}", Portal = "${normalizedPortal}"`);
-  
-  // If role is empty, assume it's valid for debugging purposes
-  if (!normalizedRole) {
-    console.log('⚠️ User role is empty, allowing access for now');
+    console.log(`🔍 Portal Validation: User Role = "${userRole}", Selected Portal = "${selectedPortal}"`);
+    
+    setLastAttemptedRole(userRole || 'undefined');
+    
+    // Handle non-string userRole
+    if (!userRole || typeof userRole !== 'string') {
+      console.log(`⚠️ User role is not a string: ${typeof userRole}`, userRole);
+      return {
+        valid: true,
+        message: ""
+      };
+    }
+    
+    // Clean and normalize the role
+    const normalizedRole = userRole.toLowerCase().trim();
+    const normalizedPortal = selectedPortal ? selectedPortal.toLowerCase().trim() : '';
+    
+    console.log(`🔍 Normalized: Role = "${normalizedRole}", Portal = "${normalizedPortal}"`);
+    
+    // Check if role is valid
+    const validRoles = ["oracle", "postgres"];
+    if (!validRoles.includes(normalizedRole)) {
+      console.log(`❌ Invalid role detected: "${normalizedRole}"`);
+      return {
+        valid: false,
+        message: `Unknown user role: "${userRole}". Access denied. Please contact system administrator.`
+      };
+    }
+
+    // Check if role matches portal
+    if (normalizedRole !== normalizedPortal) {
+      console.log(`❌ Role/portal mismatch: ${normalizedRole} != ${normalizedPortal}`);
+      
+      const attemptedPortal = normalizedPortal === "oracle" ? "Admin Portal" : "postgres Portal";
+      const shouldBePortal = normalizedRole === "oracle" ? "Admin Portal" : "postgres Portal";
+
+      const userType = normalizedRole === "oracle" 
+        ? "an ADMINISTRATOR" 
+        : "a postgres";
+      
+      return {
+        valid: false,
+        message: `Your account is assigned the role of ${userType}, which grants access only to the ${shouldBePortal}. Access to the ${attemptedPortal} is not permitted.`
+      };
+    }
+
+    console.log("✅ Portal validation passed");
     return {
       valid: true,
       message: ""
     };
-  }
-  
-  // Check if role is valid
-  const validRoles = ["oracle", "teller"];
-  if (!validRoles.includes(normalizedRole)) {
-    console.log(`❌ Invalid role detected: "${normalizedRole}"`);
-    return {
-      valid: false,
-      message: `Unknown user role: "${userRole}". Access denied. Please contact system administrator.`
-    };
-  }
-
-  // Check if role matches portal
-  if (normalizedRole !== normalizedPortal) {
-    console.log(`❌ Role/portal mismatch: ${normalizedRole} != ${normalizedPortal}`);
-    
-    const attemptedPortal = normalizedPortal === "oracle" ? "Admin Portal" : "Teller Portal";
-    const shouldBePortal = normalizedRole === "oracle" ? "Admin Portal" : "Teller Portal";
-
-    const userType = normalizedRole === "oracle" 
-      ? "an ADMINISTRATOR" 
-      : "a TELLER";
-    
-    return {
-      valid: false,
-      message: `Your account is assigned the role of ${userType}, which grants access only to the ${shouldBePortal}. Access to the ${attemptedPortal} is not permitted.`
-    };
-  }
-
-  console.log("✅ Portal validation passed");
-  return {
-    valid: true,
-    message: ""
   };
-};
 
   // Password validation
   const validatePasswordResetForm = (values) => {
@@ -237,162 +249,167 @@ export const useLogin = () => {
 
   // Login handler
   const handleLogin = async (e) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  if (!state.userId.trim() || !state.password.trim()) {
-    const userRole = getUserRoleForAlert();
-    showWarning("Missing Information", "Please enter both your User ID and Password", userRole);
-    return;
-  }
-
-  try {
-    setLoading(true);
-    setPortalValidationError("");
-
-    console.log("🔄 Starting login process for user:", state.userId);
-    console.log("🎯 Selected portal:", state.userType);
-
-    setToken(null);
-    setRole(null);
-    setLastAttemptedRole("");
-
-    // Make the API call
-    const loginResponse = await apiLogin({
-      user_id: state.userId,
-      password: state.password,
-      entrySource: "web",
-      deviceIp: "192.168.1.251",
-      channel: "browser",
-      authToken: "",
-      userName: state.userId,
-      deviceId: "web-client",
-      deviceName: navigator.userAgent,
-      country: "",
-      brand: "",
-      manufacturer: "",
-      phoneNumber: ""
-    });
-
-    console.log("📦 Full login response:", loginResponse);
-    console.log("📦 Response data:", loginResponse.data);
-
-    if (loginResponse.responseCode !== 200) {
-      throw new Error(loginResponse.message || "Login failed");
+    if (!state.userId.trim() || !state.password.trim()) {
+      const userRole = getUserRoleForAlert();
+      showWarning("Missing Information", "Please enter both your User ID and Password", userRole);
+      return;
     }
 
-    // Extract user data - handle nested structures
-    let userData = loginResponse.data;
-    console.log("📦 User data type:", typeof userData);
-    console.log("📦 User data keys:", Object.keys(userData || {}));
-    
-    // Check if data is nested inside another 'data' field
-    if (userData && typeof userData === 'object' && userData.data) {
-      console.log("📦 Found nested data structure");
-      userData = userData.data;
-      console.log("📦 Extracted user data keys:", Object.keys(userData || {}));
-    }
+    try {
+      setLoading(true);
+      setPortalValidationError("");
 
-    // Try multiple possible field names for role
-    const possibleRoleFields = ['role', 'userType', 'user_role', 'user_role_name', 'type', 'role_name'];
-    let userRole = null;
-    
-    for (const field of possibleRoleFields) {
-      if (userData && userData[field]) {
-        userRole = userData[field].toLowerCase();
-        console.log(`✅ Found role in field '${field}': ${userRole}`);
-        break;
+      console.log("🔄 Starting login process for user:", state.userId);
+      console.log("🎯 Selected portal:", state.userType);
+
+      setToken(null);
+      setRole(null);
+      setLastAttemptedRole("");
+
+      // Make the API call
+      const loginResponse = await apiLogin({
+        user_id: state.userId,
+        password: state.password,
+        entrySource: "web",
+        deviceIp: "192.168.1.169",
+        channel: "browser",
+        authToken: "",
+        userName: state.userId,
+        deviceId: "web-client",
+        deviceName: navigator.userAgent,
+        country: "",
+        brand: "",
+        manufacturer: "",
+        phoneNumber: ""
+      });
+
+      console.log("📦 Full login response:", loginResponse);
+      console.log("📦 Response data:", loginResponse.data);
+
+      if (loginResponse.responseCode !== 200) {
+        throw new Error(loginResponse.message || "Login failed");
       }
-    }
-    
-    // If still no role, check if there's a user object with role
-    if (!userRole && userData && userData.user) {
-      const userObj = userData.user;
+
+      // Extract user data - handle nested structures
+      let userData = loginResponse.data;
+      console.log("📦 User data type:", typeof userData);
+      console.log("📦 User data keys:", Object.keys(userData || {}));
+      
+      // Check if data is nested inside another 'data' field
+      if (userData && typeof userData === 'object' && userData.data) {
+        console.log("📦 Found nested data structure");
+        userData = userData.data;
+        console.log("📦 Extracted user data keys:", Object.keys(userData || {}));
+      }
+
+      // Try multiple possible field names for role
+      const possibleRoleFields = ['role', 'userType', 'user_role', 'user_role_name', 'type', 'role_name'];
+      let userRole = null;
+      
       for (const field of possibleRoleFields) {
-        if (userObj && userObj[field]) {
-          userRole = userObj[field].toLowerCase();
-          console.log(`✅ Found role in user.${field}: ${userRole}`);
+        if (userData && userData[field]) {
+          // Ensure we have a string before using toLowerCase
+          userRole = typeof userData[field] === 'string' 
+            ? userData[field].toLowerCase() 
+            : String(userData[field]).toLowerCase();
+          console.log(`✅ Found role in field '${field}': ${userRole}`);
           break;
         }
       }
-    }
-
-    const receivedToken = userData.authToken || userData.token || loginResponse.token;
-    
-    console.log("📦 Extracted token:", !!receivedToken);
-    console.log("📦 Extracted role:", userRole);
-
-    if (!receivedToken) {
-      throw new Error("Login failed - no authentication token received");
-    }
-
-    console.log("✅ Initial login successful, token received");
-    
-    // If role is still undefined, use the selected portal type
-    if (!userRole) {
-      console.log("⚠️ No role found in response, using selected portal type:", state.userType);
-      userRole = state.userType;
       
-      // Add role to userData for consistency
-      if (userData && typeof userData === 'object') {
-        userData.role = state.userType;
+      // If still no role, check if there's a user object with role
+      if (!userRole && userData && userData.user) {
+        const userObj = userData.user;
+        for (const field of possibleRoleFields) {
+          if (userObj && userObj[field]) {
+            userRole = typeof userObj[field] === 'string' 
+              ? userObj[field].toLowerCase() 
+              : String(userObj[field]).toLowerCase();
+            console.log(`✅ Found role in user.${field}: ${userRole}`);
+            break;
+          }
+        }
       }
-    }
 
-    // Validate portal access
-    const portalValidation = validatePortalAccess(userRole, state.userType);
-    
-    if (!portalValidation.valid) {
-      console.log("❌ Portal access validation failed:", portalValidation.message);
+      const receivedToken = userData.authToken || userData.token || loginResponse.token;
       
+      console.log("📦 Extracted token:", !!receivedToken);
+      console.log("📦 Extracted role:", userRole);
+
+      if (!receivedToken) {
+        throw new Error("Login failed - no authentication token received");
+      }
+
+      console.log("✅ Initial login successful, token received");
+      
+      // If role is still undefined, use the selected portal type
+      if (!userRole) {
+        console.log("⚠️ No role found in response, using selected portal type:", state.userType);
+        userRole = state.userType;
+        
+        // Add role to userData for consistency
+        if (userData && typeof userData === 'object') {
+          userData.role = state.userType;
+        }
+      }
+
+      // Validate portal access
+      const portalValidation = validatePortalAccess(userRole, state.userType);
+      
+      if (!portalValidation.valid) {
+        console.log("❌ Portal access validation failed:", portalValidation.message);
+        
+        setToken(null);
+        setRole(null);
+        setLoginData(null);
+        
+        setPortalValidationError(portalValidation.message);
+        
+        showError(
+          "Login Denied",
+          "You do not have permission to access this portal.",
+          userRole
+        );
+
+        return;
+      }
+
+      console.log("✅ Portal access validated successfully");
+      
+      setToken(receivedToken);
+      setRole(userRole);
+      setLoginData(userData);
+      setPortalValidationError("");
+
+      // Check if password reset is required
+      const requiresReset = userData.requiresPasswordReset || 
+                           userData.is_default_password || 
+                           userData.passwordResetRequired;
+      
+      if (requiresReset) {
+        console.log("🔄 Password reset required");
+        setRequiresPasswordReset(true);
+        return;
+      }
+
+      console.log("🔄 Sending OTP for user:", state.userId);
+      await sendOTP(state.userId, receivedToken);
+      setShowOtp(true);
+      console.log("✅ OTP sent, showing OTP form");
+
+    } catch (err) {
+      console.error("❌ Login error:", err);
       setToken(null);
-      setRole(null);
       setLoginData(null);
-      
-      setPortalValidationError(portalValidation.message);
-      
-      showError(
-        "Login Denied",
-        "You do not have permission to access this portal.",
-        userRole
-      );
-
-      return;
+      setPortalValidationError("");
+      const userRole = getUserRoleForAlert();
+      showError("Login Failed", err.message, userRole);
+    } finally {
+      setLoading(false);
     }
-
-    console.log("✅ Portal access validated successfully");
-    
-    setToken(receivedToken);
-    setRole(userRole);
-    setLoginData(userData);
-    setPortalValidationError("");
-
-    // Check if password reset is required
-    const requiresReset = userData.requiresPasswordReset || 
-                         userData.is_default_password || 
-                         userData.passwordResetRequired;
-    
-    if (requiresReset) {
-      console.log("🔄 Password reset required");
-      setRequiresPasswordReset(true);
-      return;
-    }
-
-    console.log("🔄 Sending OTP for user:", state.userId);
-    await sendOTP(state.userId, receivedToken);
-    setShowOtp(true);
-    console.log("✅ OTP sent, showing OTP form");
-
-  } catch (err) {
-    console.error("❌ Login error:", err);
-    setToken(null);
-    setLoginData(null);
-    setPortalValidationError("");
-    const userRole = getUserRoleForAlert();
-    showError("Login Failed", err.message, userRole);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   // OTP handlers
   const handleOtpChange = (value, idx) => {
@@ -529,28 +546,27 @@ export const useLogin = () => {
       console.log("✅ OTP verification response:", response);
 
       if (response.responseCode === 200) {
-          const finalUserData = {
-            ...state.loginData,
-            ...response.data,
-            token: token,
-            authenticated: true
-          };
+        const finalUserData = {
+          ...state.loginData,
+          ...response.data,
+          token: token,
+          authenticated: true
+        };
 
-          console.log("🎯 Final user data for authentication:", finalUserData);
+        console.log("🎯 Final user data for authentication:", finalUserData);
 
-          await loginWithUserData(finalUserData);
+        await loginWithUserData(finalUserData);
 
-          setRole(finalUserData.role);
+        setRole(finalUserData.role);
 
-          if (finalUserData.role === "oracle") {
-            return navigate("/admin", { replace: true });
-          } else if (finalUserData.role === "teller") {
-            return navigate("/teller", { replace: true });
-          } else {
-            return navigate("/", { replace: true });
-          }
+        if (finalUserData.role === "oracle") {
+          return navigate("/admin", { replace: true });
+        } else if (finalUserData.role === "postgres") {
+          return navigate("/postgres", { replace: true });
+        } else {
+          return navigate("/", { replace: true });
         }
-       else {
+      } else {
         console.error("❌ OTP verification failed:", response.message);
         const userRole = getUserRoleForAlert();
         showError("Verification Failed", response.message || "Invalid OTP", userRole);
@@ -644,54 +660,88 @@ export const useLogin = () => {
 
   // Forgot password handler
   const handleForgotPassword = async (e) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    if (!state.forgotUserId.trim()) {
-      const userRole = getUserRoleForAlert();
-      showWarning(
-        "User ID Required",
-        "Please enter your User ID to reset your password.",
-        userRole
-      );
-      return;
+  if (!state.forgotUserId.trim()) {
+    const userRole = getUserRoleForAlert();
+    showWarning(
+      "User ID Required",
+      "Please enter your User ID to reset your password.",
+      userRole
+    );
+    return false;
+  }
+
+  try {
+    setForgotLoading(true);
+
+    // Get API credentials from your config
+    const apiKey = API_CONFIG.HEADERS["x-api-key"];
+    const apiSecret = API_CONFIG.HEADERS["x-api-secret"];
+
+    console.log("🔑 Using API credentials for forgot password:", {
+      apiKeyPresent: !!apiKey,
+      apiSecretPresent: !!apiSecret
+    });
+
+    // First, check if user exists and get their phone number
+    const userResponse = await findUser(state.forgotUserId, apiKey, apiSecret);
+    console.log("📦 User lookup response:", userResponse);
+
+    const userData = userResponse?.data;
+    if (!userData) {
+      throw new Error("User not found. Please check the User ID and try again.");
     }
 
-    try {
-      setForgotLoading(true);
+    console.log("userData:::::::::" + JSON.stringify(userData));
 
-      const response = await findUser(state.forgotUserId);
-      const userData = response?.data;
+    if (!userData.phoneNumber) {
+      throw new Error("No phone number found for this user. Please contact system administrator.");
+    }
 
-      if (!userData?.phoneNumber) {
-        throw new Error("No phone number found for this user.");
-      }
+    // Now call the forgot password endpoint
+    const forgotPasswordPayload = {
+      user_id: state.forgotUserId
+    };
 
-      const forgotPasswordPayload = {
-        user_id: state.forgotUserId
-      };
+    console.log("🔄 Calling forgot password API with payload:", forgotPasswordPayload);
 
-      const resetResponse = await forgotPassword(forgotPasswordPayload);
+    const resetResponse = await forgotPassword(
+      forgotPasswordPayload,
+      apiKey,
+      apiSecret
+    );
 
-      if (resetResponse?.responseCode !== 200) {
-        throw new Error(resetResponse?.message || "Failed to reset password.");
-      }
+    console.log("📦 Forgot password response:", resetResponse);
 
+    if (resetResponse?.responseCode === 200) {
       const userRole = getUserRoleForAlert();
       showSuccess(
         "Password Reset Instructions Sent",
-        `We've sent password reset instructions to your registered mobile number (${userData.phoneNumber}).`,
+        `We've sent password reset instructions to your registered mobile number (${userData.phoneNumber}). Please check your messages.`,
         userRole
       );
 
       setShowForgotPassword(false);
       setForgotUserId("");
-    } catch (error) {
-      const userRole = getUserRoleForAlert();
-      showError("Password Reset Failed", error.message, userRole);
-    } finally {
-      setForgotLoading(false);
+      return true;
+    } else {
+      throw new Error(resetResponse?.message || "Failed to reset password.");
     }
-  };
+  } catch (error) {
+    console.error("❌ Forgot password error:", error);
+    
+    const userRole = getUserRoleForAlert();
+    showError(
+      "Password Reset Failed", 
+      error.message || "An error occurred while resetting your password. Please try again later.",
+      userRole
+    );
+    return false;
+  } finally {
+    setForgotLoading(false);
+  }
+};
 
   // Navigation handlers
   const handleBackFromReset = () => {

@@ -130,7 +130,7 @@ public class DatabaseConfig {
         config.setConnectionTimeout(connectionTimeout);
         config.setPoolName("Oracle-Hikari-Pool");
         config.setConnectionTestQuery("SELECT 1 FROM DUAL");
-        config.setAutoCommit(false);
+        config.setAutoCommit(true);  // ← CHANGE THIS TO true
 
         return new HikariDataSource(config);
     }

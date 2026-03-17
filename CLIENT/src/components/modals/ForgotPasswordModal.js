@@ -71,11 +71,18 @@ const ForgotPasswordModal = ({
         throw new Error('Password reset failed');
       }
     } catch (error) {
+      
       console.error('Password reset error:', error);
+  
+      // Extract the actual error message
+      const errorMessage = error?.message || 
+                          error?.response?.data?.message || 
+                          error?.data?.message ||
+                          'Failed to reset password. Please try again later.';
       
       showError(
-        'Reset Failed', 
-        error.message || 'Failed to reset password. Please try again later.',
+        'Password Reset Failed', 
+        errorMessage,
         {
           timer: 6000,
           showConfirmButton: true,

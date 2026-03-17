@@ -31,6 +31,42 @@ public class TableExecutorUtil {
         this.parameterValidator = parameterValidator;
     }
 
+    /**
+     * Extracts the full Oracle error message from the exception chain
+     */
+    private String extractFullOracleError(Exception e) {
+        Throwable cause = e;
+        Set<String> seenMessages = new HashSet<>();
+        StringBuilder fullError = new StringBuilder();
+
+        while (cause != null) {
+            String message = cause.getMessage();
+            if (message != null && !message.isEmpty()) {
+                // Avoid duplicate messages
+                if (!seenMessages.contains(message)) {
+                    seenMessages.add(message);
+
+                    // Look for ORA-xxxxx pattern
+                    if (message.contains("ORA-")) {
+                        // This is the Oracle error we want
+                        return message;
+                    }
+
+                    // Build chain if needed for debugging
+                    if (fullError.length() > 0) {
+                        fullError.append(" -> ");
+                    }
+                    fullError.append(message);
+                }
+            }
+            cause = cause.getCause();
+        }
+
+        // If we found an ORA error, we would have returned it already
+        // Otherwise return the chain or original message
+        return fullError.length() > 0 ? fullError.toString() : e.getMessage();
+    }
+
     public Object executeSelect(String tableName, String owner, Map<String, Object> params,
                                 GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
         try {
@@ -211,6 +247,8 @@ public class TableExecutorUtil {
         } catch (Exception e) {
             log.error("Error executing table select: {}", e.getMessage(), e);
 
+            String detailedError = extractFullOracleError(e);
+
             if (e.getMessage() != null && e.getMessage().contains("Invalid column type")) {
                 if (params != null) {
                     for (Map.Entry<String, Object> entry : params.entrySet()) {
@@ -225,7 +263,7 @@ public class TableExecutorUtil {
                 throw new ValidationException("Invalid parameter format. Please check the data types of your parameters.");
             }
 
-            throw new RuntimeException("Failed to execute SELECT operation: " + e.getMessage(), e);
+            throw new RuntimeException("Failed to execute SELECT operation: " + detailedError, e);
         }
     }
 
@@ -301,28 +339,46 @@ public class TableExecutorUtil {
         } catch (Exception e) {
             log.error("Error executing INSERT on {}: {}", tableName, e.getMessage(), e);
 
-            // Provide user-friendly error messages
-            if (e.getMessage() != null && e.getMessage().contains("ORA-00942")) {
-                throw new RuntimeException("The requested table could not be found.");
+            String detailedError = extractFullOracleError(e);
+
+            // Provide user-friendly error messages with full Oracle details
+            if (e.getMessage() != null) {
+                if (e.getMessage().contains("ORA-00942")) {
+                    throw new RuntimeException("Table not found: " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-01031")) {
+                    throw new RuntimeException("Insufficient privileges: " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-01400")) {
+                    throw new RuntimeException("Cannot insert NULL into non-nullable column: " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-02291")) {
+                    throw new RuntimeException("Parent key not found - integrity constraint violation: " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-02290")) {
+                    throw new RuntimeException("Check constraint violation: " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-12899")) {
+                    throw new RuntimeException(detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-00001")) {
+                    throw new RuntimeException("Unique constraint violation: " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-01461")) {
+                    throw new RuntimeException("Value too long for column (only bind LONG values): " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-01722")) {
+                    throw new RuntimeException("Invalid number: " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-01843")) {
+                    throw new RuntimeException("Invalid month/date format: " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-01858")) {
+                    throw new RuntimeException("Invalid date format: " + detailedError, e);
+                }
             }
 
-            if (e.getMessage() != null && e.getMessage().contains("ORA-01031")) {
-                throw new RuntimeException("Insufficient privileges to insert into this table.");
-            }
-
-            if (e.getMessage() != null && e.getMessage().contains("ORA-01400")) {
-                throw new RuntimeException("A required value is missing for a non-nullable column.");
-            }
-
-            if (e.getMessage() != null && e.getMessage().contains("ORA-02291")) {
-                throw new RuntimeException("Referential integrity constraint violation - parent record not found.");
-            }
-
-            if (e.getMessage() != null && e.getMessage().contains("ORA-12899")) {
-                throw new RuntimeException("Value too large for the target column.");
-            }
-
-            throw new RuntimeException("Failed to execute INSERT operation.", e);
+            throw new RuntimeException("Failed to execute INSERT operation: " + detailedError, e);
         }
     }
 
@@ -407,7 +463,38 @@ public class TableExecutorUtil {
 
         } catch (Exception e) {
             log.error("Error executing UPDATE on {}: {}", tableName, e.getMessage(), e);
-            throw new RuntimeException("Failed to execute UPDATE operation.", e);
+
+            String detailedError = extractFullOracleError(e);
+
+            // Provide user-friendly error messages with full Oracle details
+            if (e.getMessage() != null) {
+                if (e.getMessage().contains("ORA-00942")) {
+                    throw new RuntimeException("Table not found: " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-01031")) {
+                    throw new RuntimeException("Insufficient privileges: " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-02291")) {
+                    throw new RuntimeException("Parent key not found - integrity constraint violation: " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-02292")) {
+                    throw new RuntimeException("Child record found - integrity constraint violation: " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-12899")) {
+                    throw new RuntimeException(detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-00001")) {
+                    throw new RuntimeException("Unique constraint violation: " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-01407")) {
+                    throw new RuntimeException("Cannot update to NULL: " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-01722")) {
+                    throw new RuntimeException("Invalid number: " + detailedError, e);
+                }
+            }
+
+            throw new RuntimeException("Failed to execute UPDATE operation: " + detailedError, e);
         }
     }
 
@@ -462,7 +549,26 @@ public class TableExecutorUtil {
 
         } catch (Exception e) {
             log.error("Error executing DELETE on {}: {}", tableName, e.getMessage(), e);
-            throw new RuntimeException("Failed to execute DELETE operation.", e);
+
+            String detailedError = extractFullOracleError(e);
+
+            // Provide user-friendly error messages with full Oracle details
+            if (e.getMessage() != null) {
+                if (e.getMessage().contains("ORA-00942")) {
+                    throw new RuntimeException("Table not found: " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-01031")) {
+                    throw new RuntimeException("Insufficient privileges: " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-02292")) {
+                    throw new RuntimeException("Child record found - integrity constraint violation: " + detailedError, e);
+                }
+                if (e.getMessage().contains("ORA-02291")) {
+                    throw new RuntimeException("Parent key not found: " + detailedError, e);
+                }
+            }
+
+            throw new RuntimeException("Failed to execute DELETE operation: " + detailedError, e);
         }
     }
 }

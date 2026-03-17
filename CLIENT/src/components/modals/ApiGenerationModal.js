@@ -2169,156 +2169,286 @@ const loadSelectedObjectDetails = useCallback(async (object) => {
 }, [authToken, populateFormFromObject]);
 
   // Function to populate form from selected object
-  const populateFormFromObject = useCallback((object) => {
-    const objectType = object.type?.toUpperCase();
-    const baseName = object.name?.toLowerCase() || '';
-    const endpointPath = baseName ? `/${baseName.replace(/_/g, '-').toLowerCase()}` : '';
+  // Function to populate form from selected object
+const populateFormFromObject = useCallback((object) => {
+  const objectType = object.type?.toUpperCase();
+  const baseName = object.name?.toLowerCase() || '';
+  const endpointPath = baseName ? `/${baseName.replace(/_/g, '-').toLowerCase()}` : '';
 
-    // Set API details
-    setApiDetails(prev => ({
-      ...prev,
-      apiName: object.name ? `${object.name} API` : 'New API',
-      apiCode: objectType ? `${objectType.slice(0, 3)}_${object.name || 'API'}` : 'API',
-      description: object.comment || (object.name ? `API for ${object.name}` : ''),
-      endpointPath: endpointPath,
-      owner: object.owner || 'HR',
-      httpMethod: objectType === 'PROCEDURE' || objectType === 'FUNCTION' ? 'POST' : 'GET'
-    }));
+  // Get HTTP method from existing state or default based on object type
+  let httpMethod = apiDetails.httpMethod;
+  
+  // For tables, default to GET but respect the selected HTTP method
+  if (objectType === 'TABLE' || objectType === 'VIEW') {
+    // Keep the current httpMethod or default to GET
+    httpMethod = httpMethod || 'GET';
+  } else if (objectType === 'PROCEDURE' || objectType === 'FUNCTION' || objectType === 'PACKAGE') {
+    // Force POST for procedures/functions
+    httpMethod = 'POST';
+  } else {
+    httpMethod = httpMethod || 'GET';
+  }
 
-    // Set schema config
-    setSchemaConfig(prev => ({
-      ...prev,
-      schemaName: object.owner || 'HR',
-      objectType: object.type || 'TABLE',
-      objectName: object.name || '',
-      operation: objectType === 'PROCEDURE' || objectType === 'FUNCTION' ? 'EXECUTE' : 'SELECT',
-      primaryKeyColumn: ''
-    }));
+  // Determine operation based on HTTP method and object type
+  let operation = 'SELECT';
+  
+  // For procedures/functions/packages, always use EXECUTE regardless of HTTP method
+  if (objectType === 'PROCEDURE' || objectType === 'FUNCTION' || objectType === 'PACKAGE') {
+    operation = 'EXECUTE';
+  } else {
+    // For tables/views, map HTTP method to operation
+    switch(httpMethod) {
+      case 'POST':
+        operation = 'INSERT';
+        break;
+      case 'PUT':
+        operation = 'UPDATE';
+        break;
+      case 'PATCH':
+        operation = 'UPDATE';
+        break;
+      case 'DELETE':
+        operation = 'DELETE';
+        break;
+      case 'GET':
+      default:
+        operation = 'SELECT';
+        break;
+    }
+  }
 
-    // Generate parameters
-    const newParameters = [];
-    const newMappings = [];
+  // Set API details
+  setApiDetails(prev => ({
+    ...prev,
+    apiName: object.name ? `${object.name} API` : 'New API',
+    apiCode: objectType ? `${objectType.slice(0, 3)}_${object.name || 'API'}` : 'API',
+    description: object.comment || (object.name ? `API for ${object.name}` : ''),
+    endpointPath: endpointPath,
+    owner: object.owner || 'HR',
+    httpMethod: httpMethod
+  }));
 
-    if (object.parameters && object.parameters.length > 0) {
-      object.parameters.forEach((param, index) => {
-        const paramName = param.ARGUMENT_NAME || param.argument_name || param.name || `param_${index + 1}`;
-        const paramType = param.DATA_TYPE || param.data_type || param.type || 'VARCHAR2';
-        const paramMode = param.IN_OUT || param.in_out || param.mode || 'IN';
+  // Set schema config with proper operation based on HTTP method
+  setSchemaConfig(prev => ({
+    ...prev,
+    schemaName: object.owner || 'HR',
+    objectType: object.type || 'TABLE',
+    objectName: object.name || '',
+    operation: operation,
+    primaryKeyColumn: ''
+  }));
+
+  // Generate parameters
+  const newParameters = [];
+  const newMappings = [];
+
+  // Handle tables/views (with columns)
+  if (object.columns && object.columns.length > 0) {
+    object.columns.forEach((col, index) => {
+      const colName = col.name || col.COLUMN_NAME || col.column_name;
+      const colType = col.type || col.DATA_TYPE || col.data_type || 'VARCHAR2';
+      const colNullable = col.nullable || col.NULLABLE || 'Y';
+      const isPrimaryKey = col.key === 'PK' || col.CONSTRAINT_TYPE === 'P' || col.isPrimaryKey;
+      
+      if (colName) {
+        const cleanKey = colName.toLowerCase();
         
-        const cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
+        // Determine parameter location based on operation and primary key
+        let parameterLocation = 'query';
         
-        if (paramMode === 'IN' || paramMode === 'IN/OUT') {
-          newParameters.push({
-            id: `param-${Date.now()}-${index}`,
-            key: cleanKey,
-            dbColumn: paramName,
-            oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 'VARCHAR2',
-            apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
-            parameterLocation: paramMode === 'IN/OUT' ? 'body' : 'query',
-            required: true,
-            description: `${paramName} (${paramMode})`,
-            example: paramType.includes('NUMBER') ? '1' : 'sample',
-            validationPattern: '',
-            defaultValue: param.DATA_DEFAULT || '',
-            inBody: paramMode === 'IN/OUT',
-            isPrimaryKey: false,
-            paramMode: paramMode
-          });
+        if (operation === 'INSERT') {
+          // For INSERT, all columns go to body
+          parameterLocation = 'body';
+        } else if (operation === 'UPDATE' || operation === 'DELETE') {
+          // For UPDATE/DELETE, primary keys go to path/query, others to body
+          if (isPrimaryKey) {
+            parameterLocation = httpMethod === 'DELETE' ? 'query' : 'path';
+          } else {
+            parameterLocation = 'body';
+          }
+        } else {
+          // For SELECT, all columns go to query
+          parameterLocation = 'query';
         }
+        
+        newParameters.push({
+          id: `param-${Date.now()}-${index}`,
+          key: cleanKey,
+          dbColumn: colName,
+          oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
+                     colType.includes('NUMBER') ? 'NUMBER' :
+                     colType.includes('DATE') ? 'DATE' : 
+                     colType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
+          apiType: colType.includes('NUMBER') ? 'integer' : 'string',
+          parameterLocation: parameterLocation,
+          required: isPrimaryKey || colNullable === 'N',
+          description: col.comment || col.COMMENTS || `From ${object.name}.${colName}`,
+          example: colName.includes('ID') ? '1' : 
+                  colName.includes('DATE') ? '2024-01-01' :
+                  colName.includes('NAME') ? 'Sample' : '',
+          validationPattern: '',
+          defaultValue: col.DATA_DEFAULT || '',
+          inBody: parameterLocation === 'body',
+          isPrimaryKey: isPrimaryKey,
+          paramMode: null
+        });
 
-        if (paramMode === 'OUT' || paramMode === 'IN/OUT') {
-          newMappings.push({
-            id: `mapping-${Date.now()}-out-${index}`,
-            apiField: cleanKey,
-            dbColumn: paramName,
-            oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 'VARCHAR2',
-            apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
-            format: paramType.includes('DATE') ? 'date-time' : '',
-            nullable: true,
-            isPrimaryKey: false,
-            includeInResponse: true,
-            inResponse: true,
-            paramMode: paramMode
-          });
-        }
+        newMappings.push({
+          id: `mapping-${Date.now()}-${index}`,
+          apiField: cleanKey,
+          dbColumn: colName,
+          oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
+                     colType.includes('NUMBER') ? 'NUMBER' :
+                     colType.includes('DATE') ? 'DATE' : 'VARCHAR2',
+          apiType: colType.includes('NUMBER') ? 'integer' : 'string',
+          format: colType.includes('DATE') ? 'date-time' : '',
+          nullable: colNullable === 'Y',
+          isPrimaryKey: isPrimaryKey,
+          includeInResponse: true,
+          inResponse: true,
+          paramMode: null
+        });
+      }
+    });
+  }
+
+  // Handle procedures/functions (with parameters)
+  if (object.parameters && object.parameters.length > 0) {
+    object.parameters.forEach((param, index) => {
+      const paramName = param.ARGUMENT_NAME || param.argument_name || param.name || `param_${index + 1}`;
+      const paramType = param.DATA_TYPE || param.data_type || param.type || 'VARCHAR2';
+      const paramMode = param.IN_OUT || param.in_out || param.mode || 'IN';
+      
+      const cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
+      
+      // Determine parameter location based on mode and HTTP method
+      let parameterLocation = 'query';
+      if (paramMode === 'IN' && (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH')) {
+        parameterLocation = 'body';
+      } else if (paramMode === 'IN' && httpMethod === 'GET') {
+        parameterLocation = 'query';
+      } else if (paramMode === 'IN/OUT') {
+        parameterLocation = 'body'; // IN OUT goes to body
+      }
+
+      // Add to parameters for IN and IN/OUT
+      if (paramMode === 'IN' || paramMode === 'IN/OUT') {
+        newParameters.push({
+          id: `param-${Date.now()}-proc-${index}`,
+          key: cleanKey,
+          dbColumn: paramName,
+          oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
+                     paramType.includes('NUMBER') ? 'NUMBER' :
+                     paramType.includes('DATE') ? 'DATE' : 
+                     paramType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
+          apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
+          parameterLocation: parameterLocation,
+          required: paramMode === 'IN' || paramMode === 'IN/OUT',
+          description: `${paramName} (${paramMode})`,
+          example: paramType.includes('NUMBER') ? '1' : 
+                  paramType.includes('DATE') ? '2024-01-01' : 'sample',
+          validationPattern: '',
+          defaultValue: param.DATA_DEFAULT || '',
+          inBody: parameterLocation === 'body',
+          isPrimaryKey: false,
+          paramMode: paramMode
+        });
+      }
+
+      // Add to response mappings for OUT and IN/OUT
+      if (paramMode === 'OUT' || paramMode === 'IN/OUT') {
+        newMappings.push({
+          id: `mapping-${Date.now()}-out-${index}`,
+          apiField: cleanKey,
+          dbColumn: paramName,
+          oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
+                     paramType.includes('NUMBER') ? 'NUMBER' :
+                     paramType.includes('DATE') ? 'DATE' : 'VARCHAR2',
+          apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
+          format: paramType.includes('DATE') ? 'date-time' : '',
+          nullable: true,
+          isPrimaryKey: false,
+          includeInResponse: true,
+          inResponse: true,
+          paramMode: paramMode
+        });
+      }
+    });
+
+    // Handle function return value
+    const returnType = object.RETURN_TYPE || object.return_type || object.returnType;
+    if (returnType && objectType === 'FUNCTION') {
+      newMappings.push({
+        id: `mapping-${Date.now()}-return`,
+        apiField: 'result',
+        dbColumn: 'RETURN_VALUE',
+        oracleType: returnType.includes('VARCHAR') ? 'VARCHAR2' : 
+                   returnType.includes('NUMBER') ? 'NUMBER' :
+                   returnType.includes('DATE') ? 'DATE' : 'VARCHAR2',
+        apiType: returnType.includes('NUMBER') ? 'integer' : 'string',
+        format: '',
+        nullable: false,
+        isPrimaryKey: false,
+        includeInResponse: true,
+        inResponse: true,
+        paramMode: 'OUT'
       });
     }
+  }
 
-    if (object.columns && object.columns.length > 0) {
-      object.columns.forEach((col, index) => {
-        const colName = col.name || col.COLUMN_NAME || col.column_name;
-        const colType = col.type || col.DATA_TYPE || col.data_type || 'VARCHAR2';
-        const colNullable = col.nullable || col.NULLABLE || 'Y';
-        const isPrimaryKey = col.key === 'PK' || col.CONSTRAINT_TYPE === 'P' || col.isPrimaryKey;
-        
-        if (colName) {
-          const cleanKey = colName.toLowerCase();
-          
-          newParameters.push({
-            id: `param-${Date.now()}-${index}`,
-            key: cleanKey,
-            dbColumn: colName,
-            oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 'VARCHAR2',
-            apiType: colType.includes('NUMBER') ? 'integer' : 'string',
-            parameterLocation: isPrimaryKey ? 'path' : 'query',
-            required: isPrimaryKey || colNullable === 'N',
-            description: `From ${object.name}.${colName}`,
-            example: colName.includes('ID') ? '1' : 'sample',
-            validationPattern: '',
-            defaultValue: col.DATA_DEFAULT || '',
-            inBody: false,
-            isPrimaryKey: isPrimaryKey,
-            paramMode: null
-          });
-
-          newMappings.push({
-            id: `mapping-${Date.now()}-${index}`,
-            apiField: cleanKey,
-            dbColumn: colName,
-            oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 'VARCHAR2',
-            apiType: colType.includes('NUMBER') ? 'integer' : 'string',
-            format: colType.includes('DATE') ? 'date-time' : '',
-            nullable: colNullable === 'Y',
-            isPrimaryKey: isPrimaryKey,
-            includeInResponse: true,
-            inResponse: true,
-            paramMode: null
-          });
-        }
-      });
-    }
-
-    setParameters(newParameters);
-    setResponseMappings(newMappings);
-    
-    // Generate sample response
-    if (newMappings.length > 0) {
-      const sampleData = {};
-      newMappings.slice(0, 50).forEach(mapping => {
-        if (mapping.apiType === 'integer') {
-          sampleData[mapping.apiField] = 123;
-        } else if (mapping.apiType === 'string') {
+  setParameters(newParameters);
+  setResponseMappings(newMappings);
+  
+  // Generate sample response based on mappings
+  if (newMappings.length > 0) {
+    const sampleData = {};
+    newMappings.slice(0, 50).forEach(mapping => {
+      if (mapping.apiType === 'integer') {
+        sampleData[mapping.apiField] = 123;
+      } else if (mapping.apiType === 'string') {
+        if (mapping.format === 'date-time') {
+          sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
+        } else {
           sampleData[mapping.apiField] = mapping.apiField === 'id' ? 1 : 'sample';
         }
-      });
-      
-      const successSchema = JSON.stringify({
-        success: true,
-        data: sampleData,
-        message: 'Request processed successfully',
-        metadata: {
-          timestamp: '{{timestamp}}',
-          apiVersion: apiDetails.version,
-          requestId: '{{requestId}}'
-        }
-      }, null, 2);
-      
-      setResponseBody(prev => ({
-        ...prev,
-        successSchema
-      }));
-    }
-  }, [apiDetails.version]);
+      } else if (mapping.apiType === 'boolean') {
+        sampleData[mapping.apiField] = true;
+      }
+    });
+    
+    const successSchema = JSON.stringify({
+      success: true,
+      data: sampleData,
+      message: 'Request processed successfully',
+      metadata: {
+        timestamp: '{{timestamp}}',
+        apiVersion: apiDetails.version,
+        requestId: '{{requestId}}'
+      }
+    }, null, 2);
+    
+    setResponseBody(prev => ({
+      ...prev,
+      successSchema
+    }));
+  }
+
+  // Set body type based on HTTP method
+  if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
+    setRequestBody(prev => ({
+      ...prev,
+      bodyType: 'json'
+    }));
+  } else {
+    setRequestBody(prev => ({
+      ...prev,
+      bodyType: 'none'
+    }));
+  }
+
+  console.log(`✅ Form populated for ${objectType} with operation: ${operation} (HTTP ${httpMethod})`);
+  console.log(`📊 Parameters: ${newParameters.length}, Mappings: ${newMappings.length}`);
+}, [apiDetails.version]);
 
   // ==================== VALIDATION FUNCTIONS ====================
 
@@ -2502,6 +2632,47 @@ const loadSelectedObjectDetails = useCallback(async (object) => {
       return true;
     }
   };
+
+
+  // Sync operation when HTTP method changes
+ // Sync operation when HTTP method changes
+useEffect(() => {
+  // Skip for procedures/functions/packages
+  const objectType = selectedDbObject?.type?.toUpperCase() || selectedObject?.type?.toUpperCase();
+  
+  if (objectType === 'PROCEDURE' || objectType === 'FUNCTION' || objectType === 'PACKAGE') {
+    // For procedures/functions, operation should always be EXECUTE
+    setSchemaConfig(prev => ({
+      ...prev,
+      operation: 'EXECUTE'
+    }));
+  } else {
+    // For tables/views, map HTTP method to operation
+    let operation = 'SELECT';
+    switch(apiDetails.httpMethod) {
+      case 'POST':
+        operation = 'INSERT';
+        break;
+      case 'PUT':
+      case 'PATCH':
+        operation = 'UPDATE';
+        break;
+      case 'DELETE':
+        operation = 'DELETE';
+        break;
+      case 'GET':
+      default:
+        operation = 'SELECT';
+        break;
+    }
+    
+    setSchemaConfig(prev => ({
+      ...prev,
+      operation: operation
+    }));
+  }
+}, [apiDetails.httpMethod, selectedDbObject, selectedObject]);
+
 
   // Add cleanup in useEffect
   useEffect(() => {
@@ -2873,9 +3044,9 @@ const loadSelectedObjectDetails = useCallback(async (object) => {
         // Determine operation and HTTP method
         let operation = 'SELECT';
         let httpMethod = 'GET';
-        
+
         const normalizedType = (selectedObject?.type || '').toUpperCase();
-        
+
         if (normalizedType === 'PROCEDURE' || normalizedType === 'FUNCTION') {
           operation = 'EXECUTE';
           httpMethod = 'POST';
@@ -2886,8 +3057,30 @@ const loadSelectedObjectDetails = useCallback(async (object) => {
           operation = 'SELECT';
           httpMethod = 'GET';
         } else if (normalizedType === 'TABLE') {
-          operation = 'SELECT';
-          httpMethod = 'GET';
+          // For tables, use the HTTP method from apiDetails if available, otherwise default to GET
+          // This is the key change - don't hardcode to SELECT
+          httpMethod = apiDetails.httpMethod || 'GET';
+          console.log("httpMethodNEWWWWWWW:::::" + httpMethod);
+          
+          // Map HTTP method to operation
+          switch(httpMethod) {
+            case 'POST':
+              operation = 'INSERT';
+              break;
+            case 'PUT':
+              operation = 'UPDATE';
+              break;
+            case 'PATCH':
+              operation = 'UPDATE';
+              break;
+            case 'DELETE':
+              operation = 'DELETE';
+              break;
+            case 'GET':
+            default:
+              operation = 'SELECT';
+              break;
+          }
         } else if (normalizedType === 'SEQUENCE') {
           operation = 'SELECT';
           httpMethod = 'GET';

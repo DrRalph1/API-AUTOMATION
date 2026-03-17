@@ -42,7 +42,13 @@ public class WebConfig implements WebMvcConfigurer {
                         "/error",
                         "/swagger-ui/**",
                         "/v3/api-docs/**",
-                        "/swagger-resources/**"
+                        "/swagger-resources/**",
+                        "/plx/api/users/login",           // Login endpoint
+                        "/plx/api/users/forgot-password", // Forgot password
+                        "/plx/api/users/password-reset",  // Password reset
+                        "/plx/api/users/{userId}",        // Public user lookup for forgot password
+                        "/plx/api/health/**",              // Health checks
+                        "/plx/api/public/**"
                 );
     }
 

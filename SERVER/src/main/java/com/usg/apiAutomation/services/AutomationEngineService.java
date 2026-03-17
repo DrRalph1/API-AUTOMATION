@@ -233,6 +233,8 @@ public class AutomationEngineService {
             loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Executing API: " + apiId + " by: " + performedBy);
 
+            System.out.println("executeRequest::::::" + executeRequest);
+
             // 1. Get the API entity
             GeneratedApiEntity api = executionHelper.getApiEntity(generatedAPIRepository, apiId);
 
@@ -296,10 +298,14 @@ public class AutomationEngineService {
 
                 log.warn("HTTP method mismatch. {}", errorMsg);
 
-                // Update captured request with error if it was captured
+                // Update captured request with error if it was captured (in a separate try-catch)
                 if (capturedRequestId != null) {
-                    updateCapturedRequestWithError(requestId, capturedRequestId, 405, errorMsg,
-                            System.currentTimeMillis() - startTime);
+                    try {
+                        updateCapturedRequestWithError(requestId, capturedRequestId, 405, errorMsg,
+                                System.currentTimeMillis() - startTime);
+                    } catch (Exception ex) {
+                        log.error("Failed to update captured request with error: {}", ex.getMessage());
+                    }
                 }
 
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
@@ -319,20 +325,23 @@ public class AutomationEngineService {
                         authResult.isAuthenticated(), authResult.getReason());
 
                 if (!authResult.isAuthenticated()) {
+                    String errorMsg = "Authentication failed: " + authResult.getReason();
+
                     // Update captured request with auth error
                     if (capturedRequestId != null) {
-                        updateCapturedRequestWithError(requestId, capturedRequestId, 401,
-                                "Authentication failed: " + authResult.getReason(),
-                                System.currentTimeMillis() - startTime);
+                        try {
+                            updateCapturedRequestWithError(requestId, capturedRequestId, 401,
+                                    errorMsg, System.currentTimeMillis() - startTime);
+                        } catch (Exception ex) {
+                            log.error("Failed to update captured request with error: {}", ex.getMessage());
+                        }
                     }
 
                     executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                             null, 401, System.currentTimeMillis() - startTime,
-                            performedBy, clientIp, userAgent,
-                            "Authentication failed: " + authResult.getReason(), objectMapper);
+                            performedBy, clientIp, userAgent, errorMsg, objectMapper);
 
-                    return responseHelper.createErrorResponse(401,
-                            "Authentication failed: " + authResult.getReason(), startTime);
+                    return responseHelper.createErrorResponse(401, errorMsg, startTime);
                 }
                 log.info("=== STEP 8: Authentication validation completed successfully ===");
             } catch (Exception e) {
@@ -378,54 +387,63 @@ public class AutomationEngineService {
 
             if (!validationErrors.isEmpty()) {
                 String missingParams = String.join(", ", validationErrors.keySet());
+                String errorMsg = "Required parameter(s) missing: " + missingParams;
 
                 // Update captured request with validation error
                 if (capturedRequestId != null) {
-                    updateCapturedRequestWithError(requestId, capturedRequestId, 400,
-                            "Required parameter(s) missing: " + missingParams,
-                            System.currentTimeMillis() - startTime);
+                    try {
+                        updateCapturedRequestWithError(requestId, capturedRequestId, 400,
+                                errorMsg, System.currentTimeMillis() - startTime);
+                    } catch (Exception ex) {
+                        log.error("Failed to update captured request with error: {}", ex.getMessage());
+                    }
                 }
 
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, 400, System.currentTimeMillis() - startTime,
-                        performedBy, clientIp, userAgent,
-                        "Required parameter(s) missing: " + missingParams, objectMapper);
+                        performedBy, clientIp, userAgent, errorMsg, objectMapper);
 
-                return responseHelper.createErrorResponse(400,
-                        "Required parameter(s) missing: " + missingParams, startTime);
+                return responseHelper.createErrorResponse(400, errorMsg, startTime);
             }
 
             // 13. Authorization check
             if (!validatorService.validateAuthorization(api, performedBy)) {
+                String errorMsg = "User not authorized to access this API";
+
                 // Update captured request with authorization error
                 if (capturedRequestId != null) {
-                    updateCapturedRequestWithError(requestId, capturedRequestId, 403,
-                            "User not authorized to access this API",
-                            System.currentTimeMillis() - startTime);
+                    try {
+                        updateCapturedRequestWithError(requestId, capturedRequestId, 403,
+                                errorMsg, System.currentTimeMillis() - startTime);
+                    } catch (Exception ex) {
+                        log.error("Failed to update captured request with error: {}", ex.getMessage());
+                    }
                 }
 
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, 403, System.currentTimeMillis() - startTime,
-                        performedBy, clientIp, userAgent,
-                        "User not authorized to access this API", objectMapper);
+                        performedBy, clientIp, userAgent, errorMsg, objectMapper);
 
-                return responseHelper.createErrorResponse(403,
-                        "User not authorized to access this API", startTime);
+                return responseHelper.createErrorResponse(403, errorMsg, startTime);
             }
 
             // 14. Rate limiting check
             if (!validatorService.checkRateLimit(api, clientIp)) {
+                String errorMsg = "Rate limit exceeded";
+
                 // Update captured request with rate limit error
                 if (capturedRequestId != null) {
-                    updateCapturedRequestWithError(requestId, capturedRequestId, 429,
-                            "Rate limit exceeded",
-                            System.currentTimeMillis() - startTime);
+                    try {
+                        updateCapturedRequestWithError(requestId, capturedRequestId, 429,
+                                errorMsg, System.currentTimeMillis() - startTime);
+                    } catch (Exception ex) {
+                        log.error("Failed to update captured request with error: {}", ex.getMessage());
+                    }
                 }
 
                 executionHelper.logExecution(executionLogRepository, api, validatedRequest,
                         null, 429, System.currentTimeMillis() - startTime,
-                        performedBy, clientIp, userAgent,
-                        "Rate limit exceeded", objectMapper);
+                        performedBy, clientIp, userAgent, errorMsg, objectMapper);
 
                 return responseHelper.createErrorResponse(429,
                         "Rate limit exceeded. Please try again later.", startTime);
@@ -440,6 +458,7 @@ public class AutomationEngineService {
             // 17. Execute against Oracle
             Object result;
             long executionTime;
+
             try {
                 result = executionHelper.executeAgainstOracle(
                         api,
@@ -506,30 +525,53 @@ public class AutomationEngineService {
 
             } catch (Exception e) {
                 executionTime = System.currentTimeMillis() - startTime;
-                log.error("Oracle execution failed: {}", e.getMessage(), e);
+                log.error("Oracle execution failed: ", e);
 
-                // ============= UPDATE CAPTURED REQUEST WITH ERROR RESPONSE =============
+                // Extract the detailed Oracle error message
+                String detailedError = extractDetailedOracleError(e);
+
+                // Log the full error for debugging
+                log.error("Detailed Oracle error: {}", detailedError);
+
+                // Create a client-friendly message (keep the full Oracle error for the client)
+                String clientErrorMessage = "Database execution error: " + detailedError;
+
+                // Create the error response FIRST (before any database operations that might fail)
+                ExecuteApiResponseDTO errorResponse = responseHelper.createErrorResponse(500,
+                        clientErrorMessage, startTime);
+
+                // THEN try to update the captured request, but use a truncated version for database
                 if (capturedRequestId != null) {
                     try {
+                        // Truncate for database storage (255 chars max)
+                        String dbErrorMessage = truncateErrorMessage(detailedError, 250);
+
                         apiRequestService.updateRequestWithError(
                                 requestId,
                                 capturedRequestId,
                                 500,
-                                "Database execution error: " + e.getMessage(),
+                                dbErrorMessage,
                                 executionTime
                         );
-                        log.info("Captured request updated with error response");
+                        log.info("Captured request updated with error response (truncated to {} chars)",
+                                dbErrorMessage.length());
                     } catch (Exception updateError) {
                         log.error("Failed to update captured request with error: {}", updateError.getMessage());
+                        // Don't rethrow - we already have our error response
                     }
                 }
 
-                executionHelper.logExecution(executionLogRepository, api, validatedRequest,
-                        null, 500, executionTime, performedBy, clientIp, userAgent,
-                        "Database execution error: " + e.getMessage(), objectMapper);
+                // Try to log the execution, but use truncated version for database
+                try {
+                    String logErrorMessage = truncateErrorMessage(detailedError, 1000);
+                    executionHelper.logExecution(executionLogRepository, api, validatedRequest,
+                            null, 500, executionTime, performedBy, clientIp, userAgent,
+                            logErrorMessage, objectMapper);
+                } catch (Exception logError) {
+                    log.error("Failed to log execution error: {}", logError.getMessage());
+                }
 
-                return responseHelper.createErrorResponse(500,
-                        "Database execution error: " + e.getMessage(), startTime);
+                return errorResponse;  // Return the error response regardless of update/log failures
             }
 
         } catch (Exception e) {
@@ -537,16 +579,35 @@ public class AutomationEngineService {
 
             loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", Error executing API: " + e.getMessage());
-            log.error("Error executing API: {}", e.getMessage(), e);
+            log.error("Error executing API: ", e);
 
-            // ============= UPDATE CAPTURED REQUEST WITH GENERAL ERROR =============
+            // Extract detailed error
+            String detailedError = extractDetailedOracleError(e);
+
+            // Create a safe error response that doesn't depend on any database operations
+            ExecuteApiResponseDTO safeResponse = new ExecuteApiResponseDTO();
+            safeResponse.setResponseCode(500);
+            safeResponse.setSuccess(false);
+            safeResponse.setMessage("Database execution error: " + detailedError);
+            safeResponse.setExecutionTimeMs(executionTime);
+            safeResponse.setCorrelationId(requestId);
+
+            Map<String, Object> errorData = new HashMap<>();
+            errorData.put("error", detailedError);
+            errorData.put("timestamp", LocalDateTime.now().toString());
+            errorData.put("executionTimeMs", executionTime);
+            safeResponse.setData(Collections.singletonList(errorData));
+
+            // Try to update captured request, but use truncated version
             if (capturedRequestId != null) {
                 try {
+                    String dbErrorMessage = truncateErrorMessage(detailedError, 250);
+
                     apiRequestService.updateRequestWithError(
                             requestId,
                             capturedRequestId,
                             500,
-                            "Execution error: " + e.getMessage(),
+                            dbErrorMessage,
                             executionTime
                     );
                 } catch (Exception updateError) {
@@ -563,33 +624,75 @@ public class AutomationEngineService {
                     // Ignore
                 }
 
+                String logErrorMessage = truncateErrorMessage(detailedError, 1000);
                 executionHelper.logExecution(executionLogRepository, api, executeRequest,
                         null, 500, executionTime, performedBy, clientIp, userAgent,
-                        e.getMessage(), objectMapper);
+                        logErrorMessage, objectMapper);
             } catch (Exception logError) {
                 log.error("Failed to log execution error: {}", logError.getMessage());
             }
 
-            return responseHelper.createSafeErrorResponse(e, startTime);
+            return safeResponse;  // Always return a valid response, never throw
         }
     }
 
     /**
-     * Helper method to update captured request with error
+     * Extracts the detailed Oracle error message from exception chain
+     */
+    private String extractDetailedOracleError(Exception e) {
+        Throwable cause = e;
+        while (cause != null) {
+            String message = cause.getMessage();
+            if (message != null) {
+                // Look for ORA-xxxxx pattern
+                if (message.contains("ORA-")) {
+                    return message;  // Return the full Oracle error
+                }
+                // Check for SQLException with Oracle error
+                if (cause instanceof java.sql.SQLException) {
+                    return message;
+                }
+            }
+            cause = cause.getCause();
+        }
+
+        // Fallback to original message if no ORA error found
+        return e.getMessage() != null ? e.getMessage() : "Unknown database error";
+    }
+
+    /**
+     * Truncate error message to fit database column limits
+     */
+    private String truncateErrorMessage(String message, int maxLength) {
+        if (message == null) {
+            return null;
+        }
+        if (message.length() <= maxLength) {
+            return message;
+        }
+        return message.substring(0, maxLength - 3) + "...";
+    }
+
+    /**
+     * Helper method to update captured request with error (with truncation for database)
      */
     private void updateCapturedRequestWithError(String requestId, String capturedRequestId,
                                                 int statusCode, String errorMessage,
                                                 long executionDurationMs) {
         try {
+            // Truncate error message for database storage (255 chars max)
+            String dbErrorMessage = truncateErrorMessage(errorMessage, 250);
+
             apiRequestService.updateRequestWithError(
                     requestId,
                     capturedRequestId,
                     statusCode,
-                    errorMessage,
+                    dbErrorMessage,
                     executionDurationMs
             );
         } catch (Exception e) {
             log.error("Failed to update captured request with error: {}", e.getMessage());
+            // Don't rethrow - this is a non-critical operation
         }
     }
 

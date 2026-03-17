@@ -13,11 +13,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle, AlertOctagon, CheckCircle, Info, XCircle, AlertTriangle, Loader2 } from "lucide-react";
+import { AlertCircle, AlertOctagon, CheckCircle, Info, XCircle, AlertTriangle, Loader2, Check } from "lucide-react";
 
-// --- Theme configuration (SAME AS ORIGINAL) ---
+// --- Theme configuration (FIXED: Safe userRole handling) ---
 const getPortalTheme = (isDark, userRole = "oracle") => {
-  const role = (userRole && userRole.toLowerCase() === "oracle") ? "oracle" : 'teller';
+  // Safe conversion - handle any non-string value
+  let role = 'postgres'; // default
+  
+  if (userRole) {
+    if (typeof userRole === 'string') {
+      role = userRole.toLowerCase() === "oracle" ? "oracle" : 'postgres';
+    } else if (typeof userRole === 'object' && userRole.role) {
+      // If userRole is an object with a role property
+      role = String(userRole.role).toLowerCase() === "oracle" ? "oracle" : 'postgres';
+    } else {
+      // Convert to string as fallback
+      role = String(userRole).toLowerCase() === "oracle" ? "oracle" : 'postgres';
+    }
+  }
 
   if (role === "oracle") {
     return {
@@ -30,7 +43,7 @@ const getPortalTheme = (isDark, userRole = "oracle") => {
     };
   }
 
-  // Default to teller theme
+  // Default to postgres theme
   return {
     gradient: 'from-blue-600 to-cyan-500',
     iconColor: '#3b82f6',
@@ -141,7 +154,7 @@ export function DialogAlertProvider({ children }) {
   };
   
   const showError = (title, text = '', userRole = "oracle", options = {}) => {
-    const actualUserRole = (typeof userRole === 'string' && userRole === "oracle") ? "oracle" : 'teller';
+    const actualUserRole = (typeof userRole === 'string' && userRole === "oracle") ? "oracle" : 'postgres';
     const id = showAlert({
       type: 'error',
       title,
@@ -410,7 +423,7 @@ function DialogAlertComponent({
         case 'info':
         default: return { 
           Icon: Info, 
-          color: userRole === "oracle" 
+          color: (typeof userRole === 'string' ? userRole.toLowerCase() : String(userRole).toLowerCase()) === "oracle" 
             ? 'text-purple-600 dark:text-purple-400' 
             : 'text-blue-600 dark:text-blue-400' 
         };
@@ -427,7 +440,7 @@ function DialogAlertComponent({
       case 'info':
       default: return { 
         Icon: Info, 
-        color: userRole === "oracle" 
+        color: (typeof userRole === 'string' ? userRole.toLowerCase() : String(userRole).toLowerCase()) === "oracle" 
           ? 'text-purple-600 dark:text-purple-400' 
           : 'text-blue-600 dark:text-blue-400' 
       };
@@ -472,7 +485,7 @@ function DialogAlertComponent({
             ? `${isDark ? 'bg-red-900/10 border-red-800/30' : 'bg-red-50 border-red-200'}`
             : toastType === 'warning'
             ? `${isDark ? 'bg-yellow-900/10 border-yellow-800/30' : 'bg-yellow-50 border-yellow-200'}`
-            : userRole === "oracle"
+            : (typeof userRole === 'string' ? userRole.toLowerCase() : String(userRole).toLowerCase()) === "oracle"
             ? `${isDark ? 'bg-purple-900/10 border-purple-800/30' : 'bg-purple-50 border-purple-200'}`
             : `${isDark ? 'bg-blue-900/10 border-blue-800/30' : 'bg-blue-50 border-blue-200'}`
         }`}>
@@ -501,178 +514,165 @@ function DialogAlertComponent({
   
   // Main dialog for alerts, confirm, input
   return (
-  <Dialog 
-    open={true} 
-    onOpenChange={type === 'confirm' || type === 'input' ? handleCancel : handleConfirm}
-  >
-    <DialogContent 
-      className={`
-        ${isMobile ? 'w-[92vw] p-4 max-w-[92vw]' : 'max-w-md p-6'} 
-        ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'} 
-        ${iconConfig.popupBorder} 
-        rounded-2xl 
-        shadow-2xl shadow-black/10 dark:shadow-black/30
-        animate-in fade-in-0 zoom-in-95 duration-200
-      `}
+    <Dialog 
+      open={true} 
+      onOpenChange={type === 'confirm' || type === 'input' ? handleCancel : handleConfirm}
     >
-      <DialogHeader className="space-y-4">
-        <div className="flex items-start gap-4 mb-4">
-          <div className={`
-            p-3 rounded-xl 
-            ${isDark 
-              ? type === 'success' ? 'bg-emerald-900/20 border-emerald-800/40' 
-                : type === 'error' ? 'bg-rose-900/20 border-rose-800/40'
-                : type === 'warning' ? 'bg-amber-900/20 border-amber-800/40'
-                : userRole === "oracle" ? 'bg-violet-900/20 border-violet-800/40' 
-                : 'bg-sky-900/20 border-sky-800/40'
-              : type === 'success' ? 'bg-emerald-50 border-emerald-200'
-                : type === 'error' ? 'bg-rose-50 border-rose-200'
-                : type === 'warning' ? 'bg-amber-50 border-amber-200'
-                : userRole === "oracle" ? 'bg-violet-50 border-violet-200'
-                : 'bg-sky-50 border-sky-200'
-            } 
-            border shadow-sm
-            animate-pulse-subtle
-          `}>
-            <Icon className={`h-6 w-6 ${color} animate-in zoom-in-50 duration-300`} />
-          </div>
-          
-          <div className="flex-1 pt-1">
-            <DialogTitle className={`
-              text-xl font-semibold leading-tight 
-              ${isDark ? 'text-gray-100' : 'text-gray-900'}
-            `}>
-              {title}
-            </DialogTitle>
-            
-            {/* {userRole && (
-              <span className={`
-                inline-block px-2 py-1 mt-2 rounded-md text-xs font-medium
-                ${userRole === "oracle"
-                  ? `${isDark ? 'bg-violet-900/30 text-violet-300' : 'bg-violet-100 text-violet-700'}`
-                  : `${isDark ? 'bg-sky-900/30 text-sky-300' : 'bg-sky-100 text-sky-700'}`
-                }
-                animate-in slide-in-from-left-2 duration-300
-              `}>
-                {userRole === "oracle" ? 'Super Admin' : 'Teller'}
-              </span>
-            )} */}
-          </div>
-        </div>
-
-        {text && (
-          <DialogDescription className={`
-            text-md leading-relaxed -mb-4 px-1
-            ${isDark ? 'text-gray-400' : 'text-gray-600'}
-            animate-in fade-in-50 duration-300 delay-100
-          `}>
-            {text}
-          </DialogDescription>
-        )}
-      </DialogHeader>
-
-      {type === 'input' && (
-        <div className="space-y-4 pt-4 animate-in fade-in-50 duration-300 delay-150">
-          <div className="space-y-3">
-            <Label 
-              htmlFor="dialog-input" 
-              className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}
-            >
-              {placeholder || 'Enter value'}
-            </Label>
-            <Input
-              id="dialog-input"
-              type={inputType}
-              placeholder={placeholder}
-              value={inputValue}
-              onChange={handleInputChange}
-              className={`
-                h-11 transition-all duration-200
-                ${inputError ? 'border-red-500 focus-visible:ring-red-500/20' : ''} 
-                ${isDark 
-                  ? 'bg-gray-800/50 border-gray-700 text-white focus:border-gray-600 focus:ring-gray-600/20' 
-                  : 'bg-gray-50 border-gray-300 focus:border-gray-400 focus:ring-gray-400/20'
-                }
-                focus-visible:ring-2 focus-visible:ring-offset-2
-                ${isDark ? 'focus-visible:ring-offset-gray-900' : 'focus-visible:ring-offset-white'}
-                placeholder:text-gray-500
-              `}
-              autoFocus
-            />
-            {inputError && (
-              <div className="flex items-center gap-2 text-red-500 text-sm animate-shake">
-                <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                <span>{inputError}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      <DialogFooter className={`
-        flex ${isMobile ? 'flex-col' : 'flex-row'} gap-3 pt-6
-        animate-in fade-in-50 duration-300 delay-200
-      `}>
-        {(type === 'confirm' || type === 'input') && (
-          <Button
-            variant="outline"
-            onClick={handleCancel}
-            className={`
-              ${isMobile ? 'w-full' : 'w-auto'} 
-              h-11 px-6
-              transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]
+      <DialogContent 
+        className={`
+          ${isMobile ? 'w-[92vw] p-4 max-w-[92vw]' : 'max-w-md p-6'} 
+          ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'} 
+          ${iconConfig.popupBorder} 
+          rounded-2xl 
+          shadow-2xl shadow-black/10 dark:shadow-black/30
+          animate-in fade-in-0 zoom-in-95 duration-200
+        `}
+      >
+        <DialogHeader className="space-y-4">
+          <div className="flex items-start gap-4 mb-4">
+            <div className={`
+              p-3 rounded-xl 
               ${isDark 
-                ? 'border-gray-700 bg-gray-800/50 text-gray-300 hover:bg-gray-700 hover:text-gray-200' 
-                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100'
-              }
-              shadow-sm hover:shadow
-            `}
-          >
-            <XCircle className="h-4 w-4 mr-2" />
-            {cancelText || 'Cancel'}
-          </Button>
+                ? type === 'success' ? 'bg-emerald-900/20 border-emerald-800/40' 
+                  : type === 'error' ? 'bg-rose-900/20 border-rose-800/40'
+                  : type === 'warning' ? 'bg-amber-900/20 border-amber-800/40'
+                  : (typeof userRole === 'string' ? userRole.toLowerCase() : String(userRole).toLowerCase()) === "oracle" ? 'bg-violet-900/20 border-violet-800/40' 
+                  : 'bg-sky-900/20 border-sky-800/40'
+                : type === 'success' ? 'bg-emerald-50 border-emerald-200'
+                  : type === 'error' ? 'bg-rose-50 border-rose-200'
+                  : type === 'warning' ? 'bg-amber-50 border-amber-200'
+                  : (typeof userRole === 'string' ? userRole.toLowerCase() : String(userRole).toLowerCase()) === "oracle" ? 'bg-violet-50 border-violet-200'
+                  : 'bg-sky-50 border-sky-200'
+              } 
+              border shadow-sm
+              animate-pulse-subtle
+            `}>
+              <Icon className={`h-6 w-6 ${color} animate-in zoom-in-50 duration-300`} />
+            </div>
+            
+            <div className="flex-1 pt-1">
+              <DialogTitle className={`
+                text-xl font-semibold leading-tight 
+                ${isDark ? 'text-gray-100' : 'text-gray-900'}
+              `}>
+                {title}
+              </DialogTitle>
+            </div>
+          </div>
+
+          {text && (
+            <DialogDescription className={`
+              text-md leading-relaxed -mb-4 px-1
+              ${isDark ? 'text-gray-400' : 'text-gray-600'}
+              animate-in fade-in-50 duration-300 delay-100
+            `}>
+              {text}
+            </DialogDescription>
+          )}
+        </DialogHeader>
+
+        {type === 'input' && (
+          <div className="space-y-4 pt-4 animate-in fade-in-50 duration-300 delay-150">
+            <div className="space-y-3">
+              <Label 
+                htmlFor="dialog-input" 
+                className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}
+              >
+                {placeholder || 'Enter value'}
+              </Label>
+              <Input
+                id="dialog-input"
+                type={inputType}
+                placeholder={placeholder}
+                value={inputValue}
+                onChange={handleInputChange}
+                className={`
+                  h-11 transition-all duration-200
+                  ${inputError ? 'border-red-500 focus-visible:ring-red-500/20' : ''} 
+                  ${isDark 
+                    ? 'bg-gray-800/50 border-gray-700 text-white focus:border-gray-600 focus:ring-gray-600/20' 
+                    : 'bg-gray-50 border-gray-300 focus:border-gray-400 focus:ring-gray-400/20'
+                  }
+                  focus-visible:ring-2 focus-visible:ring-offset-2
+                  ${isDark ? 'focus-visible:ring-offset-gray-900' : 'focus-visible:ring-offset-white'}
+                  placeholder:text-gray-500
+                `}
+                autoFocus
+              />
+              {inputError && (
+                <div className="flex items-center gap-2 text-red-500 text-sm animate-shake">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  <span>{inputError}</span>
+                </div>
+              )}
+            </div>
+          </div>
         )}
-        
-        {type === 'input' ? (
-          <Button
-            onClick={handleSubmitInput}
-            className={`
-              ${isMobile ? 'w-full' : 'w-auto'} 
-              h-11 px-6
-              transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]
-              ${iconConfig.buttonClass} 
-              hover:opacity-90 text-white
-              shadow-lg hover:shadow-xl
-              disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100
-            `}
-          >
-            <Check className="h-4 w-4 mr-2" />
-            {confirmText || 'Submit'}
-          </Button>
-        ) : (
-          <Button
-            onClick={handleConfirm}
-            className={`
-              ${isMobile ? 'w-full' : 'w-auto'} 
-              h-11 px-6
-              transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]
-              ${type === 'confirm' || type === 'input'
-                ? `${iconConfig.buttonClass} hover:opacity-90 text-white shadow-lg hover:shadow-xl`
-                : `${isDark 
-                    ? 'border-gray-700 bg-gray-800/50 text-gray-300 hover:bg-gray-700 hover:text-gray-200' 
-                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100'
-                  } shadow-sm hover:shadow`
-              }
-            `}
-            variant={type === 'confirm' || type === 'input' ? 'default' : 'outline'}
-          >
-            {type === 'confirm' ? (confirmText || 'Confirm') : 'OK'}
-          </Button>
-        )}
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>
-);
+
+        <DialogFooter className={`
+          flex ${isMobile ? 'flex-col' : 'flex-row'} gap-3 pt-6
+          animate-in fade-in-50 duration-300 delay-200
+        `}>
+          {(type === 'confirm' || type === 'input') && (
+            <Button
+              variant="outline"
+              onClick={handleCancel}
+              className={`
+                ${isMobile ? 'w-full' : 'w-auto'} 
+                h-11 px-6
+                transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]
+                ${isDark 
+                  ? 'border-gray-700 bg-gray-800/50 text-gray-300 hover:bg-gray-700 hover:text-gray-200' 
+                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100'
+                }
+                shadow-sm hover:shadow
+              `}
+            >
+              <XCircle className="h-4 w-4 mr-2" />
+              {cancelText || 'Cancel'}
+            </Button>
+          )}
+          
+          {type === 'input' ? (
+            <Button
+              onClick={handleSubmitInput}
+              className={`
+                ${isMobile ? 'w-full' : 'w-auto'} 
+                h-11 px-6
+                transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]
+                ${iconConfig.buttonClass} 
+                hover:opacity-90 text-white
+                shadow-lg hover:shadow-xl
+                disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100
+              `}
+            >
+              <Check className="h-4 w-4 mr-2" />
+              {confirmText || 'Submit'}
+            </Button>
+          ) : (
+            <Button
+              onClick={handleConfirm}
+              className={`
+                ${isMobile ? 'w-full' : 'w-auto'} 
+                h-11 px-6
+                transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]
+                ${type === 'confirm' || type === 'input'
+                  ? `${iconConfig.buttonClass} hover:opacity-90 text-white shadow-lg hover:shadow-xl`
+                  : `${isDark 
+                      ? 'border-gray-700 bg-gray-800/50 text-gray-300 hover:bg-gray-700 hover:text-gray-200' 
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100'
+                    } shadow-sm hover:shadow`
+                }
+              `}
+              variant={type === 'confirm' || type === 'input' ? 'default' : 'outline'}
+            >
+              {type === 'confirm' ? (confirmText || 'Confirm') : 'OK'}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 // --- Global export functions (EXACT SAME SIGNATURES AS ORIGINAL) ---

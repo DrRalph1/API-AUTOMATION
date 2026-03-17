@@ -693,87 +693,89 @@ public class UserController {
     })
     public ResponseEntity<?> getUser(
             @PathVariable String userId,
-            @RequestHeader(value = "x-api-key", defaultValue = "", required = true)
-            @Parameter(name = "x-api-key", description = "API Key", required = true, in = ParameterIn.HEADER)
-            String apiKey,
-            @RequestHeader(value = "x-api-secret", defaultValue = "", required = true)
-            @Parameter(name = "x-api-secret", description = "API Secret", required = true, in = ParameterIn.HEADER)
-            String apiSecret,
+            @RequestHeader(value = "x-api-key", required = true) String apiKey,
+            @RequestHeader(value = "x-api-secret", required = true) String apiSecret,
             HttpServletRequest req) {
-
-        // Validate API credentials
-        boolean validAPICredentials = apiKeyNSecretHelper.validateApiCredentials(apiKey, apiSecret);
-        boolean validClientIP = clientIpHelper.validateAPIClientIp(apiKey, apiSecret);
-
-        if (!validAPICredentials) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 403);
-            errorResponse.put("message", "Access Forbidden. Invalid API Key or Secret.");
-            errorResponse.put("requestId", "");
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
-        }
-
-        if (!validClientIP) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("responseCode", 403);
-            errorResponse.put("message", "Access Forbidden. Unknown Client IP.");
-            errorResponse.put("requestId", "");
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
-        }
 
         String requestId = UUID.randomUUID().toString();
 
-        try {
-            // Log incoming requestEntity
+        // Log the request with headers (for debugging)
+        loggerUtil.log("api-automation",
+                "RequestEntity ID: " + requestId +
+                        ", GET /users/" + userId +
+                        ", Headers - x-api-key: " + (apiKey != null ? "present" : "missing") +
+                        ", x-api-secret: " + (apiSecret != null ? "present" : "missing"));
+
+        // Validate API credentials first
+        boolean validAPICredentials = apiKeyNSecretHelper.validateApiCredentials(apiKey, apiSecret);
+        if (!validAPICredentials) {
             loggerUtil.log("api-automation",
-                    "RequestEntity ID: " + requestId + ", Retrieving user with ID: " + userId +
-                            ", Requested by API client with key: " + apiKey);
-            auditLogHelper.logAuditAction("RETRIEVE_USER_REQUEST", apiKey,
-                    String.format("Retrieving user with ID: %s by API client: %s", userId, apiKey),
-                    requestId);
+                    "RequestEntity ID: " + requestId + ", Invalid API credentials for user lookup: " + userId);
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 403);
+            errorResponse.put("message", "Access Forbidden. Invalid API Key or Secret.");
+            errorResponse.put("requestId", requestId);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
+        }
+
+        // Validate client IP
+        boolean validClientIP = clientIpHelper.validateAPIClientIp(apiKey, apiSecret);
+        if (!validClientIP) {
+            loggerUtil.log("api-automation",
+                    "RequestEntity ID: " + requestId + ", Invalid client IP for user lookup: " + userId);
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("responseCode", 403);
+            errorResponse.put("message", "Access Forbidden. Unknown Client IP.");
+            errorResponse.put("requestId", requestId);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
+        }
+
+        try {
+            // Log successful authentication
+            loggerUtil.log("api-automation",
+                    "RequestEntity ID: " + requestId +
+                            ", API authentication successful for user lookup: " + userId +
+                            ", API Key: " + maskApiKey(apiKey));
 
             // Call service method
             ResponseEntity<?> responseEntity = userService.getUser(userId, requestId, req, apiKey);
 
-            // Handle empty or null response
-            if (responseEntity == null || responseEntity.getBody() == null) {
-                loggerUtil.log("api-automation",
-                        "RequestEntity ID: " + requestId + ", Empty response from getUser service");
-                auditLogHelper.logAuditAction("RETRIEVE_USER_EMPTY_RESPONSE", apiKey,
-                        String.format("Empty response from getUser service for user %s", userId), requestId);
-
-                Map<String, Object> errorResponse = new HashMap<>();
-                errorResponse.put("responseCode", 500);
-                errorResponse.put("message", "Empty response from user retrieval service.");
-                errorResponse.put("requestId", requestId);
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-            }
-
             // Log response
-            if (responseEntity.getBody() instanceof Map) {
-                Map<?, ?> responseBody = (Map<?, ?>) responseEntity.getBody();
+            if (responseEntity != null && responseEntity.getBody() != null) {
                 loggerUtil.log("api-automation",
-                        "RequestEntity ID: " + requestId + ", User retrieval completed. Response code: " +
-                                responseBody.get("responseCode") + ", Message: " + responseBody.get("message"));
-                auditLogHelper.logAuditAction("RETRIEVE_USER_COMPLETED", apiKey,
-                        String.format("User retrieval completed for %s. Response code: %s, Message: %s",
-                                userId, responseBody.get("responseCode"), responseBody.get("message")), requestId);
+                        "RequestEntity ID: " + requestId +
+                                ", User lookup completed for: " + userId);
             }
 
-            return responseEntity;
+            return responseEntity != null ? responseEntity :
+                    ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                            .body(Map.of(
+                                    "responseCode", 500,
+                                    "message", "Empty response from service",
+                                    "requestId", requestId
+                            ));
 
         } catch (Exception e) {
             loggerUtil.log("api-automation",
-                    "RequestEntity ID: " + requestId + ", Error retrieving user: " + e.getMessage());
-            auditLogHelper.logAuditAction("RETRIEVE_USER_ERROR", apiKey,
-                    String.format("Error retrieving user %s: %s", userId, e.getMessage()), requestId);
+                    "RequestEntity ID: " + requestId +
+                            ", Error in user lookup: " + e.getMessage());
 
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("responseCode", 500);
-            errorResponse.put("message", "An error occurred while retrieving user: " + e.getMessage());
+            errorResponse.put("message", "Error retrieving user: " + e.getMessage());
             errorResponse.put("requestId", requestId);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
+    }
+
+    // Helper method to mask API key for logging
+    private String maskApiKey(String apiKey) {
+        if (apiKey == null || apiKey.length() < 8) {
+            return "***";
+        }
+        return apiKey.substring(0, 4) + "..." + apiKey.substring(apiKey.length() - 4);
     }
 
 

@@ -508,6 +508,8 @@ public class ApiExecutionHelper {
         // Create consolidated params map for the executors
         Map<String, Object> consolidatedParams = createConsolidatedParams(request);
 
+        System.out.println("operation::::" + operation);
+
         switch (targetType) {
             case "TABLE":
                 return executeTableOperation(tableExecutorUtil, targetName, targetOwner, operation,
@@ -545,6 +547,7 @@ public class ApiExecutionHelper {
                                          Map<String, Object> params,
                                          GeneratedApiEntity api,
                                          List<ApiParameterDTO> configuredParamDTOs) {
+
         if (operation == null) {
             operation = "SELECT";
         }

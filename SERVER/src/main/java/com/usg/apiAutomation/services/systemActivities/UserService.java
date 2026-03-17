@@ -962,16 +962,23 @@ public class UserService {
                             String.format("User with ID %s not found", userId)
                     ));
 
+            // Build the DTO with ALL fields including phoneNumber
             UserDTO dto = UserDTO.builder()
                     .userId(entity.getUserId())
                     .username(entity.getUsername())
-                    .phoneNumber(entity.getPhoneNumber())
+                    .phoneNumber(entity.getPhoneNumber())           // ✅ CRITICAL - Add this line
                     .emailAddress(entity.getEmailAddress())
-                    .staffId(entity.getStaffId())           // ✅ ADD THIS
+                    .staffId(entity.getStaffId())
                     .fullName(entity.getFullName())
-                    .roleId(entity.getRole().getRoleId())
-                    .roleName(entity.getRole().getRoleName())
-                    .isActive(entity.getIsActive())         // ✅ ADD THIS
+                    .roleId(entity.getRole() != null ? entity.getRole().getRoleId() : null)
+                    .roleName(entity.getRole() != null ? entity.getRole().getRoleName() : null)
+                    .isActive(entity.getIsActive())
+                    .isDefaultPassword(entity.getIsDefaultPassword())
+                    .failedLoginAttempts(entity.getFailedLoginAttempts())
+                    .accountLockedUntil(entity.getAccountLockedUntil())
+                    .lastLogin(entity.getLastLogin())
+                    .createdDate(entity.getCreatedDate())
+                    .lastModifiedDate(entity.getLastModifiedDate())
                     .build();
 
             loggerUtil.log("api-automation",
@@ -1002,6 +1009,7 @@ public class UserService {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
         }
     }
+
 
     // ========== GET ALL USERS ==========
     @Transactional
