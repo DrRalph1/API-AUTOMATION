@@ -62,7 +62,7 @@ public class ApiExecutionHelper {
                 // REMOVE THIS LINE: .sourceRequestId(requestId)
                 .build();
 
-        // Save configurations
+        // Save configurations using helper setters
         if (request.getSchemaConfig() != null) {
             api.setSchemaConfig(mapToSchemaConfigEntity(request.getSchemaConfig(), api));
         }
@@ -83,34 +83,34 @@ public class ApiExecutionHelper {
             api.setSettings(mapToSettingsEntity(request.getSettings(), api));
         }
 
-        // Save parameters
+        // Save parameters using helper methods
         if (request.getParameters() != null && !request.getParameters().isEmpty()) {
             List<ApiParameterEntity> parameters = createParametersFromDTOs(request.getParameters(), api);
-            api.setParameters(parameters);
+            api.replaceParameters(parameters);  // Using the new bulk replace method
         } else if (sourceObjectDTO != null) {
             List<ApiParameterEntity> parameters = parameterGenerator.generateParametersFromSource(sourceObjectDTO, api);
-            api.setParameters(parameters);
+            api.replaceParameters(parameters);  // Using the new bulk replace method
         }
 
-        // Save response mappings
+        // Save response mappings using helper methods
         if (request.getResponseMappings() != null && !request.getResponseMappings().isEmpty()) {
             List<ApiResponseMappingEntity> mappings = createResponseMappingsFromDTOs(request.getResponseMappings(), api);
-            api.setResponseMappings(mappings);
+            api.replaceResponseMappings(mappings);  // Using the new bulk replace method
         } else if (sourceObjectDTO != null) {
             List<ApiResponseMappingEntity> mappings = parameterGenerator.generateResponseMappingsFromSource(sourceObjectDTO, api);
-            api.setResponseMappings(mappings);
+            api.replaceResponseMappings(mappings);  // Using the new bulk replace method
         }
 
-        // Save headers
+        // Save headers using helper methods
         if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
             List<ApiHeaderEntity> headers = createHeadersFromDTOs(request.getHeaders(), api);
-            api.setHeaders(headers);
+            api.replaceHeaders(headers);  // Using the new bulk replace method
         }
 
-        // Save tests
+        // Save tests using helper methods
         if (request.getTests() != null) {
             List<ApiTestEntity> tests = createTestEntities(request.getTests(), api);
-            api.setTests(tests);
+            api.replaceTests(tests);  // Using the new bulk replace method
         }
 
         return generatedAPIRepository.save(api);
@@ -133,7 +133,7 @@ public class ApiExecutionHelper {
         api.setOwner(request.getOwner());
         api.setUpdatedAt(LocalDateTime.now());
         api.setUpdatedBy(performedBy);
-        api.setTags(request.getTags() != null ? request.getTags() : new ArrayList<>());
+        api.replaceTags(request.getTags() != null ? request.getTags() : new ArrayList<>());  // Using replaceTags
 
         if (sourceObjectDTO != null) {
             api.setSourceObjectInfo(new ObjectMapper().convertValue(sourceObjectDTO, Map.class));
@@ -144,45 +144,42 @@ public class ApiExecutionHelper {
         }
     }
 
+    /**
+     * UPDATED: Clear all relationships using the new helper methods
+     */
     public void clearApiRelationships(GeneratedApiEntity api) {
-        if (api.getSchemaConfig() != null) {
-            api.getSchemaConfig().setGeneratedApi(null);
-        }
-        if (api.getAuthConfig() != null) {
-            api.getAuthConfig().setGeneratedApi(null);
-        }
-        if (api.getRequestConfig() != null) {
-            api.getRequestConfig().setGeneratedApi(null);
-        }
-        if (api.getResponseConfig() != null) {
-            api.getResponseConfig().setGeneratedApi(null);
-        }
-        if (api.getSettings() != null) {
-            api.getSettings().setGeneratedApi(null);
-        }
-        if (api.getParameters() != null) {
-            api.getParameters().forEach(p -> p.setGeneratedApi(null));
-            api.setParameters(null);
-        }
-        if (api.getResponseMappings() != null) {
-            api.getResponseMappings().forEach(m -> m.setGeneratedApi(null));
-            api.setResponseMappings(null);
-        }
-        if (api.getHeaders() != null) {
-            api.getHeaders().forEach(h -> h.setGeneratedApi(null));
-            api.setHeaders(null);
-        }
-        if (api.getTests() != null) {
-            api.getTests().forEach(t -> t.setGeneratedApi(null));
-            api.setTests(null);
-        }
+        if (api == null) return;
+
+        log.debug("Clearing relationships for API: {}", api.getId());
+
+        // Clear one-to-one relationships using helper setters
+        api.setSchemaConfig(null);
+        api.setAuthConfig(null);
+        api.setRequestConfig(null);
+        api.setResponseConfig(null);
+        api.setSettings(null);
+
+        // Clear collections using helper methods
+        api.clearParameters();
+        api.clearResponseMappings();
+        api.clearHeaders();
+        api.clearTests();
+        api.clearTags();
+
+        log.debug("Successfully cleared relationships for API: {}", api.getId());
     }
 
+    /**
+     * UPDATED: Recreate relationships using the new helper methods
+     */
     public void recreateApiRelationships(GeneratedApiEntity api,
                                          GenerateApiRequestDTO request,
                                          ApiSourceObjectDTO sourceObjectDTO,
                                          ParameterGeneratorUtil parameterGenerator,
                                          ApiConversionHelper conversionHelper) {
+
+        log.debug("Recreating relationships for API: {}", api.getId());
+
         // Recreate schema config
         if (request.getSchemaConfig() != null) {
             api.setSchemaConfig(mapToSchemaConfigEntity(request.getSchemaConfig(), api));
@@ -211,32 +208,34 @@ public class ApiExecutionHelper {
         // Recreate parameters
         if (request.getParameters() != null && !request.getParameters().isEmpty()) {
             List<ApiParameterEntity> parameters = createParametersFromDTOs(request.getParameters(), api);
-            api.setParameters(parameters);
+            api.replaceParameters(parameters);  // Using bulk replace
         } else if (sourceObjectDTO != null) {
             List<ApiParameterEntity> parameters = parameterGenerator.generateParametersFromSource(sourceObjectDTO, api);
-            api.setParameters(parameters);
+            api.replaceParameters(parameters);  // Using bulk replace
         }
 
         // Recreate response mappings
         if (request.getResponseMappings() != null && !request.getResponseMappings().isEmpty()) {
             List<ApiResponseMappingEntity> mappings = createResponseMappingsFromDTOs(request.getResponseMappings(), api);
-            api.setResponseMappings(mappings);
+            api.replaceResponseMappings(mappings);  // Using bulk replace
         } else if (sourceObjectDTO != null) {
             List<ApiResponseMappingEntity> mappings = parameterGenerator.generateResponseMappingsFromSource(sourceObjectDTO, api);
-            api.setResponseMappings(mappings);
+            api.replaceResponseMappings(mappings);  // Using bulk replace
         }
 
         // Recreate headers
         if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
             List<ApiHeaderEntity> headers = createHeadersFromDTOs(request.getHeaders(), api);
-            api.setHeaders(headers);
+            api.replaceHeaders(headers);  // Using bulk replace
         }
 
         // Recreate tests
         if (request.getTests() != null) {
             List<ApiTestEntity> tests = createTestEntities(request.getTests(), api);
-            api.setTests(tests);
+            api.replaceTests(tests);  // Using bulk replace
         }
+
+        log.debug("Successfully recreated relationships for API: {}", api.getId());
     }
 
 
@@ -296,7 +295,7 @@ public class ApiExecutionHelper {
         }
 
         // Categorize parameters based on API configuration
-        if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+        if (api.hasParameters()) {  // Using the new utility method
             Map<String, Object> allProvidedParams = new HashMap<>();
             allProvidedParams.putAll(pathParams);
             allProvidedParams.putAll(queryParams);

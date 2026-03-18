@@ -7,6 +7,7 @@ import com.usg.apiAutomation.entities.postgres.codeBase.*;
 import com.usg.apiAutomation.repositories.postgres.codeBase.*;
 import com.usg.apiAutomation.utils.apiEngine.CodeLanguageGeneratorUtil;
 import com.usg.apiAutomation.utils.apiEngine.GenUrlBuilderUtil;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -30,6 +31,7 @@ public class CodeBaseGeneratorUtil {
     private final ParameterRepository codeBaseParameterRepository;
     private final HeaderRepository codeBaseHeaderRepository;
     private final GenUrlBuilderUtil genUrlBuilder;
+    private final EntityManager entityManager;
 
     @Transactional
     public String generate(GeneratedApiEntity api, String performedBy,
@@ -482,33 +484,47 @@ public class CodeBaseGeneratorUtil {
 
 
     private void createLanguageConfigs(String generatedApiId) {
-        // Check if language configs already exist
-        if (languageConfigRepository.count() > 0) {
-            return;
+        try {
+            // First, ensure any pending changes are flushed
+            entityManager.flush();
+
+            // Clear the persistence context to avoid state conflicts
+            entityManager.clear();
+
+            // Check if language configs already exist
+            if (languageConfigRepository.count() > 0) {
+                return;
+            }
+
+            List<LanguageConfigEntity> configs = Arrays.asList(
+                    createLanguageConfig(generatedApiId, "java", "Java", "Spring Boot", "#007396",
+                            "java-icon", "mvn", "maven", ".java", "java"),
+                    createLanguageConfig(generatedApiId, "javascript", "JavaScript", "Node.js/Express", "#F7DF1E",
+                            "js-icon", "npm", "npm", ".js", "javascript"),
+                    createLanguageConfig(generatedApiId, "python", "Python", "Flask/FastAPI", "#3776AB",
+                            "python-icon", "pip", "pip", ".py", "python"),
+                    createLanguageConfig(generatedApiId, "curl", "cURL", "Command Line", "#0B3B5C",
+                            "curl-icon", null, null, ".sh", "bash"),
+                    createLanguageConfig(generatedApiId, "csharp", "C#", ".NET Core", "#178600",
+                            "csharp-icon", "dotnet", "nuget", ".cs", "csharp"),
+                    createLanguageConfig(generatedApiId, "php", "PHP", "Laravel", "#777BB4",
+                            "php-icon", "composer", "composer", ".php", "php"),
+                    createLanguageConfig(generatedApiId, "ruby", "Ruby", "Rails", "#CC342D",
+                            "ruby-icon", "gem", "bundler", ".rb", "ruby"),
+                    createLanguageConfig(generatedApiId, "go", "Go", "Gin", "#00ADD8",
+                            "go-icon", "go mod", "go", ".go", "go")
+            );
+
+            languageConfigRepository.saveAll(configs);
+            log.debug("Created {} language configurations", configs.size());
+
+        } catch (Exception e) {
+            log.error("Error creating language configs: {}", e.getMessage(), e);
+            // Don't throw the exception - this is not critical for API generation
         }
-
-        List<LanguageConfigEntity> configs = Arrays.asList(
-                createLanguageConfig(generatedApiId, "java", "Java", "Spring Boot", "#007396",
-                        "java-icon", "mvn", "maven", ".java", "java"),
-                createLanguageConfig(generatedApiId, "javascript", "JavaScript", "Node.js/Express", "#F7DF1E",
-                        "js-icon", "npm", "npm", ".js", "javascript"),
-                createLanguageConfig(generatedApiId, "python", "Python", "Flask/FastAPI", "#3776AB",
-                        "python-icon", "pip", "pip", ".py", "python"),
-                createLanguageConfig(generatedApiId, "curl", "cURL", "Command Line", "#0B3B5C",
-                        "curl-icon", null, null, ".sh", "bash"),
-                createLanguageConfig(generatedApiId, "csharp", "C#", ".NET Core", "#178600",
-                        "csharp-icon", "dotnet", "nuget", ".cs", "csharp"),
-                createLanguageConfig(generatedApiId, "php", "PHP", "Laravel", "#777BB4",
-                        "php-icon", "composer", "composer", ".php", "php"),
-                createLanguageConfig(generatedApiId, "ruby", "Ruby", "Rails", "#CC342D",
-                        "ruby-icon", "gem", "bundler", ".rb", "ruby"),
-                createLanguageConfig(generatedApiId, "go", "Go", "Gin", "#00ADD8",
-                        "go-icon", "go mod", "go", ".go", "go")
-        );
-
-        languageConfigRepository.saveAll(configs);
-        log.debug("Created {} language configurations", configs.size());
     }
+
+
 
     private LanguageConfigEntity createLanguageConfig(String generatedApiId, String language,
                                                       String displayName, String framework,

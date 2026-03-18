@@ -3,6 +3,7 @@ package com.usg.apiAutomation.services;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.*;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
+import com.usg.apiAutomation.entities.postgres.collections.CollectionEntity;
 import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.*;
 import com.usg.apiAutomation.repositories.postgres.codeBase.*;
 import com.usg.apiAutomation.repositories.postgres.codeBase.FolderRepository;
@@ -178,6 +179,9 @@ public class AutomationEngineService {
 
             GeneratedApiEntity api = executionHelper.getApiEntity(generatedAPIRepository, apiId);
 
+            // Store the original sourceRequestId before clearing relationships
+            String originalSourceRequestId = api.getSourceRequestId();
+
             // Check API code uniqueness if changed
             validationHelper.validateApiCodeUniquenessOnUpdate(
                     generatedAPIRepository, api.getApiCode(), request.getApiCode());
@@ -197,14 +201,41 @@ public class AutomationEngineService {
             executionHelper.recreateApiRelationships(api, request, sourceObjectDTO,
                     parameterGeneratorUtil, conversionHelper);
 
+            // IMPORTANT: Temporarily set the original sourceRequestId back
+            api.setSourceRequestId(originalSourceRequestId);
+
             GeneratedApiEntity savedApi = generatedAPIRepository.save(api);
 
-            // Update components
-            componentHelper.updateComponents(savedApi, performedBy, request, collectionInfo,
+            // ============ CRITICAL FIX: Flush only, don't clear ============
+            // This forces Hibernate to execute all pending SQL statements
+            entityManager.flush();
+
+            // DO NOT clear the persistence context - we need the entity to stay managed
+            // entityManager.clear(); // REMOVE THIS LINE
+            // =============================================================================
+
+            // Update components - now passing generateApiCode function
+            componentHelper.updateComponents(
+                    savedApi,  // This entity is still managed
+                    performedBy,
+                    request,
+                    collectionInfo,
                     shouldRegenerateComponents(request),
-                    codeBaseGeneratorUtil, collectionsGeneratorUtil, documentationGeneratorUtil,
-                    this::updateCodeBase, this::updateCollections, this::updateDocumentation,
-                    this::getCodeBaseRequestId, this::getCollectionsCollectionId);
+                    codeBaseGeneratorUtil,
+                    collectionsGeneratorUtil,
+                    documentationGeneratorUtil,
+                    // QuadConsumer with 4 params: (api, user, req, collInfo)
+                    (apiEntity, user, req, collInfo) -> updateCodeBase(apiEntity, user, req, collInfo),
+                    // QuintConsumer with 5 params: (api, user, req, collInfo, originalRequestId)
+                    (apiEntity, user, req, collInfo, originalId) ->
+                            updateCollections(apiEntity, user, req, collInfo, originalId),
+                    // SextConsumer with 6 params: (api, user, req, collInfo, codeBaseId, collectionId)
+                    (apiEntity, user, req, collInfo, codeBaseId, collectionId) ->
+                            updateDocumentation(apiEntity, user, req, collInfo, codeBaseId, collectionId),
+                    this::getCodeBaseRequestId,
+                    this::getCollectionsCollectionId,
+                    this::generateApiCode
+            );
 
             loggerUtil.log("apiAutomation", "Request ID: " + requestId +
                     ", API updated successfully: " + savedApi.getId());
@@ -216,6 +247,82 @@ public class AutomationEngineService {
                     ", Error updating API: " + e.getMessage());
             throw new RuntimeException("Failed to update API: " + e.getMessage(), e);
         }
+    }
+
+
+
+    // Add this overloaded updateCollections method that accepts the original sourceRequestId
+    private void updateCollections(GeneratedApiEntity api, String performedBy,
+                                   GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo,
+                                   String originalSourceRequestId) {
+        try {
+            log.info("Updating collections for API: {} with original request ID: {}",
+                    api.getId(), originalSourceRequestId);
+
+            // If we have an original sourceRequestId, try to update the existing request
+            if (originalSourceRequestId != null && !originalSourceRequestId.isEmpty()) {
+                log.info("Attempting to update existing collections request with ID: {}", originalSourceRequestId);
+
+                // Check if the request still exists
+                Optional<com.usg.apiAutomation.entities.postgres.collections.RequestEntity> existingRequestOpt =
+                        collectionsRequestRepository.findById(originalSourceRequestId);
+
+                if (existingRequestOpt.isPresent()) {
+                    var existingRequest = existingRequestOpt.get();
+
+                    // FIXED: Call updateExistingRequest (not updateExistingCollectionsRequest)
+                    collectionsGeneratorUtil.updateExistingRequest(existingRequest, api, performedBy, request, collectionInfo);
+
+                    // Update the collection if needed
+                    if (collectionInfo != null && collectionInfo.getCollectionId() != null) {
+                        Optional<CollectionEntity> existingCollectionOpt =
+                                collectionsCollectionRepository.findById(collectionInfo.getCollectionId());
+
+                        if (existingCollectionOpt.isPresent()) {
+                            var existingCollection = existingCollectionOpt.get();
+                            collectionsGeneratorUtil.updateExistingCollection(existingCollection, api, collectionInfo);
+                        }
+                    }
+
+                    log.info("Successfully updated existing collections request: {}", originalSourceRequestId);
+                    return;
+                } else {
+                    log.warn("Existing collections request with ID {} not found. Will generate new one.",
+                            originalSourceRequestId);
+                }
+            }
+
+            // If no existing request or it was deleted, generate new ones
+            log.info("No existing collections request found, generating new ones for API: {}", api.getId());
+            Map<String, String> collectionResult = collectionsGeneratorUtil.generateWithDetails(
+                    api, performedBy, request, collectionInfo);
+
+            String collectionsRequestId = collectionResult.get("requestId");
+
+            // CRITICAL: Update the API with the new collections request ID
+            if (collectionsRequestId != null) {
+                api.setSourceRequestId(collectionsRequestId);
+                generatedAPIRepository.save(api);
+                log.info("Generated new collections request with ID: {} and updated API", collectionsRequestId);
+            } else {
+                log.error("Failed to generate new collections request - requestId is null");
+            }
+
+        } catch (Exception e) {
+            log.error("Error updating collections: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update collections: " + e.getMessage(), e);
+        }
+    }
+
+
+    // Keep the original updateDocumentation method as is
+    private void updateDocumentation(GeneratedApiEntity api, String performedBy,
+                                     GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo,
+                                     String codeBaseRequestId, String collectionsCollectionId) {
+        // Your existing implementation
+        componentHelper.updateDocumentation(api, performedBy, request, collectionInfo,
+                codeBaseRequestId, collectionsCollectionId, documentationGeneratorUtil,
+                docCollectionRepository, docFolderRepository, endpointRepository, entityManager);
     }
 
 
@@ -1106,14 +1213,6 @@ public class AutomationEngineService {
         componentHelper.updateCollections(api, performedBy, request, collectionInfo,
                 collectionsGeneratorUtil, collectionsCollectionRepository, collectionsFolderRepository,
                 collectionsRequestRepository, entityManager);
-    }
-
-    private void updateDocumentation(GeneratedApiEntity api, String performedBy,
-                                     GenerateApiRequestDTO request, CollectionInfoDTO collectionInfo,
-                                     String codeBaseRequestId, String collectionsCollectionId) {
-        componentHelper.updateDocumentation(api, performedBy, request, collectionInfo,
-                codeBaseRequestId, collectionsCollectionId, documentationGeneratorUtil,
-                docCollectionRepository, docFolderRepository, endpointRepository, entityManager);
     }
 
     private void regenerateComponents(GeneratedApiEntity api, String performedBy,

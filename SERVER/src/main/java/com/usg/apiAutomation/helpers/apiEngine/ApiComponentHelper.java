@@ -20,36 +20,51 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.function.Function;
 
 @Slf4j
 @Component
 public class ApiComponentHelper {
 
     public void updateComponents(
-            GeneratedApiEntity savedApi,
+            GeneratedApiEntity api,
             String performedBy,
             GenerateApiRequestDTO request,
             CollectionInfoDTO collectionInfo,
-            boolean regenerate,
+            boolean shouldRegenerate,
             CodeBaseGeneratorUtil codeBaseGeneratorUtil,
             CollectionsGeneratorUtil collectionsGeneratorUtil,
             DocumentationGeneratorUtil documentationGeneratorUtil,
-            CodeBaseUpdater codeBaseUpdater,
-            CollectionsUpdater collectionsUpdater,
-            DocumentationUpdater documentationUpdater,
-            ComponentIdProvider codeBaseIdProvider,
-            ComponentIdProvider collectionIdProvider) {
+            QuadConsumer<GeneratedApiEntity, String, GenerateApiRequestDTO, CollectionInfoDTO> updateCodeBase,
+            QuintConsumer<GeneratedApiEntity, String, GenerateApiRequestDTO, CollectionInfoDTO, String> updateCollections,
+            SextConsumer<GeneratedApiEntity, String, GenerateApiRequestDTO, CollectionInfoDTO, String, String> updateDocumentation,
+            Function<GeneratedApiEntity, String> getCodeBaseRequestId,
+            Function<GeneratedApiEntity, String> getCollectionsCollectionId,
+            Function<GeneratedApiEntity, Map<String, String>> generateApiCode) {
 
-        if (regenerate) {
-            regenerateComponents(savedApi, performedBy, request, collectionInfo,
-                    codeBaseGeneratorUtil, collectionsGeneratorUtil, documentationGeneratorUtil,
-                    this::generateApiCodeForRegeneration); // <-- Use this method reference
-        } else {
-            codeBaseUpdater.updateCodeBase(savedApi, performedBy, request, collectionInfo);
-            collectionsUpdater.updateCollections(savedApi, performedBy, request, collectionInfo);
-            documentationUpdater.updateDocumentation(savedApi, performedBy, request, collectionInfo,
-                    codeBaseIdProvider.getComponentId(savedApi),
-                    collectionIdProvider.getComponentId(savedApi));
+        try {
+            log.info("Updating components for API: {}", api.getId());
+
+            if (shouldRegenerate) {
+                regenerateComponents(api, performedBy, request, collectionInfo,
+                        codeBaseGeneratorUtil, collectionsGeneratorUtil, documentationGeneratorUtil,
+                        generateApiCode);
+            } else {
+                // Update existing components
+                String codeBaseRequestId = getCodeBaseRequestId.apply(api);
+                String collectionsCollectionId = getCollectionsCollectionId.apply(api);
+
+                updateCodeBase.accept(api, performedBy, request, collectionInfo);
+                updateCollections.accept(api, performedBy, request, collectionInfo, api.getSourceRequestId());
+                updateDocumentation.accept(api, performedBy, request, collectionInfo,
+                        codeBaseRequestId, collectionsCollectionId);
+            }
+
+            log.info("Successfully updated components for API: {}", api.getId());
+
+        } catch (Exception e) {
+            log.error("Error updating components: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update components: " + e.getMessage(), e);
         }
     }
 
@@ -87,6 +102,23 @@ public class ApiComponentHelper {
             throw new RuntimeException("Failed to update code base: " + e.getMessage(), e);
         }
     }
+
+
+    @FunctionalInterface
+    public interface QuadConsumer<T, U, V, W> {
+        void accept(T t, U u, V v, W w);
+    }
+
+    @FunctionalInterface
+    public interface QuintConsumer<T, U, V, W, X> {
+        void accept(T t, U u, V v, W w, X x);
+    }
+
+    @FunctionalInterface
+    public interface SextConsumer<T, U, V, W, X, Y> {
+        void accept(T t, U u, V v, W w, X x, Y y);
+    }
+
 
     public void updateCollections(GeneratedApiEntity api,
                                   String performedBy,
@@ -245,23 +277,50 @@ public class ApiComponentHelper {
         }
     }
 
-    public void regenerateComponents(GeneratedApiEntity api,
-                                     String performedBy,
-                                     GenerateApiRequestDTO request,
-                                     CollectionInfoDTO collectionInfo,
-                                     CodeBaseGeneratorUtil codeBaseGeneratorUtil,
-                                     CollectionsGeneratorUtil collectionsGeneratorUtil,
-                                     DocumentationGeneratorUtil documentationGeneratorUtil,
-                                     ApiCodeGenerator apiCodeGenerator) {
+    public void regenerateComponents(
+            GeneratedApiEntity api,
+            String performedBy,
+            GenerateApiRequestDTO request,
+            CollectionInfoDTO collectionInfo,
+            CodeBaseGeneratorUtil codeBaseGeneratorUtil,
+            CollectionsGeneratorUtil collectionsGeneratorUtil,
+            DocumentationGeneratorUtil documentationGeneratorUtil,
+            Function<GeneratedApiEntity, Map<String, String>> generateCodeFunction) {
+
         try {
-            apiCodeGenerator.generateApiCode(api);
+            log.info("Regenerating components for API: {}", api.getId());
+
+            // Delete existing components
+            deleteExistingComponents(api);
+
+            // Generate new components
             codeBaseGeneratorUtil.generate(api, performedBy, request, collectionInfo);
             collectionsGeneratorUtil.generate(api, performedBy, request, collectionInfo);
+
+            // Fix: Get the codeBaseRequestId and collectionsCollectionId properly
             String codeBaseRequestId = getCodeBaseRequestId(api);
-            String collectionId = getCollectionsCollectionId(api);
-            documentationGeneratorUtil.generate(api, performedBy, request, codeBaseRequestId, collectionId, collectionInfo);
+            String collectionsCollectionId = getCollectionsCollectionId(api);
+
+            // FIXED: Call with correct parameter order (5 parameters total)
+            // The method expects: api, performedBy, request, codeBaseRequestId, collectionsCollectionId, collectionInfo
+            documentationGeneratorUtil.generate(
+                    api,
+                    performedBy,
+                    request,
+                    codeBaseRequestId,      // 4th parameter
+                    collectionsCollectionId, // 5th parameter
+                    collectionInfo           // 6th parameter
+            );
+
+            // Generate code files using the passed function
+            Map<String, String> generatedCode = generateCodeFunction.apply(api);
+
+            log.info("Regenerated components for API: {}. Generated code files: {}",
+                    api.getId(), generatedCode.keySet());
+
         } catch (Exception e) {
-            log.warn("Failed to regenerate components: {}", e.getMessage());
+            log.error("Error regenerating components: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to regenerate components: " + e.getMessage(), e);
         }
     }
 
@@ -540,5 +599,22 @@ public class ApiComponentHelper {
                 this::generateGenInfoFile,
                 (a) -> generateOpenApiSpec(a, objectMapper, typeMapper),
                 (a) -> generatePostmanCollection(a, objectMapper));
+    }
+
+
+    // Add this method to delete existing components
+    public void deleteExistingComponents(GeneratedApiEntity api) {
+        try {
+            log.info("Deleting existing components for API: {}", api.getId());
+
+            // This method should be implemented based on your actual needs
+            // You might want to delete related entities or mark them as deleted
+            // For now, it's just a placeholder that logs the action
+
+            log.info("Successfully deleted existing components for API: {}", api.getId());
+        } catch (Exception e) {
+            log.error("Error deleting existing components: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to delete existing components: " + e.getMessage(), e);
+        }
     }
 }

@@ -37,14 +37,14 @@ const MOCK_COLLECTIONS = [
     description: 'Core banking system APIs for loans, accounts, and customer management',
     type: 'core',
     folders: [
-      { id: 'loans', name: 'Loans', description: 'Loan origination, servicing, and management' },
-      { id: 'accounts', name: 'Accounts', description: 'Deposit accounts, savings, and current accounts' },
-      { id: 'customers', name: 'Customers', description: 'Customer onboarding and profile management' },
-      { id: 'transactions', name: 'Transactions', description: 'Financial transactions and history' },
-      { id: 'cards', name: 'Cards', description: 'Debit and credit card management' },
-      { id: 'trade-finance', name: 'Trade Finance', description: 'Letters of credit, guarantees, and collections' },
-      { id: 'treasury', name: 'Treasury', description: 'Treasury operations and foreign exchange' },
-      { id: 'enquiry', name: 'Enquiry Services', description: 'Balance enquiries, statement enquiries' }
+      { id: 'core-api-loans', name: 'Loans', description: 'Loan origination, servicing, and management' },
+      { id: 'core-api-accounts', name: 'Accounts', description: 'Deposit accounts, savings, and current accounts' },
+      { id: 'core-api-customers', name: 'Customers', description: 'Customer onboarding and profile management' },
+      { id: 'core-api-transactions', name: 'Transactions', description: 'Financial transactions and history' },
+      { id: 'core-api-cards', name: 'Cards', description: 'Debit and credit card management' },
+      { id: 'core-api-trade-finance', name: 'Trade Finance', description: 'Letters of credit, guarantees, and collections' },
+      { id: 'core-api-treasury', name: 'Treasury', description: 'Treasury operations and foreign exchange' },
+      { id: 'core-api-enquiry', name: 'Enquiry Services', description: 'Balance enquiries, statement enquiries' }
     ]
   },
   {
@@ -53,11 +53,11 @@ const MOCK_COLLECTIONS = [
     description: 'APIs for mobile banking, internet banking, and customer portals',
     type: 'channel',
     folders: [
-      { id: 'mobile-banking', name: 'Mobile Banking', description: 'Mobile app specific APIs' },
-      { id: 'internet-banking', name: 'Internet Banking', description: 'Web banking portal APIs' },
-      { id: 'atm', name: 'ATM Services', description: 'ATM and CDM related services' },
-      { id: 'ussd', name: 'USSD Banking', description: 'USSD banking services' },
-      { id: 'notifications', name: 'Notifications', description: 'SMS, email, and push notifications' }
+      { id: 'customer-channel-mobile-banking', name: 'Mobile Banking', description: 'Mobile app specific APIs' },
+      { id: 'customer-channel-internet-banking', name: 'Internet Banking', description: 'Web banking portal APIs' },
+      { id: 'customer-channel-atm', name: 'ATM Services', description: 'ATM and CDM related services' },
+      { id: 'customer-channel-ussd', name: 'USSD Banking', description: 'USSD banking services' },
+      { id: 'customer-channel-notifications', name: 'Notifications', description: 'SMS, email, and push notifications' }
     ]
   },
   {
@@ -66,12 +66,38 @@ const MOCK_COLLECTIONS = [
     description: 'Payment processing, transfers, and gateway services',
     type: 'payment',
     folders: [
-      { id: 'transfers', name: 'Fund Transfers', description: 'Internal and external transfers' },
-      { id: 'rtgs-neft', name: 'RTGS/NEFT', description: 'Interbank payment systems' },
-      { id: 'upi', name: 'UPI Services', description: 'Unified Payments Interface' },
-      { id: 'imps', name: 'IMPS', description: 'Immediate Payment Service' },
-      { id: 'bill-payments', name: 'Bill Payments', description: 'Utility bill payments' },
-      { id: 'recurring', name: 'Recurring Payments', description: 'Standing instructions and mandates' }
+      { id: 'payment-gateway-transfers', name: 'Fund Transfers', description: 'Internal and external transfers' },
+      { id: 'payment-gateway-rtgs-neft', name: 'RTGS/NEFT', description: 'Interbank payment systems' },
+      { id: 'payment-gateway-upi', name: 'UPI Services', description: 'Unified Payments Interface' },
+      { id: 'payment-gateway-imps', name: 'IMPS', description: 'Immediate Payment Service' },
+      { id: 'payment-gateway-bill-payments', name: 'Bill Payments', description: 'Utility bill payments' },
+      { id: 'payment-gateway-recurring', name: 'Recurring Payments', description: 'Standing instructions and mandates' }
+    ]
+  },
+  {
+    id: 'self-service',
+    name: 'Self Service API Collection',
+    description: 'APIs for customer self-service operations, transactions, and account management',
+    type: 'selfservice',
+    folders: [
+      { id: 'self-service-profile-management', name: 'Profile Management', description: 'Update personal information, change password, manage communication preferences, update contact details' },
+      { id: 'self-service-account-services', name: 'Account Services', description: 'Open new accounts, close accounts, manage account settings, link/delink accounts' },
+      { id: 'self-service-card-services', name: 'Card Services', description: 'Block/unblock cards, report lost/stolen, request replacement, set limits, manage card controls' },
+      { id: 'self-service-transactions', name: 'Transactions', description: 'View transaction history, search transactions, export transactions, filter by date/type/amount' },
+      { id: 'self-service-funds-transfer', name: 'Funds Transfer', description: 'Initiate transfers, schedule future transfers, manage transfer templates, quick pay' },
+      { id: 'self-service-reporting', name: 'Reporting', description: 'Generate custom reports, download statements, spending analysis, tax reports, interest certificates' },
+      { id: 'self-service-cheque-services', name: 'Cheque Services', description: 'Request cheque books, stop cheque payments, track cheque status, view cheque images' },
+      { id: 'self-service-standing-instructions', name: 'Standing Instructions', description: 'Create, modify, and cancel standing instructions and auto-payments, view scheduled payments' },
+      { id: 'self-service-beneficiary-management', name: 'Beneficiary Management', description: 'Add, edit, and delete beneficiary accounts, manage beneficiary limits, verify beneficiaries' },
+      { id: 'self-service-statement-requests', name: 'Statement Requests', description: 'Generate account statements, download e-statements, request physical statements, historical statements' },
+      { id: 'self-service-pin-management', name: 'PIN Management', description: 'Generate/change ATM PIN, set transaction limits, manage PIN for cards' },
+      { id: 'self-service-service-requests', name: 'Service Requests', description: 'Raise and track service requests, complaints, inquiries, view request history' },
+      { id: 'self-service-document-upload', name: 'Document Upload', description: 'Upload KYC documents, submit supporting documents, view uploaded documents' },
+      { id: 'self-service-alerts-notifications', name: 'Alerts & Notifications', description: 'Manage alert preferences, view notifications, setup transaction alerts' },
+      { id: 'self-service-tax-services', name: 'Tax Services', description: 'View tax statements, download tax certificates, interest certificates for IT returns' },
+      { id: 'self-service-investment-services', name: 'Investment Services', description: 'View fixed deposits, recurring deposits, open new deposits, premature withdrawal' },
+      { id: 'self-service-loan-services', name: 'Loan Services', description: 'View loan details, check outstanding, request statements, part-payment, foreclosure' },
+      { id: 'self-service-forex-services', name: 'Forex Services', description: 'View exchange rates, travel card loading, forex bookings' }
     ]
   },
   {
@@ -80,11 +106,11 @@ const MOCK_COLLECTIONS = [
     description: 'APIs for third-party integration and open banking',
     type: 'thirdparty',
     folders: [
-      { id: 'open-banking', name: 'Open Banking', description: 'PSD2 and open banking APIs' },
-      { id: 'aggregators', name: 'Account Aggregators', description: 'Account aggregator framework' },
-      { id: 'partner-integration', name: 'Partner Integration', description: 'Third-party partner APIs' },
-      { id: 'credit-bureau', name: 'Credit Bureau', description: 'Credit bureau integration' },
-      { id: 'kYC', name: 'KYC Services', description: 'KYC verification services' }
+      { id: 'third-party-open-banking', name: 'Open Banking', description: 'PSD2 and open banking APIs' },
+      { id: 'third-party-aggregators', name: 'Account Aggregators', description: 'Account aggregator framework' },
+      { id: 'third-party-partner-integration', name: 'Partner Integration', description: 'Third-party partner APIs' },
+      { id: 'third-party-credit-bureau', name: 'Credit Bureau', description: 'Credit bureau integration' },
+      { id: 'third-party-kyc', name: 'KYC Services', description: 'KYC verification services' }
     ]
   },
   {
@@ -93,11 +119,11 @@ const MOCK_COLLECTIONS = [
     description: 'Internal administrative and operational APIs',
     type: 'admin',
     folders: [
-      { id: 'user-admin', name: 'User Administration', description: 'User management and roles' },
-      { id: 'audit', name: 'Audit Services', description: 'Audit log and compliance' },
-      { id: 'reports', name: 'Reports', description: 'Reporting and analytics' },
-      { id: 'system-monitoring', name: 'System Monitoring', description: 'System health and monitoring' },
-      { id: 'configuration', name: 'Configuration', description: 'System configuration' }
+      { id: 'admin-operations-user-admin', name: 'User Administration', description: 'User management and roles' },
+      { id: 'admin-operations-audit', name: 'Audit Services', description: 'Audit log and compliance' },
+      { id: 'admin-operations-reports', name: 'Reports', description: 'Reporting and analytics' },
+      { id: 'admin-operations-system-monitoring', name: 'System Monitoring', description: 'System health and monitoring' },
+      { id: 'admin-operations-configuration', name: 'Configuration', description: 'System configuration' }
     ]
   },
   {
@@ -106,11 +132,11 @@ const MOCK_COLLECTIONS = [
     description: 'Utility and miscellaneous services',
     type: 'misc',
     folders: [
-      { id: 'utilities', name: 'Utilities', description: 'Utility services' },
-      { id: 'reference-data', name: 'Reference Data', description: 'Reference and master data' },
-      { id: 'file-services', name: 'File Services', description: 'File upload and download' },
-      { id: 'document-management', name: 'Document Management', description: 'Document storage and retrieval' },
-      { id: 'other', name: 'Other Services', description: 'Miscellaneous services' }
+      { id: 'miscellaneous-utilities', name: 'Utilities', description: 'Utility services' },
+      { id: 'miscellaneous-reference-data', name: 'Reference Data', description: 'Reference and master data' },
+      { id: 'miscellaneous-file-services', name: 'File Services', description: 'File upload and download' },
+      { id: 'miscellaneous-document-management', name: 'Document Management', description: 'Document storage and retrieval' },
+      { id: 'miscellaneous-other', name: 'Other Services', description: 'Miscellaneous services' }
     ]
   }
 ];

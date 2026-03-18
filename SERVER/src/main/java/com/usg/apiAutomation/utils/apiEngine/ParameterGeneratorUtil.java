@@ -68,7 +68,6 @@ public class ParameterGeneratorUtil {
 
                 case "PROCEDURE":
                 case "FUNCTION":
-                    // IMPORTANT: Generate parameters WITHOUT path/query classification
                     generateProcedureParametersRaw(actualOwner, actualName, operation, parameterDTOs);
                     break;
 
@@ -86,10 +85,8 @@ public class ParameterGeneratorUtil {
         return parameterDTOs;
     }
 
-
     /**
      * Generate parameters for procedures/functions WITHOUT path/query classification
-     * This method just collects the parameters - path/query classification should be done by the caller
      */
     private void generateProcedureParametersRaw(String owner, String name, String operation,
                                                 List<ApiParameterDTO> parameterDTOs) {
@@ -119,7 +116,6 @@ public class ParameterGeneratorUtil {
                 String defaulted = (String) param.get("DEFAULTED");
                 boolean hasDefault = "YES".equalsIgnoreCase(defaulted);
 
-                // Skip if argument name is null (return value for functions)
                 if (paramName == null) {
                     continue;
                 }
@@ -127,10 +123,7 @@ public class ParameterGeneratorUtil {
                 log.debug("Processing parameter: {} - Type: {} - Mode: {} - Position: {}",
                         paramName, dataType, inOut, param.get("POSITION"));
 
-                // IMPORTANT: Only include IN and IN/OUT parameters
-                // OUT parameters should be response mappings, not request parameters
                 if ("IN".equals(inOut) || "IN/OUT".equals(inOut)) {
-                    // Determine if parameter should be in body based on type and size
                     String parameterLocation = determineParameterLocation(dataType);
                     boolean required = !hasDefault;
 
@@ -139,14 +132,8 @@ public class ParameterGeneratorUtil {
                     paramDTO.setDbParameter(paramName);
                     paramDTO.setOracleType(typeMapper.mapOracleType(dataType));
                     paramDTO.setApiType(mapOracleToApiType(dataType));
-
-                    // IMPORTANT: Set parameterType to null initially - caller will set it
                     paramDTO.setParameterType(null);
-
-                    // Set location based on data characteristics, not as "path" or "query"
-                    // This is just a hint for where the parameter naturally belongs
                     paramDTO.setParameterLocation(parameterLocation);
-
                     paramDTO.setRequired(required);
                     paramDTO.setDescription(String.format("%s (%s) - %s", paramName, inOut, dataType));
                     paramDTO.setExample(generateExample(dataType));
@@ -169,158 +156,26 @@ public class ParameterGeneratorUtil {
         }
     }
 
-
     /**
      * Determine where a parameter naturally belongs based on its characteristics
-     * This is just a hint, not a definitive classification
      */
     private String determineParameterLocation(String dataType) {
         if (dataType == null) return "body";
 
         String type = dataType.toUpperCase();
 
-        // Large data types should go in body
         if (type.contains("CLOB") || type.contains("BLOB") || type.contains("LONG") ||
                 type.contains("XML") || type.contains("JSON")) {
             return "body";
         }
 
-        // Simple scalar types could be in path/query
         if (type.contains("CHAR") || type.contains("VARCHAR") ||
                 type.contains("NUMBER") || type.contains("INT") ||
                 type.contains("DATE")) {
-            // Return "scalar" to indicate it could be path/query, not a definitive assignment
             return "scalar";
         }
 
         return "body";
-    }
-
-    /**
-     * Generate parameters for procedures/functions using direct JDBC
-     */
-    private void generateProcedureParameters(String owner, String name, String operation,
-                                             List<ApiParameterDTO> parameterDTOs) {
-        String sql = "SELECT " +
-                "ARGUMENT_NAME, " +
-                "DATA_TYPE, " +
-                "IN_OUT, " +
-                "POSITION, " +
-                "DATA_LENGTH, " +
-                "DATA_PRECISION, " +
-                "DATA_SCALE, " +
-                "DEFAULTED " +
-                "FROM ALL_ARGUMENTS " +
-                "WHERE OWNER = ? AND OBJECT_NAME = ? AND DATA_LEVEL = 0 " +
-                "ORDER BY POSITION";
-
-        try {
-            List<Map<String, Object>> params = oracleJdbcTemplate.queryForList(sql, owner, name);
-            log.info("Found {} parameters for {}.{}", params.size(), owner, name);
-
-            int position = 0;
-            int pathParamCount = 0;
-            int queryParamCount = 0;
-
-            for (Map<String, Object> param : params) {
-                String paramName = (String) param.get("ARGUMENT_NAME");
-                String dataType = (String) param.get("DATA_TYPE");
-                String inOut = (String) param.get("IN_OUT");
-                String defaulted = (String) param.get("DEFAULTED");
-                boolean hasDefault = "YES".equalsIgnoreCase(defaulted);
-
-                // Skip if argument name is null (return value for functions)
-                if (paramName == null) {
-                    continue;
-                }
-
-                log.debug("Processing parameter: {} - Type: {} - Mode: {} - Position: {}",
-                        paramName, dataType, inOut, param.get("POSITION"));
-
-                String parameterType;
-                boolean required;
-
-                if ("EXECUTE".equals(operation)) {
-                    if ("IN".equals(inOut) || "IN/OUT".equals(inOut)) {
-                        // IMPROVED PATH PARAMETER DETECTION
-                        boolean isPathParameter = determineIfPathParameter(paramName, dataType, position, params.size());
-
-                        if (isPathParameter) {
-                            parameterType = "path";
-                            pathParamCount++;
-                        } else {
-                            parameterType = "query";
-                            queryParamCount++;
-                        }
-                        required = !hasDefault;
-                    } else {
-                        // OUT parameters are not sent in request
-                        continue;
-                    }
-                } else {
-                    continue;
-                }
-
-                ApiParameterDTO paramDTO = new ApiParameterDTO();
-                paramDTO.setKey(convertToCamelCase(paramName));
-                paramDTO.setDbParameter(paramName);
-                paramDTO.setOracleType(typeMapper.mapOracleType(dataType));
-                paramDTO.setApiType(mapOracleToApiType(dataType));
-                paramDTO.setParameterType(parameterType);
-                paramDTO.setParameterLocation(parameterType); // Set location same as type
-                paramDTO.setRequired(required);
-                paramDTO.setDescription(String.format("%s (%s) - %s", paramName, inOut, dataType));
-                paramDTO.setExample(generateExample(dataType));
-                paramDTO.setPosition(position++);
-                paramDTO.setParamMode(inOut);
-                paramDTO.setIsPrimaryKey(false);
-
-                parameterDTOs.add(paramDTO);
-                log.debug("Generated parameter: {} ({}) as {} (required: {}, location: {})",
-                        paramName, dataType, parameterType, required, parameterType);
-            }
-
-            log.info("Generated {} parameters for {}: {} path params, {} query params",
-                    parameterDTOs.size(), name, pathParamCount, queryParamCount);
-
-        } catch (Exception e) {
-            log.error("Error generating procedure parameters for {}.{}: {}", owner, name, e.getMessage());
-        }
-    }
-
-    /**
-     * Determine if a parameter should be a path parameter based on multiple heuristics
-     */
-    private boolean determineIfPathParameter(String paramName, String dataType, int position, int totalParams) {
-        if (paramName == null) return false;
-
-        String upperName = paramName.toUpperCase();
-
-        // HEURISTIC 1: Check if parameter name suggests it's an identifier
-        boolean looksLikeIdentifier = upperName.contains("ID") ||
-                upperName.contains("CODE") ||
-                upperName.contains("LINK") ||
-                upperName.contains("KEY") ||
-                upperName.contains("REF") ||
-                upperName.contains("NO") ||
-                upperName.contains("NUM") ||
-                upperName.contains("BRA") ||  // For GLOBAL_BRA
-                upperName.endsWith("_PK") ||
-                upperName.endsWith("_FK");
-
-        // HEURISTIC 2: First 1-2 parameters are often path parameters
-        boolean isEarlyPosition = position < 2;
-
-        // HEURISTIC 3: If total parameters are few (<=3), first one is likely path
-        boolean isOnlyFewParams = totalParams <= 3 && position == 0;
-
-        // HEURISTIC 4: Check data type - numeric/short string parameters are good candidates
-        boolean isGoodDataType = !"CLOB".equalsIgnoreCase(dataType) &&
-                !"BLOB".equalsIgnoreCase(dataType) &&
-                !"DATE".equalsIgnoreCase(dataType);
-
-        // Combine heuristics
-        return (looksLikeIdentifier || isEarlyPosition || isOnlyFewParams) && isGoodDataType;
     }
 
     /**
@@ -343,12 +198,9 @@ public class ParameterGeneratorUtil {
             List<Map<String, Object>> columns = oracleJdbcTemplate.queryForList(sql, owner, tableName);
             log.info("Found {} columns for {}.{}", columns.size(), owner, tableName);
 
-            // Get primary key information
             Set<String> primaryKeys = getPrimaryKeys(owner, tableName);
 
             int position = 0;
-            int pathParamCount = 0;
-            int queryParamCount = 0;
 
             for (Map<String, Object> column : columns) {
                 String columnName = (String) column.get("COLUMN_NAME");
@@ -361,24 +213,20 @@ public class ParameterGeneratorUtil {
                 boolean required;
 
                 if ("SELECT".equals(operation)) {
-                    // For SELECT, primary keys become path parameters, others query
                     if (isPrimaryKey) {
                         parameterType = "path";
                         required = true;
-                        pathParamCount++;
                     } else {
                         parameterType = "query";
                         required = false;
-                        queryParamCount++;
                     }
                 } else if ("INSERT".equals(operation)) {
                     parameterType = "body";
-                    required = !isNullable && !isPrimaryKey; // Primary keys might be auto-generated
+                    required = !isNullable && !isPrimaryKey;
                 } else if ("UPDATE".equals(operation)) {
                     if (isPrimaryKey) {
                         parameterType = "path";
                         required = true;
-                        pathParamCount++;
                     } else {
                         parameterType = "body";
                         required = false;
@@ -387,14 +235,12 @@ public class ParameterGeneratorUtil {
                     if (isPrimaryKey) {
                         parameterType = "path";
                         required = true;
-                        pathParamCount++;
                     } else {
-                        continue; // DELETE only needs primary keys
+                        continue;
                     }
                 } else {
                     parameterType = "query";
                     required = false;
-                    queryParamCount++;
                 }
 
                 ApiParameterDTO paramDTO = new ApiParameterDTO();
@@ -416,8 +262,7 @@ public class ParameterGeneratorUtil {
                         columnName, dataType, parameterType, required, isPrimaryKey);
             }
 
-            log.info("Generated {} parameters for {}: {} path params, {} query params",
-                    parameterDTOs.size(), tableName, pathParamCount, queryParamCount);
+            log.info("Generated {} parameters for {}", parameterDTOs.size(), tableName);
 
         } catch (Exception e) {
             log.error("Error generating table parameters for {}.{}: {}", owner, tableName, e.getMessage());
@@ -456,18 +301,15 @@ public class ParameterGeneratorUtil {
     }
 
     /**
-     * Convert database name like P_ACCT_LINK to camelCase acctLink
+     * Convert database name to camelCase
      */
     private String convertToCamelCase(String dbName) {
         if (dbName == null) return null;
 
-        // Remove common prefixes
         String name = dbName.replaceAll("^P_", "").replaceAll("^V_", "").replaceAll("^P", "");
 
-        // Convert to lowercase and split by underscore
         String[] parts = name.toLowerCase().split("_");
 
-        // Build camelCase
         StringBuilder result = new StringBuilder(parts[0]);
         for (int i = 1; i < parts.length; i++) {
             if (parts[i].length() > 0) {
@@ -521,7 +363,7 @@ public class ParameterGeneratorUtil {
     }
 
     /**
-     * Generate parameters from source for saving to database
+     * Generate parameters from source for saving to database - WITH BIDIRECTIONAL LINK
      */
     public List<ApiParameterEntity> generateParametersFromSource(ApiSourceObjectDTO sourceObject, GeneratedApiEntity api) {
         List<ApiParameterEntity> parameters = new ArrayList<>();
@@ -531,7 +373,7 @@ public class ParameterGeneratorUtil {
 
             for (int i = 0; i < parameterDTOs.size(); i++) {
                 ApiParameterDTO dto = parameterDTOs.get(i);
-                ApiParameterEntity param = mapToParameterEntity(dto, api);
+                ApiParameterEntity param = createParameterEntity(dto, api);
                 param.setPosition(i);
                 parameters.add(param);
             }
@@ -546,7 +388,7 @@ public class ParameterGeneratorUtil {
     }
 
     /**
-     * Generate response mappings from source using direct JDBC
+     * Generate response mappings from source - WITH BIDIRECTIONAL LINK
      */
     public List<ApiResponseMappingEntity> generateResponseMappingsFromSource(ApiSourceObjectDTO sourceObject, GeneratedApiEntity api) {
         List<ApiResponseMappingEntity> mappings = new ArrayList<>();
@@ -559,7 +401,6 @@ public class ParameterGeneratorUtil {
             String targetName = sourceObject.getTargetName() != null ?
                     sourceObject.getTargetName() : sourceObject.getObjectName();
 
-            // Resolve synonyms
             Map<String, Object> resolvedInfo = objectResolver.resolveObject(
                     targetOwner, targetName, targetType);
 
@@ -593,6 +434,86 @@ public class ParameterGeneratorUtil {
         return mappings;
     }
 
+    /**
+     * CREATE PARAMETER ENTITY WITH BIDIRECTIONAL LINK - NEW METHOD
+     */
+    public ApiParameterEntity createParameterEntity(ApiParameterDTO dto, GeneratedApiEntity api) {
+        if (dto == null) return null;
+
+        ApiParameterEntity param = ApiParameterEntity.builder()
+                .id(UUID.randomUUID().toString())
+                .key(dto.getKey())
+                .dbColumn(dto.getDbColumn())
+                .dbParameter(dto.getDbParameter())
+                .oracleType(dto.getOracleType())
+                .apiType(dto.getApiType())
+                .parameterType(dto.getParameterType())
+                .parameterLocation(dto.getParameterLocation())
+                .required(dto.getRequired())
+                .description(dto.getDescription())
+                .example(dto.getExample())
+                .validationPattern(dto.getValidationPattern())
+                .defaultValue(dto.getDefaultValue())
+                .inBody(dto.getInBody())
+                .isPrimaryKey(dto.getIsPrimaryKey() != null ? dto.getIsPrimaryKey() : false)
+                .paramMode(dto.getParamMode())
+                .position(dto.getPosition() != null ? dto.getPosition() : 0)
+                .build();
+
+        // CRITICAL: Set the bidirectional relationship
+        param.setGeneratedApi(api);
+
+        return param;
+    }
+
+    /**
+     * CREATE HEADER ENTITY WITH BIDIRECTIONAL LINK - NEW METHOD
+     */
+    public ApiHeaderEntity createHeaderEntity(ApiHeaderDTO dto, GeneratedApiEntity api) {
+        if (dto == null) return null;
+
+        ApiHeaderEntity header = ApiHeaderEntity.builder()
+                .id(UUID.randomUUID().toString())
+                .key(dto.getKey())
+                .value(dto.getValue())
+                .description(dto.getDescription())
+                .required(dto.getRequired())
+                .isRequestHeader(dto.getIsRequestHeader())
+                .isResponseHeader(dto.getIsResponseHeader())
+                .build();
+
+        // CRITICAL: Set the bidirectional relationship
+        header.setGeneratedApi(api);
+
+        return header;
+    }
+
+    /**
+     * CREATE RESPONSE MAPPING ENTITY WITH BIDIRECTIONAL LINK - NEW METHOD
+     */
+    public ApiResponseMappingEntity createResponseMappingEntity(ApiResponseMappingDTO dto, GeneratedApiEntity api) {
+        if (dto == null) return null;
+
+        ApiResponseMappingEntity mapping = ApiResponseMappingEntity.builder()
+                .id(UUID.randomUUID().toString())
+                .apiField(dto.getApiField())
+                .dbColumn(dto.getDbColumn())
+                .oracleType(dto.getOracleType())
+                .apiType(dto.getApiType())
+                .format(dto.getFormat())
+                .nullable(dto.getNullable())
+                .isPrimaryKey(dto.getIsPrimaryKey())
+                .includeInResponse(dto.getIncludeInResponse())
+                .inResponse(dto.getInResponse())
+                .position(dto.getPosition())
+                .build();
+
+        // CRITICAL: Set the bidirectional relationship
+        mapping.setGeneratedApi(api);
+
+        return mapping;
+    }
+
     private void generateTableResponseMappings(String owner, String tableName, GeneratedApiEntity api,
                                                List<ApiResponseMappingEntity> mappings) {
         String sql = "SELECT COLUMN_NAME, DATA_TYPE, NULLABLE " +
@@ -611,7 +532,7 @@ public class ParameterGeneratorUtil {
                 String nullable = (String) column.get("NULLABLE");
 
                 ApiResponseMappingEntity mapping = ApiResponseMappingEntity.builder()
-                        .generatedApi(api)
+                        .id(UUID.randomUUID().toString())
                         .apiField(convertToCamelCase(columnName))
                         .dbColumn(columnName)
                         .oracleType(typeMapper.mapOracleType(dataType))
@@ -623,6 +544,9 @@ public class ParameterGeneratorUtil {
                         .inResponse(true)
                         .position(position++)
                         .build();
+
+                // CRITICAL: Set the bidirectional relationship
+                mapping.setGeneratedApi(api);
 
                 mappings.add(mapping);
             }
@@ -650,7 +574,7 @@ public class ParameterGeneratorUtil {
                 if (paramName == null) continue;
 
                 ApiResponseMappingEntity mapping = ApiResponseMappingEntity.builder()
-                        .generatedApi(api)
+                        .id(UUID.randomUUID().toString())
                         .apiField(convertToCamelCase(paramName))
                         .dbColumn(paramName)
                         .oracleType(typeMapper.mapOracleType(dataType))
@@ -662,6 +586,9 @@ public class ParameterGeneratorUtil {
                         .inResponse(true)
                         .position(position++)
                         .build();
+
+                // CRITICAL: Set the bidirectional relationship
+                mapping.setGeneratedApi(api);
 
                 mappings.add(mapping);
             }
@@ -684,7 +611,7 @@ public class ParameterGeneratorUtil {
                 String dataType = (String) returnVal.get(0).get("DATA_TYPE");
 
                 ApiResponseMappingEntity mapping = ApiResponseMappingEntity.builder()
-                        .generatedApi(api)
+                        .id(UUID.randomUUID().toString())
                         .apiField("result")
                         .dbColumn("RETURN_VALUE")
                         .oracleType(typeMapper.mapOracleType(dataType))
@@ -697,35 +624,13 @@ public class ParameterGeneratorUtil {
                         .position(0)
                         .build();
 
+                // CRITICAL: Set the bidirectional relationship
+                mapping.setGeneratedApi(api);
+
                 mappings.add(mapping);
             }
         } catch (Exception e) {
             log.error("Error generating function response mappings: {}", e.getMessage());
         }
-    }
-
-    private ApiParameterEntity mapToParameterEntity(ApiParameterDTO dto, GeneratedApiEntity api) {
-        if (dto == null) return null;
-
-        return ApiParameterEntity.builder()
-                .id(UUID.randomUUID().toString())
-                .generatedApi(api)
-                .key(dto.getKey())
-                .dbColumn(dto.getDbColumn())
-                .dbParameter(dto.getDbParameter())
-                .oracleType(dto.getOracleType())
-                .apiType(dto.getApiType())
-                .parameterType(dto.getParameterType())
-                .parameterLocation(dto.getParameterLocation())
-                .required(dto.getRequired())
-                .description(dto.getDescription())
-                .example(dto.getExample())
-                .validationPattern(dto.getValidationPattern())
-                .defaultValue(dto.getDefaultValue())
-                .inBody(dto.getInBody())
-                .isPrimaryKey(dto.getIsPrimaryKey() != null ? dto.getIsPrimaryKey() : false)
-                .paramMode(dto.getParamMode())
-                .position(dto.getPosition() != null ? dto.getPosition() : 0)
-                .build();
     }
 }

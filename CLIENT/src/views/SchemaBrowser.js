@@ -2092,91 +2092,120 @@ useEffect(() => {
   }, [authToken, synonymInfo]);
 
   // ============================================================
-  // Load Data (for Tables/Views)
-  // ============================================================
-  const loadData = useCallback(async (object, type, owner, params = {}) => {
-    if (!authToken || !object || !type) return;
-    
-    const { page = 1, pageSize = 15, sortColumn, sortDirection = 'ASC' } = params;
-    
-    // Determine effective object info (resolve synonyms)
-    let effectiveType = type;
-    let effectiveName = object.name;
-    let effectiveOwner = owner;
-    
-    if (type === 'SYNONYM' && synonymInfo && synonymInfo.valid) {
-      effectiveType = synonymInfo.targetType;
-      effectiveName = synonymInfo.targetName;
-      effectiveOwner = synonymInfo.targetOwner;
-    }
-    
-    // Only tables and views have data
-    if (effectiveType !== 'TABLE' && effectiveType !== 'VIEW') {
-      setTabData(prev => ({
-        ...prev,
-        data: { loading: false, data: null }
-      }));
-      return;
-    }
-    
-    const cacheKey = `data_${effectiveName}_${effectiveOwner || 'unknown'}_p${page}_s${pageSize}_${sortColumn || ''}_${sortDirection}`;
-    const cached = objectCache.get(cacheKey);
-    
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      setTabData(prev => ({
-        ...prev,
-        data: { 
-          loading: false, 
-          data: cached.data,
-          page: cached.data.page,
-          pageSize: cached.data.pageSize,
-          totalPages: cached.data.totalPages
-        }
-      }));
-      return;
-    }
-    
+// Load Data (for Tables/Views) - FIXED VERSION WITH DEBUGGING
+// ============================================================
+const loadData = useCallback(async (object, type, owner, params = {}) => {
+  if (!authToken || !object || !type) {
+    console.error('loadData: Missing required parameters', { authToken: !!authToken, object, type });
+    return;
+  }
+
+  console.log('loadData called with:', { object, type, owner, params });
+
+  const { page = 1, pageSize = 15, sortColumn, sortDirection = 'ASC' } = params;
+
+  // Determine effective object info (resolve synonyms)
+  let effectiveType = type;
+  let effectiveName = object.name;
+  let effectiveOwner = owner;
+
+  if (type === 'SYNONYM' && synonymInfo && synonymInfo.valid) {
+    effectiveType = synonymInfo.targetType;
+    effectiveName = synonymInfo.targetName;
+    effectiveOwner = synonymInfo.targetOwner;
+    console.log('Synonym resolved to:', { effectiveType, effectiveName, effectiveOwner });
+  }
+
+  // Only tables and views have data
+  if (effectiveType !== 'TABLE' && effectiveType !== 'VIEW') {
+    console.log('Object type does not support data view:', effectiveType);
     setTabData(prev => ({
       ...prev,
-      data: { ...prev.data, loading: true }
+      data: { loading: false, data: null, error: 'This object type does not support data view' }
     }));
-    
-    try {
-      const response = await getTableData(authToken, {
-        tableName: effectiveName,
-        owner: effectiveOwner,
+    return;
+  }
+
+  setTabData(prev => ({
+    ...prev,
+    data: { ...prev.data, loading: true, error: null }
+  }));
+
+  try {
+    console.log(`Fetching data for ${effectiveType} ${effectiveName}...`, {
+      page,
+      pageSize,
+      sortColumn,
+      sortDirection
+    });
+
+    const response = await getTableData(authToken, {
+      tableName: effectiveName,
+      owner: effectiveOwner,
+      page,
+      pageSize,
+      sortColumn,
+      sortDirection
+    });
+
+    console.log('Raw response from getTableData:', response);
+
+    // Extract data using the helper function
+    const extractedData = extractTableData(response);
+    console.log('Extracted data:', extractedData);
+
+    // Ensure rows is always an array
+    const rows = extractedData?.rows || [];
+    const columns = extractedData?.columns || [];
+    const totalPages = extractedData?.totalPages || 1;
+    const totalRows = extractedData?.totalRows || rows.length;
+
+    console.log('Processed data:', { 
+      rowsCount: rows.length, 
+      columnsCount: columns.length, 
+      totalPages, 
+      totalRows 
+    });
+
+    // Cache the result
+    const cacheKey = `data_${effectiveName}_${effectiveOwner || 'unknown'}_p${page}_s${pageSize}_${sortColumn || ''}_${sortDirection}`;
+    objectCache.set(cacheKey, { 
+      data: { rows, columns, page, pageSize, totalPages, totalRows }, 
+      timestamp: Date.now() 
+    });
+
+    setTabData(prev => ({
+      ...prev,
+      data: { 
+        loading: false, 
+        data: rows,
+        columns: columns,
         page,
         pageSize,
+        totalPages,
+        totalRows,
         sortColumn,
-        sortDirection
-      });
-      
-      const data = extractTableData(response);
-      
-      objectCache.set(cacheKey, { data, timestamp: Date.now() });
-      
-      setTabData(prev => ({
-        ...prev,
-        data: { 
-          loading: false, 
-          data: data.rows,
-          columns: data.columns,
-          page,
-          pageSize,
-          totalPages: data.totalPages,
-          sortColumn,
-          sortDirection
-        }
-      }));
-      
-    } catch (err) {
-      Logger.error('SchemaBrowser', 'loadData', 'Error loading data', err);
-      setTabData(prev => ({
-        ...prev,
-        data: { loading: false, data: null }
-      }));
-    }
-  }, [authToken, synonymInfo]);
+        sortDirection,
+        error: null
+      }
+    }));
+
+    console.log('Tab data updated successfully');
+
+  } catch (err) {
+    console.error('Error in loadData:', err);
+    setTabData(prev => ({
+      ...prev,
+      data: { 
+        loading: false, 
+        data: null,
+        error: err.message || 'Failed to load data',
+        page: page,
+        pageSize: pageSize
+      }
+    }));
+  }
+}, [authToken, synonymInfo]);
 
   // ============================================================
   // Load Constraints (for Tables)
@@ -3491,295 +3520,299 @@ const handleClearFilters = resetToDefaultState;
   };
 
   // Render Data Tab
-  const renderDataTab = () => {
-    const rows = tabData.data.data || [];
-    const loading = tabData.data.loading;
-    const page = tabData.data.page || 1;
-    const pageSize = tabData.data.pageSize || 15;
-    const totalPages = tabData.data.totalPages || 1;
-    const totalRows = tabData.data.totalRows || rows.length || 0;
-    const sortColumn = tabData.data.sortColumn;
-    const sortDirection = tabData.data.sortDirection;
+const renderDataTab = () => {
+  // Safely access data with fallbacks
+  const rows = tabData.data?.data || [];
+  const loading = tabData.data?.loading || false;
+  const page = tabData.data?.page || 1;
+  const pageSize = tabData.data?.pageSize || 15;
+  const totalPages = tabData.data?.totalPages || 1;
+  const totalRows = tabData.data?.totalRows || (Array.isArray(rows) ? rows.length : 0);
+  const sortColumn = tabData.data?.sortColumn;
+  const sortDirection = tabData.data?.sortDirection;
+  
+  // Ensure rows is always an array
+  const safeRows = Array.isArray(rows) ? rows : [];
+  
+  // Generate columns from the first row if available
+  let columns = tabData.data?.columns || [];
+  if (columns.length === 0 && safeRows.length > 0) {
+    columns = Object.keys(safeRows[0]).map(key => ({ name: key }));
+  }
+  
+  const objectType = activeObject?.type?.toUpperCase();
+  const effectiveType = (objectType === 'SYNONYM' && synonymInfo) ? synonymInfo.targetType : objectType;
+  
+  const isView = effectiveType === 'VIEW';
+  
+  const downloadData = () => {
+    if (safeRows.length === 0) return;
     
-    // Generate columns from the first row if available
-    let columns = tabData.data.columns || [];
-    if (columns.length === 0 && rows.length > 0) {
-      columns = Object.keys(rows[0]).map(key => ({ name: key }));
-    }
+    const objectName = activeObject?.name;
     
-    const objectType = activeObject?.type?.toUpperCase();
-    const effectiveType = (objectType === 'SYNONYM' && synonymInfo) ? synonymInfo.targetType : objectType;
+    const headers = ['#', ...columns.map(col => col.name || col.COLUMN_NAME)];
     
-    const isView = effectiveType === 'VIEW';
+    const csvRows = [
+      headers.join(','),
+      ...safeRows.map((row, index) => {
+        const rowValues = [
+          index + 1 + (page - 1) * pageSize,
+          ...columns.map(col => {
+            const columnName = col.name || col.COLUMN_NAME;
+            const value = row[columnName];
+            
+            if (value === null || value === undefined) return '';
+            if (typeof value === 'object') return `"${JSON.stringify(value).replace(/"/g, '""')}"`;
+            if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+              return `"${value.replace(/"/g, '""')}"`;
+            }
+            return value;
+          })
+        ];
+        return rowValues.join(',');
+      })
+    ].join('\n');
     
-    const downloadData = () => {
-      if (rows.length === 0) return;
-      
-      const objectName = activeObject?.name;
-      
-      const headers = ['#', ...columns.map(col => col.name || col.COLUMN_NAME)];
-      
-      const csvRows = [
-        headers.join(','),
-        ...rows.map((row, index) => {
-          const rowValues = [
-            index + 1 + (page - 1) * pageSize,
-            ...columns.map(col => {
-              const columnName = col.name || col.COLUMN_NAME;
-              const value = row[columnName];
-              
-              if (value === null || value === undefined) return '';
-              if (typeof value === 'object') return `"${JSON.stringify(value).replace(/"/g, '""')}"`;
-              if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
-                return `"${value.replace(/"/g, '""')}"`;
-              }
-              return value;
-            })
-          ];
-          return rowValues.join(',');
-        })
-      ].join('\n');
-      
-      const blob = new Blob([csvRows], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `${objectName}_data.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    };
-    
-    return (
-      <div className="flex-1 flex flex-col h-full" style={{ minHeight: 0 }}>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 border-b shrink-0" style={{ borderColor: colors.border }}>
-          <div className="flex items-center gap-2">
-            <button 
+    const blob = new Blob([csvRows], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${objectName}_data.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+  
+  return (
+    <div className="flex-1 flex flex-col h-full" style={{ minHeight: 0 }}>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 border-b shrink-0" style={{ borderColor: colors.border }}>
+        <div className="flex items-center gap-2">
+          <button 
+            className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2"
+            style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+            onClick={() => loadData(activeObject, activeObject.type?.toUpperCase(), activeObject.owner, {
+              page,
+              pageSize,
+              sortColumn,
+              sortDirection
+            })}
+            disabled={loading || !activeObject}
+          >
+            {loading ? (
+              <Loader size={12} className="animate-spin" />
+            ) : (
+              <Play size={12} />
+            )}
+            <span>Execute</span>
+          </button>
+          <select 
+            className="px-2 py-1 border rounded text-sm"
+            style={{ backgroundColor: colors.bg, borderColor: colors.border, color: colors.text }}
+            value={pageSize}
+            onChange={(e) => handleDataPageSizeChange(parseInt(e.target.value))}
+            disabled={loading}
+          >
+            <option value="15">15 rows</option>
+            <option value="25">25 rows</option>
+            <option value="50">50 rows</option>
+            <option value="100">100 rows</option>
+            <option value="250">250 rows</option>
+            <option value="500">500 rows</option>
+          </select>
+          {safeRows.length > 0 && (
+            <button
               className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2"
-              style={{ backgroundColor: colors.primaryDark, color: colors.white }}
-              onClick={() => loadData(activeObject, activeObject.type?.toUpperCase(), activeObject.owner, {
-                page,
-                pageSize,
-                sortColumn,
-                sortDirection
-              })}
-              disabled={loading || !activeObject}
-            >
-              {loading ? (
-                <Loader size={12} className="animate-spin" />
-              ) : (
-                <Play size={12} />
-              )}
-              <span>Execute</span>
-            </button>
-            <select 
-              className="px-2 py-1 border rounded text-sm"
-              style={{ backgroundColor: colors.bg, borderColor: colors.border, color: colors.text }}
-              value={pageSize}
-              onChange={(e) => handleDataPageSizeChange(parseInt(e.target.value))}
+              style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}`, color: colors.text }}
+              onClick={downloadData}
               disabled={loading}
             >
-              <option value="15">15 rows</option>
-              <option value="25">25 rows</option>
-              <option value="50">50 rows</option>
-              <option value="100">100 rows</option>
-              <option value="250">250 rows</option>
-              <option value="500">500 rows</option>
-            </select>
-            {rows.length > 0 && (
-              <button
-                className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-2"
-                style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}`, color: colors.text }}
-                onClick={downloadData}
-                disabled={loading}
-              >
-                <Download size={12} />
-                <span>Download CSV</span>
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs" style={{ color: colors.textSecondary }}>
-              {totalRows > 0 ? (
-                <>Page {page} of {totalPages} | Total: {totalRows.toLocaleString()} rows</>
-              ) : (
-                isView ? 'No view data' : 'No data'
-              )}
-            </span>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-2">
-                <button 
-                  className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
-                  style={{ backgroundColor: colors.hover }}
-                  onClick={() => handleDataPageChange(page - 1)}
-                  disabled={loading || page <= 1}
-                >
-                  <ChevronLeft size={14} />
-                </button>
-                <button 
-                  className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
-                  style={{ backgroundColor: colors.hover }}
-                  onClick={() => handleDataPageChange(page + 1)}
-                  disabled={loading || page >= totalPages}
-                >
-                  <ChevronRight size={14} />
-                </button>
-              </div>
-            )}
-          </div>
+              <Download size={12} />
+              <span>Download CSV</span>
+            </button>
+          )}
         </div>
-
-        <div className="flex-1 relative" style={{ minHeight: 0, overflow: 'hidden' }}>
-          {loading ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <Loader className="animate-spin mx-auto mb-4" size={40} style={{ color: colors.primary }} />
-                <div className="text-sm font-medium" style={{ color: colors.text }}>
-                  Loading {isView ? 'view' : 'table'} data...
-                </div>
-              </div>
-            </div>
-          ) : rows.length === 0 ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <div className="flex justify-center mb-4">
-                  {isView ? (
-                    <FileText size={64} style={{ color: colors.textSecondary, opacity: 0.5 }} />
-                  ) : (
-                    <TableIcon size={64} style={{ color: colors.textSecondary, opacity: 0.5 }} />
-                  )}
-                </div>
-                <div className="text-lg font-medium" style={{ color: colors.text }}>
-                  No {isView ? 'view' : ''} data available
-                </div>
-                <div className="text-sm mt-2" style={{ color: colors.textSecondary }}>
-                  Click the Execute button to load data
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div 
-              className="absolute inset-0 border rounded" 
-              style={{ 
-                borderColor: colors.gridBorder,
-                overflow: 'auto'
-              }}
-            >
-              <table style={{ borderCollapse: 'collapse', minWidth: '100%', width: 'max-content' }}>
-                <thead style={{ 
-                  backgroundColor: colors.tableHeader, 
-                  position: 'sticky', 
-                  top: 0, 
-                  zIndex: 10 
-                }}>
-                  <tr>
-                    <th 
-                      className="text-left p-2 text-xs font-medium"
-                      style={{ 
-                        color: colors.textSecondary, 
-                        background: colors.bg,
-                        position: 'sticky',
-                        left: 0,
-                        zIndex: 10,
-                        minWidth: '60px',
-                        borderRight: `1px solid ${colors.gridBorder}`,
-                        borderBottom: `1px solid ${colors.gridBorder}`,
-                        padding: '8px'
-                      }}
-                    >
-                      <div className="flex items-center gap-1">
-                        <span>#</span>
-                      </div>
-                    </th>
-                    {columns.map((col, colIndex) => (
-                      <th 
-                        key={col.name || col.COLUMN_NAME || `col-${colIndex}`} 
-                        className="text-left p-2 text-xs font-medium cursor-pointer hover:bg-opacity-50"
-                        onClick={() => handleSortChange(
-                          col.name || col.COLUMN_NAME, 
-                          sortColumn === (col.name || col.COLUMN_NAME) && sortDirection === 'ASC' ? 'DESC' : 'ASC'
-                        )}
-                        style={{ 
-                          color: colors.textSecondary, 
-                          background: colors.bg,
-                          minWidth: '150px',
-                          borderBottom: `1px solid ${colors.gridBorder}`,
-                          padding: '8px',
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        <div className="flex items-center gap-1">
-                          <span>{col.name || col.COLUMN_NAME}</span>
-                          {sortColumn === (col.name || col.COLUMN_NAME) && (
-                            sortDirection === 'ASC' ? 
-                              <ChevronUp size={10} /> : 
-                              <ChevronDown size={10} />
-                          )}
-                        </div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row, rowIndex) => (
-                    <tr 
-                      key={rowIndex} 
-                      style={{ 
-                        backgroundColor: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                      }}
-                    >
-                      <td 
-                        className="p-2 text-xs border-b"
-                        style={{ 
-                          borderColor: colors.gridBorder,
-                          color: colors.text,
-                          background: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                          position: 'sticky',
-                          left: 0,
-                          zIndex: 5,
-                          minWidth: '60px',
-                          borderRight: `1px solid ${colors.gridBorder}`,
-                          padding: '8px',
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        {rowIndex + 1 + (page - 1) * pageSize}
-                      </td>
-                      {columns.map((col, colIndex) => {
-                        const columnName = col.name || col.COLUMN_NAME;
-                        const value = row[columnName];
-                        return (
-                          <td 
-                            key={`${rowIndex}-${colIndex}`} 
-                            className="p-2 text-xs border-b" 
-                            style={{ 
-                              borderColor: colors.gridBorder,
-                              color: colors.text,
-                              minWidth: '150px',
-                              padding: '8px',
-                              whiteSpace: 'nowrap'
-                            }}
-                            title={value?.toString()}
-                          >
-                            {value !== null && value !== undefined ? (
-                              typeof value === 'object' ? JSON.stringify(value) : value.toString()
-                            ) : (
-                              <span style={{ color: colors.textTertiary }}>NULL</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <div className="flex items-center gap-2">
+          <span className="text-xs" style={{ color: colors.textSecondary }}>
+            {totalRows > 0 ? (
+              <>Page {page} of {totalPages} | Total: {totalRows.toLocaleString()} rows</>
+            ) : (
+              isView ? 'No view data' : 'No data'
+            )}
+          </span>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <button 
+                className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
+                style={{ backgroundColor: colors.hover }}
+                onClick={() => handleDataPageChange(page - 1)}
+                disabled={loading || page <= 1}
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <button 
+                className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
+                style={{ backgroundColor: colors.hover }}
+                onClick={() => handleDataPageChange(page + 1)}
+                disabled={loading || page >= totalPages}
+              >
+                <ChevronRight size={14} />
+              </button>
             </div>
           )}
         </div>
       </div>
-    );
-  };
+
+      <div className="flex-1 relative" style={{ minHeight: 0, overflow: 'hidden' }}>
+        {loading ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center">
+              <Loader className="animate-spin mx-auto mb-4" size={40} style={{ color: colors.primary }} />
+              <div className="text-sm font-medium" style={{ color: colors.text }}>
+                Loading {isView ? 'view' : 'table'} data...
+              </div>
+            </div>
+          </div>
+        ) : safeRows.length === 0 ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center">
+              <div className="flex justify-center mb-4">
+                {isView ? (
+                  <FileText size={64} style={{ color: colors.textSecondary, opacity: 0.5 }} />
+                ) : (
+                  <TableIcon size={64} style={{ color: colors.textSecondary, opacity: 0.5 }} />
+                )}
+              </div>
+              <div className="text-lg font-medium" style={{ color: colors.text }}>
+                No {isView ? 'view' : ''} data available
+              </div>
+              <div className="text-sm mt-2" style={{ color: colors.textSecondary }}>
+                Click the Execute button to load data
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div 
+            className="absolute inset-0 border rounded" 
+            style={{ 
+              borderColor: colors.gridBorder,
+              overflow: 'auto'
+            }}
+          >
+            <table style={{ borderCollapse: 'collapse', minWidth: '100%', width: 'max-content' }}>
+              <thead style={{ 
+                backgroundColor: colors.tableHeader, 
+                position: 'sticky', 
+                top: 0, 
+                zIndex: 10 
+              }}>
+                <tr>
+                  <th 
+                    className="text-left p-2 text-xs font-medium"
+                    style={{ 
+                      color: colors.textSecondary, 
+                      background: colors.bg,
+                      position: 'sticky',
+                      left: 0,
+                      zIndex: 10,
+                      minWidth: '60px',
+                      borderRight: `1px solid ${colors.gridBorder}`,
+                      borderBottom: `1px solid ${colors.gridBorder}`,
+                      padding: '8px'
+                    }}
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>#</span>
+                    </div>
+                  </th>
+                  {columns.map((col, colIndex) => (
+                    <th 
+                      key={col.name || col.COLUMN_NAME || `col-${colIndex}`} 
+                      className="text-left p-2 text-xs font-medium cursor-pointer hover:bg-opacity-50"
+                      onClick={() => handleSortChange(
+                        col.name || col.COLUMN_NAME, 
+                        sortColumn === (col.name || col.COLUMN_NAME) && sortDirection === 'ASC' ? 'DESC' : 'ASC'
+                      )}
+                      style={{ 
+                        color: colors.textSecondary, 
+                        background: colors.bg,
+                        minWidth: '150px',
+                        borderBottom: `1px solid ${colors.gridBorder}`,
+                        padding: '8px',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>{col.name || col.COLUMN_NAME}</span>
+                        {sortColumn === (col.name || col.COLUMN_NAME) && (
+                          sortDirection === 'ASC' ? 
+                            <ChevronUp size={10} /> : 
+                            <ChevronDown size={10} />
+                        )}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {safeRows.map((row, rowIndex) => (
+                  <tr 
+                    key={rowIndex} 
+                    style={{ 
+                      backgroundColor: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                    }}
+                  >
+                    <td 
+                      className="p-2 text-xs border-b"
+                      style={{ 
+                        borderColor: colors.gridBorder,
+                        color: colors.text,
+                        background: rowIndex % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                        position: 'sticky',
+                        left: 0,
+                        zIndex: 5,
+                        minWidth: '60px',
+                        borderRight: `1px solid ${colors.gridBorder}`,
+                        padding: '8px',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {rowIndex + 1 + (page - 1) * pageSize}
+                    </td>
+                    {columns.map((col, colIndex) => {
+                      const columnName = col.name || col.COLUMN_NAME;
+                      const value = row[columnName];
+                      return (
+                        <td 
+                          key={`${rowIndex}-${colIndex}`} 
+                          className="p-2 text-xs border-b" 
+                          style={{ 
+                            borderColor: colors.gridBorder,
+                            color: colors.text,
+                            minWidth: '150px',
+                            padding: '8px',
+                            whiteSpace: 'nowrap'
+                          }}
+                          title={value?.toString()}
+                        >
+                          {value !== null && value !== undefined ? (
+                            typeof value === 'object' ? JSON.stringify(value) : value.toString()
+                          ) : (
+                            <span style={{ color: colors.textTertiary }}>NULL</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
   // Render Constraints Tab
   const renderConstraintsTab = () => {

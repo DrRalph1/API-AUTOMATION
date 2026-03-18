@@ -130,6 +130,243 @@ public class CollectionsGeneratorUtil {
         }
     }
 
+    // ==================== UPDATE METHODS FOR EXISTING REQUESTS ====================
+
+    @Transactional
+    public void updateExistingRequest(com.usg.apiAutomation.entities.postgres.collections.RequestEntity existingRequest,
+                                      GeneratedApiEntity api,
+                                      String performedBy,
+                                      GenerateApiRequestDTO request,
+                                      CollectionInfoDTO collectionInfo) {
+        try {
+            log.info("Updating existing collections request: {} for API: {}",
+                    existingRequest.getId(), api.getApiCode());
+
+            String generatedApiId = api.getId();
+            GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(api);
+
+            // Update request basic info
+            existingRequest.setName(api.getApiName() + " - " + api.getHttpMethod());
+            existingRequest.setMethod(api.getHttpMethod());
+            existingRequest.setUrl(genUrlInfo.getFullUrl());
+            existingRequest.setDescription(api.getDescription());
+            existingRequest.setLastModified(LocalDateTime.now());
+            existingRequest.setUpdatedAt(LocalDateTime.now());
+
+            // Update request body
+            if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
+                existingRequest.setBody(api.getRequestConfig().getSample());
+            }
+
+            // Update auth type
+            if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
+                existingRequest.setAuthType(api.getAuthConfig().getAuthType().toLowerCase());
+            }
+
+            collectionsRequestRepository.save(existingRequest);
+
+            // Update or recreate headers
+            updateHeaders(existingRequest, api, generatedApiId);
+
+            // Update or recreate parameters
+            updateParameters(existingRequest, api, generatedApiId);
+
+            // Update auth config
+            updateAuthConfig(existingRequest, api, generatedApiId);
+
+            log.info("Successfully updated collections request: {}", existingRequest.getId());
+
+        } catch (Exception e) {
+            log.error("Error updating existing collections request: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update existing collections request: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Helper method to update an existing collection
+     */
+    public void updateExistingCollection(CollectionEntity existingCollection,
+                                         GeneratedApiEntity api,
+                                         CollectionInfoDTO collectionInfo) {
+        try {
+            log.info("Updating existing collection: {} for API: {}",
+                    existingCollection.getId(), api.getApiCode());
+
+            boolean needsUpdate = false;
+
+            if (collectionInfo != null && !collectionInfo.getCollectionName().equals(existingCollection.getName())) {
+                existingCollection.setName(collectionInfo.getCollectionName());
+                needsUpdate = true;
+            }
+
+            if (needsUpdate) {
+                existingCollection.setLastActivity(LocalDateTime.now());
+                existingCollection.setUpdatedAt(LocalDateTime.now());
+                collectionsCollectionRepository.save(existingCollection);
+                log.info("Updated collection metadata: {}", existingCollection.getId());
+            }
+
+        } catch (Exception e) {
+            log.error("Error updating existing collection: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update existing collection: " + e.getMessage(), e);
+        }
+    }
+
+    // ==================== PRIVATE HELPER METHODS FOR UPDATES ====================
+
+    /**
+     * Update headers for an existing request
+     */
+    private void updateHeaders(com.usg.apiAutomation.entities.postgres.collections.RequestEntity request,
+                               GeneratedApiEntity api, String generatedApiId) {
+        // Delete existing headers
+        if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
+            collectionsHeaderRepository.deleteAll(request.getHeaders());
+            request.getHeaders().clear();
+        }
+
+        // Recreate headers
+        List<HeaderEntity> newHeaders = new ArrayList<>();
+
+        // Add headers from headers array
+        if (api.getHeaders() != null) {
+            for (ApiHeaderEntity apiHeader : api.getHeaders()) {
+                if (Boolean.TRUE.equals(apiHeader.getIsRequestHeader())) {
+                    HeaderEntity header = new HeaderEntity();
+                    header.setId(UUID.randomUUID().toString());
+                    header.setGeneratedApiId(generatedApiId);
+                    header.setKey(apiHeader.getKey());
+                    header.setValue(apiHeader.getValue() != null ? apiHeader.getValue() : "");
+                    header.setDescription(apiHeader.getDescription());
+                    header.setEnabled(apiHeader.getRequired() != null ? apiHeader.getRequired() : true);
+                    header.setRequest(request);
+                    newHeaders.add(header);
+                }
+            }
+        }
+
+        // Add header parameters
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity apiParam : api.getParameters()) {
+                if ("header".equals(apiParam.getParameterType())) {
+                    HeaderEntity header = new HeaderEntity();
+                    header.setId(UUID.randomUUID().toString());
+                    header.setGeneratedApiId(generatedApiId);
+                    header.setKey(apiParam.getKey());
+                    header.setValue(apiParam.getExample() != null ? apiParam.getExample() : "");
+                    header.setDescription(apiParam.getDescription());
+                    header.setEnabled(apiParam.getRequired() != null ? apiParam.getRequired() : true);
+                    header.setRequest(request);
+                    newHeaders.add(header);
+                }
+            }
+        }
+
+        if (!newHeaders.isEmpty()) {
+            collectionsHeaderRepository.saveAll(newHeaders);
+            request.setHeaders(newHeaders);
+            collectionsRequestRepository.save(request);
+        }
+    }
+
+    /**
+     * Update parameters for an existing request
+     */
+    private void updateParameters(com.usg.apiAutomation.entities.postgres.collections.RequestEntity request,
+                                  GeneratedApiEntity api, String generatedApiId) {
+        // Delete existing parameters
+        if (request.getParams() != null && !request.getParams().isEmpty()) {
+            collectionsParameterRepository.deleteAll(request.getParams());
+            request.getParams().clear();
+        }
+
+        // Recreate parameters
+        if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+            List<ParameterEntity> newParams = new ArrayList<>();
+
+            for (ApiParameterEntity apiParam : api.getParameters()) {
+                ParameterEntity param = new ParameterEntity();
+                param.setId(UUID.randomUUID().toString());
+                param.setGeneratedApiId(generatedApiId);
+                param.setKey(apiParam.getKey());
+                param.setValue(apiParam.getExample());
+                param.setDescription(apiParam.getDescription());
+                param.setEnabled(apiParam.getRequired() != null ? apiParam.getRequired() : true);
+                param.setDbColumn(apiParam.getDbColumn());
+                param.setDbParameter(apiParam.getDbParameter());
+                param.setParameterType(apiParam.getParameterType());
+                param.setOracleType(apiParam.getOracleType());
+                param.setApiType(apiParam.getApiType());
+                param.setParameterLocation(apiParam.getParameterLocation());
+                param.setRequired(apiParam.getRequired());
+                param.setValidationPattern(apiParam.getValidationPattern());
+                param.setDefaultValue(apiParam.getDefaultValue());
+                param.setInBody(apiParam.getInBody());
+                param.setIsPrimaryKey(apiParam.getIsPrimaryKey());
+                param.setParamMode(apiParam.getParamMode() != null ? apiParam.getParamMode() : "IN");
+                param.setPosition(apiParam.getPosition() != null ? apiParam.getPosition() : 0);
+                param.setRequest(request);
+                newParams.add(param);
+            }
+
+            collectionsParameterRepository.saveAll(newParams);
+            request.setParams(newParams);
+            collectionsRequestRepository.save(request);
+        }
+    }
+
+    /**
+     * Update auth config for an existing request
+     */
+    private void updateAuthConfig(com.usg.apiAutomation.entities.postgres.collections.RequestEntity request,
+                                  GeneratedApiEntity api, String generatedApiId) {
+        // Delete existing auth config if present
+        if (request.getAuthConfig() != null) {
+            collectionsAuthConfigRepository.delete(request.getAuthConfig());
+            request.setAuthConfig(null);
+        }
+
+        // Create new auth config if needed
+        if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
+            AuthConfigEntity authConfig = new AuthConfigEntity();
+            authConfig.setId(UUID.randomUUID().toString());
+            authConfig.setGeneratedApiId(generatedApiId);
+            authConfig.setRequest(request);
+            authConfig.setType(api.getAuthConfig().getAuthType());
+
+            switch (api.getAuthConfig().getAuthType()) {
+                case "API_KEY":
+                    authConfig.setKey(api.getAuthConfig().getApiKeyHeader() != null ?
+                            api.getAuthConfig().getApiKeyHeader() : "X-API-Key");
+                    authConfig.setValue("{{apiKey}}");
+                    authConfig.setAddTo("header");
+                    break;
+                case "BEARER":
+                case "JWT":
+                    authConfig.setType("bearer");
+                    authConfig.setToken("{{jwtToken}}");
+                    authConfig.setAddTo("header");
+                    break;
+                case "BASIC":
+                    authConfig.setUsername("{{username}}");
+                    authConfig.setPassword("{{password}}");
+                    authConfig.setAddTo("header");
+                    break;
+                case "ORACLE_ROLES":
+                    authConfig.setKey("X-Oracle-Session");
+                    authConfig.setValue("{{oracleSessionId}}");
+                    authConfig.setAddTo("header");
+                    break;
+            }
+
+            collectionsAuthConfigRepository.save(authConfig);
+            request.setAuthConfig(authConfig);
+            collectionsRequestRepository.save(request);
+        }
+    }
+
+    // ==================== EXISTING PRIVATE METHODS ====================
+
     private CollectionEntity createOrUpdateCollection(GeneratedApiEntity api, String performedBy,
                                                       CollectionInfoDTO collectionInfo, String generatedApiId) {
         Optional<CollectionEntity> existing = collectionsCollectionRepository

@@ -1,4 +1,4 @@
-// Dashboard.jsx - FIXED VERSION
+// Dashboard.jsx - FIXED VERSION WITH AUTO-REFRESH
 import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense, useRef } from 'react';
 import {
   Database, FileCode, Activity, Zap, Settings,
@@ -525,6 +525,9 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
   const [showApiModal, setShowApiModal] = useState(false);
   const [selectedForApiGeneration, setSelectedForApiGeneration] = useState(null);
   
+  // NEW STATE: Track when to refresh endpoints table
+  const [refreshEndpointsTrigger, setRefreshEndpointsTrigger] = useState(0);
+  
   // Stats state
   const [stats, setStats] = useState({
     totalApis: 0,
@@ -712,6 +715,16 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
     }
   }, [authToken]);
 
+  // NEW: Function to refresh endpoints table (called after updates)
+  const refreshEndpointsTable = useCallback(() => {
+    // Keep the current page and filters, just refresh the data
+    fetchEndpoints(endpointPage, endpointsPerPage, endpointFilters);
+    
+    // Also refresh stats and collections to keep everything in sync
+    fetchStats();
+    fetchTopCollections();
+  }, [endpointPage, endpointsPerPage, endpointFilters, fetchEndpoints, fetchStats, fetchTopCollections]);
+
   // Fetch endpoint details by ID
   const fetchEndpointDetails = useCallback(async (endpointId) => {
     if (!authToken || !endpointId) return null;
@@ -809,7 +822,12 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
     }
   }, [authToken, fetchStats, fetchTopCollections, endpointsPerPage, endpointFilters, apiSearchQuery]);
 
-  
+  // NEW: Handle API update (called from modal after successful update)
+  const handleApiUpdate = useCallback(() => {
+    // Trigger endpoints table refresh
+    refreshEndpointsTable();
+  }, [refreshEndpointsTable]);
+
   const handleEndpointClick = useCallback(async (endpoint) => {
   console.log("endpoint:::::::" + JSON.stringify(endpoint));
   
@@ -1195,20 +1213,21 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
 
       {/* API Generation Modal */}
       {showApiModal && (
-  <Suspense fallback={null}>
-    <ApiGenerationModal
-      isOpen={showApiModal}
-      onClose={handleCloseModal}
-      selectedObject={selectedForApiGeneration}
-      colors={colors}
-      theme={theme}
-      fromDashboard={true}
-      onGenerateAPI={() => Promise.resolve({ success: true })}
-      authToken={authToken}
-      isEditing={!!selectedForApiGeneration?.data?.id} // Check for data.id, not just id
-    />
-  </Suspense>
-)}
+        <Suspense fallback={null}>
+          <ApiGenerationModal
+            isOpen={showApiModal}
+            onClose={handleCloseModal}
+            selectedObject={selectedForApiGeneration}
+            colors={colors}
+            theme={theme}
+            fromDashboard={true}
+            // UPDATED: Pass the refresh function to the modal
+            onGenerateAPI={handleApiUpdate}
+            authToken={authToken}
+            isEditing={!!selectedForApiGeneration?.data?.id} // Check for data.id, not just id
+          />
+        </Suspense>
+      )}
     </div>
   );
 };
