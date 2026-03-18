@@ -333,9 +333,17 @@ const ObjectTreeSection = React.memo(({
     }
   }, [handleContextMenu, type]);
   
-  const getObjectId = useCallback((obj) => {
-    return obj.id || `${obj.owner || 'unknown'}_${obj.name}`;
-  }, []);
+  // In ObjectTreeSection component, update the getObjectId function
+const getObjectId = useCallback((obj) => {
+  // Create a truly unique key using multiple fields
+  const owner = obj.owner || 'unknown';
+  const name = obj.name || '';
+  const type = obj.type || obj.objectType || '';
+  const timestamp = obj.timestamp || obj.lastModified || Date.now();
+  
+  // Use multiple fields to ensure uniqueness
+  return `${owner}_${name}_${type}_${obj.status || ''}_${obj.id || ''}`.replace(/\s+/g, '_');
+}, []);
   
   const hasMorePages = currentPage < totalPages;
   const showLoadMore = hasMorePages && filteredObjects.length < totalCount && !hasActiveFilter && !isFiltering;
@@ -1254,6 +1262,10 @@ const SchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   });
 
   const searchAbortController = useRef(null);
+  // Use a ref to track if initialization has been attempted
+  const initAttempted = useRef(false);
+  // Add a ref to track ongoing selections
+  const selectingRef = useRef(null);
   
   
   // Handle search
@@ -1359,6 +1371,22 @@ const handleSearch = useCallback((searchTerm) => {
 
   // Track resolved synonym info
   const [synonymInfo, setSynonymInfo] = useState(null);
+
+  // Cleanup on unmount
+useEffect(() => {
+  return () => {
+    // Cancel any ongoing requests
+    if (searchAbortController.current) {
+      searchAbortController.current.abort();
+    }
+    
+    // Clear all ongoing requests
+    ongoingRequests.clear();
+    
+    // Clear selection ref
+    selectingRef.current = null;
+  };
+}, []);
 
   // In SchemaBrowser component, update this useEffect
   useEffect(() => {
@@ -1469,53 +1497,67 @@ const handleSearch = useCallback((searchTerm) => {
 
 
  // Load initial data (only procedures first)
-  const loadInitialData = useCallback(async () => {
-    if (!authToken) return;
+// Load initial data (only procedures first)
+const loadInitialData = useCallback(async () => {
+  if (!authToken) return;
+  
+  Logger.info('SchemaBrowser', 'loadInitialData', 'Loading procedures first');
+  
+  try {
+    // Load procedures first
+    const proceduresData = await loadProcedures();
     
-    Logger.info('SchemaBrowser', 'loadInitialData', 'Loading procedures first');
-    
-    try {
-      // Load procedures first
-      const proceduresData = await loadProcedures();
-      
-      // Load schema info in parallel
-      if (!schemaInfo) {
-        await loadSchemaInfo();
-      }
-      
-      // Immediately set initial load complete
-      setIsInitialLoad(false);
-      setLoading(false);
-      setInitialLoadComplete(true);
-      
-      // Auto-select first procedure and load its properties immediately
-      if (proceduresData?.items && proceduresData.items.length > 0) {
-        const firstProcedure = proceduresData.items[0];
-        const procedureWithId = {
-          ...firstProcedure,
-          id: firstProcedure.id || `${firstProcedure.owner || 'unknown'}_${firstProcedure.name}`
-        };
-        
-        // Set active object first
-        setActiveObject(procedureWithId);
-        setSelectedForApiGeneration(procedureWithId);
-        setObType('PROCEDURE');
-        
-        // Immediately load properties for the first procedure
-        // setTimeout(() => {
-        //   loadProperties(procedureWithId, 'PROCEDURE', procedureWithId.owner);
-        // }, 0);
-      }
-      
-      Logger.info('SchemaBrowser', 'loadInitialData', 'Initial data loaded with procedures');
-      
-    } catch (err) {
-      Logger.error('SchemaBrowser', 'loadInitialData', 'Error loading initial data', err);
-      setError(`Failed to load initial data: ${err.message}`);
-      setIsInitialLoad(false);
-      setLoading(false);
+    // Load schema info in parallel
+    if (!schemaInfo) {
+      await loadSchemaInfo();
     }
-  }, [authToken, loadProcedures, loadSchemaInfo, loadProperties]);
+    
+    // Immediately set initial load complete
+    setIsInitialLoad(false);
+    setLoading(false);
+    setInitialLoadComplete(true);
+    
+    // Auto-select first procedure ONLY if nothing is selected yet
+    if (proceduresData?.items && proceduresData.items.length > 0 && !activeObject) {
+      const firstProcedure = proceduresData.items[0];
+      
+      // Ensure the type is correctly set to 'PROCEDURE' (uppercase)
+      const procedureWithId = {
+        ...firstProcedure,
+        id: firstProcedure.id || `${firstProcedure.owner || 'unknown'}_${firstProcedure.name}`,
+        type: 'PROCEDURE' // Explicitly set type to uppercase PROCEDURE
+      };
+      
+      console.log('Auto-selecting procedure:', procedureWithId);
+      
+      // Set active object - this will trigger the useEffect to load properties
+      setActiveObject(procedureWithId);
+      setSelectedForApiGeneration(procedureWithId);
+      setObType('PROCEDURE');
+      
+      // Add to tabs
+      const tabId = `PROCEDURE_${procedureWithId.owner || 'unknown'}_${procedureWithId.name}_${Date.now()}`;
+      setTabs([{
+        id: tabId,
+        name: procedureWithId.name,
+        type: 'PROCEDURE',
+        objectId: procedureWithId.id,
+        owner: procedureWithId.owner,
+        isActive: true
+      }]);
+      
+      // DO NOT load properties here - let the useEffect handle it
+    }
+    
+    Logger.info('SchemaBrowser', 'loadInitialData', 'Initial data loaded with procedures');
+    
+  } catch (err) {
+    Logger.error('SchemaBrowser', 'loadInitialData', 'Error loading initial data', err);
+    setError(`Failed to load initial data: ${err.message}`);
+    setIsInitialLoad(false);
+    setLoading(false);
+  }
+}, [authToken, loadProcedures, loadSchemaInfo, activeObject]); // Removed loadProperties
 
   // Load procedures with higher page size
   const loadProcedures = useCallback(async () => {
@@ -1588,98 +1630,107 @@ const handleSearch = useCallback((searchTerm) => {
   }, [authToken]);
 
   // Load remaining data in background AFTER page is fully loaded
-  const loadRemainingData = useCallback(async () => {
-    if (!authToken) return;
+  // Load remaining data in background AFTER page is fully loaded
+const loadRemainingData = useCallback(async () => {
+  if (!authToken) return;
+  
+  Logger.info('SchemaBrowser', 'loadRemainingData', 'Loading remaining data in background');
+  
+  // Wait a bit longer before loading remaining data
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  
+  const remainingTypes = [
+    { type: 'views', fetcher: getAllViewsForFrontendPaginated },
+    { type: 'functions', fetcher: getAllFunctionsForFrontendPaginated },
+    { type: 'tables', fetcher: getAllTablesForFrontendPaginated },
+    { type: 'packages', fetcher: getAllPackagesForFrontendPaginated },
+    { type: 'sequences', fetcher: getAllSequencesForFrontendPaginated },
+    { type: 'types', fetcher: getAllTypesForFrontendPaginated },
+    { type: 'triggers', fetcher: getAllTriggersForFrontendPaginated }
+  ];
+  
+  // Load one type at a time with delay
+  for (const { type, fetcher } of remainingTypes) {
+    // Skip if there's an active filter
+    if (hasActiveFilter) {
+      Logger.info('SchemaBrowser', 'loadRemainingData', `Skipping ${type} load due to active filter`);
+      continue;
+    }
     
-    Logger.info('SchemaBrowser', 'loadRemainingData', 'Loading remaining data in background');
+    await new Promise(resolve => setTimeout(resolve, 300));
     
-    // Wait a bit longer before loading remaining data (1 second)
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    const remainingTypes = [
-      { type: 'views', fetcher: getAllViewsForFrontendPaginated },
-      { type: 'functions', fetcher: getAllFunctionsForFrontendPaginated },
-      { type: 'tables', fetcher: getAllTablesForFrontendPaginated },
-      { type: 'packages', fetcher: getAllPackagesForFrontendPaginated },
-      { type: 'sequences', fetcher: getAllSequencesForFrontendPaginated },
-      { type: 'types', fetcher: getAllTypesForFrontendPaginated },
-      { type: 'triggers', fetcher: getAllTriggersForFrontendPaginated }
-    ];
-    
-    // Load one type at a time with delay
-    for (const { type, fetcher } of remainingTypes) {
-      await new Promise(resolve => setTimeout(resolve, 300));
+    try {
+      const cacheKey = `${type}_${authToken.substring(0, 10)}_page1`;
+      const cached = objectCache.get(cacheKey);
       
-      try {
-        const cacheKey = `${type}_${authToken.substring(0, 10)}_page1`;
-        const cached = objectCache.get(cacheKey);
-        
-        if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-          setSchemaObjects(prev => ({ 
-            ...prev, 
-            [type]: cached.data.items,
-            [`${type}TotalCount`]: cached.data.totalCount
-          }));
-          setPagination(prev => ({
-            ...prev,
-            [type]: {
-              page: cached.data.page,
-              totalPages: cached.data.totalPages,
-              totalCount: cached.data.totalCount
-            }
-          }));
-          setLoadedSections(prev => ({ ...prev, [type]: true }));
-          continue;
-        }
-        
-        setLoadingStates(prev => ({ ...prev, [type]: true }));
-        
-        const response = await fetcher(authToken, { page: 1, pageSize: 10 });
-        const { items, totalCount, totalPages } = extractItemsFromResponse(response);
-        
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
         setSchemaObjects(prev => ({ 
           ...prev, 
-          [type]: items,
-          [`${type}TotalCount`]: totalCount 
+          [type]: cached.data.items,
+          [`${type}TotalCount`]: cached.data.totalCount
         }));
         setPagination(prev => ({
           ...prev,
-          [type]: { page: 1, totalPages, totalCount }
+          [type]: {
+            page: cached.data.page,
+            totalPages: cached.data.totalPages,
+            totalCount: cached.data.totalCount
+          }
         }));
         setLoadedSections(prev => ({ ...prev, [type]: true }));
-        
-        objectCache.set(cacheKey, { 
-          data: { items, totalCount, totalPages, page: 1 }, 
-          timestamp: Date.now() 
-        });
-        
-        setOwners(prev => {
-          const newOwners = new Set(prev);
-          items.forEach(obj => {
-            if (obj.owner) newOwners.add(obj.owner);
-          });
-          return Array.from(newOwners).sort();
-        });
-        
-      } catch (err) {
-        Logger.error('SchemaBrowser', 'loadRemainingData', `Error loading ${type}`, err);
-      } finally {
-        setLoadingStates(prev => ({ ...prev, [type]: false }));
+        continue;
       }
+      
+      setLoadingStates(prev => ({ ...prev, [type]: true }));
+      
+      const response = await fetcher(authToken, { page: 1, pageSize: 10 });
+      const { items, totalCount, totalPages } = extractItemsFromResponse(response);
+      
+      setSchemaObjects(prev => ({ 
+        ...prev, 
+        [type]: items,
+        [`${type}TotalCount`]: totalCount 
+      }));
+      setPagination(prev => ({
+        ...prev,
+        [type]: { page: 1, totalPages, totalCount }
+      }));
+      setLoadedSections(prev => ({ ...prev, [type]: true }));
+      
+      objectCache.set(cacheKey, { 
+        data: { items, totalCount, totalPages, page: 1 }, 
+        timestamp: Date.now() 
+      });
+      
+      setOwners(prev => {
+        const newOwners = new Set(prev);
+        items.forEach(obj => {
+          if (obj.owner) newOwners.add(obj.owner);
+        });
+        return Array.from(newOwners).sort();
+      });
+      
+    } catch (err) {
+      Logger.error('SchemaBrowser', 'loadRemainingData', `Error loading ${type}`, err);
+    } finally {
+      setLoadingStates(prev => ({ ...prev, [type]: false }));
     }
-    
-    setIsLoadingSchemaObjects(false);
-    Logger.info('SchemaBrowser', 'loadRemainingData', 'All remaining data loaded');
-    
-  }, [authToken]);
+  }
+  
+  setIsLoadingSchemaObjects(false);
+  Logger.info('SchemaBrowser', 'loadRemainingData', 'All remaining data loaded');
+  
+}, [authToken, hasActiveFilter]); // Added hasActiveFilter dependency
 
 // Initialize component
 useEffect(() => {
   let isMounted = true;
   
   const initialize = async () => {
-    if (!authToken || initialized) return;
+    // Prevent double initialization
+    if (!authToken || initialized || initAttempted.current) return;
     
+    initAttempted.current = true;
     Logger.info('SchemaBrowser', 'initialize', 'Starting initialization');
     
     // Load initial data (procedures only)
@@ -1688,12 +1739,12 @@ useEffect(() => {
     if (isMounted) {
       setInitialized(true);
       
-      // Load remaining data AFTER page is fully loaded and user can interact
+      // Load remaining data AFTER page is fully loaded
       setTimeout(() => {
         loadRemainingData().catch(err => {
           Logger.error('SchemaBrowser', 'initialize', 'Error loading remaining data', err);
         });
-      }, 300); // Wait 1.5 seconds after page load
+      }, 1500);
     }
   };
   
@@ -1701,8 +1752,9 @@ useEffect(() => {
   
   return () => {
     isMounted = false;
+    // Don't reset initAttempted on unmount - this prevents re-init
   };
-}, [authToken, initialized, loadInitialData, loadRemainingData]);
+}, [authToken]); // Remove initialized from dependencies
 
   // Load more objects
   const loadObjectType = useCallback(async (type, page = 1, pageSize = 10) => {
@@ -1832,145 +1884,117 @@ useEffect(() => {
     setObjectTree(prev => ({ ...prev, [type]: !prev[type] }));
   }, []);
 
-  // ============================================================
-  // Load Properties (Basic Info)
-  // ============================================================
-  const loadProperties = useCallback(async (object, type, owner) => {
-    if (!authToken || !object || !type) return;
+// Load Properties (Basic Info) - FIXED with mounted check
+const loadProperties = useCallback(async (object, type, owner) => {
+  if (!authToken || !object || !type) return;
+  
+  let isMounted = true;
+  
+  setTabData(prev => ({
+    ...prev,
+    properties: { loading: true, data: prev.properties.data }
+  }));
+  
+  try {
+    // Check if this is a synonym
+    const isSynonymFromObject = object.isSynonym === true || 
+                                object.objectType === 'SYNONYM' || 
+                                object.type === 'SYNONYM' ||
+                                type === 'SYNONYM';
+    
+    let effectiveType = type;
+    let effectiveName = object.name;
+    let effectiveOwner = owner;
+    let synonymResolutionData = null;
+    let isSynonym = isSynonymFromObject;
+    
+    // Resolve synonym if needed
+    if (isSynonymFromObject || type === 'SYNONYM' || object.objectType === 'SYNONYM') {
+      try {
+        const synonymResponse = await resolveSynonym(authToken, { objectName: object.name, owner });
+        const synonymData = handleSchemaBrowserResponse(synonymResponse);
+        
+        if (synonymData.valid && synonymData.targetName) {
+          effectiveType = synonymData.targetType;
+          effectiveName = synonymData.targetName;
+          effectiveOwner = synonymData.targetOwner;
+          isSynonym = true;
+          
+          synonymResolutionData = {
+            synonymName: object.name,
+            synonymOwner: owner,
+            targetName: effectiveName,
+            targetOwner: effectiveOwner,
+            targetType: effectiveType,
+            valid: synonymData.valid,
+            dbLink: synonymData.dbLink
+          };
+        }
+      } catch (synonymErr) {
+        // Not a synonym or resolution failed
+      }
+    }
+    
+    const response = await getObjectBasicInfo(authToken, {
+      objectType: effectiveType,
+      objectName: effectiveName,
+      owner: effectiveOwner
+    });
+    
+    const data = handleSchemaBrowserResponse(response);
+    
+    // Check if still mounted before updating state
+    if (!isMounted) return;
+    
+    // Check if this is still the active object
+    const currentActiveId = activeObject?.id;
+    const objectId = object.id || `${owner || 'unknown'}_${object.name}`;
+    
+    if (currentActiveId !== objectId) {
+      console.log('Object changed, not updating properties');
+      return;
+    }
+    
+    // Create enriched data
+    const enrichedData = {
+      ...data,
+      name: effectiveName,
+      originalName: object.name,
+      type: effectiveType,
+      originalType: type,
+      owner: effectiveOwner,
+      isSynonym: isSynonym,
+      synonymInfo: isSynonym ? {
+        synonymName: object.name,
+        synonymOwner: owner,
+        targetName: data.targetName || data.TARGET_NAME || effectiveName,
+        targetOwner: data.targetOwner || data.TARGET_OWNER || effectiveOwner,
+        targetType: data.targetType || data.TARGET_TYPE || effectiveType,
+        ...(synonymResolutionData || {})
+      } : null,
+    };
+    
+    console.log('Properties loaded for object:', enrichedData.type, enrichedData.name);
     
     setTabData(prev => ({
       ...prev,
-      properties: { loading: true, data: prev.properties.data }
+      properties: { loading: false, data: enrichedData }
     }));
     
-    try {
-      // Check if this is a synonym by looking at the object properties
-      const isSynonymFromObject = object.isSynonym === true || 
-                                  object.objectType === 'SYNONYM' || 
-                                  object.type === 'SYNONYM' ||
-                                  type === 'SYNONYM';
-      
-      let effectiveType = type;
-      let effectiveName = object.name;
-      let effectiveOwner = owner;
-      let synonymResolutionData = null;
-      let isSynonym = isSynonymFromObject;
-      
-      // Always try to resolve if it might be a synonym
-      if (isSynonymFromObject || type === 'SYNONYM' || object.objectType === 'SYNONYM') {
-        try {
-          const synonymResponse = await resolveSynonym(authToken, { objectName: object.name, owner });
-          const synonymData = handleSchemaBrowserResponse(synonymResponse);
-          
-          if (synonymData.valid && synonymData.targetName) {
-            effectiveType = synonymData.targetType;
-            effectiveName = synonymData.targetName;
-            effectiveOwner = synonymData.targetOwner;
-            isSynonym = true;
-            
-            synonymResolutionData = {
-              synonymName: object.name,
-              synonymOwner: owner,
-              targetName: effectiveName,
-              targetOwner: effectiveOwner,
-              targetType: effectiveType,
-              valid: synonymData.valid,
-              dbLink: synonymData.dbLink
-            };
-          }
-        } catch (synonymErr) {
-          // Not a synonym or resolution failed, continue with original values
-        }
-      }
-      
-      const response = await getObjectBasicInfo(authToken, {
-        objectType: effectiveType,
-        objectName: effectiveName,
-        owner: effectiveOwner
-      });
-      
-      const data = handleSchemaBrowserResponse(response);
-      
-      // Check if the response indicates this is a synonym
-      const isSynonymFromResponse = data.isSynonym === true || 
-                                    data.OBJECT_TYPE === 'SYNONYM' ||
-                                    data.objectType === 'SYNONYM';
-      
-      // Final determination: it's a synonym if either the object indicated it or the response indicates it
-      const finalIsSynonym = isSynonym || isSynonymFromResponse;
-      
-      // Create enriched data that includes EVERY field from the API response
-      const enrichedData = {
-        // Include EVERYTHING from the original data
-        ...data,
-        
-        // Add our computed fields
-        name: effectiveName,
-        originalName: object.name,
-        type: effectiveType,
-        originalType: type,
-        owner: effectiveOwner,
-        
-        // Set isSynonym flag correctly
-        isSynonym: finalIsSynonym,
-        
-        // Add synonym info if available
-        synonymInfo: finalIsSynonym ? {
-          synonymName: object.name,
-          synonymOwner: owner,
-          targetName: data.targetName || data.TARGET_NAME || effectiveName,
-          targetOwner: data.targetOwner || data.TARGET_OWNER || effectiveOwner,
-          targetType: data.targetType || data.TARGET_TYPE || effectiveType,
-          targetStatus: data.targetStatus || data.TARGET_STATUS || data.STATUS || data.status,
-          ...(synonymResolutionData || {})
-        } : null,
-        
-        // Ensure target fields are available at the top level
-        targetName: data.targetName || data.TARGET_NAME,
-        targetOwner: data.targetOwner || data.TARGET_OWNER,
-        targetType: data.targetType || data.TARGET_TYPE,
-        targetStatus: data.targetStatus || data.TARGET_STATUS,
-        
-        // Also preserve all original field names
-        TARGET_NAME: data.TARGET_NAME || data.targetName,
-        TARGET_OWNER: data.TARGET_OWNER || data.targetOwner,
-        TARGET_TYPE: data.TARGET_TYPE || data.targetType,
-        TARGET_STATUS: data.TARGET_STATUS || data.targetStatus,
-      };
-      
-      // Update cache with new data
-      const cacheKey = `properties_${effectiveType}_${effectiveOwner || 'unknown'}_${effectiveName}`;
-      objectCache.set(cacheKey, { data: enrichedData, timestamp: Date.now() });
-      
-      setTabData(prev => ({
-        ...prev,
-        properties: { loading: false, data: enrichedData }
-      }));
-      
-      // Also update synonymInfo state if this is a synonym
-      if (finalIsSynonym) {
-        setSynonymInfo({
-          synonymName: object.name,
-          synonymOwner: owner,
-          targetName: data.targetName || data.TARGET_NAME || effectiveName,
-          targetOwner: data.targetOwner || data.TARGET_OWNER || effectiveOwner,
-          targetType: data.targetType || data.TARGET_TYPE || effectiveType,
-          targetStatus: data.targetStatus || data.TARGET_STATUS || data.STATUS || data.status,
-          valid: true
-        });
-      }
-      
-      return enrichedData;
-      
-    } catch (err) {
-      Logger.error('SchemaBrowser', 'loadProperties', 'Error loading properties', err);
+    return enrichedData;
+    
+  } catch (err) {
+    Logger.error('SchemaBrowser', 'loadProperties', 'Error loading properties', err);
+    
+    if (isMounted) {
       setTabData(prev => ({
         ...prev,
         properties: { loading: false, data: null }
       }));
-      return null;
     }
-  }, [authToken]);
+    return null;
+  }
+}, [authToken, activeObject]);
 
   // ============================================================
   // Load Columns (for Tables/Views) or Parameters (for Procedures/Functions)
@@ -2409,62 +2433,121 @@ const loadData = useCallback(async (object, type, owner, params = {}) => {
   // ============================================================
   // Handle Tab Changes - Load data on demand
   // ============================================================
-  useEffect(() => {
-    if (!activeObject) return;
+
+  // Debug effect for tabs
+useEffect(() => {
+  if (activeObject) {
+    console.log('Active object:', {
+      type: activeObject.type,
+      name: activeObject.name,
+      propertiesData: tabData.properties.data?.type
+    });
     
-    const objectType = activeObject.type?.toUpperCase();
-    const owner = activeObject.owner;
+    const tabs = getTabsForObject(activeObject.type, tabData.properties.data);
+    console.log('Tabs for object:', tabs);
+  }
+}, [activeObject, tabData.properties.data, getTabsForObject]);
+
+ // Handle Tab Changes - Load data on demand only when needed
+useEffect(() => {
+  if (!activeObject) return;
+  
+  const objectType = activeObject.type?.toUpperCase();
+  const owner = activeObject.owner;
+  
+  // Check if we already have data for this tab and it's not currently loading
+  const hasDataForTab = () => {
+    switch (activeTab) {
+      case 'properties':
+        return tabData.properties.data !== null && !tabData.properties.loading;
+      case 'columns':
+      case 'parameters':
+      case 'attributes':
+        return tabData.columns.data !== null && !tabData.columns.loading;
+      case 'data':
+        return tabData.data.data !== null && !tabData.data.loading;
+      case 'constraints':
+        return tabData.constraints.data !== null && !tabData.constraints.loading;
+      case 'ddl':
+      case 'definition':
+      case 'spec':
+      case 'body':
+        return tabData.ddl.data !== '' && !tabData.ddl.loading;
+      case 'used by':
+        return tabData['used by'].items.length > 0 && !tabData['used by'].loading;
+      default:
+        return false;
+    }
+  };
+  
+  // Only load if we don't have data AND not already loading
+  if (!hasDataForTab()) {
+    // Set loading state first
+    if (activeTab === 'properties') {
+      setTabData(prev => ({
+        ...prev,
+        properties: { ...prev.properties, loading: true }
+      }));
+    }
     
-    // Always load data for the current tab
+    // Then load the data
     const loadTabData = async () => {
-      switch (activeTab) {
-        case 'properties':
-          await loadProperties(activeObject, objectType, owner);
-          break;
-          
-        case 'columns':
-        case 'parameters':
-        case 'attributes':
-          await loadColumns(activeObject, objectType, owner, 1);
-          break;
-          
-        case 'data':
-          await loadData(activeObject, objectType, owner, {
-            page: tabData.data.page || 1,
-            pageSize: tabData.data.pageSize || 15,
-            sortColumn: tabData.data.sortColumn,
-            sortDirection: tabData.data.sortDirection
-          });
-          break;
-          
-        case 'constraints':
-          await loadConstraints(activeObject, objectType, owner);
-          break;
-          
-        case 'ddl':
-        case 'definition':
-        case 'spec':
-          await loadDDL(activeObject, objectType, owner);
-          break;
-          
-        case 'used by':
-          await loadUsedByData(
-            activeObject, 
-            objectType, 
-            owner, 
-            tabData['used by'].page || 1, 
-            tabData['used by'].pageSize || 10
-          );
-          break;
-          
-        default:
-          break;
+      try {
+        switch (activeTab) {
+          case 'properties':
+            await loadProperties(activeObject, objectType, owner);
+            break;
+            
+          case 'columns':
+          case 'parameters':
+          case 'attributes':
+            await loadColumns(activeObject, objectType, owner, 1);
+            break;
+            
+          case 'data':
+            await loadData(activeObject, objectType, owner, {
+              page: tabData.data.page || 1,
+              pageSize: tabData.data.pageSize || 15,
+              sortColumn: tabData.data.sortColumn,
+              sortDirection: tabData.data.sortDirection
+            });
+            break;
+            
+          case 'constraints':
+            await loadConstraints(activeObject, objectType, owner);
+            break;
+            
+          case 'ddl':
+          case 'definition':
+          case 'spec':
+          case 'body':
+            await loadDDL(activeObject, objectType, owner);
+            break;
+            
+          case 'used by':
+            await loadUsedByData(
+              activeObject, 
+              objectType, 
+              owner, 
+              tabData['used by'].page || 1, 
+              tabData['used by'].pageSize || 10
+            );
+            break;
+            
+          default:
+            break;
+        }
+      } catch (error) {
+        console.error(`Error loading ${activeTab} data:`, error);
       }
     };
     
     loadTabData();
-    
-  }, [activeObject, activeTab]);
+  }
+  
+  // IMPORTANT: Only depend on activeObject and activeTab
+  // Remove tabData from dependencies to prevent loops
+}, [activeObject, activeTab]);
 
   // Handle page change for data tab
   const handleDataPageChange = useCallback((newPage) => {
@@ -2548,18 +2631,38 @@ const loadData = useCallback(async (object, type, owner, params = {}) => {
     }
   }, []);
 
- // Handle object selection - COMPLETE FIXED VERSION
+ // Handle object selection - ONLY set the object, don't load data
 const handleObjectSelect = useCallback(async (object, type) => {
   if (!authToken || !object) {
     console.error('Cannot select object: missing authToken or object', { authToken: !!authToken, object });
     return;
   }
 
+  // Create a unique key for this selection
+  const selectionKey = `${object.owner || 'unknown'}_${object.name}_${type}`;
+  
+  // Prevent duplicate selection of the same object
+  if (selectingRef.current === selectionKey) {
+    console.log('Already selecting this object, skipping duplicate call');
+    return;
+  }
+  
+  // Check if this object is already active
+  const currentActiveId = activeObject?.id;
+  const newObjectId = object.id || `${object.owner || 'unknown'}_${object.name}`;
+  
+  if (currentActiveId === newObjectId && activeObject?.type === type) {
+    console.log('Object already active, skipping selection');
+    return;
+  }
+  
+  selectingRef.current = selectionKey;
+  
   Logger.info('SchemaBrowser', 'handleObjectSelect', `Selecting ${object.name} (${type})`);
   
-  const objectId = object.id || `${object.owner || 'unknown'}_${object.name}`;
+  const objectId = newObjectId;
   
-  // Reset tab data for new object
+  // Reset tab data for new object (clear all previous data)
   setTabData({
     properties: { loading: false, data: null },
     columns: { loading: false, data: null, page: 1, totalPages: 1 },
@@ -2577,279 +2680,29 @@ const handleObjectSelect = useCallback(async (object, type) => {
   setLoadedTabs({});
   setSynonymInfo(null);
   
-  setActiveTab('properties');
-  
+  // Set the active object FIRST (this will trigger the useEffect)
   const enrichedObject = {
     ...object,
     id: objectId,
-    type: type
+    type: type?.toUpperCase()
   };
   
   setActiveObject(enrichedObject);
   
-  // Set a temporary selected object while loading
+  // Set selected for API generation
   setSelectedForApiGeneration(enrichedObject);
-  
-  try {
-    Logger.debug('SchemaBrowser', 'handleObjectSelect', `Loading details for ${object.name}`);
-    
-    const isSynonym = object.isSynonym === true || 
-                      object.objectType === 'SYNONYM' || 
-                      object.type === 'SYNONYM' ||
-                      type === 'SYNONYM';
-    
-    let effectiveType = type;
-    let effectiveName = object.name;
-    let effectiveOwner = object.owner;
-    let synonymResolutionData = null;
-    let parameters = [];
-    let columns = [];
-    let sourceCode = '';
-    
-    // FIXED: Resolve synonym if needed - ensure we pass a string, not an object
-    if (isSynonym || type === 'SYNONYM' || object.objectType === 'SYNONYM') {
-      try {
-        console.log(`Resolving synonym: ${object.name} with owner: ${object.owner}`);
-        
-        // CRITICAL FIX: Make sure we're passing a string, not an object
-        // The controller expects: resolveSynonym(authorizationHeader, synonymName)
-        // where synonymName is a string, not an object
-        const synonymNameString = String(object.name); // Ensure it's a string
-        console.log('Calling resolveSynonym with:', synonymNameString);
-        
-        const synonymResponse = await resolveSynonym(authToken, synonymNameString);
-        
-        const synonymData = handleSchemaBrowserResponse(synonymResponse);
-        console.log('Synonym resolution result:', synonymData);
-        
-        if (synonymData.valid && synonymData.targetName) {
-          effectiveType = synonymData.targetType;
-          effectiveName = synonymData.targetName;
-          effectiveOwner = synonymData.targetOwner;
-          
-          synonymResolutionData = {
-            synonymName: object.name,
-            synonymOwner: object.owner,
-            targetName: effectiveName,
-            targetOwner: effectiveOwner,
-            targetType: effectiveType,
-            valid: synonymData.valid,
-            dbLink: synonymData.dbLink
-          };
-          
-          console.log(`Synonym resolved to: ${effectiveType} ${effectiveOwner}.${effectiveName}`);
-        } else {
-          console.log('Synonym resolution returned invalid or no target');
-        }
-      } catch (synonymErr) {
-        console.error('Synonym resolution error:', synonymErr);
-        // Continue with original values
-      }
-    }
-    
-    // Load basic info first - use the resolved values if available
-    console.log(`Loading basic info for: ${effectiveType} ${effectiveName} with owner ${effectiveOwner}`);
-    
-    const propertiesResponse = await getObjectBasicInfo(authToken, {
-      objectType: effectiveType,
-      objectName: effectiveName,
-      owner: effectiveOwner
-    });
-    
-    const propertiesData = handleSchemaBrowserResponse(propertiesResponse);
-    console.log('Basic info loaded:', propertiesData);
-    
-    // LOAD PARAMETERS FOR PROCEDURES/FUNCTIONS
-    if (effectiveType === 'PROCEDURE' || effectiveType === 'FUNCTION') {
-      try {
-        console.log(`📡 Fetching ${effectiveType} parameters for ${effectiveName}...`);
-        
-        let paramResponse;
-        if (effectiveType === 'PROCEDURE') {
-          paramResponse = await getProcedureParametersPaginated(authToken, {
-            procedureName: effectiveName,
-            owner: effectiveOwner,
-            page: 1,
-            pageSize: 100
-          });
-        } else {
-          paramResponse = await getFunctionParametersPaginated(authToken, {
-            functionName: effectiveName,
-            owner: effectiveOwner,
-            page: 1,
-            pageSize: 100
-          });
-        }
-        
-        const { items } = extractItemsFromResponse(paramResponse);
-        parameters = items || [];
-        console.log(`📦 Extracted ${parameters.length} parameters from ${effectiveType}`);
-        
-        // Update parameters tab data
-        setTabData(prev => ({
-          ...prev,
-          parameters: { loading: false, data: parameters, page: 1, totalPages: 1 }
-        }));
-        
-      } catch (paramErr) {
-        console.error('Error loading parameters:', paramErr);
-      }
-    }
-    
-    // LOAD COLUMNS FOR TABLES/VIEWS
-    if (effectiveType === 'TABLE' || effectiveType === 'VIEW') {
-      try {
-        console.log(`📡 Fetching ${effectiveType} columns for ${effectiveName}...`);
-        
-        const columnsResponse = await getTableColumnsPaginated(authToken, {
-          tableName: effectiveName,
-          owner: effectiveOwner,
-          page: 1,
-          pageSize: 100
-        });
-        
-        const { items } = extractItemsFromResponse(columnsResponse);
-        columns = items || [];
-        console.log(`📦 Extracted ${columns.length} columns from ${effectiveType}`);
-        
-        // Update columns tab data
-        setTabData(prev => ({
-          ...prev,
-          columns: { loading: false, data: columns, page: 1, totalPages: 1 }
-        }));
-        
-      } catch (colErr) {
-        console.error('Error loading columns:', colErr);
-      }
-    }
-    
-    // LOAD PACKAGE ITEMS FOR PACKAGES
-    if (effectiveType === 'PACKAGE') {
-      try {
-        console.log(`📡 Fetching package items for ${effectiveName}...`);
-        
-        const packageResponse = await getPackageItemsPaginated(authToken, {
-          packageName: effectiveName,
-          owner: effectiveOwner,
-          itemType: 'ALL',
-          page: 1,
-          pageSize: 100
-        });
-        
-        const { items } = extractItemsFromResponse(packageResponse);
-        parameters = items || []; // Store package items as parameters
-        console.log(`📦 Extracted ${parameters.length} items from package`);
-        
-      } catch (pkgErr) {
-        console.error('Error loading package items:', pkgErr);
-      }
-    }
-    
-    // LOAD DDL/SOURCE CODE
-    try {
-      console.log(`📡 Fetching DDL for ${effectiveType}...`);
-      const ddlResponse = await getObjectDDL(authToken, {
-        objectType: effectiveType,
-        objectName: effectiveName,
-        owner: effectiveOwner
-      });
-      sourceCode = extractDDL(ddlResponse);
-      console.log('📝 DDL loaded, length:', sourceCode?.length);
-      
-      setTabData(prev => ({
-        ...prev,
-        ddl: { loading: false, data: sourceCode }
-      }));
-      
-    } catch (ddlErr) {
-      console.error('Error loading DDL:', ddlErr);
-    }
-    
-    // Create enriched object with all details
-    const enrichedData = {
-      ...propertiesData,
-      name: effectiveName,
-      originalName: object.name,
-      type: effectiveType,
-      originalType: type,
-      owner: effectiveOwner,
-      isSynonym: isSynonym,
-      synonymInfo: isSynonym ? {
-        synonymName: object.name,
-        synonymOwner: object.owner,
-        targetName: effectiveName,
-        targetOwner: effectiveOwner,
-        targetType: effectiveType,
-        ...(synonymResolutionData || {})
-      } : null,
-      parameters: parameters,
-      columns: columns,
-      source: sourceCode,
-      targetName: propertiesData.targetName || propertiesData.TARGET_NAME || effectiveName,
-      targetOwner: propertiesData.targetOwner || propertiesData.TARGET_OWNER || effectiveOwner,
-      targetType: propertiesData.targetType || propertiesData.TARGET_TYPE || effectiveType,
-    };
-    
-    console.log(`🎯 Final enriched data:`, {
-      hasParameters: parameters.length > 0,
-      hasColumns: columns.length > 0,
-      parameterCount: parameters.length,
-      columnCount: columns.length,
-      isSynonym: isSynonym
-    });
-    
-    // Update properties tab
-    setTabData(prev => ({
-      ...prev,
-      properties: { loading: false, data: enrichedData }
-    }));
-    
-    // CRITICAL: Update selectedForApiGeneration with ALL the data
-    const apiObject = {
-      ...object,
-      ...enrichedData,
-      name: object.name,
-      type: effectiveType,
-      owner: object.owner,
-      parameters: parameters,  // This must be included
-      columns: columns,        // This must be included for tables/views
-      source: sourceCode,
-      parameterCount: parameters.length, // Add this for easy access
-      columnCount: columns.length
-    };
-    
-    console.log(`🚀 Setting selectedForApiGeneration with:`, {
-      parameterCount: parameters.length,
-      columnCount: columns.length,
-      type: effectiveType
-    });
-    
-    setSelectedForApiGeneration(apiObject);
-    
-    // Update synonym info if needed
-    if (isSynonym) {
-      setSynonymInfo({
-        synonymName: object.name,
-        synonymOwner: object.owner,
-        targetName: effectiveName,
-        targetOwner: effectiveOwner,
-        targetType: effectiveType,
-        valid: true
-      });
-    }
-    
-  } catch (err) {
-    Logger.error('SchemaBrowser', 'handleObjectSelect', `Error loading details for ${object.name}`, err);
-    // Fallback - keep the basic object
-    console.error('Error in handleObjectSelect:', err);
-  }
-  
+  setActiveTab('properties');
+  setObType(type);
+
   // Handle tab management
-  const tabId = `${type}_${object.owner || 'unknown'}_${object.name}`;
-  const existingTab = tabs.find(t => t.id === tabId);
+  const tabId = `${type}_${object.owner || 'unknown'}_${object.name}_${Date.now()}`;
+  const existingTab = tabs.find(t => t.id === tabId || 
+                                   (t.name === object.name && 
+                                    t.owner === object.owner && 
+                                    t.type === type));
   
   if (existingTab) {
-    setTabs(tabs.map(t => ({ ...t, isActive: t.id === tabId })));
+    setTabs(tabs.map(t => ({ ...t, isActive: t.id === existingTab.id })));
   } else {
     setTabs(prev => [...prev.slice(-4), {
       id: tabId,
@@ -2861,12 +2714,17 @@ const handleObjectSelect = useCallback(async (object, type) => {
     }].map(t => ({ ...t, isActive: t.id === tabId })));
   }
 
-  setObType(type);
-
   if (window.innerWidth < 768) {
     setIsLeftSidebarVisible(false);
   }
-}, [authToken, tabs]);
+  
+  // Clear selection ref after a delay
+  setTimeout(() => {
+    if (selectingRef.current === selectionKey) {
+      selectingRef.current = null;
+    }
+  }, 1000);
+}, [authToken, tabs, activeObject]);
 
   // Handle context menu
   const handleContextMenu = useCallback((e, object, type) => {
@@ -3168,36 +3026,15 @@ const handleClearFilters = resetToDefaultState;
   }, []);
 
   // Get Tabs for Object Type
-  const getTabsForObject = useCallback((type, propertiesData) => {
-    const objectType = type?.toUpperCase();
+  // Get Tabs for Object Type - with fallback to object type
+const getTabsForObject = useCallback((type, propertiesData) => {
+  const objectType = type?.toUpperCase();
+  
+  // If we have properties data with synonym info, use that
+  if (propertiesData?.isSynonym && propertiesData.synonymInfo?.valid) {
+    const targetType = propertiesData.synonymInfo.targetType;
     
-    // If we have synonym info, show tabs based on target type
-    if (objectType === 'SYNONYM' && synonymInfo && synonymInfo.valid) {
-      const targetType = synonymInfo.targetType;
-      
-      switch(targetType) {
-        case 'TABLE':
-          return ['Properties', 'Columns', 'Data', 'Constraints', 'DDL', 'Used By'];
-        case 'VIEW':
-          return ['Properties', 'Columns', 'Data', 'DDL', 'Used By'];
-        case 'PROCEDURE':
-          return ['Properties', 'Parameters', 'DDL', 'Used By'];
-        case 'FUNCTION':
-          return ['Properties', 'Parameters', 'DDL', 'Used By'];
-        case 'PACKAGE':
-          return ['Properties', 'Spec', 'Body', 'Used By'];
-        case 'SEQUENCE':
-          return ['Properties', 'DDL', 'Used By'];
-        case 'TYPE':
-          return ['Properties', 'Attributes', 'Used By'];
-        case 'TRIGGER':
-          return ['Properties', 'Definition', 'Used By'];
-        default:
-          return ['Properties', 'Used By'];
-      }
-    }
-    
-    switch(objectType) {
+    switch(targetType) {
       case 'TABLE':
         return ['Properties', 'Columns', 'Data', 'Constraints', 'DDL', 'Used By'];
       case 'VIEW':
@@ -3210,8 +3047,6 @@ const handleClearFilters = resetToDefaultState;
         return ['Properties', 'Spec', 'Body', 'Used By'];
       case 'SEQUENCE':
         return ['Properties', 'DDL', 'Used By'];
-      case 'SYNONYM':
-        return ['Properties', 'Used By'];
       case 'TYPE':
         return ['Properties', 'Attributes', 'Used By'];
       case 'TRIGGER':
@@ -3219,7 +3054,58 @@ const handleClearFilters = resetToDefaultState;
       default:
         return ['Properties', 'Used By'];
     }
-  }, [synonymInfo]);
+  }
+  
+  // If we have synonym info from state, use that
+  if (objectType === 'SYNONYM' && synonymInfo && synonymInfo.valid) {
+    const targetType = synonymInfo.targetType;
+    
+    switch(targetType) {
+      case 'TABLE':
+        return ['Properties', 'Columns', 'Data', 'Constraints', 'DDL', 'Used By'];
+      case 'VIEW':
+        return ['Properties', 'Columns', 'Data', 'DDL', 'Used By'];
+      case 'PROCEDURE':
+        return ['Properties', 'Parameters', 'DDL', 'Used By'];
+      case 'FUNCTION':
+        return ['Properties', 'Parameters', 'DDL', 'Used By'];
+      case 'PACKAGE':
+        return ['Properties', 'Spec', 'Body', 'Used By'];
+      case 'SEQUENCE':
+        return ['Properties', 'DDL', 'Used By'];
+      case 'TYPE':
+        return ['Properties', 'Attributes', 'Used By'];
+      case 'TRIGGER':
+        return ['Properties', 'Definition', 'Used By'];
+      default:
+        return ['Properties', 'Used By'];
+    }
+  }
+  
+  // Otherwise use the object type directly
+  switch(objectType) {
+    case 'TABLE':
+      return ['Properties', 'Columns', 'Data', 'Constraints', 'DDL', 'Used By'];
+    case 'VIEW':
+      return ['Properties', 'Columns', 'Data', 'DDL', 'Used By'];
+    case 'PROCEDURE':
+      return ['Properties', 'Parameters', 'DDL', 'Used By'];
+    case 'FUNCTION':
+      return ['Properties', 'Parameters', 'DDL', 'Used By'];
+    case 'PACKAGE':
+      return ['Properties', 'Spec', 'Body', 'Used By'];
+    case 'SEQUENCE':
+      return ['Properties', 'DDL', 'Used By'];
+    case 'SYNONYM':
+      return ['Properties', 'Used By'];
+    case 'TYPE':
+      return ['Properties', 'Attributes', 'Used By'];
+    case 'TRIGGER':
+      return ['Properties', 'Definition', 'Used By'];
+    default:
+      return ['Properties', 'Used By'];
+  }
+}, [synonymInfo]);
 
   // ============================================================
   // RENDER FUNCTIONS FOR EACH TAB
@@ -4303,7 +4189,7 @@ const renderDataTab = () => {
             }}>
               {tabs.map(tab => (
                 <button
-                  key={tab.id}
+                  key={tab.id} // This must be unique!
                   className={`flex items-center gap-2 px-3 py-2 border-r cursor-pointer ${
                     tab.isActive ? '' : 'hover:bg-opacity-50'
                   }`}
@@ -4312,32 +4198,23 @@ const renderDataTab = () => {
                     borderRightColor: colors.border,
                     borderTop: tab.isActive ? `2px solid ${colors.tabActive}` : 'none'
                   }}
-                 onClick={async () => {
+                  onClick={async () => {
                     if (tab.isActive) return;
                     
                     const parts = tab.id.split('_');
                     if (parts.length >= 3) {
                       const type = parts[0];
                       const owner = parts[1];
-                      const name = parts.slice(2).join('_');
+                      const name = parts.slice(2, -1).join('_'); // Exclude the timestamp part
                       
                       const objectToSelect = {
                         name: name,
                         owner: owner,
                         type: type,
-                        id: tab.id
+                        id: `${owner}_${name}`
                       };
                       
                       await handleObjectSelect(objectToSelect, type);
-                    } else {
-                      const allObjects = Object.values(schemaObjects).flat();
-                      const found = allObjects.find(obj => 
-                        (obj.id || `${obj.owner}_${obj.name}`) === tab.objectId || 
-                        (obj.name === tab.name && obj.owner === tab.owner)
-                      );
-                      if (found) {
-                        await handleObjectSelect(found, tab.type);
-                      }
                     }
                   }}
                 >

@@ -587,16 +587,17 @@ public class AutomationEngineService {
                 // 18. Format the response
                 Object formattedResponse = responseHelper.formatResponse(api, result);
 
+
                 // ============= UPDATE CAPTURED REQUEST WITH SUCCESS RESPONSE =============
                 if (capturedRequestId != null) {
                     try {
-                        ExecuteApiResponseDTO successResponse = ExecuteApiResponseDTO.builder()
-                                .responseCode(200)
-                                .message("Success")
-                                .data(formattedResponse)
-                                .executionTimeMs(executionTime)
-                                .correlationId(executeRequest.getRequestId())
-                                .build();
+                        // Create a simpler success response without executionTimeMs and correlationId
+                        ExecuteApiResponseDTO successResponse = new ExecuteApiResponseDTO();
+                        successResponse.setResponseCode(200);
+                        successResponse.setSuccess(true);
+                        successResponse.setMessage("Success");
+                        successResponse.setData(formattedResponse);
+                        // DON'T set executionTimeMs and correlationId here either
 
                         apiRequestService.updateRequestWithResponse(
                                 requestId,
@@ -611,6 +612,7 @@ public class AutomationEngineService {
                         log.error("Failed to update captured request with response: {}", e.getMessage());
                     }
                 }
+
 
                 // 19. Update API statistics
                 executionHelper.updateApiStats(api, generatedAPIRepository);
@@ -696,8 +698,8 @@ public class AutomationEngineService {
             safeResponse.setResponseCode(500);
             safeResponse.setSuccess(false);
             safeResponse.setMessage("Database execution error: " + detailedError);
-            safeResponse.setExecutionTimeMs(executionTime);
-            safeResponse.setCorrelationId(requestId);
+//            safeResponse.setExecutionTimeMs(executionTime);
+//            safeResponse.setCorrelationId(requestId);
 
             Map<String, Object> errorData = new HashMap<>();
             errorData.put("error", detailedError);

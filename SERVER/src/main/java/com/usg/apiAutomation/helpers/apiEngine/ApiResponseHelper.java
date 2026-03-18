@@ -187,67 +187,97 @@ public class ApiResponseHelper {
     public ExecuteApiResponseDTO buildSuccessResponse(Object formattedResponse,
                                                       long executionTime,
                                                       GeneratedApiEntity api) {
-        List<Map<String, Object>> dataList = new ArrayList<>();
 
+        ExecuteApiResponseDTO response = new ExecuteApiResponseDTO();
+        response.setResponseCode(200);
+        response.setSuccess(true);
+        response.setMessage("API executed successfully");
+
+        // DON'T set executionTimeMs and correlationId if you want them removed
+        // response.setExecutionTimeMs(executionTime); // Comment this out
+
+        // Extract the actual data without the list wrapper
+        Object simplifiedData = extractActualData(formattedResponse);
+        response.setData(simplifiedData);
+
+        return response;
+    }
+
+    /**
+     * Extract just the actual business data from the response
+     */
+    private Object extractActualData(Object formattedResponse) {
+        if (formattedResponse == null) {
+            return null;
+        }
+
+        // If it's a List, check if it contains the actual data
         if (formattedResponse instanceof List) {
-            List<?> resultList = (List<?>) formattedResponse;
-            for (Object item : resultList) {
+            List<?> responseList = (List<?>) formattedResponse;
+
+            // Look for the actual business data in the list
+            for (Object item : responseList) {
                 if (item instanceof Map) {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> itemMap = (Map<String, Object>) item;
-                    dataList.add(itemMap);
-                } else {
-                    Map<String, Object> itemMap = new HashMap<>();
-                    itemMap.put("value", item);
-                    dataList.add(itemMap);
+                    Map<?, ?> itemMap = (Map<?, ?>) item;
+
+                    // Check if this item has the business response fields
+                    if (itemMap.containsKey("response_code") ||
+                            itemMap.containsKey("mess") ||
+                            itemMap.containsKey("batchnumber")) {
+                        return item;
+                    }
                 }
             }
-        } else if (formattedResponse instanceof Map) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> responseMap = (Map<String, Object>) formattedResponse;
-            dataList.add(responseMap);
-        } else {
-            Map<String, Object> itemMap = new HashMap<>();
-            itemMap.put("result", formattedResponse);
-            dataList.add(itemMap);
+
+            // If list has one item, return it directly
+            if (responseList.size() == 1) {
+                return responseList.get(0);
+            }
+
+            // Otherwise return the list (might be multiple records)
+            return responseList;
         }
 
-        // Add metadata if configured
-        if (api.getResponseConfig() != null &&
-                Boolean.TRUE.equals(api.getResponseConfig().getIncludeMetadata())) {
-            Map<String, Object> metadataMap = new HashMap<>();
-            metadataMap.put("executionTimeMs", executionTime);
-            metadataMap.put("timestamp", LocalDateTime.now().toString());
-            metadataMap.put("apiVersion", api.getVersion());
-            metadataMap.put("totalRecords", dataList.size());
-            dataList.add(0, metadataMap);
+        // If it's a Map, try to extract the actual data
+        if (formattedResponse instanceof Map) {
+            Map<?, ?> responseMap = (Map<?, ?>) formattedResponse;
+
+            // Skip metadata wrapper if present
+            if (responseMap.containsKey("data")) {
+                return extractActualData(responseMap.get("data"));
+            }
+
+            // If it has the business fields directly, return it
+            if (responseMap.containsKey("response_code") ||
+                    responseMap.containsKey("mess") ||
+                    responseMap.containsKey("batchnumber")) {
+                return responseMap;
+            }
         }
 
-        return ExecuteApiResponseDTO.builder()
-                .responseCode(200)
-                .message("API executed successfully")
-                .data(dataList)
-                .success(true)
-                .build();
+        return formattedResponse;
     }
 
     public ExecuteApiResponseDTO createErrorResponse(int statusCode, String message, long startTime) {
         long executionTime = System.currentTimeMillis() - startTime;
 
-        List<Map<String, Object>> errorData = new ArrayList<>();
-        Map<String, Object> errorMap = new HashMap<>();
-        errorMap.put("error", message);
-        errorMap.put("timestamp", LocalDateTime.now().toString());
-        errorMap.put("executionTimeMs", executionTime);
-        errorData.add(errorMap);
+        ExecuteApiResponseDTO response = new ExecuteApiResponseDTO();
+        response.setResponseCode(statusCode);
+        response.setSuccess(false);
+        response.setMessage(message);
+//        response.setExecutionTimeMs(executionTime);
 
-        return ExecuteApiResponseDTO.builder()
-                .responseCode(statusCode)
-                .message(message)
-                .data(errorData)
-                .success(false)
-                .build();
+        // Create a simple error object instead of a list
+        Map<String, Object> errorData = new HashMap<>();
+        errorData.put("error", message);
+        errorData.put("timestamp", LocalDateTime.now().toString());
+
+        response.setData(errorData);
+
+        return response;
     }
+
+
 
     public ExecuteApiResponseDTO createSafeErrorResponse(Exception e, long startTime) {
         long executionTime = System.currentTimeMillis() - startTime;
@@ -353,6 +383,9 @@ public class ApiResponseHelper {
                 .build();
     }
 
+
+
+
     public ApiTestResultDTO buildTestResult(ApiTestRequestDTO testRequest, boolean passed,
                                             long executionTime, int statusCode, Object data) {
         return ApiTestResultDTO.builder()
@@ -380,31 +413,31 @@ public class ApiResponseHelper {
     }
 
     public Object formatResponse(GeneratedApiEntity api, Object data) {
-        if (api.getResponseConfig() != null && Boolean.TRUE.equals(api.getResponseConfig().getIncludeMetadata())) {
-            Map<String, Object> formatted = new HashMap<>();
-            formatted.put("data", data);
-
-            Map<String, Object> metadata = new HashMap<>();
-            metadata.put("timestamp", LocalDateTime.now().toString());
-            metadata.put("apiVersion", api.getVersion());
-            metadata.put("requestId", UUID.randomUUID().toString());
-
-            if (api.getResponseConfig().getMetadataFields() != null && !api.getResponseConfig().getMetadataFields().isEmpty()) {
-                Map<String, Object> filteredMetadata = new HashMap<>();
-                for (String field : api.getResponseConfig().getMetadataFields()) {
-                    if (field != null && metadata.containsKey(field)) {
-                        filteredMetadata.put(field, metadata.get(field));
-                    }
-                }
-                if (!filteredMetadata.isEmpty()) {
-                    formatted.put("metadata", filteredMetadata);
-                }
-            } else {
-                formatted.put("metadata", metadata);
-            }
-
-            return formatted;
-        }
+//        if (api.getResponseConfig() != null && Boolean.TRUE.equals(api.getResponseConfig().getIncludeMetadata())) {
+//            Map<String, Object> formatted = new HashMap<>();
+//            formatted.put("data", data);
+//
+//            Map<String, Object> metadata = new HashMap<>();
+//            metadata.put("timestamp", LocalDateTime.now().toString());
+//            metadata.put("apiVersion", api.getVersion());
+//            metadata.put("requestId", UUID.randomUUID().toString());
+//
+//            if (api.getResponseConfig().getMetadataFields() != null && !api.getResponseConfig().getMetadataFields().isEmpty()) {
+//                Map<String, Object> filteredMetadata = new HashMap<>();
+//                for (String field : api.getResponseConfig().getMetadataFields()) {
+//                    if (field != null && metadata.containsKey(field)) {
+//                        filteredMetadata.put(field, metadata.get(field));
+//                    }
+//                }
+//                if (!filteredMetadata.isEmpty()) {
+//                    formatted.put("metadata", filteredMetadata);
+//                }
+//            } else {
+//                formatted.put("metadata", metadata);
+//            }
+//
+//            return formatted;
+//        }
 
         return data;
     }

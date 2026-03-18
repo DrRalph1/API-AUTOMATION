@@ -114,4 +114,6 @@ public interface RequestRepository extends JpaRepository<RequestEntity, String> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from RequestEntityCodeBase r where r.id = :id")
     Optional<RequestEntity> findByIdWithLock(@Param("id") String id);
+
+    Optional<RequestEntity> findByGeneratedApiId(String generatedApiId);
 }
