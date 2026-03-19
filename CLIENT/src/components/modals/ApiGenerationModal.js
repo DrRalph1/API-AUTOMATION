@@ -1651,6 +1651,7 @@ export default function ApiGenerationModal({
   isOpen,
   onClose,
   onSave,
+  onGenerateAPI,  // Add this prop
   selectedObject = null,
   colors = {},
   obType,
@@ -3948,205 +3949,219 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
   };
 
   // Handle preview confirmation - actually call the generateApi function
-  const handlePreviewConfirm = async () => {
-    setPreviewOpen(false);
-    setLoadingOpen(true);
-    
-    try {
-      // Double-check collection info exists
-      if (!selectedCollection || !selectedFolder) {
-        throw new Error('Collection and folder are required');
-      }
+const handlePreviewConfirm = async () => {
+  setPreviewOpen(false);
+  setLoadingOpen(true);
+  
+  try {
+    // Double-check collection info exists
+    if (!selectedCollection || !selectedFolder) {
+      throw new Error('Collection and folder are required');
+    }
 
-      // Prepare the request object for the generateApi function
-      const generateRequest = {
-        apiName: apiDetails.apiName,
-        apiCode: apiDetails.apiCode,
-        description: apiDetails.description,
-        version: apiDetails.version,
-        httpMethod: apiDetails.httpMethod,
-        basePath: apiDetails.basePath,
-        endpointPath: apiDetails.endpointPath,
-        category: apiDetails.category,
-        owner: apiDetails.owner,
-        status: apiDetails.status,
-        tags: apiDetails.tags,
-        collectionInfo: {
-          collectionId: selectedCollection.id,
-          collectionName: selectedCollection.name,
-          collectionType: selectedCollection.type,
-          folderId: selectedFolder.id,
-          folderName: selectedFolder.name
-        },
-        sourceObject: {
-          schemaName: schemaConfig.schemaName,
-          objectType: schemaConfig.objectType,
-          objectName: schemaConfig.objectName,
-          operation: schemaConfig.operation,
-          primaryKeyColumn: schemaConfig.primaryKeyColumn,
-          sequenceName: schemaConfig.sequenceName,
-          enablePagination: schemaConfig.enablePagination,
-          pageSize: schemaConfig.pageSize,
-          enableSorting: schemaConfig.enableSorting,
-          defaultSortColumn: schemaConfig.defaultSortColumn,
-          defaultSortDirection: schemaConfig.defaultSortDirection
-        },
-        schemaConfig: schemaConfig,
-        // Only send IN parameters in parameters array
-        parameters: getInParameters().map(p => ({
-          ...p,
-          bodyFormat: p.parameterLocation === 'body' ? requestBody.bodyType : null
-        })),
-        // Send all response mappings (including OUT parameters)
-        responseMappings: getOutMappings(),
-        requestBody: {
-          ...requestBody,
-          contentType: requestBody.bodyType === 'json' ? 'application/json' :
-                    requestBody.bodyType === 'xml' ? 'application/xml' :
-                    requestBody.bodyType === 'form-data' ? 'multipart/form-data' :
-                    requestBody.bodyType === 'urlencoded' ? 'application/x-www-form-urlencoded' :
-                    requestBody.bodyType === 'raw' ? 'text/plain' :
-                    null, // null for 'none'
-          sample: (() => {
-            if (requestBody.bodyType === 'none') return null;
-            if (typeof requestBody.sample === 'string') {
-              return requestBody.sample;
-            }
-            if (requestBody.sample && typeof requestBody.sample === 'object') {
-              return JSON.stringify(requestBody.sample, null, 2);
-            }
-            return requestBody.bodyType === 'json' ? '{}' : '';
-          })()
-        },
-        responseBody: {
-          ...responseBody,
-          successSchema: (() => {
-            if (typeof responseBody.successSchema === 'string') {
-              return responseBody.successSchema;
-            }
-            if (responseBody.successSchema && typeof responseBody.successSchema === 'object') {
-              return JSON.stringify(responseBody.successSchema, null, 2);
-            }
-            return '{\n  "success": true,\n  "data": {},\n  "message": "Success"\n}';
-          })(),
-          errorSchema: (() => {
-            if (typeof responseBody.errorSchema === 'string') {
-              return responseBody.errorSchema;
-            }
-            if (responseBody.errorSchema && typeof responseBody.errorSchema === 'object') {
-              return JSON.stringify(responseBody.errorSchema, null, 2);
-            }
-            return '{\n  "success": false,\n  "error": {\n    "code": "ERROR",\n    "message": "Error"\n  }\n}';
-          })()
-        },
-        authConfig: authConfig,
-        headers: headers,
-        tests: {
-          testConnection: tests.testConnection,
-          testObjectAccess: tests.testObjectAccess,
-          testPrivileges: tests.testPrivileges,
-          testDataTypes: tests.testDataTypes,
-          testNullConstraints: tests.testNullConstraints,
-          testUniqueConstraints: tests.testUniqueConstraints,
-          testForeignKeyReferences: tests.testForeignKeyReferences,
-          testQueryPerformance: tests.testQueryPerformance,
-          performanceThreshold: tests.performanceThreshold,
-          testWithSampleData: tests.testWithSampleData,
-          sampleDataRows: tests.sampleDataRows,
-          testProcedureExecution: tests.testProcedureExecution,
-          testFunctionReturn: tests.testFunctionReturn,
-          testExceptionHandling: tests.testExceptionHandling,
-          testSQLInjection: tests.testSQLInjection,
-          testAuthentication: tests.testAuthentication,
-          testAuthorization: tests.testAuthorization,
-          testData: (() => {
-            if (!tests.testData) {
+    // Prepare the request object for the generateApi function
+    const generateRequest = {
+      apiName: apiDetails.apiName,
+      apiCode: apiDetails.apiCode,
+      description: apiDetails.description,
+      version: apiDetails.version,
+      httpMethod: apiDetails.httpMethod,
+      basePath: apiDetails.basePath,
+      endpointPath: apiDetails.endpointPath,
+      category: apiDetails.category,
+      owner: apiDetails.owner,
+      status: apiDetails.status,
+      tags: apiDetails.tags,
+      collectionInfo: {
+        collectionId: selectedCollection.id,
+        collectionName: selectedCollection.name,
+        collectionType: selectedCollection.type,
+        folderId: selectedFolder.id,
+        folderName: selectedFolder.name
+      },
+      sourceObject: {
+        schemaName: schemaConfig.schemaName,
+        objectType: schemaConfig.objectType,
+        objectName: schemaConfig.objectName,
+        operation: schemaConfig.operation,
+        primaryKeyColumn: schemaConfig.primaryKeyColumn,
+        sequenceName: schemaConfig.sequenceName,
+        enablePagination: schemaConfig.enablePagination,
+        pageSize: schemaConfig.pageSize,
+        enableSorting: schemaConfig.enableSorting,
+        defaultSortColumn: schemaConfig.defaultSortColumn,
+        defaultSortDirection: schemaConfig.defaultSortDirection
+      },
+      schemaConfig: schemaConfig,
+      // Only send IN parameters in parameters array
+      parameters: getInParameters().map(p => ({
+        ...p,
+        bodyFormat: p.parameterLocation === 'body' ? requestBody.bodyType : null
+      })),
+      // Send all response mappings (including OUT parameters)
+      responseMappings: getOutMappings(),
+      requestBody: {
+        ...requestBody,
+        contentType: requestBody.bodyType === 'json' ? 'application/json' :
+                  requestBody.bodyType === 'xml' ? 'application/xml' :
+                  requestBody.bodyType === 'form-data' ? 'multipart/form-data' :
+                  requestBody.bodyType === 'urlencoded' ? 'application/x-www-form-urlencoded' :
+                  requestBody.bodyType === 'raw' ? 'text/plain' :
+                  null, // null for 'none'
+        sample: (() => {
+          if (requestBody.bodyType === 'none') return null;
+          if (typeof requestBody.sample === 'string') {
+            return requestBody.sample;
+          }
+          if (requestBody.sample && typeof requestBody.sample === 'object') {
+            return JSON.stringify(requestBody.sample, null, 2);
+          }
+          return requestBody.bodyType === 'json' ? '{}' : '';
+        })()
+      },
+      responseBody: {
+        ...responseBody,
+        successSchema: (() => {
+          if (typeof responseBody.successSchema === 'string') {
+            return responseBody.successSchema;
+          }
+          if (responseBody.successSchema && typeof responseBody.successSchema === 'object') {
+            return JSON.stringify(responseBody.successSchema, null, 2);
+          }
+          return '{\n  "success": true,\n  "data": {},\n  "message": "Success"\n}';
+        })(),
+        errorSchema: (() => {
+          if (typeof responseBody.errorSchema === 'string') {
+            return responseBody.errorSchema;
+          }
+          if (responseBody.errorSchema && typeof responseBody.errorSchema === 'object') {
+            return JSON.stringify(responseBody.errorSchema, null, 2);
+          }
+          return '{\n  "success": false,\n  "error": {\n    "code": "ERROR",\n    "message": "Error"\n  }\n}';
+        })()
+      },
+      authConfig: authConfig,
+      headers: headers,
+      tests: {
+        testConnection: tests.testConnection,
+        testObjectAccess: tests.testObjectAccess,
+        testPrivileges: tests.testPrivileges,
+        testDataTypes: tests.testDataTypes,
+        testNullConstraints: tests.testNullConstraints,
+        testUniqueConstraints: tests.testUniqueConstraints,
+        testForeignKeyReferences: tests.testForeignKeyReferences,
+        testQueryPerformance: tests.testQueryPerformance,
+        performanceThreshold: tests.performanceThreshold,
+        testWithSampleData: tests.testWithSampleData,
+        sampleDataRows: tests.sampleDataRows,
+        testProcedureExecution: tests.testProcedureExecution,
+        testFunctionReturn: tests.testFunctionReturn,
+        testExceptionHandling: tests.testExceptionHandling,
+        testSQLInjection: tests.testSQLInjection,
+        testAuthentication: tests.testAuthentication,
+        testAuthorization: tests.testAuthorization,
+        testData: (() => {
+          if (!tests.testData) {
+            return {};
+          }
+          if (typeof tests.testData === 'object' && tests.testData !== null) {
+            return tests.testData;
+          }
+          if (typeof tests.testData === 'string') {
+            const trimmed = tests.testData.trim();
+            if (trimmed === '') {
               return {};
             }
-            if (typeof tests.testData === 'object' && tests.testData !== null) {
-              return tests.testData;
-            }
-            if (typeof tests.testData === 'string') {
-              const trimmed = tests.testData.trim();
-              if (trimmed === '') {
-                return {};
+            if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+              try {
+                return JSON.parse(trimmed);
+              } catch (e) {
+                console.warn('Failed to parse testData JSON, wrapping in object:', e);
+                return { value: trimmed };
               }
-              if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-                try {
-                  return JSON.parse(trimmed);
-                } catch (e) {
-                  console.warn('Failed to parse testData JSON, wrapping in object:', e);
-                  return { value: trimmed };
-                }
-              }
-              return { value: trimmed };
             }
-            return { value: tests.testData };
-          })(),
-          testQueries: Array.isArray(tests.testQueries) ? tests.testQueries : []
-        },
-        settings: settings,
-        regenerateComponents: true
-      };
+            return { value: trimmed };
+          }
+          return { value: tests.testData };
+        })(),
+        testQueries: Array.isArray(tests.testQueries) ? tests.testQueries : []
+      },
+      settings: settings,
+      regenerateComponents: true
+    };
 
-      console.log('📡 Sending to backend with format:', requestBody.bodyType, generateRequest.requestBody.contentType);
-      console.log('📡 IN Parameters count:', generateRequest.parameters.length);
-      console.log('📡 Response Mappings count:', generateRequest.responseMappings.length);
-      
-      let response;
-      
-      // Call the appropriate API based on whether we're editing or creating
-      if (isEditing && (selectedObject?.id || selectedObject?.data?.id)) {
-        const apiId = selectedObject.data?.id || selectedObject.id;
-        console.log('📡 Updating API with ID:', apiId);
-        // Call updateApi for editing
-        response = await updateApi(authToken, apiId, generateRequest);
-      } else {
-        // Call generateApi for new API
-        response = await generateApi(authToken, generateRequest);
-      }
-      
-      console.log('📥 API response:', response);
-
-      // Store the response
-      setApiResponse(response);
-
-      // If the response is successful, we have the generated data
-      if (response.responseCode >= 200 && response.responseCode < 300) {
-        // Combine the original data with the response data
-        const enrichedApiData = {
-          ...newApiData,
-          ...response.data,
-          generatedFiles: response.data?.generatedFiles || newApiData?.generatedFiles,
-          isEditing: isEditing
-        };
-        setNewApiData(enrichedApiData);
-        
-        // Call the parent onSave if provided
-        if (onSave) {
-          onSave(enrichedApiData, response);
-        }
-      } else {
-        // Handle error
-        console.error('API operation failed:', response);
-      }
-
-    } catch (error) {
-      console.error('❌ Error:', error);
-      setApiResponse({
-        responseCode: 500,
-        message: error.message || 'Failed to process API request',
-        data: null
-      });
-    } finally {
-      setLoadingOpen(false);
-      setConfirmationOpen(true);
+    console.log('📡 Sending to backend with format:', requestBody.bodyType, generateRequest.requestBody.contentType);
+    console.log('📡 IN Parameters count:', generateRequest.parameters.length);
+    console.log('📡 Response Mappings count:', generateRequest.responseMappings.length);
+    
+    let response;
+    
+    // Call the appropriate API based on whether we're editing or creating
+    if (isEditing && (selectedObject?.id || selectedObject?.data?.id)) {
+      const apiId = selectedObject.data?.id || selectedObject.id;
+      console.log('📡 Updating API with ID:', apiId);
+      // Call updateApi for editing
+      response = await updateApi(authToken, apiId, generateRequest);
+    } else {
+      // Call generateApi for new API
+      response = await generateApi(authToken, generateRequest);
     }
-  };
+    
+    console.log('📥 API response:', response);
 
-  // Handle confirmation modal close
+    // Store the response
+    setApiResponse(response);
+
+    // If the response is successful, we have the generated data
+    if (response.responseCode >= 200 && response.responseCode < 300) {
+      // Combine the original data with the response data
+      const enrichedApiData = {
+        ...newApiData,
+        ...response.data,
+        generatedFiles: response.data?.generatedFiles || newApiData?.generatedFiles,
+        isEditing: isEditing
+      };
+      setNewApiData(enrichedApiData);
+      
+      // Call the parent onSave if provided
+      if (onSave) {
+        onSave(enrichedApiData, response);
+      }
+      
+      // IMPORTANT: Call onGenerateAPI to refresh the dashboard endpoints table
+      // This will trigger the refresh after successful update
+      if (onGenerateAPI) {
+        console.log('🔄 Triggering dashboard refresh after API update');
+        onGenerateAPI();
+      }
+    } else {
+      // Handle error
+      console.error('API operation failed:', response);
+    }
+
+  } catch (error) {
+    console.error('❌ Error:', error);
+    setApiResponse({
+      responseCode: 500,
+      message: error.message || 'Failed to process API request',
+      data: null
+    });
+  } finally {
+    setLoadingOpen(false);
+    setConfirmationOpen(true);
+  }
+};
+
+ // Handle confirmation modal close
   const handleConfirmationClose = () => {
     setConfirmationOpen(false);
+    
+    // Also refresh when closing the success modal (for extra safety)
+    if (onGenerateAPI && apiResponse?.responseCode >= 200 && apiResponse?.responseCode < 300) {
+      console.log('🔄 Triggering dashboard refresh on confirmation close');
+      onGenerateAPI();
+    }
+    
     onClose(); // Close the generation modal too
   };
 
