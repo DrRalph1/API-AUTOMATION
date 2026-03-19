@@ -88,7 +88,7 @@ public class SMSRequestHelper {
             loggerUtil.log(Level.INFO, "api-automation", "SMSRequestHelper.submitMessageToInfoBib",
                     "Submitting message to Infobip: " + message);
 
-            URL sendUrl = new URL("https://api.infobip.com/sms/1/text/single");
+            URL sendUrl = new URL("https://...api.infobip.com/sms/1/text/single");
             System.out.println("[SMSRequestHelper] Created URL: " + sendUrl);
 
             HttpURLConnection httpConnection = (HttpURLConnection) sendUrl.openConnection();

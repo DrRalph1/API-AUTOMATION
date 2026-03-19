@@ -3356,41 +3356,6 @@ public class OracleSchemaRepository {
         return parameters;
     }
 
-    /**
-     * Remove all SQL comments (--) from the string
-     */
-    private String removeComments(String text) {
-        StringBuilder result = new StringBuilder();
-        String[] lines = text.split("\\n");
-
-        for (String line : lines) {
-            // Find the position of '--' that is not inside quotes
-            boolean inQuotes = false;
-            int commentStart = -1;
-
-            for (int i = 0; i < line.length(); i++) {
-                char c = line.charAt(i);
-
-                if (c == '\'') {
-                    inQuotes = !inQuotes;
-                } else if (!inQuotes && c == '-' && i + 1 < line.length() && line.charAt(i + 1) == '-') {
-                    commentStart = i;
-                    break;
-                }
-            }
-
-            if (commentStart != -1) {
-                // Add everything before the comment
-                result.append(line.substring(0, commentStart));
-            } else {
-                result.append(line);
-            }
-
-            result.append(" ");
-        }
-
-        return result.toString();
-    }
 
     /**
      * Split parameters by commas, respecting parentheses
@@ -3726,6 +3691,14 @@ public class OracleSchemaRepository {
     // 4. PAGINATED FUNCTION PARAMETERS REPOSITORY METHOD
     // ============================================================
 
+// ============================================================
+// 4. PAGINATED FUNCTION PARAMETERS REPOSITORY METHOD - UPDATED
+// ============================================================
+
+    // ============================================================
+// 4. PAGINATED FUNCTION PARAMETERS REPOSITORY METHOD - UPDATED
+// ============================================================
+
     public Map<String, Object> getFunctionParametersPaginated(String functionName, String owner,
                                                               int page, int pageSize) {
         Map<String, Object> result = new HashMap<>();
@@ -3737,60 +3710,331 @@ public class OracleSchemaRepository {
 
             int offset = (page - 1) * pageSize;
 
-            // Get total count including return type
+            // First, check if this is a synonym and resolve it
+            Map<String, Object> resolved = resolveSynonymIfNeeded(functionName, owner);
+
+            String actualOwner;
+            String actualFunctionName;
+            boolean isSynonym = false;
+
+            if (resolved != null && !resolved.isEmpty()) {
+                actualOwner = (String) resolved.get("target_owner");
+                actualFunctionName = (String) resolved.get("target_name");
+                isSynonym = true;
+                log.info("Resolved synonym {} to target {}.{}", functionName, actualOwner, actualFunctionName);
+            } else {
+                actualOwner = owner;
+                actualFunctionName = functionName;
+            }
+
+            // Try to get parameters from database first
             String countSql = "SELECT COUNT(*) FROM all_arguments " +
                     "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
                     "AND package_name IS NULL";
 
-            int totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class, owner, functionName);
+            int totalCount = 0;
+            List<Map<String, Object>> allParameters = new ArrayList<>();
+            boolean fromSource = false;
 
-            // Get paginated parameters
-            String paramSql = "SELECT " +
-                    "    argument_name, " +
-                    "    position, " +
-                    "    sequence, " +
-                    "    data_type, " +
-                    "    in_out, " +
-                    "    data_length, " +
-                    "    data_precision, " +
-                    "    data_scale, " +
-                    "    defaulted " +
-                    "FROM all_arguments " +
-                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
-                    "AND package_name IS NULL " +
-                    "ORDER BY position, sequence " +
-                    "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
+            try {
+                totalCount = oracleJdbcTemplate.queryForObject(countSql, Integer.class, actualOwner, actualFunctionName);
 
-            List<Map<String, Object>> allArgs = oracleJdbcTemplate.queryForList(
-                    paramSql, owner, functionName, offset, pageSize);
+                if (totalCount > 0) {
+                    // Get paginated parameters from database (including return type at position 0)
+                    String paramSql = "SELECT " +
+                            "    argument_name, " +
+                            "    position, " +
+                            "    sequence, " +
+                            "    data_type, " +
+                            "    in_out, " +
+                            "    data_length, " +
+                            "    data_precision, " +
+                            "    data_scale, " +
+                            "    defaulted " +
+                            "FROM all_arguments " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                            "AND package_name IS NULL " +
+                            "ORDER BY position, sequence " +
+                            "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
 
-            // Separate return type (position = 0) from parameters
-            List<Map<String, Object>> parameters = new ArrayList<>();
-            Map<String, Object> returnType = null;
+                    List<Map<String, Object>> dbParameters = oracleJdbcTemplate.queryForList(
+                            paramSql, actualOwner, actualFunctionName, offset, pageSize);
 
-            for (Map<String, Object> arg : allArgs) {
-                Number position = (Number) arg.get("position");
-                if (position != null && position.intValue() == 0) {
-                    returnType = arg;
-                } else {
-                    parameters.add(arg);
+                    // Format all parameters (including return type) with consistent field names
+                    for (Map<String, Object> param : dbParameters) {
+                        Map<String, Object> formatted = new HashMap<>();
+                        formatted.put("ARGUMENT_NAME", param.get("argument_name"));
+                        formatted.put("POSITION", param.get("position"));
+                        formatted.put("SEQUENCE", param.get("sequence"));
+                        formatted.put("DATA_TYPE", param.get("data_type"));
+                        formatted.put("IN_OUT", param.get("in_out") != null ?
+                                param.get("in_out").toString().toUpperCase() : "IN");
+                        formatted.put("DATA_LENGTH", param.get("data_length"));
+                        formatted.put("DATA_PRECISION", param.get("data_precision"));
+                        formatted.put("DATA_SCALE", param.get("data_scale"));
+                        formatted.put("DEFAULTED", param.get("defaulted"));
+                        allParameters.add(formatted);
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Error querying all_arguments for {}.{}: {}",
+                        actualOwner, actualFunctionName, e.getMessage());
+            }
+
+            // If no parameters found in database, try parsing from source
+            if (allParameters.isEmpty() && totalCount == 0) {
+                log.info("No parameters found in database for {}.{}, attempting to parse from source",
+                        actualOwner, actualFunctionName);
+
+                // Get ALL parameters from source (including return type as first parameter)
+                List<Map<String, Object>> sourceParameters = parseFunctionParametersFromSource(actualOwner, actualFunctionName);
+
+                if (!sourceParameters.isEmpty()) {
+                    totalCount = sourceParameters.size();
+                    fromSource = true;
+
+                    // Apply pagination to the parsed parameters
+                    if (offset < sourceParameters.size()) {
+                        int endIndex = Math.min(offset + pageSize, sourceParameters.size());
+                        allParameters = sourceParameters.subList(offset, endIndex);
+                    }
+
+                    log.info("Parsed {} parameters from source for {}.{}",
+                            totalCount, actualOwner, actualFunctionName);
                 }
             }
 
-            result.put("parameters", parameters);
-            result.put("returnType", returnType);
+            // Prepare the response - parameters array includes return type as first element
+            result.put("parameters", allParameters);
             result.put("totalCount", totalCount);
             result.put("page", page);
             result.put("pageSize", pageSize);
-            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+            result.put("totalPages", pageSize > 0 ? (int) Math.ceil((double) totalCount / pageSize) : 0);
+
+            if (isSynonym) {
+                result.put("isSynonym", true);
+                result.put("originalOwner", owner);
+                result.put("originalName", functionName);
+                result.put("resolvedOwner", actualOwner);
+                result.put("resolvedName", actualFunctionName);
+            }
+
+            if (fromSource) {
+                result.put("fromSource", true);
+                result.put("message", "Parameters parsed from source code");
+            }
 
             return result;
 
         } catch (Exception e) {
-            log.error("Error in getFunctionParametersPaginated for {}.{}: {}", owner, functionName, e.getMessage(), e);
+            log.error("Error in getFunctionParametersPaginated for {}.{}: {}",
+                    owner, functionName, e.getMessage(), e);
             throw new RuntimeException("Failed to retrieve function parameters: " + e.getMessage(), e);
         }
     }
+
+    /**
+     * Parse function parameters from source - MODIFIED to include return type as first parameter
+     */
+    private List<Map<String, Object>> parseFunctionParametersFromSource(String owner, String functionName) {
+        List<Map<String, Object>> allParams = new ArrayList<>();
+
+        try {
+            // First, parse the return type
+            Map<String, Object> returnType = parseFunctionReturnTypeFromSource(owner, functionName);
+            if (returnType != null && !returnType.isEmpty()) {
+                // Format return type as a parameter
+                Map<String, Object> returnParam = new HashMap<>();
+                returnParam.put("ARGUMENT_NAME", "RETURN");
+                returnParam.put("POSITION", 0);
+                returnParam.put("SEQUENCE", 1);
+                returnParam.put("DATA_TYPE", returnType.get("data_type"));
+                returnParam.put("IN_OUT", "OUT");
+                returnParam.put("DATA_LENGTH", returnType.get("data_length"));
+                returnParam.put("DATA_PRECISION", returnType.get("data_precision"));
+                returnParam.put("DATA_SCALE", returnType.get("data_scale"));
+                returnParam.put("DEFAULTED", "N");
+                allParams.add(returnParam);
+            }
+
+            // Get the source code
+            String source = getSourceFromAllSource(functionName, owner, "FUNCTION");
+
+            if (source == null || source.isEmpty()) {
+                log.warn("No source found for function {}.{}", owner, functionName);
+                return allParams;
+            }
+
+            log.info("Found source for function {}.{}, length: {}", owner, functionName, source.length());
+
+            // Remove comments
+            String sourceWithoutComments = removeComments(source);
+
+            // Try multiple patterns to find function signature
+            String[] patterns = {
+                    "FUNCTION\\s+" + functionName + "\\s*\\(([\\s\\S]*?)\\)\\s*RETURN",
+                    "FUNCTION\\s+" + functionName + "\\s*\\(([\\s\\S]*?)\\)",
+                    "function\\s+" + functionName + "\\s*\\(([\\s\\S]*?)\\)\\s*return",
+                    functionName + "\\s*\\(([\\s\\S]*?)\\)\\s*RETURN"
+            };
+
+            String paramsSection = null;
+
+            for (String patternStr : patterns) {
+                Pattern p = Pattern.compile(patternStr, Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+                Matcher m = p.matcher(sourceWithoutComments);
+
+                if (m.find()) {
+                    paramsSection = m.group(1).trim();
+                    log.info("Found parameter section for {} using pattern: {}", functionName, patternStr);
+                    log.debug("Parameter section: '{}'", paramsSection);
+                    break;
+                }
+            }
+
+            if (paramsSection != null && !paramsSection.isEmpty()) {
+                // Split parameters by comma, respecting parentheses
+                List<String> paramDefs = splitParameters(paramsSection);
+                log.info("Found {} parameter definitions", paramDefs.size());
+
+                int position = 1; // Start from 1 for regular parameters (return type already has position 0)
+                for (String paramDef : paramDefs) {
+                    log.debug("Processing parameter definition: '{}'", paramDef);
+                    Map<String, Object> param = parseFunctionParameter(paramDef, position);
+                    if (param != null && !param.isEmpty()) {
+                        // Format the parameter with consistent field names
+                        Map<String, Object> formattedParam = new HashMap<>();
+                        formattedParam.put("ARGUMENT_NAME", param.get("argument_name"));
+                        formattedParam.put("POSITION", param.get("position"));
+                        formattedParam.put("SEQUENCE", param.get("sequence") != null ? param.get("sequence") : position + 1);
+                        formattedParam.put("DATA_TYPE", param.get("data_type"));
+                        formattedParam.put("IN_OUT", param.get("in_out") != null ?
+                                param.get("in_out").toString().toUpperCase() : "IN");
+                        formattedParam.put("DATA_LENGTH", param.get("data_length"));
+                        formattedParam.put("DATA_PRECISION", param.get("data_precision"));
+                        formattedParam.put("DATA_SCALE", param.get("data_scale"));
+                        formattedParam.put("DEFAULTED", param.get("defaulted") != null ? param.get("defaulted") : "N");
+                        allParams.add(formattedParam);
+                        position++;
+                        log.debug("Successfully parsed parameter: {}", formattedParam);
+                    }
+                }
+
+                log.info("Parsed {} parameters for function {} (including return type)",
+                        allParams.size(), functionName);
+            } else {
+                log.warn("Could not find parameter section for function {}", functionName);
+            }
+
+        } catch (Exception e) {
+            log.error("Error parsing function parameters from source for {}.{}: {}",
+                    owner, functionName, e.getMessage(), e);
+        }
+
+        return allParams;
+    }
+
+
+    /**
+     * Specialized parameter parser for functions that handles the format: p_trans_code IN varchar2
+     */
+    private Map<String, Object> parseFunctionParameter(String paramDef, int position) {
+        Map<String, Object> param = new HashMap<>();
+
+        // Clean up the parameter definition
+        paramDef = paramDef.replaceAll("\\s+", " ").trim();
+
+        // Remove inline comments
+        int commentIdx = paramDef.indexOf("--");
+        if (commentIdx > 0) {
+            paramDef = paramDef.substring(0, commentIdx).trim();
+        }
+
+        if (paramDef.isEmpty()) {
+            return null;
+        }
+
+        log.debug("Parsing function parameter: '{}' at position {}", paramDef, position);
+
+        // Pattern specifically for function parameters: name IN/OUT type
+        // This matches: p_trans_code IN varchar2
+        Pattern pattern = Pattern.compile(
+                "^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s+" +  // parameter name (p_trans_code)
+                        "(IN|OUT|IN\\s+OUT)\\s+" +              // direction (IN)
+                        "([a-zA-Z_][a-zA-Z0-9_]*" +             // data type (varchar2)
+                        "(?:\\s*\\(" +
+                        "[^)]*" +
+                        "\\))?)" +                               // optional size/precision
+                        "(?:\\s+(?:DEFAULT|:=)\\s+(.+))?",      // default value (optional)
+                Pattern.CASE_INSENSITIVE
+        );
+
+        Matcher matcher = pattern.matcher(paramDef);
+
+        if (matcher.find()) {
+            String paramName = matcher.group(1);
+            String direction = matcher.group(2);
+            String dataType = matcher.group(3);
+            String defaultValue = matcher.group(4);
+
+            // Clean up data type
+            dataType = dataType.trim().toUpperCase();
+
+            param.put("argument_name", paramName);
+            param.put("position", position);
+            param.put("sequence", position);
+            param.put("data_type", dataType);
+            param.put("in_out", direction.toUpperCase().replace(" ", "_"));
+
+            // Extract length/precision if present
+            if (dataType.contains("(")) {
+                param.put("data_length", extractLength(dataType));
+                param.put("data_precision", extractPrecision(dataType));
+                param.put("data_scale", extractScale(dataType));
+            }
+
+            param.put("defaulted", defaultValue != null ? "YES" : "NO");
+
+            log.info("Successfully parsed function parameter: name={}, direction={}, type={}",
+                    paramName, direction, dataType);
+        } else {
+            // Try alternative pattern for cases where direction might be missing
+            Pattern altPattern = Pattern.compile(
+                    "^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s+" +  // parameter name
+                            "([a-zA-Z_][a-zA-Z0-9_]*" +             // data type
+                            "(?:\\s*\\(" +
+                            "[^)]*" +
+                            "\\))?)" +
+                            "(?:\\s+(?:DEFAULT|:=)\\s+(.+))?",
+                    Pattern.CASE_INSENSITIVE
+            );
+
+            Matcher altMatcher = altPattern.matcher(paramDef);
+            if (altMatcher.find()) {
+                String paramName = altMatcher.group(1);
+                String dataType = altMatcher.group(2);
+                String defaultValue = altMatcher.group(3);
+
+                param.put("argument_name", paramName);
+                param.put("position", position);
+                param.put("sequence", position);
+                param.put("data_type", dataType.trim().toUpperCase());
+                param.put("in_out", "IN"); // Default to IN
+                param.put("data_length", extractLength(dataType));
+                param.put("data_precision", extractPrecision(dataType));
+                param.put("data_scale", extractScale(dataType));
+                param.put("defaulted", defaultValue != null ? "YES" : "NO");
+
+                log.info("Parsed function parameter with alt pattern: name={}, type={}", paramName, dataType);
+            } else {
+                log.warn("Could not parse function parameter: '{}'", paramDef);
+            }
+        }
+
+        return param.isEmpty() ? null : param;
+    }
+
+
 
     // ============================================================
     // 5. PAGINATED PACKAGE ITEMS REPOSITORY METHOD
@@ -5229,6 +5473,9 @@ public class OracleSchemaRepository {
     /**
      * Get procedure details with owner - FIXED to handle invalid procedures
      */
+    /**
+     * Get procedure details with owner - FIXED version
+     */
     public Map<String, Object> getProcedureDetails(String owner, String procedureName) {
         Map<String, Object> details = new HashMap<>();
 
@@ -5251,44 +5498,95 @@ public class OracleSchemaRepository {
                 details.put("owner", owner);
                 details.put("object_type", "PROCEDURE");
                 log.info("Procedure {} is in package: {}", procedureName, packageName);
-
-                // Get package info
-                String pkgSql = "SELECT status, created, last_ddl_time FROM all_objects " +
-                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
-                        "AND object_type = 'PACKAGE'";
-
-                try {
-                    Map<String, Object> pkgInfo = oracleJdbcTemplate.queryForMap(pkgSql, owner, packageName);
-                    details.put("package_status", pkgInfo.get("status"));
-                    details.put("package_created", pkgInfo.get("created"));
-                    details.put("package_modified", pkgInfo.get("last_ddl_time"));
-                } catch (Exception e) {
-                    log.debug("Could not get package info: {}", e.getMessage());
-                }
             } else {
                 // Get standalone procedure info
-                String sql = "SELECT " +
-                        "    object_name, " +
-                        "    object_type, " +
-                        "    status, " +
-                        "    created, " +
-                        "    last_ddl_time, " +
-                        "    temporary, " +
-                        "    generated, " +
-                        "    secondary " +
-                        "FROM all_objects " +
-                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
-                        "AND object_type = 'PROCEDURE'";
+                try {
+                    String sql = "SELECT " +
+                            "    object_name, " +
+                            "    object_type, " +
+                            "    status, " +
+                            "    created, " +
+                            "    last_ddl_time, " +
+                            "    temporary, " +
+                            "    generated, " +
+                            "    secondary " +
+                            "FROM all_objects " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                            "AND object_type = 'PROCEDURE'";
 
-                Map<String, Object> procInfo = oracleJdbcTemplate.queryForMap(sql, owner, procedureName);
-                details.putAll(procInfo);
+                    Map<String, Object> procInfo = oracleJdbcTemplate.queryForMap(sql, owner, procedureName);
+                    details.putAll(procInfo);
+                } catch (EmptyResultDataAccessException e) {
+                    // Try without object type filter
+                    String altSql = "SELECT object_name, object_type, status, created, last_ddl_time " +
+                            "FROM all_objects WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?)";
+                    Map<String, Object> procInfo = oracleJdbcTemplate.queryForMap(altSql, owner, procedureName);
+                    details.putAll(procInfo);
+                }
             }
 
             // Try to get parameters from database first
-            List<Map<String, Object>> params = new ArrayList<>();
+            List<Map<String, Object>> params = getProcedureParametersFromDatabase(owner, procedureName, isPackageProcedure, packages);
 
-            if (isPackageProcedure) {
-                // For package procedures, query by package_name and procedure_name
+            // If database parameters are empty or suspicious (like only 1 parameter when there should be many),
+            // try parsing from source
+            if (params.isEmpty() || (params.size() == 1 && !isLikelyCorrectParameterCount(params, procedureName))) {
+                log.info("Database parameters insufficient for {}.{}, trying enhanced source parsing",
+                        owner, procedureName);
+                params = parseProcedureParametersEnhanced(owner, procedureName);
+            }
+
+            details.put("parameters", params);
+            details.put("parameterCount", params.size());
+
+            // Calculate parameter counts by type
+            int inCount = 0;
+            int outCount = 0;
+            int inOutCount = 0;
+
+            for (Map<String, Object> param : params) {
+                String inOut = (String) param.get("in_out");
+                if (inOut == null) inOut = (String) param.get("IN_OUT");
+
+                if (inOut != null) {
+                    String upperInOut = inOut.toUpperCase();
+                    if (upperInOut.contains("IN") && upperInOut.contains("OUT")) {
+                        inOutCount++;
+                    } else if (upperInOut.contains("OUT")) {
+                        outCount++;
+                    } else if (upperInOut.contains("IN")) {
+                        inCount++;
+                    }
+                }
+            }
+
+            details.put("inParameterCount", inCount);
+            details.put("outParameterCount", outCount);
+            details.put("inOutParameterCount", inOutCount);
+
+            // Get source code
+            String source = getProcedureSource(owner, procedureName, isPackageProcedure, packages);
+            if (source != null) {
+                details.put("sourceCode", source);
+            }
+
+        } catch (Exception e) {
+            log.warn("Error getting procedure details for {}.{}: {}", owner, procedureName, e.getMessage());
+            details.put("error", e.getMessage());
+        }
+
+        return details;
+    }
+
+    /**
+     * Get procedure parameters from database
+     */
+    private List<Map<String, Object>> getProcedureParametersFromDatabase(String owner, String procedureName,
+                                                                         boolean isPackageProcedure, List<String> packages) {
+        List<Map<String, Object>> params = new ArrayList<>();
+
+        try {
+            if (isPackageProcedure && !packages.isEmpty()) {
                 String packageName = packages.get(0);
                 String paramSql = "SELECT " +
                         "    argument_name, " +
@@ -5310,7 +5608,6 @@ public class OracleSchemaRepository {
 
                 params = oracleJdbcTemplate.queryForList(paramSql, owner, packageName, procedureName);
             } else {
-                // For standalone procedures
                 String paramSql = "SELECT " +
                         "    argument_name, " +
                         "    position, " +
@@ -5329,28 +5626,300 @@ public class OracleSchemaRepository {
 
                 params = oracleJdbcTemplate.queryForList(paramSql, owner, procedureName);
             }
+        } catch (Exception e) {
+            log.debug("Error getting database parameters: {}", e.getMessage());
+        }
 
-            // If no parameters found in database (likely due to invalid object), parse from source
-            if (params.isEmpty()) {
-                log.info("No parameters in database for {}.{}, trying to parse from source", owner, procedureName);
-                params = parseParametersFromSource(owner, procedureName);
+        return params;
+    }
 
-                // If still no parameters, try to get from ALL_SOURCE with different type
-                if (params.isEmpty()) {
-                    log.info("Trying to parse from ALL_SOURCE with different approach for {}.{}", owner, procedureName);
-                    params = parseParametersFromAllSource(owner, procedureName);
+    /**
+     * Enhanced method to parse procedure parameters from source
+     */
+    private List<Map<String, Object>> parseProcedureParametersEnhanced(String owner, String procedureName) {
+        List<Map<String, Object>> params = new ArrayList<>();
+
+        try {
+            // Get source lines in order
+            String sourceSql = "SELECT text FROM all_source " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(name) = UPPER(?) " +
+                    "AND UPPER(type) IN ('PROCEDURE', 'PACKAGE', 'PACKAGE BODY') " +
+                    "ORDER BY line";
+
+            List<String> sourceLines = oracleJdbcTemplate.queryForList(sourceSql, String.class, owner, procedureName);
+
+            if (sourceLines.isEmpty()) {
+                log.warn("No source found for {}.{}", owner, procedureName);
+                return params;
+            }
+
+            // Build full source
+            StringBuilder fullSourceBuilder = new StringBuilder();
+            for (String line : sourceLines) {
+                fullSourceBuilder.append(line).append("\n");
+            }
+            String fullSource = fullSourceBuilder.toString();
+
+            // Remove comments to avoid interference
+            String sourceWithoutComments = removeComments(fullSource);
+
+            // Find the procedure signature - multiple patterns to try
+            String[] patterns = {
+                    "PROCEDURE\\s+" + procedureName + "\\s*\\(([\\s\\S]*?)\\)\\s*(?:IS|AS)",
+                    "PROCEDURE\\s+" + procedureName + "\\s*\\(([\\s\\S]*?)\\)",
+                    "procedure\\s+" + procedureName + "\\s*\\(([\\s\\S]*?)\\)\\s*(?:is|as)",
+                    procedureName + "\\s*\\(([\\s\\S]*?)\\)\\s*(?:IS|AS)"
+            };
+
+            String paramsSection = null;
+
+            for (String patternStr : patterns) {
+                Pattern pattern = Pattern.compile(patternStr, Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+                Matcher matcher = pattern.matcher(sourceWithoutComments);
+
+                if (matcher.find()) {
+                    paramsSection = matcher.group(1).trim();
+                    log.info("Found parameter section using pattern: {}", patternStr);
+                    break;
                 }
             }
 
-            details.put("parameters", params);
-            details.put("parameterCount", params.size());
+            if (paramsSection == null || paramsSection.isEmpty()) {
+                log.warn("Could not find parameter section for {}", procedureName);
+                return params;
+            }
 
-            // Get source code if available
+            log.info("Parameter section for {}: {}", procedureName, paramsSection);
+
+            // Parse each parameter
+            List<String> paramDeclarations = splitParameterDeclarations(paramsSection);
+
+            int position = 1;
+            for (String paramDecl : paramDeclarations) {
+                Map<String, Object> param = parseParameterDeclarationEnhanced(paramDecl, position++);
+                if (param != null && !param.isEmpty()) {
+                    params.add(param);
+                    log.debug("Parsed parameter: {}", param);
+                }
+            }
+
+            log.info("Successfully parsed {} parameters for {}", params.size(), procedureName);
+
+        } catch (Exception e) {
+            log.error("Error parsing parameters for {}.{}: {}", owner, procedureName, e.getMessage(), e);
+        }
+
+        return params;
+    }
+
+    /**
+     * Remove comments from source code
+     */
+    private String removeComments(String source) {
+        StringBuilder result = new StringBuilder();
+        String[] lines = source.split("\\n");
+
+        for (String line : lines) {
+            boolean inQuotes = false;
+            int commentStart = -1;
+
+            for (int i = 0; i < line.length(); i++) {
+                char c = line.charAt(i);
+
+                if (c == '\'') {
+                    inQuotes = !inQuotes;
+                } else if (!inQuotes && c == '-' && i + 1 < line.length() && line.charAt(i + 1) == '-') {
+                    commentStart = i;
+                    break;
+                }
+            }
+
+            if (commentStart != -1) {
+                result.append(line.substring(0, commentStart));
+            } else {
+                result.append(line);
+            }
+            result.append("\n");
+        }
+
+        return result.toString();
+    }
+
+    /**
+     * Split parameter declarations by comma, respecting parentheses
+     */
+    private List<String> splitParameterDeclarations(String paramsSection) {
+        List<String> parameters = new ArrayList<>();
+        StringBuilder currentParam = new StringBuilder();
+        int parenCount = 0;
+        boolean inQuotes = false;
+
+        for (int i = 0; i < paramsSection.length(); i++) {
+            char c = paramsSection.charAt(i);
+
+            if (c == '\'') {
+                inQuotes = !inQuotes;
+                currentParam.append(c);
+            } else if (!inQuotes) {
+                if (c == '(') {
+                    parenCount++;
+                    currentParam.append(c);
+                } else if (c == ')') {
+                    parenCount--;
+                    currentParam.append(c);
+                } else if (c == ',' && parenCount == 0) {
+                    // End of parameter
+                    String param = currentParam.toString().trim();
+                    if (!param.isEmpty()) {
+                        parameters.add(param);
+                    }
+                    currentParam = new StringBuilder();
+                } else {
+                    currentParam.append(c);
+                }
+            } else {
+                currentParam.append(c);
+            }
+        }
+
+        // Add the last parameter
+        String lastParam = currentParam.toString().trim();
+        if (!lastParam.isEmpty()) {
+            parameters.add(lastParam);
+        }
+
+        return parameters;
+    }
+
+    /**
+     * Parse a single parameter declaration
+     */
+    private Map<String, Object> parseParameterDeclarationEnhanced(String paramDecl, int position) {
+        Map<String, Object> param = new HashMap<>();
+
+        // Clean up
+        paramDecl = paramDecl.replaceAll("\\s+", " ").trim();
+
+        // Patterns for different parameter formats
+        String[] patterns = {
+                // Pattern 1: name IN/OUT type
+                "^(\\w+)\\s+(IN\\s+OUT|IN|OUT)\\s+(.+?)$",
+                // Pattern 2: name type (no direction specified - default IN)
+                "^(\\w+)\\s+([^\\s]+(?:\\s*\\)[^\\s]*)?)$",
+                // Pattern 3: name IN/OUT type with default
+                "^(\\w+)\\s+(IN\\s+OUT|IN|OUT)\\s+(.+?)(?:\\s+(?:DEFAULT|:=)\\s+(.+))?$",
+                // Pattern 4: name type with default
+                "^(\\w+)\\s+([^\\s]+(?:\\s*\\()?[^)]*\\)?)(?:\\s+(?:DEFAULT|:=)\\s+(.+))?$"
+        };
+
+        for (String patternStr : patterns) {
+            Pattern pattern = Pattern.compile(patternStr, Pattern.CASE_INSENSITIVE);
+            Matcher matcher = pattern.matcher(paramDecl);
+
+            if (matcher.find()) {
+                String paramName = matcher.group(1);
+                String dataType;
+                String inOut = "IN";
+                String defaultValue = null;
+
+                if (patternStr.contains("IN\\s+OUT|IN|OUT")) {
+                    // Pattern with explicit direction
+                    inOut = matcher.group(2).toUpperCase().replace(" ", "_");
+                    dataType = matcher.group(3).trim();
+                    if (matcher.groupCount() >= 4) {
+                        defaultValue = matcher.group(4);
+                    }
+                } else {
+                    // Pattern without direction
+                    dataType = matcher.group(2).trim();
+                    if (matcher.groupCount() >= 3) {
+                        defaultValue = matcher.group(3);
+                    }
+                }
+
+                // Clean up data type
+                dataType = dataType.replaceAll("[,;]$", "").trim();
+
+                param.put("argument_name", paramName);
+                param.put("position", position);
+                param.put("sequence", position);
+                param.put("data_type", dataType);
+                param.put("in_out", inOut);
+                param.put("data_length", extractDataTypeLength(dataType));
+                param.put("data_precision", extractDataTypePrecision(dataType));
+                param.put("data_scale", extractDataTypeScale(dataType));
+                param.put("defaulted", defaultValue != null ? "Y" : "N");
+
+                log.debug("Parsed: {} {} {}", paramName, inOut, dataType);
+                break;
+            }
+        }
+
+        return param.isEmpty() ? null : param;
+    }
+
+    /**
+     * Extract length from data type (e.g., VARCHAR2(100) -> 100)
+     */
+    private Integer extractDataTypeLength(String dataType) {
+        Pattern pattern = Pattern.compile("\\((\\d+)\\)");
+        Matcher matcher = pattern.matcher(dataType);
+        return matcher.find() ? Integer.parseInt(matcher.group(1)) : null;
+    }
+
+    /**
+     * Extract precision from data type (e.g., NUMBER(10,2) -> 10)
+     */
+    private Integer extractDataTypePrecision(String dataType) {
+        Pattern pattern = Pattern.compile("\\((\\d+),\\s*\\d+\\)");
+        Matcher matcher = pattern.matcher(dataType);
+        return matcher.find() ? Integer.parseInt(matcher.group(1)) : null;
+    }
+
+    /**
+     * Extract scale from data type (e.g., NUMBER(10,2) -> 2)
+     */
+    private Integer extractDataTypeScale(String dataType) {
+        Pattern pattern = Pattern.compile("\\(\\d+,\\s*(\\d+)\\)");
+        Matcher matcher = pattern.matcher(dataType);
+        return matcher.find() ? Integer.parseInt(matcher.group(1)) : null;
+    }
+
+    /**
+     * Check if parameter count is likely correct
+     */
+    private boolean isLikelyCorrectParameterCount(List<Map<String, Object>> params, String procedureName) {
+        if (params == null || params.isEmpty()) {
+            return false;
+        }
+
+        // If we got at least 2 parameters from database, it's probably correct
+        if (params.size() >= 2) {
+            return true;
+        }
+
+        // Check procedure name patterns that often have multiple parameters
+        String upperName = procedureName.toUpperCase();
+        if (upperName.contains("DETAILS") || upperName.contains("INFO") ||
+                upperName.contains("DATA") || upperName.contains("POST") ||
+                upperName.contains("INSERT") || upperName.contains("UPDATE")) {
+            // These typically have multiple parameters, so 1 parameter is suspicious
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Get procedure source code
+     */
+    private String getProcedureSource(String owner, String procedureName,
+                                      boolean isPackageProcedure, List<String> packages) {
+        try {
             String sourceSql;
             List<String> sourceLines;
 
-            if (isPackageProcedure) {
-                // For package procedures, get the package source
+            if (isPackageProcedure && !packages.isEmpty()) {
                 String packageName = packages.get(0);
                 sourceSql = "SELECT text FROM all_source " +
                         "WHERE UPPER(owner) = UPPER(?) AND UPPER(name) = UPPER(?) " +
@@ -5359,7 +5928,6 @@ public class OracleSchemaRepository {
 
                 sourceLines = oracleJdbcTemplate.queryForList(sourceSql, String.class, owner, packageName);
             } else {
-                // For standalone procedures, try different source types
                 sourceSql = "SELECT text FROM all_source " +
                         "WHERE UPPER(owner) = UPPER(?) AND UPPER(name) = UPPER(?) " +
                         "AND UPPER(type) IN ('PROCEDURE', 'PACKAGE', 'PACKAGE BODY') " +
@@ -5369,19 +5937,13 @@ public class OracleSchemaRepository {
             }
 
             if (!sourceLines.isEmpty()) {
-                details.put("source", String.join("", sourceLines));
+                return String.join("", sourceLines);
             }
-
-        } catch (EmptyResultDataAccessException e) {
-            log.warn("Procedure {}.{} not found", owner, procedureName);
-            details.put("error", "Procedure not found");
-            details.put("exists", false);
         } catch (Exception e) {
-            log.warn("Error getting procedure details for {}.{}: {}", owner, procedureName, e.getMessage());
-            details.put("error", e.getMessage());
+            log.debug("Error getting source: {}", e.getMessage());
         }
 
-        return details;
+        return null;
     }
 
     /**
@@ -5558,30 +6120,117 @@ public class OracleSchemaRepository {
     }
 
     /**
-     * Get function details with owner
+     * Get function details with owner - FIXED version
      */
-    private Map<String, Object> getFunctionDetails(String owner, String functionName) {
+    public Map<String, Object> getFunctionDetails(String owner, String functionName) {
         Map<String, Object> details = new HashMap<>();
 
         try {
-            if (owner.equalsIgnoreCase(getCurrentUser())) {
-                String sql = "SELECT " +
-                        "    object_name, " +
-                        "    object_type, " +
-                        "    status, " +
-                        "    created, " +
-                        "    last_ddl_time, " +
-                        "    temporary, " +
-                        "    generated, " +
-                        "    secondary " +
-                        "FROM user_objects " +
-                        "WHERE UPPER(object_name) = UPPER(?) AND object_type = 'FUNCTION'";
+            // First check if this is a package function
+            String checkPackageSql = "SELECT DISTINCT package_name FROM all_arguments " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                    "AND package_name IS NOT NULL";
 
-                Map<String, Object> funcInfo = oracleJdbcTemplate.queryForMap(sql, functionName);
-                details.putAll(funcInfo);
+            List<String> packages = oracleJdbcTemplate.queryForList(
+                    checkPackageSql, String.class, owner, functionName);
 
-                // Get parameters and return type
-                String paramSql = "SELECT " +
+            boolean isPackageFunction = !packages.isEmpty();
+
+            if (isPackageFunction) {
+                String packageName = packages.get(0);
+                details.put("package_name", packageName);
+                details.put("is_package_function", true);
+                details.put("object_name", functionName);
+                details.put("owner", owner);
+                details.put("object_type", "FUNCTION");
+                log.info("Function {} is in package: {}", functionName, packageName);
+            } else {
+                // Get standalone function info
+                try {
+                    String sql = "SELECT " +
+                            "    object_name, " +
+                            "    object_type, " +
+                            "    status, " +
+                            "    created, " +
+                            "    last_ddl_time, " +
+                            "    temporary, " +
+                            "    generated, " +
+                            "    secondary " +
+                            "FROM all_objects " +
+                            "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) " +
+                            "AND object_type = 'FUNCTION'";
+
+                    Map<String, Object> funcInfo = oracleJdbcTemplate.queryForMap(sql, owner, functionName);
+                    details.putAll(funcInfo);
+                } catch (EmptyResultDataAccessException e) {
+                    // Try without object type filter
+                    String altSql = "SELECT object_name, object_type, status, created, last_ddl_time " +
+                            "FROM all_objects WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?)";
+                    Map<String, Object> funcInfo = oracleJdbcTemplate.queryForMap(altSql, owner, functionName);
+                    details.putAll(funcInfo);
+                }
+            }
+
+            // Try to get parameters and return type from database first
+            Map<String, Object> paramsAndReturn = getFunctionParametersFromDatabase(owner, functionName, isPackageFunction, packages);
+
+            List<Map<String, Object>> parameters = (List<Map<String, Object>>) paramsAndReturn.get("parameters");
+            Map<String, Object> returnType = (Map<String, Object>) paramsAndReturn.get("returnType");
+
+            // If database parameters are empty, try parsing from source
+            if (parameters == null || parameters.isEmpty()) {
+                log.info("Database parameters empty for {}.{}, trying source parsing", owner, functionName);
+                parameters = parseFunctionParametersFromSource(owner, functionName);
+
+                // Also try to get return type from source
+                if (returnType == null || returnType.isEmpty()) {
+                    returnType = parseFunctionReturnTypeFromSource(owner, functionName);
+                }
+            }
+
+            if (parameters != null && !parameters.isEmpty()) {
+                details.put("parameters", parameters);
+                details.put("parameterCount", parameters.size());
+            } else {
+                details.put("parameters", new ArrayList<>());
+                details.put("parameterCount", 0);
+            }
+
+            if (returnType != null && !returnType.isEmpty()) {
+                details.put("returnType", returnType.get("data_type"));
+            }
+
+            // Get source code
+            String source = getFunctionSource(owner, functionName, isPackageFunction, packages);
+            if (source != null) {
+                details.put("source", source);
+                details.put("sourceCode", source);
+            }
+
+        } catch (Exception e) {
+            log.warn("Error getting function details for {}.{}: {}", owner, functionName, e.getMessage());
+            details.put("error", e.getMessage());
+        }
+
+        return details;
+    }
+
+    /**
+     * Get function parameters from database
+     */
+    private Map<String, Object> getFunctionParametersFromDatabase(String owner, String functionName,
+                                                                  boolean isPackageFunction, List<String> packages) {
+        Map<String, Object> result = new HashMap<>();
+        List<Map<String, Object>> params = new ArrayList<>();
+        Map<String, Object> returnType = new HashMap<>();
+
+        try {
+            String sql;
+            List<Map<String, Object>> allArgs;
+
+            if (isPackageFunction && !packages.isEmpty()) {
+                String packageName = packages.get(0);
+                sql = "SELECT " +
                         "    argument_name, " +
                         "    position, " +
                         "    sequence, " +
@@ -5590,56 +6239,17 @@ public class OracleSchemaRepository {
                         "    data_length, " +
                         "    data_precision, " +
                         "    data_scale, " +
-                        "    defaulted " +
-                        "FROM user_arguments " +
-                        "WHERE UPPER(object_name) = UPPER(?) AND package_name IS NULL " +
+                        "    defaulted, " +
+                        "    package_name " +
+                        "FROM all_arguments " +
+                        "WHERE UPPER(owner) = UPPER(?) " +
+                        "  AND UPPER(package_name) = UPPER(?) " +
+                        "  AND UPPER(object_name) = UPPER(?) " +
                         "ORDER BY position, sequence";
 
-                List<Map<String, Object>> allArgs = oracleJdbcTemplate.queryForList(paramSql, functionName);
-
-                // Separate return type (position = 0) from parameters
-                List<Map<String, Object>> params = allArgs.stream()
-                        .filter(arg -> arg.get("argument_name") != null)
-                        .collect(Collectors.toList());
-
-                Map<String, Object> returnType = allArgs.stream()
-                        .filter(arg -> arg.get("argument_name") == null)
-                        .findFirst()
-                        .orElse(new HashMap<>());
-
-                details.put("parameters", params);
-                details.put("parameterCount", params.size());
-                details.put("returnType", returnType);
-
-                // Get source code
-                String sourceSql = "SELECT text FROM user_source " +
-                        "WHERE UPPER(name) = UPPER(?) AND type = 'FUNCTION' " +
-                        "ORDER BY line";
-
-                List<String> sourceLines = oracleJdbcTemplate.queryForList(sourceSql, String.class, functionName);
-                if (!sourceLines.isEmpty()) {
-                    details.put("source", String.join("", sourceLines));
-                }
-
+                allArgs = oracleJdbcTemplate.queryForList(sql, owner, packageName, functionName);
             } else {
-                String sql = "SELECT " +
-                        "    owner, " +
-                        "    object_name, " +
-                        "    object_type, " +
-                        "    status, " +
-                        "    created, " +
-                        "    last_ddl_time, " +
-                        "    temporary, " +
-                        "    generated, " +
-                        "    secondary " +
-                        "FROM all_objects " +
-                        "WHERE UPPER(owner) = UPPER(?) AND UPPER(object_name) = UPPER(?) AND object_type = 'FUNCTION'";
-
-                Map<String, Object> funcInfo = oracleJdbcTemplate.queryForMap(sql, owner, functionName);
-                details.putAll(funcInfo);
-
-                // Get parameters and return type
-                String paramSql = "SELECT " +
+                sql = "SELECT " +
                         "    argument_name, " +
                         "    position, " +
                         "    sequence, " +
@@ -5654,32 +6264,142 @@ public class OracleSchemaRepository {
                         "AND package_name IS NULL " +
                         "ORDER BY position, sequence";
 
-                List<Map<String, Object>> allArgs = oracleJdbcTemplate.queryForList(paramSql, owner, functionName);
-
-                List<Map<String, Object>> params = allArgs.stream()
-                        .filter(arg -> arg.get("argument_name") != null)
-                        .collect(Collectors.toList());
-
-                Map<String, Object> returnType = allArgs.stream()
-                        .filter(arg -> arg.get("argument_name") == null)
-                        .findFirst()
-                        .orElse(new HashMap<>());
-
-                details.put("parameters", params);
-                details.put("parameterCount", params.size());
-                details.put("returnType", returnType);
+                allArgs = oracleJdbcTemplate.queryForList(sql, owner, functionName);
             }
 
-        } catch (EmptyResultDataAccessException e) {
-            log.warn("Function {}.{} not found", owner, functionName);
-            details.put("error", "Function not found");
-            details.put("exists", false);
+            // Separate return type (position = 0) from parameters
+            for (Map<String, Object> arg : allArgs) {
+                Object positionObj = arg.get("position");
+                int position = positionObj instanceof Number ? ((Number) positionObj).intValue() : 0;
+
+                if (position == 0) {
+                    // This is the return type
+                    returnType.put("data_type", arg.get("data_type"));
+                    returnType.put("data_length", arg.get("data_length"));
+                    returnType.put("data_precision", arg.get("data_precision"));
+                    returnType.put("data_scale", arg.get("data_scale"));
+                } else if (arg.get("argument_name") != null) {
+                    // This is a parameter
+                    params.add(arg);
+                }
+            }
+
         } catch (Exception e) {
-            log.warn("Error getting function details for {}.{}: {}", owner, functionName, e.getMessage());
-            details.put("error", e.getMessage());
+            log.debug("Error getting function parameters from database: {}", e.getMessage());
         }
 
-        return details;
+        result.put("parameters", params);
+        result.put("returnType", returnType);
+        return result;
+    }
+
+    /**
+     * Parse function return type from source
+     */
+    private Map<String, Object> parseFunctionReturnTypeFromSource(String owner, String functionName) {
+        Map<String, Object> returnType = new HashMap<>();
+
+        try {
+            String source = getSourceFromAllSource(functionName, owner, "FUNCTION");
+            if (source == null || source.isEmpty()) {
+                return returnType;
+            }
+
+            source = removeComments(source);
+
+            // Find return type
+            Pattern pattern = Pattern.compile(
+                    "FUNCTION\\s+" + functionName + "\\s*\\([\\s\\S]*?\\)\\s*RETURN\\s+(\\w+(?:\\([^)]*\\))?)",
+                    Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+            );
+
+            Matcher matcher = pattern.matcher(source);
+            if (matcher.find()) {
+                String returnTypeStr = matcher.group(1).trim();
+                returnType.put("data_type", returnTypeStr);
+
+                // Extract length/precision if present
+                if (returnTypeStr.contains("(")) {
+                    Pattern lengthPattern = Pattern.compile("\\((\\d+)(?:,(\\d+))?\\)");
+                    Matcher lengthMatcher = lengthPattern.matcher(returnTypeStr);
+                    if (lengthMatcher.find()) {
+                        returnType.put("data_length", Integer.parseInt(lengthMatcher.group(1)));
+                        if (lengthMatcher.groupCount() > 1 && lengthMatcher.group(2) != null) {
+                            returnType.put("data_precision", Integer.parseInt(lengthMatcher.group(1)));
+                            returnType.put("data_scale", Integer.parseInt(lengthMatcher.group(2)));
+                        }
+                    }
+                }
+            }
+
+        } catch (Exception e) {
+            log.warn("Error parsing function return type: {}", e.getMessage());
+        }
+
+        return returnType;
+    }
+
+    /**
+     * Parse parameter section into parameter list
+     */
+    private List<Map<String, Object>> parseParameterSection(String paramsSection) {
+        List<Map<String, Object>> params = new ArrayList<>();
+
+        if (paramsSection == null || paramsSection.isEmpty()) {
+            return params;
+        }
+
+        List<String> paramDefs = splitParameters(paramsSection);
+        int position = 1;
+
+        for (String paramDef : paramDefs) {
+            Map<String, Object> param = parseSingleParameter(paramDef, position++);
+            if (param != null && !param.isEmpty()) {
+                params.add(param);
+            }
+        }
+
+        return params;
+    }
+
+
+
+    /**
+     * Get source from ALL_SOURCE
+     */
+    private String getSourceFromAllSource(String objectName, String owner, String type) {
+        try {
+            String sql = "SELECT text FROM all_source " +
+                    "WHERE UPPER(owner) = UPPER(?) AND UPPER(name) = UPPER(?) " +
+                    "AND UPPER(type) = UPPER(?) ORDER BY line";
+
+            List<String> lines = oracleJdbcTemplate.queryForList(sql, String.class, owner, objectName, type);
+
+            if (lines.isEmpty()) {
+                sql = "SELECT text FROM all_source WHERE UPPER(owner) = UPPER(?) AND UPPER(name) = UPPER(?) ORDER BY line";
+                lines = oracleJdbcTemplate.queryForList(sql, String.class, owner, objectName);
+            }
+
+            return lines.isEmpty() ? null : String.join("", lines);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Get function source
+     */
+    private String getFunctionSource(String owner, String functionName, boolean isPackageFunction, List<String> packages) {
+        try {
+            if (isPackageFunction && !packages.isEmpty()) {
+                String packageName = packages.get(0);
+                return getSourceFromAllSource(packageName, owner, "PACKAGE");
+            } else {
+                return getSourceFromAllSource(functionName, owner, "FUNCTION");
+            }
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**
@@ -6364,7 +7084,7 @@ public class OracleSchemaRepository {
     /**
      * Get trigger details with owner
      */
-    private Map<String, Object> getTriggerDetails(String owner, String triggerName) {
+    public Map<String, Object> getTriggerDetails(String owner, String triggerName) {
         Map<String, Object> details = new HashMap<>();
         try {
             String sql;
@@ -6443,7 +7163,7 @@ public class OracleSchemaRepository {
     /**
      * Get index details with owner
      */
-    private Map<String, Object> getIndexDetails(String owner, String indexName) {
+    public Map<String, Object> getIndexDetails(String owner, String indexName) {
         Map<String, Object> details = new HashMap<>();
         try {
             String sql;
@@ -6540,7 +7260,7 @@ public class OracleSchemaRepository {
     /**
      * Get type details with owner
      */
-    private Map<String, Object> getTypeDetails(String owner, String typeName) {
+    public Map<String, Object> getTypeDetails(String owner, String typeName) {
         Map<String, Object> details = new HashMap<>();
         try {
             String sql;
@@ -6709,7 +7429,7 @@ public class OracleSchemaRepository {
     /**
      * Get materialized view details
      */
-    private Map<String, Object> getMaterializedViewDetails(String owner, String mvName) {
+    public Map<String, Object> getMaterializedViewDetails(String owner, String mvName) {
         Map<String, Object> details = new HashMap<>();
         try {
             String sql;
@@ -6780,7 +7500,7 @@ public class OracleSchemaRepository {
     /**
      * Get database link details
      */
-    private Map<String, Object> getDatabaseLinkDetails(String owner, String dbLinkName) {
+    public Map<String, Object> getDatabaseLinkDetails(String owner, String dbLinkName) {
         Map<String, Object> details = new HashMap<>();
         try {
             String sql;
@@ -6872,7 +7592,7 @@ public class OracleSchemaRepository {
     /**
      * Get table columns with owner
      */
-    private List<Map<String, Object>> getTableColumns(String owner, String tableName) {
+    public List<Map<String, Object>> getTableColumns(String owner, String tableName) {
         try {
             String sql;
             if (owner.equalsIgnoreCase(getCurrentUser())) {
@@ -6998,7 +7718,7 @@ public class OracleSchemaRepository {
     /**
      * Get table indexes with owner
      */
-    private List<Map<String, Object>> getTableIndexes(String owner, String tableName) {
+    public List<Map<String, Object>> getTableIndexes(String owner, String tableName) {
         try {
             String sql;
             if (owner.equalsIgnoreCase(getCurrentUser())) {
@@ -7065,7 +7785,7 @@ public class OracleSchemaRepository {
     /**
      * Get view columns with owner
      */
-    private List<Map<String, Object>> getViewColumns(String owner, String viewName) {
+    public List<Map<String, Object>> getViewColumns(String owner, String viewName) {
         try {
             String sql;
             if (owner.equalsIgnoreCase(getCurrentUser())) {

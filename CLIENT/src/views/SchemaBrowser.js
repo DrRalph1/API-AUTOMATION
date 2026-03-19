@@ -1997,123 +1997,149 @@ const loadProperties = useCallback(async (object, type, owner) => {
 }, [authToken, activeObject]);
 
   // ============================================================
-  // Load Columns (for Tables/Views) or Parameters (for Procedures/Functions)
-  // ============================================================
-  const loadColumns = useCallback(async (object, type, owner, page = 1, pageSize = 50) => {
-    if (!authToken || !object || !type) return;
-    
-    // Determine effective object info (resolve synonyms)
-    let effectiveType = type;
-    let effectiveName = object.name;
-    let effectiveOwner = owner;
-    
-    if (type === 'SYNONYM' && synonymInfo && synonymInfo.valid) {
-      effectiveType = synonymInfo.targetType;
-      effectiveName = synonymInfo.targetName;
-      effectiveOwner = synonymInfo.targetOwner;
-    }
-    
-    const cacheKey = `columns_${effectiveType}_${effectiveOwner || 'unknown'}_${effectiveName}_page${page}`;
-    const cached = objectCache.get(cacheKey);
-    
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      setTabData(prev => ({
-        ...prev,
-        columns: { 
-          loading: false, 
-          data: cached.data.items,
-          page: cached.data.page,
-          totalPages: cached.data.totalPages
-        }
-      }));
-      return;
-    }
-    
+// Load Columns (for Tables/Views) or Parameters (for Procedures/Functions)
+// ============================================================
+const loadColumns = useCallback(async (object, type, owner, page = 1, pageSize = 50) => {
+  if (!authToken || !object || !type) return;
+  
+  // Determine effective object info (resolve synonyms)
+  let effectiveType = type;
+  let effectiveName = object.name;
+  let effectiveOwner = owner;
+  
+  if (type === 'SYNONYM' && synonymInfo && synonymInfo.valid) {
+    effectiveType = synonymInfo.targetType;
+    effectiveName = synonymInfo.targetName;
+    effectiveOwner = synonymInfo.targetOwner;
+  }
+  
+  const cacheKey = `columns_${effectiveType}_${effectiveOwner || 'unknown'}_${effectiveName}_page${page}`;
+  const cached = objectCache.get(cacheKey);
+  
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     setTabData(prev => ({
       ...prev,
-      columns: { ...prev.columns, loading: true }
-    }));
-    
-    try {
-      let response;
-      
-      if (effectiveType === 'TABLE' || effectiveType === 'VIEW') {
-        response = await getTableColumnsPaginated(authToken, {
-          tableName: effectiveName,
-          owner: effectiveOwner,
-          page,
-          pageSize
-        });
-      } else if (effectiveType === 'PROCEDURE') {
-        response = await getProcedureParametersPaginated(authToken, {
-          procedureName: effectiveName,
-          owner: effectiveOwner,
-          page,
-          pageSize
-        });
-      } else if (effectiveType === 'FUNCTION') {
-        response = await getFunctionParametersPaginated(authToken, {
-          functionName: effectiveName,
-          owner: effectiveOwner,
-          page,
-          pageSize
-        });
-      } else if (effectiveType === 'PACKAGE') {
-        response = await getPackageItemsPaginated(authToken, {
-          packageName: effectiveName,
-          owner: effectiveOwner,
-          itemType: 'ALL',
-          page,
-          pageSize
-        });
-      } else if (effectiveType === 'TYPE') {
-        const typeDetails = await getTypeDetails(authToken, effectiveName);
-        const typeData = handleSchemaBrowserResponse(typeDetails);
-        
-        setTabData(prev => ({
-          ...prev,
-          columns: { 
-            loading: false, 
-            data: typeData.attributes || [],
-            page: 1,
-            totalPages: 1
-          }
-        }));
-        return;
-      } else {
-        // Unsupported type for columns
-        setTabData(prev => ({
-          ...prev,
-          columns: { loading: false, data: [] }
-        }));
-        return;
+      columns: { 
+        loading: false, 
+        data: cached.data.items,
+        page: cached.data.page,
+        totalPages: cached.data.totalPages
       }
-      
-      const { items, totalPages } = extractItemsFromResponse(response);
-      
-      objectCache.set(cacheKey, { 
-        data: { items, page, totalPages }, 
-        timestamp: Date.now() 
+    }));
+    return;
+  }
+  
+  setTabData(prev => ({
+    ...prev,
+    columns: { ...prev.columns, loading: true }
+  }));
+  
+  try {
+    let response;
+    let items = [];
+    let totalPages = 1;
+    let currentPage = page;
+    
+    if (effectiveType === 'TABLE' || effectiveType === 'VIEW') {
+      response = await getTableColumnsPaginated(authToken, {
+        tableName: effectiveName,
+        owner: effectiveOwner,
+        page,
+        pageSize
       });
       
-      setTabData(prev => ({
-        ...prev,
-        columns: { 
-          loading: false, 
-          data: items,
-          page,
-          totalPages
-        }
-      }));
+      const extracted = extractItemsFromResponse(response);
+      items = extracted.items;
+      totalPages = extracted.totalPages;
+      currentPage = extracted.page;
       
-    } catch (err) {
-      Logger.error('SchemaBrowser', 'loadColumns', 'Error loading columns', err);
+    } else if (effectiveType === 'PROCEDURE') {
+      response = await getProcedureParametersPaginated(authToken, {
+        procedureName: effectiveName,
+        owner: effectiveOwner,
+        page,
+        pageSize
+      });
+      
+      const extracted = extractItemsFromResponse(response);
+      items = extracted.items;
+      totalPages = extracted.totalPages;
+      currentPage = extracted.page;
+      
+    } else if (effectiveType === 'FUNCTION') {
+      console.log('Loading function parameters for:', effectiveName);
+      
+      response = await getFunctionParametersPaginated(authToken, {
+        functionName: effectiveName,
+        owner: effectiveOwner,
+        page,
+        pageSize
+      });
+      
+      console.log('Function parameters response:', response);
+      
+      // The transformer already formatted the data with 'items' array
+      const responseData = response?.data || {};
+      items = responseData.items || [];
+      totalPages = responseData.totalPages || 1;
+      currentPage = responseData.page || page;
+      
+      console.log('Processed parameters:', items.length, items);
+      
+    } else if (effectiveType === 'PACKAGE') {
+      response = await getPackageItemsPaginated(authToken, {
+        packageName: effectiveName,
+        owner: effectiveOwner,
+        itemType: 'ALL',
+        page,
+        pageSize
+      });
+      
+      const extracted = extractItemsFromResponse(response);
+      items = extracted.items;
+      totalPages = extracted.totalPages;
+      currentPage = extracted.page;
+      
+    } else if (effectiveType === 'TYPE') {
+      const typeDetails = await getTypeDetails(authToken, effectiveName);
+      const typeData = handleSchemaBrowserResponse(typeDetails);
+      items = typeData.attributes || [];
+      totalPages = 1;
+      currentPage = 1;
+      
+    } else {
+      // Unsupported type for columns
       setTabData(prev => ({
         ...prev,
         columns: { loading: false, data: [] }
       }));
+      return;
     }
-  }, [authToken, synonymInfo]);
+    
+    // Cache the result
+    objectCache.set(cacheKey, { 
+      data: { items, page: currentPage, totalPages }, 
+      timestamp: Date.now() 
+    });
+    
+    setTabData(prev => ({
+      ...prev,
+      columns: { 
+        loading: false, 
+        data: items,
+        page: currentPage,
+        totalPages: totalPages
+      }
+    }));
+    
+  } catch (err) {
+    Logger.error('SchemaBrowser', 'loadColumns', 'Error loading columns', err);
+    setTabData(prev => ({
+      ...prev,
+      columns: { loading: false, data: [] }
+    }));
+  }
+}, [authToken, synonymInfo]);
 
   // ============================================================
 // Load Data (for Tables/Views) - FIXED VERSION WITH DEBUGGING
@@ -3232,85 +3258,131 @@ const getTabsForObject = useCallback((type, propertiesData) => {
     const effectiveType = (objectType === 'SYNONYM' && synonymInfo) ? synonymInfo.targetType : objectType;
     const isParameterMode = effectiveType === 'PROCEDURE' || effectiveType === 'FUNCTION';
     
-    if (isParameterMode) {
-      return (
-        <div className="flex-1 overflow-auto">
-          <div className="flex items-center justify-between p-3 border-b" style={{ borderColor: colors.border }}>
-            <span className="text-sm font-medium" style={{ color: colors.text }}>
-              Parameters ({data.length})
+    // In renderColumnsTab function, replace the isParameterMode section with this updated version:
+
+if (isParameterMode) {
+  return (
+    <div className="flex-1 overflow-auto">
+      <div className="flex items-center justify-between p-3 border-b" style={{ borderColor: colors.border }}>
+        <span className="text-sm font-medium" style={{ color: colors.text }}>
+          Parameters ({data.length})
+        </span>
+        {totalPages > 1 && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs" style={{ color: colors.textSecondary }}>
+              Page {page} of {totalPages}
             </span>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs" style={{ color: colors.textSecondary }}>
-                  Page {page} of {totalPages}
-                </span>
-                <button
-                  onClick={() => handleColumnsPageChange(page - 1)}
-                  disabled={loading || page <= 1}
-                  className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
-                  style={{ color: colors.text }}
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                <button
-                  onClick={() => handleColumnsPageChange(page + 1)}
-                  disabled={loading || page >= totalPages}
-                  className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
-                  style={{ color: colors.text }}
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-            )}
+            <button
+              onClick={() => handleColumnsPageChange(page - 1)}
+              disabled={loading || page <= 1}
+              className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
+              style={{ color: colors.text }}
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <button
+              onClick={() => handleColumnsPageChange(page + 1)}
+              disabled={loading || page >= totalPages}
+              className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
+              style={{ color: colors.text }}
+            >
+              <ChevronRight size={16} />
+            </button>
           </div>
-          <div className="overflow-auto">
-            <table className="w-full">
-              <thead style={{ backgroundColor: colors.tableHeader }}>
-                <tr>
-                  <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>#</th>
-                  <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Parameter</th>
-                  <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Type</th>
-                  <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Mode</th>
-                  <th className="text-left p-2 text-xs hidden md:table-cell" style={{ color: colors.textSecondary }}>Data Length</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.map((param, i) => {
-                  const position = param.POSITION || param.position || i + 1;
-                  const name = param.argument_name || param.ARGUMENT_NAME || param.name || `Parameter ${i + 1}`;
-                  const dataType = param.DATA_TYPE || param.data_type || param.type || 'VARCHAR2';
-                  const mode = param.IN_OUT || param.in_out || param.mode || 'IN';
-                  const dataLength = param.DATA_LENGTH || param.data_length || '-';
-                  
-                  return (
-                    <tr key={name + i} style={{ 
-                      backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                      borderBottom: `1px solid ${colors.gridBorder}`
-                    }}>
-                      <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{position}</td>
-                      <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{name}</td>
-                      <td className="p-2 text-xs" style={{ color: colors.text }}>{dataType}</td>
-                      <td className="p-2 text-xs">
-                        <span className={`px-2 py-0.5 rounded text-xs ${
-                          mode === 'IN' ? 'bg-blue-500/10 text-blue-400' :
-                          mode === 'OUT' ? 'bg-purple-500/10 text-purple-400' :
-                          'bg-green-500/10 text-green-400'
-                        }`}>
-                          {mode}
-                        </span>
-                      </td>
-                      <td className="p-2 text-xs hidden md:table-cell" style={{ color: colors.textSecondary }}>
-                        {dataLength}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      );
-    }
+        )}
+      </div>
+      <div className="overflow-auto">
+        <table className="w-full">
+          <thead style={{ backgroundColor: colors.tableHeader }}>
+            <tr>
+              <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>#</th>
+              <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Parameter</th>
+              <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Type</th>
+              <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Mode</th>
+              <th className="text-left p-2 text-xs hidden md:table-cell" style={{ color: colors.textSecondary }}>Data Length</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data
+              // Sort by position to ensure correct order
+              .sort((a, b) => {
+                const posA = a.POSITION !== undefined ? a.POSITION : 
+                            (a.position !== undefined ? a.position : 999);
+                const posB = b.POSITION !== undefined ? b.POSITION : 
+                            (b.position !== undefined ? b.position : 999);
+                return posA - posB;
+              })
+              .map((param, index) => {
+                // Get position from the data
+                let position = param.POSITION;
+                if (position === undefined || position === null) {
+                  position = param.position;
+                }
+                
+                // Get parameter name
+                const name = param.argument_name || param.ARGUMENT_NAME || param.name;
+                
+                // Check if this is a FUNCTION (has a return value)
+                const isFunction = effectiveType === 'FUNCTION';
+                
+                // For functions, position 0 is the RETURN value
+                const isReturn = isFunction && (position === 0 || (!name && position === undefined));
+                
+                // Calculate display position
+                let displayPosition;
+                if (isReturn) {
+                  // Return parameter is always #1
+                  displayPosition = 1;
+                } else if (isFunction) {
+                  // For functions with a return parameter:
+                  // Regular parameters: position 1 becomes #2, position 2 becomes #3, etc.
+                  displayPosition = position + 1;
+                } else {
+                  // For procedures (no return parameter):
+                  // Just use the actual position
+                  displayPosition = position;
+                }
+                
+                // For return values, always show "RETURN"
+                const displayName = isReturn ? 'RETURN' : name;
+                
+                const dataType = param.DATA_TYPE || param.data_type || param.type || 'VARCHAR2';
+                const mode = param.IN_OUT || param.in_out || param.mode;
+                
+                // Set appropriate mode for return parameter
+                const displayMode = isReturn ? 'OUT' : mode || 'IN';
+                
+                const dataLength = param.DATA_LENGTH || param.data_length || '-';
+                
+                return (
+                  <tr key={`${displayName}-${index}-${position}`} style={{ 
+                    backgroundColor: index % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                    borderBottom: `1px solid ${colors.gridBorder}`
+                  }}>
+                    <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{displayPosition}</td>
+                    <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{displayName}</td>
+                    <td className="p-2 text-xs" style={{ color: colors.text }}>{dataType}</td>
+                    <td className="p-2 text-xs">
+                      <span className={`px-2 py-0.5 rounded text-xs ${
+                        displayMode === 'IN' ? 'bg-blue-500/10 text-blue-400' :
+                        displayMode === 'OUT' ? 'bg-purple-500/10 text-purple-400' :
+                        'bg-green-500/10 text-green-400'
+                      }`}>
+                        {displayMode}
+                      </span>
+                    </td>
+                    <td className="p-2 text-xs hidden md:table-cell" style={{ color: colors.textSecondary }}>
+                      {dataLength}
+                    </td>
+                  </tr>
+                );
+              })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
     
     // Regular columns display for tables/views
     return (

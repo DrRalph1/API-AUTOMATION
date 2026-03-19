@@ -857,9 +857,11 @@ export const getFunctionParametersPaginated = async (authorizationHeader, params
             requestId: requestId
         })
     ).then(response => {
-        return transformPaginatedResponse(response);
+        // Use the specific transformer for function parameters
+        return transformFunctionParametersResponse(response);
     });
 };
+
 
 // ============================================================
 // 9. FUNCTION ENDPOINTS - FRONTEND FORMAT
@@ -4309,6 +4311,58 @@ const transformProcedureDetailsResponse = (response, procedureName) => {
         data: transformedData
     };
 };
+
+
+
+
+// Add this to your controller after the other transform functions
+const transformFunctionParametersResponse = (response) => {
+    const responseData = response.data || {};
+    
+    console.log('transformFunctionParametersResponse - input:', responseData);
+    
+    // The data structure you're receiving
+    let parameters = responseData.parameters || [];
+    let returnType = responseData.returnType;
+    
+    // Add return type as a parameter if it exists
+    if (returnType) {
+        console.log('Adding return type:', returnType);
+        const returnParam = {
+            ...returnType,
+            ARGUMENT_NAME: returnType.ARGUMENT_NAME || 'RETURN',
+            IS_RETURN: true,
+            POSITION: 0
+        };
+        parameters = [returnParam, ...parameters];
+    }
+    
+    // Create the transformed data in the format your frontend expects
+    const transformedData = {
+        items: parameters,
+        totalCount: responseData.totalCount || parameters.length,
+        totalPages: responseData.totalPages || 1,
+        page: responseData.page || 1,
+        pageSize: responseData.pageSize || 50,
+        hasNext: (responseData.page || 1) < (responseData.totalPages || 1),
+        hasPrev: (responseData.page || 1) > 1,
+        // Preserve metadata
+        originalName: responseData.originalName,
+        resolvedName: responseData.resolvedName,
+        originalOwner: responseData.originalOwner,
+        resolvedOwner: responseData.resolvedOwner,
+        isSynonym: responseData.isSynonym
+    };
+
+    console.log('transformFunctionParametersResponse - output:', transformedData);
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+
 
 /**
  * Transform functions response

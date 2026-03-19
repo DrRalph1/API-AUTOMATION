@@ -43,7 +43,7 @@ public class ApiKeyNSecretInterceptor implements HandlerInterceptor {
 
             // Set CORS headers for preflight response
             String origin = request.getHeader("Origin");
-            if (origin != null && (origin.contains("192.168.1.169:9874") ||
+            if (origin != null && (origin.contains("192.168.0.127:9874") ||
                     origin.contains("localhost:9874") ||
                     origin.contains("127.0.0.1:9874"))) {
                 response.setHeader("Access-Control-Allow-Origin", origin);

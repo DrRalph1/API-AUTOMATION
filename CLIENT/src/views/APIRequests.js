@@ -2048,9 +2048,9 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   // Render requests table
   const renderRequestsTable = () => {
     return (
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden pl-2 pr-2">
         {/* Table container with scroll */}
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto p-4">
           <table className="w-full" style={{ borderCollapse: 'collapse' }}>
             <thead className="sticky top-0" style={{ backgroundColor: colors.card, zIndex: 10 }}>
               <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
@@ -2415,7 +2415,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
         )}
 
         {/* Date Range Bar */}
-        <div className="flex items-center gap-4 px-4 py-2 border-b" style={{ 
+        <div className="flex items-center gap-4 px-4 py-2 border-b pl-2 pr-2" style={{ 
           borderColor: colors.border, 
           backgroundColor: colors.card
         }}>

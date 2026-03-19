@@ -2194,287 +2194,548 @@ const loadSelectedObjectDetails = useCallback(async (object) => {
   }
 }, [authToken, populateFormFromObject]);
 
-  // Function to populate form from selected object
-  // Function to populate form from selected object
-const populateFormFromObject = useCallback((object) => {
-  const objectType = object.type?.toUpperCase();
-  const baseName = object.name?.toLowerCase() || '';
-  const endpointPath = baseName ? `/${baseName.replace(/_/g, '-').toLowerCase()}` : '';
 
-  // Get HTTP method from existing state or default based on object type
-  let httpMethod = apiDetails.httpMethod;
-  
-  // For tables, default to GET but respect the selected HTTP method
-  if (objectType === 'TABLE' || objectType === 'VIEW') {
-    // Keep the current httpMethod or default to GET
-    httpMethod = httpMethod || 'GET';
-  } else if (objectType === 'PROCEDURE' || objectType === 'FUNCTION' || objectType === 'PACKAGE') {
-    // Force POST for procedures/functions
-    httpMethod = 'POST';
-  } else {
-    httpMethod = httpMethod || 'GET';
-  }
 
-  // Determine operation based on HTTP method and object type
-  let operation = 'SELECT';
+  // NEW: Function to populate form from existing API data (for editing)
+const populateFormFromApiData = useCallback(async (apiData) => {
+  console.log('📝 populateFormFromApiData called with:', apiData);
   
-  // For procedures/functions/packages, always use EXECUTE regardless of HTTP method
-  if (objectType === 'PROCEDURE' || objectType === 'FUNCTION' || objectType === 'PACKAGE') {
-    operation = 'EXECUTE';
-  } else {
-    // For tables/views, map HTTP method to operation
-    switch(httpMethod) {
-      case 'POST':
-        operation = 'INSERT';
-        break;
-      case 'PUT':
-        operation = 'UPDATE';
-        break;
-      case 'PATCH':
-        operation = 'UPDATE';
-        break;
-      case 'DELETE':
-        operation = 'DELETE';
-        break;
-      case 'GET':
-      default:
-        operation = 'SELECT';
-        break;
+  // Set API details
+  setApiDetails({
+    apiName: apiData.apiName || '',
+    apiCode: apiData.apiCode || '',
+    description: apiData.description || '',
+    version: apiData.version || '1.0.0',
+    status: apiData.status || 'ACTIVE',
+    httpMethod: apiData.httpMethod || 'GET',
+    basePath: apiData.basePath || '/api/v1',
+    endpointPath: apiData.endpointPath || '',
+    tags: apiData.tags || ['default'],
+    category: apiData.category || 'general',
+    owner: apiData.owner || 'HR',
+  });
+
+  // Set collection info
+  if (apiData.collectionInfo) {
+    const collection = collections.find(c => c.id === apiData.collectionInfo.collectionId);
+    if (collection) {
+      setSelectedCollection(collection);
+      setFolders(collection.folders || []);
+      
+      if (apiData.collectionInfo.folderId) {
+        const folder = collection.folders?.find(f => f.id === apiData.collectionInfo.folderId);
+        setSelectedFolder(folder || null);
+      }
     }
   }
 
-  // Set API details
-  setApiDetails(prev => ({
-    ...prev,
-    apiName: object.name ? `${object.name} API` : 'New API',
-    apiCode: objectType ? `${objectType.slice(0, 3)}_${object.name || 'API'}` : 'API',
-    description: object.comment || (object.name ? `API for ${object.name}` : ''),
-    endpointPath: endpointPath,
-    owner: object.owner || 'HR',
-    httpMethod: httpMethod
-  }));
+  // Set schema config
+  if (apiData.schemaConfig) {
+    setSchemaConfig({
+      schemaName: apiData.schemaConfig.schemaName || '',
+      objectType: apiData.schemaConfig.objectType || '',
+      objectName: apiData.schemaConfig.objectName || '',
+      operation: apiData.schemaConfig.operation || 'SELECT',
+      primaryKeyColumn: apiData.schemaConfig.primaryKeyColumn || '',
+      sequenceName: apiData.schemaConfig.sequenceName || '',
+      enablePagination: apiData.schemaConfig.enablePagination !== undefined ? apiData.schemaConfig.enablePagination : true,
+      pageSize: apiData.schemaConfig.pageSize || 10,
+      enableSorting: apiData.schemaConfig.enableSorting !== undefined ? apiData.schemaConfig.enableSorting : true,
+      defaultSortColumn: apiData.schemaConfig.defaultSortColumn || '',
+      defaultSortDirection: apiData.schemaConfig.defaultSortDirection || 'ASC'
+    });
+  }
 
-  // Set schema config with proper operation based on HTTP method
-  setSchemaConfig(prev => ({
-    ...prev,
-    schemaName: object.owner || 'HR',
-    objectType: object.type || 'TABLE',
-    objectName: object.name || '',
-    operation: operation,
-    primaryKeyColumn: ''
-  }));
+  // Set source object info
+  if (apiData.sourceObject) {
+    setSourceObjectInfo({
+      isSynonym: apiData.sourceObject.isSynonym || false,
+      targetType: apiData.sourceObject.targetType || null,
+      targetName: apiData.sourceObject.targetName || null,
+      targetOwner: apiData.sourceObject.targetOwner || null
+    });
+  }
 
-  // Generate parameters
-  const newParameters = [];
-  const newMappings = [];
+  // Set parameters - ensure each has a unique ID
+  if (apiData.parameters && Array.isArray(apiData.parameters)) {
+    const paramsWithIds = apiData.parameters.map(p => ({
+      ...p,
+      id: p.id || `param-${Date.now()}-${Math.random()}`,
+      parameterLocation: p.parameterLocation || 'body',
+      required: p.required !== undefined ? p.required : true,
+      inBody: p.inBody !== undefined ? p.inBody : (p.parameterLocation === 'body'),
+      paramMode: p.paramMode || 'IN'
+    }));
+    setParameters(paramsWithIds);
+  }
 
-  // Handle tables/views (with columns)
-  if (object.columns && object.columns.length > 0) {
-    object.columns.forEach((col, index) => {
-      const colName = col.name || col.COLUMN_NAME || col.column_name;
-      const colType = col.type || col.DATA_TYPE || col.data_type || 'VARCHAR2';
-      const colNullable = col.nullable || col.NULLABLE || 'Y';
-      const isPrimaryKey = col.key === 'PK' || col.CONSTRAINT_TYPE === 'P' || col.isPrimaryKey;
+  // Set response mappings - ensure each has a unique ID
+  if (apiData.responseMappings && Array.isArray(apiData.responseMappings)) {
+    const mappingsWithIds = apiData.responseMappings.map(m => ({
+      ...m,
+      id: m.id || `mapping-${Date.now()}-${Math.random()}`,
+      includeInResponse: m.includeInResponse !== undefined ? m.includeInResponse : true,
+      inResponse: m.inResponse !== undefined ? m.inResponse : true,
+      nullable: m.nullable !== undefined ? m.nullable : true
+    }));
+    setResponseMappings(mappingsWithIds);
+  }
+
+  // Set request body
+  if (apiData.requestBody) {
+    setRequestBody({
+      bodyType: apiData.requestBody.bodyType || 'none',
+      sample: apiData.requestBody.sample || '',
+      requiredFields: apiData.requestBody.requiredFields || [],
+      validateSchema: apiData.requestBody.validateSchema !== undefined ? apiData.requestBody.validateSchema : true,
+      maxSize: apiData.requestBody.maxSize || 1048576,
+      allowedMediaTypes: apiData.requestBody.allowedMediaTypes || ['application/json']
+    });
+  }
+
+  // Set response body
+  if (apiData.responseBody) {
+    setResponseBody({
+      successSchema: apiData.responseBody.successSchema || '{\n  "success": true,\n  "data": {},\n  "message": "Request processed successfully"\n}',
+      errorSchema: apiData.responseBody.errorSchema || '{\n  "success": false,\n  "error": {\n    "code": "ERROR_CODE",\n    "message": "Error description",\n    "details": {}\n  }\n}',
+      includeMetadata: apiData.responseBody.includeMetadata !== undefined ? apiData.responseBody.includeMetadata : true,
+      metadataFields: apiData.responseBody.metadataFields || ['timestamp', 'apiVersion', 'requestId'],
+      contentType: apiData.responseBody.contentType || 'application/json',
+      compression: apiData.responseBody.compression || 'gzip'
+    });
+  }
+
+  // Set auth config
+  if (apiData.authConfig) {
+    setAuthConfig({
+      authType: apiData.authConfig.authType || 'none',
+      apiKeyHeader: apiData.authConfig.apiKeyHeader || 'X-API-Key',
+      apiKeyValue: apiData.authConfig.apiKeyValue || '',
+      apiSecretHeader: apiData.authConfig.apiSecretHeader || 'X-API-Secret',
+      apiSecretValue: apiData.authConfig.apiSecretValue || '',
+      jwtToken: apiData.authConfig.jwtToken || '',
+      jwtIssuer: apiData.authConfig.jwtIssuer || 'api.example.com',
+      basicUsername: apiData.authConfig.basicUsername || '',
+      basicPassword: apiData.authConfig.basicPassword || '',
+      ipWhitelist: apiData.authConfig.ipWhitelist || '',
+      rateLimitRequests: apiData.authConfig.rateLimitRequests || 100,
+      rateLimitPeriod: apiData.authConfig.rateLimitPeriod || 'minute',
+      enableRateLimiting: apiData.authConfig.enableRateLimiting || false,
+      corsOrigins: apiData.authConfig.corsOrigins || ['*'],
+      auditLevel: apiData.authConfig.auditLevel || 'standard'
+    });
+  }
+
+  // Set headers
+  if (apiData.headers && Array.isArray(apiData.headers)) {
+    const headersWithIds = apiData.headers.map((h, idx) => ({
+      ...h,
+      id: h.id || `header-${Date.now()}-${idx}`
+    }));
+    setHeaders(headersWithIds);
+  }
+
+  // Set settings
+  if (apiData.settings) {
+    setSettings({
+      timeout: apiData.settings.timeout || 30000,
+      maxRecords: apiData.settings.maxRecords || 1000,
+      enableLogging: apiData.settings.enableLogging !== undefined ? apiData.settings.enableLogging : true,
+      logLevel: apiData.settings.logLevel || 'INFO',
+      enableCaching: apiData.settings.enableCaching || false,
+      cacheTtl: apiData.settings.cacheTtl || 300,
+      generateSwagger: apiData.settings.generateSwagger !== undefined ? apiData.settings.generateSwagger : true,
+      generatePostman: apiData.settings.generatePostman !== undefined ? apiData.settings.generatePostman : true,
+      generateClientSDK: apiData.settings.generateClientSDK !== undefined ? apiData.settings.generateClientSDK : true,
+      enableMonitoring: apiData.settings.enableMonitoring !== undefined ? apiData.settings.enableMonitoring : true,
+      enableAlerts: apiData.settings.enableAlerts || false,
+      alertEmail: apiData.settings.alertEmail || '',
+      enableTracing: apiData.settings.enableTracing || false,
+      corsEnabled: apiData.settings.corsEnabled !== undefined ? apiData.settings.corsEnabled : true
+    });
+  }
+
+  console.log('✅ Form populated from API data');
+}, [collections]);
+
+
+
+  // Function to populate form from selected object - FIXED VERSION WITH PROPER MODE FILTERING
+  const populateFormFromObject = useCallback((object) => {
+    console.log('📝 populateFormFromObject called with object:', object);
+    
+    const objectType = object.type?.toUpperCase() || object.objectType?.toUpperCase();
+    const baseName = object.name?.toLowerCase() || object.objectName?.toLowerCase() || '';
+    const endpointPath = baseName ? `/${baseName.replace(/_/g, '-').toLowerCase()}` : '';
+
+    // Get HTTP method from existing state or default based on object type
+    let httpMethod = apiDetails.httpMethod;
+    
+    // For procedures/functions, force POST
+    if (objectType === 'PROCEDURE' || objectType === 'FUNCTION' || objectType === 'PACKAGE') {
+      httpMethod = 'POST';
+    } else {
+      httpMethod = httpMethod || 'GET';
+    }
+
+    // Determine operation based on HTTP method and object type
+    let operation = 'SELECT';
+    
+    // For procedures/functions/packages, always use EXECUTE
+    if (objectType === 'PROCEDURE' || objectType === 'FUNCTION' || objectType === 'PACKAGE') {
+      operation = 'EXECUTE';
+    } else {
+      // For tables/views, map HTTP method to operation
+      switch(httpMethod) {
+        case 'POST':
+          operation = 'INSERT';
+          break;
+        case 'PUT':
+        case 'PATCH':
+          operation = 'UPDATE';
+          break;
+        case 'DELETE':
+          operation = 'DELETE';
+          break;
+        case 'GET':
+        default:
+          operation = 'SELECT';
+          break;
+      }
+    }
+
+    // Set API details
+    setApiDetails(prev => ({
+      ...prev,
+      apiName: object.name || object.objectName ? `${object.name || object.objectName} API` : 'New API',
+      apiCode: objectType ? `${objectType.slice(0, 3)}_${object.name || object.objectName || 'API'}` : 'API',
+      description: object.comment || (object.name || object.objectName ? `API for ${object.name || object.objectName}` : ''),
+      endpointPath: endpointPath,
+      owner: object.owner || 'HR',
+      httpMethod: httpMethod
+    }));
+
+    // Set schema config with proper operation based on HTTP method
+    setSchemaConfig(prev => ({
+      ...prev,
+      schemaName: object.owner || 'HR',
+      objectType: objectType || 'TABLE',
+      objectName: object.name || object.objectName || '',
+      operation: operation,
+      primaryKeyColumn: ''
+    }));
+
+    // Generate parameters and response mappings
+    const newParameters = [];
+    const newMappings = [];
+
+    // FIX: Check for parameters in object.details.parameters (from validation response)
+    console.log('📦 Looking for parameters in object:', {
+      hasParameters: object.parameters,
+      hasDetailsParameters: object.details?.parameters,
+      details: object.details
+    });
+
+    // Handle parameters - look in both object.parameters and object.details.parameters
+    let parameters = [];
+    if (object.parameters && Array.isArray(object.parameters)) {
+      parameters = object.parameters;
+      console.log('📦 Found parameters in object.parameters:', parameters);
+    } else if (object.details?.parameters && Array.isArray(object.details.parameters)) {
+      parameters = object.details.parameters;
+      console.log('📦 Found parameters in object.details.parameters:', parameters);
+    }
+
+    // Handle columns - look in object.columns and object.details.columns
+    let columns = [];
+    if (object.columns && Array.isArray(object.columns)) {
+      columns = object.columns;
+      console.log('📦 Found columns in object.columns:', columns);
+    } else if (object.details?.columns && Array.isArray(object.details.columns)) {
+      columns = object.details.columns;
+      console.log('📦 Found columns in object.details.columns:', columns);
+    }
+
+    // Process parameters if we have any
+    if (parameters.length > 0) {
+      console.log('📦 Processing parameters (count: ' + parameters.length + ')');
       
-      if (colName) {
-        const cleanKey = colName.toLowerCase();
+      parameters.forEach((param, index) => {
+        // Extract parameter data with fallbacks for different naming conventions
+        const paramName = param.ARGUMENT_NAME || param.argument_name || param.name || param.NAME || `param_${index + 1}`;
+        const paramType = param.DATA_TYPE || param.data_type || param.type || param.TYPE || 'VARCHAR2';
+        // IMPORTANT: Use in_out as the key for parameter mode (from your sample data)
+        const paramMode = param.IN_OUT || param.in_out || param.mode || param.MODE || 'IN';
         
-        // Determine parameter location based on operation and primary key
+        // Normalize the mode to handle different formats
+        const normalizedMode = paramMode?.toString().toUpperCase().replace(/\s+/g, '_') || 'IN';
+        
+        console.log(`🔍 Processing param ${index}:`, { 
+          paramName, 
+          paramType, 
+          paramMode: normalizedMode,
+          original: paramMode 
+        });
+        
+        // Generate a clean key name
+        let cleanKey = paramName;
+        if (typeof paramName === 'string') {
+          cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
+        } else {
+          cleanKey = `param_${index + 1}`;
+        }
+        
+        // Determine parameter location based on mode and HTTP method
         let parameterLocation = 'query';
         
-        if (operation === 'INSERT') {
-          // For INSERT, all columns go to body
+        // Check if this is an IN or IN/OUT parameter for parameters tab
+        const isInParam = normalizedMode === 'IN' || normalizedMode === 'IN_OUT' || normalizedMode === 'INOUT' || normalizedMode === 'IN/OUT';
+        // Check if this is an OUT or IN/OUT parameter for mappings tab
+        const isOutParam = normalizedMode === 'OUT' || normalizedMode === 'IN_OUT' || normalizedMode === 'INOUT' || normalizedMode === 'IN/OUT';
+        
+        if (isInParam && (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH')) {
           parameterLocation = 'body';
-        } else if (operation === 'UPDATE' || operation === 'DELETE') {
-          // For UPDATE/DELETE, primary keys go to path/query, others to body
-          if (isPrimaryKey) {
-            parameterLocation = httpMethod === 'DELETE' ? 'query' : 'path';
-          } else {
-            parameterLocation = 'body';
-          }
-        } else {
-          // For SELECT, all columns go to query
+        } else if (isInParam && httpMethod === 'GET') {
           parameterLocation = 'query';
         }
+
+        // Determine oracle type
+        let oracleType = 'VARCHAR2';
+        if (paramType.includes('VARCHAR') || paramType.includes('CHAR')) {
+          oracleType = 'VARCHAR2';
+        } else if (paramType.includes('NUMBER') || paramType.includes('INT') || paramType.includes('FLOAT')) {
+          oracleType = 'NUMBER';
+        } else if (paramType.includes('DATE')) {
+          oracleType = 'DATE';
+        } else if (paramType.includes('TIMESTAMP')) {
+          oracleType = 'TIMESTAMP';
+        } else if (paramType.includes('CLOB')) {
+          oracleType = 'CLOB';
+        }
+
+        // Determine API type
+        let apiType = 'string';
+        if (oracleType === 'NUMBER') {
+          apiType = 'integer';
+        } else if (oracleType === 'CLOB') {
+          apiType = 'string';
+        }
+
+        // FIX: Only add to parameters array for IN and IN/OUT parameters
+        if (isInParam) {
+          newParameters.push({
+            id: `proc-param-${Date.now()}-${index}`,
+            key: cleanKey,
+            dbColumn: paramName,
+            oracleType: oracleType,
+            apiType: apiType,
+            parameterLocation: parameterLocation,
+            required: normalizedMode === 'IN' || normalizedMode === 'IN_OUT' || normalizedMode === 'INOUT' || normalizedMode === 'IN/OUT',
+            description: `${paramName} (${paramMode})`,
+            example: oracleType === 'NUMBER' ? '1000' : 
+                    oracleType === 'DATE' ? '2024-01-01' : 
+                    oracleType === 'CLOB' ? '{...}' : 'sample',
+            validationPattern: '',
+            defaultValue: param.DATA_DEFAULT || param.defaultValue || '',
+            inBody: parameterLocation === 'body',
+            isPrimaryKey: false,
+            paramMode: normalizedMode
+          });
+          console.log(`✅ Added parameter: ${cleanKey} (${normalizedMode})`);
+        }
+
+        // FIX: Only add to response mappings for OUT and IN/OUT parameters
+        if (isOutParam) {
+          newMappings.push({
+            id: `mapping-out-${Date.now()}-${index}`,
+            apiField: cleanKey,
+            dbColumn: paramName,
+            oracleType: oracleType,
+            apiType: apiType,
+            format: oracleType === 'DATE' ? 'date-time' : '',
+            nullable: true,
+            isPrimaryKey: false,
+            includeInResponse: true,
+            inResponse: true,
+            paramMode: normalizedMode
+          });
+          console.log(`✅ Added response mapping: ${cleanKey} (${normalizedMode})`);
+        }
+      });
+
+      // For functions, handle return type
+      const returnType = object.RETURN_TYPE || object.return_type || object.returnType || object.details?.returnType;
+      if (returnType && objectType === 'FUNCTION') {
+        // Determine oracle type for return
+        let oracleType = 'VARCHAR2';
+        if (returnType.includes('VARCHAR') || returnType.includes('CHAR')) {
+          oracleType = 'VARCHAR2';
+        } else if (returnType.includes('NUMBER') || returnType.includes('INT') || returnType.includes('FLOAT')) {
+          oracleType = 'NUMBER';
+        } else if (returnType.includes('DATE')) {
+          oracleType = 'DATE';
+        }
+
+        // Determine API type
+        let apiType = 'string';
+        if (oracleType === 'NUMBER') {
+          apiType = 'integer';
+        }
+
+        newMappings.push({
+          id: `mapping-return-${Date.now()}`,
+          apiField: 'result',
+          dbColumn: 'RETURN_VALUE',
+          oracleType: oracleType,
+          apiType: apiType,
+          format: oracleType === 'DATE' ? 'date-time' : '',
+          nullable: false,
+          isPrimaryKey: false,
+          includeInResponse: true,
+          inResponse: true,
+          paramMode: 'OUT'
+        });
+        console.log('✅ Added function return mapping');
+      }
+    }
+
+    // Process columns if we have any and no parameters (for tables/views)
+    if (columns.length > 0 && parameters.length === 0) {
+      console.log('📦 Processing columns (count: ' + columns.length + ')');
+      
+      columns.forEach((col, index) => {
+        const colName = col.name || col.COLUMN_NAME || col.column_name;
+        const colType = col.type || col.DATA_TYPE || col.data_type || 'VARCHAR2';
+        const colNullable = col.nullable || col.NULLABLE || 'Y';
+        const isPrimaryKey = col.key === 'PK' || col.CONSTRAINT_TYPE === 'P' || col.isPrimaryKey;
         
-        newParameters.push({
-          id: `param-${Date.now()}-${index}`,
-          key: cleanKey,
-          dbColumn: colName,
-          oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
-                     colType.includes('NUMBER') ? 'NUMBER' :
-                     colType.includes('DATE') ? 'DATE' : 
-                     colType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
-          apiType: colType.includes('NUMBER') ? 'integer' : 'string',
-          parameterLocation: parameterLocation,
-          required: isPrimaryKey || colNullable === 'N',
-          description: col.comment || col.COMMENTS || `From ${object.name}.${colName}`,
-          example: colName.includes('ID') ? '1' : 
-                  colName.includes('DATE') ? '2024-01-01' :
-                  colName.includes('NAME') ? 'Sample' : '',
-          validationPattern: '',
-          defaultValue: col.DATA_DEFAULT || '',
-          inBody: parameterLocation === 'body',
-          isPrimaryKey: isPrimaryKey,
-          paramMode: null
-        });
+        if (colName) {
+          // Clean up column name for API key
+          const cleanKey = typeof colName === 'string' ? colName.toLowerCase() : `column_${index + 1}`;
+          
+          // Determine oracle type
+          let oracleType = 'VARCHAR2';
+          if (colType.includes('VARCHAR') || colType.includes('CHAR')) {
+            oracleType = 'VARCHAR2';
+          } else if (colType.includes('NUMBER') || colType.includes('INT') || colType.includes('FLOAT')) {
+            oracleType = 'NUMBER';
+          } else if (colType.includes('DATE')) {
+            oracleType = 'DATE';
+          } else if (colType.includes('TIMESTAMP')) {
+            oracleType = 'TIMESTAMP';
+          }
 
-        newMappings.push({
-          id: `mapping-${Date.now()}-${index}`,
-          apiField: cleanKey,
-          dbColumn: colName,
-          oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
-                     colType.includes('NUMBER') ? 'NUMBER' :
-                     colType.includes('DATE') ? 'DATE' : 'VARCHAR2',
-          apiType: colType.includes('NUMBER') ? 'integer' : 'string',
-          format: colType.includes('DATE') ? 'date-time' : '',
-          nullable: colNullable === 'Y',
-          isPrimaryKey: isPrimaryKey,
-          includeInResponse: true,
-          inResponse: true,
-          paramMode: null
-        });
-      }
-    });
-  }
+          // Determine API type
+          let apiType = 'string';
+          if (oracleType === 'NUMBER') {
+            apiType = 'integer';
+          }
 
-  // Handle procedures/functions (with parameters)
-  if (object.parameters && object.parameters.length > 0) {
-    object.parameters.forEach((param, index) => {
-      const paramName = param.ARGUMENT_NAME || param.argument_name || param.name || `param_${index + 1}`;
-      const paramType = param.DATA_TYPE || param.data_type || param.type || 'VARCHAR2';
-      const paramMode = param.IN_OUT || param.in_out || param.mode || 'IN';
-      
-      const cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
-      
-      // Determine parameter location based on mode and HTTP method
-      let parameterLocation = 'query';
-      if (paramMode === 'IN' && (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH')) {
-        parameterLocation = 'body';
-      } else if (paramMode === 'IN' && httpMethod === 'GET') {
-        parameterLocation = 'query';
-      } else if (paramMode === 'IN/OUT') {
-        parameterLocation = 'body'; // IN OUT goes to body
-      }
+          // Determine parameter location
+          let parameterLocation = 'query';
+          if (isPrimaryKey && (httpMethod === 'GET' || httpMethod === 'PUT' || httpMethod === 'DELETE')) {
+            parameterLocation = 'path';
+          } else if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
+            parameterLocation = 'body';
+          }
+          
+          // For tables/views, all columns go to both parameters and mappings
+          newParameters.push({
+            id: `param-col-${Date.now()}-${index}`,
+            key: cleanKey,
+            dbColumn: colName,
+            oracleType: oracleType,
+            apiType: apiType,
+            parameterLocation: parameterLocation,
+            required: isPrimaryKey || colNullable === 'N',
+            description: col.comment || col.COMMENTS || `From ${object.name || object.objectName}.${colName}`,
+            example: colName.includes('ID') ? '1' : 
+                    colName.includes('DATE') ? '2024-01-01' :
+                    colName.includes('NAME') ? 'Sample' : '',
+            validationPattern: '',
+            defaultValue: col.DATA_DEFAULT || col.defaultValue || '',
+            inBody: parameterLocation === 'body',
+            isPrimaryKey: isPrimaryKey,
+            paramMode: null
+          });
 
-      // Add to parameters for IN and IN/OUT
-      if (paramMode === 'IN' || paramMode === 'IN/OUT') {
-        newParameters.push({
-          id: `param-${Date.now()}-proc-${index}`,
-          key: cleanKey,
-          dbColumn: paramName,
-          oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
-                     paramType.includes('NUMBER') ? 'NUMBER' :
-                     paramType.includes('DATE') ? 'DATE' : 
-                     paramType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
-          apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
-          parameterLocation: parameterLocation,
-          required: paramMode === 'IN' || paramMode === 'IN/OUT',
-          description: `${paramName} (${paramMode})`,
-          example: paramType.includes('NUMBER') ? '1' : 
-                  paramType.includes('DATE') ? '2024-01-01' : 'sample',
-          validationPattern: '',
-          defaultValue: param.DATA_DEFAULT || '',
-          inBody: parameterLocation === 'body',
-          isPrimaryKey: false,
-          paramMode: paramMode
-        });
-      }
-
-      // Add to response mappings for OUT and IN/OUT
-      if (paramMode === 'OUT' || paramMode === 'IN/OUT') {
-        newMappings.push({
-          id: `mapping-${Date.now()}-out-${index}`,
-          apiField: cleanKey,
-          dbColumn: paramName,
-          oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
-                     paramType.includes('NUMBER') ? 'NUMBER' :
-                     paramType.includes('DATE') ? 'DATE' : 'VARCHAR2',
-          apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
-          format: paramType.includes('DATE') ? 'date-time' : '',
-          nullable: true,
-          isPrimaryKey: false,
-          includeInResponse: true,
-          inResponse: true,
-          paramMode: paramMode
-        });
-      }
-    });
-
-    // Handle function return value
-    const returnType = object.RETURN_TYPE || object.return_type || object.returnType;
-    if (returnType && objectType === 'FUNCTION') {
-      newMappings.push({
-        id: `mapping-${Date.now()}-return`,
-        apiField: 'result',
-        dbColumn: 'RETURN_VALUE',
-        oracleType: returnType.includes('VARCHAR') ? 'VARCHAR2' : 
-                   returnType.includes('NUMBER') ? 'NUMBER' :
-                   returnType.includes('DATE') ? 'DATE' : 'VARCHAR2',
-        apiType: returnType.includes('NUMBER') ? 'integer' : 'string',
-        format: '',
-        nullable: false,
-        isPrimaryKey: false,
-        includeInResponse: true,
-        inResponse: true,
-        paramMode: 'OUT'
+          newMappings.push({
+            id: `mapping-col-${Date.now()}-${index}`,
+            apiField: cleanKey,
+            dbColumn: colName,
+            oracleType: oracleType,
+            apiType: apiType,
+            format: oracleType === 'DATE' ? 'date-time' : '',
+            nullable: colNullable === 'Y',
+            isPrimaryKey: isPrimaryKey,
+            includeInResponse: true,
+            inResponse: true,
+            paramMode: null
+          });
+        }
       });
     }
-  }
 
-  setParameters(newParameters);
-  setResponseMappings(newMappings);
-  
-  // Generate sample response based on mappings
-  if (newMappings.length > 0) {
-    const sampleData = {};
-    newMappings.slice(0, 50).forEach(mapping => {
-      if (mapping.apiType === 'integer') {
-        sampleData[mapping.apiField] = 123;
-      } else if (mapping.apiType === 'string') {
-        if (mapping.format === 'date-time') {
-          sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
-        } else {
-          sampleData[mapping.apiField] = mapping.apiField === 'id' ? 1 : 'sample';
-        }
-      } else if (mapping.apiType === 'boolean') {
-        sampleData[mapping.apiField] = true;
-      }
+    console.log('📊 Final results:', {
+      parametersCount: newParameters.length,
+      mappingsCount: newMappings.length,
+      inCount: newParameters.filter(p => p.paramMode === 'IN' || p.paramMode === 'IN_OUT' || p.paramMode === 'INOUT' || p.paramMode === 'IN/OUT' || p.paramMode === null).length,
+      outCount: newMappings.length
     });
-    
-    const successSchema = JSON.stringify({
-      success: true,
-      data: sampleData,
-      message: 'Request processed successfully',
-      metadata: {
-        timestamp: '{{timestamp}}',
-        apiVersion: apiDetails.version,
-        requestId: '{{requestId}}'
-      }
-    }, null, 2);
-    
-    setResponseBody(prev => ({
-      ...prev,
-      successSchema
-    }));
-  }
 
-  // Set body type based on HTTP method
-  if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
-    setRequestBody(prev => ({
-      ...prev,
-      bodyType: 'json'
-    }));
-  } else {
-    setRequestBody(prev => ({
-      ...prev,
-      bodyType: 'none'
-    }));
-  }
+    setParameters(newParameters);
+    setResponseMappings(newMappings);
+    
+    // Generate sample response based on mappings
+    if (newMappings.length > 0) {
+      const sampleData = {};
+      newMappings.slice(0, 50).forEach(mapping => {
+        if (mapping.apiType === 'integer') {
+          sampleData[mapping.apiField] = 123;
+        } else if (mapping.apiType === 'string') {
+          if (mapping.format === 'date-time') {
+            sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
+          } else {
+            sampleData[mapping.apiField] = mapping.apiField.includes('id') ? 1 : 'sample';
+          }
+        } else if (mapping.apiType === 'boolean') {
+          sampleData[mapping.apiField] = true;
+        }
+      });
+      
+      const successSchema = JSON.stringify({
+        success: true,
+        data: sampleData,
+        message: 'Request processed successfully',
+        metadata: {
+          timestamp: '{{timestamp}}',
+          apiVersion: apiDetails.version,
+          requestId: '{{requestId}}'
+        }
+      }, null, 2);
+      
+      setResponseBody(prev => ({
+        ...prev,
+        successSchema
+      }));
+    }
 
-  console.log(`✅ Form populated for ${objectType} with operation: ${operation} (HTTP ${httpMethod})`);
-  console.log(`📊 Parameters: ${newParameters.length}, Mappings: ${newMappings.length}`);
-}, [apiDetails.version]);
+    // Set body type based on HTTP method
+    if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
+      setRequestBody(prev => ({
+        ...prev,
+        bodyType: 'json'
+      }));
+    } else {
+      setRequestBody(prev => ({
+        ...prev,
+        bodyType: 'none'
+      }));
+    }
+
+    console.log(`✅ Form populated for ${objectType} with operation: ${operation} (HTTP ${httpMethod})`);
+    console.log(`📊 Parameters: ${newParameters.length}, Mappings: ${newMappings.length}`);
+  }, [apiDetails.version, setApiDetails, setSchemaConfig, setParameters, setResponseMappings, setRequestBody, setResponseBody]);
 
   // ==================== VALIDATION FUNCTIONS ====================
 
@@ -2567,45 +2828,78 @@ const populateFormFromObject = useCallback((object) => {
     );
   };
 
-  // ==================== API FUNCTIONS ====================
+// Validate source object with the API Generation Engine - FIXED to resolve synonyms
+const validateObject = async (object, type) => {
+  // Skip validation for API objects (when editing)
+  if (isEditing || type === 'API' || type === 'CONNECTION' || !type || type === 'API' || object?.type === 'API') {
+    console.log('ℹ️ Skipping validation for API object');
+    setValidationResult({ valid: true, message: 'API object - validation skipped' });
+    return { valid: true, data: { details: {} } };
+  }
 
-  // Validate source object with the API Generation Engine - SKIP for API objects
-  const validateObject = async (object, type) => {
-    // Skip validation for API objects (when editing)
-    if (isEditing || type === 'API' || type === 'CONNECTION' || !type || type === 'API' || object?.type === 'API') {
-      console.log('ℹ️ Skipping validation for API object');
-      setValidationResult({ valid: true, message: 'API object - validation skipped' });
-      return { valid: true };
-    }
+  if (!authToken || !object || !object.name || !type) {
+    console.log('❌ Cannot validate: missing required data');
+    return null;
+  }
 
-    if (!authToken || !object || !object.name || !type) {
-      console.log('❌ Cannot validate: missing required data');
-      return null;
-    }
+  setValidating(true);
+  setValidationResult(null);
 
-    setValidating(true);
-    setValidationResult(null);
-
-    try {
-      console.log('🔍 Validating source object:', { objectName: object.name, objectType: type, owner: object.owner });
-      
-      const response = await validateSourceObject(authToken, {
-        objectName: object.name,
-        objectType: type,
-        owner: object.owner
+  try {
+    // Check if this is a synonym and resolve it first
+    let targetOwner = object.owner;
+    let targetName = object.name;
+    let targetType = type;
+    
+    // If the object is a synonym, resolve it to get the target object
+    if (object.isSynonym || object.targetType) {
+      console.log('🔍 Object is a synonym, resolving to target:', {
+        targetOwner: object.targetOwner,
+        targetName: object.targetName,
+        targetType: object.targetType
       });
-
-      console.log('📦 Validation response:', response);
-      setValidationResult(response.data);
-      return response.data;
-    } catch (error) {
-      console.error('❌ Error validating source object:', error);
-      setValidationResult({ valid: false, message: error.message });
-      return null;
-    } finally {
-      setValidating(false);
+      
+      targetOwner = object.targetOwner;
+      targetName = object.targetName;
+      targetType = object.targetType;
+      
+      // Update sourceObjectInfo to show it's a synonym
+      setSourceObjectInfo({
+        isSynonym: true,
+        targetType: object.targetType,
+        targetName: object.targetName,
+        targetOwner: object.targetOwner
+      });
     }
-  };
+
+    console.log('🔍 Validating source object:', { 
+      objectName: targetName, 
+      objectType: targetType, 
+      owner: targetOwner 
+    });
+    
+    // Validate the target object (not the synonym)
+    const response = await validateSourceObject(authToken, {
+      objectName: targetName,
+      objectType: targetType,
+      owner: targetOwner
+    });
+
+    console.log('📦 Validation response:', response);
+    
+    // Store the validation result
+    setValidationResult(response.data);
+    
+    // Return the full response data for use in initialization
+    return response;
+  } catch (error) {
+    console.error('❌ Error validating source object:', error);
+    setValidationResult({ valid: false, message: error.message });
+    return null;
+  } finally {
+    setValidating(false);
+  }
+};
 
   // Check if API code is available - FIXED: Only check for new APIs, not when editing
   const checkCodeAvailability = async (code) => {
@@ -2711,656 +3005,232 @@ useEffect(() => {
 
   // ==================== INITIALIZATION EFFECTS ====================
 
-  // Show object selector when modal opens from dashboard AND no object is selected
-  useEffect(() => {
-    if (isOpen && fromDashboard && !selectedObject && !isEditing && !selectedDbObject) {
-      setShowObjectSelector(true);
+// Show object selector when modal opens from dashboard AND no object is selected
+useEffect(() => {
+  if (isOpen && fromDashboard && !selectedObject && !isEditing && !selectedDbObject) {
+    setShowObjectSelector(true);
+  }
+}, [isOpen, fromDashboard, selectedObject, isEditing, selectedDbObject]);
+
+// Initialize parameters and mappings based on selected object - FIXED VERSION
+useEffect(() => {
+  const initializeFromObject = async () => {
+    // If we're on dashboard and have selectedDbObject, use that
+    if (fromDashboard && selectedDbObject) {
+      console.log('📝 Using dashboard-selected object:', selectedDbObject);
+      await populateFormFromObject(selectedDbObject);
+      return;
     }
-  }, [isOpen, fromDashboard, selectedObject, isEditing, selectedDbObject]);
 
-  // Initialize parameters and mappings based on selected object
-  useEffect(() => {
-    const initializeFromObject = async () => {
-      // If we're on dashboard and have selectedDbObject, use that
-      if (fromDashboard && selectedDbObject) {
-        console.log('📝 Using dashboard-selected object:', selectedDbObject);
-        return;
-      }
+    if (!selectedObject) {
+      console.log('ℹ️ ApiGenerationModal - No selected object provided, showing empty form');
+      return;
+    }
 
-      if (!selectedObject) {
-        console.log('ℹ️ ApiGenerationModal - No selected object provided, showing empty form');
-        return;
-      }
+    setLoading(true);
+    
+    // Check if we're in edit mode - IMPROVED DETECTION
+    const isEditMode = isEditing || (selectedObject?.data && selectedObject.data.id);
+    
+    console.log('🔍 ApiGenerationModal - Initializing with selected object:', {
+      selectedObject: selectedObject,
+      isEditing: isEditing,
+      isEditMode: isEditMode
+    });
 
-      setLoading(true);
-      
-      // Check if we're in edit mode - either from prop OR from data structure
-      const isEditMode = isEditing || (selectedObject?.data && selectedObject.data.id);
-      
-      console.log('🔍 ApiGenerationModal - Initializing with selected object:', {
-        name: selectedObject?.name,
-        type: selectedObject?.type,
-        owner: selectedObject?.owner,
-        isEditing: isEditing,
-        isEditMode: isEditMode,
-        hasDataWrapper: !!selectedObject?.data,
-        hasDataId: !!(selectedObject?.data?.id),
-        hasParameters: !!(selectedObject?.data?.parameters && selectedObject.data.parameters.length > 0),
-        hasResponseMappings: !!(selectedObject?.data?.responseMappings && selectedObject.data.responseMappings.length > 0),
-        fullObject: selectedObject
-      });
-
-      try {
-        // Skip validation for API objects (when in edit mode)
-        if (!isEditMode && selectedObject?.type !== 'API' && selectedObject?.type !== 'CONNECTION') {
-          // First, validate the source object
-          await validateObject(selectedObject, selectedObject.type);
-        } else {
-          console.log('ℹ️ Skipping validation for API object - edit mode detected');
-          setValidationResult({ valid: true, message: 'API object - validation skipped' });
-        }
-
-        // For API objects (editing mode), populate from the selectedObject directly
-        if (isEditMode || selectedObject?.type === 'API' || selectedObject?.type === 'CONNECTION') {
-          console.log('📝 Populating form for API editing with data:', selectedObject);
-          
-          // Extract the actual data object if it's wrapped in a data property
-          const apiData = selectedObject.data || selectedObject;
-          
-          console.log('📝 Extracted apiData:', apiData);
-          console.log('📝 Parameters from data:', apiData.parameters);
-          console.log('📝 ResponseMappings from data:', apiData.responseMappings);
-          
-          // API DETAILS TAB
-          setApiDetails({
-            apiName: apiData.apiName || apiData.name || '',
-            apiCode: apiData.apiCode || apiData.id || '',
-            description: apiData.description || '',
-            version: apiData.version || '1.0.0',
-            status: apiData.status || 'ACTIVE',
-            httpMethod: apiData.httpMethod || apiData.method || 'GET',
-            basePath: apiData.basePath || '/api/v1',
-            endpointPath: apiData.endpointPath || apiData.url || '',
-            tags: apiData.tags || ['default'],
-            category: apiData.category || 'general',
-            owner: apiData.owner || 'HR',
-          });
-
-          // SCHEMA TAB
-          if (apiData.schemaConfig) {
-            console.log('📊 Setting schemaConfig from selectedObject:', apiData.schemaConfig);
-            setSchemaConfig(apiData.schemaConfig);
-          } else if (apiData.sourceObject) {
-            // Try to get schema config from sourceObject
-            setSchemaConfig({
-              schemaName: apiData.sourceObject.owner || 'HR',
-              objectType: apiData.sourceObject.type || 'TABLE',
-              objectName: apiData.sourceObject.name || '',
-              operation: apiData.sourceObject.operation || 'SELECT',
-              primaryKeyColumn: apiData.sourceObject.primaryKeyColumn || '',
-              sequenceName: apiData.sourceObject.sequenceName || '',
-              enablePagination: apiData.sourceObject.enablePagination !== undefined ? apiData.sourceObject.enablePagination : true,
-              pageSize: apiData.sourceObject.pageSize || 10,
-              enableSorting: apiData.sourceObject.enableSorting !== undefined ? apiData.sourceObject.enableSorting : true,
-              defaultSortColumn: apiData.sourceObject.defaultSortColumn || '',
-              defaultSortDirection: apiData.sourceObject.defaultSortDirection || 'ASC'
-            });
-          } else {
-            // Default values if no schema config found
-            setSchemaConfig({
-              schemaName: 'HR',
-              objectType: 'TABLE',
-              objectName: apiData.name?.replace(/\s+/g, '_').toUpperCase() || 'OBJECT',
-              operation: apiData.method === 'GET' ? 'SELECT' : 
-                        apiData.method === 'POST' ? 'INSERT' :
-                        apiData.method === 'PUT' ? 'UPDATE' :
-                        apiData.method === 'DELETE' ? 'DELETE' : 'SELECT',
-              primaryKeyColumn: '',
-              sequenceName: '',
-              enablePagination: true,
-              pageSize: 10,
-              enableSorting: true,
-              defaultSortColumn: '',
-              defaultSortDirection: 'ASC'
-            });
-          }
-
-          // PARAMETERS TAB - load parameters (should be IN parameters)
-          if (apiData.parameters && apiData.parameters.length > 0) {
-            console.log('📦 Loading parameters for editing:', apiData.parameters);
-            
-            // Map existing parameters to ensure they have proper structure
-            const mappedParams = apiData.parameters.map(param => ({
-              id: param.id || `param-${Date.now()}-${Math.random()}`,
-              key: param.key || param.name || '',
-              dbColumn: param.dbColumn || param.column || '',
-              oracleType: param.oracleType || param.type || 'VARCHAR2',
-              apiType: param.apiType || (param.oracleType?.includes('NUMBER') ? 'integer' : 'string'),
-              parameterLocation: param.parameterLocation || param.location || 'query',
-              required: param.required || false,
-              description: param.description || '',
-              example: param.example || '',
-              validationPattern: param.validationPattern || '',
-              defaultValue: param.defaultValue || '',
-              inBody: param.inBody || param.parameterLocation === 'body' || false,
-              isPrimaryKey: param.isPrimaryKey || false,
-              paramMode: param.paramMode || 'IN'
-            }));
-            
-            console.log('📦 Mapped parameters for editing (count: ' + mappedParams.length + '):', mappedParams);
-            setParameters(mappedParams);
-          } else {
-            console.log('📦 No parameters found in selected object');
-            setParameters([]);
-          }
-
-          // MAPPING TAB - load response mappings (should include OUT parameters)
-          if (apiData.responseMappings && apiData.responseMappings.length > 0) {
-            console.log('📋 Loading response mappings for editing:', apiData.responseMappings);
-            
-            const mappedMappings = apiData.responseMappings.map(mapping => ({
-              id: mapping.id || `mapping-${Date.now()}-${Math.random()}`,
-              apiField: mapping.apiField || mapping.field || '',
-              dbColumn: mapping.dbColumn || mapping.column || '',
-              oracleType: mapping.oracleType || mapping.type || 'VARCHAR2',
-              apiType: mapping.apiType || (mapping.oracleType?.includes('NUMBER') ? 'integer' : 'string'),
-              format: mapping.format || (mapping.oracleType?.includes('DATE') ? 'date-time' : ''),
-              nullable: mapping.nullable !== undefined ? mapping.nullable : true,
-              isPrimaryKey: mapping.isPrimaryKey || false,
-              includeInResponse: mapping.includeInResponse !== undefined ? mapping.includeInResponse : true,
-              inResponse: mapping.inResponse !== undefined ? mapping.inResponse : true,
-              paramMode: mapping.paramMode || 'OUT'
-            }));
-            
-            console.log('📋 Mapped response mappings for editing (count: ' + mappedMappings.length + '):', mappedMappings);
-            setResponseMappings(mappedMappings);
-          } else {
-            console.log('📋 No response mappings found in selected object');
-            setResponseMappings([]);
-          }
-
-          // AUTHENTICATION TAB
-          if (apiData.authConfig) {
-            console.log('🔐 Loading auth config:', apiData.authConfig);
-            setAuthConfig(apiData.authConfig);
-          } else {
-            setAuthConfig({
-              authType: 'none',
-              apiKeyHeader: 'X-API-Key',
-              apiKeyValue: '',
-              apiSecretHeader: 'X-API-Secret',
-              apiSecretValue: '',
-              jwtToken: '',
-              jwtIssuer: 'api.example.com',
-              basicUsername: '',
-              basicPassword: '',
-              ipWhitelist: '',
-              rateLimitRequests: 100,
-              rateLimitPeriod: 'minute',
-              enableRateLimiting: false,
-              corsOrigins: ['*'],
-              auditLevel: 'standard'
-            });
-          }
-
-          // REQUEST TAB
-          if (apiData.requestBody) {
-            console.log('📤 Loading request body:', apiData.requestBody);
-            setRequestBody(apiData.requestBody);
-          } else {
-            setRequestBody({
-              bodyType: 'json',
-              sample: null,
-              requiredFields: [],
-              validateSchema: true,
-              maxSize: 1048576,
-              allowedMediaTypes: ['application/json']
-            });
-          }
-
-          // RESPONSE TAB
-          if (apiData.responseBody) {
-            console.log('📥 Loading response body:', apiData.responseBody);
-            setResponseBody(apiData.responseBody);
-          } else {
-            // Generate sample response from mappings if available
-            let successSchema = JSON.stringify({
-              success: true,
-              data: {},
-              message: "Request processed successfully",
-              metadata: {
-                timestamp: "{{timestamp}}",
-                apiVersion: apiData.version || "1.0.0",
-                requestId: "{{requestId}}"
-              }
-            }, null, 2);
-            
-            setResponseBody({
-              successSchema: successSchema,
-              errorSchema: JSON.stringify({
-                success: false,
-                error: {
-                  code: "ERROR_CODE",
-                  message: "Error description",
-                  details: {}
-                }
-              }, null, 2),
-              includeMetadata: true,
-              metadataFields: ['timestamp', 'apiVersion', 'requestId'],
-              contentType: 'application/json',
-              compression: 'gzip'
-            });
-          }
-
-          // HEADERS
-          if (apiData.headers && apiData.headers.length > 0) {
-            console.log('📌 Loading headers:', apiData.headers);
-            setHeaders(apiData.headers);
-          } else {
-            setHeaders([
-              { id: '1', key: 'Content-Type', value: 'application/json', required: true, description: 'Response content type' },
-              { id: '2', key: 'Cache-Control', value: 'no-cache', required: false, description: 'Cache control header' }
-            ]);
-          }
-
-          // DATABASE TESTS TAB
-          if (apiData.tests) {
-            console.log('🧪 Loading tests:', apiData.tests);
-            setTests(apiData.tests);
-          } else {
-            setTests({
-              testConnection: true,
-              testObjectAccess: true,
-              testPrivileges: true,
-              testDataTypes: true,
-              testNullConstraints: true,
-              testUniqueConstraints: false,
-              testForeignKeyReferences: false,
-              testQueryPerformance: true,
-              performanceThreshold: 1000,
-              testWithSampleData: true,
-              sampleDataRows: 10,
-              testProcedureExecution: true,
-              testFunctionReturn: true,
-              testExceptionHandling: true,
-              testSQLInjection: true,
-              testAuthentication: true,
-              testAuthorization: true,
-              testData: '',
-              testQueries: []
-            });
-          }
-
-          // SETTINGS TAB
-          if (apiData.settings) {
-            console.log('⚙️ Loading settings:', apiData.settings);
-            setSettings(apiData.settings);
-          } else {
-            setSettings({
-              timeout: 30000,
-              maxRecords: 1000,
-              enableLogging: true,
-              logLevel: 'INFO',
-              enableCaching: false,
-              cacheTtl: 300,
-              generateSwagger: true,
-              generatePostman: true,
-              generateClientSDK: true,
-              enableMonitoring: true,
-              enableAlerts: false,
-              alertEmail: '',
-              enableTracing: false,
-              corsEnabled: true
-            });
-          }
-
-          // COLLECTION & FOLDER INFO
-          if (apiData.collectionInfo) {
-            console.log('📁 Loading collection info:', apiData.collectionInfo);
-            const collectionId = apiData.collectionInfo.collectionId;
-            const folderId = apiData.collectionInfo.folderId;
-            const folderName = apiData.collectionInfo.folderName;
-            
-            if (collectionId) {
-              // Find the collection by ID
-              const collection = collections.find(c => c.id === collectionId);
-              if (collection) {
-                setSelectedCollection(collection);
-                
-                // Get folders for this collection
-                if (collection.folders && Array.isArray(collection.folders)) {
-                  setFolders(collection.folders);
-                  
-                  // If we have a folder ID or name, find the folder
-                  if (folderId) {
-                    const folder = collection.folders.find(f => f.id === folderId);
-                    if (folder) {
-                      console.log('📁 Found folder by ID:', folder);
-                      setSelectedFolder(folder);
-                    }
-                  } else if (folderName) {
-                    const folder = collection.folders.find(f => 
-                      f.name === folderName || f.folderName === folderName
-                    );
-                    if (folder) {
-                      console.log('📁 Found folder by name:', folder);
-                      setSelectedFolder(folder);
-                    }
-                  }
-                }
-              } else {
-                console.log('📁 Collection not found with ID:', collectionId);
-              }
-            }
-          }
-
-          console.log('✅ Editing initialization complete:', {
-            parametersCount: parameters.length,
-            responseMappingsCount: responseMappings.length,
-            apiDetails: apiDetails,
-            schemaConfig: schemaConfig
-          });
-
-          setLoading(false);
-          return;
-        }
-
-        // FOR DATABASE OBJECTS (NEW API GENERATION)
+    try {
+      // For API objects (when in edit mode), handle differently
+      if (isEditMode) {
+        console.log('ℹ️ Loading API object for edit mode');
         
-        // Determine operation and HTTP method
-        let operation = 'SELECT';
-        let httpMethod = 'GET';
-
-        const normalizedType = (selectedObject?.type || '').toUpperCase();
-
-        if (normalizedType === 'PROCEDURE' || normalizedType === 'FUNCTION') {
-          operation = 'EXECUTE';
-          httpMethod = 'POST';
-        } else if (normalizedType === 'PACKAGE') {
-          operation = 'EXECUTE';
-          httpMethod = 'POST';
-        } else if (normalizedType === 'VIEW') {
-          operation = 'SELECT';
-          httpMethod = 'GET';
-        } else if (normalizedType === 'TABLE') {
-          // For tables, use the HTTP method from apiDetails if available, otherwise default to GET
-          // This is the key change - don't hardcode to SELECT
-          httpMethod = apiDetails.httpMethod || 'GET';
-          console.log("httpMethodNEWWWWWWW:::::" + httpMethod);
-          
-          // Map HTTP method to operation
-          switch(httpMethod) {
-            case 'POST':
-              operation = 'INSERT';
-              break;
-            case 'PUT':
-              operation = 'UPDATE';
-              break;
-            case 'PATCH':
-              operation = 'UPDATE';
-              break;
-            case 'DELETE':
-              operation = 'DELETE';
-              break;
-            case 'GET':
-            default:
-              operation = 'SELECT';
-              break;
-          }
-        } else if (normalizedType === 'SEQUENCE') {
-          operation = 'SELECT';
-          httpMethod = 'GET';
-        } else if (normalizedType === 'TRIGGER') {
-          operation = 'EXECUTE';
-          httpMethod = 'POST';
-        }
-
-        // Set API details
-        const baseName = selectedObject?.name?.toLowerCase() || '';
-        const endpointPath = baseName ? `/${baseName.replace(/_/g, '-').toLowerCase()}` : '';
+        // Extract the API data - handle both wrapped and unwrapped formats
+        let apiData = selectedObject;
         
-        setApiDetails(prev => ({
-          ...prev,
-          apiName: selectedObject?.name ? `${selectedObject.name} API` : 'New API',
-          apiCode: normalizedType ? `${normalizedType.slice(0, 3)}_${selectedObject?.name || 'API'}` : 'API',
-          description: selectedObject?.comment || (selectedObject?.name ? `API for ${selectedObject.name}` : ''),
-          endpointPath: endpointPath,
-          owner: selectedObject?.owner || 'HR',
-          httpMethod: httpMethod
-        }));
-
-        setSchemaConfig(prev => ({
-          ...prev,
-          schemaName: selectedObject?.owner || 'HR',
-          objectType: selectedObject?.type || 'TABLE',
-          objectName: selectedObject?.name || '',
-          operation: operation,
-          primaryKeyColumn: ''
-        }));
-
-        // Generate parameters and response mappings with proper separation
-        const newParameters = [];
-        const newMappings = [];
-
-        // Check for parameters (procedures/functions)
-        if (selectedObject?.parameters && selectedObject.parameters.length > 0) {
-          // Generate parameters from procedure/function
-          selectedObject.parameters.forEach((param, index) => {
-            const paramName = param.ARGUMENT_NAME || param.argument_name || param.name || param.NAME || `param_${index + 1}`;
-            const paramType = param.DATA_TYPE || param.data_type || param.type || param.TYPE || 'VARCHAR2';
-            const paramMode = param.IN_OUT || param.in_out || param.mode || param.MODE || 'IN';
-            
-            // Generate a clean key name
-            let cleanKey = paramName;
-            if (typeof paramName === 'string') {
-              cleanKey = paramName.replace(/^p_/i, '').toLowerCase();
-            } else {
-              cleanKey = `param_${index + 1}`;
-            }
-            
-            // Determine parameter location based on mode
-            let parameterLocation = 'query';
-            if (paramMode === 'IN' && (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH')) {
-              parameterLocation = 'body';
-            } else if (paramMode === 'IN' && httpMethod === 'GET') {
-              parameterLocation = 'query';
-            } else if (paramMode === 'IN/OUT') {
-              parameterLocation = 'body'; // IN OUT goes to body
-            }
-
-            // For OUT parameters, don't add to parameters list - only add to mappings
-            if (paramMode === 'IN' || paramMode === 'IN/OUT') {
-              newParameters.push({
-                id: `proc-param-${Date.now()}-${index}`,
-                key: cleanKey,
-                dbColumn: paramName,
-                oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
-                           paramType.includes('NUMBER') ? 'NUMBER' :
-                           paramType.includes('DATE') ? 'DATE' : 
-                           paramType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
-                apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
-                parameterLocation: parameterLocation,
-                required: paramMode === 'IN' || paramMode === 'IN/OUT',
-                description: `${paramName} (${paramMode})`,
-                example: paramType.includes('NUMBER') ? '1' : 
-                        paramType.includes('DATE') ? '2024-01-01' : '',
-                validationPattern: '',
-                defaultValue: param.DATA_DEFAULT || param.defaultValue || '',
-                inBody: parameterLocation === 'body',
-                isPrimaryKey: false,
-                paramMode: paramMode
-              });
-            }
-
-            // Add to response mappings for OUT parameters (and IN OUT parameters as they appear in both)
-            if (paramMode === 'OUT' || paramMode === 'IN/OUT') {
-              newMappings.push({
-                id: `mapping-${Date.now()}-out-${index}`,
-                apiField: cleanKey,
-                dbColumn: paramName,
-                oracleType: paramType.includes('VARCHAR') ? 'VARCHAR2' : 
-                           paramType.includes('NUMBER') ? 'NUMBER' :
-                           paramType.includes('DATE') ? 'DATE' : 'VARCHAR2',
-                apiType: paramType.includes('NUMBER') ? 'integer' : 'string',
-                format: paramType.includes('DATE') ? 'date-time' : '',
-                nullable: true,
-                isPrimaryKey: false,
-                includeInResponse: true,
-                inResponse: true,
-                paramMode: paramMode
-              });
-            }
-          });
-          
-          // If there's a return type for functions, add it to mappings
-          const returnType = selectedObject.RETURN_TYPE || selectedObject.return_type || selectedObject.returnType;
-          if (returnType && normalizedType === 'FUNCTION') {
-            newMappings.push({
-              id: `mapping-${Date.now()}-return`,
-              apiField: 'result',
-              dbColumn: 'RETURN_VALUE',
-              oracleType: returnType.includes('VARCHAR') ? 'VARCHAR2' : 
-                         returnType.includes('NUMBER') ? 'NUMBER' :
-                         returnType.includes('DATE') ? 'DATE' : 'VARCHAR2',
-              apiType: returnType.includes('NUMBER') ? 'integer' : 'string',
-              format: '',
-              nullable: false,
-              isPrimaryKey: false,
-              includeInResponse: true,
-              inResponse: true,
-              paramMode: 'OUT'
-            });
-          }
-        }
-
-        // Check for columns (tables/views)
-        if (selectedObject?.columns && selectedObject.columns.length > 0) {
-          selectedObject.columns.forEach((col, index) => {
-            const colName = col.name || col.COLUMN_NAME || col.column_name;
-            const colType = col.type || col.DATA_TYPE || col.data_type || 'VARCHAR2';
-            const colNullable = col.nullable || col.NULLABLE || 'Y';
-            const isPrimaryKey = col.key === 'PK' || col.CONSTRAINT_TYPE === 'P' || col.isPrimaryKey;
-            
-            if (colName) {
-              // Clean up column name for API key
-              const cleanKey = typeof colName === 'string' ? colName.toLowerCase() : `column_${index + 1}`;
-              
-              // Determine parameter location
-              let parameterLocation = 'query';
-              if (isPrimaryKey && (httpMethod === 'GET' || httpMethod === 'PUT' || httpMethod === 'DELETE')) {
-                parameterLocation = 'path';
-              } else if (httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') {
-                parameterLocation = 'body';
-              }
-              
-              // For tables/views, all columns go to both parameters and mappings
-              newParameters.push({
-                id: `param-${Date.now()}-${index}`,
-                key: cleanKey,
-                dbColumn: colName,
-                oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
-                          colType.includes('NUMBER') ? 'NUMBER' :
-                          colType.includes('DATE') ? 'DATE' : 
-                          colType.includes('TIMESTAMP') ? 'TIMESTAMP' : 'VARCHAR2',
-                apiType: colType.includes('NUMBER') ? 'integer' : 'string',
-                parameterLocation: parameterLocation,
-                required: isPrimaryKey || colNullable === 'N',
-                description: col.comment || col.COMMENTS || `From ${selectedObject.name}.${colName}`,
-                example: colName.includes('ID') ? '1' : 
-                        colName.includes('DATE') ? '2024-01-01' :
-                        colName.includes('NAME') ? 'Sample' : '',
-                validationPattern: '',
-                defaultValue: col.DATA_DEFAULT || col.defaultValue || '',
-                inBody: parameterLocation === 'body',
-                isPrimaryKey: isPrimaryKey,
-                paramMode: null
-              });
-
-              newMappings.push({
-                id: `mapping-${Date.now()}-${index}`,
-                apiField: cleanKey,
-                dbColumn: colName,
-                oracleType: colType.includes('VARCHAR') ? 'VARCHAR2' : 
-                          colType.includes('NUMBER') ? 'NUMBER' :
-                          colType.includes('DATE') ? 'DATE' : 'VARCHAR2',
-                apiType: colType.includes('NUMBER') ? 'integer' : 'string',
-                format: colType.includes('DATE') ? 'date-time' : '',
-                nullable: colNullable === 'Y',
-                isPrimaryKey: isPrimaryKey,
-                includeInResponse: true,
-                inResponse: true,
-                paramMode: null
-              });
-            }
-          });
-        }
-
-        setParameters(newParameters);
-        setResponseMappings(newMappings);
-        
-        // Generate sample response based on mappings
-        if (newMappings.length > 0) {
-          const sampleData = {};
-          newMappings.slice(0, 50).forEach(mapping => {
-            if (mapping.apiType === 'integer') {
-              sampleData[mapping.apiField] = 123;
-            } else if (mapping.apiType === 'string') {
-              if (mapping.format === 'date-time') {
-                sampleData[mapping.apiField] = '2024-01-01T00:00:00Z';
-              } else {
-                sampleData[mapping.apiField] = mapping.apiField === 'id' ? 1 : 'sample';
-              }
-            } else if (mapping.apiType === 'boolean') {
-              sampleData[mapping.apiField] = true;
-            }
-          });
-          
-          const successSchema = JSON.stringify({
-            success: true,
-            data: sampleData,
-            message: 'Request processed successfully',
-            metadata: {
-              timestamp: '{{timestamp}}',
-              apiVersion: apiDetails.version,
-              requestId: '{{requestId}}'
-            }
-          }, null, 2);
-          
-          const errorSchema = JSON.stringify({
-            success: false,
-            error: {
-              code: 'ERR_001',
-              message: 'Error processing request',
-              details: {
-                field: 'field_name',
-                reason: 'Invalid value'
-              }
-            }
-          }, null, 2);
-          
-          setResponseBody(prev => ({
-            ...prev,
-            successSchema,
-            errorSchema
-          }));
+        // If it's wrapped in a 'data' property (from API response), extract it
+        if (selectedObject.data && selectedObject.data.id) {
+          apiData = selectedObject.data;
         }
         
-        console.log('✅ ApiGenerationModal - Initialization complete:', {
-          inParametersCount: newParameters.length,
-          outMappingsCount: newMappings.length
-        });
-
-      } catch (error) {
-        console.error('❌ Error initializing modal:', error);
-      } finally {
+        console.log('📦 Extracted API data for edit:', apiData);
+        
+        // Populate form with existing API data
+        await populateFormFromApiData(apiData);
+        
         setLoading(false);
+        return;
       }
-    };
 
-    if (isOpen) {
-      initializeFromObject();
+      // For regular database objects (not APIs), validate and populate
+      console.log('🔍 Starting validation for object:', selectedObject.name);
+      
+      // Validate the source object (now resolves synonyms)
+      const validationResponse = await validateObject(selectedObject, selectedObject.type);
+      console.log('📦 Validation response received:', validationResponse);
+      
+      if (validationResponse && validationResponse.data) {
+        console.log('📦 Using validation data to populate form');
+        
+        const validationData = validationResponse.data;
+        
+        // Extract parameters from the response
+        let parameters = [];
+        let columns = [];
+        
+        if (validationData.details?.parameters && Array.isArray(validationData.details.parameters)) {
+          parameters = validationData.details.parameters;
+          console.log('📦 Found parameters in validationData.details.parameters:', parameters.length);
+        }
+        
+        if (validationData.details?.columns && Array.isArray(validationData.details.columns)) {
+          columns = validationData.details.columns;
+          console.log('📦 Found columns in validationData.details.columns:', columns.length);
+        }
+        
+        // Create a combined object with all the data
+        const combinedObject = {
+          ...selectedObject,
+          details: validationData.details || {},
+          parameters: parameters,
+          columns: columns,
+          // Use the target owner/name if it was a synonym
+          owner: validationData.owner || selectedObject.targetOwner || selectedObject.owner,
+          name: validationData.objectName || selectedObject.targetName || selectedObject.name,
+          type: validationData.objectType || selectedObject.targetType || selectedObject.type
+        };
+        
+        console.log('📦 Combined object for population:', {
+          owner: combinedObject.owner,
+          name: combinedObject.name,
+          type: combinedObject.type,
+          hasParameters: combinedObject.parameters?.length > 0,
+          parametersCount: combinedObject.parameters?.length,
+          hasColumns: combinedObject.columns?.length > 0,
+          columnsCount: combinedObject.columns?.length
+        });
+        
+        // Populate the form
+        await populateFormFromObject(combinedObject);
+      } else {
+        console.log('⚠️ No validation data received');
+      }
+    } catch (error) {
+      console.error('❌ Error initializing modal:', error);
+    } finally {
+      setLoading(false);
     }
-  }, [selectedObject, isOpen, authToken, obType, isEditing, collections]);
+  };
+
+  if (isOpen) {
+    initializeFromObject();
+  }
+}, [selectedObject, isOpen, authToken, obType, isEditing, collections, fromDashboard, selectedDbObject, populateFormFromObject]);
+
+// Initialize parameters and mappings based on selected object - FIXED VERSION
+useEffect(() => {
+  const initializeFromObject = async () => {
+    // If we're on dashboard and have selectedDbObject, use that
+    if (fromDashboard && selectedDbObject) {
+      console.log('📝 Using dashboard-selected object:', selectedDbObject);
+      await populateFormFromObject(selectedDbObject);
+      return;
+    }
+
+    if (!selectedObject) {
+      console.log('ℹ️ ApiGenerationModal - No selected object provided, showing empty form');
+      return;
+    }
+
+    setLoading(true);
+    
+    // Check if we're in edit mode
+    const isEditMode = isEditing || (selectedObject?.data && selectedObject.data.id);
+    
+    console.log('🔍 ApiGenerationModal - Initializing with selected object:', {
+      name: selectedObject?.name,
+      type: selectedObject?.type,
+      owner: selectedObject?.owner,
+      isSynonym: selectedObject?.isSynonym,
+      targetOwner: selectedObject?.targetOwner,
+      targetName: selectedObject?.targetName,
+      targetType: selectedObject?.targetType,
+      isEditing: isEditing,
+      isEditMode: isEditMode
+    });
+
+    try {
+      // For API objects (when in edit mode), handle differently
+      if (isEditMode || selectedObject?.type === 'API' || selectedObject?.type === 'CONNECTION') {
+        // ... (existing edit mode code - keep as is)
+        console.log('ℹ️ Skipping validation for API object - edit mode detected');
+        // ... rest of edit mode code
+        setLoading(false);
+        return;
+      }
+
+      // For regular database objects (not APIs), validate and populate
+      console.log('🔍 Starting validation for object:', selectedObject.name);
+      
+      // Validate the source object (now resolves synonyms)
+      const validationResponse = await validateObject(selectedObject, selectedObject.type);
+      console.log('📦 Validation response received:', validationResponse);
+      
+      if (validationResponse && validationResponse.data) {
+        console.log('📦 Using validation data to populate form');
+        
+        const validationData = validationResponse.data;
+        
+        // Extract parameters from the response
+        let parameters = [];
+        let columns = [];
+        
+        if (validationData.details?.parameters && Array.isArray(validationData.details.parameters)) {
+          parameters = validationData.details.parameters;
+          console.log('📦 Found parameters in validationData.details.parameters:', parameters.length);
+        }
+        
+        if (validationData.details?.columns && Array.isArray(validationData.details.columns)) {
+          columns = validationData.details.columns;
+          console.log('📦 Found columns in validationData.details.columns:', columns.length);
+        }
+        
+        // Create a combined object with all the data
+        const combinedObject = {
+          ...selectedObject,
+          details: validationData.details || {},
+          parameters: parameters,
+          columns: columns,
+          // Use the target owner/name if it was a synonym
+          owner: validationData.owner || selectedObject.targetOwner || selectedObject.owner,
+          name: validationData.objectName || selectedObject.targetName || selectedObject.name,
+          type: validationData.objectType || selectedObject.targetType || selectedObject.type
+        };
+        
+        console.log('📦 Combined object for population:', {
+          owner: combinedObject.owner,
+          name: combinedObject.name,
+          type: combinedObject.type,
+          hasParameters: combinedObject.parameters?.length > 0,
+          parametersCount: combinedObject.parameters?.length,
+          hasColumns: combinedObject.columns?.length > 0,
+          columnsCount: combinedObject.columns?.length
+        });
+        
+        // Populate the form
+        await populateFormFromObject(combinedObject);
+      } else {
+        console.log('⚠️ No validation data received');
+      }
+    } catch (error) {
+      console.error('❌ Error initializing modal:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (isOpen) {
+    initializeFromObject();
+  }
+}, [selectedObject, isOpen, authToken, obType, isEditing, collections, fromDashboard, selectedDbObject, populateFormFromObject]);
 
   // Add this useEffect after your initialization useEffect - FIXED VERSION
   useEffect(() => {
@@ -4050,82 +3920,139 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
   }, [previewMode, apiDetails, schemaConfig, parameters, responseMappings, requestBody, responseBody, authConfig, settings, sourceObjectInfo, tests, validationResult, selectedCollection, selectedFolder, isEditing]);
 
   // Handle save - show preview first - UPDATED to check for existing API code only for new APIs
-  const handleSave = () => {
-    // Validate all required fields
-    if (!validateRequiredFields()) {
-      // Show first tab with errors
-      if (validationErrors.collection || validationErrors.folder) {
-        setActiveTab('definition');
-      } else if (validationErrors.apiName || validationErrors.apiCode || validationErrors.endpointPath) {
-        setActiveTab('definition');
-      } else if (!isEditing && (validationErrors.schemaName || validationErrors.objectName)) {
-        setActiveTab('schema');
-      } else if (authConfig.authType !== 'none') {
-        setActiveTab('auth');
-      }
-      
-      // Show error message
-      alert('Please fill in all required fields marked with *');
-      return;
-    }
-
-    // NEW: Check if API code already exists (only for new APIs)
-    if (!isEditing && apiCodeExists) {
-      alert(`❌ Cannot generate API\n\nAn API with code "${apiDetails.apiCode}" already exists.\nPlease choose a different API code to continue.`);
+const handleSave = () => {
+  // Validate all required fields
+  if (!validateRequiredFields()) {
+    // Show first tab with errors
+    if (validationErrors.collection || validationErrors.folder) {
       setActiveTab('definition');
-      // Focus on the API code field by setting the active tab and maybe scrolling
-      return;
+    } else if (validationErrors.apiName || validationErrors.apiCode || validationErrors.endpointPath) {
+      setActiveTab('definition');
+    } else if (!isEditing && (validationErrors.schemaName || validationErrors.objectName)) {
+      setActiveTab('schema');
+    } else if (authConfig.authType !== 'none') {
+      setActiveTab('auth');
     }
-
-    // Extract the actual data if we're in editing mode and selectedObject has a data wrapper
-    const sourceData = (isEditing && selectedObject?.data) ? selectedObject.data : selectedObject;
-
-    // Use selectedDbObject for dashboard generation, otherwise use sourceData
-    const effectiveSource = fromDashboard && selectedDbObject ? selectedDbObject : sourceData;
-
-    const apiData = {
-      id: isEditing ? sourceData?.id || selectedObject?.id : `api-${Date.now()}`,
-      ...apiDetails,
-      schemaConfig,
-      collectionInfo: {
-        collectionId: selectedCollection.id,
-        collectionName: selectedCollection.name,
-        collectionType: selectedCollection.type,
-        isNewCollection: isAddingNewCollection,
-        folderId: selectedFolder.id,
-        folderName: selectedFolder.name,
-        isNewFolder: selectedFolder.id?.startsWith('new-folder-')
-      },
-      // Only store IN parameters in parameters array
-      parameters: getInParameters(),
-      // Store all response mappings (including OUT parameters)
-      responseMappings: getOutMappings(),
-      requestBody,
-      responseBody,
-      authConfig,
-      headers,
-      settings,
-      tests,
-      createdAt: new Date().toISOString(),
-      sourceObject: isEditing ? sourceData?.sourceObject : {
-        name: effectiveSource?.name,
-        type: effectiveSource?.type,
-        owner: effectiveSource?.owner,
-        columns: effectiveSource?.columns?.length,
-        parameters: effectiveSource?.parameters?.length,
-        isSynonym: sourceObjectInfo.isSynonym,
-        targetType: sourceObjectInfo.targetType,
-        targetName: sourceObjectInfo.targetName,
-        targetOwner: sourceObjectInfo.targetOwner
-      },
-      validation: validationResult,
-      isEditing: isEditing // Pass editing flag to preview
-    };
     
-    // Show preview modal
-    setNewApiData(apiData);
-    setPreviewOpen(true);
+    // Show error message
+    alert('Please fill in all required fields marked with *');
+    return;
+  }
+
+  // NEW: Check if API code already exists (only for new APIs)
+  if (!isEditing && apiCodeExists) {
+    alert(`❌ Cannot generate API\n\nAn API with code "${apiDetails.apiCode}" already exists.\nPlease choose a different API code to continue.`);
+    setActiveTab('definition');
+    // Focus on the API code field by setting the active tab and maybe scrolling
+    return;
+  }
+
+  // Extract the actual data if we're in editing mode and selectedObject has a data wrapper
+  let sourceData = null;
+  if (isEditing && selectedObject) {
+    // If it's wrapped in a 'data' property, extract it
+    if (selectedObject.data && selectedObject.data.id) {
+      sourceData = selectedObject.data;
+      console.log('📦 Extracted sourceData from selectedObject.data:', sourceData);
+    } else {
+      sourceData = selectedObject;
+      console.log('📦 Using selectedObject directly as sourceData:', sourceData);
+    }
+  } else {
+    sourceData = selectedObject;
+  }
+
+  // Use selectedDbObject for dashboard generation, otherwise use sourceData
+  const effectiveSource = fromDashboard && selectedDbObject ? selectedDbObject : sourceData;
+
+  // Ensure collection and folder are selected
+  if (!selectedCollection || !selectedFolder) {
+    alert('Please select both a collection and folder');
+    setActiveTab('definition');
+    return;
+  }
+
+  // Prepare the API data object
+  const apiData = {
+    id: isEditing ? sourceData?.id || selectedObject?.id || `api-${Date.now()}` : `api-${Date.now()}`,
+    ...apiDetails,
+    schemaConfig,
+    collectionInfo: {
+      collectionId: selectedCollection.id,
+      collectionName: selectedCollection.name,
+      collectionType: selectedCollection.type,
+      isNewCollection: isAddingNewCollection,
+      folderId: selectedFolder.id,
+      folderName: selectedFolder.name,
+      isNewFolder: selectedFolder.id?.startsWith('new-folder-')
+    },
+    // Only store IN parameters in parameters array
+    parameters: getInParameters().map(p => ({
+      ...p,
+      // Ensure each parameter has all required fields
+      id: p.id || `param-${Date.now()}-${Math.random()}`,
+      inBody: p.parameterLocation === 'body'
+    })),
+    // Store all response mappings (including OUT parameters)
+    responseMappings: getOutMappings().map(m => ({
+      ...m,
+      id: m.id || `mapping-${Date.now()}-${Math.random()}`,
+      includeInResponse: m.includeInResponse !== undefined ? m.includeInResponse : true,
+      inResponse: m.inResponse !== undefined ? m.inResponse : true
+    })),
+    requestBody: {
+      ...requestBody,
+      // Ensure bodyType is set correctly
+      bodyType: requestBody.bodyType || 'none'
+    },
+    responseBody: {
+      ...responseBody,
+      successSchema: responseBody.successSchema || '{\n  "success": true,\n  "data": {},\n  "message": "Request processed successfully"\n}',
+      errorSchema: responseBody.errorSchema || '{\n  "success": false,\n  "error": {\n    "code": "ERROR_CODE",\n    "message": "Error description",\n    "details": {}\n  }\n}'
+    },
+    authConfig: {
+      ...authConfig,
+      // Ensure authType is set
+      authType: authConfig.authType || 'none'
+    },
+    headers: headers.map(h => ({
+      ...h,
+      id: h.id || `header-${Date.now()}-${Math.random()}`
+    })),
+    settings: {
+      ...settings,
+      timeout: settings.timeout || 30000,
+      maxRecords: settings.maxRecords || 1000,
+      enableLogging: settings.enableLogging !== undefined ? settings.enableLogging : true,
+      logLevel: settings.logLevel || 'INFO'
+    },
+    tests: {
+      ...tests,
+      testData: tests.testData || {},
+      testQueries: tests.testQueries || []
+    },
+    createdAt: new Date().toISOString(),
+    sourceObject: isEditing ? sourceData?.sourceObject || sourceData : {
+      name: effectiveSource?.name,
+      type: effectiveSource?.type,
+      owner: effectiveSource?.owner,
+      columns: effectiveSource?.columns?.length || 0,
+      parameters: effectiveSource?.parameters?.length || 0,
+      isSynonym: sourceObjectInfo.isSynonym,
+      targetType: sourceObjectInfo.targetType,
+      targetName: sourceObjectInfo.targetName,
+      targetOwner: sourceObjectInfo.targetOwner
+    },
+    validation: validationResult,
+    isEditing: isEditing // Pass editing flag to preview
   };
+  
+  console.log('📦 Prepared API data for preview:', apiData);
+  
+  // Show preview modal
+  setNewApiData(apiData);
+  setPreviewOpen(true);
+};
 
   // Handle preview confirmation - actually call the generateApi function
   const handlePreviewConfirm = async () => {

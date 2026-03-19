@@ -1,4 +1,4 @@
-// Dashboard.jsx - FIXED VERSION WITH AUTO-REFRESH
+// Dashboard.jsx - FIXED VERSION WITH WORKING PAGINATION AND LOADING INDICATOR
 import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense, useRef } from 'react';
 import {
   Database, FileCode, Activity, Zap, Settings,
@@ -109,6 +109,19 @@ const getMethodColor = (method, isDark) => {
 };
 
 // ============ COMPONENTS ============
+
+// Loading Spinner Component for Table
+const TableLoader = ({ colors }) => (
+  <div className="flex flex-col items-center justify-center py-12">
+    <div className="relative">
+      <Loader className="animate-spin" size={40} style={{ color: colors.primary }} />
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors.primary }}></div>
+      </div>
+    </div>
+    <p className="text-sm mt-4" style={{ color: colors.textSecondary }}>Loading endpoints...</p>
+  </div>
+);
 
 // Stat Card - Memoized
 const StatCard = React.memo(({ title, value, icon: Icon, change, color, onClick, colors }) => {
@@ -301,7 +314,6 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
     { label: 'API Code Base', icon: Code, onClick: () => onNavigate('code-base'), color: colors.warning },
     { label: 'API Security', icon: Shield, onClick: () => onNavigate('security'), color: colors.error },
     { label: 'User Management', icon: UserCog, onClick: () => onNavigate('user-mgt'), color: colors.accentPurple },
-    // { label: 'API Requests', icon: TrendingUp, onClick: () => onNavigate('api-requests'), color: colors.accentCyan },
   ], [colors, onNavigate]);
 
   // Format stats data for display
@@ -398,18 +410,6 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
                   style={{ borderColor: colors.border, backgroundColor: colors.card }}
                 >
                   <div className="p-4 space-y-4">
-                    {/* Quick Stats - 2 columns */}
-                    {/* <div className="grid grid-cols-2 gap-3">
-                      <div className="text-center p-2 rounded-lg" style={{ backgroundColor: `${colors.primary}10` }}>
-                        <div className="text-xs" style={{ color: colors.textSecondary }}>Total APIs</div>
-                        <div className="text-xl font-bold" style={{ color: colors.primary }}>{stats.totalApis || 0}</div>
-                      </div>
-                      <div className="text-center p-2 rounded-lg" style={{ backgroundColor: `${colors.success}10` }}>
-                        <div className="text-xs" style={{ color: colors.textSecondary }}>Collections</div>
-                        <div className="text-xl font-bold" style={{ color: colors.success }}>{stats.totalCollections || 0}</div>
-                      </div>
-                    </div> */}
-
                     {/* Stats rows - each on its own line */}
                     <div className="space-y-2">
                       {/* Security */}
@@ -418,14 +418,6 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
                           <Shield size={14} style={{ color: colors.warning }} />
                           <span className="text-xs" style={{ color: colors.textSecondary }}>Security Rules</span>
                         </div>
-                        {/* <div className="flex gap-3">
-                          <span className="text-xs" style={{ color: colors.text }}>
-                            Rate: <span style={{ color: colors.warning }}>{stats.totalRateLimitRules || 0}</span>
-                          </span>
-                          <span className="text-xs" style={{ color: colors.text }}>
-                            IP: <span style={{ color: colors.success }}>{stats.totalIpWhitelistEntries || 0}</span>
-                          </span>
-                        </div> */}
                         <span className="text-xs" style={{ color: colors.text }}>
                             <span style={{ color: colors.success }}>{stats.totalIpWhitelistEntries || 0}</span> IP Whitelisted
                           </span>
@@ -447,14 +439,6 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
                           <Code size={14} style={{ color: colors.info }} />
                           <span className="text-xs" style={{ color: colors.textSecondary }}>Code Base</span>
                         </div>
-                        {/* <div className="flex gap-3">
-                          <span className="text-xs" style={{ color: colors.text }}>
-                            Impl: <span style={{ color: colors.warning }}>{stats.totalCodeImplementations?.toLocaleString() || 0}</span>
-                          </span>
-                          <span className="text-xs" style={{ color: colors.text }}>
-                            Lang: <span style={{ color: colors.info }}>{stats.supportedLanguages || 0}</span>
-                          </span>
-                        </div> */}
                         <span className="text-xs" style={{ color: colors.text }}>
                           <span style={{ color: colors.success }}>{stats.totalCodeImplementations?.toLocaleString() || 0}</span> Implementations
                         </span>
@@ -466,14 +450,6 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
                           <Users size={14} style={{ color: colors.text }} />
                           <span className="text-xs" style={{ color: colors.textSecondary }}>Users</span>
                         </div>
-                        {/* <div className="flex gap-3">
-                          <span className="text-xs" style={{ color: colors.text }}>
-                            Total: <span style={{ color: colors.primary }}>{stats.totalUsers || 0}</span>
-                          </span>
-                          <span className="text-xs" style={{ color: colors.text }}>
-                            Active: <span style={{ color: colors.success }}>{stats.activeUsers || 0}</span>
-                          </span>
-                        </div> */}
                         <span className="text-xs" style={{ color: colors.text }}>
                           <span style={{ color: colors.success }}>{stats.activeUsers || 0}</span> Active Users
                         </span>
@@ -485,14 +461,6 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
                           <BookOpen size={14} style={{ color: colors.info }} />
                           <span className="text-xs" style={{ color: colors.textSecondary }}>Documentation</span>
                         </div>
-                        {/* <div className="flex gap-3">
-                          <span className="text-xs" style={{ color: colors.text }}>
-                            Total: <span style={{ color: colors.info }}>{stats.totalDocumentationEndpoints || 0}</span>
-                          </span>
-                          <span className="text-xs" style={{ color: colors.text }}>
-                            Pub: <span style={{ color: colors.success }}>{stats.publishedDocumentation || 0}</span>
-                          </span>
-                        </div> */}
                         <span className="text-xs" style={{ color: colors.text }}>
                           <span style={{ color: colors.success }}>{stats.publishedDocumentation || 0}</span> Published
                         </span>
@@ -521,12 +489,10 @@ const RightSidebar = React.memo(({ colors, isDark, isVisible, onClose, onNavigat
 const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authToken }) => {
   // State
   const [loading, setLoading] = useState({ initialLoad: true, refresh: false, endpointDetails: false });
+  const [tableLoading, setTableLoading] = useState(false); // New state for table loading
   const [apiSearchQuery, setApiSearchQuery] = useState('');
   const [showApiModal, setShowApiModal] = useState(false);
   const [selectedForApiGeneration, setSelectedForApiGeneration] = useState(null);
-  
-  // NEW STATE: Track when to refresh endpoints table
-  const [refreshEndpointsTrigger, setRefreshEndpointsTrigger] = useState(0);
   
   // Stats state
   const [stats, setStats] = useState({
@@ -566,6 +532,8 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
 
   // Debounce timer
   const endpointSearchTimer = useRef(null);
+  // Flag to prevent multiple simultaneous fetches
+  const isFetchingEndpoints = useRef(false);
 
   const colors = useMemo(() => getColorScheme(isDark), [isDark]);
 
@@ -662,11 +630,24 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
     }
   }, [authToken]);
 
-  // Fetch paginated endpoints
+  // Fetch paginated endpoints - FIXED with race condition prevention and loading state
   const fetchEndpoints = useCallback(async (page, size, filters) => {
     if (!authToken) return;
+    
+    // Prevent multiple simultaneous fetches
+    if (isFetchingEndpoints.current) {
+      console.log('Already fetching endpoints, skipping...');
+      return;
+    }
+
+    // Set table loading to true when starting a new fetch (not on initial load)
+    if (!loading.initialLoad) {
+      setTableLoading(true);
+    }
 
     try {
+      isFetchingEndpoints.current = true;
+      
       const params = {
         page,
         size,
@@ -678,8 +659,15 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
       if (filters.collectionId) params.collectionId = filters.collectionId;
       if (filters.method) params.method = filters.method;
 
+      console.log(`Fetching endpoints - Page: ${page}, Size: ${size}, Search: ${filters.search}`);
+      
       const response = await getDashboardEndpoints(authToken, params);
       const handledResponse = handleDashboardResponse(response);
+
+      // Add this right after setting endpointData in fetchEndpoints (around line 330)
+      console.log('API Response - last:', handledResponse.data.last);
+      console.log('API Response - totalPages:', handledResponse.data.totalPages);
+      console.log('API Response - pageNumber:', handledResponse.data.pageNumber);
       
       if (handledResponse?.responseCode === 200 && handledResponse.data) {
         const transformedContent = (handledResponse.data.content || []).map(endpoint => ({
@@ -707,13 +695,133 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
           pageSize: handledResponse.data.pageSize || size,
           totalElements: handledResponse.data.totalElements || 0,
           totalPages: handledResponse.data.totalPages || 0,
-          last: handledResponse.data.last || true
+          last: handledResponse.data.last || false // Change this from true to false
         });
       }
     } catch (error) {
       console.error('Error fetching endpoints:', error);
+    } finally {
+      isFetchingEndpoints.current = false;
+      setTableLoading(false);
     }
-  }, [authToken]);
+  }, [authToken, loading.initialLoad]);
+
+  // FIXED: Previous page handler - DIRECT FETCH WITHOUT STATE DEPENDENCY
+  const handlePreviousPage = useCallback(() => {
+    if (endpointPage > 0) {
+      const newPage = endpointPage - 1;
+      console.log('Going to previous page:', newPage);
+      
+      // Update page state first
+      setEndpointPage(newPage);
+      
+      // Then fetch data with new page (using current filters and size)
+      fetchEndpoints(newPage, endpointsPerPage, endpointFilters);
+    }
+  }, [endpointPage, endpointsPerPage, endpointFilters, fetchEndpoints]);
+
+  // FIXED: Next page handler - DIRECT FETCH WITHOUT STATE DEPENDENCY
+  const handleNextPage = useCallback(() => {
+    if (!endpointData.last) {
+      const newPage = endpointPage + 1;
+      console.log('Going to next page:', newPage);
+      
+      // Update page state first
+      setEndpointPage(newPage);
+      
+      // Then fetch data with new page (using current filters and size)
+      fetchEndpoints(newPage, endpointsPerPage, endpointFilters);
+    }
+  }, [endpointPage, endpointsPerPage, endpointFilters, endpointData.last, fetchEndpoints]);
+
+  // FIXED: Per page change handler
+  const handleEndpointsPerPageChange = useCallback((newSize) => {
+    console.log('Changing per page to:', newSize);
+    
+    // Reset to first page
+    setEndpointPage(DEFAULT_PAGE);
+    setEndpointsPerPage(newSize);
+    
+    // Fetch with new size and reset page
+    fetchEndpoints(DEFAULT_PAGE, newSize, endpointFilters);
+  }, [endpointFilters, fetchEndpoints]);
+
+  // FIXED: Search handlers with debounce
+  const handleEndpointSearchChange = useCallback((e) => {
+    const query = e.target.value;
+    setApiSearchQuery(query);
+    
+    if (endpointSearchTimer.current) {
+      clearTimeout(endpointSearchTimer.current);
+    }
+    
+    endpointSearchTimer.current = setTimeout(() => {
+      console.log('Searching with query:', query);
+      
+      // Update filters
+      const newFilters = { ...endpointFilters, search: query };
+      setEndpointFilters(newFilters);
+      
+      // Reset to first page
+      setEndpointPage(DEFAULT_PAGE);
+      
+      // Fetch with new filters
+      fetchEndpoints(DEFAULT_PAGE, endpointsPerPage, newFilters);
+    }, 500);
+  }, [endpointFilters, endpointsPerPage, fetchEndpoints]);
+
+  const handleEndpointSearchClear = useCallback(() => {
+    setApiSearchQuery('');
+    
+    const newFilters = { ...endpointFilters, search: '' };
+    setEndpointFilters(newFilters);
+    setEndpointPage(DEFAULT_PAGE);
+    
+    fetchEndpoints(DEFAULT_PAGE, endpointsPerPage, newFilters);
+  }, [endpointFilters, endpointsPerPage, fetchEndpoints]);
+
+  // FIXED: Refresh handler
+  const handleRefresh = useCallback(async () => {
+    if (!authToken) return;
+    
+    setLoading(prev => ({ ...prev, refresh: true }));
+    try {
+      await Promise.all([
+        fetchStats(),
+        fetchTopCollections(),
+        fetchEndpoints(endpointPage, endpointsPerPage, endpointFilters)
+      ]);
+    } catch (error) {
+      console.error('Error refreshing:', error);
+    } finally {
+      setLoading(prev => ({ ...prev, refresh: false }));
+    }
+  }, [authToken, fetchStats, fetchTopCollections, endpointPage, endpointsPerPage, endpointFilters, fetchEndpoints]);
+
+  // FIXED: Load all dashboard data
+  const loadAllDashboardData = useCallback(async () => {
+    if (!authToken) {
+      setError('Authentication required');
+      setLoading(prev => ({ ...prev, initialLoad: false }));
+      return;
+    }
+
+    try {
+      await Promise.all([
+        fetchStats(),
+        fetchTopCollections(),
+        fetchEndpoints(DEFAULT_PAGE, endpointsPerPage, endpointFilters)
+      ]);
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+      setError(error.message);
+    } finally {
+      setLoading(prev => ({ ...prev, initialLoad: false }));
+    }
+  }, [authToken, fetchStats, fetchTopCollections, endpointsPerPage, endpointFilters, fetchEndpoints]);
+
+  // REMOVED the problematic useEffect that was causing loops
+  // The fetch is now triggered directly by user actions
 
   // NEW: Function to refresh endpoints table (called after updates)
   const refreshEndpointsTable = useCallback(() => {
@@ -778,50 +886,6 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
     }
   }, [authToken]);
 
-  // Load all dashboard data
-  const loadAllDashboardData = useCallback(async () => {
-    if (!authToken) {
-      setError('Authentication required');
-      setLoading(prev => ({ ...prev, initialLoad: false }));
-      return;
-    }
-
-    try {
-      // Fetch all three endpoints in parallel
-      await Promise.all([
-        fetchStats(),
-        fetchTopCollections(),
-        fetchEndpoints(DEFAULT_PAGE, endpointsPerPage, endpointFilters)
-      ]);
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
-      setError(error.message);
-    } finally {
-      setLoading(prev => ({ ...prev, initialLoad: false }));
-    }
-  }, [authToken, fetchStats, fetchTopCollections, endpointsPerPage, endpointFilters]);
-
-  // Refresh handler - calls the same three endpoints
-  const handleRefresh = useCallback(async () => {
-    if (!authToken) return;
-    
-    setLoading(prev => ({ ...prev, refresh: true }));
-    try {
-      await Promise.all([
-        fetchStats(),
-        fetchTopCollections(),
-        fetchEndpoints(DEFAULT_PAGE, endpointsPerPage, { ...endpointFilters, search: apiSearchQuery })
-      ]);
-      
-      // Reset to first page
-      setEndpointPage(DEFAULT_PAGE);
-    } catch (error) {
-      console.error('Error refreshing:', error);
-    } finally {
-      setLoading(prev => ({ ...prev, refresh: false }));
-    }
-  }, [authToken, fetchStats, fetchTopCollections, endpointsPerPage, endpointFilters, apiSearchQuery]);
-
   // NEW: Handle API update (called from modal after successful update)
   const handleApiUpdate = useCallback(() => {
     // Trigger endpoints table refresh
@@ -837,6 +901,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
   if (details) {
     // The API response has the data wrapped in a 'data' property
     // We need to pass the full response to maintain the structure
+    console.log('📦 Received API details for editing:', details);
     setSelectedForApiGeneration(details);  // This already has {data: {...}} structure
   } else {
     // Fallback - but we need to wrap it in a data property to match the API response structure
@@ -848,61 +913,12 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
     });
   }
   setShowApiModal(true);
-}, [authToken, getGeneratedApiDetails]);
- 
+}, [authToken]);
 
   // Handle collection click
   const handleCollectionClick = useCallback((collection) => {
     handleNavigate('api-collections');
   }, [handleNavigate]);
-
-  // Endpoint pagination handlers - FIXED: These now directly call fetchEndpoints with current state
-  const handlePreviousPage = useCallback(() => {
-    if (endpointPage > 0) {
-      const newPage = endpointPage - 1;
-      setEndpointPage(newPage);
-      fetchEndpoints(newPage, endpointsPerPage, endpointFilters);
-    }
-  }, [endpointPage, endpointsPerPage, endpointFilters, fetchEndpoints]);
-
-  const handleNextPage = useCallback(() => {
-    if (!endpointData.last) {
-      const newPage = endpointPage + 1;
-      setEndpointPage(newPage);
-      fetchEndpoints(newPage, endpointsPerPage, endpointFilters);
-    }
-  }, [endpointPage, endpointsPerPage, endpointFilters, endpointData.last, fetchEndpoints]);
-
-  const handleEndpointsPerPageChange = useCallback((newSize) => {
-    setEndpointsPerPage(newSize);
-    setEndpointPage(DEFAULT_PAGE);
-    fetchEndpoints(DEFAULT_PAGE, newSize, endpointFilters);
-  }, [endpointFilters, fetchEndpoints]);
-
-  // Search handlers with debounce
-  const handleEndpointSearchChange = useCallback((e) => {
-    const query = e.target.value;
-    setApiSearchQuery(query);
-    
-    if (endpointSearchTimer.current) {
-      clearTimeout(endpointSearchTimer.current);
-    }
-    
-    endpointSearchTimer.current = setTimeout(() => {
-      const newFilters = { ...endpointFilters, search: query };
-      setEndpointFilters(newFilters);
-      setEndpointPage(DEFAULT_PAGE);
-      fetchEndpoints(DEFAULT_PAGE, endpointsPerPage, newFilters);
-    }, 500);
-  }, [endpointFilters, endpointsPerPage, fetchEndpoints]);
-
-  const handleEndpointSearchClear = useCallback(() => {
-    setApiSearchQuery('');
-    const newFilters = { ...endpointFilters, search: '' };
-    setEndpointFilters(newFilters);
-    setEndpointPage(DEFAULT_PAGE);
-    fetchEndpoints(DEFAULT_PAGE, endpointsPerPage, newFilters);
-  }, [endpointFilters, endpointsPerPage, fetchEndpoints]);
 
   const handleApiGeneration = useCallback(() => {
     setSelectedForApiGeneration(null);
@@ -921,23 +937,39 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
 
   // ============ MEMOIZED VALUES ============
   const currentPageApis = useMemo(() => endpointData.content || [], [endpointData.content]);
-  
+
   const totalApiPages = useMemo(() => endpointData.totalPages || 0, [endpointData.totalPages]);
 
   const startItem = useMemo(() => {
     if (endpointData.totalElements === 0) return 0;
-    return endpointData.pageNumber * endpointData.pageSize + 1;
-  }, [endpointData.pageNumber, endpointData.pageSize, endpointData.totalElements]);
+    // Calculate based on current page and page size
+    return (endpointPage * endpointsPerPage) + 1;
+  }, [endpointPage, endpointsPerPage, endpointData.totalElements]);
 
   const endItem = useMemo(() => {
     if (endpointData.totalElements === 0) return 0;
-    return Math.min((endpointData.pageNumber + 1) * endpointData.pageSize, endpointData.totalElements);
-  }, [endpointData.pageNumber, endpointData.pageSize, endpointData.totalElements]);
+    // Calculate based on current page, page size, and total elements
+    const calculatedEnd = (endpointPage + 1) * endpointsPerPage;
+    return Math.min(calculatedEnd, endpointData.totalElements);
+  }, [endpointPage, endpointsPerPage, endpointData.totalElements]);
 
   const hasData = useMemo(() => 
     stats.totalCollections > 0 || endpointData.totalElements > 0,
     [stats.totalCollections, endpointData.totalElements]
   );
+
+
+  // Add this to see what values are being used (for debugging)
+  useEffect(() => {
+    console.log('Pagination info:', {
+      endpointPage,
+      endpointsPerPage,
+      totalElements: endpointData.totalElements,
+      startItem,
+      endItem,
+      last: endpointData.last
+    });
+  }, [endpointPage, endpointsPerPage, endpointData.totalElements, endpointData.last, startItem, endItem]);
 
   // ============ EFFECTS ============
   useEffect(() => {
@@ -947,6 +979,16 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
       if (endpointSearchTimer.current) clearTimeout(endpointSearchTimer.current);
     };
   }, []); // Empty dependency array - only run once on mount
+
+  // Add this near your other useEffect hooks (around line 550)
+useEffect(() => {
+  console.log('endpointData updated:', {
+    last: endpointData.last,
+    pageNumber: endpointData.pageNumber,
+    totalPages: endpointData.totalPages,
+    totalElements: endpointData.totalElements
+  });
+}, [endpointData]);
 
   // Add scrollbar styles
   useEffect(() => {
@@ -1114,7 +1156,9 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
                     </div>
                     
                     <div>
-                      {currentPageApis.length > 0 ? (
+                      {tableLoading ? (
+                        <TableLoader colors={colors} />
+                      ) : currentPageApis.length > 0 ? (
                         <div className="p-4 space-y-2">
                           {currentPageApis.map(api => (
                             <ApiEndpointItem 
@@ -1146,35 +1190,37 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
                         <div className="text-xs" style={{ color: colors.textSecondary }}>
                           Showing {startItem} - {endItem} of {endpointData.totalElements}
                         </div>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-2">
                           <button
                             onClick={handlePreviousPage}
-                            disabled={endpointPage === 0}
-                            className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
+                            disabled={endpointPage === 0 || tableLoading}
+                            className="px-3 py-1.5 rounded text-sm font-medium disabled:opacity-30 hover:bg-opacity-50 transition-colors flex items-center gap-1"
                             style={{ 
-                              backgroundColor: endpointPage === 0 ? 'transparent' : colors.hover, 
+                              backgroundColor: endpointPage === 0 || tableLoading ? 'transparent' : colors.hover, 
                               color: colors.text,
-                              cursor: endpointPage === 0 ? 'not-allowed' : 'pointer'
+                              cursor: endpointPage === 0 || tableLoading ? 'not-allowed' : 'pointer'
                             }}
                           >
-                            <ChevronLeft size={14} />
+                            <ChevronLeft size={16} />
+                            <span>Prev</span>
                           </button>
-                          
-                          <span className="text-xs px-2" style={{ color: colors.text }}>
+
+                          <span className="text-sm px-3 py-1.5 rounded" style={{ backgroundColor: colors.hover, color: colors.text }}>
                             {endpointPage + 1} / {totalApiPages}
                           </span>
-                          
+
                           <button
                             onClick={handleNextPage}
-                            disabled={endpointData.last}
-                            className="p-1.5 rounded disabled:opacity-30 hover:bg-opacity-50 transition-colors"
+                            disabled={endpointData.last || tableLoading}
+                            className="px-3 py-1.5 rounded text-sm font-medium disabled:opacity-30 hover:bg-opacity-50 transition-colors flex items-center gap-1"
                             style={{ 
-                              backgroundColor: endpointData.last ? 'transparent' : colors.hover, 
+                              backgroundColor: endpointData.last || tableLoading ? 'transparent' : colors.hover, 
                               color: colors.text,
-                              cursor: endpointData.last ? 'not-allowed' : 'pointer'
+                              cursor: endpointData.last || tableLoading ? 'not-allowed' : 'pointer'
                             }}
                           >
-                            <ChevronRightIcon size={14} />
+                            <span>Next</span>
+                            <ChevronRightIcon size={16} />
                           </button>
                         </div>
                       </div>
@@ -1221,7 +1267,6 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
             colors={colors}
             theme={theme}
             fromDashboard={true}
-            // UPDATED: Pass the refresh function to the modal
             onGenerateAPI={handleApiUpdate}
             authToken={authToken}
             isEditing={!!selectedForApiGeneration?.data?.id} // Check for data.id, not just id
