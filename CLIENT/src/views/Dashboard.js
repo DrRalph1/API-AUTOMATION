@@ -892,27 +892,34 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
     refreshEndpointsTable();
   }, [refreshEndpointsTable]);
 
-  const handleEndpointClick = useCallback(async (endpoint) => {
+ const handleEndpointClick = useCallback(async (endpoint) => {
   console.log("endpoint:::::::" + JSON.stringify(endpoint));
   
-  // Use the updated function name and pass both authToken and the API ID
-  const details = await getGeneratedApiDetails(authToken, endpoint.apiId);
+  // Open modal immediately with a loading state
+  // We'll set a temporary object that indicates loading
+  setSelectedForApiGeneration({ 
+    loading: true,
+    endpointId: endpoint.apiId,
+    data: endpoint  // Store the basic endpoint data for reference
+  });
+  setShowApiModal(true);
   
-  if (details) {
-    // The API response has the data wrapped in a 'data' property
-    // We need to pass the full response to maintain the structure
+  // Then fetch the details in the background
+  try {
+    const details = await getGeneratedApiDetails(authToken, endpoint.apiId);
     console.log('📦 Received API details for editing:', details);
-    setSelectedForApiGeneration(details);  // This already has {data: {...}} structure
-  } else {
-    // Fallback - but we need to wrap it in a data property to match the API response structure
+    
+    // Update with the actual data once loaded
+    setSelectedForApiGeneration(details);
+  } catch (error) {
+    console.error('Error loading API details:', error);
+    // You might want to show an error state here
     setSelectedForApiGeneration({ 
-      data: endpoint,  // Wrap in data property to match API response
-      requestId: 'local',
-      message: 'Local endpoint data',
-      responseCode: 200 
+      error: true,
+      message: error.message,
+      data: endpoint 
     });
   }
-  setShowApiModal(true);
 }, [authToken]);
 
   // Handle collection click

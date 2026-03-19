@@ -26,4 +26,13 @@ public interface MockServerRepository extends JpaRepository<MockServerEntity, St
     @Transactional
     @Query("UPDATE MockServerEntity m SET m.isActive = false WHERE m.expiresAt < :currentDate")
     int deactivateExpiredServers(@Param("currentDate") LocalDateTime currentDate);
+
+    // Add this method to return all mock servers for a collection (handles duplicates)
+    List<MockServerEntity> findAllByCollectionId(String collectionId);
+
+    @Query("SELECT m FROM MockServerEntity m LEFT JOIN FETCH m.collection WHERE m.collection.id = :collectionId")
+    List<MockServerEntity> findByCollectionIdWithoutCollections(@Param("collectionId") String collectionId);
+
+    @Query("SELECT COUNT(m) FROM MockServerEntity m WHERE m.collection.id = :collectionId")
+    long countByCollectionId(@Param("collectionId") String collectionId);
 }

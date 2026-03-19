@@ -7,6 +7,7 @@ import com.usg.apiAutomation.entities.postgres.documentation.*;
 import com.usg.apiAutomation.repositories.postgres.documentation.*;
 import com.usg.apiAutomation.utils.apiEngine.CodeLanguageGeneratorUtil;
 import com.usg.apiAutomation.utils.apiEngine.GenUrlBuilderUtil;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -14,7 +15,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -38,6 +38,7 @@ public class DocumentationGeneratorUtil {
     private final MockEndpointRepository mockEndpointRepository;
     private final GenUrlBuilderUtil genUrlBuilder;
     private final CodeLanguageGeneratorUtil codeLanguageGeneratorUtil;
+    private final EntityManager entityManager;
 
     @Transactional
     public String generate(GeneratedApiEntity api, String performedBy,
@@ -51,6 +52,9 @@ public class DocumentationGeneratorUtil {
 
             String generatedApiId = api.getId();
 
+            // CRITICAL: Don't do any operations that might trigger auto-flush before we're ready
+            // Don't call entityManager.flush() or entityManager.clear() here
+
             // ============ API COLLECTION ENTITY ============
             APICollectionEntity docCollection = createOrUpdateCollection(api, performedBy, collectionInfo, generatedApiId);
 
@@ -60,8 +64,8 @@ public class DocumentationGeneratorUtil {
             // ============ ENVIRONMENT ENTITIES ============
             createEnvironments(api, performedBy, generatedApiId);
 
-            // ============ MOCK SERVER ENTITIES (with duplicate check) ============
-            MockServerEntity mockServer = createOrUpdateMockServer(api, performedBy, docCollection, generatedApiId);
+            // ============ MOCK SERVER ENTITIES ============
+            MockServerEntity mockServer = createOrUpdateMockServer(api, performedBy, docCollection.getId(), generatedApiId);
 
             // ============ FOLDER ENTITY ============
             com.usg.apiAutomation.entities.postgres.documentation.FolderEntity docFolder =
@@ -70,7 +74,7 @@ public class DocumentationGeneratorUtil {
             // ============ ENDPOINT ENTITY ============
             APIEndpointEntity endpoint = createEndpoint(api, performedBy, docCollection, docFolder, generatedApiId);
 
-            // ============ MOCK ENDPOINT ENTITY (with duplicate check) ============
+            // ============ MOCK ENDPOINT ENTITY ============
             createOrUpdateMockEndpoint(api, endpoint, mockServer, generatedApiId);
 
             // ============ HEADER ENTITIES ============
@@ -114,88 +118,124 @@ public class DocumentationGeneratorUtil {
     }
 
     /**
-     * Create or update a mock server for the collection (prevents duplicate key violation)
+     * Create or update a mock server for the collection - FIXED to avoid entity graph issues
      */
     private MockServerEntity createOrUpdateMockServer(GeneratedApiEntity api, String performedBy,
-                                                      APICollectionEntity collection, String generatedApiId) {
-        // Check if mock server already exists for this collection
-        Optional<MockServerEntity> existingMockServer = mockServerRepository
-                .findByCollectionId(collection.getId());
+                                                      String collectionId, String generatedApiId) {
+        // Use a simple count query first to avoid loading collections
+        long count = mockServerRepository.countByCollectionId(collectionId);
 
         MockServerEntity mockServer;
-        if (existingMockServer.isPresent()) {
-            // Update existing mock server
-            mockServer = existingMockServer.get();
+
+        if (count > 0) {
+            // Load only what we need
+            List<MockServerEntity> existingMockServers = mockServerRepository
+                    .findByCollectionIdWithoutCollections(collectionId);
+
+            if (existingMockServers.size() > 1) {
+                // Delete duplicates
+                for (int i = 1; i < existingMockServers.size(); i++) {
+                    mockServerRepository.delete(existingMockServers.get(i));
+                }
+                mockServerRepository.flush();
+            }
+
+            mockServer = existingMockServers.get(0);
+
+            // Reload with minimal associations
+            if (mockServer.getCollection() == null || !entityManager.contains(mockServer.getCollection())) {
+                APICollectionEntity collection = docCollectionRepository.findById(collectionId).orElseThrow();
+                mockServer.setCollection(collection);
+            }
+
             mockServer.setActive(true);
             mockServer.setUpdatedAt(LocalDateTime.now());
-            mockServer.setDescription("Mock server for " + api.getApiName() + " (updated)");
-            if (mockServer.getGeneratedApiId() == null) {
-                mockServer.setGeneratedApiId(generatedApiId);
-            }
-            log.debug("Updating existing mock server for collection: {}", collection.getId());
         } else {
-            // Create new mock server
+            // Create new
             mockServer = new MockServerEntity();
             mockServer.setId(UUID.randomUUID().toString());
             mockServer.setGeneratedApiId(generatedApiId);
+
+            APICollectionEntity collection = docCollectionRepository.findById(collectionId).orElseThrow();
             mockServer.setCollection(collection);
+
             mockServer.setMockServerUrl("https://mock." + api.getApiCode().toLowerCase() + ".example.com");
             mockServer.setActive(true);
             mockServer.setDescription("Mock server for " + api.getApiName());
             mockServer.setCreatedBy(performedBy);
             mockServer.setCreatedAt(LocalDateTime.now());
             mockServer.setExpiresAt(LocalDateTime.now().plusDays(30));
-            log.debug("Creating new mock server for collection: {}", collection.getId());
         }
 
-        mockServer.setUpdatedAt(LocalDateTime.now());
         return mockServerRepository.save(mockServer);
     }
 
     /**
-     * Create or update a mock endpoint (to handle updates when mock server already exists)
+     * Create or update a mock endpoint - FIXED to handle detached entities
      */
     private void createOrUpdateMockEndpoint(GeneratedApiEntity api, APIEndpointEntity endpoint,
                                             MockServerEntity mockServer, String generatedApiId) {
-        // Check if mock endpoint already exists for this endpoint
+        // Ensure endpoint is managed
+        APIEndpointEntity managedEndpoint;
+        if (!entityManager.contains(endpoint)) {
+            managedEndpoint = entityManager.merge(endpoint);
+        } else {
+            managedEndpoint = endpoint;
+        }
+
+        // Ensure mockServer is managed
+        MockServerEntity managedMockServer;
+        if (!entityManager.contains(mockServer)) {
+            managedMockServer = entityManager.merge(mockServer);
+        } else {
+            managedMockServer = mockServer;
+        }
+
         List<MockEndpointEntity> existingMockEndpoints = mockEndpointRepository
-                .findBySourceEndpointId(endpoint.getId());
+                .findBySourceEndpointId(managedEndpoint.getId());
 
         MockEndpointEntity mockEndpoint;
         if (existingMockEndpoints != null && !existingMockEndpoints.isEmpty()) {
-            // Use the first existing mock endpoint
             mockEndpoint = existingMockEndpoints.get(0);
+            // Ensure the mock endpoint is managed
+            if (!entityManager.contains(mockEndpoint)) {
+                mockEndpoint = entityManager.merge(mockEndpoint);
+            }
             mockEndpoint.setMethod(api.getHttpMethod());
-            mockEndpoint.setPath(endpoint.getUrl());
+            mockEndpoint.setPath(managedEndpoint.getUrl());
             mockEndpoint.setDescription("Mock endpoint for " + api.getApiName() + " (updated)");
             mockEndpoint.setEnabled(true);
-            mockEndpoint.setMockServer(mockServer);
-            log.debug("Updating existing mock endpoint for endpoint: {}", endpoint.getId());
+            mockEndpoint.setMockServer(managedMockServer);
+            log.debug("Updating existing mock endpoint for endpoint: {}", managedEndpoint.getId());
 
-            // Delete any additional mock endpoints (if they exist) to avoid duplicates
+            // Delete any additional mock endpoints
             if (existingMockEndpoints.size() > 1) {
                 for (int i = 1; i < existingMockEndpoints.size(); i++) {
-                    mockEndpointRepository.delete(existingMockEndpoints.get(i));
-                    log.debug("Deleted duplicate mock endpoint: {}", existingMockEndpoints.get(i).getId());
+                    MockEndpointEntity duplicate = existingMockEndpoints.get(i);
+                    // Ensure the duplicate is managed before deletion
+                    if (!entityManager.contains(duplicate)) {
+                        duplicate = entityManager.merge(duplicate);
+                    }
+                    mockEndpointRepository.delete(duplicate);
+                    log.debug("Deleted duplicate mock endpoint: {}", duplicate.getId());
                 }
             }
         } else {
-            // Create new mock endpoint
             mockEndpoint = new MockEndpointEntity();
             mockEndpoint.setId(UUID.randomUUID().toString());
             mockEndpoint.setGeneratedApiId(generatedApiId);
             mockEndpoint.setMethod(api.getHttpMethod());
-            mockEndpoint.setPath(endpoint.getUrl());
+            mockEndpoint.setPath(managedEndpoint.getUrl());
             mockEndpoint.setStatusCode(200);
             mockEndpoint.setResponseDelay(0);
             mockEndpoint.setDescription("Mock endpoint for " + api.getApiName());
             mockEndpoint.setEnabled(true);
-            mockEndpoint.setMockServer(mockServer);
-            mockEndpoint.setSourceEndpoint(endpoint);
-            log.debug("Creating new mock endpoint for endpoint: {}", endpoint.getId());
+            mockEndpoint.setMockServer(managedMockServer);
+            mockEndpoint.setSourceEndpoint(managedEndpoint);
+            log.debug("Creating new mock endpoint for endpoint: {}", managedEndpoint.getId());
         }
 
-        // Set response body from success schema (always update this)
+        // Set response body from success schema
         if (api.getResponseConfig() != null && api.getResponseConfig().getSuccessSchema() != null) {
             try {
                 Map<String, Object> responseBody = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
@@ -211,26 +251,24 @@ public class DocumentationGeneratorUtil {
         log.debug("Saved MockEndpoint: {}", mockEndpoint.getId());
     }
 
-
-
     private APICollectionEntity createOrUpdateCollection(GeneratedApiEntity api, String performedBy,
                                                          CollectionInfoDTO collectionInfo, String generatedApiId) {
         Optional<APICollectionEntity> existing = docCollectionRepository
                 .findById(collectionInfo.getCollectionId());
 
+        APICollectionEntity collection;
         if (existing.isPresent()) {
-            APICollectionEntity collection = existing.get();
+            collection = existing.get();
             collection.setName(collectionInfo.getCollectionName());
             collection.setDescription(api.getDescription());
             collection.setVersion(api.getVersion());
-            collection.setTags(api.getTags());
+            collection.setTags(api.getTags() != null ? new ArrayList<>(api.getTags()) : new ArrayList<>());
             collection.setUpdatedBy(performedBy);
             if (collection.getGeneratedApiId() == null) {
                 collection.setGeneratedApiId(generatedApiId);
             }
-            return docCollectionRepository.save(collection);
         } else {
-            APICollectionEntity collection = new APICollectionEntity();
+            collection = new APICollectionEntity();
             collection.setId(collectionInfo.getCollectionId());
             collection.setGeneratedApiId(generatedApiId);
             collection.setName(collectionInfo.getCollectionName());
@@ -249,8 +287,9 @@ public class DocumentationGeneratorUtil {
             collection.setTotalFolders(0);
             collection.setCreatedAt(LocalDateTime.now());
             collection.setUpdatedAt(LocalDateTime.now());
-            return docCollectionRepository.save(collection);
         }
+
+        return docCollectionRepository.save(collection);
     }
 
     private void createDocumentationSettings(GeneratedApiEntity api, String performedBy, String generatedApiId) {
@@ -328,17 +367,16 @@ public class DocumentationGeneratorUtil {
         Optional<com.usg.apiAutomation.entities.postgres.documentation.FolderEntity> existing =
                 docFolderRepository.findById(collectionInfo.getFolderId());
 
+        com.usg.apiAutomation.entities.postgres.documentation.FolderEntity folder;
         if (existing.isPresent()) {
-            com.usg.apiAutomation.entities.postgres.documentation.FolderEntity folder = existing.get();
+            folder = existing.get();
             folder.setName(collectionInfo.getFolderName());
             folder.setUpdatedBy(performedBy);
             if (folder.getGeneratedApiId() == null) {
                 folder.setGeneratedApiId(generatedApiId);
             }
-            return docFolderRepository.save(folder);
         } else {
-            com.usg.apiAutomation.entities.postgres.documentation.FolderEntity folder =
-                    new com.usg.apiAutomation.entities.postgres.documentation.FolderEntity();
+            folder = new com.usg.apiAutomation.entities.postgres.documentation.FolderEntity();
             folder.setId(collectionInfo.getFolderId());
             folder.setGeneratedApiId(generatedApiId);
             folder.setName(collectionInfo.getFolderName());
@@ -349,8 +387,9 @@ public class DocumentationGeneratorUtil {
             folder.setUpdatedBy(performedBy);
             folder.setCreatedAt(LocalDateTime.now());
             folder.setUpdatedAt(LocalDateTime.now());
-            return docFolderRepository.save(folder);
         }
+
+        return docFolderRepository.save(folder);
     }
 
     private APIEndpointEntity createEndpoint(GeneratedApiEntity api, String performedBy,
@@ -475,7 +514,6 @@ public class DocumentationGeneratorUtil {
                     authHeader.setDescription("Oracle Database Session ID");
                     break;
                 default:
-                    // Handle unknown auth types
                     log.warn("Unknown auth type: {}, using default Authorization header", authType);
                     authHeader.setKey("Authorization");
                     authHeader.setValue("Bearer YOUR_TOKEN");

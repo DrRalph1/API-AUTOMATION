@@ -1,4 +1,4 @@
-// components/modals/ApiGenerationModal.js - COMPLETE FIXED VERSION WITH OBJECT SELECTOR FOR DASHBOARD
+// components/modals/ApiGenerationModal.js - COMPLETE FIXED VERSION WITH LOADING STATE
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   X, Plus, Trash2, Save, Copy, Code, Globe, Lock, FileText, 
@@ -348,7 +348,7 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken }) =
               <Database className="h-5 w-5" style={{ color: colors.primary }} />
             </div>
             <div>
-              <h2 className="text-lg font-bold" style={{ color: colors.text }}>Select Database Object &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</h2>
+              <h2 className="text-lg font-bold" style={{ color: colors.text }}>Select Database Object</h2>
               <p className="text-xs" style={{ color: colors.textSecondary }}>
                 Search and select an object to generate API from
               </p>
@@ -374,7 +374,6 @@ const ObjectSelectorModal = ({ isOpen, onClose, onSelect, colors, authToken }) =
               className="w-full pl-10 pr-4 py-3 rounded-lg text-sm"
               style={{ 
                 backgroundColor: colors.inputBg,
-                // borderColor: colors.backgroundColor,
                 color: colors.text
               }}
               placeholder="Search for tables, views, procedures, functions..."
@@ -2130,235 +2129,231 @@ export default function ApiGenerationModal({
 
   // ==================== OBJECT SELECTOR FUNCTIONS ====================
 
- // Update loadSelectedObjectDetails to close modal first
-const loadSelectedObjectDetails = useCallback(async (object) => {
-  if (!authToken || !object) return;
+  // Update loadSelectedObjectDetails to close modal first
+  const loadSelectedObjectDetails = useCallback(async (object) => {
+    if (!authToken || !object) return;
 
-  // Close the selector modal immediately
-  setShowObjectSelector(false);
-  
-  // Show loading in main modal
-  setLoading(true);
-  setObjectSelectorError(null);
-
-  try {
-    // Dynamically import the function
-    const { getObjectDetails } = await import('../../controllers/OracleSchemaController.js');
+    // Close the selector modal immediately
+    setShowObjectSelector(false);
     
-    const response = await getObjectDetails(authToken, {
-      objectType: object.type,
-      objectName: object.name,
-      owner: object.owner
-    });
+    // Show loading in main modal
+    setLoading(true);
+    setObjectSelectorError(null);
 
-    const responseData = response?.data || {};
-    let parameters = [];
-    let columns = [];
+    try {
+      // Dynamically import the function
+      const { getObjectDetails } = await import('../../controllers/OracleSchemaController.js');
+      
+      const response = await getObjectDetails(authToken, {
+        objectType: object.type,
+        objectName: object.name,
+        owner: object.owner
+      });
 
-    // Extract parameters for procedures/functions
-    if (object.type === 'PROCEDURE' || object.type === 'FUNCTION') {
-      if (responseData.parameters && Array.isArray(responseData.parameters)) {
-        parameters = responseData.parameters;
-      } else if (responseData.arguments && Array.isArray(responseData.arguments)) {
-        parameters = responseData.arguments;
+      const responseData = response?.data || {};
+      let parameters = [];
+      let columns = [];
+
+      // Extract parameters for procedures/functions
+      if (object.type === 'PROCEDURE' || object.type === 'FUNCTION') {
+        if (responseData.parameters && Array.isArray(responseData.parameters)) {
+          parameters = responseData.parameters;
+        } else if (responseData.arguments && Array.isArray(responseData.arguments)) {
+          parameters = responseData.arguments;
+        }
       }
-    }
 
-    // Extract columns for tables/views
-    if (object.type === 'TABLE' || object.type === 'VIEW') {
-      if (responseData.columns && Array.isArray(responseData.columns)) {
-        columns = responseData.columns;
-      } else if (responseData.targetObjectDetails?.columns) {
-        columns = responseData.targetObjectDetails.columns;
+      // Extract columns for tables/views
+      if (object.type === 'TABLE' || object.type === 'VIEW') {
+        if (responseData.columns && Array.isArray(responseData.columns)) {
+          columns = responseData.columns;
+        } else if (responseData.targetObjectDetails?.columns) {
+          columns = responseData.targetObjectDetails.columns;
+        }
       }
+
+      // Create a selected object with all details
+      const detailedObject = {
+        ...object,
+        ...responseData,
+        parameters: parameters,
+        columns: columns,
+        comment: responseData.comment || responseData.COMMENTS
+      };
+
+      // Set the selected object and populate form
+      setSelectedDbObject(detailedObject);
+      populateFormFromObject(detailedObject);
+      
+    } catch (error) {
+      console.error('Error loading object details:', error);
+      setObjectSelectorError('Failed to load object details');
+    } finally {
+      setLoading(false);
     }
-
-    // Create a selected object with all details
-    const detailedObject = {
-      ...object,
-      ...responseData,
-      parameters: parameters,
-      columns: columns,
-      comment: responseData.comment || responseData.COMMENTS
-    };
-
-    // Set the selected object and populate form
-    setSelectedDbObject(detailedObject);
-    populateFormFromObject(detailedObject);
-    
-  } catch (error) {
-    console.error('Error loading object details:', error);
-    setObjectSelectorError('Failed to load object details');
-  } finally {
-    setLoading(false);
-  }
-}, [authToken, populateFormFromObject]);
-
-
+  }, [authToken, populateFormFromObject]);
 
   // NEW: Function to populate form from existing API data (for editing)
-const populateFormFromApiData = useCallback(async (apiData) => {
-  console.log('📝 populateFormFromApiData called with:', apiData);
-  
-  // Set API details
-  setApiDetails({
-    apiName: apiData.apiName || '',
-    apiCode: apiData.apiCode || '',
-    description: apiData.description || '',
-    version: apiData.version || '1.0.0',
-    status: apiData.status || 'ACTIVE',
-    httpMethod: apiData.httpMethod || 'GET',
-    basePath: apiData.basePath || '/api/v1',
-    endpointPath: apiData.endpointPath || '',
-    tags: apiData.tags || ['default'],
-    category: apiData.category || 'general',
-    owner: apiData.owner || 'HR',
-  });
+  const populateFormFromApiData = useCallback(async (apiData) => {
+    console.log('📝 populateFormFromApiData called with:', apiData);
+    
+    // Set API details
+    setApiDetails({
+      apiName: apiData.apiName || '',
+      apiCode: apiData.apiCode || '',
+      description: apiData.description || '',
+      version: apiData.version || '1.0.0',
+      status: apiData.status || 'ACTIVE',
+      httpMethod: apiData.httpMethod || 'GET',
+      basePath: apiData.basePath || '/api/v1',
+      endpointPath: apiData.endpointPath || '',
+      tags: apiData.tags || ['default'],
+      category: apiData.category || 'general',
+      owner: apiData.owner || 'HR',
+    });
 
-  // Set collection info
-  if (apiData.collectionInfo) {
-    const collection = collections.find(c => c.id === apiData.collectionInfo.collectionId);
-    if (collection) {
-      setSelectedCollection(collection);
-      setFolders(collection.folders || []);
-      
-      if (apiData.collectionInfo.folderId) {
-        const folder = collection.folders?.find(f => f.id === apiData.collectionInfo.folderId);
-        setSelectedFolder(folder || null);
+    // Set collection info
+    if (apiData.collectionInfo) {
+      const collection = collections.find(c => c.id === apiData.collectionInfo.collectionId);
+      if (collection) {
+        setSelectedCollection(collection);
+        setFolders(collection.folders || []);
+        
+        if (apiData.collectionInfo.folderId) {
+          const folder = collection.folders?.find(f => f.id === apiData.collectionInfo.folderId);
+          setSelectedFolder(folder || null);
+        }
       }
     }
-  }
 
-  // Set schema config
-  if (apiData.schemaConfig) {
-    setSchemaConfig({
-      schemaName: apiData.schemaConfig.schemaName || '',
-      objectType: apiData.schemaConfig.objectType || '',
-      objectName: apiData.schemaConfig.objectName || '',
-      operation: apiData.schemaConfig.operation || 'SELECT',
-      primaryKeyColumn: apiData.schemaConfig.primaryKeyColumn || '',
-      sequenceName: apiData.schemaConfig.sequenceName || '',
-      enablePagination: apiData.schemaConfig.enablePagination !== undefined ? apiData.schemaConfig.enablePagination : true,
-      pageSize: apiData.schemaConfig.pageSize || 10,
-      enableSorting: apiData.schemaConfig.enableSorting !== undefined ? apiData.schemaConfig.enableSorting : true,
-      defaultSortColumn: apiData.schemaConfig.defaultSortColumn || '',
-      defaultSortDirection: apiData.schemaConfig.defaultSortDirection || 'ASC'
-    });
-  }
+    // Set schema config
+    if (apiData.schemaConfig) {
+      setSchemaConfig({
+        schemaName: apiData.schemaConfig.schemaName || '',
+        objectType: apiData.schemaConfig.objectType || '',
+        objectName: apiData.schemaConfig.objectName || '',
+        operation: apiData.schemaConfig.operation || 'SELECT',
+        primaryKeyColumn: apiData.schemaConfig.primaryKeyColumn || '',
+        sequenceName: apiData.schemaConfig.sequenceName || '',
+        enablePagination: apiData.schemaConfig.enablePagination !== undefined ? apiData.schemaConfig.enablePagination : true,
+        pageSize: apiData.schemaConfig.pageSize || 10,
+        enableSorting: apiData.schemaConfig.enableSorting !== undefined ? apiData.schemaConfig.enableSorting : true,
+        defaultSortColumn: apiData.schemaConfig.defaultSortColumn || '',
+        defaultSortDirection: apiData.schemaConfig.defaultSortDirection || 'ASC'
+      });
+    }
 
-  // Set source object info
-  if (apiData.sourceObject) {
-    setSourceObjectInfo({
-      isSynonym: apiData.sourceObject.isSynonym || false,
-      targetType: apiData.sourceObject.targetType || null,
-      targetName: apiData.sourceObject.targetName || null,
-      targetOwner: apiData.sourceObject.targetOwner || null
-    });
-  }
+    // Set source object info
+    if (apiData.sourceObject) {
+      setSourceObjectInfo({
+        isSynonym: apiData.sourceObject.isSynonym || false,
+        targetType: apiData.sourceObject.targetType || null,
+        targetName: apiData.sourceObject.targetName || null,
+        targetOwner: apiData.sourceObject.targetOwner || null
+      });
+    }
 
-  // Set parameters - ensure each has a unique ID
-  if (apiData.parameters && Array.isArray(apiData.parameters)) {
-    const paramsWithIds = apiData.parameters.map(p => ({
-      ...p,
-      id: p.id || `param-${Date.now()}-${Math.random()}`,
-      parameterLocation: p.parameterLocation || 'body',
-      required: p.required !== undefined ? p.required : true,
-      inBody: p.inBody !== undefined ? p.inBody : (p.parameterLocation === 'body'),
-      paramMode: p.paramMode || 'IN'
-    }));
-    setParameters(paramsWithIds);
-  }
+    // Set parameters - ensure each has a unique ID
+    if (apiData.parameters && Array.isArray(apiData.parameters)) {
+      const paramsWithIds = apiData.parameters.map(p => ({
+        ...p,
+        id: p.id || `param-${Date.now()}-${Math.random()}`,
+        parameterLocation: p.parameterLocation || 'body',
+        required: p.required !== undefined ? p.required : true,
+        inBody: p.inBody !== undefined ? p.inBody : (p.parameterLocation === 'body'),
+        paramMode: p.paramMode || 'IN'
+      }));
+      setParameters(paramsWithIds);
+    }
 
-  // Set response mappings - ensure each has a unique ID
-  if (apiData.responseMappings && Array.isArray(apiData.responseMappings)) {
-    const mappingsWithIds = apiData.responseMappings.map(m => ({
-      ...m,
-      id: m.id || `mapping-${Date.now()}-${Math.random()}`,
-      includeInResponse: m.includeInResponse !== undefined ? m.includeInResponse : true,
-      inResponse: m.inResponse !== undefined ? m.inResponse : true,
-      nullable: m.nullable !== undefined ? m.nullable : true
-    }));
-    setResponseMappings(mappingsWithIds);
-  }
+    // Set response mappings - ensure each has a unique ID
+    if (apiData.responseMappings && Array.isArray(apiData.responseMappings)) {
+      const mappingsWithIds = apiData.responseMappings.map(m => ({
+        ...m,
+        id: m.id || `mapping-${Date.now()}-${Math.random()}`,
+        includeInResponse: m.includeInResponse !== undefined ? m.includeInResponse : true,
+        inResponse: m.inResponse !== undefined ? m.inResponse : true,
+        nullable: m.nullable !== undefined ? m.nullable : true
+      }));
+      setResponseMappings(mappingsWithIds);
+    }
 
-  // Set request body
-  if (apiData.requestBody) {
-    setRequestBody({
-      bodyType: apiData.requestBody.bodyType || 'none',
-      sample: apiData.requestBody.sample || '',
-      requiredFields: apiData.requestBody.requiredFields || [],
-      validateSchema: apiData.requestBody.validateSchema !== undefined ? apiData.requestBody.validateSchema : true,
-      maxSize: apiData.requestBody.maxSize || 1048576,
-      allowedMediaTypes: apiData.requestBody.allowedMediaTypes || ['application/json']
-    });
-  }
+    // Set request body
+    if (apiData.requestBody) {
+      setRequestBody({
+        bodyType: apiData.requestBody.bodyType || 'none',
+        sample: apiData.requestBody.sample || '',
+        requiredFields: apiData.requestBody.requiredFields || [],
+        validateSchema: apiData.requestBody.validateSchema !== undefined ? apiData.requestBody.validateSchema : true,
+        maxSize: apiData.requestBody.maxSize || 1048576,
+        allowedMediaTypes: apiData.requestBody.allowedMediaTypes || ['application/json']
+      });
+    }
 
-  // Set response body
-  if (apiData.responseBody) {
-    setResponseBody({
-      successSchema: apiData.responseBody.successSchema || '{\n  "success": true,\n  "data": {},\n  "message": "Request processed successfully"\n}',
-      errorSchema: apiData.responseBody.errorSchema || '{\n  "success": false,\n  "error": {\n    "code": "ERROR_CODE",\n    "message": "Error description",\n    "details": {}\n  }\n}',
-      includeMetadata: apiData.responseBody.includeMetadata !== undefined ? apiData.responseBody.includeMetadata : true,
-      metadataFields: apiData.responseBody.metadataFields || ['timestamp', 'apiVersion', 'requestId'],
-      contentType: apiData.responseBody.contentType || 'application/json',
-      compression: apiData.responseBody.compression || 'gzip'
-    });
-  }
+    // Set response body
+    if (apiData.responseBody) {
+      setResponseBody({
+        successSchema: apiData.responseBody.successSchema || '{\n  "success": true,\n  "data": {},\n  "message": "Request processed successfully"\n}',
+        errorSchema: apiData.responseBody.errorSchema || '{\n  "success": false,\n  "error": {\n    "code": "ERROR_CODE",\n    "message": "Error description",\n    "details": {}\n  }\n}',
+        includeMetadata: apiData.responseBody.includeMetadata !== undefined ? apiData.responseBody.includeMetadata : true,
+        metadataFields: apiData.responseBody.metadataFields || ['timestamp', 'apiVersion', 'requestId'],
+        contentType: apiData.responseBody.contentType || 'application/json',
+        compression: apiData.responseBody.compression || 'gzip'
+      });
+    }
 
-  // Set auth config
-  if (apiData.authConfig) {
-    setAuthConfig({
-      authType: apiData.authConfig.authType || 'none',
-      apiKeyHeader: apiData.authConfig.apiKeyHeader || 'X-API-Key',
-      apiKeyValue: apiData.authConfig.apiKeyValue || '',
-      apiSecretHeader: apiData.authConfig.apiSecretHeader || 'X-API-Secret',
-      apiSecretValue: apiData.authConfig.apiSecretValue || '',
-      jwtToken: apiData.authConfig.jwtToken || '',
-      jwtIssuer: apiData.authConfig.jwtIssuer || 'api.example.com',
-      basicUsername: apiData.authConfig.basicUsername || '',
-      basicPassword: apiData.authConfig.basicPassword || '',
-      ipWhitelist: apiData.authConfig.ipWhitelist || '',
-      rateLimitRequests: apiData.authConfig.rateLimitRequests || 100,
-      rateLimitPeriod: apiData.authConfig.rateLimitPeriod || 'minute',
-      enableRateLimiting: apiData.authConfig.enableRateLimiting || false,
-      corsOrigins: apiData.authConfig.corsOrigins || ['*'],
-      auditLevel: apiData.authConfig.auditLevel || 'standard'
-    });
-  }
+    // Set auth config
+    if (apiData.authConfig) {
+      setAuthConfig({
+        authType: apiData.authConfig.authType || 'none',
+        apiKeyHeader: apiData.authConfig.apiKeyHeader || 'X-API-Key',
+        apiKeyValue: apiData.authConfig.apiKeyValue || '',
+        apiSecretHeader: apiData.authConfig.apiSecretHeader || 'X-API-Secret',
+        apiSecretValue: apiData.authConfig.apiSecretValue || '',
+        jwtToken: apiData.authConfig.jwtToken || '',
+        jwtIssuer: apiData.authConfig.jwtIssuer || 'api.example.com',
+        basicUsername: apiData.authConfig.basicUsername || '',
+        basicPassword: apiData.authConfig.basicPassword || '',
+        ipWhitelist: apiData.authConfig.ipWhitelist || '',
+        rateLimitRequests: apiData.authConfig.rateLimitRequests || 100,
+        rateLimitPeriod: apiData.authConfig.rateLimitPeriod || 'minute',
+        enableRateLimiting: apiData.authConfig.enableRateLimiting || false,
+        corsOrigins: apiData.authConfig.corsOrigins || ['*'],
+        auditLevel: apiData.authConfig.auditLevel || 'standard'
+      });
+    }
 
-  // Set headers
-  if (apiData.headers && Array.isArray(apiData.headers)) {
-    const headersWithIds = apiData.headers.map((h, idx) => ({
-      ...h,
-      id: h.id || `header-${Date.now()}-${idx}`
-    }));
-    setHeaders(headersWithIds);
-  }
+    // Set headers
+    if (apiData.headers && Array.isArray(apiData.headers)) {
+      const headersWithIds = apiData.headers.map((h, idx) => ({
+        ...h,
+        id: h.id || `header-${Date.now()}-${idx}`
+      }));
+      setHeaders(headersWithIds);
+    }
 
-  // Set settings
-  if (apiData.settings) {
-    setSettings({
-      timeout: apiData.settings.timeout || 30000,
-      maxRecords: apiData.settings.maxRecords || 1000,
-      enableLogging: apiData.settings.enableLogging !== undefined ? apiData.settings.enableLogging : true,
-      logLevel: apiData.settings.logLevel || 'INFO',
-      enableCaching: apiData.settings.enableCaching || false,
-      cacheTtl: apiData.settings.cacheTtl || 300,
-      generateSwagger: apiData.settings.generateSwagger !== undefined ? apiData.settings.generateSwagger : true,
-      generatePostman: apiData.settings.generatePostman !== undefined ? apiData.settings.generatePostman : true,
-      generateClientSDK: apiData.settings.generateClientSDK !== undefined ? apiData.settings.generateClientSDK : true,
-      enableMonitoring: apiData.settings.enableMonitoring !== undefined ? apiData.settings.enableMonitoring : true,
-      enableAlerts: apiData.settings.enableAlerts || false,
-      alertEmail: apiData.settings.alertEmail || '',
-      enableTracing: apiData.settings.enableTracing || false,
-      corsEnabled: apiData.settings.corsEnabled !== undefined ? apiData.settings.corsEnabled : true
-    });
-  }
+    // Set settings
+    if (apiData.settings) {
+      setSettings({
+        timeout: apiData.settings.timeout || 30000,
+        maxRecords: apiData.settings.maxRecords || 1000,
+        enableLogging: apiData.settings.enableLogging !== undefined ? apiData.settings.enableLogging : true,
+        logLevel: apiData.settings.logLevel || 'INFO',
+        enableCaching: apiData.settings.enableCaching || false,
+        cacheTtl: apiData.settings.cacheTtl || 300,
+        generateSwagger: apiData.settings.generateSwagger !== undefined ? apiData.settings.generateSwagger : true,
+        generatePostman: apiData.settings.generatePostman !== undefined ? apiData.settings.generatePostman : true,
+        generateClientSDK: apiData.settings.generateClientSDK !== undefined ? apiData.settings.generateClientSDK : true,
+        enableMonitoring: apiData.settings.enableMonitoring !== undefined ? apiData.settings.enableMonitoring : true,
+        enableAlerts: apiData.settings.enableAlerts || false,
+        alertEmail: apiData.settings.alertEmail || '',
+        enableTracing: apiData.settings.enableTracing || false,
+        corsEnabled: apiData.settings.corsEnabled !== undefined ? apiData.settings.corsEnabled : true
+      });
+    }
 
-  console.log('✅ Form populated from API data');
-}, [collections]);
-
-
+    console.log('✅ Form populated from API data');
+  }, [collections]);
 
   // Function to populate form from selected object - FIXED VERSION WITH PROPER MODE FILTERING
   const populateFormFromObject = useCallback((object) => {
@@ -2828,78 +2823,78 @@ const populateFormFromApiData = useCallback(async (apiData) => {
     );
   };
 
-// Validate source object with the API Generation Engine - FIXED to resolve synonyms
-const validateObject = async (object, type) => {
-  // Skip validation for API objects (when editing)
-  if (isEditing || type === 'API' || type === 'CONNECTION' || !type || type === 'API' || object?.type === 'API') {
-    console.log('ℹ️ Skipping validation for API object');
-    setValidationResult({ valid: true, message: 'API object - validation skipped' });
-    return { valid: true, data: { details: {} } };
-  }
-
-  if (!authToken || !object || !object.name || !type) {
-    console.log('❌ Cannot validate: missing required data');
-    return null;
-  }
-
-  setValidating(true);
-  setValidationResult(null);
-
-  try {
-    // Check if this is a synonym and resolve it first
-    let targetOwner = object.owner;
-    let targetName = object.name;
-    let targetType = type;
-    
-    // If the object is a synonym, resolve it to get the target object
-    if (object.isSynonym || object.targetType) {
-      console.log('🔍 Object is a synonym, resolving to target:', {
-        targetOwner: object.targetOwner,
-        targetName: object.targetName,
-        targetType: object.targetType
-      });
-      
-      targetOwner = object.targetOwner;
-      targetName = object.targetName;
-      targetType = object.targetType;
-      
-      // Update sourceObjectInfo to show it's a synonym
-      setSourceObjectInfo({
-        isSynonym: true,
-        targetType: object.targetType,
-        targetName: object.targetName,
-        targetOwner: object.targetOwner
-      });
+  // Validate source object with the API Generation Engine - FIXED to resolve synonyms
+  const validateObject = async (object, type) => {
+    // Skip validation for API objects (when editing)
+    if (isEditing || type === 'API' || type === 'CONNECTION' || !type || type === 'API' || object?.type === 'API') {
+      console.log('ℹ️ Skipping validation for API object');
+      setValidationResult({ valid: true, message: 'API object - validation skipped' });
+      return { valid: true, data: { details: {} } };
     }
 
-    console.log('🔍 Validating source object:', { 
-      objectName: targetName, 
-      objectType: targetType, 
-      owner: targetOwner 
-    });
-    
-    // Validate the target object (not the synonym)
-    const response = await validateSourceObject(authToken, {
-      objectName: targetName,
-      objectType: targetType,
-      owner: targetOwner
-    });
+    if (!authToken || !object || !object.name || !type) {
+      console.log('❌ Cannot validate: missing required data');
+      return null;
+    }
 
-    console.log('📦 Validation response:', response);
-    
-    // Store the validation result
-    setValidationResult(response.data);
-    
-    // Return the full response data for use in initialization
-    return response;
-  } catch (error) {
-    console.error('❌ Error validating source object:', error);
-    setValidationResult({ valid: false, message: error.message });
-    return null;
-  } finally {
-    setValidating(false);
-  }
-};
+    setValidating(true);
+    setValidationResult(null);
+
+    try {
+      // Check if this is a synonym and resolve it first
+      let targetOwner = object.owner;
+      let targetName = object.name;
+      let targetType = type;
+      
+      // If the object is a synonym, resolve it to get the target object
+      if (object.isSynonym || object.targetType) {
+        console.log('🔍 Object is a synonym, resolving to target:', {
+          targetOwner: object.targetOwner,
+          targetName: object.targetName,
+          targetType: object.targetType
+        });
+        
+        targetOwner = object.targetOwner;
+        targetName = object.targetName;
+        targetType = object.targetType;
+        
+        // Update sourceObjectInfo to show it's a synonym
+        setSourceObjectInfo({
+          isSynonym: true,
+          targetType: object.targetType,
+          targetName: object.targetName,
+          targetOwner: object.targetOwner
+        });
+      }
+
+      console.log('🔍 Validating source object:', { 
+        objectName: targetName, 
+        objectType: targetType, 
+        owner: targetOwner 
+      });
+      
+      // Validate the target object (not the synonym)
+      const response = await validateSourceObject(authToken, {
+        objectName: targetName,
+        objectType: targetType,
+        owner: targetOwner
+      });
+
+      console.log('📦 Validation response:', response);
+      
+      // Store the validation result
+      setValidationResult(response.data);
+      
+      // Return the full response data for use in initialization
+      return response;
+    } catch (error) {
+      console.error('❌ Error validating source object:', error);
+      setValidationResult({ valid: false, message: error.message });
+      return null;
+    } finally {
+      setValidating(false);
+    }
+  };
 
   // Check if API code is available - FIXED: Only check for new APIs, not when editing
   const checkCodeAvailability = async (code) => {
@@ -2953,46 +2948,43 @@ const validateObject = async (object, type) => {
     }
   };
 
-
   // Sync operation when HTTP method changes
- // Sync operation when HTTP method changes
-useEffect(() => {
-  // Skip for procedures/functions/packages
-  const objectType = selectedDbObject?.type?.toUpperCase() || selectedObject?.type?.toUpperCase();
-  
-  if (objectType === 'PROCEDURE' || objectType === 'FUNCTION' || objectType === 'PACKAGE') {
-    // For procedures/functions, operation should always be EXECUTE
-    setSchemaConfig(prev => ({
-      ...prev,
-      operation: 'EXECUTE'
-    }));
-  } else {
-    // For tables/views, map HTTP method to operation
-    let operation = 'SELECT';
-    switch(apiDetails.httpMethod) {
-      case 'POST':
-        operation = 'INSERT';
-        break;
-      case 'PUT':
-      case 'PATCH':
-        operation = 'UPDATE';
-        break;
-      case 'DELETE':
-        operation = 'DELETE';
-        break;
-      case 'GET':
-      default:
-        operation = 'SELECT';
-        break;
-    }
+  useEffect(() => {
+    // Skip for procedures/functions/packages
+    const objectType = selectedDbObject?.type?.toUpperCase() || selectedObject?.type?.toUpperCase();
     
-    setSchemaConfig(prev => ({
-      ...prev,
-      operation: operation
-    }));
-  }
-}, [apiDetails.httpMethod, selectedDbObject, selectedObject]);
-
+    if (objectType === 'PROCEDURE' || objectType === 'FUNCTION' || objectType === 'PACKAGE') {
+      // For procedures/functions, operation should always be EXECUTE
+      setSchemaConfig(prev => ({
+        ...prev,
+        operation: 'EXECUTE'
+      }));
+    } else {
+      // For tables/views, map HTTP method to operation
+      let operation = 'SELECT';
+      switch(apiDetails.httpMethod) {
+        case 'POST':
+          operation = 'INSERT';
+          break;
+        case 'PUT':
+        case 'PATCH':
+          operation = 'UPDATE';
+          break;
+        case 'DELETE':
+          operation = 'DELETE';
+          break;
+        case 'GET':
+        default:
+          operation = 'SELECT';
+          break;
+      }
+      
+      setSchemaConfig(prev => ({
+        ...prev,
+        operation: operation
+      }));
+    }
+  }, [apiDetails.httpMethod, selectedDbObject, selectedObject]);
 
   // Add cleanup in useEffect
   useEffect(() => {
@@ -3005,232 +2997,133 @@ useEffect(() => {
 
   // ==================== INITIALIZATION EFFECTS ====================
 
-// Show object selector when modal opens from dashboard AND no object is selected
-useEffect(() => {
-  if (isOpen && fromDashboard && !selectedObject && !isEditing && !selectedDbObject) {
-    setShowObjectSelector(true);
-  }
-}, [isOpen, fromDashboard, selectedObject, isEditing, selectedDbObject]);
-
-// Initialize parameters and mappings based on selected object - FIXED VERSION
-useEffect(() => {
-  const initializeFromObject = async () => {
-    // If we're on dashboard and have selectedDbObject, use that
-    if (fromDashboard && selectedDbObject) {
-      console.log('📝 Using dashboard-selected object:', selectedDbObject);
-      await populateFormFromObject(selectedDbObject);
-      return;
+  // Handle loading state when opening from dashboard with incomplete data
+  useEffect(() => {
+    if (isOpen && fromDashboard && selectedObject?.loading) {
+      // Don't do anything yet - just show the loading state in the modal
+      console.log('⏳ Dashboard object loading in progress...');
     }
+  }, [isOpen, fromDashboard, selectedObject]);
 
-    if (!selectedObject) {
-      console.log('ℹ️ ApiGenerationModal - No selected object provided, showing empty form');
-      return;
+  // Show object selector when modal opens from dashboard AND no object is selected
+  useEffect(() => {
+    if (isOpen && fromDashboard && !selectedObject && !isEditing && !selectedDbObject) {
+      setShowObjectSelector(true);
     }
+  }, [isOpen, fromDashboard, selectedObject, isEditing, selectedDbObject]);
 
-    setLoading(true);
-    
-    // Check if we're in edit mode - IMPROVED DETECTION
-    const isEditMode = isEditing || (selectedObject?.data && selectedObject.data.id);
-    
-    console.log('🔍 ApiGenerationModal - Initializing with selected object:', {
-      selectedObject: selectedObject,
-      isEditing: isEditing,
-      isEditMode: isEditMode
-    });
-
-    try {
-      // For API objects (when in edit mode), handle differently
-      if (isEditMode) {
-        console.log('ℹ️ Loading API object for edit mode');
-        
-        // Extract the API data - handle both wrapped and unwrapped formats
-        let apiData = selectedObject;
-        
-        // If it's wrapped in a 'data' property (from API response), extract it
-        if (selectedObject.data && selectedObject.data.id) {
-          apiData = selectedObject.data;
-        }
-        
-        console.log('📦 Extracted API data for edit:', apiData);
-        
-        // Populate form with existing API data
-        await populateFormFromApiData(apiData);
-        
-        setLoading(false);
+  // Initialize parameters and mappings based on selected object - FIXED VERSION
+  useEffect(() => {
+    const initializeFromObject = async () => {
+      // If we're on dashboard and have selectedDbObject, use that
+      if (fromDashboard && selectedDbObject) {
+        console.log('📝 Using dashboard-selected object:', selectedDbObject);
+        await populateFormFromObject(selectedDbObject);
         return;
       }
 
-      // For regular database objects (not APIs), validate and populate
-      console.log('🔍 Starting validation for object:', selectedObject.name);
-      
-      // Validate the source object (now resolves synonyms)
-      const validationResponse = await validateObject(selectedObject, selectedObject.type);
-      console.log('📦 Validation response received:', validationResponse);
-      
-      if (validationResponse && validationResponse.data) {
-        console.log('📦 Using validation data to populate form');
-        
-        const validationData = validationResponse.data;
-        
-        // Extract parameters from the response
-        let parameters = [];
-        let columns = [];
-        
-        if (validationData.details?.parameters && Array.isArray(validationData.details.parameters)) {
-          parameters = validationData.details.parameters;
-          console.log('📦 Found parameters in validationData.details.parameters:', parameters.length);
-        }
-        
-        if (validationData.details?.columns && Array.isArray(validationData.details.columns)) {
-          columns = validationData.details.columns;
-          console.log('📦 Found columns in validationData.details.columns:', columns.length);
-        }
-        
-        // Create a combined object with all the data
-        const combinedObject = {
-          ...selectedObject,
-          details: validationData.details || {},
-          parameters: parameters,
-          columns: columns,
-          // Use the target owner/name if it was a synonym
-          owner: validationData.owner || selectedObject.targetOwner || selectedObject.owner,
-          name: validationData.objectName || selectedObject.targetName || selectedObject.name,
-          type: validationData.objectType || selectedObject.targetType || selectedObject.type
-        };
-        
-        console.log('📦 Combined object for population:', {
-          owner: combinedObject.owner,
-          name: combinedObject.name,
-          type: combinedObject.type,
-          hasParameters: combinedObject.parameters?.length > 0,
-          parametersCount: combinedObject.parameters?.length,
-          hasColumns: combinedObject.columns?.length > 0,
-          columnsCount: combinedObject.columns?.length
-        });
-        
-        // Populate the form
-        await populateFormFromObject(combinedObject);
-      } else {
-        console.log('⚠️ No validation data received');
-      }
-    } catch (error) {
-      console.error('❌ Error initializing modal:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (isOpen) {
-    initializeFromObject();
-  }
-}, [selectedObject, isOpen, authToken, obType, isEditing, collections, fromDashboard, selectedDbObject, populateFormFromObject]);
-
-// Initialize parameters and mappings based on selected object - FIXED VERSION
-useEffect(() => {
-  const initializeFromObject = async () => {
-    // If we're on dashboard and have selectedDbObject, use that
-    if (fromDashboard && selectedDbObject) {
-      console.log('📝 Using dashboard-selected object:', selectedDbObject);
-      await populateFormFromObject(selectedDbObject);
-      return;
-    }
-
-    if (!selectedObject) {
-      console.log('ℹ️ ApiGenerationModal - No selected object provided, showing empty form');
-      return;
-    }
-
-    setLoading(true);
-    
-    // Check if we're in edit mode
-    const isEditMode = isEditing || (selectedObject?.data && selectedObject.data.id);
-    
-    console.log('🔍 ApiGenerationModal - Initializing with selected object:', {
-      name: selectedObject?.name,
-      type: selectedObject?.type,
-      owner: selectedObject?.owner,
-      isSynonym: selectedObject?.isSynonym,
-      targetOwner: selectedObject?.targetOwner,
-      targetName: selectedObject?.targetName,
-      targetType: selectedObject?.targetType,
-      isEditing: isEditing,
-      isEditMode: isEditMode
-    });
-
-    try {
-      // For API objects (when in edit mode), handle differently
-      if (isEditMode || selectedObject?.type === 'API' || selectedObject?.type === 'CONNECTION') {
-        // ... (existing edit mode code - keep as is)
-        console.log('ℹ️ Skipping validation for API object - edit mode detected');
-        // ... rest of edit mode code
-        setLoading(false);
+      if (!selectedObject) {
+        console.log('ℹ️ ApiGenerationModal - No selected object provided, showing empty form');
         return;
       }
 
-      // For regular database objects (not APIs), validate and populate
-      console.log('🔍 Starting validation for object:', selectedObject.name);
+      setLoading(true);
       
-      // Validate the source object (now resolves synonyms)
-      const validationResponse = await validateObject(selectedObject, selectedObject.type);
-      console.log('📦 Validation response received:', validationResponse);
+      // Check if we're in edit mode - IMPROVED DETECTION
+      const isEditMode = isEditing || (selectedObject?.data && selectedObject.data.id);
       
-      if (validationResponse && validationResponse.data) {
-        console.log('📦 Using validation data to populate form');
-        
-        const validationData = validationResponse.data;
-        
-        // Extract parameters from the response
-        let parameters = [];
-        let columns = [];
-        
-        if (validationData.details?.parameters && Array.isArray(validationData.details.parameters)) {
-          parameters = validationData.details.parameters;
-          console.log('📦 Found parameters in validationData.details.parameters:', parameters.length);
-        }
-        
-        if (validationData.details?.columns && Array.isArray(validationData.details.columns)) {
-          columns = validationData.details.columns;
-          console.log('📦 Found columns in validationData.details.columns:', columns.length);
-        }
-        
-        // Create a combined object with all the data
-        const combinedObject = {
-          ...selectedObject,
-          details: validationData.details || {},
-          parameters: parameters,
-          columns: columns,
-          // Use the target owner/name if it was a synonym
-          owner: validationData.owner || selectedObject.targetOwner || selectedObject.owner,
-          name: validationData.objectName || selectedObject.targetName || selectedObject.name,
-          type: validationData.objectType || selectedObject.targetType || selectedObject.type
-        };
-        
-        console.log('📦 Combined object for population:', {
-          owner: combinedObject.owner,
-          name: combinedObject.name,
-          type: combinedObject.type,
-          hasParameters: combinedObject.parameters?.length > 0,
-          parametersCount: combinedObject.parameters?.length,
-          hasColumns: combinedObject.columns?.length > 0,
-          columnsCount: combinedObject.columns?.length
-        });
-        
-        // Populate the form
-        await populateFormFromObject(combinedObject);
-      } else {
-        console.log('⚠️ No validation data received');
-      }
-    } catch (error) {
-      console.error('❌ Error initializing modal:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+      console.log('🔍 ApiGenerationModal - Initializing with selected object:', {
+        selectedObject: selectedObject,
+        isEditing: isEditing,
+        isEditMode: isEditMode
+      });
 
-  if (isOpen) {
-    initializeFromObject();
-  }
-}, [selectedObject, isOpen, authToken, obType, isEditing, collections, fromDashboard, selectedDbObject, populateFormFromObject]);
+      try {
+        // For API objects (when in edit mode), handle differently
+        if (isEditMode) {
+          console.log('ℹ️ Loading API object for edit mode');
+          
+          // Extract the API data - handle both wrapped and unwrapped formats
+          let apiData = selectedObject;
+          
+          // If it's wrapped in a 'data' property (from API response), extract it
+          if (selectedObject.data && selectedObject.data.id) {
+            apiData = selectedObject.data;
+          }
+          
+          console.log('📦 Extracted API data for edit:', apiData);
+          
+          // Populate form with existing API data
+          await populateFormFromApiData(apiData);
+          
+          setLoading(false);
+          return;
+        }
+
+        // For regular database objects (not APIs), validate and populate
+        console.log('🔍 Starting validation for object:', selectedObject.name);
+        
+        // Validate the source object (now resolves synonyms)
+        const validationResponse = await validateObject(selectedObject, selectedObject.type);
+        console.log('📦 Validation response received:', validationResponse);
+        
+        if (validationResponse && validationResponse.data) {
+          console.log('📦 Using validation data to populate form');
+          
+          const validationData = validationResponse.data;
+          
+          // Extract parameters from the response
+          let parameters = [];
+          let columns = [];
+          
+          if (validationData.details?.parameters && Array.isArray(validationData.details.parameters)) {
+            parameters = validationData.details.parameters;
+            console.log('📦 Found parameters in validationData.details.parameters:', parameters.length);
+          }
+          
+          if (validationData.details?.columns && Array.isArray(validationData.details.columns)) {
+            columns = validationData.details.columns;
+            console.log('📦 Found columns in validationData.details.columns:', columns.length);
+          }
+          
+          // Create a combined object with all the data
+          const combinedObject = {
+            ...selectedObject,
+            details: validationData.details || {},
+            parameters: parameters,
+            columns: columns,
+            // Use the target owner/name if it was a synonym
+            owner: validationData.owner || selectedObject.targetOwner || selectedObject.owner,
+            name: validationData.objectName || selectedObject.targetName || selectedObject.name,
+            type: validationData.objectType || selectedObject.targetType || selectedObject.type
+          };
+          
+          console.log('📦 Combined object for population:', {
+            owner: combinedObject.owner,
+            name: combinedObject.name,
+            type: combinedObject.type,
+            hasParameters: combinedObject.parameters?.length > 0,
+            parametersCount: combinedObject.parameters?.length,
+            hasColumns: combinedObject.columns?.length > 0,
+            columnsCount: combinedObject.columns?.length
+          });
+          
+          // Populate the form
+          await populateFormFromObject(combinedObject);
+        } else {
+          console.log('⚠️ No validation data received');
+        }
+      } catch (error) {
+        console.error('❌ Error initializing modal:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (isOpen) {
+      initializeFromObject();
+    }
+  }, [selectedObject, isOpen, authToken, obType, isEditing, collections, fromDashboard, selectedDbObject, populateFormFromObject]);
 
   // Add this useEffect after your initialization useEffect - FIXED VERSION
   useEffect(() => {
@@ -3920,139 +3813,139 @@ END ${schemaConfig.schemaName}_${apiDetails.apiCode || 'API'}_PKG;
   }, [previewMode, apiDetails, schemaConfig, parameters, responseMappings, requestBody, responseBody, authConfig, settings, sourceObjectInfo, tests, validationResult, selectedCollection, selectedFolder, isEditing]);
 
   // Handle save - show preview first - UPDATED to check for existing API code only for new APIs
-const handleSave = () => {
-  // Validate all required fields
-  if (!validateRequiredFields()) {
-    // Show first tab with errors
-    if (validationErrors.collection || validationErrors.folder) {
-      setActiveTab('definition');
-    } else if (validationErrors.apiName || validationErrors.apiCode || validationErrors.endpointPath) {
-      setActiveTab('definition');
-    } else if (!isEditing && (validationErrors.schemaName || validationErrors.objectName)) {
-      setActiveTab('schema');
-    } else if (authConfig.authType !== 'none') {
-      setActiveTab('auth');
+  const handleSave = () => {
+    // Validate all required fields
+    if (!validateRequiredFields()) {
+      // Show first tab with errors
+      if (validationErrors.collection || validationErrors.folder) {
+        setActiveTab('definition');
+      } else if (validationErrors.apiName || validationErrors.apiCode || validationErrors.endpointPath) {
+        setActiveTab('definition');
+      } else if (!isEditing && (validationErrors.schemaName || validationErrors.objectName)) {
+        setActiveTab('schema');
+      } else if (authConfig.authType !== 'none') {
+        setActiveTab('auth');
+      }
+      
+      // Show error message
+      alert('Please fill in all required fields marked with *');
+      return;
     }
-    
-    // Show error message
-    alert('Please fill in all required fields marked with *');
-    return;
-  }
 
-  // NEW: Check if API code already exists (only for new APIs)
-  if (!isEditing && apiCodeExists) {
-    alert(`❌ Cannot generate API\n\nAn API with code "${apiDetails.apiCode}" already exists.\nPlease choose a different API code to continue.`);
-    setActiveTab('definition');
-    // Focus on the API code field by setting the active tab and maybe scrolling
-    return;
-  }
+    // NEW: Check if API code already exists (only for new APIs)
+    if (!isEditing && apiCodeExists) {
+      alert(`❌ Cannot generate API\n\nAn API with code "${apiDetails.apiCode}" already exists.\nPlease choose a different API code to continue.`);
+      setActiveTab('definition');
+      // Focus on the API code field by setting the active tab and maybe scrolling
+      return;
+    }
 
-  // Extract the actual data if we're in editing mode and selectedObject has a data wrapper
-  let sourceData = null;
-  if (isEditing && selectedObject) {
-    // If it's wrapped in a 'data' property, extract it
-    if (selectedObject.data && selectedObject.data.id) {
-      sourceData = selectedObject.data;
-      console.log('📦 Extracted sourceData from selectedObject.data:', sourceData);
+    // Extract the actual data if we're in editing mode and selectedObject has a data wrapper
+    let sourceData = null;
+    if (isEditing && selectedObject) {
+      // If it's wrapped in a 'data' property, extract it
+      if (selectedObject.data && selectedObject.data.id) {
+        sourceData = selectedObject.data;
+        console.log('📦 Extracted sourceData from selectedObject.data:', sourceData);
+      } else {
+        sourceData = selectedObject;
+        console.log('📦 Using selectedObject directly as sourceData:', sourceData);
+      }
     } else {
       sourceData = selectedObject;
-      console.log('📦 Using selectedObject directly as sourceData:', sourceData);
     }
-  } else {
-    sourceData = selectedObject;
-  }
 
-  // Use selectedDbObject for dashboard generation, otherwise use sourceData
-  const effectiveSource = fromDashboard && selectedDbObject ? selectedDbObject : sourceData;
+    // Use selectedDbObject for dashboard generation, otherwise use sourceData
+    const effectiveSource = fromDashboard && selectedDbObject ? selectedDbObject : sourceData;
 
-  // Ensure collection and folder are selected
-  if (!selectedCollection || !selectedFolder) {
-    alert('Please select both a collection and folder');
-    setActiveTab('definition');
-    return;
-  }
+    // Ensure collection and folder are selected
+    if (!selectedCollection || !selectedFolder) {
+      alert('Please select both a collection and folder');
+      setActiveTab('definition');
+      return;
+    }
 
-  // Prepare the API data object
-  const apiData = {
-    id: isEditing ? sourceData?.id || selectedObject?.id || `api-${Date.now()}` : `api-${Date.now()}`,
-    ...apiDetails,
-    schemaConfig,
-    collectionInfo: {
-      collectionId: selectedCollection.id,
-      collectionName: selectedCollection.name,
-      collectionType: selectedCollection.type,
-      isNewCollection: isAddingNewCollection,
-      folderId: selectedFolder.id,
-      folderName: selectedFolder.name,
-      isNewFolder: selectedFolder.id?.startsWith('new-folder-')
-    },
-    // Only store IN parameters in parameters array
-    parameters: getInParameters().map(p => ({
-      ...p,
-      // Ensure each parameter has all required fields
-      id: p.id || `param-${Date.now()}-${Math.random()}`,
-      inBody: p.parameterLocation === 'body'
-    })),
-    // Store all response mappings (including OUT parameters)
-    responseMappings: getOutMappings().map(m => ({
-      ...m,
-      id: m.id || `mapping-${Date.now()}-${Math.random()}`,
-      includeInResponse: m.includeInResponse !== undefined ? m.includeInResponse : true,
-      inResponse: m.inResponse !== undefined ? m.inResponse : true
-    })),
-    requestBody: {
-      ...requestBody,
-      // Ensure bodyType is set correctly
-      bodyType: requestBody.bodyType || 'none'
-    },
-    responseBody: {
-      ...responseBody,
-      successSchema: responseBody.successSchema || '{\n  "success": true,\n  "data": {},\n  "message": "Request processed successfully"\n}',
-      errorSchema: responseBody.errorSchema || '{\n  "success": false,\n  "error": {\n    "code": "ERROR_CODE",\n    "message": "Error description",\n    "details": {}\n  }\n}'
-    },
-    authConfig: {
-      ...authConfig,
-      // Ensure authType is set
-      authType: authConfig.authType || 'none'
-    },
-    headers: headers.map(h => ({
-      ...h,
-      id: h.id || `header-${Date.now()}-${Math.random()}`
-    })),
-    settings: {
-      ...settings,
-      timeout: settings.timeout || 30000,
-      maxRecords: settings.maxRecords || 1000,
-      enableLogging: settings.enableLogging !== undefined ? settings.enableLogging : true,
-      logLevel: settings.logLevel || 'INFO'
-    },
-    tests: {
-      ...tests,
-      testData: tests.testData || {},
-      testQueries: tests.testQueries || []
-    },
-    createdAt: new Date().toISOString(),
-    sourceObject: isEditing ? sourceData?.sourceObject || sourceData : {
-      name: effectiveSource?.name,
-      type: effectiveSource?.type,
-      owner: effectiveSource?.owner,
-      columns: effectiveSource?.columns?.length || 0,
-      parameters: effectiveSource?.parameters?.length || 0,
-      isSynonym: sourceObjectInfo.isSynonym,
-      targetType: sourceObjectInfo.targetType,
-      targetName: sourceObjectInfo.targetName,
-      targetOwner: sourceObjectInfo.targetOwner
-    },
-    validation: validationResult,
-    isEditing: isEditing // Pass editing flag to preview
+    // Prepare the API data object
+    const apiData = {
+      id: isEditing ? sourceData?.id || selectedObject?.id || `api-${Date.now()}` : `api-${Date.now()}`,
+      ...apiDetails,
+      schemaConfig,
+      collectionInfo: {
+        collectionId: selectedCollection.id,
+        collectionName: selectedCollection.name,
+        collectionType: selectedCollection.type,
+        isNewCollection: isAddingNewCollection,
+        folderId: selectedFolder.id,
+        folderName: selectedFolder.name,
+        isNewFolder: selectedFolder.id?.startsWith('new-folder-')
+      },
+      // Only store IN parameters in parameters array
+      parameters: getInParameters().map(p => ({
+        ...p,
+        // Ensure each parameter has all required fields
+        id: p.id || `param-${Date.now()}-${Math.random()}`,
+        inBody: p.parameterLocation === 'body'
+      })),
+      // Store all response mappings (including OUT parameters)
+      responseMappings: getOutMappings().map(m => ({
+        ...m,
+        id: m.id || `mapping-${Date.now()}-${Math.random()}`,
+        includeInResponse: m.includeInResponse !== undefined ? m.includeInResponse : true,
+        inResponse: m.inResponse !== undefined ? m.inResponse : true
+      })),
+      requestBody: {
+        ...requestBody,
+        // Ensure bodyType is set correctly
+        bodyType: requestBody.bodyType || 'none'
+      },
+      responseBody: {
+        ...responseBody,
+        successSchema: responseBody.successSchema || '{\n  "success": true,\n  "data": {},\n  "message": "Request processed successfully"\n}',
+        errorSchema: responseBody.errorSchema || '{\n  "success": false,\n  "error": {\n    "code": "ERROR_CODE",\n    "message": "Error description",\n    "details": {}\n  }\n}'
+      },
+      authConfig: {
+        ...authConfig,
+        // Ensure authType is set
+        authType: authConfig.authType || 'none'
+      },
+      headers: headers.map(h => ({
+        ...h,
+        id: h.id || `header-${Date.now()}-${Math.random()}`
+      })),
+      settings: {
+        ...settings,
+        timeout: settings.timeout || 30000,
+        maxRecords: settings.maxRecords || 1000,
+        enableLogging: settings.enableLogging !== undefined ? settings.enableLogging : true,
+        logLevel: settings.logLevel || 'INFO'
+      },
+      tests: {
+        ...tests,
+        testData: tests.testData || {},
+        testQueries: tests.testQueries || []
+      },
+      createdAt: new Date().toISOString(),
+      sourceObject: isEditing ? sourceData?.sourceObject || sourceData : {
+        name: effectiveSource?.name,
+        type: effectiveSource?.type,
+        owner: effectiveSource?.owner,
+        columns: effectiveSource?.columns?.length || 0,
+        parameters: effectiveSource?.parameters?.length || 0,
+        isSynonym: sourceObjectInfo.isSynonym,
+        targetType: sourceObjectInfo.targetType,
+        targetName: sourceObjectInfo.targetName,
+        targetOwner: sourceObjectInfo.targetOwner
+      },
+      validation: validationResult,
+      isEditing: isEditing // Pass editing flag to preview
+    };
+    
+    console.log('📦 Prepared API data for preview:', apiData);
+    
+    // Show preview modal
+    setNewApiData(apiData);
+    setPreviewOpen(true);
   };
-  
-  console.log('📦 Prepared API data for preview:', apiData);
-  
-  // Show preview modal
-  setNewApiData(apiData);
-  setPreviewOpen(true);
-};
 
   // Handle preview confirmation - actually call the generateApi function
   const handlePreviewConfirm = async () => {
@@ -4368,46 +4261,62 @@ const handleSave = () => {
           backgroundColor: themeColors.bg,
           border: `1px solid ${themeColors.modalBorder}`
         }}>
-          {/* Header - UPDATED with apiCodeExists warning and dashboard selection indicator */}
+          {/* Header - MODIFIED to show loading state */}
           <div className="px-6 py-4 border-b flex items-center justify-between" style={{ 
             borderColor: themeColors.border,
             backgroundColor: themeColors.card
           }}>
             <div className="flex items-center gap-3">
-                {isEditing ? (
-                  <Edit className="h-6 w-6" style={{ color: themeColors.warning }} />
-                ) : fromDashboard && !selectedDbObject ? (
-                  <Search className="h-6 w-6" style={{ color: themeColors.info }} />
-                ) : selectedObject?.type === 'TABLE' ? (
-                  <Database className="h-6 w-6" style={{ color: themeColors.info }} />
-                ) : selectedObject?.type === 'VIEW' ? (
-                  <FileText className="h-6 w-6" style={{ color: themeColors.success }} />
-                ) : selectedObject?.type === 'PROCEDURE' ? (
-                  <Terminal className="h-6 w-6" style={{ color: themeColors.info }} />
-                ) : selectedObject?.type === 'FUNCTION' ? (
-                  <Code className="h-6 w-6" style={{ color: themeColors.warning }} />
-                ) : selectedObject?.type === 'PACKAGE' ? (
-                  <Package className="h-6 w-6" style={{ color: themeColors.textSecondary }} />
-                ) : selectedObject?.type === 'TRIGGER' ? (
-                  <Zap className="h-6 w-6" style={{ color: themeColors.error }} />
-                ) : selectedObject?.type === 'SYNONYM' ? (
-                  <Link className="h-6 w-6" style={{ color: themeColors.info }} />
-                ) : (
-                  <Globe className="h-6 w-6" style={{ color: themeColors.info }} />
-                )}
-                <div>
+              {selectedObject?.loading ? (
+                // Show loading state in header
+                <div className="p-2 rounded-lg animate-pulse" style={{ backgroundColor: themeColors.info + '40' }}>
+                  <Loader className="h-6 w-6 animate-spin" style={{ color: themeColors.info }} />
+                </div>
+              ) : isEditing ? (
+                <Edit className="h-6 w-6" style={{ color: themeColors.warning }} />
+              ) : fromDashboard && !selectedDbObject ? (
+                <Search className="h-6 w-6" style={{ color: themeColors.info }} />
+              ) : selectedObject?.type === 'TABLE' ? (
+                <Database className="h-6 w-6" style={{ color: themeColors.info }} />
+              ) : selectedObject?.type === 'VIEW' ? (
+                <FileText className="h-6 w-6" style={{ color: themeColors.success }} />
+              ) : selectedObject?.type === 'PROCEDURE' ? (
+                <Terminal className="h-6 w-6" style={{ color: themeColors.info }} />
+              ) : selectedObject?.type === 'FUNCTION' ? (
+                <Code className="h-6 w-6" style={{ color: themeColors.warning }} />
+              ) : selectedObject?.type === 'PACKAGE' ? (
+                <Package className="h-6 w-6" style={{ color: themeColors.textSecondary }} />
+              ) : selectedObject?.type === 'SYNONYM' ? (
+                <Link className="h-6 w-6" style={{ color: themeColors.info }} />
+              ) : (
+                <Globe className="h-6 w-6" style={{ color: themeColors.info }} />
+              )}
+              
+              <div>
                 <h2 className="text-lg font-bold" style={{ color: themeColors.text }}>
-                  {isEditing ? 'Edit API' : 
+                  {selectedObject?.loading ? 'Loading API Details...' : 
+                   isEditing ? 'Edit API' : 
                    fromDashboard && !selectedDbObject ? 'Generate API - Select Object' :
                    fromDashboard && selectedDbObject ? 'Generate API from Selected Object' :
                    'Generate API'} 
-                  {selectedObject?.name && !isEditing && !fromDashboard ? 
+                  {!selectedObject?.loading && selectedObject?.name && !isEditing && !fromDashboard ? 
                     ' from ' + (selectedObject?.type || 'Object') + ': ' + selectedObject?.name : ''}
                 </h2>
-                {selectedObject?.name && !isEditing && (
+                
+                {selectedObject?.loading ? (
+                  <p className="text-xs flex items-center gap-2 mt-1" style={{ color: themeColors.info }}>
+                    <Loader className="h-3 w-3 animate-spin" />
+                    Fetching API details from server...
+                  </p>
+                ) : selectedObject?.error ? (
+                  <p className="text-xs flex items-center gap-1 mt-1" style={{ color: themeColors.error }}>
+                    <AlertCircle className="h-3 w-3" />
+                    Error loading API details: {selectedObject.message}
+                  </p>
+                ) : selectedObject?.name && !isEditing && (
                   <>
                     <p className="text-xs" style={{ color: themeColors.textSecondary }}>
-                      {selectedObject?.owner}.{selectedObject?.name} • {selectedObject?.type} • 
+                      {selectedObject?.owner}.{selectedObject?.name} • {selectedObject?.type}
                       {sourceObjectInfo.isSynonym && (
                         <span className="ml-1 text-yellow-500">
                           (points to {sourceObjectInfo.targetType}: {sourceObjectInfo.targetOwner}.{sourceObjectInfo.targetName})
@@ -4420,58 +4329,18 @@ const handleSave = () => {
                         Validating source object...
                       </p>
                     )}
-                    {validationResult && !validationResult.valid && (
-                      <p className="text-xs mt-1 flex items-center gap-1" style={{ color: themeColors.error }}>
-                        <AlertCircle className="h-3 w-3" />
-                        {validationResult.message || 'Object validation failed'}
-                      </p>
-                    )}
                   </>
                 )}
-                {isEditing && (
+                
+                {isEditing && !selectedObject?.loading && (
                   <p className="text-xs mt-1" style={{ color: themeColors.success }}>
                     <CheckCircle className="h-3 w-3 inline mr-1" />
                     Editing existing API
                   </p>
                 )}
-                
-                {/* Dashboard selected object indicator */}
-                {fromDashboard && selectedDbObject && (
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-xs" style={{ color: themeColors.success }}>
-                      <CheckCircle className="h-3 w-3 inline mr-1" />
-                      Selected: {selectedDbObject.owner}.{selectedDbObject.name} ({selectedDbObject.type})
-                    </p>
-                    <button
-                      onClick={() => setShowObjectSelector(true)}
-                      className="text-xs underline hover:no-underline"
-                      style={{ color: themeColors.info }}
-                    >
-                      Change object
-                    </button>
-                  </div>
-                )}
-                
-                {/* UPDATED: API Code Already Exists Warning - Using apiCodeExists state */}
-                {!isEditing && apiCodeExists && (
-                  <div className="mt-2 p-2 rounded-lg border flex items-center gap-2" style={{ 
-                    backgroundColor: themeColors.error + '20',
-                    borderColor: themeColors.error,
-                  }}>
-                    <AlertCircle className="h-4 w-4 flex-shrink-0" style={{ color: themeColors.error }} />
-                    <div>
-                      <p className="text-xs font-medium" style={{ color: themeColors.error }}>
-                        ⚠️ API Already Exists
-                      </p>
-                      <p className="text-xs mt-0.5" style={{ color: themeColors.textSecondary }}>
-                        An API with code "{apiDetails.apiCode}" already exists. 
-                        You must choose a different API code to continue.
-                      </p>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
+            
             <div className="flex items-center gap-2">
               <button
                 onClick={onClose}
@@ -4874,9 +4743,40 @@ const handleSave = () => {
             </div>
           </div>
 
-          {/* Tab Content */}
+          {/* Tab Content - ADD LOADING STATE AT TOP */}
           <div className="flex-1 overflow-y-auto">
-            {loading ? (
+            {selectedObject?.loading ? (
+              <div className="h-full flex items-center justify-center p-12">
+                <div className="text-center">
+                  <div className="relative">
+                    <Loader className="animate-spin mx-auto mb-6" size={48} style={{ color: themeColors.primary }} />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: themeColors.primary }}></div>
+                    </div>
+                  </div>
+                  <h3 className="text-lg font-semibold mb-2" style={{ color: themeColors.text }}>
+                    Loading API Details
+                  </h3>
+                  <p className="text-sm mb-2" style={{ color: themeColors.textSecondary }}>
+                    Please wait while we fetch the complete API configuration
+                  </p>
+                  <div className="w-48 h-1 mx-auto mt-4 rounded-full overflow-hidden" style={{ backgroundColor: themeColors.border }}>
+                    <div className="h-full animate-pulse" style={{ 
+                      width: '60%', 
+                      backgroundColor: themeColors.primary,
+                      animation: 'progress 2s ease-in-out infinite'
+                    }}></div>
+                  </div>
+                  <style jsx>{`
+                    @keyframes progress {
+                      0% { width: 0%; margin-left: 0%; }
+                      50% { width: 100%; margin-left: 0%; }
+                      100% { width: 0%; margin-left: 100%; }
+                    }
+                  `}</style>
+                </div>
+              </div>
+            ) : loading ? (
               <div className="h-full flex items-center justify-center p-8">
                 <div className="text-center">
                   <Loader className="h-12 w-12 animate-spin mx-auto mb-4" style={{ color: themeColors.info }} />
@@ -7169,17 +7069,25 @@ WHERE ROWNUM <= 100;` : ''}`}
                   borderColor: themeColors.border,
                   color: themeColors.text
                 }}
-                disabled={loading || validating}
+                disabled={loading || validating || selectedObject?.loading}
               >
                 Cancel
               </button>
               <button
                 onClick={handleSave}
                 className="px-4 py-2 rounded-lg flex items-center gap-2 transition-colors hover-lift"
-                style={{ backgroundColor: themeColors.success, color: themeColors.white }}
-                disabled={loading || validating || (validationResult && !validationResult.valid && !isEditing)}
+                style={{ 
+                  backgroundColor: (loading || validating || selectedObject?.loading || (!isEditing && apiCodeExists)) ? themeColors.textSecondary : themeColors.success, 
+                  color: themeColors.white 
+                }}
+                disabled={loading || validating || selectedObject?.loading || (!isEditing && apiCodeExists)}
               >
-                {loading || validating ? (
+                {selectedObject?.loading ? (
+                  <>
+                    <Loader className="h-4 w-4 animate-spin" />
+                    Loading...
+                  </>
+                ) : loading || validating ? (
                   <>
                     <Loader className="h-4 w-4 animate-spin" />
                     {validating ? 'Validating...' : 'Loading...'}

@@ -18,4 +18,7 @@ public interface MockEndpointRepository extends JpaRepository<MockEndpointEntity
     List<MockEndpointEntity> findByMethod(String method);
 
     boolean existsByPathAndMethodAndMockServerId(String path, String method, String mockServerId);
+
+    // Add this method to return all mock endpoints for a source endpoint (handles duplicates)
+    List<MockEndpointEntity> findAllBySourceEndpointId(String sourceEndpointId);
 }

@@ -1188,7 +1188,8 @@ public class AutomationEngineService {
     }
 
     private boolean shouldRegenerateComponents(GenerateApiRequestDTO request) {
-        return request.getRegenerateComponents() != null && request.getRegenerateComponents();
+        return false;
+    // return request.getRegenerateComponents() != null && request.getRegenerateComponents();
     }
 
     private String getCodeBaseRequestId(GeneratedApiEntity api) {

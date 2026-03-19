@@ -6,6 +6,7 @@ import com.usg.apiAutomation.dtos.apiGenerationEngine.GenerateApiRequestDTO;
 import com.usg.apiAutomation.entities.postgres.collections.*;
 import com.usg.apiAutomation.repositories.postgres.collections.*;
 import com.usg.apiAutomation.utils.apiEngine.GenUrlBuilderUtil;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,7 @@ public class CollectionsGeneratorUtil {
     private final AuthConfigRepository collectionsAuthConfigRepository;
     private final EnvironmentRepository collectionsEnvironmentRepository;
     private final EnvironmentVariableRepository environmentVariableRepository;
+    private final EntityManager entityManager;
     private final GenUrlBuilderUtil genUrlBuilder;
 
     /**
@@ -145,6 +147,47 @@ public class CollectionsGeneratorUtil {
             String generatedApiId = api.getId();
             GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(api);
 
+            // CRITICAL FIX: Use the helper methods to properly clear collections
+            // This maintains bidirectional relationship integrity
+
+            // Clear headers properly
+            if (existingRequest.getHeaders() != null) {
+                // Create a copy to avoid ConcurrentModificationException
+                List<HeaderEntity> headersToRemove = new ArrayList<>(existingRequest.getHeaders());
+                for (HeaderEntity header : headersToRemove) {
+                    existingRequest.removeHeader(header);
+                }
+                // Now delete using repository
+                if (!headersToRemove.isEmpty()) {
+                    collectionsHeaderRepository.deleteAll(headersToRemove);
+                    log.debug("Deleted {} headers for request: {}", headersToRemove.size(), existingRequest.getId());
+                }
+            }
+
+            // Clear parameters properly
+            if (existingRequest.getParams() != null) {
+                List<ParameterEntity> paramsToRemove = new ArrayList<>(existingRequest.getParams());
+                for (ParameterEntity param : paramsToRemove) {
+                    existingRequest.removeParameter(param);
+                }
+                if (!paramsToRemove.isEmpty()) {
+                    collectionsParameterRepository.deleteAll(paramsToRemove);
+                    log.debug("Deleted {} parameters for request: {}", paramsToRemove.size(), existingRequest.getId());
+                }
+            }
+
+            // Handle auth config
+            if (existingRequest.getAuthConfig() != null) {
+                AuthConfigEntity authConfig = existingRequest.getAuthConfig();
+                existingRequest.setAuthConfig(null); // This breaks the relationship
+                collectionsAuthConfigRepository.delete(authConfig);
+            }
+
+            // Flush deletions to ensure they're processed
+            collectionsHeaderRepository.flush();
+            collectionsParameterRepository.flush();
+            collectionsAuthConfigRepository.flush();
+
             // Update request basic info
             existingRequest.setName(api.getApiName() + " - " + api.getHttpMethod());
             existingRequest.setMethod(api.getHttpMethod());
@@ -153,26 +196,42 @@ public class CollectionsGeneratorUtil {
             existingRequest.setLastModified(LocalDateTime.now());
             existingRequest.setUpdatedAt(LocalDateTime.now());
 
-            // Update request body
+            // Set request body
             if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
                 existingRequest.setBody(api.getRequestConfig().getSample());
             }
 
-            // Update auth type
+            // Set auth type
             if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
                 existingRequest.setAuthType(api.getAuthConfig().getAuthType().toLowerCase());
             }
 
+            // Save the request first
+            existingRequest = collectionsRequestRepository.save(existingRequest);
+
+            // Create and add new headers using helper method
+            List<HeaderEntity> newHeaders = createHeadersForRequest(api, existingRequest, generatedApiId);
+            for (HeaderEntity header : newHeaders) {
+                existingRequest.addHeader(header);
+            }
+            if (!newHeaders.isEmpty()) {
+                collectionsHeaderRepository.saveAll(newHeaders);
+            }
+
+            // Create and add new parameters using helper method
+            List<ParameterEntity> newParams = createParametersForRequest(api, existingRequest, generatedApiId);
+            for (ParameterEntity param : newParams) {
+                existingRequest.addParameter(param);
+            }
+            if (!newParams.isEmpty()) {
+                collectionsParameterRepository.saveAll(newParams);
+            }
+
+            // Create new auth config
+            createAuthConfig(api, existingRequest, generatedApiId);
+
+            // Final save
             collectionsRequestRepository.save(existingRequest);
-
-            // Update or recreate headers
-            updateHeaders(existingRequest, api, generatedApiId);
-
-            // Update or recreate parameters
-            updateParameters(existingRequest, api, generatedApiId);
-
-            // Update auth config
-            updateAuthConfig(existingRequest, api, generatedApiId);
 
             log.info("Successfully updated collections request: {}", existingRequest.getId());
 
@@ -180,6 +239,128 @@ public class CollectionsGeneratorUtil {
             log.error("Error updating existing collections request: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to update existing collections request: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Delete all collections from a request without using orphanRemoval
+     */
+    private void deleteRequestCollections(com.usg.apiAutomation.entities.postgres.collections.RequestEntity request) {
+        if (request != null) {
+            log.debug("Deleting collections for request: {}", request.getId());
+
+            // CRITICAL: First, clear the collections to break the relationship
+            // This prevents Hibernate from trying to cascade operations
+            if (request.getHeaders() != null) {
+                List<HeaderEntity> headersToDelete = new ArrayList<>(request.getHeaders());
+                if (!headersToDelete.isEmpty()) {
+                    // First clear the collection
+                    request.getHeaders().clear();
+                    // Then delete using repository
+                    collectionsHeaderRepository.deleteAll(headersToDelete);
+                    log.debug("Deleted {} headers for request: {}", headersToDelete.size(), request.getId());
+                }
+            }
+
+            if (request.getParams() != null) {
+                List<ParameterEntity> paramsToDelete = new ArrayList<>(request.getParams());
+                if (!paramsToDelete.isEmpty()) {
+                    // First clear the collection
+                    request.getParams().clear();
+                    // Then delete using repository
+                    collectionsParameterRepository.deleteAll(paramsToDelete);
+                    log.debug("Deleted {} parameters for request: {}", paramsToDelete.size(), request.getId());
+                }
+            }
+
+            log.debug("Successfully deleted collections for request: {}", request.getId());
+        }
+    }
+
+    /**
+     * Create headers for a request
+     */
+    private List<HeaderEntity> createHeadersForRequest(GeneratedApiEntity api,
+                                                       com.usg.apiAutomation.entities.postgres.collections.RequestEntity request,
+                                                       String generatedApiId) {
+        List<HeaderEntity> newHeaders = new ArrayList<>();
+
+        // Add headers from headers array
+        if (api.getHeaders() != null) {
+            for (ApiHeaderEntity apiHeader : api.getHeaders()) {
+                if (Boolean.TRUE.equals(apiHeader.getIsRequestHeader())) {
+                    HeaderEntity header = new HeaderEntity();
+                    header.setId(UUID.randomUUID().toString());
+                    header.setGeneratedApiId(generatedApiId);
+                    header.setKey(apiHeader.getKey());
+                    header.setValue(apiHeader.getValue() != null ? apiHeader.getValue() : "");
+                    header.setDescription(apiHeader.getDescription());
+                    header.setEnabled(apiHeader.getRequired() != null ? apiHeader.getRequired() : true);
+                    // DON'T set request here - let the helper method do it
+                    newHeaders.add(header);
+                }
+            }
+        }
+
+        // Add header parameters
+        if (api.getParameters() != null) {
+            for (ApiParameterEntity apiParam : api.getParameters()) {
+                if ("header".equals(apiParam.getParameterType())) {
+                    HeaderEntity header = new HeaderEntity();
+                    header.setId(UUID.randomUUID().toString());
+                    header.setGeneratedApiId(generatedApiId);
+                    header.setKey(apiParam.getKey());
+                    header.setValue(apiParam.getExample() != null ? apiParam.getExample() : "");
+                    header.setDescription(apiParam.getDescription());
+                    header.setEnabled(apiParam.getRequired() != null ? apiParam.getRequired() : true);
+                    // DON'T set request here - let the helper method do it
+                    newHeaders.add(header);
+                }
+            }
+        }
+
+        return newHeaders;
+    }
+
+    /**
+     * Create parameters for a request
+     */
+    private List<ParameterEntity> createParametersForRequest(GeneratedApiEntity api,
+                                                             com.usg.apiAutomation.entities.postgres.collections.RequestEntity request,
+                                                             String generatedApiId) {
+        List<ParameterEntity> newParams = new ArrayList<>();
+
+        if (api.getParameters() != null && !api.getParameters().isEmpty()) {
+            for (ApiParameterEntity apiParam : api.getParameters()) {
+                ParameterEntity param = new ParameterEntity();
+                param.setId(UUID.randomUUID().toString());
+                param.setGeneratedApiId(generatedApiId);
+                param.setKey(apiParam.getKey());
+                param.setValue(apiParam.getExample());
+                param.setDescription(apiParam.getDescription());
+                param.setEnabled(apiParam.getRequired() != null ? apiParam.getRequired() : true);
+                param.setDbColumn(apiParam.getDbColumn());
+                param.setDbParameter(apiParam.getDbParameter());
+                param.setParameterType(apiParam.getParameterType());
+                param.setOracleType(apiParam.getOracleType());
+                param.setApiType(apiParam.getApiType());
+                param.setParameterLocation(apiParam.getParameterLocation());
+                param.setRequired(apiParam.getRequired());
+                param.setValidationPattern(apiParam.getValidationPattern());
+                param.setDefaultValue(apiParam.getDefaultValue());
+                param.setInBody(apiParam.getInBody());
+                param.setIsPrimaryKey(apiParam.getIsPrimaryKey());
+                param.setParamMode(apiParam.getParamMode() != null ? apiParam.getParamMode() : "IN");
+                param.setPosition(apiParam.getPosition() != null ? apiParam.getPosition() : 0);
+                param.setRequest(request);
+                newParams.add(param);
+            }
+        }
+
+        if (!newParams.isEmpty()) {
+            collectionsParameterRepository.saveAll(newParams);
+        }
+
+        return newParams;
     }
 
     /**
@@ -214,106 +395,6 @@ public class CollectionsGeneratorUtil {
 
     // ==================== PRIVATE HELPER METHODS FOR UPDATES ====================
 
-    /**
-     * Update headers for an existing request
-     */
-    private void updateHeaders(com.usg.apiAutomation.entities.postgres.collections.RequestEntity request,
-                               GeneratedApiEntity api, String generatedApiId) {
-        // Delete existing headers
-        if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
-            collectionsHeaderRepository.deleteAll(request.getHeaders());
-            request.getHeaders().clear();
-        }
-
-        // Recreate headers
-        List<HeaderEntity> newHeaders = new ArrayList<>();
-
-        // Add headers from headers array
-        if (api.getHeaders() != null) {
-            for (ApiHeaderEntity apiHeader : api.getHeaders()) {
-                if (Boolean.TRUE.equals(apiHeader.getIsRequestHeader())) {
-                    HeaderEntity header = new HeaderEntity();
-                    header.setId(UUID.randomUUID().toString());
-                    header.setGeneratedApiId(generatedApiId);
-                    header.setKey(apiHeader.getKey());
-                    header.setValue(apiHeader.getValue() != null ? apiHeader.getValue() : "");
-                    header.setDescription(apiHeader.getDescription());
-                    header.setEnabled(apiHeader.getRequired() != null ? apiHeader.getRequired() : true);
-                    header.setRequest(request);
-                    newHeaders.add(header);
-                }
-            }
-        }
-
-        // Add header parameters
-        if (api.getParameters() != null) {
-            for (ApiParameterEntity apiParam : api.getParameters()) {
-                if ("header".equals(apiParam.getParameterType())) {
-                    HeaderEntity header = new HeaderEntity();
-                    header.setId(UUID.randomUUID().toString());
-                    header.setGeneratedApiId(generatedApiId);
-                    header.setKey(apiParam.getKey());
-                    header.setValue(apiParam.getExample() != null ? apiParam.getExample() : "");
-                    header.setDescription(apiParam.getDescription());
-                    header.setEnabled(apiParam.getRequired() != null ? apiParam.getRequired() : true);
-                    header.setRequest(request);
-                    newHeaders.add(header);
-                }
-            }
-        }
-
-        if (!newHeaders.isEmpty()) {
-            collectionsHeaderRepository.saveAll(newHeaders);
-            request.setHeaders(newHeaders);
-            collectionsRequestRepository.save(request);
-        }
-    }
-
-    /**
-     * Update parameters for an existing request
-     */
-    private void updateParameters(com.usg.apiAutomation.entities.postgres.collections.RequestEntity request,
-                                  GeneratedApiEntity api, String generatedApiId) {
-        // Delete existing parameters
-        if (request.getParams() != null && !request.getParams().isEmpty()) {
-            collectionsParameterRepository.deleteAll(request.getParams());
-            request.getParams().clear();
-        }
-
-        // Recreate parameters
-        if (api.getParameters() != null && !api.getParameters().isEmpty()) {
-            List<ParameterEntity> newParams = new ArrayList<>();
-
-            for (ApiParameterEntity apiParam : api.getParameters()) {
-                ParameterEntity param = new ParameterEntity();
-                param.setId(UUID.randomUUID().toString());
-                param.setGeneratedApiId(generatedApiId);
-                param.setKey(apiParam.getKey());
-                param.setValue(apiParam.getExample());
-                param.setDescription(apiParam.getDescription());
-                param.setEnabled(apiParam.getRequired() != null ? apiParam.getRequired() : true);
-                param.setDbColumn(apiParam.getDbColumn());
-                param.setDbParameter(apiParam.getDbParameter());
-                param.setParameterType(apiParam.getParameterType());
-                param.setOracleType(apiParam.getOracleType());
-                param.setApiType(apiParam.getApiType());
-                param.setParameterLocation(apiParam.getParameterLocation());
-                param.setRequired(apiParam.getRequired());
-                param.setValidationPattern(apiParam.getValidationPattern());
-                param.setDefaultValue(apiParam.getDefaultValue());
-                param.setInBody(apiParam.getInBody());
-                param.setIsPrimaryKey(apiParam.getIsPrimaryKey());
-                param.setParamMode(apiParam.getParamMode() != null ? apiParam.getParamMode() : "IN");
-                param.setPosition(apiParam.getPosition() != null ? apiParam.getPosition() : 0);
-                param.setRequest(request);
-                newParams.add(param);
-            }
-
-            collectionsParameterRepository.saveAll(newParams);
-            request.setParams(newParams);
-            collectionsRequestRepository.save(request);
-        }
-    }
 
     /**
      * Update auth config for an existing request
