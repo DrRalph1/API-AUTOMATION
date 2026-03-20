@@ -2153,6 +2153,17 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     hasRequestBody: !!request.requestBody
   });
 
+  // Add this helper function near the top of your component
+  const escapeXml = (str) => {
+    if (!str) return '';
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  };
+
   // Check if this is a new/empty request
   const isNewRequest = request.id?.startsWith('req-') || !request.url;
   
@@ -2633,54 +2644,204 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
           setRequestHeaders(uniqueHeaders);
         }
         
-        // Process request body
+        // Process request body based on bodyType
         if (details.requestBody) {
-          const bodyType = details.requestBody.bodyType;
+          const bodyType = details.requestBody.bodyType || 'raw';
+          const bodyParams = (details.parameters || []).filter(
+            p => p.parameterLocation?.toLowerCase() === 'body'
+          );
           
-          if (bodyType === 'form-data' && details.parameters) {
-            const bodyParams = details.parameters.filter(p => p.parameterLocation?.toLowerCase() === 'body');
-            if (bodyParams.length > 0) {
-              const formDataArray = bodyParams.map((param, index) => ({
-                id: param.id || `form-${Date.now()}-${index}-${Math.random()}`,
-                key: param.key || '',
-                value: param.value || param.defaultValue || param.example || '',
-                type: param.bodyFormat === 'file' ? 'file' : 'text',
-                enabled: true,
-                description: param.description || '',
-                required: param.required || false
-              }));
-              setFormData(formDataArray);
+          console.log('📦 Processing request body:', {
+            bodyType,
+            bodyParamsCount: bodyParams.length,
+            sample: details.requestBody.sample
+          });
+          
+          // Handle based on bodyType (this determines the UI representation)
+          switch (bodyType) {
+            case 'form-data':
+              // For form-data - parameters become form fields
+              if (bodyParams.length > 0) {
+                const formDataArray = bodyParams.map((param, index) => ({
+                  id: param.id || `form-${Date.now()}-${index}-${Math.random()}`,
+                  key: param.key || '',
+                  value: param.value || param.defaultValue || param.example || '',
+                  type: param.bodyFormat === 'file' ? 'file' : 'text',
+                  enabled: param.enabled !== false,
+                  description: param.description || '',
+                  required: param.required || false,
+                  file: null
+                }));
+                setFormData(formDataArray);
+              } else {
+                // If no parameters but we have a sample, try to parse it
+                if (details.requestBody.sample && details.requestBody.sample !== '{}') {
+                  try {
+                    const parsed = JSON.parse(details.requestBody.sample);
+                    const formDataArray = Object.entries(parsed).map(([key, value], index) => ({
+                      id: `form-${Date.now()}-${index}-${Math.random()}`,
+                      key: key,
+                      value: typeof value === 'object' ? JSON.stringify(value) : String(value),
+                      type: 'text',
+                      enabled: true,
+                      description: '',
+                      required: false,
+                      file: null
+                    }));
+                    setFormData(formDataArray);
+                  } catch (e) {
+                    setFormData([]);
+                  }
+                } else {
+                  setFormData([]);
+                }
+              }
               setRequestBodyType('form-data');
-            }
-          } 
-          else if (bodyType === 'x-www-form-urlencoded' && details.parameters) {
-            const bodyParams = details.parameters.filter(p => p.parameterLocation?.toLowerCase() === 'body');
-            if (bodyParams.length > 0) {
-              const urlEncodedArray = bodyParams.map((param, index) => ({
-                id: param.id || `url-${Date.now()}-${index}-${Math.random()}`,
-                key: param.key || '',
-                value: param.value || param.defaultValue || param.example || '',
-                description: param.description || '',
-                enabled: true,
-                required: param.required || false
-              }));
-              setUrlEncodedData(urlEncodedArray);
+              setRequestBody('');
+              break;
+              
+            case 'x-www-form-urlencoded':
+            case 'urlencoded':
+              // For URL-encoded form data
+              if (bodyParams.length > 0) {
+                const urlEncodedArray = bodyParams.map((param, index) => ({
+                  id: param.id || `url-${Date.now()}-${index}-${Math.random()}`,
+                  key: param.key || '',
+                  value: param.value || param.defaultValue || param.example || '',
+                  description: param.description || '',
+                  enabled: param.enabled !== false,
+                  required: param.required || false
+                }));
+                setUrlEncodedData(urlEncodedArray);
+              } else {
+                // If no parameters but we have a sample, try to parse it
+                if (details.requestBody.sample && details.requestBody.sample !== '{}') {
+                  try {
+                    const parsed = JSON.parse(details.requestBody.sample);
+                    const urlEncodedArray = Object.entries(parsed).map(([key, value], index) => ({
+                      id: `url-${Date.now()}-${index}-${Math.random()}`,
+                      key: key,
+                      value: String(value),
+                      description: '',
+                      enabled: true,
+                      required: false
+                    }));
+                    setUrlEncodedData(urlEncodedArray);
+                  } catch (e) {
+                    setUrlEncodedData([]);
+                  }
+                } else {
+                  setUrlEncodedData([]);
+                }
+              }
               setRequestBodyType('x-www-form-urlencoded');
-            }
-          } 
-          else if (bodyType === 'json' || bodyType === 'raw') {
-            setRequestBodyType('raw');
-            setRawBodyType('json');
-            
-            if (details.requestBody.sample) {
-              setRequestBody(details.requestBody.sample);
-            }
-          }
-          else if (bodyType === 'xml') {
-            setRequestBodyType('xml');
-            if (details.requestBody.sample) {
-              setRequestBody(details.requestBody.sample);
-            }
+              setRequestBody('');
+              break;
+              
+            case 'json':
+            case 'raw':
+              // For raw JSON body
+              setRequestBodyType('raw');
+              setRawBodyType('json');
+              
+              // Build JSON from body parameters if they exist
+              if (bodyParams.length > 0) {
+                const jsonBody = {};
+                bodyParams.forEach(param => {
+                  if (param.key) {
+                    // Try to parse the value if it looks like JSON
+                    let value = param.value || param.defaultValue || param.example || '';
+                    if (value && (value.startsWith('{') || value.startsWith('['))) {
+                      try {
+                        value = JSON.parse(value);
+                      } catch (e) {
+                        // Keep as string if not valid JSON
+                      }
+                    }
+                    jsonBody[param.key] = value;
+                  }
+                });
+                
+                // Start with built JSON
+                let finalBody = JSON.stringify(jsonBody, null, 2);
+                
+                // If there's a sample, try to merge or use it
+                if (details.requestBody.sample && details.requestBody.sample !== '{}') {
+                  try {
+                    const parsedSample = JSON.parse(details.requestBody.sample);
+                    const merged = { ...parsedSample, ...jsonBody };
+                    finalBody = JSON.stringify(merged, null, 2);
+                  } catch (e) {
+                    // If sample isn't valid JSON, use built JSON
+                    finalBody = JSON.stringify(jsonBody, null, 2);
+                  }
+                }
+                
+                setRequestBody(finalBody);
+                console.log('✅ Set JSON body:', finalBody);
+              } else if (details.requestBody.sample) {
+                // Use sample if no parameters
+                setRequestBody(details.requestBody.sample);
+                console.log('✅ Set JSON body from sample');
+              } else {
+                setRequestBody('{}');
+              }
+              break;
+              
+            case 'xml':
+              // For XML body
+              setRequestBodyType('xml');
+              setRawBodyType('xml');
+              
+              // Build XML from body parameters if they exist
+              if (bodyParams.length > 0) {
+                let xmlBody = '<?xml version="1.0" encoding="UTF-8"?>\n<request>\n';
+                bodyParams.forEach(param => {
+                  if (param.key) {
+                    const value = param.value || param.defaultValue || param.example || '';
+                    xmlBody += `  <${param.key}>${escapeXml(value)}</${param.key}>\n`;
+                  }
+                });
+                xmlBody += '</request>';
+                setRequestBody(xmlBody);
+              } else if (details.requestBody.sample) {
+                setRequestBody(details.requestBody.sample);
+              } else {
+                setRequestBody('<?xml version="1.0" encoding="UTF-8"?>\n<request>\n</request>');
+              }
+              break;
+              
+            case 'graphql':
+              // For GraphQL
+              setRequestBodyType('graphql');
+              if (details.requestBody.sample) {
+                try {
+                  const parsed = JSON.parse(details.requestBody.sample);
+                  setGraphqlQuery(parsed.query || '');
+                  setGraphqlVariables(JSON.stringify(parsed.variables || {}, null, 2));
+                } catch (e) {
+                  setGraphqlQuery(details.requestBody.sample || '');
+                  setGraphqlVariables('{}');
+                }
+              }
+              break;
+              
+            case 'binary':
+              // For binary
+              setRequestBodyType('binary');
+              setBinaryFile(null);
+              break;
+              
+            default:
+              // Default to none
+              setRequestBodyType('none');
+              setRequestBody('');
+              setFormData([]);
+              setUrlEncodedData([]);
+              setBinaryFile(null);
+              setGraphqlQuery('');
+              setGraphqlVariables('');
+              break;
           }
         }
         
