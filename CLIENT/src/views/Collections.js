@@ -2266,12 +2266,12 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
   setRequestBody(request.body || '');
   setRequestParams(request.queryParams || []);
   
-  // ============== FIXED: Path params extraction - ONLY from single curly braces ==============
+  // ============== FIXED: Path params extraction ==============
   // Set path params - extract from URL first
   const pathParamsFromUrl = [];
   if (initialTemplateUrl) {
     // Find all {param} placeholders in URL - ONLY single curly braces, NOT double
-    const placeholderRegex = /{([^{}]+)}/g; // This regex ensures we don't match {{ }}
+    const placeholderRegex = /{([^{}]+)}/g;
     let match;
     while ((match = placeholderRegex.exec(initialTemplateUrl)) !== null) {
       const paramName = match[1];
@@ -2289,9 +2289,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
   }
 
   // CRITICAL FIX: Filter out any path params that might have been incorrectly identified
-  // Also ensure we don't create path params from environment variables
   const cleanedPathParamsFromUrl = pathParamsFromUrl.filter(param => {
-    // Skip if the key looks like an environment variable (common names)
     const envVarPatterns = ['baseUrl', 'baseurl', 'base_url', 'base-url', 'host', 'apiUrl', 'apiurl'];
     if (envVarPatterns.includes(param.key.toLowerCase())) {
       console.log(`🧹 Filtering out environment variable as path param: ${param.key}`);
@@ -2300,11 +2298,8 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     return true;
   });
 
-  // Use URL-extracted params or fall back to request.pathParams
-  // But only if they're actually path parameters (from single curly braces)
   let initialPathParams = cleanedPathParamsFromUrl.length > 0 ? cleanedPathParamsFromUrl : [];
 
-  // If we have request.pathParams, add them only if they're not environment variables
   if (request.pathParams && request.pathParams.length > 0) {
     const filteredRequestPathParams = request.pathParams.filter(param => {
       const envVarPatterns = ['baseUrl', 'baseurl', 'base_url', 'base-url', 'host', 'apiUrl', 'apiurl'];
@@ -2315,7 +2310,6 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
       return true;
     });
     
-    // Merge with existing path params, avoiding duplicates
     filteredRequestPathParams.forEach(param => {
       if (!initialPathParams.some(p => p.key === param.key)) {
         initialPathParams.push({
@@ -2354,171 +2348,6 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
   }
   // ============== END PATH PARAMS FIX ==============
   
-  // ============== FIXED: Set auth with proper config ==============
-  console.log('🔐 Setting auth from request:', {
-    authType: request.authType,
-    authConfig: request.authConfig,
-    auth: request.auth
-  });
-
-  // Get the auth config from the most appropriate source
-  const authConfigFromRequest = request.authConfig || request.auth || {};
-  const authTypeFromRequest = request.authType || request.auth?.type || 'noauth';
-
-  // Process based on auth type
-  let processedAuthConfig = { type: authTypeFromRequest };
-  let authHeaders = [];
-
-  if (authTypeFromRequest === 'apikey') {
-    // For API Key, we need key and value
-    processedAuthConfig = {
-      type: 'apikey', // Keep the original type for saving
-      key: authConfigFromRequest.key || authConfigFromRequest.apiKey || '',
-      value: authConfigFromRequest.value || authConfigFromRequest.apiSecret || authConfigFromRequest.secret || '',
-      addTo: authConfigFromRequest.addTo || 'header'
-    };
-    console.log('🔐 Processing API Key config:', {
-      type: processedAuthConfig.type,
-      key: processedAuthConfig.key,
-      value: processedAuthConfig.value ? '***' : '(empty)',
-      addTo: processedAuthConfig.addTo
-    });
-    
-    // For API Key, set the Authorization tab to "No Auth" since API keys go in headers
-    setAuthType('noauth');
-    
-    // Add API Key headers
-    if (processedAuthConfig.key && processedAuthConfig.value) {
-      authHeaders.push({
-        id: `auth-header-${Date.now()}-1`,
-        key: processedAuthConfig.key,
-        value: processedAuthConfig.value,
-        description: 'API Key authentication',
-        enabled: true,
-        required: true
-      });
-    }
-  } 
-  else if (authTypeFromRequest === 'bearer') {
-    processedAuthConfig = {
-      type: 'bearer',
-      token: authConfigFromRequest.token || authConfigFromRequest.bearerToken || '',
-      tokenType: authConfigFromRequest.tokenType || 'Bearer'
-    };
-    console.log('🔐 Setting Bearer config (initial):', processedAuthConfig);
-    setAuthType('bearer');
-    
-    // Add Authorization header for Bearer token
-    if (processedAuthConfig.token) {
-      authHeaders.push({
-        id: `auth-header-${Date.now()}`,
-        key: 'Authorization',
-        value: `${processedAuthConfig.tokenType} ${processedAuthConfig.token}`,
-        description: 'Bearer token authentication',
-        enabled: true,
-        required: true
-      });
-    }
-  }
-  else if (authTypeFromRequest === 'basic') {
-  processedAuthConfig = {
-    type: 'basic',
-    username: authConfigFromRequest.username || authConfigFromRequest.basicUsername || '',
-    password: authConfigFromRequest.password || authConfigFromRequest.basicPassword || ''
-  };
-  console.log('🔐 Setting Basic config (initial):', {
-    ...processedAuthConfig,
-    password: processedAuthConfig.password ? '***' : '(empty)'
-  });
-  setAuthType('basic');
-  
-  // CRITICAL FIX: Switch to authorization tab when Basic Auth is set
-  setActiveTab('authorization');
-  
-  // Add Authorization header for Basic auth
-  if (processedAuthConfig.username && processedAuthConfig.password) {
-    const credentials = btoa(`${processedAuthConfig.username}:${processedAuthConfig.password}`);
-    authHeaders.push({
-      id: `auth-header-${Date.now()}`,
-      key: 'Authorization',
-      value: `Basic ${credentials}`,
-      description: 'Basic authentication',
-      enabled: true,
-      required: true
-    });
-  }
-}
-  else if (authTypeFromRequest === 'oauth2') {
-    processedAuthConfig = {
-      type: 'oauth2',
-      token: authConfigFromRequest.token || authConfigFromRequest.jwtToken || '',
-      tokenType: authConfigFromRequest.tokenType || 'Bearer'
-    };
-    console.log('🔐 Setting OAuth2 config (initial):', processedAuthConfig);
-    setAuthType('oauth2');
-    
-    // Add Authorization header for OAuth2
-    if (processedAuthConfig.token) {
-      authHeaders.push({
-        id: `auth-header-${Date.now()}`,
-        key: 'Authorization',
-        value: `Bearer ${processedAuthConfig.token}`,
-        description: 'OAuth2/JWT token authentication',
-        enabled: true,
-        required: true
-      });
-    }
-  }
-  else {
-    // No auth
-    processedAuthConfig = { type: 'noauth' };
-    setAuthType('noauth');
-  }
-
-  // Set the auth config in state
-  setAuthConfig(processedAuthConfig);
-  // ============== END AUTH FIX ==============
-  
-  setResponse(null);
-  
-  // Set the selected request
-  const requestWithContext = { ...request, collectionId, folderId };
-  setSelectedRequest(requestWithContext);
-  
-  // Update tabs
-  setRequestTabs(tabs => {
-    const existingTab = tabs.find(t => t.id === request.id);
-    if (existingTab) {
-      return tabs.map(t => ({ ...t, isActive: t.id === request.id }));
-    } else {
-      return tabs.map(t => ({ ...t, isActive: false }))
-        .concat({ 
-          id: request.id, 
-          name: request.name, 
-          method: request.method, 
-          collectionId, 
-          folderId, 
-          isActive: true 
-        });
-    }
-  });
-  
-  // Parse URL for query params
-  if (request.url && request.url.includes('?')) {
-    const parsed = parseUrlIntoTemplateAndParams(request.url);
-    if (parsed.queryParams.length > 0) {
-      setRequestParams(prev => {
-        const merged = [...prev];
-        parsed.queryParams.forEach(p => {
-          if (!merged.some(m => m.key === p.key)) {
-            merged.push(p);
-          }
-        });
-        return merged;
-      });
-    }
-  }
-  
   // Then fetch additional details from API
   if (authToken && request.id && collectionId) {
     setLoading(prev => ({ ...prev, request: true }));
@@ -2540,101 +2369,78 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
           jwtToken: details.authConfig?.jwtToken ? 'present' : 'absent'
         });
         
-        // ============== FIX: Declare apiAuthHeaders at the beginning ==============
-        let apiAuthHeaders = []; // <-- DECLARE IT HERE
-        // ============== END FIX ==============
+        // ============== FIXED: Extract API Key and Secret properly ==============
+        let apiAuthHeaders = [];
         
-        // ============== FIXED: Update auth from API details ==============
         if (details.authConfig) {
           console.log('🔐 Full auth config from API:', details.authConfig);
           
-          // Get the auth type from the config - this is where the issue is
-          const apiAuthType = details.authConfig.authType || details.authType || authTypeFromRequest;
+          const apiAuthType = details.authConfig.authType || details.authType || request.authType;
           
           console.log('🔐 Detected auth type:', apiAuthType);
           
-          // CRITICAL FIX: Check for basic auth first (since it's the one we're having issues with)
-          if (apiAuthType === 'basic') {
-            // ============== FIX: Properly handle Basic Auth ==============
-            const apiProcessedConfig = {
-              type: 'basic',
-              username: details.authConfig.basicUsername || 
-                        details.authConfig.username || 
-                        processedAuthConfig.username || '',
-              password: details.authConfig.basicPassword || 
-                        details.authConfig.password || 
-                        processedAuthConfig.password || '',
-              realm: details.authConfig.basicRealm || ''
-            };
+          // ============== FIX: Handle API Key with Secret ==============
+          if (apiAuthType === 'apikey' || apiAuthType === 'apiKey') {
+            // Extract API Key and Secret from authConfig
+            const apiKeyHeader = details.authConfig.apiKeyHeader || details.authConfig.key || '';
+            const apiKeyValue = details.authConfig.apiKeyValue || details.authConfig.value || '';
+            const apiSecretHeader = details.authConfig.apiSecretHeader || '';
+            const apiSecretValue = details.authConfig.apiSecretValue || '';
             
-            console.log('🔐 Setting Basic config from API:', {
-              ...apiProcessedConfig,
-              password: apiProcessedConfig.password ? '***' : '(empty)'
+            console.log('🔐 Extracted API Key config:', {
+              apiKeyHeader,
+              apiKeyValue: apiKeyValue ? '***' : '(empty)',
+              apiSecretHeader,
+              apiSecretValue: apiSecretValue ? '***' : '(empty)'
             });
             
-            // CRITICAL FIX: Set authType to 'basic' for UI
-            setAuthType('basic');
-            setAuthConfig(apiProcessedConfig);
-            
-            // Switch to authorization tab so user can see the Basic Auth form
-            setActiveTab('authorization');
-            
-            // Build Authorization header for Basic auth
-            if (apiProcessedConfig.username && apiProcessedConfig.password) {
-              const credentials = btoa(`${apiProcessedConfig.username}:${apiProcessedConfig.password}`);
-              apiAuthHeaders.push({
-                id: `auth-header-${Date.now()}`,
-                key: 'Authorization',
-                value: `Basic ${credentials}`,
-                description: 'Basic authentication',
-                enabled: true,
-                required: true
-              });
-              console.log('✅ Added Basic Authorization header');
-            } else {
-              console.warn('⚠️ Basic auth missing username or password');
-            }
-            // ============== END BASIC AUTH FIX ==============
-          }
-          else if (apiAuthType === 'apikey' || details.authConfig.authType === 'apiKey') {
-            // Handle API Key from API
+            // Set auth config with both key and secret
             const apiProcessedConfig = {
               type: 'apikey',
-              key: details.authConfig.key || 
-                    details.authConfig.apiKeyHeader || 
-                    processedAuthConfig.key || '',
-              value: details.authConfig.value || 
-                    details.authConfig.apiKeyValue || 
-                    processedAuthConfig.value || '',
-              addTo: details.authConfig.addTo || processedAuthConfig.addTo || 'header'
+              authType: 'apikey',
+              key: apiKeyHeader,
+              value: apiKeyValue,
+              apiKeyHeader: apiKeyHeader,
+              apiKeyValue: apiKeyValue,
+              apiSecretHeader: apiSecretHeader,
+              apiSecretValue: apiSecretValue,
+              addTo: details.authConfig.addTo || 'header'
             };
-            console.log('🔐 Processing API Key config from API:', apiProcessedConfig);
             
-            // Keep authType as 'noauth' for the UI (API keys go in headers)
-            setAuthType('noauth');
+            // Set authType to 'apikey' to show the editing form with actual values
+            setAuthType('apikey');
+            setAuthConfig(apiProcessedConfig);
             
-            // Build API Key headers
-            if (apiProcessedConfig.key && apiProcessedConfig.value) {
+            // Build headers for API Key and Secret
+            if (apiKeyHeader && apiKeyValue) {
               apiAuthHeaders.push({
                 id: `auth-header-${Date.now()}-key`,
-                key: apiProcessedConfig.key,
-                value: apiProcessedConfig.value,
+                key: apiKeyHeader,
+                value: apiKeyValue,
                 description: 'API Key authentication',
                 enabled: true,
                 required: true
               });
             }
             
-            // Update the auth config in state
-            setAuthConfig(apiProcessedConfig);
-          } 
+            if (apiSecretHeader && apiSecretValue) {
+              apiAuthHeaders.push({
+                id: `auth-header-${Date.now()}-secret`,
+                key: apiSecretHeader,
+                value: apiSecretValue,
+                description: 'API Secret authentication',
+                enabled: true,
+                required: true
+              });
+            }
+          }
+          // ============== END API KEY FIX ==============
+          
           else if (apiAuthType === 'bearer') {
             const apiProcessedConfig = {
               type: 'bearer',
-              token: details.authConfig.token || 
-                    details.authConfig.bearerToken || 
-                    processedAuthConfig.token || '',
-              tokenType: details.authConfig.tokenType || processedAuthConfig.tokenType || 'Bearer'
+              token: details.authConfig.token || details.authConfig.bearerToken || '',
+              tokenType: details.authConfig.tokenType || 'Bearer'
             };
             console.log('🔐 Setting Bearer config from API:', apiProcessedConfig);
             
@@ -2652,24 +2458,37 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
               });
             }
           }
-          else if (apiAuthType === 'oauth2') {
-            // Handle OAuth2/JWT token
-            let jwtToken = '';
+          else if (apiAuthType === 'basic') {
+            const apiProcessedConfig = {
+              type: 'basic',
+              username: details.authConfig.basicUsername || details.authConfig.username || '',
+              password: details.authConfig.basicPassword || details.authConfig.password || '',
+              realm: details.authConfig.basicRealm || ''
+            };
             
-            // Check all possible sources for the JWT token
-            if (details.authConfig.jwtToken) {
-              jwtToken = details.authConfig.jwtToken;
-              console.log('✅ Found jwtToken in authConfig.jwtToken');
-            } else if (details.authConfig.token) {
-              jwtToken = details.authConfig.token;
-              console.log('✅ Found token in authConfig.token');
-            } else if (details.authConfig.oauthToken) {
-              jwtToken = details.authConfig.oauthToken;
-              console.log('✅ Found token in authConfig.oauthToken');
-            } else if (processedAuthConfig.token) {
-              jwtToken = processedAuthConfig.token;
-              console.log('✅ Using existing token from processedAuthConfig');
+            console.log('🔐 Setting Basic config from API:', {
+              ...apiProcessedConfig,
+              password: apiProcessedConfig.password ? '***' : '(empty)'
+            });
+            
+            setAuthType('basic');
+            setAuthConfig(apiProcessedConfig);
+            setActiveTab('authorization');
+            
+            if (apiProcessedConfig.username && apiProcessedConfig.password) {
+              const credentials = btoa(`${apiProcessedConfig.username}:${apiProcessedConfig.password}`);
+              apiAuthHeaders.push({
+                id: `auth-header-${Date.now()}`,
+                key: 'Authorization',
+                value: `Basic ${credentials}`,
+                description: 'Basic authentication',
+                enabled: true,
+                required: true
+              });
             }
+          }
+          else if (apiAuthType === 'oauth2') {
+            let jwtToken = details.authConfig.jwtToken || details.authConfig.token || details.authConfig.oauthToken || '';
             
             const apiProcessedConfig = {
               type: 'oauth2',
@@ -2683,8 +2502,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
             
             console.log('🔐 Setting OAuth2 config from API:', {
               ...apiProcessedConfig,
-              token: apiProcessedConfig.token ? `${apiProcessedConfig.token.substring(0, 50)}...` : '(empty)',
-              tokenLength: apiProcessedConfig.token?.length || 0
+              token: apiProcessedConfig.token ? `${apiProcessedConfig.token.substring(0, 50)}...` : '(empty)'
             });
             
             setAuthType('oauth2');
@@ -2699,107 +2517,12 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
                 enabled: true,
                 required: true
               });
-              console.log('✅ Added Authorization header with JWT token');
-            } else {
-              console.warn('⚠️ No JWT token found in API response');
             }
-          }
-          
-          // If we have API auth headers, store them for later merging
-          if (apiAuthHeaders.length > 0) {
-            console.log('📌 API auth headers prepared:', apiAuthHeaders.map(h => h.key));
-            // We'll merge these with other headers after processing parameters
           }
         }
         // ============== END AUTH FIX ==============
         
-        // Log body parameters specifically
-        const bodyParams = details.parameters?.filter(p => 
-          p.parameterLocation?.toLowerCase() === 'body'
-        ) || [];
-        console.log('📦 Body parameters found:', bodyParams.length, bodyParams);
-        
-        // IMPORTANT: Process body type and parameters from API details
-        if (details.requestBody && details.requestBody.bodyType) {
-          const bodyType = details.requestBody.bodyType;
-          console.log(`📦 Setting body type from API details: ${bodyType}`);
-          
-          // Get all body parameters
-          const bodyParams = details.parameters?.filter(p => 
-            p.parameterLocation?.toLowerCase() === 'body'
-          ) || [];
-          
-          console.log(`📦 Found ${bodyParams.length} body parameters for ${bodyType}`);
-          
-          if (bodyType === 'form-data') {
-            setRequestBodyType('form-data');
-            if (bodyParams.length > 0) {
-              const formDataArray = bodyParams.map((param, index) => ({
-                id: param.id || `form-${Date.now()}-${index}-${Math.random()}`,
-                key: param.key || '',
-                value: param.value || param.defaultValue || param.example || '',
-                type: param.bodyFormat === 'file' ? 'file' : 'text',
-                enabled: true,
-                description: param.description || '',
-                required: param.required || false
-              }));
-              setFormData(formDataArray);
-            }
-          } 
-          else if (bodyType === 'x-www-form-urlencoded' || bodyType === 'urlencoded') {
-            setRequestBodyType('x-www-form-urlencoded');
-            if (bodyParams.length > 0) {
-              const urlEncodedArray = bodyParams.map((param, index) => ({
-                id: param.id || `url-${Date.now()}-${index}-${Math.random()}`,
-                key: param.key || '',
-                value: param.value || param.defaultValue || param.example || '',
-                description: param.description || '',
-                enabled: true,
-                required: param.required || false
-              }));
-              setUrlEncodedData(urlEncodedArray);
-            }
-          } 
-          else if (bodyType === 'json' || bodyType === 'raw') {
-            setRequestBodyType('raw');
-            setRawBodyType('json');
-            
-            if (bodyParams.length > 0) {
-              const jsonObject = {};
-              bodyParams.forEach(param => {
-                if (param.key) {
-                  let value = param.value || param.defaultValue || param.example || '';
-                  if (param.type === 'integer' || param.type === 'number') {
-                    const num = Number(value);
-                    if (!isNaN(num)) value = num;
-                  } else if (param.type === 'boolean') {
-                    value = value === 'true' || value === true;
-                  }
-                  jsonObject[param.key] = value;
-                }
-              });
-              
-              if (details.requestBody.sample) {
-                try {
-                  const existingBody = JSON.parse(details.requestBody.sample);
-                  setRequestBody(JSON.stringify({ ...existingBody, ...jsonObject }, null, 2));
-                } catch {
-                  setRequestBody(JSON.stringify(jsonObject, null, 2));
-                }
-              } else {
-                setRequestBody(JSON.stringify(jsonObject, null, 2));
-              }
-            } else if (details.requestBody.sample) {
-              setRequestBody(details.requestBody.sample);
-            }
-          }
-        }
-        
-        if (details.method && details.method !== request.method) {
-          setRequestMethod(details.method);
-        }
-        
-        // Separate parameters based on location
+        // Process body parameters and other details
         if (details.parameters) {
           const queryParams = [];
           const pathParams = [];
@@ -2808,10 +2531,9 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
           
           console.log('📊 Processing parameters from API:', details.parameters.length);
           
-          // First, collect all path parameters from the template URL
           const templateUrlPathParams = [];
           if (initialTemplateUrl) {
-            const placeholderRegex = /{([^{}]+)}/g; // Updated regex to avoid {{ }}
+            const placeholderRegex = /{([^{}]+)}/g;
             let match;
             while ((match = placeholderRegex.exec(initialTemplateUrl)) !== null) {
               templateUrlPathParams.push(match[1]);
@@ -2834,38 +2556,21 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
                 example: param.example || ''
               };
               
-              console.log(`📍 [API] Parameter ${param.key}: location = ${param.parameterLocation}`);
-              
               const location = (param.parameterLocation || '').toLowerCase();
-              
-              // CRITICAL FIX: Check if this is a path parameter based on URL
               const isInTemplateUrl = templateUrlPathParams.includes(param.key);
               
               if (isInTemplateUrl || location === 'path') {
                 pathParams.push(paramObject);
-                console.log(`🛣️ Added to PATH params: ${param.key} (from URL template or location)`);
               } else if (location === 'query') {
                 queryParams.push(paramObject);
               } else if (location === 'header') {
                 headerParams.push(paramObject);
-                console.log(`📌 Added to HEADER params: ${param.key}`);
               } else if (location === 'body') {
                 bodyParams.push(paramObject);
-                console.log(`📦 Body parameter: ${param.key}`);
               } else {
-                // Default to query params
                 queryParams.push(paramObject);
-                console.log(`🔍 Defaulted to QUERY param: ${param.key}`);
               }
             }
-          });
-          
-          console.log('📊 [Separated Parameters]', {
-            query: queryParams.length,
-            path: pathParams.length,
-            header: headerParams.length,
-            body: bodyParams.length,
-            templateUrlPathParams
           });
           
           if (queryParams.length > 0) {
@@ -2874,83 +2579,15 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
           }
           
           if (pathParams.length > 0) {
-            console.log('🛣️ Setting path params:', pathParams);
-            
-            // Add position information based on order in URL
-            const pathParamsWithPosition = pathParams.map((param, index) => ({
-              ...param,
-              position: index,
-              id: param.id || `path-${Date.now()}-${index}-${Math.random()}`
-            }));
-            
-            // CRITICAL FIX: Filter out any path params that have placeholder values
-            const cleanedPathParams = pathParamsWithPosition.map(param => {
-              // Check if the value contains any placeholder patterns
-              const value = param.value || '';
-              
-              // If the value contains {, }, or %7B, %7D (encoded curly braces), treat it as empty
-              const hasPlaceholder = value.includes('{') || value.includes('}') || 
-                                    value.includes('%7B') || value.includes('%7D');
-              
-              return {
-                ...param,
-                // Only keep the value if it's a real value (not a placeholder)
-                value: hasPlaceholder ? '' : value
-              };
-            });
-            
-            console.log('🧹 Cleaned path params with position:', cleanedPathParams);
-            setRequestPathParams(cleanedPathParams);
-            
-            // Build the URL with path params, but don't add extra placeholders
-            let updatedUrl = initialTemplateUrl;
-            
-            // Create a map of placeholders to values - only include real values
-            const paramValueMap = new Map();
-            pathParams.forEach(param => {
-              const value = param.value || '';
-              const hasPlaceholder = value.includes('{') || value.includes('}') || 
-                                    value.includes('%7B') || value.includes('%7D');
-              
-              // Only add to map if it's a real value (not a placeholder)
-              if (param.key && value && value.trim() !== '' && !hasPlaceholder) {
-                paramValueMap.set(param.key, value);
-              }
-            });
-            
-            // Replace placeholders with values
-            const placeholders = Array.from(paramValueMap.keys());
-            
-            placeholders.forEach(key => {
-              const value = paramValueMap.get(key);
-              const placeholder = `{${key}}`;
-              
-              if (updatedUrl.includes(placeholder)) {
-                const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-                updatedUrl = updatedUrl.replace(regex, value);
-              }
-            });
-            
-            // Add query params if they have values
-            const queryString = queryParams
-              .filter(p => p.enabled && p.key && p.key.trim() !== '' && p.value && p.value.trim() !== '')
-              .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
-              .join('&');
-            
-            const finalUrl = queryString ? `${updatedUrl}?${queryString}` : updatedUrl;
-            
-            console.log('✅ Updated URL with API path params and query params:', finalUrl);
-            setRequestUrl(finalUrl);
+            console.log('🛣️ Setting path params from API:', pathParams);
+            setRequestPathParams(pathParams);
           }
           
-          // ============== SIMPLIFIED FIX: Include ALL headers without filtering ==============
-          // Collect all headers from API details
-          const allHeaders = [];
+          // Process headers from API details
+          const allHeaders = [...apiAuthHeaders];
           
-          // 1. Add header parameters (parameters with location='header')
+          // Add header parameters (parameters with location='header')
           if (headerParams.length > 0) {
-            console.log('📌 Adding header parameters to headers:', headerParams);
-            
             headerParams.forEach(param => {
               allHeaders.push({
                 id: param.id || `header-${Date.now()}-${Math.random()}`,
@@ -2963,127 +2600,86 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
             });
           }
           
-          // 2. Add regular headers from details.headers array
+          // Add regular headers from details.headers array
           if (details.headers && details.headers.length > 0) {
-            console.log('📌 Adding regular headers from details:', details.headers);
-            
             details.headers.forEach((header, idx) => {
-              allHeaders.push({
-                id: header.id || `header-${Date.now()}-${idx}-${Math.random()}`,
-                key: header.key,
-                value: header.value || '',
-                description: header.description || '',
-                enabled: header.enabled !== false,
-                required: header.required || false
-              });
+              const isAuthHeader = allHeaders.some(h => h.key?.toLowerCase() === header.key?.toLowerCase());
+              if (!isAuthHeader) {
+                allHeaders.push({
+                  id: header.id || `header-${Date.now()}-${idx}-${Math.random()}`,
+                  key: header.key,
+                  value: header.value || '',
+                  description: header.description || '',
+                  enabled: header.enabled !== false,
+                  required: header.required || false
+                });
+              }
             });
           }
           
-          // 3. Add any auth headers from the processed auth config
-          if (authHeaders.length > 0) {
-            console.log('📌 Adding auth headers:', authHeaders);
-            allHeaders.push(...authHeaders);
-          }
-          
-          // 4. Add any API auth headers from the auth config
-          if (apiAuthHeaders && apiAuthHeaders.length > 0) {
-            console.log('📌 Adding API auth headers:', apiAuthHeaders);
-            allHeaders.push(...apiAuthHeaders);
-          }
-          
-          // Remove duplicates by key (case-insensitive) - keep the first occurrence
+          // Remove duplicates
           const uniqueHeaders = [];
           const headerKeys = new Set();
           
-          // Process in order: auth headers should take precedence, so we add them first
-          // but since we're pushing them first in the array, they'll be kept when we dedupe
           allHeaders.forEach(header => {
             const keyLower = header.key?.toLowerCase();
             if (keyLower && !headerKeys.has(keyLower)) {
               headerKeys.add(keyLower);
               uniqueHeaders.push(header);
-            } else {
-              console.log(`🔄 Skipping duplicate header: ${header.key}`);
             }
           });
           
-          console.log('📌 Final headers (all included, no filtering):', uniqueHeaders.map(h => h.key));
+          console.log('📌 Final headers (including API Key/Secret):', uniqueHeaders.map(h => h.key));
           setRequestHeaders(uniqueHeaders);
-          // ============== END SIMPLIFIED FIX ==============
+        }
+        
+        // Process request body
+        if (details.requestBody) {
+          const bodyType = details.requestBody.bodyType;
           
-          if (bodyParams.length > 0) {
-            console.log('📦 Body parameters found:', bodyParams);
-            
-            if (details.requestBody && details.requestBody.bodyType === 'xml') {
-              setRequestBodyType('xml');
-              
-              if (bodyParams.length > 0) {
-                const xmlBuilder = ['<?xml version="1.0" encoding="UTF-8"?>', '<request>'];
-                bodyParams.forEach(param => {
-                  if (param.key) {
-                    xmlBuilder.push(`  <${param.key}>${param.value || param.defaultValue || ''}</${param.key}>`);
-                  }
-                });
-                xmlBuilder.push('</request>');
-                setRequestBody(xmlBuilder.join('\n'));
-              } else if (details.requestBody.sample) {
-                setRequestBody(details.requestBody.sample);
-              }
-            }
-            else if (details.requestBody && details.requestBody.bodyType === 'json') {
-              setRequestBodyType('raw');
-              setRawBodyType('json');
-              
-              if (bodyParams.length > 0) {
-                const jsonObject = {};
-                bodyParams.forEach(param => {
-                  if (param.key) {
-                    let value = param.value || param.defaultValue || param.example || '';
-                    if (param.type === 'integer' || param.type === 'number') {
-                      const num = Number(value);
-                      if (!isNaN(num)) value = num;
-                    } else if (param.type === 'boolean') {
-                      value = value === 'true' || value === true;
-                    }
-                    jsonObject[param.key] = value;
-                  }
-                });
-                
-                if (Object.keys(jsonObject).length > 0) {
-                  setRequestBody(JSON.stringify(jsonObject, null, 2));
-                } else if (details.requestBody.sample) {
-                  setRequestBody(details.requestBody.sample);
-                }
-              }
-            }
-            else if (details.requestBody && details.requestBody.bodyType === 'form-data') {
+          if (bodyType === 'form-data' && details.parameters) {
+            const bodyParams = details.parameters.filter(p => p.parameterLocation?.toLowerCase() === 'body');
+            if (bodyParams.length > 0) {
+              const formDataArray = bodyParams.map((param, index) => ({
+                id: param.id || `form-${Date.now()}-${index}-${Math.random()}`,
+                key: param.key || '',
+                value: param.value || param.defaultValue || param.example || '',
+                type: param.bodyFormat === 'file' ? 'file' : 'text',
+                enabled: true,
+                description: param.description || '',
+                required: param.required || false
+              }));
+              setFormData(formDataArray);
               setRequestBodyType('form-data');
-              if (bodyParams.length > 0) {
-                const formDataArray = bodyParams.map((param, index) => ({
-                  id: param.id || `form-${Date.now()}-${index}-${Math.random()}`,
-                  key: param.key || '',
-                  value: param.value || param.defaultValue || param.example || '',
-                  type: param.bodyFormat === 'file' ? 'file' : 'text',
-                  enabled: true,
-                  description: param.description || '',
-                  required: param.required || false
-                }));
-                setFormData(formDataArray);
-              }
             }
-            else if (details.requestBody && details.requestBody.bodyType === 'x-www-form-urlencoded') {
+          } 
+          else if (bodyType === 'x-www-form-urlencoded' && details.parameters) {
+            const bodyParams = details.parameters.filter(p => p.parameterLocation?.toLowerCase() === 'body');
+            if (bodyParams.length > 0) {
+              const urlEncodedArray = bodyParams.map((param, index) => ({
+                id: param.id || `url-${Date.now()}-${index}-${Math.random()}`,
+                key: param.key || '',
+                value: param.value || param.defaultValue || param.example || '',
+                description: param.description || '',
+                enabled: true,
+                required: param.required || false
+              }));
+              setUrlEncodedData(urlEncodedArray);
               setRequestBodyType('x-www-form-urlencoded');
-              if (bodyParams.length > 0) {
-                const urlEncodedArray = bodyParams.map((param, index) => ({
-                  id: param.id || `url-${Date.now()}-${index}-${Math.random()}`,
-                  key: param.key || '',
-                  value: param.value || param.defaultValue || param.example || '',
-                  description: param.description || '',
-                  enabled: true,
-                  required: param.required || false
-                }));
-                setUrlEncodedData(urlEncodedArray);
-              }
+            }
+          } 
+          else if (bodyType === 'json' || bodyType === 'raw') {
+            setRequestBodyType('raw');
+            setRawBodyType('json');
+            
+            if (details.requestBody.sample) {
+              setRequestBody(details.requestBody.sample);
+            }
+          }
+          else if (bodyType === 'xml') {
+            setRequestBodyType('xml');
+            if (details.requestBody.sample) {
+              setRequestBody(details.requestBody.sample);
             }
           }
         }
@@ -4107,446 +3703,554 @@ const separateParamsAndHeaders = (items) => {
   // ==================== UI COMPONENTS ====================
 
   // Render Authorization Tab
-  const renderAuthTab = () => {
-    const authTypes = [
-      { id: 'noauth', name: 'No Auth', icon: <Globe size={16} />, description: 'No authorization required' },
-      { id: 'bearer', name: 'Bearer Token', icon: <Key size={16} />, description: 'Token-based authentication' },
-      { id: 'basic', name: 'Basic Auth', icon: <Shield size={16} />, description: 'Username and password' },
-      { id: 'apikey', name: 'API Key', icon: <Key size={16} />, description: 'API key authentication' },
-      { id: 'oauth2', name: 'OAuth 2.0', icon: <ShieldCheck size={16} />, description: 'OAuth 2.0 protocol' }
-    ];
+ const renderAuthTab = () => {
+  const authTypes = [
+    { id: 'noauth', name: 'No Auth', icon: <Globe size={16} />, description: 'No authorization required' },
+    { id: 'bearer', name: 'Bearer Token', icon: <Key size={16} />, description: 'Token-based authentication' },
+    { id: 'basic', name: 'Basic Auth', icon: <Shield size={16} />, description: 'Username and password' },
+    { id: 'apikey', name: 'API Key', icon: <Key size={16} />, description: 'API key authentication' },
+    { id: 'oauth2', name: 'OAuth 2.0', icon: <ShieldCheck size={16} />, description: 'OAuth 2.0 protocol' }
+  ];
 
-    // Check if the request has API Key auth config (even though authType is 'noauth')
-    const hasApiKeyConfig = authConfig && authConfig.type === 'noauth';
-    
-    // Determine what to display in the type dropdown
-    let displayAuthType = authType;
-    
-    // If we have API Key config but authType is 'noauth', still show the type as 'apikey' in the dropdown
-    // but we'll handle it differently in the UI
-    // if (hasApiKeyConfig) {
-    //   displayAuthType = 'apikey';
-    // }
-    
-    const currentAuthType = authTypes.find(type => type.id === displayAuthType);
+  // Check if the request has API Key auth config
+  const hasApiKeyConfig = authConfig && (authConfig.type === 'apikey' || authConfig.authType === 'apikey');
+  const displayAuthType = (authType === 'apikey' || hasApiKeyConfig) ? 'apikey' : authType;
+  const currentAuthType = authTypes.find(type => type.id === displayAuthType);
 
-    return (
-      <div className="p-4 h-full overflow-auto">
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-            Type
-          </label>
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowAuthDropdown(!showAuthDropdown)}
-              className="w-full px-3 py-2 rounded text-sm flex items-center justify-between hover:bg-opacity-50 transition-colors border hover-lift"
-              style={{ 
-                backgroundColor: colors.inputBg,
-                borderColor: colors.border,
-                color: colors.text
-              }}>
-              <div className="flex items-center gap-2">
-                {currentAuthType?.icon}
-                <span>{currentAuthType?.name}</span>
-              </div>
-              <ChevronDown size={14} style={{ color: colors.textSecondary }} />
-            </button>
+  return (
+    <div className="p-4 h-full overflow-auto">
+      <div className="mb-4">
+        <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+          Type
+        </label>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowAuthDropdown(!showAuthDropdown)}
+            className="w-full px-3 py-2 rounded text-sm flex items-center justify-between hover:bg-opacity-50 transition-colors border hover-lift"
+            style={{ 
+              backgroundColor: colors.inputBg,
+              borderColor: colors.border,
+              color: colors.text
+            }}>
+            <div className="flex items-center gap-2">
+              {currentAuthType?.icon}
+              <span>{currentAuthType?.name}</span>
+            </div>
+            <ChevronDown size={14} style={{ color: colors.textSecondary }} />
+          </button>
 
-            {showAuthDropdown && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowAuthDropdown(false)} />
-                <div className="absolute left-0 right-0 top-full mt-1 py-2 rounded shadow-lg z-50 border"
-                  style={{ 
-                    backgroundColor: colors.bg,
-                    borderColor: colors.border,
-                    maxHeight: '300px',
-                    overflowY: 'auto'
-                  }}>
-                  {authTypes.map(type => (
-                    <button
-                      key={type.id}
-                      type="button"
-                      onClick={() => {
-                        // Special handling for API Key - we want to set authType to 'noauth' for UI
-                        // but store the config with type 'apikey'
-                        if (type.id === 'apikey') {
-                          // Set authType to 'noauth' for UI display
-                          setAuthType('noauth');
-                          // Initialize API Key config
+          {showAuthDropdown && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowAuthDropdown(false)} />
+              <div className="absolute left-0 right-0 top-full mt-1 py-2 rounded shadow-lg z-50 border"
+                style={{ 
+                  backgroundColor: colors.bg,
+                  borderColor: colors.border,
+                  maxHeight: '300px',
+                  overflowY: 'auto'
+                }}>
+                {authTypes.map(type => (
+                  <button
+                    key={type.id}
+                    type="button"
+                    onClick={() => {
+                      if (type.id === 'apikey') {
+                        setAuthType('apikey');
+                        if (!authConfig || authConfig.type !== 'apikey') {
                           setAuthConfig({
                             type: 'apikey',
+                            authType: 'apikey',
                             key: '',
                             value: '',
+                            apiKeyHeader: '',
+                            apiKeyValue: '',
+                            apiSecretHeader: '',
+                            apiSecretValue: '',
                             addTo: 'header'
                           });
-                          // Show a toast to guide the user
-                          showToast('API Key will be added to Headers tab', 'info');
-                        } else {
-                          // For other auth types, set normally
-                          setAuthType(type.id);
-                          setAuthConfig({ ...authConfig, type: type.id });
                         }
-                        setShowAuthDropdown(false);
-                      }}
-                      className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors hover-lift"
-                      style={{ 
-                        backgroundColor: displayAuthType === type.id ? colors.selected : 'transparent',
-                        color: displayAuthType === type.id ? colors.primary : colors.text
-                      }}
-                    >
-                      {type.icon}
-                      {type.name}
-                      {displayAuthType === type.id && <Check size={14} className="ml-auto" />}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-          {currentAuthType && (
-            <p className="text-xs mt-1" style={{ color: colors.textSecondary }}>
-              {currentAuthType.description}
-            </p>
+                      } else {
+                        setAuthType(type.id);
+                        setAuthConfig({ ...authConfig, type: type.id, authType: type.id });
+                      }
+                      setShowAuthDropdown(false);
+                    }}
+                    className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors hover-lift"
+                    style={{ 
+                      backgroundColor: displayAuthType === type.id ? colors.selected : 'transparent',
+                      color: displayAuthType === type.id ? colors.primary : colors.text
+                    }}
+                  >
+                    {type.icon}
+                    {type.name}
+                    {displayAuthType === type.id && <Check size={14} className="ml-auto" />}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
+        {currentAuthType && (
+          <p className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+            {currentAuthType.description}
+          </p>
+        )}
+      </div>
 
-        {/* Dynamic auth forms */}
-        <div className="mt-6">
-          {/* If we have API Key config but authType is 'noauth', show a message */}
-          {hasApiKeyConfig && (
-            <div className="text-center py-8">
-              <Key size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
-              <h3 className="text-sm font-semibold mb-2" style={{ color: colors.text }}>API Key Authentication</h3>
-              <p className="text-sm max-w-sm mx-auto mb-4" style={{ color: colors.textSecondary }}>
-                API Key is configured in the Headers tab.
-              </p>
-              <div className="flex justify-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('headers')}
-                  className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.primaryDark, color: colors.white }}
-                >
-                  Go to Headers
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    // Switch to API Key editing mode
-                    setAuthType('apikey');
-                  }}
-                  className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.hover, color: colors.text }}
-                >
-                  Edit API Key
-                </button>
-              </div>
+      {/* Dynamic auth forms */}
+      <div className="mt-6">
+        {/* API Key editing form - shows both Key and Secret */}
+        {(authType === 'apikey' || hasApiKeyConfig) && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+                API Key Name
+              </label>
+              <input
+                type="text"
+                value={authConfig.apiKeyHeader || authConfig.key || ''}
+                onChange={(e) => setAuthConfig({ 
+                  ...authConfig, 
+                  apiKeyHeader: e.target.value,
+                  key: e.target.value 
+                })}
+                className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
+                style={{
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.border,
+                  color: colors.text
+                }}
+                placeholder="e.g., X-API-Key"
+              />
             </div>
-          )}
-          
-          {authType === 'bearer' && (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-                  Token
-                </label>
-                <div className="relative">
-                  <input
-                    type={showToken ? "text" : "password"}
-                    value={authConfig.token || ''}
-                    onChange={(e) => setAuthConfig({ ...authConfig, token: e.target.value })}
-                    className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 hover-lift"
-                    style={{
-                      backgroundColor: colors.inputBg,
-                      borderColor: colors.border,
-                      color: colors.text
-                    }}
-                    placeholder="Enter bearer token"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowToken(!showToken)}
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover-lift"
-                    style={{ color: colors.textSecondary }}
-                  >
-                    {showToken ? <EyeOff size={16} /> : <EyeIcon size={16} />}
-                  </button>
-                </div>
-                <div className="mt-3">
-                  <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-                    Prefix
-                  </label>
-                  <select
-                    value={authConfig.tokenType || 'Bearer'}
-                    onChange={(e) => setAuthConfig({ ...authConfig, tokenType: e.target.value })}
-                    className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
-                    style={{
-                      backgroundColor: colors.bg,
-                      borderColor: colors.border,
-                      color: colors.text
-                    }}>
-                    <option value="Bearer">Bearer</option>
-                    <option value="Token">Token</option>
-                    <option value="JWT">JWT</option>
-                    <option value="Basic">Basic</option>
-                  </select>
-                </div>
-                <p className="text-xs mt-2" style={{ color: colors.textSecondary }}>
-                  Will be sent as: {authConfig.tokenType || 'Bearer'} [your_token]
-                </p>
-              </div>
-            </div>
-          )}
-
-          {authType === 'basic' && (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-                  Username
-                </label>
+            
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+                API Key Value
+              </label>
+              <div className="relative">
                 <input
-                  type="text"
-                  value={authConfig.username || ''}
-                  onChange={(e) => setAuthConfig({ ...authConfig, username: e.target.value })}
-                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
+                  type={showToken ? "text" : "password"}
+                  value={authConfig.apiKeyValue || authConfig.value || ''}
+                  onChange={(e) => setAuthConfig({ 
+                    ...authConfig, 
+                    apiKeyValue: e.target.value,
+                    value: e.target.value 
+                  })}
+                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 hover-lift"
                   style={{
                     backgroundColor: colors.inputBg,
                     borderColor: colors.border,
                     color: colors.text
                   }}
-                  placeholder="Enter username"
+                  placeholder="Enter API key value"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowToken(!showToken)}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover-lift"
+                  style={{ color: colors.textSecondary }}
+                >
+                  {showToken ? <EyeOff size={16} /> : <EyeIcon size={16} />}
+                </button>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-                  Password
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    value={authConfig.password || ''}
-                    onChange={(e) => setAuthConfig({ ...authConfig, password: e.target.value })}
-                    className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 hover-lift"
-                    style={{
-                      backgroundColor: colors.inputBg,
-                      borderColor: colors.border,
-                      color: colors.text
-                    }}
-                    placeholder="Enter password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover-lift"
-                    style={{ color: colors.textSecondary }}
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <EyeIcon size={16} />}
-                  </button>
+              {/* Display current value preview */}
+              {(authConfig.apiKeyValue || authConfig.value) && (
+                <div className="mt-2 text-xs flex items-center gap-2">
+                  <span style={{ color: colors.textSecondary }}>Current value:</span>
+                  <code className="px-2 py-1 rounded" style={{ 
+                    backgroundColor: colors.codeBg,
+                    color: colors.text,
+                    fontSize: '11px'
+                  }}>
+                    {showToken 
+                      ? (authConfig.apiKeyValue || authConfig.value)
+                      : (authConfig.apiKeyValue || authConfig.value).substring(0, 8) + '...' + 
+                        (authConfig.apiKeyValue || authConfig.value).slice(-4)}
+                  </code>
                 </div>
-              </div>
+              )}
             </div>
-          )}
-
-          {authType === 'apikey' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-                    Key
-                  </label>
-                  <input
-                    type="text"
-                    value={authConfig.key || ''}
-                    onChange={(e) => setAuthConfig({ ...authConfig, key: e.target.value })}
-                    className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
-                    style={{
-                      backgroundColor: colors.inputBg,
-                      borderColor: colors.border,
-                      color: colors.text
-                    }}
-                    placeholder="e.g., X-API-Key"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-                    Value
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showToken ? "text" : "password"}
-                      value={authConfig.value || ''}
-                      onChange={(e) => setAuthConfig({ ...authConfig, value: e.target.value })}
-                      className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 hover-lift"
-                      style={{
-                        backgroundColor: colors.inputBg,
-                        borderColor: colors.border,
-                        color: colors.text
-                      }}
-                      placeholder="Enter API key"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowToken(!showToken)}
-                      className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover-lift"
-                      style={{ color: colors.textSecondary }}
-                    >
-                      {showToken ? <EyeOff size={16} /> : <EyeIcon size={16} />}
-                    </button>
-                  </div>
-                </div>
+            
+            {/* API Secret field - now properly displayed */}
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+                API Secret Name
+              </label>
+              <input
+                type="text"
+                value={authConfig.apiSecretHeader || ''}
+                onChange={(e) => setAuthConfig({ 
+                  ...authConfig, 
+                  apiSecretHeader: e.target.value 
+                })}
+                className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
+                style={{
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.border,
+                  color: colors.text
+                }}
+                placeholder="e.g., X-API-Secret"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+                API Secret Value
+              </label>
+              <div className="relative">
+                <input
+                  type={showToken ? "text" : "password"}
+                  value={authConfig.apiSecretValue || ''}
+                  onChange={(e) => setAuthConfig({ 
+                    ...authConfig, 
+                    apiSecretValue: e.target.value 
+                  })}
+                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 hover-lift"
+                  style={{
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.border,
+                    color: colors.text
+                  }}
+                  placeholder="Enter API secret value"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowToken(!showToken)}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover-lift"
+                  style={{ color: colors.textSecondary }}
+                >
+                  {showToken ? <EyeOff size={16} /> : <EyeIcon size={16} />}
+                </button>
               </div>
-              <div>
+              {/* Display current secret value preview */}
+              {authConfig.apiSecretValue && (
+                <div className="mt-2 text-xs flex items-center gap-2">
+                  <span style={{ color: colors.textSecondary }}>Current secret:</span>
+                  <code className="px-2 py-1 rounded" style={{ 
+                    backgroundColor: colors.codeBg,
+                    color: colors.text,
+                    fontSize: '11px'
+                  }}>
+                    {showToken 
+                      ? authConfig.apiSecretValue
+                      : '••••••••' + authConfig.apiSecretValue.slice(-4)}
+                  </code>
+                </div>
+              )}
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+                Add to
+              </label>
+              <select
+                value={authConfig.addTo || 'header'}
+                onChange={(e) => setAuthConfig({ ...authConfig, addTo: e.target.value })}
+                className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
+                style={{
+                  backgroundColor: colors.bg,
+                  borderColor: colors.border,
+                  color: colors.text
+                }}>
+                <option value="header">Header</option>
+                <option value="queryParams">Query Params</option>
+              </select>
+            </div>
+            
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  // Update headers with both API Key and Secret
+                  const newHeaders = [...requestHeaders];
+                  
+                  // Remove existing API Key/Secret headers
+                  const filteredHeaders = newHeaders.filter(h => 
+                    h.key !== authConfig.apiKeyHeader && 
+                    h.key !== authConfig.apiSecretHeader
+                  );
+                  
+                  // Add API Key header
+                  if (authConfig.apiKeyHeader && authConfig.apiKeyValue) {
+                    filteredHeaders.push({
+                      id: `auth-header-key-${Date.now()}`,
+                      key: authConfig.apiKeyHeader,
+                      value: authConfig.apiKeyValue,
+                      description: 'API Key authentication',
+                      enabled: true,
+                      required: true
+                    });
+                  }
+                  
+                  // Add API Secret header
+                  if (authConfig.apiSecretHeader && authConfig.apiSecretValue) {
+                    filteredHeaders.push({
+                      id: `auth-header-secret-${Date.now()}`,
+                      key: authConfig.apiSecretHeader,
+                      value: authConfig.apiSecretValue,
+                      description: 'API Secret authentication',
+                      enabled: true,
+                      required: true
+                    });
+                  }
+                  
+                  setRequestHeaders(filteredHeaders);
+                  showToast('API Key and Secret added to Headers tab', 'success');
+                }}
+                className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+              >
+                Apply to Headers
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => {
+                  showToast('API Key configuration saved', 'success');
+                }}
+                className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                style={{ backgroundColor: colors.hover, color: colors.text }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        )}
+
+        {authType === 'bearer' && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+                Token
+              </label>
+              <div className="relative">
+                <input
+                  type={showToken ? "text" : "password"}
+                  value={authConfig.token || ''}
+                  onChange={(e) => setAuthConfig({ ...authConfig, token: e.target.value })}
+                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 hover-lift"
+                  style={{
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.border,
+                    color: colors.text
+                  }}
+                  placeholder="Enter bearer token"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowToken(!showToken)}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover-lift"
+                  style={{ color: colors.textSecondary }}
+                >
+                  {showToken ? <EyeOff size={16} /> : <EyeIcon size={16} />}
+                </button>
+              </div>
+              {authConfig.token && (
+                <div className="mt-2 text-xs flex items-center gap-2">
+                  <span style={{ color: colors.textSecondary }}>Token preview:</span>
+                  <code className="px-2 py-1 rounded" style={{ 
+                    backgroundColor: colors.codeBg,
+                    color: colors.text,
+                    fontSize: '11px'
+                  }}>
+                    {showToken 
+                      ? (authConfig.token.length > 40 ? authConfig.token.substring(0, 40) + '...' : authConfig.token)
+                      : authConfig.token.substring(0, 8) + '...' + authConfig.token.slice(-4)}
+                  </code>
+                </div>
+              )}
+              <div className="mt-3">
                 <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-                  Add to
+                  Prefix
                 </label>
                 <select
-                  value={authConfig.addTo || 'header'}
-                  onChange={(e) => setAuthConfig({ ...authConfig, addTo: e.target.value })}
+                  value={authConfig.tokenType || 'Bearer'}
+                  onChange={(e) => setAuthConfig({ ...authConfig, tokenType: e.target.value })}
                   className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
                   style={{
                     backgroundColor: colors.bg,
                     borderColor: colors.border,
                     color: colors.text
                   }}>
-                  <option value="header">Header</option>
-                  <option value="queryParams">Query Params</option>
+                  <option value="Bearer">Bearer</option>
+                  <option value="Token">Token</option>
+                  <option value="JWT">JWT</option>
+                  <option value="Basic">Basic</option>
                 </select>
               </div>
-              <div className="flex justify-end">
+              <p className="text-xs mt-2" style={{ color: colors.textSecondary }}>
+                Will be sent as: {authConfig.tokenType || 'Bearer'} [your_token]
+              </p>
+            </div>
+          </div>
+        )}
+
+        {authType === 'basic' && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+                Username
+              </label>
+              <input
+                type="text"
+                value={authConfig.username || ''}
+                onChange={(e) => setAuthConfig({ ...authConfig, username: e.target.value })}
+                className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
+                style={{
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.border,
+                  color: colors.text
+                }}
+                placeholder="Enter username"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={authConfig.password || ''}
+                  onChange={(e) => setAuthConfig({ ...authConfig, password: e.target.value })}
+                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 hover-lift"
+                  style={{
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.border,
+                    color: colors.text
+                  }}
+                  placeholder="Enter password"
+                />
                 <button
                   type="button"
-                  onClick={() => {
-                    // When done editing API Key, switch back to 'noauth' for UI
-                    // but keep the config
-                    setAuthType('noauth');
-                    showToast('API Key will be added to Headers tab', 'success');
-                  }}
-                  className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-                  style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover-lift"
+                  style={{ color: colors.textSecondary }}
                 >
-                  Done
+                  {showPassword ? <EyeOff size={16} /> : <EyeIcon size={16} />}
                 </button>
               </div>
             </div>
-          )}
-
-          {authType === 'oauth2' && (
-    <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-          JWT / Access Token
-        </label>
-        <div className="relative">
-          <textarea
-            rows={3}
-            value={authConfig.token || ''}
-            onChange={(e) => setAuthConfig({ ...authConfig, token: e.target.value })}
-            className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 font-mono hover-lift"
-            style={{
-              backgroundColor: colors.inputBg,
-              borderColor: colors.border,
-              color: colors.text,
-              resize: 'vertical'
-            }}
-            placeholder="Enter JWT token or OAuth 2.0 access token"
-          />
-          <button
-            type="button"
-            onClick={() => setShowToken(!showToken)}
-            className="absolute right-2 top-2 p-1 hover-lift"
-            style={{ color: colors.textSecondary }}
-          >
-            {showToken ? <EyeOff size={16} /> : <EyeIcon size={16} />}
-          </button>
-        </div>
-        <p className="text-xs mt-2" style={{ color: colors.textSecondary }}>
-          Token will be sent as: Bearer [your_token]
-        </p>
-      </div>
-      
-      {authConfig.token && (
-        <div className="p-3 rounded text-xs" style={{ backgroundColor: colors.hover }}>
-          <div className="flex items-center justify-between mb-1">
-            <span className="font-medium" style={{ color: colors.text }}>Token Preview:</span>
-            <button
-              type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(authConfig.token);
-                showToast('Token copied to clipboard!', 'success');
-              }}
-              className="p-1 rounded hover:bg-opacity-50 transition-colors"
-              style={{ backgroundColor: colors.card }}
-            >
-              <Copy size={12} style={{ color: colors.textSecondary }} />
-            </button>
           </div>
-          <code className="break-all" style={{ color: colors.textSecondary }}>
-            {authConfig.token.length > 100 
-              ? `${authConfig.token.substring(0, 100)}...` 
-              : authConfig.token}
-          </code>
-          <p className="mt-2 text-xs" style={{ color: colors.textTertiary }}>
-            Token length: {authConfig.token.length} characters
-          </p>
-        </div>
-      )}
-      
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={() => {
-            if (authConfig.token && authConfig.token.trim() !== '') {
-              // Update headers with the token
-              setRequestHeaders(prevHeaders => {
-                const existingAuthIndex = prevHeaders.findIndex(
-                  h => h.key.toLowerCase() === 'authorization'
-                );
-                
-                const authHeader = {
-                  id: `auth-header-${Date.now()}`,
-                  key: 'Authorization',
-                  value: `Bearer ${authConfig.token}`,
-                  description: 'Bearer token authentication',
-                  enabled: true,
-                  required: true
-                };
-                
-                if (existingAuthIndex >= 0) {
-                  const newHeaders = [...prevHeaders];
-                  newHeaders[existingAuthIndex] = authHeader;
-                  return newHeaders;
-                } else {
-                  return [...prevHeaders, authHeader];
-                }
-              });
-              showToast('Authorization header updated', 'success');
-            } else {
-              showToast('Please enter a token first', 'warning');
-            }
-          }}
-          className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-          style={{ backgroundColor: colors.primaryDark, color: colors.white }}
-        >
-          Apply to Headers
-        </button>
-      </div>
-    </div>
-  )}
+        )}
 
-          {authType === 'noauth' && !hasApiKeyConfig && (
-            <div className="text-center py-8">
-              <Globe size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
-              <h3 className="text-sm font-semibold mb-2" style={{ color: colors.text }}>No Authorization</h3>
-              <p className="text-sm max-w-sm mx-auto" style={{ color: colors.textSecondary }}>
-                This request does not use any authorization.
+        {authType === 'oauth2' && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+                JWT / Access Token
+              </label>
+              <div className="relative">
+                <textarea
+                  rows={3}
+                  value={authConfig.token || ''}
+                  onChange={(e) => setAuthConfig({ ...authConfig, token: e.target.value })}
+                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 font-mono hover-lift"
+                  style={{
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.border,
+                    color: colors.text,
+                    resize: 'vertical'
+                  }}
+                  placeholder="Enter JWT token or OAuth 2.0 access token"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowToken(!showToken)}
+                  className="absolute right-2 top-2 p-1 hover-lift"
+                  style={{ color: colors.textSecondary }}
+                >
+                  {showToken ? <EyeOff size={16} /> : <EyeIcon size={16} />}
+                </button>
+              </div>
+              <p className="text-xs mt-2" style={{ color: colors.textSecondary }}>
+                Token will be sent as: Bearer [your_token]
               </p>
             </div>
-          )}
-        </div>
+            
+            {authConfig.token && (
+              <div className="p-3 rounded text-xs" style={{ backgroundColor: colors.hover }}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-medium" style={{ color: colors.text }}>Token Preview:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(authConfig.token);
+                      showToast('Token copied to clipboard!', 'success');
+                    }}
+                    className="p-1 rounded hover:bg-opacity-50 transition-colors"
+                    style={{ backgroundColor: colors.card }}
+                  >
+                    <Copy size={12} style={{ color: colors.textSecondary }} />
+                  </button>
+                </div>
+                <code className="break-all" style={{ color: colors.textSecondary }}>
+                  {showToken 
+                    ? (authConfig.token.length > 100 ? `${authConfig.token.substring(0, 100)}...` : authConfig.token)
+                    : authConfig.token.substring(0, 50) + '...' + authConfig.token.slice(-20)}
+                </code>
+                <p className="mt-2 text-xs" style={{ color: colors.textTertiary }}>
+                  Token length: {authConfig.token.length} characters
+                </p>
+              </div>
+            )}
+            
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  if (authConfig.token && authConfig.token.trim() !== '') {
+                    setRequestHeaders(prevHeaders => {
+                      const existingAuthIndex = prevHeaders.findIndex(
+                        h => h.key.toLowerCase() === 'authorization'
+                      );
+                      
+                      const authHeader = {
+                        id: `auth-header-${Date.now()}`,
+                        key: 'Authorization',
+                        value: `Bearer ${authConfig.token}`,
+                        description: 'Bearer token authentication',
+                        enabled: true,
+                        required: true
+                      };
+                      
+                      if (existingAuthIndex >= 0) {
+                        const newHeaders = [...prevHeaders];
+                        newHeaders[existingAuthIndex] = authHeader;
+                        return newHeaders;
+                      } else {
+                        return [...prevHeaders, authHeader];
+                      }
+                    });
+                    showToast('Authorization header updated', 'success');
+                  } else {
+                    showToast('Please enter a token first', 'warning');
+                  }
+                }}
+                className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+              >
+                Apply to Headers
+              </button>
+            </div>
+          </div>
+        )}
+
+        {authType === 'noauth' && !hasApiKeyConfig && (
+          <div className="text-center py-8">
+            <Globe size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
+            <h3 className="text-sm font-semibold mb-2" style={{ color: colors.text }}>No Authorization</h3>
+            <p className="text-sm max-w-sm mx-auto" style={{ color: colors.textSecondary }}>
+              This request does not use any authorization.
+            </p>
+          </div>
+        )}
       </div>
-    );
-  };
+    </div>
+  );
+};
 
 
   const renderPathParamsTab = () => {
