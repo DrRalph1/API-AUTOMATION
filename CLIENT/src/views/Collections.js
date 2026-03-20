@@ -4107,283 +4107,162 @@ const separateParamsAndHeaders = (items) => {
   // ==================== UI COMPONENTS ====================
 
   // Render Authorization Tab
-const renderAuthTab = () => {
-  const authTypes = [
-    { id: 'noauth', name: 'No Auth', icon: <Globe size={16} />, description: 'No authorization required' },
-    { id: 'bearer', name: 'Bearer Token', icon: <Key size={16} />, description: 'Token-based authentication' },
-    { id: 'basic', name: 'Basic Auth', icon: <Shield size={16} />, description: 'Username and password' },
-    { id: 'apikey', name: 'API Key', icon: <Key size={16} />, description: 'API key authentication' },
-    { id: 'oauth2', name: 'OAuth 2.0', icon: <ShieldCheck size={16} />, description: 'OAuth 2.0 protocol' }
-  ];
+  const renderAuthTab = () => {
+    const authTypes = [
+      { id: 'noauth', name: 'No Auth', icon: <Globe size={16} />, description: 'No authorization required' },
+      { id: 'bearer', name: 'Bearer Token', icon: <Key size={16} />, description: 'Token-based authentication' },
+      { id: 'basic', name: 'Basic Auth', icon: <Shield size={16} />, description: 'Username and password' },
+      { id: 'apikey', name: 'API Key', icon: <Key size={16} />, description: 'API key authentication' },
+      { id: 'oauth2', name: 'OAuth 2.0', icon: <ShieldCheck size={16} />, description: 'OAuth 2.0 protocol' }
+    ];
 
-  // Check if the request has API Key auth config (even though authType is 'noauth')
-  const hasApiKeyConfig = authConfig && authConfig.type === 'noauth';
-  
-  // Determine what to display in the type dropdown
-  let displayAuthType = authType;
-  
-  // If we have API Key config but authType is 'noauth', still show the type as 'apikey' in the dropdown
-  // but we'll handle it differently in the UI
-  // if (hasApiKeyConfig) {
-  //   displayAuthType = 'apikey';
-  // }
-  
-  const currentAuthType = authTypes.find(type => type.id === displayAuthType);
+    // Check if the request has API Key auth config (even though authType is 'noauth')
+    const hasApiKeyConfig = authConfig && authConfig.type === 'noauth';
+    
+    // Determine what to display in the type dropdown
+    let displayAuthType = authType;
+    
+    // If we have API Key config but authType is 'noauth', still show the type as 'apikey' in the dropdown
+    // but we'll handle it differently in the UI
+    // if (hasApiKeyConfig) {
+    //   displayAuthType = 'apikey';
+    // }
+    
+    const currentAuthType = authTypes.find(type => type.id === displayAuthType);
 
-  return (
-    <div className="p-4 h-full overflow-auto">
-      <div className="mb-4">
-        <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-          Type
-        </label>
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setShowAuthDropdown(!showAuthDropdown)}
-            className="w-full px-3 py-2 rounded text-sm flex items-center justify-between hover:bg-opacity-50 transition-colors border hover-lift"
-            style={{ 
-              backgroundColor: colors.inputBg,
-              borderColor: colors.border,
-              color: colors.text
-            }}>
-            <div className="flex items-center gap-2">
-              {currentAuthType?.icon}
-              <span>{currentAuthType?.name}</span>
-            </div>
-            <ChevronDown size={14} style={{ color: colors.textSecondary }} />
-          </button>
-
-          {showAuthDropdown && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setShowAuthDropdown(false)} />
-              <div className="absolute left-0 right-0 top-full mt-1 py-2 rounded shadow-lg z-50 border"
-                style={{ 
-                  backgroundColor: colors.bg,
-                  borderColor: colors.border,
-                  maxHeight: '300px',
-                  overflowY: 'auto'
-                }}>
-                {authTypes.map(type => (
-                  <button
-                    key={type.id}
-                    type="button"
-                    onClick={() => {
-                      // Special handling for API Key - we want to set authType to 'noauth' for UI
-                      // but store the config with type 'apikey'
-                      if (type.id === 'apikey') {
-                        // Set authType to 'noauth' for UI display
-                        setAuthType('noauth');
-                        // Initialize API Key config
-                        setAuthConfig({
-                          type: 'apikey',
-                          key: '',
-                          value: '',
-                          addTo: 'header'
-                        });
-                        // Show a toast to guide the user
-                        showToast('API Key will be added to Headers tab', 'info');
-                      } else {
-                        // For other auth types, set normally
-                        setAuthType(type.id);
-                        setAuthConfig({ ...authConfig, type: type.id });
-                      }
-                      setShowAuthDropdown(false);
-                    }}
-                    className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors hover-lift"
-                    style={{ 
-                      backgroundColor: displayAuthType === type.id ? colors.selected : 'transparent',
-                      color: displayAuthType === type.id ? colors.primary : colors.text
-                    }}
-                  >
-                    {type.icon}
-                    {type.name}
-                    {displayAuthType === type.id && <Check size={14} className="ml-auto" />}
-                  </button>
-                ))}
+    return (
+      <div className="p-4 h-full overflow-auto">
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+            Type
+          </label>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowAuthDropdown(!showAuthDropdown)}
+              className="w-full px-3 py-2 rounded text-sm flex items-center justify-between hover:bg-opacity-50 transition-colors border hover-lift"
+              style={{ 
+                backgroundColor: colors.inputBg,
+                borderColor: colors.border,
+                color: colors.text
+              }}>
+              <div className="flex items-center gap-2">
+                {currentAuthType?.icon}
+                <span>{currentAuthType?.name}</span>
               </div>
-            </>
-          )}
-        </div>
-        {currentAuthType && (
-          <p className="text-xs mt-1" style={{ color: colors.textSecondary }}>
-            {currentAuthType.description}
-          </p>
-        )}
-      </div>
+              <ChevronDown size={14} style={{ color: colors.textSecondary }} />
+            </button>
 
-      {/* Dynamic auth forms */}
-      <div className="mt-6">
-        {/* If we have API Key config but authType is 'noauth', show a message */}
-        {hasApiKeyConfig && (
-          <div className="text-center py-8">
-            <Key size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
-            <h3 className="text-sm font-semibold mb-2" style={{ color: colors.text }}>API Key Authentication</h3>
-            <p className="text-sm max-w-sm mx-auto mb-4" style={{ color: colors.textSecondary }}>
-              API Key is configured in the Headers tab.
-            </p>
-            <div className="flex justify-center gap-2">
-              <button
-                type="button"
-                onClick={() => setActiveTab('headers')}
-                className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-                style={{ backgroundColor: colors.primaryDark, color: colors.white }}
-              >
-                Go to Headers
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  // Switch to API Key editing mode
-                  setAuthType('apikey');
-                }}
-                className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-                style={{ backgroundColor: colors.hover, color: colors.text }}
-              >
-                Edit API Key
-              </button>
-            </div>
-          </div>
-        )}
-        
-        {authType === 'bearer' && (
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-                Token
-              </label>
-              <div className="relative">
-                <input
-                  type={showToken ? "text" : "password"}
-                  value={authConfig.token || ''}
-                  onChange={(e) => setAuthConfig({ ...authConfig, token: e.target.value })}
-                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 hover-lift"
-                  style={{
-                    backgroundColor: colors.inputBg,
-                    borderColor: colors.border,
-                    color: colors.text
-                  }}
-                  placeholder="Enter bearer token"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowToken(!showToken)}
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover-lift"
-                  style={{ color: colors.textSecondary }}
-                >
-                  {showToken ? <EyeOff size={16} /> : <EyeIcon size={16} />}
-                </button>
-              </div>
-              <div className="mt-3">
-                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-                  Prefix
-                </label>
-                <select
-                  value={authConfig.tokenType || 'Bearer'}
-                  onChange={(e) => setAuthConfig({ ...authConfig, tokenType: e.target.value })}
-                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
-                  style={{
+            {showAuthDropdown && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowAuthDropdown(false)} />
+                <div className="absolute left-0 right-0 top-full mt-1 py-2 rounded shadow-lg z-50 border"
+                  style={{ 
                     backgroundColor: colors.bg,
                     borderColor: colors.border,
-                    color: colors.text
+                    maxHeight: '300px',
+                    overflowY: 'auto'
                   }}>
-                  <option value="Bearer">Bearer</option>
-                  <option value="Token">Token</option>
-                  <option value="JWT">JWT</option>
-                  <option value="Basic">Basic</option>
-                </select>
-              </div>
-              <p className="text-xs mt-2" style={{ color: colors.textSecondary }}>
-                Will be sent as: {authConfig.tokenType || 'Bearer'} [your_token]
-              </p>
-            </div>
+                  {authTypes.map(type => (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={() => {
+                        // Special handling for API Key - we want to set authType to 'noauth' for UI
+                        // but store the config with type 'apikey'
+                        if (type.id === 'apikey') {
+                          // Set authType to 'noauth' for UI display
+                          setAuthType('noauth');
+                          // Initialize API Key config
+                          setAuthConfig({
+                            type: 'apikey',
+                            key: '',
+                            value: '',
+                            addTo: 'header'
+                          });
+                          // Show a toast to guide the user
+                          showToast('API Key will be added to Headers tab', 'info');
+                        } else {
+                          // For other auth types, set normally
+                          setAuthType(type.id);
+                          setAuthConfig({ ...authConfig, type: type.id });
+                        }
+                        setShowAuthDropdown(false);
+                      }}
+                      className="w-full px-3 py-2 text-sm flex items-center gap-2 hover:bg-opacity-50 transition-colors hover-lift"
+                      style={{ 
+                        backgroundColor: displayAuthType === type.id ? colors.selected : 'transparent',
+                        color: displayAuthType === type.id ? colors.primary : colors.text
+                      }}
+                    >
+                      {type.icon}
+                      {type.name}
+                      {displayAuthType === type.id && <Check size={14} className="ml-auto" />}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
-        )}
+          {currentAuthType && (
+            <p className="text-xs mt-1" style={{ color: colors.textSecondary }}>
+              {currentAuthType.description}
+            </p>
+          )}
+        </div>
 
-        {authType === 'basic' && (
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-                Username
-              </label>
-              <input
-                type="text"
-                value={authConfig.username || ''}
-                onChange={(e) => setAuthConfig({ ...authConfig, username: e.target.value })}
-                className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
-                style={{
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.border,
-                  color: colors.text
-                }}
-                placeholder="Enter username"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={authConfig.password || ''}
-                  onChange={(e) => setAuthConfig({ ...authConfig, password: e.target.value })}
-                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 hover-lift"
-                  style={{
-                    backgroundColor: colors.inputBg,
-                    borderColor: colors.border,
-                    color: colors.text
-                  }}
-                  placeholder="Enter password"
-                />
+        {/* Dynamic auth forms */}
+        <div className="mt-6">
+          {/* If we have API Key config but authType is 'noauth', show a message */}
+          {hasApiKeyConfig && (
+            <div className="text-center py-8">
+              <Key size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
+              <h3 className="text-sm font-semibold mb-2" style={{ color: colors.text }}>API Key Authentication</h3>
+              <p className="text-sm max-w-sm mx-auto mb-4" style={{ color: colors.textSecondary }}>
+                API Key is configured in the Headers tab.
+              </p>
+              <div className="flex justify-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover-lift"
-                  style={{ color: colors.textSecondary }}
+                  onClick={() => setActiveTab('headers')}
+                  className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                  style={{ backgroundColor: colors.primaryDark, color: colors.white }}
                 >
-                  {showPassword ? <EyeOff size={16} /> : <EyeIcon size={16} />}
+                  Go to Headers
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Switch to API Key editing mode
+                    setAuthType('apikey');
+                  }}
+                  className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                  style={{ backgroundColor: colors.hover, color: colors.text }}
+                >
+                  Edit API Key
                 </button>
               </div>
             </div>
-          </div>
-        )}
-
-        {authType === 'apikey' && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+          )}
+          
+          {authType === 'bearer' && (
+            <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-                  Key
-                </label>
-                <input
-                  type="text"
-                  value={authConfig.key || ''}
-                  onChange={(e) => setAuthConfig({ ...authConfig, key: e.target.value })}
-                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
-                  style={{
-                    backgroundColor: colors.inputBg,
-                    borderColor: colors.border,
-                    color: colors.text
-                  }}
-                  placeholder="e.g., X-API-Key"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-                  Value
+                  Token
                 </label>
                 <div className="relative">
                   <input
                     type={showToken ? "text" : "password"}
-                    value={authConfig.value || ''}
-                    onChange={(e) => setAuthConfig({ ...authConfig, value: e.target.value })}
+                    value={authConfig.token || ''}
+                    onChange={(e) => setAuthConfig({ ...authConfig, token: e.target.value })}
                     className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 hover-lift"
                     style={{
                       backgroundColor: colors.inputBg,
                       borderColor: colors.border,
                       color: colors.text
                     }}
-                    placeholder="Enter API key"
+                    placeholder="Enter bearer token"
                   />
                   <button
                     type="button"
@@ -4394,159 +4273,280 @@ const renderAuthTab = () => {
                     {showToken ? <EyeOff size={16} /> : <EyeIcon size={16} />}
                   </button>
                 </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+                    Prefix
+                  </label>
+                  <select
+                    value={authConfig.tokenType || 'Bearer'}
+                    onChange={(e) => setAuthConfig({ ...authConfig, tokenType: e.target.value })}
+                    className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
+                    style={{
+                      backgroundColor: colors.bg,
+                      borderColor: colors.border,
+                      color: colors.text
+                    }}>
+                    <option value="Bearer">Bearer</option>
+                    <option value="Token">Token</option>
+                    <option value="JWT">JWT</option>
+                    <option value="Basic">Basic</option>
+                  </select>
+                </div>
+                <p className="text-xs mt-2" style={{ color: colors.textSecondary }}>
+                  Will be sent as: {authConfig.tokenType || 'Bearer'} [your_token]
+                </p>
               </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-                Add to
-              </label>
-              <select
-                value={authConfig.addTo || 'header'}
-                onChange={(e) => setAuthConfig({ ...authConfig, addTo: e.target.value })}
-                className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
-                style={{
-                  backgroundColor: colors.bg,
-                  borderColor: colors.border,
-                  color: colors.text
-                }}>
-                <option value="header">Header</option>
-                <option value="queryParams">Query Params</option>
-              </select>
-            </div>
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => {
-                  // When done editing API Key, switch back to 'noauth' for UI
-                  // but keep the config
-                  setAuthType('noauth');
-                  showToast('API Key will be added to Headers tab', 'success');
-                }}
-                className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-                style={{ backgroundColor: colors.primaryDark, color: colors.white }}
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        )}
+          )}
 
-        {authType === 'oauth2' && (
-  <div className="space-y-4">
-    <div>
-      <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-        JWT / Access Token
-      </label>
-      <div className="relative">
-        <textarea
-          rows={3}
-          value={authConfig.token || ''}
-          onChange={(e) => setAuthConfig({ ...authConfig, token: e.target.value })}
-          className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 font-mono hover-lift"
-          style={{
-            backgroundColor: colors.inputBg,
-            borderColor: colors.border,
-            color: colors.text,
-            resize: 'vertical'
-          }}
-          placeholder="Enter JWT token or OAuth 2.0 access token"
-        />
-        <button
-          type="button"
-          onClick={() => setShowToken(!showToken)}
-          className="absolute right-2 top-2 p-1 hover-lift"
-          style={{ color: colors.textSecondary }}
-        >
-          {showToken ? <EyeOff size={16} /> : <EyeIcon size={16} />}
-        </button>
-      </div>
-      <p className="text-xs mt-2" style={{ color: colors.textSecondary }}>
-        Token will be sent as: Bearer [your_token]
-      </p>
-    </div>
-    
-    {authConfig.token && (
-      <div className="p-3 rounded text-xs" style={{ backgroundColor: colors.hover }}>
-        <div className="flex items-center justify-between mb-1">
-          <span className="font-medium" style={{ color: colors.text }}>Token Preview:</span>
+          {authType === 'basic' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+                  Username
+                </label>
+                <input
+                  type="text"
+                  value={authConfig.username || ''}
+                  onChange={(e) => setAuthConfig({ ...authConfig, username: e.target.value })}
+                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
+                  style={{
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.border,
+                    color: colors.text
+                  }}
+                  placeholder="Enter username"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={authConfig.password || ''}
+                    onChange={(e) => setAuthConfig({ ...authConfig, password: e.target.value })}
+                    className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 hover-lift"
+                    style={{
+                      backgroundColor: colors.inputBg,
+                      borderColor: colors.border,
+                      color: colors.text
+                    }}
+                    placeholder="Enter password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover-lift"
+                    style={{ color: colors.textSecondary }}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <EyeIcon size={16} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {authType === 'apikey' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+                    Key
+                  </label>
+                  <input
+                    type="text"
+                    value={authConfig.key || ''}
+                    onChange={(e) => setAuthConfig({ ...authConfig, key: e.target.value })}
+                    className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
+                    style={{
+                      backgroundColor: colors.inputBg,
+                      borderColor: colors.border,
+                      color: colors.text
+                    }}
+                    placeholder="e.g., X-API-Key"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+                    Value
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showToken ? "text" : "password"}
+                      value={authConfig.value || ''}
+                      onChange={(e) => setAuthConfig({ ...authConfig, value: e.target.value })}
+                      className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 hover-lift"
+                      style={{
+                        backgroundColor: colors.inputBg,
+                        borderColor: colors.border,
+                        color: colors.text
+                      }}
+                      placeholder="Enter API key"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowToken(!showToken)}
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover-lift"
+                      style={{ color: colors.textSecondary }}
+                    >
+                      {showToken ? <EyeOff size={16} /> : <EyeIcon size={16} />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+                  Add to
+                </label>
+                <select
+                  value={authConfig.addTo || 'header'}
+                  onChange={(e) => setAuthConfig({ ...authConfig, addTo: e.target.value })}
+                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
+                  style={{
+                    backgroundColor: colors.bg,
+                    borderColor: colors.border,
+                    color: colors.text
+                  }}>
+                  <option value="header">Header</option>
+                  <option value="queryParams">Query Params</option>
+                </select>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // When done editing API Key, switch back to 'noauth' for UI
+                    // but keep the config
+                    setAuthType('noauth');
+                    showToast('API Key will be added to Headers tab', 'success');
+                  }}
+                  className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+                  style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          )}
+
+          {authType === 'oauth2' && (
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+          JWT / Access Token
+        </label>
+        <div className="relative">
+          <textarea
+            rows={3}
+            value={authConfig.token || ''}
+            onChange={(e) => setAuthConfig({ ...authConfig, token: e.target.value })}
+            className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 font-mono hover-lift"
+            style={{
+              backgroundColor: colors.inputBg,
+              borderColor: colors.border,
+              color: colors.text,
+              resize: 'vertical'
+            }}
+            placeholder="Enter JWT token or OAuth 2.0 access token"
+          />
           <button
             type="button"
-            onClick={() => {
-              navigator.clipboard.writeText(authConfig.token);
-              showToast('Token copied to clipboard!', 'success');
-            }}
-            className="p-1 rounded hover:bg-opacity-50 transition-colors"
-            style={{ backgroundColor: colors.card }}
+            onClick={() => setShowToken(!showToken)}
+            className="absolute right-2 top-2 p-1 hover-lift"
+            style={{ color: colors.textSecondary }}
           >
-            <Copy size={12} style={{ color: colors.textSecondary }} />
+            {showToken ? <EyeOff size={16} /> : <EyeIcon size={16} />}
           </button>
         </div>
-        <code className="break-all" style={{ color: colors.textSecondary }}>
-          {authConfig.token.length > 100 
-            ? `${authConfig.token.substring(0, 100)}...` 
-            : authConfig.token}
-        </code>
-        <p className="mt-2 text-xs" style={{ color: colors.textTertiary }}>
-          Token length: {authConfig.token.length} characters
+        <p className="text-xs mt-2" style={{ color: colors.textSecondary }}>
+          Token will be sent as: Bearer [your_token]
         </p>
       </div>
-    )}
-    
-    <div className="flex justify-end">
-      <button
-        type="button"
-        onClick={() => {
-          if (authConfig.token && authConfig.token.trim() !== '') {
-            // Update headers with the token
-            setRequestHeaders(prevHeaders => {
-              const existingAuthIndex = prevHeaders.findIndex(
-                h => h.key.toLowerCase() === 'authorization'
-              );
-              
-              const authHeader = {
-                id: `auth-header-${Date.now()}`,
-                key: 'Authorization',
-                value: `Bearer ${authConfig.token}`,
-                description: 'Bearer token authentication',
-                enabled: true,
-                required: true
-              };
-              
-              if (existingAuthIndex >= 0) {
-                const newHeaders = [...prevHeaders];
-                newHeaders[existingAuthIndex] = authHeader;
-                return newHeaders;
-              } else {
-                return [...prevHeaders, authHeader];
-              }
-            });
-            showToast('Authorization header updated', 'success');
-          } else {
-            showToast('Please enter a token first', 'warning');
-          }
-        }}
-        className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
-        style={{ backgroundColor: colors.primaryDark, color: colors.white }}
-      >
-        Apply to Headers
-      </button>
-    </div>
-  </div>
-)}
-
-        {authType === 'noauth' && !hasApiKeyConfig && (
-          <div className="text-center py-8">
-            <Globe size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
-            <h3 className="text-sm font-semibold mb-2" style={{ color: colors.text }}>No Authorization</h3>
-            <p className="text-sm max-w-sm mx-auto" style={{ color: colors.textSecondary }}>
-              This request does not use any authorization.
-            </p>
+      
+      {authConfig.token && (
+        <div className="p-3 rounded text-xs" style={{ backgroundColor: colors.hover }}>
+          <div className="flex items-center justify-between mb-1">
+            <span className="font-medium" style={{ color: colors.text }}>Token Preview:</span>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(authConfig.token);
+                showToast('Token copied to clipboard!', 'success');
+              }}
+              className="p-1 rounded hover:bg-opacity-50 transition-colors"
+              style={{ backgroundColor: colors.card }}
+            >
+              <Copy size={12} style={{ color: colors.textSecondary }} />
+            </button>
           </div>
-        )}
+          <code className="break-all" style={{ color: colors.textSecondary }}>
+            {authConfig.token.length > 100 
+              ? `${authConfig.token.substring(0, 100)}...` 
+              : authConfig.token}
+          </code>
+          <p className="mt-2 text-xs" style={{ color: colors.textTertiary }}>
+            Token length: {authConfig.token.length} characters
+          </p>
+        </div>
+      )}
+      
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => {
+            if (authConfig.token && authConfig.token.trim() !== '') {
+              // Update headers with the token
+              setRequestHeaders(prevHeaders => {
+                const existingAuthIndex = prevHeaders.findIndex(
+                  h => h.key.toLowerCase() === 'authorization'
+                );
+                
+                const authHeader = {
+                  id: `auth-header-${Date.now()}`,
+                  key: 'Authorization',
+                  value: `Bearer ${authConfig.token}`,
+                  description: 'Bearer token authentication',
+                  enabled: true,
+                  required: true
+                };
+                
+                if (existingAuthIndex >= 0) {
+                  const newHeaders = [...prevHeaders];
+                  newHeaders[existingAuthIndex] = authHeader;
+                  return newHeaders;
+                } else {
+                  return [...prevHeaders, authHeader];
+                }
+              });
+              showToast('Authorization header updated', 'success');
+            } else {
+              showToast('Please enter a token first', 'warning');
+            }
+          }}
+          className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+          style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+        >
+          Apply to Headers
+        </button>
       </div>
     </div>
-  );
-};
+  )}
+
+          {authType === 'noauth' && !hasApiKeyConfig && (
+            <div className="text-center py-8">
+              <Globe size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mx-auto mb-4" />
+              <h3 className="text-sm font-semibold mb-2" style={{ color: colors.text }}>No Authorization</h3>
+              <p className="text-sm max-w-sm mx-auto" style={{ color: colors.textSecondary }}>
+                This request does not use any authorization.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
 
   const renderPathParamsTab = () => {
