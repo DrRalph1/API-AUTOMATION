@@ -765,4 +765,236 @@ public class CollectionsGeneratorUtil {
                 "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1"};
         return colors[new Random().nextInt(colors.length)];
     }
+
+
+
+    @Transactional
+    public void updateExistingRequestWithNewParent(
+            com.usg.apiAutomation.entities.postgres.collections.RequestEntity existingRequest,
+            GeneratedApiEntity api,
+            String performedBy,
+            GenerateApiRequestDTO request,
+            CollectionInfoDTO collectionInfo,
+            CollectionEntity newCollection,
+            FolderEntity newFolder) {
+
+        try {
+            log.info("Updating existing collections request with new parent structure: {} -> {}",
+                    existingRequest.getId(), newCollection.getId());
+
+            // Clear existing relationships
+            deleteRequestCollections(existingRequest);
+
+            // Update request with new parent
+            existingRequest.setCollection(newCollection);
+            existingRequest.setFolder(newFolder);
+
+            // Update content
+            updateRequestContent(existingRequest, api, performedBy, request);
+
+            // Save the request
+            collectionsRequestRepository.save(existingRequest);
+
+            log.info("Successfully updated request with new parent structure");
+
+        } catch (Exception e) {
+            log.error("Error updating request with new parent: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update request with new parent", e);
+        }
+    }
+
+
+
+    /**
+     * Update the content of an existing request (without changing parent structure)
+     */
+    @Transactional
+    public void updateRequestContent(
+            com.usg.apiAutomation.entities.postgres.collections.RequestEntity existingRequest,
+            GeneratedApiEntity api,
+            String performedBy,
+            GenerateApiRequestDTO request) {
+
+        try {
+            log.info("Updating request content for: {}", existingRequest.getId());
+
+            String generatedApiId = api.getId();
+            GenUrlBuilderUtil.GenUrlInfo genUrlInfo = genUrlBuilder.buildGenUrlInfo(api);
+
+            // Clear existing relationships properly
+            clearRequestRelationships(existingRequest);
+
+            // Update basic info
+            existingRequest.setName(api.getApiName() + " - " + api.getHttpMethod());
+            existingRequest.setMethod(api.getHttpMethod());
+            existingRequest.setUrl(genUrlInfo.getFullUrl());
+            existingRequest.setDescription(api.getDescription());
+            existingRequest.setLastModified(LocalDateTime.now());
+            existingRequest.setUpdatedAt(LocalDateTime.now());
+
+            // Set request body
+            if (api.getRequestConfig() != null && api.getRequestConfig().getSample() != null) {
+                existingRequest.setBody(api.getRequestConfig().getSample());
+            }
+
+            // Set auth type
+            if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
+                existingRequest.setAuthType(api.getAuthConfig().getAuthType().toLowerCase());
+            }
+
+            // Save the request first
+            existingRequest = collectionsRequestRepository.save(existingRequest);
+
+            // Create and add new headers
+            List<HeaderEntity> newHeaders = createHeadersForRequest(api, existingRequest, generatedApiId);
+            for (HeaderEntity header : newHeaders) {
+                existingRequest.addHeader(header);
+            }
+            if (!newHeaders.isEmpty()) {
+                collectionsHeaderRepository.saveAll(newHeaders);
+            }
+
+            // Create and add new parameters
+            List<ParameterEntity> newParams = createParametersForRequest(api, existingRequest, generatedApiId);
+            for (ParameterEntity param : newParams) {
+                existingRequest.addParameter(param);
+            }
+            if (!newParams.isEmpty()) {
+                collectionsParameterRepository.saveAll(newParams);
+            }
+
+            // Create new auth config
+            createAuthConfigForRequest(api, existingRequest, generatedApiId);
+
+            // Final save
+            collectionsRequestRepository.save(existingRequest);
+
+            log.info("Successfully updated request content for: {}", existingRequest.getId());
+
+        } catch (Exception e) {
+            log.error("Error updating request content: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update request content", e);
+        }
+    }
+
+
+
+    /**
+     * Clear all relationships from a request
+     */
+    private void clearRequestRelationships(com.usg.apiAutomation.entities.postgres.collections.RequestEntity request) {
+        // Clear headers
+        if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
+            List<HeaderEntity> headersToRemove = new ArrayList<>(request.getHeaders());
+            request.getHeaders().clear();
+            if (!headersToRemove.isEmpty()) {
+                collectionsHeaderRepository.deleteAll(headersToRemove);
+                log.debug("Deleted {} headers for request: {}", headersToRemove.size(), request.getId());
+            }
+        }
+
+        // Clear parameters
+        if (request.getParams() != null && !request.getParams().isEmpty()) {
+            List<ParameterEntity> paramsToRemove = new ArrayList<>(request.getParams());
+            request.getParams().clear();
+            if (!paramsToRemove.isEmpty()) {
+                collectionsParameterRepository.deleteAll(paramsToRemove);
+                log.debug("Deleted {} parameters for request: {}", paramsToRemove.size(), request.getId());
+            }
+        }
+
+        // Clear auth config
+        if (request.getAuthConfig() != null) {
+            AuthConfigEntity authConfig = request.getAuthConfig();
+            request.setAuthConfig(null);
+            collectionsAuthConfigRepository.delete(authConfig);
+            log.debug("Deleted auth config for request: {}", request.getId());
+        }
+
+        // Flush to ensure deletions are processed
+        collectionsHeaderRepository.flush();
+        collectionsParameterRepository.flush();
+        collectionsAuthConfigRepository.flush();
+    }
+
+
+    /**
+     * Create auth config for a request
+     */
+    private void createAuthConfigForRequest(GeneratedApiEntity api,
+                                            com.usg.apiAutomation.entities.postgres.collections.RequestEntity request,
+                                            String generatedApiId) {
+        if (api.getAuthConfig() == null || "NONE".equals(api.getAuthConfig().getAuthType())) {
+            return;
+        }
+
+        AuthConfigEntity authConfig = new AuthConfigEntity();
+        authConfig.setId(UUID.randomUUID().toString());
+        authConfig.setGeneratedApiId(generatedApiId);
+        authConfig.setRequest(request);
+        authConfig.setType(api.getAuthConfig().getAuthType());
+
+        switch (api.getAuthConfig().getAuthType()) {
+            case "API_KEY":
+                authConfig.setKey(api.getAuthConfig().getApiKeyHeader() != null ?
+                        api.getAuthConfig().getApiKeyHeader() : "X-API-Key");
+                authConfig.setValue("{{apiKey}}");
+                authConfig.setAddTo("header");
+                break;
+            case "BEARER":
+            case "JWT":
+                authConfig.setType("bearer");
+                authConfig.setToken("{{jwtToken}}");
+                authConfig.setAddTo("header");
+                break;
+            case "BASIC":
+                authConfig.setUsername("{{username}}");
+                authConfig.setPassword("{{password}}");
+                authConfig.setAddTo("header");
+                break;
+            case "ORACLE_ROLES":
+                authConfig.setKey("X-Oracle-Session");
+                authConfig.setValue("{{oracleSessionId}}");
+                authConfig.setAddTo("header");
+                break;
+        }
+
+        collectionsAuthConfigRepository.save(authConfig);
+        request.setAuthConfig(authConfig);
+    }
+
+    /**
+     * Update folder request counts (fixed version without int vs null issue)
+     */
+    public void updateFolderRequestCounts(String oldFolderId, String newFolderId) {
+        try {
+            // Decrement count for old folder if it exists and is different
+            if (oldFolderId != null && !oldFolderId.equals(newFolderId)) {
+                collectionsFolderRepository.findById(oldFolderId).ifPresent(oldFolder -> {
+                    Integer currentCount = oldFolder.getRequestCount();
+                    int newCount = (currentCount != null ? currentCount : 0) - 1;
+                    oldFolder.setRequestCount(Math.max(0, newCount));
+                    collectionsFolderRepository.save(oldFolder);
+                    log.debug("Decremented request count for old folder: {} to {}",
+                            oldFolderId, oldFolder.getRequestCount());
+                });
+            }
+
+            // Increment count for new folder if it exists and is different
+            if (newFolderId != null && !newFolderId.equals(oldFolderId)) {
+                collectionsFolderRepository.findById(newFolderId).ifPresent(newFolder -> {
+                    Integer currentCount = newFolder.getRequestCount();
+                    int newCount = (currentCount != null ? currentCount : 0) + 1;
+                    newFolder.setRequestCount(newCount);
+                    collectionsFolderRepository.save(newFolder);
+                    log.debug("Incremented request count for new folder: {} to {}",
+                            newFolderId, newFolder.getRequestCount());
+                });
+            }
+        } catch (Exception e) {
+            log.warn("Failed to update folder request counts: {}", e.getMessage());
+        }
+    }
+
+
 }
