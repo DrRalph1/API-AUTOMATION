@@ -1557,9 +1557,36 @@ public class DashboardService {
 
         List<DashboardEndpointDTO> filteredList = stream.collect(Collectors.toList());
 
-        // Apply sorting
-        Comparator<DashboardEndpointDTO> comparator = getComparator(sortBy, sortDir);
-        filteredList.sort(comparator);
+        // Apply sorting - FIXED for lastUpdated
+        if (sortBy == null || sortBy.isEmpty() || "lastUpdated".equals(sortBy)) {
+            // Default sorting by lastUpdated descending
+            String direction = (sortBy != null && !sortBy.isEmpty()) ? sortDir : "desc";
+
+            // Sort using the most recent date (lastUpdated or createdAt)
+            filteredList.sort((e1, e2) -> {
+                String date1 = getMostRecentDate(e1);
+                String date2 = getMostRecentDate(e2);
+
+                if (date1 == null && date2 == null) return 0;
+                if (date1 == null) return 1;
+                if (date2 == null) return -1;
+
+                try {
+                    LocalDateTime dt1 = LocalDateTime.parse(date1, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                    LocalDateTime dt2 = LocalDateTime.parse(date2, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                    int result = dt1.compareTo(dt2);
+                    return "desc".equalsIgnoreCase(direction) ? -result : result;
+                } catch (Exception e) {
+                    // Fallback to string comparison
+                    int result = date1.compareTo(date2);
+                    return "desc".equalsIgnoreCase(direction) ? -result : result;
+                }
+            });
+        } else {
+            // Use the existing comparator for other fields
+            Comparator<DashboardEndpointDTO> comparator = getComparator(sortBy, sortDir);
+            filteredList.sort(comparator);
+        }
 
         // Apply pagination
         int totalElements = filteredList.size();
@@ -1587,25 +1614,56 @@ public class DashboardService {
                 .build();
     }
 
+
+
     // Helper method to get comparator based on sort field and direction
     private Comparator<DashboardEndpointDTO> getComparator(String sortBy, String sortDir) {
         Comparator<DashboardEndpointDTO> comparator;
 
         // Determine comparator based on sort field
         switch (sortBy) {
-            case "id":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getId,
-                        Comparator.nullsLast(String::compareTo));
+            case "lastUpdated":
+                // Handle lastUpdated as date
+                comparator = (e1, e2) -> {
+                    String date1 = getMostRecentDate(e1);
+                    String date2 = getMostRecentDate(e2);
+
+                    if (date1 == null && date2 == null) return 0;
+                    if (date1 == null) return 1;
+                    if (date2 == null) return -1;
+
+                    try {
+                        LocalDateTime dt1 = LocalDateTime.parse(date1, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                        LocalDateTime dt2 = LocalDateTime.parse(date2, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                        return dt1.compareTo(dt2);
+                    } catch (Exception e) {
+                        return date1.compareTo(date2);
+                    }
+                };
                 break;
 
-            case "apiId":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getApiId,
-                        Comparator.nullsLast(String::compareTo));
+            case "createdAt":
+                comparator = Comparator.comparing(
+                        e -> {
+                            if (e.getCreatedAt() == null) return null;
+                            try {
+                                return LocalDateTime.parse(e.getCreatedAt(), DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                            } catch (Exception ex) {
+                                return null;
+                            }
+                        },
+                        Comparator.nullsLast(Comparator.naturalOrder())
+                );
                 break;
 
-            case "apiCode":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getApiCode,
-                        Comparator.nullsLast(String::compareTo));
+            case "calls":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getCalls,
+                        Comparator.nullsLast(Integer::compareTo));
+                break;
+
+            case "errors":
+                comparator = Comparator.comparing(DashboardEndpointDTO::getErrors,
+                        Comparator.nullsLast(Integer::compareTo));
                 break;
 
             case "name":
@@ -1618,33 +1676,8 @@ public class DashboardService {
                         Comparator.nullsLast(String::compareTo));
                 break;
 
-            case "url":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getUrl,
-                        Comparator.nullsLast(String::compareTo));
-                break;
-
-            case "description":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getDescription,
-                        Comparator.nullsLast(String::compareTo));
-                break;
-
-            case "collectionId":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getCollectionId,
-                        Comparator.nullsLast(String::compareTo));
-                break;
-
             case "collectionName":
                 comparator = Comparator.comparing(DashboardEndpointDTO::getCollectionName,
-                        Comparator.nullsLast(String::compareTo));
-                break;
-
-            case "folderId":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getFolderId,
-                        Comparator.nullsLast(String::compareTo));
-                break;
-
-            case "folderName":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getFolderName,
                         Comparator.nullsLast(String::compareTo));
                 break;
 
@@ -1653,76 +1686,20 @@ public class DashboardService {
                         Comparator.nullsLast(String::compareTo));
                 break;
 
-            case "version":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getVersion,
-                        Comparator.nullsLast(String::compareTo));
-                break;
-
             case "owner":
                 comparator = Comparator.comparing(DashboardEndpointDTO::getOwner,
                         Comparator.nullsLast(String::compareTo));
                 break;
 
-            case "createdBy":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getCreatedBy,
-                        Comparator.nullsLast(String::compareTo));
-                break;
-
-            case "createdAt":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getCreatedAt,
-                        Comparator.nullsLast(String::compareTo));
-                break;
-
-            case "updatedAt":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getUpdatedAt,
-                        Comparator.nullsLast(String::compareTo));
-                break;
-
-            case "timeAgo":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getTimeAgo,
-                        Comparator.nullsLast(String::compareTo));
-                break;
-
-            case "calls":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getCalls,
-                        Comparator.nullsLast(Integer::compareTo));
-                break;
-
-            case "latency":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getLatency,
-                        Comparator.nullsLast(String::compareTo));
-                break;
-
-            case "successRate":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getSuccessRate,
-                        Comparator.nullsLast(String::compareTo));
-                break;
-
-            case "errors":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getErrors,
-                        Comparator.nullsLast(Integer::compareTo));
-                break;
-
-            case "avgResponseTime":
-                comparator = Comparator.comparing(DashboardEndpointDTO::getAvgResponseTime,
-                        Comparator.nullsLast(String::compareTo));
-                break;
-
-            case "lastUpdated":
             default:
-                // Default sorting by lastUpdated timestamp
-                comparator = Comparator.comparing(
-                        (DashboardEndpointDTO dto) -> {
-                            String timestamp = dto.getLastUpdated();
-                            return timestamp != null ? timestamp : "";
-                        },
-                        Comparator.nullsLast(String::compareTo)
-                );
+                // Default to name if field not recognized
+                comparator = Comparator.comparing(DashboardEndpointDTO::getName,
+                        Comparator.nullsLast(String::compareTo));
                 break;
         }
 
-        // Apply direction (default to descending for timestamp fields if not specified)
-        if (sortDir.equalsIgnoreCase("desc")) {
+        // Apply direction
+        if ("desc".equalsIgnoreCase(sortDir)) {
             comparator = comparator.reversed();
         }
 
@@ -1968,10 +1945,19 @@ public class DashboardService {
     private String getMostRecentDate(DashboardEndpointDTO endpoint) {
         String lastUpdated = endpoint.getLastUpdated();
         String createdAt = endpoint.getCreatedAt();
+
         if (lastUpdated == null && createdAt == null) return null;
         if (lastUpdated == null) return createdAt;
         if (createdAt == null) return lastUpdated;
-        return lastUpdated.compareTo(createdAt) > 0 ? lastUpdated : createdAt;
+
+        try {
+            LocalDateTime lastUpdatedTime = LocalDateTime.parse(lastUpdated, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+            LocalDateTime createdAtTime = LocalDateTime.parse(createdAt, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+            return lastUpdatedTime.isAfter(createdAtTime) ? lastUpdated : createdAt;
+        } catch (Exception e) {
+            // Fallback to string comparison
+            return lastUpdated.compareTo(createdAt) > 0 ? lastUpdated : createdAt;
+        }
     }
 
     private List<ActivityDTO> getAllActivities(String requestId, HttpServletRequest req, String performedBy) {

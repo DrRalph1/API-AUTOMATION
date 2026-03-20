@@ -330,7 +330,7 @@ const RequestDetailsModal = ({ request, colors, isOpen, onClose, onRefresh }) =>
     <div className="fixed inset-0 flex items-center justify-center z-50">
       {/* Blurred Backdrop */}
       <div 
-        className="absolute inset-0 backdrop-blur-sm bg-black/30" 
+        className="absolute inset-0 backdrop-blur-sm bg-black/50" 
         onClick={onClose} 
       />
       <div className="relative w-3/4 max-w-4xl max-h-[80vh] rounded-lg overflow-hidden" style={{ 
