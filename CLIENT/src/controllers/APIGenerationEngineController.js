@@ -71,7 +71,7 @@ const getRandomColor = () => {
  * @param {string} request.endpointPath - Endpoint path (e.g., /users)
  * @param {string} request.category - API category
  * @param {string} request.owner - API owner
- * @param {string} request.status - API status (DRAFT, ACTIVE, DEPRECATED)
+ * @param {string} request.status - API status ('ACTIVE', 'ARCHIVED', 'DEPRECATED', 'DRAFT', 'INACTIVE', 'PENDING', 'SUSPENDED')
  * @param {Array<string>} request.tags - API tags
  * @param {Object} request.sourceObject - Source Oracle object configuration
  * @param {Object} request.schemaConfig - Schema configuration
@@ -485,7 +485,7 @@ export const getTestResults = async (authorizationHeader, apiId) => {
  * Update API status
  * @param {string} authorizationHeader - Bearer token
  * @param {string} apiId - API ID
- * @param {string} status - New status (DRAFT, ACTIVE, DEPRECATED, ARCHIVED)
+ * @param {string} status - New status ('ACTIVE', 'ARCHIVED', 'DEPRECATED', 'DRAFT', 'INACTIVE', 'PENDING', 'SUSPENDED')
  * @returns {Promise} API response
  */
 export const updateApiStatus = async (authorizationHeader, apiId, status) => {
@@ -507,7 +507,7 @@ export const updateApiStatus = async (authorizationHeader, apiId, status) => {
         });
     }
     
-    const validStatuses = ['DRAFT', 'ACTIVE', 'DEPRECATED', 'ARCHIVED'];
+    const validStatuses = ['ACTIVE', 'ARCHIVED', 'DEPRECATED', 'DRAFT', 'INACTIVE', 'PENDING', 'SUSPENDED'];
     if (!validStatuses.includes(status)) {
         return Promise.reject({
             responseCode: 400,
@@ -1044,7 +1044,7 @@ export const syncComponents = async (authorizationHeader, apiId) => {
  * @param {Object} params - Parameters
  * @param {number} params.page - Page number (1-based)
  * @param {number} params.pageSize - Number of items per page
- * @param {string} params.status - Filter by status (DRAFT, ACTIVE, DEPRECATED)
+ * @param {string} params.status - Filter by status ('ACTIVE', 'ARCHIVED', 'DEPRECATED', 'DRAFT', 'INACTIVE', 'PENDING', 'SUSPENDED')
  * @param {string} params.category - Filter by category
  * @param {string} params.search - Search term
  * @returns {Promise} API response
@@ -2344,6 +2344,9 @@ export const getStatusColor = (status) => {
         case 'DRAFT': return 'blue';
         case 'DEPRECATED': return 'yellow';
         case 'ARCHIVED': return 'gray';
+        case 'INACTIVE': return 'red';
+        case 'PENDING': return 'orange';
+        case 'SUSPENDED': return 'purple';
         default: return 'gray';
     }
 };

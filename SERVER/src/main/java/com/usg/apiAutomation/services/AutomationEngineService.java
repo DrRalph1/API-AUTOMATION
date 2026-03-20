@@ -345,10 +345,84 @@ public class AutomationEngineService {
             // 1. Get the API entity
             GeneratedApiEntity api = executionHelper.getApiEntity(generatedAPIRepository, apiId);
 
-            // 2. Check if API is active
+            // 2. ENHANCED: Check API status with specific messages
+            String apiStatus = api.getStatus() != null ? api.getStatus().toUpperCase() : "UNKNOWN";
+
+            // If status is not ACTIVE, handle accordingly
+            if (!"ACTIVE".equals(apiStatus)) {
+                String errorMsg;
+                int statusCode;
+
+                switch (apiStatus) {
+                    case "ARCHIVED":
+                        errorMsg = "This API has been archived and cannot be executed. Please contact system administrator.";
+                        statusCode = 410; // Gone
+                        break;
+                    case "DEPRECATED":
+                        errorMsg = "This API is deprecated and no longer available for execution. Please contact system administrator for migration assistance.";
+                        statusCode = 410; // Gone
+                        break;
+                    case "DRAFT":
+                        errorMsg = "This API is in draft mode and has not been published yet. Please contact system administrator to publish the API.";
+                        statusCode = 403; // Forbidden
+                        break;
+                    case "INACTIVE":
+                        errorMsg = "This API is inactive and cannot be executed. Please contact system administrator to activate it.";
+                        statusCode = 403; // Forbidden
+                        break;
+                    case "PENDING":
+                        errorMsg = "This API is pending approval and cannot be executed yet. Please contact system administrator.";
+                        statusCode = 403; // Forbidden
+                        break;
+                    case "SUSPENDED":
+                        errorMsg = "This API has been suspended and cannot be executed. Please contact system administrator.";
+                        statusCode = 403; // Forbidden
+                        break;
+                    default:
+                        errorMsg = String.format("API is in '%s' state and cannot be executed. Please contact system administrator.",
+                                api.getStatus());
+                        statusCode = 403;
+                        break;
+                }
+
+                log.warn("API execution blocked - Status: {}, API ID: {}", apiStatus, apiId);
+
+                // Update captured request if it exists
+                if (capturedRequestId != null) {
+                    try {
+                        updateCapturedRequestWithError(requestId, capturedRequestId, statusCode,
+                                errorMsg, System.currentTimeMillis() - startTime);
+                    } catch (Exception ex) {
+                        log.error("Failed to update captured request with error: {}", ex.getMessage());
+                    }
+                }
+
+                executionHelper.logExecution(executionLogRepository, api, executeRequest,
+                        null, statusCode, System.currentTimeMillis() - startTime,
+                        performedBy, clientIp, userAgent, errorMsg, objectMapper);
+
+                return responseHelper.createErrorResponse(statusCode, errorMsg, startTime);
+            }
+
+            // Also check the isActive flag for backward compatibility
             if (!api.getIsActive()) {
-                return responseHelper.createErrorResponse(403,
-                        "API is inactive and cannot be executed", startTime);
+                String errorMsg = "API is inactive and cannot be executed. Please contact system administrator to activate it.";
+                log.warn("API execution blocked - isActive flag is false for API ID: {}", apiId);
+
+                if (capturedRequestId != null) {
+                    try {
+                        updateCapturedRequestWithError(requestId, capturedRequestId, 403,
+                                errorMsg, System.currentTimeMillis() - startTime);
+                    } catch (Exception ex) {
+                        log.error("Failed to update captured request with error: {}", ex.getMessage());
+                    }
+                }
+
+                executionHelper.logExecution(executionLogRepository, api, executeRequest,
+                        null, 403, System.currentTimeMillis() - startTime,
+                        performedBy, clientIp, userAgent, errorMsg, objectMapper);
+
+                return responseHelper.createErrorResponse(403, errorMsg, startTime);
             }
 
             // 3. Validate request structure

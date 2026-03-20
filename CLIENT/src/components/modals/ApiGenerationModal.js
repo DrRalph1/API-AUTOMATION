@@ -4666,7 +4666,7 @@ const handlePreviewConfirm = async () => {
                 <select
                   value={apiDetails.status}
                   onChange={(e) => handleApiDetailChange('status', e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift uppercase"
                   style={{ 
                     backgroundColor: themeColors.bg,
                     borderColor: themeColors.border,
@@ -4674,10 +4674,13 @@ const handlePreviewConfirm = async () => {
                   }}
                   disabled={loading || validating}
                 >
-                  <option value="DRAFT">Draft</option>
-                  <option value="ACTIVE">Active</option>
-                  <option value="DEPRECATED">Deprecated</option>
-                  <option value="ARCHIVED">Archived</option>
+                  <option value="ACTIVE" style={{ color: 'green' }}>Active</option>
+                  <option value="DRAFT" style={{ color: 'blue' }}>Draft</option>
+                  <option value="DEPRECATED" style={{ color: 'goldenrod' }}>Deprecated</option>
+                  <option value="ARCHIVED" style={{ color: 'gray' }}>Archived</option>
+                  <option value="INACTIVE" style={{ color: 'red' }}>Inactive</option>
+                  <option value="PENDING" style={{ color: 'orange' }}>Pending</option>
+                  <option value="SUSPENDED" style={{ color: 'purple' }}>Suspended</option>
                 </select>
               </div>
 
