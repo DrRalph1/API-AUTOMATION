@@ -2654,7 +2654,8 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
           console.log('📦 Processing request body:', {
             bodyType,
             bodyParamsCount: bodyParams.length,
-            sample: details.requestBody.sample
+            sample: details.requestBody.sample,
+            allowedMediaTypes: details.requestBody.allowedMediaTypes
           });
           
           // Handle based on bodyType (this determines the UI representation)
@@ -2674,27 +2675,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
                 }));
                 setFormData(formDataArray);
               } else {
-                // If no parameters but we have a sample, try to parse it
-                if (details.requestBody.sample && details.requestBody.sample !== '{}') {
-                  try {
-                    const parsed = JSON.parse(details.requestBody.sample);
-                    const formDataArray = Object.entries(parsed).map(([key, value], index) => ({
-                      id: `form-${Date.now()}-${index}-${Math.random()}`,
-                      key: key,
-                      value: typeof value === 'object' ? JSON.stringify(value) : String(value),
-                      type: 'text',
-                      enabled: true,
-                      description: '',
-                      required: false,
-                      file: null
-                    }));
-                    setFormData(formDataArray);
-                  } catch (e) {
-                    setFormData([]);
-                  }
-                } else {
-                  setFormData([]);
-                }
+                setFormData([]);
               }
               setRequestBodyType('form-data');
               setRequestBody('');
@@ -2714,25 +2695,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
                 }));
                 setUrlEncodedData(urlEncodedArray);
               } else {
-                // If no parameters but we have a sample, try to parse it
-                if (details.requestBody.sample && details.requestBody.sample !== '{}') {
-                  try {
-                    const parsed = JSON.parse(details.requestBody.sample);
-                    const urlEncodedArray = Object.entries(parsed).map(([key, value], index) => ({
-                      id: `url-${Date.now()}-${index}-${Math.random()}`,
-                      key: key,
-                      value: String(value),
-                      description: '',
-                      enabled: true,
-                      required: false
-                    }));
-                    setUrlEncodedData(urlEncodedArray);
-                  } catch (e) {
-                    setUrlEncodedData([]);
-                  }
-                } else {
-                  setUrlEncodedData([]);
-                }
+                setUrlEncodedData([]);
               }
               setRequestBodyType('x-www-form-urlencoded');
               setRequestBody('');
@@ -2749,7 +2712,6 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
                 const jsonBody = {};
                 bodyParams.forEach(param => {
                   if (param.key) {
-                    // Try to parse the value if it looks like JSON
                     let value = param.value || param.defaultValue || param.example || '';
                     if (value && (value.startsWith('{') || value.startsWith('['))) {
                       try {
@@ -2762,27 +2724,21 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
                   }
                 });
                 
-                // Start with built JSON
                 let finalBody = JSON.stringify(jsonBody, null, 2);
                 
-                // If there's a sample, try to merge or use it
                 if (details.requestBody.sample && details.requestBody.sample !== '{}') {
                   try {
                     const parsedSample = JSON.parse(details.requestBody.sample);
                     const merged = { ...parsedSample, ...jsonBody };
                     finalBody = JSON.stringify(merged, null, 2);
                   } catch (e) {
-                    // If sample isn't valid JSON, use built JSON
                     finalBody = JSON.stringify(jsonBody, null, 2);
                   }
                 }
                 
                 setRequestBody(finalBody);
-                console.log('✅ Set JSON body:', finalBody);
               } else if (details.requestBody.sample) {
-                // Use sample if no parameters
                 setRequestBody(details.requestBody.sample);
-                console.log('✅ Set JSON body from sample');
               } else {
                 setRequestBody('{}');
               }
@@ -2793,21 +2749,54 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
               setRequestBodyType('xml');
               setRawBodyType('xml');
               
-              // Build XML from body parameters if they exist
+              // Build XML from parameters if they exist
               if (bodyParams.length > 0) {
                 let xmlBody = '<?xml version="1.0" encoding="UTF-8"?>\n<request>\n';
                 bodyParams.forEach(param => {
                   if (param.key) {
                     const value = param.value || param.defaultValue || param.example || '';
-                    xmlBody += `  <${param.key}>${escapeXml(value)}</${param.key}>\n`;
+                    // Escape XML special characters
+                    const escapedValue = escapeXml(value);
+                    xmlBody += `  <${param.key}>${escapedValue}</${param.key}>\n`;
                   }
                 });
                 xmlBody += '</request>';
-                setRequestBody(xmlBody);
-              } else if (details.requestBody.sample) {
+                
+                // Check if sample is valid XML and not empty
+                if (details.requestBody.sample && 
+                    details.requestBody.sample !== '{}' && 
+                    details.requestBody.sample.trim() !== '') {
+                  try {
+                    // Try to parse sample to see if it's valid XML
+                    const parser = new DOMParser();
+                    const xmlDoc = parser.parseFromString(details.requestBody.sample, "text/xml");
+                    const parserError = xmlDoc.getElementsByTagName("parsererror");
+                    
+                    if (parserError.length === 0) {
+                      // Valid XML, use the sample
+                      setRequestBody(details.requestBody.sample);
+                      console.log('✅ Using XML sample from API');
+                    } else {
+                      // Invalid XML, use built XML
+                      setRequestBody(xmlBody);
+                      console.log('✅ Using built XML from parameters');
+                    }
+                  } catch (e) {
+                    setRequestBody(xmlBody);
+                    console.log('✅ Using built XML from parameters (sample invalid)');
+                  }
+                } else {
+                  setRequestBody(xmlBody);
+                  console.log('✅ Using built XML from parameters');
+                }
+              } else if (details.requestBody.sample && details.requestBody.sample.trim() !== '') {
+                // No parameters, use sample directly
                 setRequestBody(details.requestBody.sample);
+                console.log('✅ Using XML sample from API');
               } else {
-                setRequestBody('<?xml version="1.0" encoding="UTF-8"?>\n<request>\n</request>');
+                // Default XML template
+                setRequestBody('<?xml version="1.0" encoding="UTF-8"?>\n<request>\n  <!-- Add your XML fields here -->\n</request>');
+                console.log('✅ Using default XML template');
               }
               break;
               

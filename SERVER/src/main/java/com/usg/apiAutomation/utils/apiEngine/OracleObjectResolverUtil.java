@@ -311,6 +311,143 @@ public class OracleObjectResolverUtil {
         }
     }
 
+    /**
+     * Validate a package procedure exists and is valid
+     * @param schemaName The schema/owner name
+     * @param packageName The package name
+     * @param procedureName The procedure name
+     * @throws ValidationException if the package procedure doesn't exist or is invalid
+     */
+    public void validatePackageProcedure(String schemaName, String packageName, String procedureName) {
+        log.info("Validating package procedure: {}.{}.{}", schemaName, packageName, procedureName);
+
+        try {
+            // First, check if the package exists and is valid
+            String packageSql = "SELECT STATUS FROM ALL_OBJECTS " +
+                    "WHERE OWNER = ? AND OBJECT_NAME = ? AND OBJECT_TYPE = 'PACKAGE'";
+
+            String packageStatus = oracleJdbcTemplate.queryForObject(packageSql, String.class, schemaName, packageName);
+            log.info("Package {}.{} status: {}", schemaName, packageName, packageStatus);
+
+            if ("INVALID".equalsIgnoreCase(packageStatus)) {
+                throw new ValidationException(
+                        String.format("The package '%s.%s' exists but is INVALID (compilation error). Please check the database for compilation errors and recompile it.",
+                                schemaName, packageName)
+                );
+            }
+
+            // Then, check if the procedure exists within the package
+            String procedureSql = "SELECT COUNT(*) FROM ALL_PROCEDURES " +
+                    "WHERE OWNER = ? AND OBJECT_NAME = ? AND PROCEDURE_NAME = ?";
+
+            Integer count = oracleJdbcTemplate.queryForObject(procedureSql, Integer.class,
+                    schemaName, packageName, procedureName);
+
+            if (count == null || count == 0) {
+                throw new ValidationException(
+                        String.format("The procedure '%s.%s.%s' does not exist or you don't have access to it.",
+                                schemaName, packageName, procedureName)
+                );
+            }
+
+            log.info("✅ Package procedure {}.{}.{} exists", schemaName, packageName, procedureName);
+
+            // Optional: Check if the procedure has compilation errors
+            String errorSql = "SELECT COUNT(*) FROM ALL_ERRORS " +
+                    "WHERE OWNER = ? AND NAME = ? AND TYPE = 'PACKAGE' AND SEQUENCE > 0";
+
+            Integer errorCount = oracleJdbcTemplate.queryForObject(errorSql, Integer.class,
+                    schemaName, packageName);
+
+            if (errorCount != null && errorCount > 0) {
+                log.warn("⚠️ Package {}.{} has {} compilation errors. Procedure may be invalid.",
+                        schemaName, packageName, errorCount);
+
+                // Get the first few errors for logging
+                String errorDetailSql = "SELECT LINE, TEXT FROM ALL_ERRORS " +
+                        "WHERE OWNER = ? AND NAME = ? AND TYPE = 'PACKAGE' AND SEQUENCE > 0 " +
+                        "ORDER BY SEQUENCE FETCH FIRST 5 ROWS ONLY";
+
+                List<Map<String, Object>> errors = oracleJdbcTemplate.queryForList(errorDetailSql,
+                        schemaName, packageName);
+
+                if (!errors.isEmpty()) {
+                    StringBuilder errorMsg = new StringBuilder();
+                    errorMsg.append(String.format("Package %s.%s has compilation errors: ",
+                            schemaName, packageName));
+                    for (Map<String, Object> error : errors) {
+                        errorMsg.append(String.format(" Line %s: %s; ",
+                                error.get("LINE"), error.get("TEXT")));
+                    }
+                    log.warn(errorMsg.toString());
+                }
+            }
+
+        } catch (EmptyResultDataAccessException e) {
+            throw new ValidationException(
+                    String.format("The package '%s.%s' does not exist or you don't have access to it.",
+                            schemaName, packageName)
+            );
+        } catch (ValidationException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Error validating package procedure {}.{}.{}: {}",
+                    schemaName, packageName, procedureName, e.getMessage());
+            throw new ValidationException(
+                    String.format("Failed to validate package procedure '%s.%s.%s': %s",
+                            schemaName, packageName, procedureName, e.getMessage())
+            );
+        }
+    }
+
+    /**
+     * Resolve a package procedure target (handle synonyms for packages and procedures)
+     * @param owner The schema owner
+     * @param packageName The package name
+     * @param procedureName The procedure name
+     * @return Map containing resolution information
+     */
+    public Map<String, Object> resolvePackageProcedureTarget(String owner, String packageName, String procedureName) {
+        Map<String, Object> result = new HashMap<>();
+
+        result.put("originalOwner", owner);
+        result.put("originalPackageName", packageName);
+        result.put("originalProcedureName", procedureName);
+        result.put("targetOwner", owner);
+        result.put("targetPackageName", packageName);
+        result.put("targetProcedureName", procedureName);
+        result.put("isSynonym", false);
+
+        try {
+            // First, check if the package itself is a synonym
+            Map<String, Object> packageResolution = resolveObject(owner, packageName, "PACKAGE");
+
+            if ((boolean) packageResolution.getOrDefault("isSynonym", false)) {
+                result.put("isSynonym", true);
+                result.put("targetOwner", packageResolution.get("targetOwner"));
+                result.put("targetPackageName", packageResolution.get("targetName"));
+                result.put("targetProcedureName", procedureName);
+
+                log.info("✅ Resolved package synonym: {}.{} -> {}.{}",
+                        owner, packageName, result.get("targetOwner"), result.get("targetPackageName"));
+            }
+
+            // Validate the resolved package procedure
+            validatePackageProcedure(
+                    (String) result.get("targetOwner"),
+                    (String) result.get("targetPackageName"),
+                    (String) result.get("targetProcedureName")
+            );
+
+        } catch (Exception e) {
+            log.error("Error resolving package procedure {}.{}.{}: {}",
+                    owner, packageName, procedureName, e.getMessage());
+            result.put("error", e.getMessage());
+        }
+
+        return result;
+    }
+
     // ==================== EXISTING METHODS (keep as is) ====================
 
     public void validateDatabaseObject(String schemaName, String objectName, String objectType) {

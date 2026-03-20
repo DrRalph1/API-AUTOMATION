@@ -1,5 +1,7 @@
 package com.usg.apiAutomation.utils.apiEngine.executor;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiParameterDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
@@ -15,6 +17,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Component
@@ -28,82 +32,232 @@ public class ViewExecutorUtil {
     private final ParameterValidatorUtil parameterValidator;
     private final OracleObjectResolverUtil objectResolver;
     private final TableExecutorUtil tableExecutorUtil;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public Object execute(GeneratedApiEntity api, ApiSourceObjectDTO sourceObject,
                           String viewName, String owner, ExecuteApiRequestDTO request,
                           List<ApiParameterDTO> configuredParamDTOs) {
 
-        // FIX: Combine ALL parameters - path, query, headers, and body
-        Map<String, Object> allParams = new HashMap<>();
+        // ============ DEBUGGING: Log all input parameters ============
+        log.info("============ VIEW EXECUTOR DEBUG ============");
+        log.info("API ID: {}", api != null ? api.getId() : "null");
+        log.info("API Name: {}", api != null ? api.getApiName() : "null");
+        log.info("View Name parameter: {}", viewName);
+        log.info("Owner parameter: {}", owner);
+        log.info("Request Body Type: {}", request.getBody() != null ? request.getBody().getClass().getName() : "null");
+        log.info("Request Body: {}", request.getBody());
 
-        // Add path params
-        if (request.getPathParams() != null) {
-            allParams.putAll(request.getPathParams());
-            log.info("Added path params: {}", request.getPathParams().keySet());
+        // ============ CREATE PARAMETER MAPPING ============
+        // Build a map of API parameter keys to database column names
+        Map<String, String> apiToDbColumnMap = new HashMap<>();
+        if (configuredParamDTOs != null) {
+            for (ApiParameterDTO param : configuredParamDTOs) {
+                if (param.getKey() != null) {
+                    // For views, we typically use dbColumn as the column name
+                    String dbColumnName = param.getDbColumn();
+                    if (dbColumnName == null || dbColumnName.isEmpty()) {
+                        dbColumnName = param.getDbParameter();
+                    }
+                    if (dbColumnName == null || dbColumnName.isEmpty()) {
+                        dbColumnName = param.getKey();
+                    }
+                    apiToDbColumnMap.put(param.getKey().toLowerCase(), dbColumnName.toUpperCase());
+                    log.info("Parameter mapping: API '{}' -> Database Column '{}'", param.getKey(), dbColumnName.toUpperCase());
+                }
+            }
         }
 
-        // Add query params
-        if (request.getQueryParams() != null) {
-            allParams.putAll(request.getQueryParams());
-            log.info("Added query params: {}", request.getQueryParams().keySet());
+        // ============ HANDLE XML BODY ============
+        Map<String, Object> dbParams = new HashMap<>();
+        String xmlBody = null;
+        boolean isXmlBody = false;
+        boolean hasXmlParameter = false;
+
+        // Check if request body is a String and looks like XML
+        if (request.getBody() != null) {
+            if (request.getBody() instanceof String) {
+                String bodyString = (String) request.getBody();
+                // Check if it's XML (starts with <)
+                if (bodyString.trim().startsWith("<")) {
+                    isXmlBody = true;
+                    xmlBody = bodyString;
+                    log.info("=========================================");
+                    log.info("XML BODY DETECTED!");
+                    log.info("XML Length: {} characters", xmlBody.length());
+                    log.info("XML Preview: {}", xmlBody.substring(0, Math.min(500, xmlBody.length())));
+                    log.info("=========================================");
+                } else {
+                    // Regular string body - might be JSON or plain text
+                    log.info("String body detected (non-XML): {}", bodyString.substring(0, Math.min(100, bodyString.length())));
+                    // For view queries, a plain string might be a simple query parameter
+                    if (!bodyString.isEmpty() && !bodyString.equals("{}")) {
+                        dbParams.put("BODY_STRING", bodyString);
+                    }
+                }
+            } else if (request.getBody() instanceof Map) {
+                Map<String, Object> bodyMap = (Map<String, Object>) request.getBody();
+
+                // Check for wrapped XML from old format
+                if (bodyMap.containsKey("_xml")) {
+                    isXmlBody = true;
+                    xmlBody = (String) bodyMap.get("_xml");
+                    log.info("Found XML in _xml wrapper: {}", xmlBody.substring(0, Math.min(200, xmlBody.length())));
+                } else {
+                    // Regular JSON body
+                    log.info("JSON body detected with keys: {}", bodyMap.keySet());
+                    for (Map.Entry<String, Object> entry : bodyMap.entrySet()) {
+                        String paramKey = entry.getKey().toLowerCase();
+                        String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey, entry.getKey().toUpperCase());
+
+                        // Handle nested objects and arrays
+                        Object value = entry.getValue();
+                        if (value instanceof Map || value instanceof List) {
+                            try {
+                                value = objectMapper.writeValueAsString(value);
+                                log.debug("Converted complex object to JSON string for parameter: {}", dbColumnName);
+                            } catch (Exception e) {
+                                log.warn("Failed to convert complex object to string: {}", e.getMessage());
+                            }
+                        }
+
+                        dbParams.put(dbColumnName, value);
+                        log.debug("Added JSON param: {} -> {} = {}", entry.getKey(), dbColumnName, value);
+                    }
+                }
+            }
         }
 
-        // Add headers (these will be used for execution but NOT for view column validation)
+        // ============ PROCESS XML BODY ============
+        if (isXmlBody && xmlBody != null) {
+            log.info("Processing XML body for view execution");
+
+            // FIRST: Try to extract individual parameters from XML
+            Map<String, Object> extractedXmlParams = parseXmlParameters(xmlBody, configuredParamDTOs, apiToDbColumnMap);
+            if (!extractedXmlParams.isEmpty()) {
+                dbParams.putAll(extractedXmlParams);
+                log.info("✅ Extracted {} parameters from XML and added to dbParams", extractedXmlParams.size());
+                log.info("Extracted params: {}", extractedXmlParams.keySet());
+            }
+
+            // For views, we might need to handle XML specially - it could be used for dynamic WHERE clauses
+            // or stored as a parameter for XML-based queries
+            if (api.getParameters() != null) {
+                for (ApiParameterEntity param : api.getParameters()) {
+                    String paramKey = param.getKey().toLowerCase();
+                    String dbColumnName = getDbColumnName(param);
+
+                    // Check if this parameter is designed to accept XML
+                    boolean isXmlParameter = paramKey.contains("xml") ||
+                            paramKey.contains("clob") ||
+                            paramKey.contains("where") ||
+                            paramKey.contains("filter") ||
+                            paramKey.contains("condition");
+
+                    if (isXmlParameter && dbColumnName != null) {
+                        if (!dbParams.containsKey(dbColumnName)) {
+                            dbParams.put(dbColumnName, xmlBody);
+                            hasXmlParameter = true;
+                            log.info("✅ Mapped full XML body to database column: {}", dbColumnName);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            // If no explicit XML parameter found, log warning
+            if (!hasXmlParameter && extractedXmlParams.isEmpty()) {
+                log.warn("⚠️ No suitable database column found for XML body. XML will be stored as a WHERE_CONDITION.");
+                dbParams.put("WHERE_CONDITION", xmlBody);
+            }
+        }
+
+        // ============ ADD PATH AND QUERY PARAMETERS ============
+        // Add path parameters
+        if (request.getPathParams() != null && !request.getPathParams().isEmpty()) {
+            for (Map.Entry<String, Object> entry : request.getPathParams().entrySet()) {
+                String paramKey = entry.getKey().toLowerCase();
+                String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey, entry.getKey().toUpperCase());
+                dbParams.put(dbColumnName, entry.getValue());
+                log.debug("Added path param: {} -> {} = {}", entry.getKey(), dbColumnName, entry.getValue());
+            }
+            log.info("Path params added: {}", request.getPathParams().keySet());
+        }
+
+        // Add query parameters
+        if (request.getQueryParams() != null && !request.getQueryParams().isEmpty()) {
+            for (Map.Entry<String, Object> entry : request.getQueryParams().entrySet()) {
+                String paramKey = entry.getKey().toLowerCase();
+                String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey, entry.getKey().toUpperCase());
+                dbParams.put(dbColumnName, entry.getValue());
+                log.debug("Added query param: {} -> {} = {}", entry.getKey(), dbColumnName, entry.getValue());
+            }
+            log.info("Query params added: {}", request.getQueryParams().keySet());
+        }
+
+        // ============ ADD HEADERS AS PARAMETERS (if needed) ============
         Map<String, Object> headerParams = new HashMap<>();
         if (request.getHeaders() != null && !request.getHeaders().isEmpty()) {
-            headerParams.putAll(request.getHeaders());
-            allParams.putAll(request.getHeaders());
-            log.info("Added headers: {}", request.getHeaders().keySet());
+            for (Map.Entry<String, String> entry : request.getHeaders().entrySet()) {
+                String headerKey = entry.getKey().toLowerCase();
+                // Check if the API expects this header as a parameter
+                boolean headerIsParameter = api.getParameters() != null && api.getParameters().stream()
+                        .anyMatch(p -> p.getKey().equalsIgnoreCase(headerKey));
+
+                if (headerIsParameter) {
+                    String dbColumnName = apiToDbColumnMap.getOrDefault(headerKey, headerKey.toUpperCase());
+                    dbParams.put(dbColumnName, entry.getValue());
+                    headerParams.put(headerKey, entry.getValue());
+                    log.debug("Added header as parameter: {} -> {} = {}", headerKey, dbColumnName, entry.getValue());
+                } else {
+                    // Store header for potential use but not for column validation
+                    headerParams.put(headerKey, entry.getValue());
+                    log.debug("Header stored for reference (not as column param): {} = {}", headerKey, entry.getValue());
+                }
+            }
+            log.info("Headers added: {}", request.getHeaders().keySet());
 
             if (request.getHeaders().containsKey("group_id")) {
                 log.info("✅ group_id header found with value: {}", request.getHeaders().get("group_id"));
             }
         }
 
-        // Add body params if body is a map
-        Map<String, Object> bodyParams = new HashMap<>();
-        if (request.getBody() instanceof Map) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> bodyMap = (Map<String, Object>) request.getBody();
-            if (bodyMap != null && !bodyMap.isEmpty()) {
-                bodyParams.putAll(bodyMap);
-                allParams.putAll(bodyMap);
-                log.info("Added body params: {}", bodyMap.keySet());
-            }
-        }
-
-        log.info("Combined all params for view execution: {}", allParams.keySet());
-
-        // Verify group_id is in the params
-        if (allParams.containsKey("group_id")) {
-            log.info("✅ group_id successfully passed to view executor with value: {}", allParams.get("group_id"));
-        }
-
-        // Handle collection/array parameters in all params
-        for (Map.Entry<String, Object> entry : allParams.entrySet()) {
+        // ============ HANDLE COLLECTION/ARRAY PARAMETERS ============
+        // Convert collection/array parameters to single values for WHERE clause
+        for (Map.Entry<String, Object> entry : dbParams.entrySet()) {
             Object value = entry.getValue();
-            if (value instanceof List || value.getClass().isArray()) {
+            if (value instanceof List || (value != null && value.getClass().isArray())) {
                 Collection<?> collection = value instanceof List ?
                         (List<?>) value : Arrays.asList((Object[]) value);
                 if (!collection.isEmpty()) {
                     // Take the first value for WHERE clause
-                    allParams.put(entry.getKey(), collection.iterator().next());
+                    dbParams.put(entry.getKey(), collection.iterator().next());
                     log.info("Converted collection parameter '{}' to single value", entry.getKey());
+                } else {
+                    dbParams.put(entry.getKey(), null);
                 }
             }
         }
 
-        // Resolve the actual owner if null
-        String resolvedOwner = resolveOwner(owner, sourceObject);
+        log.info("Final DB params for view execution: {}", dbParams.keySet());
+
+        // Verify group_id is in the params
+        if (dbParams.containsKey("GROUP_ID") || headerParams.containsKey("group_id")) {
+            log.info("✅ group_id successfully passed to view executor");
+        }
+
+        // ============ OWNER RESOLUTION STRATEGY ============
+        String resolvedOwner = resolveOwner(owner, sourceObject, api, viewName);
         String resolvedViewName = viewName != null ? viewName.toUpperCase() : null;
 
         if (resolvedViewName == null) {
             throw new ValidationException("View name cannot be null");
         }
 
-        log.info("Resolved view owner: {}, view name: {}", resolvedOwner, resolvedViewName);
+        log.info("Final resolved owner: {}", resolvedOwner);
+        log.info("Final view name: {}", resolvedViewName);
 
-        // ==================== VALIDATION STEP 1: Check if it's a synonym first ====================
+        // ============ SYNONYM RESOLUTION ============
+        // Resolve the actual target (handle synonyms)
         Map<String, Object> resolutionResult = objectResolver.resolveObject(resolvedOwner, resolvedViewName, "VIEW");
 
         if (!(boolean) resolutionResult.getOrDefault("exists", false)) {
@@ -119,7 +273,7 @@ public class ViewExecutorUtil {
         String targetType = (String) resolutionResult.get("targetType");
         boolean isSynonym = (boolean) resolutionResult.getOrDefault("isSynonym", false);
 
-        log.info("Resolved to: {}.{} ({}) {}", targetOwner, targetName, targetType,
+        log.info("🔍 Resolved to: {}.{} ({}) {}", targetOwner, targetName, targetType,
                 isSynonym ? "(via synonym)" : "");
 
         // If it resolved to something other than a VIEW, that's a problem
@@ -130,9 +284,8 @@ public class ViewExecutorUtil {
             );
         }
 
-        // ==================== VALIDATION STEP 2: Validate view is accessible ====================
+        // ==================== VALIDATION STEP 1: Validate view is accessible ====================
         try {
-            // Use the resolved target for validation
             objectResolver.validateDatabaseObject(targetOwner, targetName, "VIEW");
             log.info("✅ View {}.{} exists and is accessible", targetOwner, targetName);
         } catch (ValidationException e) {
@@ -140,7 +293,7 @@ public class ViewExecutorUtil {
             throw e;
         }
 
-        // ==================== VALIDATION STEP 3: Validate ONLY THE APPROPRIATE PARAMETERS against view columns ====================
+        // ==================== VALIDATION STEP 2: Validate view query parameters ====================
         try {
             // Get allowed columns from response mappings or API parameters
             List<String> allowedColumns = new ArrayList<>();
@@ -168,7 +321,7 @@ public class ViewExecutorUtil {
             log.info("Configured parameter keys: {}", configuredParamKeys);
 
             // Only include parameters that are in the configured list
-            for (Map.Entry<String, Object> entry : allParams.entrySet()) {
+            for (Map.Entry<String, Object> entry : dbParams.entrySet()) {
                 String key = entry.getKey();
                 // Check if this is a configured parameter (case-insensitive)
                 boolean isConfigured = false;
@@ -180,8 +333,9 @@ public class ViewExecutorUtil {
                 }
 
                 // Also include common pagination parameters
-                if (isConfigured || "page".equalsIgnoreCase(key) || "pageSize".equalsIgnoreCase(key) ||
-                        "sort".equalsIgnoreCase(key) || "order".equalsIgnoreCase(key)) {
+                if (isConfigured || "page".equalsIgnoreCase(key) || "pagesize".equalsIgnoreCase(key) ||
+                        "sort".equalsIgnoreCase(key) || "order".equalsIgnoreCase(key) ||
+                        "where_condition".equalsIgnoreCase(key)) {
                     queryParamsForValidation.put(key, entry.getValue());
                 } else {
                     log.debug("Excluding header/other param from view validation: {} = {}", key, entry.getValue());
@@ -197,50 +351,134 @@ public class ViewExecutorUtil {
             throw e;
         }
 
-        // ==================== VALIDATION STEP 4: Validate all parameters ====================
+        // ==================== VALIDATION STEP 3: Validate all parameters ====================
         try {
-            parameterValidator.validateParameters(configuredParamDTOs, allParams, targetOwner, targetName);
+            parameterValidator.validateParameters(configuredParamDTOs, dbParams, targetOwner, targetName);
             log.info("✅ All parameter validations passed for view {}.{}", targetOwner, targetName);
         } catch (ValidationException e) {
             log.error("❌ Parameter validation failed: {}", e.getMessage());
             throw e;
         }
 
+        log.info("============ VIEW EXECUTION COMPLETE ============");
+
         // Pass ALL combined parameters to TableExecutorUtil (including headers)
-        return tableExecutorUtil.executeSelect(targetName, targetOwner, allParams, api, configuredParamDTOs);
+        return tableExecutorUtil.executeSelect(targetName, targetOwner, dbParams, api, configuredParamDTOs);
     }
 
     /**
      * Helper method to resolve the owner from multiple sources
      */
-    private String resolveOwner(String owner, ApiSourceObjectDTO sourceObject) {
-        // Try in order: explicit owner parameter, sourceObject owner, sourceObject schemaName, current schema
+    private String resolveOwner(String owner, ApiSourceObjectDTO sourceObject, GeneratedApiEntity api, String viewName) {
+        // Strategy 1: Use the owner parameter passed to the method
         if (owner != null && !owner.trim().isEmpty()) {
+            log.info("Strategy 1 - Using owner parameter: {}", owner);
             return owner.trim().toUpperCase();
         }
 
-        if (sourceObject != null) {
-            if (sourceObject.getOwner() != null && !sourceObject.getOwner().trim().isEmpty()) {
-                return sourceObject.getOwner().trim().toUpperCase();
-            }
-            if (sourceObject.getSchemaName() != null && !sourceObject.getSchemaName().trim().isEmpty()) {
-                return sourceObject.getSchemaName().trim().toUpperCase();
+        // Strategy 2: Try sourceObject.getOwner()
+        if (sourceObject != null && sourceObject.getOwner() != null && !sourceObject.getOwner().trim().isEmpty()) {
+            log.info("Strategy 2 - Using sourceObject.getOwner(): {}", sourceObject.getOwner());
+            return sourceObject.getOwner().trim().toUpperCase();
+        }
+
+        // Strategy 3: Try sourceObject.getSchemaName()
+        if (sourceObject != null && sourceObject.getSchemaName() != null && !sourceObject.getSchemaName().trim().isEmpty()) {
+            log.info("Strategy 3 - Using sourceObject.getSchemaName(): {}", sourceObject.getSchemaName());
+            return sourceObject.getSchemaName().trim().toUpperCase();
+        }
+
+        // Strategy 4: Get from API's source_object_info (as Map)
+        if (api != null && api.getSourceObjectInfo() != null) {
+            try {
+                // Check if it's already a Map
+                if (api.getSourceObjectInfo() instanceof Map) {
+                    Map<String, Object> sourceInfo = (Map<String, Object>) api.getSourceObjectInfo();
+                    if (sourceInfo.containsKey("schemaName") && sourceInfo.get("schemaName") != null) {
+                        String schemaName = sourceInfo.get("schemaName").toString();
+                        log.info("Strategy 4 - Using schemaName from source_object_info Map: {}", schemaName);
+                        return schemaName.trim().toUpperCase();
+                    }
+                    if (sourceInfo.containsKey("owner") && sourceInfo.get("owner") != null) {
+                        String ownerName = sourceInfo.get("owner").toString();
+                        log.info("Strategy 4 - Using owner from source_object_info Map: {}", ownerName);
+                        return ownerName.trim().toUpperCase();
+                    }
+                } else {
+                    // If it's a String, parse it
+                    String jsonString = api.getSourceObjectInfo().toString();
+                    Map<String, Object> sourceInfo = objectMapper.readValue(jsonString, new TypeReference<Map<String, Object>>() {});
+                    if (sourceInfo.containsKey("schemaName") && sourceInfo.get("schemaName") != null) {
+                        String schemaName = sourceInfo.get("schemaName").toString();
+                        log.info("Strategy 4 - Using schemaName from source_object_info JSON: {}", schemaName);
+                        return schemaName.trim().toUpperCase();
+                    }
+                    if (sourceInfo.containsKey("owner") && sourceInfo.get("owner") != null) {
+                        String ownerName = sourceInfo.get("owner").toString();
+                        log.info("Strategy 4 - Using owner from source_object_info JSON: {}", ownerName);
+                        return ownerName.trim().toUpperCase();
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Could not process sourceObjectInfo: {}", e.getMessage());
             }
         }
 
-        // Try to get current schema as last resort
+        // Strategy 5: Try to get current user's default schema
         try {
             String currentSchema = objectResolver.getCurrentSchema();
             if (currentSchema != null && !currentSchema.isEmpty()) {
-                log.info("Using current schema as owner: {}", currentSchema);
+                log.info("Strategy 5 - Using current schema from Oracle: {}", currentSchema);
                 return currentSchema;
             }
         } catch (Exception e) {
             log.warn("Could not get current schema: {}", e.getMessage());
         }
 
-        // If all else fails, return null (but the resolver should handle it)
+        // Strategy 6: Try to resolve the view from all accessible schemas
+        try {
+            log.info("Strategy 6 - Attempting to locate view '{}' in accessible schemas", viewName);
+
+            // Query to find the view in any schema the current user has access to
+            String findViewSql = "SELECT OWNER FROM ALL_VIEWS WHERE VIEW_NAME = ? AND ROWNUM = 1";
+            List<String> owners = oracleJdbcTemplate.queryForList(findViewSql, String.class, viewName);
+
+            if (!owners.isEmpty()) {
+                String foundOwner = owners.get(0);
+                log.info("Strategy 6 - Found view '{}' in schema: {}", viewName, foundOwner);
+                return foundOwner;
+            }
+
+            // If not found in views, check if it's a table (in case it's a table being accessed as a view)
+            String findTableSql = "SELECT OWNER FROM ALL_TABLES WHERE TABLE_NAME = ? AND ROWNUM = 1";
+            List<String> tableOwners = oracleJdbcTemplate.queryForList(findTableSql, String.class, viewName);
+
+            if (!tableOwners.isEmpty()) {
+                String foundOwner = tableOwners.get(0);
+                log.info("Strategy 6 - Found table '{}' in schema: {} (treating as view)", viewName, foundOwner);
+                return foundOwner;
+            }
+
+            log.warn("Strategy 6 - Could not locate view '{}' in any accessible schema", viewName);
+
+        } catch (Exception e) {
+            log.warn("Error while searching for view in accessible schemas: {}", e.getMessage());
+        }
+
+        log.error("❌ All owner resolution strategies failed for view: {}", viewName);
         return null;
+    }
+
+
+
+    private String getDbColumnName(ApiParameterEntity param) {
+        if (param.getDbColumn() != null && !param.getDbColumn().isEmpty()) {
+            return param.getDbColumn().toUpperCase();
+        }
+        if (param.getDbParameter() != null && !param.getDbParameter().isEmpty()) {
+            return param.getDbParameter().toUpperCase();
+        }
+        return param.getKey().toUpperCase();
     }
 
     private void validateViewQuery(String schemaName, String viewName, Map<String, Object> queryParams,
@@ -249,7 +487,7 @@ public class ViewExecutorUtil {
         String sql = "SELECT COUNT(*) FROM ALL_VIEWS WHERE OWNER = ? AND VIEW_NAME = ?";
 
         Integer count = oracleJdbcTemplate.queryForObject(sql, Integer.class, schemaName, viewName);
-        if (count == 0) {
+        if (count == null || count == 0) {
             throw new ValidationException(
                     String.format("View '%s.%s' does not exist", schemaName, viewName)
             );
@@ -261,7 +499,7 @@ public class ViewExecutorUtil {
         } catch (Exception e) {
             throw new ValidationException(
                     String.format("Cannot access view '%s.%s': %s",
-                            schemaName, viewName, e.getMessage())
+                            schemaName, viewName, extractOracleError(e.getMessage()))
             );
         }
 
@@ -284,6 +522,13 @@ public class ViewExecutorUtil {
             // Validate each query parameter
             for (Map.Entry<String, Object> param : queryParams.entrySet()) {
                 String paramName = param.getKey().toLowerCase();
+
+                // Skip special parameters that aren't view columns
+                if ("page".equals(paramName) || "pagesize".equals(paramName) ||
+                        "sort".equals(paramName) || "order".equals(paramName) ||
+                        "where_condition".equals(paramName)) {
+                    continue;
+                }
 
                 // Check if parameter corresponds to a view column
                 Map<String, Object> column = columnMap.get(paramName);
@@ -313,6 +558,104 @@ public class ViewExecutorUtil {
             );
         }
 
-        // Additional data type validation would go here
+        // Basic data type validation
+        if (value != null) {
+            String upperDataType = dataType != null ? dataType.toUpperCase() : "";
+
+            if (upperDataType.contains("NUMBER") || upperDataType.contains("INTEGER") ||
+                    upperDataType.contains("NUMERIC")) {
+                if (!(value instanceof Number)) {
+                    try {
+                        new java.math.BigDecimal(value.toString());
+                    } catch (NumberFormatException e) {
+                        throw new ValidationException(
+                                String.format("Column '%s' expects a numeric value, but got: %s",
+                                        columnName, value)
+                        );
+                    }
+                }
+            } else if (upperDataType.contains("DATE") || upperDataType.contains("TIMESTAMP")) {
+                // Basic date validation - you might want to enhance this
+                if (!(value instanceof Date) && !(value instanceof java.sql.Timestamp)) {
+                    log.debug("Date value provided for column {}: {}", columnName, value);
+                }
+            }
+        }
+    }
+
+    /**
+     * Parse XML body and extract parameter values
+     */
+    private Map<String, Object> parseXmlParameters(String xmlBody, List<ApiParameterDTO> configuredParamDTOs,
+                                                   Map<String, String> apiToDbColumnMap) {
+        Map<String, Object> extractedParams = new HashMap<>();
+
+        if (xmlBody == null || xmlBody.trim().isEmpty()) {
+            return extractedParams;
+        }
+
+        log.info("Parsing XML body to extract parameter values");
+        log.debug("XML Body: {}", xmlBody);
+
+        try {
+            // For each configured parameter, try to extract its value from XML
+            for (ApiParameterDTO param : configuredParamDTOs) {
+                String paramKey = param.getKey();
+                if (paramKey == null || paramKey.isEmpty()) {
+                    continue;
+                }
+
+                // Look for XML tags with this key (case-insensitive)
+                // Pattern matches: <acct_link>value</acct_link> or <ACCT_LINK>value</ACCT_LINK>
+                Pattern pattern = Pattern.compile("<" + paramKey + ">(.*?)</" + paramKey + ">",
+                        Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+                Matcher matcher = pattern.matcher(xmlBody);
+
+                if (matcher.find()) {
+                    String value = matcher.group(1).trim();
+                    if (!value.isEmpty()) {
+                        // Map to database column name
+                        String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey.toLowerCase(), paramKey.toUpperCase());
+                        extractedParams.put(dbColumnName, value);
+                        log.info("✅ Extracted XML parameter: {} -> {} = {}", paramKey, dbColumnName, value);
+                    } else {
+                        log.info("⚠️ XML tag <{}> found but empty", paramKey);
+                        // Still add empty string as a value (required parameter might accept empty)
+                        String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey.toLowerCase(), paramKey.toUpperCase());
+                        extractedParams.put(dbColumnName, "");
+                        log.info("Added empty parameter: {} -> {}", paramKey, dbColumnName);
+                    }
+                } else {
+                    log.debug("XML tag <{}> not found in body", paramKey);
+                }
+            }
+
+            log.info("Extracted {} parameters from XML: {}", extractedParams.size(), extractedParams.keySet());
+
+        } catch (Exception e) {
+            log.error("Error parsing XML parameters: {}", e.getMessage(), e);
+        }
+
+        return extractedParams;
+    }
+
+    /**
+     * Helper method to extract Oracle error message
+     */
+    private String extractOracleError(String errorMessage) {
+        if (errorMessage == null) return "Unknown error";
+
+        // Look for ORA-xxxxx pattern
+        Pattern pattern = Pattern.compile("ORA-\\d{5}:[^\\n]*");
+        Matcher matcher = pattern.matcher(errorMessage);
+        if (matcher.find()) {
+            return matcher.group();
+        }
+
+        // Return first line if it's long
+        if (errorMessage.length() > 200) {
+            return errorMessage.substring(0, 200) + "...";
+        }
+        return errorMessage;
     }
 }

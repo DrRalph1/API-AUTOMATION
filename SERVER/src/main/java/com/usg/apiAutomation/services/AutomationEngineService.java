@@ -32,6 +32,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -886,6 +888,17 @@ public class AutomationEngineService {
 
             // 10. Create consolidated params
             Map<String, Object> consolidatedParams = createConsolidatedParamsWithHeaders(validatedRequest);
+
+            // NEW: Parse XML body if present
+            if (validatedRequest.getBody() instanceof String) {
+                String rawBody = (String) validatedRequest.getBody();
+                if (rawBody.trim().startsWith("<")) {
+                    log.info("XML body detected, parsing to extract parameters");
+                    Map<String, Object> xmlParams = parseXmlParameters(rawBody, api.getParameters());
+                    consolidatedParams.putAll(xmlParams);
+                    log.info("Extracted XML parameters: {}", xmlParams.keySet());
+                }
+            }
 
             // 11. AUTO-ADD CONTENT-TYPE HEADER IF MISSING BUT REQUIRED
             boolean contentTypeRequired = apiParameters.stream()
@@ -1894,5 +1907,46 @@ public class AutomationEngineService {
         entities.forEach(entity -> setGeneratedApiIdForEntity(entity, generatedApiId));
     }
 
+
+    /**
+     * Parse XML body and extract parameter values
+     */
+    private Map<String, Object> parseXmlParameters(String xmlBody, List<ApiParameterEntity> parameters) {
+        Map<String, Object> extractedParams = new HashMap<>();
+
+        if (xmlBody == null || xmlBody.trim().isEmpty()) {
+            return extractedParams;
+        }
+
+        log.info("Parsing XML body to extract parameter values");
+
+        try {
+            // For each parameter, try to extract its value from XML
+            for (ApiParameterEntity param : parameters) {
+                String paramKey = param.getKey();
+                if (paramKey == null || paramKey.isEmpty()) {
+                    continue;
+                }
+
+                // Look for XML tags with this key (case-insensitive)
+                Pattern pattern = Pattern.compile("<" + paramKey + ">(.*?)</" + paramKey + ">",
+                        Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+                Matcher matcher = pattern.matcher(xmlBody);
+
+                if (matcher.find()) {
+                    String value = matcher.group(1).trim();
+                    extractedParams.put(paramKey, value);
+                    log.info("✅ Extracted XML parameter: {} = {}", paramKey, value);
+                }
+            }
+
+            log.info("Extracted {} parameters from XML: {}", extractedParams.size(), extractedParams.keySet());
+
+        } catch (Exception e) {
+            log.error("Error parsing XML parameters: {}", e.getMessage(), e);
+        }
+
+        return extractedParams;
+    }
 
 }

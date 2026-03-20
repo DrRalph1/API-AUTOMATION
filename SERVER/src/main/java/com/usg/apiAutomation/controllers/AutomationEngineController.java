@@ -721,7 +721,6 @@ public class AutomationEngineController {
     public ResponseEntity<?> executeApiById(
             @PathVariable String apiId,
             HttpServletRequest req,
-            @RequestBody(required = false) Object jsonBody,
             @RequestParam(required = false) MultiValueMap<String, String> formParams) {
 
         String requestId = UUID.randomUUID().toString();

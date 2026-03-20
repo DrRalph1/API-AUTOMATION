@@ -306,8 +306,10 @@ public class RequestExtractorHelper {
         return value.substring(0, 2) + "****" + value.substring(value.length() - 2);
     }
 
+
+
     /**
-     * Extract body based on content type
+     * Extract body based on content type, with fallback to content detection
      */
     private void extractBodyBasedOnContentType(HttpServletRequest request, ExecuteApiRequestDTO executeRequest) {
         if (request.getContentLength() <= 0 && request.getContentLengthLong() <= 0) {
@@ -315,21 +317,85 @@ public class RequestExtractorHelper {
         }
 
         String contentType = request.getContentType();
+        log.debug("Content-Type: {}", contentType);
 
-        if (contentType != null) {
-            if (contentType.contains("multipart/form-data")) {
-                handleMultipartRequest(request, executeRequest);
-            } else if (contentType.contains("application/x-www-form-urlencoded")) {
-                handleUrlEncodedRequest(request, executeRequest);
-            } else if (contentType.contains("application/json")) {
-                handleJsonRequest(request, executeRequest);
-            } else if (contentType.contains("application/xml")) {
-                handleXmlRequest(request, executeRequest);
-            } else {
-                handleRawRequest(request, executeRequest);
+        // Read the body first to detect its actual format
+        String rawBody = null;
+        try {
+            rawBody = request.getReader().lines().collect(Collectors.joining());
+            log.debug("Raw body (first 200 chars): {}",
+                    rawBody != null ? rawBody.substring(0, Math.min(200, rawBody.length())) : "null");
+        } catch (IOException e) {
+            log.error("Failed to read request body: {}", e.getMessage());
+            return;
+        }
+
+        if (rawBody == null || rawBody.isEmpty()) {
+            return;
+        }
+
+        // Detect actual content type from the body
+        boolean isXml = rawBody.trim().startsWith("<");
+        boolean isJson = rawBody.trim().startsWith("{") || rawBody.trim().startsWith("[");
+
+        log.info("Content detection: isXml={}, isJson={}", isXml, isJson);
+
+        // Handle based on actual content type, not just the header
+        if (isXml) {
+            // It's XML regardless of what the header says
+            log.info("Body detected as XML, processing as XML");
+            executeRequest.setBody(rawBody);
+        }
+        else if (isJson) {
+            // It's JSON
+            log.info("Body detected as JSON, processing as JSON");
+            try {
+                JsonNode jsonNode = objectMapper.readTree(rawBody);
+                if (jsonNode.isObject()) {
+                    Map<String, Object> bodyMap = objectMapper.convertValue(jsonNode, new TypeReference<Map<String, Object>>() {});
+                    executeRequest.setBody(bodyMap);
+                } else if (jsonNode.isArray()) {
+                    List<Object> bodyList = objectMapper.convertValue(jsonNode, new TypeReference<List<Object>>() {});
+                    executeRequest.setBody(bodyList);
+                } else {
+                    executeRequest.setBody(jsonNode.asText());
+                }
+            } catch (IOException e) {
+                log.error("Failed to parse JSON body: {}", e.getMessage());
+                executeRequest.setBody(rawBody);
             }
         }
+        else {
+            // Unknown format - try to parse based on content type
+            if (contentType != null) {
+                if (contentType.contains("xml")) {
+                    executeRequest.setBody(rawBody);
+                } else if (contentType.contains("json")) {
+                    try {
+                        JsonNode jsonNode = objectMapper.readTree(rawBody);
+                        Map<String, Object> bodyMap = objectMapper.convertValue(jsonNode, new TypeReference<Map<String, Object>>() {});
+                        executeRequest.setBody(bodyMap);
+                    } catch (IOException e) {
+                        executeRequest.setBody(rawBody);
+                    }
+                } else {
+                    // Store as raw string
+                    Map<String, Object> textWrapper = new HashMap<>();
+                    textWrapper.put("_raw", rawBody);
+                    textWrapper.put("_contentType", contentType);
+                    executeRequest.setBody(textWrapper);
+                }
+            } else {
+                // No content type, store as raw
+                executeRequest.setBody(rawBody);
+            }
+        }
+
+        log.debug("Body processed - final type: {}",
+                executeRequest.getBody() != null ? executeRequest.getBody().getClass().getSimpleName() : "null");
     }
+
+
 
     /**
      * Handle multipart/form-data requests
@@ -403,14 +469,15 @@ public class RequestExtractorHelper {
     }
 
     /**
-     * Handle application/json requests
+     * Handle application/json requests - FALLBACK if content-type is json
      */
     private void handleJsonRequest(HttpServletRequest request, ExecuteApiRequestDTO executeRequest) {
+        // This method is now only called if we specifically need to handle JSON
+        // The main detection logic should be used instead
         try {
             String body = request.getReader().lines().collect(Collectors.joining());
             if (!body.isEmpty()) {
                 JsonNode jsonNode = objectMapper.readTree(body);
-
                 if (jsonNode.isObject()) {
                     Map<String, Object> bodyMap = objectMapper.convertValue(jsonNode, new TypeReference<Map<String, Object>>() {});
                     executeRequest.setBody(bodyMap);
@@ -420,7 +487,6 @@ public class RequestExtractorHelper {
                 } else {
                     executeRequest.setBody(jsonNode.asText());
                 }
-
                 log.debug("Processed JSON request body");
             }
         } catch (IOException e) {
@@ -428,17 +494,18 @@ public class RequestExtractorHelper {
         }
     }
 
+
     /**
-     * Handle application/xml requests
+     * Handle application/xml requests - FIXED to pass raw XML string
      */
     private void handleXmlRequest(HttpServletRequest request, ExecuteApiRequestDTO executeRequest) {
         try {
             String body = request.getReader().lines().collect(Collectors.joining());
             if (!body.isEmpty()) {
-                Map<String, Object> xmlWrapper = new HashMap<>();
-                xmlWrapper.put("_xml", body);
-                executeRequest.setBody(xmlWrapper);
-                log.debug("Processed XML request body");
+                // Store as raw XML string, not wrapped in a map
+                executeRequest.setBody(body);
+                log.debug("Processed XML request body - length: {} characters", body.length());
+                log.debug("XML body preview: {}", body.substring(0, Math.min(200, body.length())));
             }
         } catch (IOException e) {
             log.error("Failed to read XML body: {}", e.getMessage());

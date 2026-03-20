@@ -1,5 +1,7 @@
 package com.usg.apiAutomation.utils.apiEngine.executor;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiParameterDTO;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.*;
 import com.usg.apiAutomation.utils.apiEngine.OracleObjectResolverUtil;
@@ -14,6 +16,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -25,6 +29,7 @@ public class TableExecutorUtil {
     private JdbcTemplate oracleJdbcTemplate;
 
     private final ParameterValidatorUtil parameterValidator;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public TableExecutorUtil(
             ParameterValidatorUtil parameterValidator) {
@@ -67,6 +72,82 @@ public class TableExecutorUtil {
         return fullError.length() > 0 ? fullError.toString() : e.getMessage();
     }
 
+    /**
+     * Helper method to extract Oracle error message
+     */
+    private String extractOracleError(String errorMessage) {
+        if (errorMessage == null) return "Unknown error";
+
+        // Look for ORA-xxxxx pattern
+        Pattern pattern = Pattern.compile("ORA-\\d{5}:[^\\n]*");
+        Matcher matcher = pattern.matcher(errorMessage);
+        if (matcher.find()) {
+            return matcher.group();
+        }
+
+        // Return first line if it's long
+        if (errorMessage.length() > 200) {
+            return errorMessage.substring(0, 200) + "...";
+        }
+        return errorMessage;
+    }
+
+    /**
+     * Parse XML body and extract parameter values
+     */
+    private Map<String, Object> parseXmlParameters(String xmlBody, List<ApiParameterDTO> configuredParamDTOs,
+                                                   Map<String, String> apiToDbColumnMap) {
+        Map<String, Object> extractedParams = new HashMap<>();
+
+        if (xmlBody == null || xmlBody.trim().isEmpty()) {
+            return extractedParams;
+        }
+
+        log.info("Parsing XML body to extract parameter values");
+        log.debug("XML Body: {}", xmlBody);
+
+        try {
+            // For each configured parameter, try to extract its value from XML
+            for (ApiParameterDTO param : configuredParamDTOs) {
+                String paramKey = param.getKey();
+                if (paramKey == null || paramKey.isEmpty()) {
+                    continue;
+                }
+
+                // Look for XML tags with this key (case-insensitive)
+                // Pattern matches: <acct_link>value</acct_link> or <ACCT_LINK>value</ACCT_LINK>
+                Pattern pattern = Pattern.compile("<" + paramKey + ">(.*?)</" + paramKey + ">",
+                        Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+                Matcher matcher = pattern.matcher(xmlBody);
+
+                if (matcher.find()) {
+                    String value = matcher.group(1).trim();
+                    if (!value.isEmpty()) {
+                        // Map to database column name
+                        String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey.toLowerCase(), paramKey.toUpperCase());
+                        extractedParams.put(dbColumnName, value);
+                        log.info("✅ Extracted XML parameter: {} -> {} = {}", paramKey, dbColumnName, value);
+                    } else {
+                        log.info("⚠️ XML tag <{}> found but empty", paramKey);
+                        // Still add empty string as a value (required parameter might accept empty)
+                        String dbColumnName = apiToDbColumnMap.getOrDefault(paramKey.toLowerCase(), paramKey.toUpperCase());
+                        extractedParams.put(dbColumnName, "");
+                        log.info("Added empty parameter: {} -> {}", paramKey, dbColumnName);
+                    }
+                } else {
+                    log.debug("XML tag <{}> not found in body", paramKey);
+                }
+            }
+
+            log.info("Extracted {} parameters from XML: {}", extractedParams.size(), extractedParams.keySet());
+
+        } catch (Exception e) {
+            log.error("Error parsing XML parameters: {}", e.getMessage(), e);
+        }
+
+        return extractedParams;
+    }
+
     public Object executeSelect(String tableName, String owner, Map<String, Object> params,
                                 GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
         try {
@@ -85,9 +166,65 @@ public class TableExecutorUtil {
 
             // Build a clean parameter map - keep ALL parameters
             Map<String, Object> cleanParams = new HashMap<>();
+
+            // Build parameter mapping
+            Map<String, String> apiToDbColumnMap = new HashMap<>();
+            if (configuredParamDTOs != null) {
+                for (ApiParameterDTO param : configuredParamDTOs) {
+                    if (param.getKey() != null) {
+                        String dbColumnName = param.getDbColumn();
+                        if (dbColumnName == null || dbColumnName.isEmpty()) {
+                            dbColumnName = param.getDbParameter();
+                        }
+                        if (dbColumnName == null || dbColumnName.isEmpty()) {
+                            dbColumnName = param.getKey();
+                        }
+                        apiToDbColumnMap.put(param.getKey().toLowerCase(), dbColumnName.toUpperCase());
+                        log.info("Parameter mapping: API '{}' -> Database Column '{}'", param.getKey(), dbColumnName.toUpperCase());
+                    }
+                }
+            }
+
+            // Process XML body if present
+            String xmlBody = null;
+            boolean isXmlBody = false;
+
+            if (params != null && params.containsKey("_xml")) {
+                Object xmlObj = params.get("_xml");
+                if (xmlObj instanceof String) {
+                    String xmlString = (String) xmlObj;
+                    if (xmlString.trim().startsWith("<")) {
+                        isXmlBody = true;
+                        xmlBody = xmlString;
+                        log.info("=========================================");
+                        log.info("XML BODY DETECTED in TableExecutor!");
+                        log.info("XML Length: {} characters", xmlBody.length());
+                        log.info("XML Preview: {}", xmlBody.substring(0, Math.min(500, xmlBody.length())));
+                        log.info("=========================================");
+
+                        // Extract parameters from XML
+                        Map<String, Object> extractedParams = parseXmlParameters(xmlBody, configuredParamDTOs, apiToDbColumnMap);
+                        if (!extractedParams.isEmpty()) {
+                            cleanParams.putAll(extractedParams);
+                            log.info("✅ Extracted {} parameters from XML and added to cleanParams", extractedParams.size());
+                        }
+                    }
+                }
+            }
+
+            // Copy all parameters
             if (params != null) {
-                // Simply copy all parameters
-                cleanParams.putAll(params);
+                for (Map.Entry<String, Object> entry : params.entrySet()) {
+                    String key = entry.getKey();
+                    // Skip the _xml key as it's already processed
+                    if ("_xml".equals(key)) {
+                        continue;
+                    }
+
+                    // Map the key to database column name if mapping exists
+                    String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key);
+                    cleanParams.put(dbColumnName, entry.getValue());
+                }
 
                 // Also handle any numbered parameters (param1, param2, etc.) that might come from path
                 for (Map.Entry<String, Object> entry : params.entrySet()) {
@@ -104,7 +241,7 @@ public class TableExecutorUtil {
                 }
             }
 
-            log.info("Cleaned params: {}", cleanParams);
+            log.info("Cleaned params after XML processing: {}", cleanParams);
 
             // Build WHERE clause from configured parameters
             if (api.getParameters() != null && !api.getParameters().isEmpty()) {
@@ -268,16 +405,70 @@ public class TableExecutorUtil {
     }
 
     public Object executeInsert(String tableName, String owner, Map<String, Object> params,
-                                GeneratedApiEntity api) {
+                                GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
         if (params == null || params.isEmpty()) {
             throw new RuntimeException("No parameters provided for INSERT operation");
         }
 
-        // Handle collection/array parameters - convert to single values for database
+        log.info("=== TABLE INSERT DEBUG ===");
+        log.info("Table: {}.{}", owner, tableName);
+
+        // Build parameter mapping
+        Map<String, String> apiToDbColumnMap = new HashMap<>();
+        if (configuredParamDTOs != null) {
+            for (ApiParameterDTO param : configuredParamDTOs) {
+                if (param.getKey() != null) {
+                    String dbColumnName = param.getDbColumn();
+                    if (dbColumnName == null || dbColumnName.isEmpty()) {
+                        dbColumnName = param.getDbParameter();
+                    }
+                    if (dbColumnName == null || dbColumnName.isEmpty()) {
+                        dbColumnName = param.getKey();
+                    }
+                    apiToDbColumnMap.put(param.getKey().toLowerCase(), dbColumnName.toUpperCase());
+                }
+            }
+        }
+
+        // Process XML body if present
         Map<String, Object> processedParams = new HashMap<>();
+        String xmlBody = null;
+
+        if (params.containsKey("_xml")) {
+            Object xmlObj = params.get("_xml");
+            if (xmlObj instanceof String) {
+                String xmlString = (String) xmlObj;
+                if (xmlString.trim().startsWith("<")) {
+                    log.info("XML BODY DETECTED in INSERT operation!");
+                    xmlBody = xmlString;
+
+                    // Extract parameters from XML
+                    Map<String, Object> extractedParams = parseXmlParameters(xmlBody, configuredParamDTOs, apiToDbColumnMap);
+                    if (!extractedParams.isEmpty()) {
+                        processedParams.putAll(extractedParams);
+                        log.info("✅ Extracted {} parameters from XML for INSERT", extractedParams.size());
+                    }
+                }
+            }
+        }
+
+        // Copy all parameters, mapping to database column names
         for (Map.Entry<String, Object> entry : params.entrySet()) {
+            String key = entry.getKey();
+            // Skip the _xml key as it's already processed
+            if ("_xml".equals(key)) {
+                continue;
+            }
+
+            // Map the key to database column name if mapping exists
+            String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key);
+            processedParams.put(dbColumnName, entry.getValue());
+        }
+
+        // Handle collection/array parameters - convert to single values for database
+        for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
             Object value = entry.getValue();
-            if (value instanceof List || value.getClass().isArray()) {
+            if (value instanceof List || (value != null && value.getClass().isArray())) {
                 Collection<?> collection = value instanceof List ?
                         (List<?>) value : Arrays.asList((Object[]) value);
                 if (!collection.isEmpty()) {
@@ -287,10 +478,10 @@ public class TableExecutorUtil {
                 } else {
                     processedParams.put(entry.getKey(), null);
                 }
-            } else {
-                processedParams.put(entry.getKey(), value);
             }
         }
+
+        log.info("Processed params for INSERT: {}", processedParams.keySet());
 
         StringBuilder columns = new StringBuilder();
         StringBuilder values = new StringBuilder();
@@ -323,11 +514,11 @@ public class TableExecutorUtil {
                         .findFirst()
                         .orElse(null);
 
-                if (pkColumn != null && processedParams.containsKey(pkColumn.toLowerCase())) {
+                if (pkColumn != null && processedParams.containsKey(pkColumn.toUpperCase())) {
                     String selectSql = "SELECT * FROM " + (owner != null && !owner.isEmpty() ? owner + "." : "") + tableName +
                             " WHERE " + pkColumn + " = ?";
                     List<Map<String, Object>> inserted = oracleJdbcTemplate.queryForList(
-                            selectSql, processedParams.get(pkColumn.toLowerCase()));
+                            selectSql, processedParams.get(pkColumn.toUpperCase()));
                     if (!inserted.isEmpty()) {
                         result.put("data", inserted.get(0));
                     }
@@ -383,10 +574,13 @@ public class TableExecutorUtil {
     }
 
     public Object executeUpdate(String tableName, String owner, Map<String, Object> params,
-                                GeneratedApiEntity api) {
+                                GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
         if (params == null || params.isEmpty()) {
             throw new RuntimeException("No parameters provided for UPDATE operation");
         }
+
+        log.info("=== TABLE UPDATE DEBUG ===");
+        log.info("Table: {}.{}", owner, tableName);
 
         List<String> pkColumns = api.getResponseMappings().stream()
                 .filter(m -> Boolean.TRUE.equals(m.getIsPrimaryKey()))
@@ -397,11 +591,62 @@ public class TableExecutorUtil {
             throw new RuntimeException("No primary key defined for UPDATE operation");
         }
 
-        // Handle collection/array parameters - convert to single values for database
+        // Build parameter mapping
+        Map<String, String> apiToDbColumnMap = new HashMap<>();
+        if (configuredParamDTOs != null) {
+            for (ApiParameterDTO param : configuredParamDTOs) {
+                if (param.getKey() != null) {
+                    String dbColumnName = param.getDbColumn();
+                    if (dbColumnName == null || dbColumnName.isEmpty()) {
+                        dbColumnName = param.getDbParameter();
+                    }
+                    if (dbColumnName == null || dbColumnName.isEmpty()) {
+                        dbColumnName = param.getKey();
+                    }
+                    apiToDbColumnMap.put(param.getKey().toLowerCase(), dbColumnName.toUpperCase());
+                }
+            }
+        }
+
+        // Process XML body if present
         Map<String, Object> processedParams = new HashMap<>();
+        String xmlBody = null;
+
+        if (params.containsKey("_xml")) {
+            Object xmlObj = params.get("_xml");
+            if (xmlObj instanceof String) {
+                String xmlString = (String) xmlObj;
+                if (xmlString.trim().startsWith("<")) {
+                    log.info("XML BODY DETECTED in UPDATE operation!");
+                    xmlBody = xmlString;
+
+                    // Extract parameters from XML
+                    Map<String, Object> extractedParams = parseXmlParameters(xmlBody, configuredParamDTOs, apiToDbColumnMap);
+                    if (!extractedParams.isEmpty()) {
+                        processedParams.putAll(extractedParams);
+                        log.info("✅ Extracted {} parameters from XML for UPDATE", extractedParams.size());
+                    }
+                }
+            }
+        }
+
+        // Copy all parameters, mapping to database column names
         for (Map.Entry<String, Object> entry : params.entrySet()) {
+            String key = entry.getKey();
+            // Skip the _xml key as it's already processed
+            if ("_xml".equals(key)) {
+                continue;
+            }
+
+            // Map the key to database column name if mapping exists
+            String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key);
+            processedParams.put(dbColumnName, entry.getValue());
+        }
+
+        // Handle collection/array parameters - convert to single values for database
+        for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
             Object value = entry.getValue();
-            if (value instanceof List || value.getClass().isArray()) {
+            if (value instanceof List || (value != null && value.getClass().isArray())) {
                 Collection<?> collection = value instanceof List ?
                         (List<?>) value : Arrays.asList((Object[]) value);
                 if (!collection.isEmpty()) {
@@ -411,10 +656,10 @@ public class TableExecutorUtil {
                 } else {
                     processedParams.put(entry.getKey(), null);
                 }
-            } else {
-                processedParams.put(entry.getKey(), value);
             }
         }
+
+        log.info("Processed params for UPDATE: {}", processedParams.keySet());
 
         StringBuilder setClause = new StringBuilder();
         StringBuilder whereClause = new StringBuilder();
@@ -499,16 +744,70 @@ public class TableExecutorUtil {
     }
 
     public Object executeDelete(String tableName, String owner, Map<String, Object> params,
-                                GeneratedApiEntity api) {
+                                GeneratedApiEntity api, List<ApiParameterDTO> configuredParamDTOs) {
         if (params == null || params.isEmpty()) {
             throw new RuntimeException("No parameters provided for DELETE operation");
         }
 
-        // Handle collection/array parameters - convert to single values for database
+        log.info("=== TABLE DELETE DEBUG ===");
+        log.info("Table: {}.{}", owner, tableName);
+
+        // Build parameter mapping
+        Map<String, String> apiToDbColumnMap = new HashMap<>();
+        if (configuredParamDTOs != null) {
+            for (ApiParameterDTO param : configuredParamDTOs) {
+                if (param.getKey() != null) {
+                    String dbColumnName = param.getDbColumn();
+                    if (dbColumnName == null || dbColumnName.isEmpty()) {
+                        dbColumnName = param.getDbParameter();
+                    }
+                    if (dbColumnName == null || dbColumnName.isEmpty()) {
+                        dbColumnName = param.getKey();
+                    }
+                    apiToDbColumnMap.put(param.getKey().toLowerCase(), dbColumnName.toUpperCase());
+                }
+            }
+        }
+
+        // Process XML body if present
         Map<String, Object> processedParams = new HashMap<>();
+        String xmlBody = null;
+
+        if (params.containsKey("_xml")) {
+            Object xmlObj = params.get("_xml");
+            if (xmlObj instanceof String) {
+                String xmlString = (String) xmlObj;
+                if (xmlString.trim().startsWith("<")) {
+                    log.info("XML BODY DETECTED in DELETE operation!");
+                    xmlBody = xmlString;
+
+                    // Extract parameters from XML
+                    Map<String, Object> extractedParams = parseXmlParameters(xmlBody, configuredParamDTOs, apiToDbColumnMap);
+                    if (!extractedParams.isEmpty()) {
+                        processedParams.putAll(extractedParams);
+                        log.info("✅ Extracted {} parameters from XML for DELETE", extractedParams.size());
+                    }
+                }
+            }
+        }
+
+        // Copy all parameters, mapping to database column names
         for (Map.Entry<String, Object> entry : params.entrySet()) {
+            String key = entry.getKey();
+            // Skip the _xml key as it's already processed
+            if ("_xml".equals(key)) {
+                continue;
+            }
+
+            // Map the key to database column name if mapping exists
+            String dbColumnName = apiToDbColumnMap.getOrDefault(key.toLowerCase(), key);
+            processedParams.put(dbColumnName, entry.getValue());
+        }
+
+        // Handle collection/array parameters - convert to single values for database
+        for (Map.Entry<String, Object> entry : processedParams.entrySet()) {
             Object value = entry.getValue();
-            if (value instanceof List || value.getClass().isArray()) {
+            if (value instanceof List || (value != null && value.getClass().isArray())) {
                 Collection<?> collection = value instanceof List ?
                         (List<?>) value : Arrays.asList((Object[]) value);
                 if (!collection.isEmpty()) {
@@ -518,10 +817,10 @@ public class TableExecutorUtil {
                 } else {
                     processedParams.put(entry.getKey(), null);
                 }
-            } else {
-                processedParams.put(entry.getKey(), value);
             }
         }
+
+        log.info("Processed params for DELETE: {}", processedParams.keySet());
 
         StringBuilder whereClause = new StringBuilder();
         List<Object> whereValues = new ArrayList<>();

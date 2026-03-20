@@ -532,7 +532,7 @@ public class ApiExecutionHelper {
                 return functionExecutorUtil.execute(api, sourceObject, targetName, targetOwner, request,
                         configuredParamDTOs);
             case "PACKAGE":
-                return packageExecutorUtil.execute(api, sourceObject, targetName, targetOwner, request);
+                return packageExecutorUtil.execute(api, sourceObject, targetName, targetOwner, request, configuredParamDTOs);
             default:
                 log.warn("Unknown target type: {}, generating sample response", targetType);
                 return sampleGenerator.generateSampleResponse(api);
@@ -552,16 +552,17 @@ public class ApiExecutionHelper {
         }
 
         log.info("Executing {} operation on {}.{} with params: {}", operation, owner, tableName, params);
+        log.info("Configured parameters count: {}", configuredParamDTOs != null ? configuredParamDTOs.size() : 0);
 
         switch (operation.toUpperCase()) {
             case "SELECT":
                 return tableExecutorUtil.executeSelect(tableName, owner, params, api, configuredParamDTOs);
             case "INSERT":
-                return tableExecutorUtil.executeInsert(tableName, owner, params, api);
+                return tableExecutorUtil.executeInsert(tableName, owner, params, api, configuredParamDTOs);
             case "UPDATE":
-                return tableExecutorUtil.executeUpdate(tableName, owner, params, api);
+                return tableExecutorUtil.executeUpdate(tableName, owner, params, api, configuredParamDTOs);
             case "DELETE":
-                return tableExecutorUtil.executeDelete(tableName, owner, params, api);
+                return tableExecutorUtil.executeDelete(tableName, owner, params, api, configuredParamDTOs);
             default:
                 throw new RuntimeException("Unsupported table operation: " + operation);
         }
