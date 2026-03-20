@@ -7,7 +7,7 @@ import com.usg.apiAutomation.dtos.apiGenerationEngine.ApiSourceObjectDTO;
 import com.usg.apiAutomation.dtos.apiGenerationEngine.GeneratedApiResponseDTO;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.ApiExecutionLogEntity;
 import com.usg.apiAutomation.entities.postgres.apiGenerationEngine.GeneratedApiEntity;
-import com.usg.apiAutomation.repositories.oracle.OracleSchemaRepository;
+import com.usg.apiAutomation.repositories.oracle.*;
 import com.usg.apiAutomation.repositories.postgres.apiGenerationEngine.ApiExecutionLogRepository;
 import com.usg.apiAutomation.services.OracleSchemaService;
 import lombok.extern.slf4j.Slf4j;
@@ -25,11 +25,31 @@ import java.util.stream.Collectors;
 @Component
 public class ApiMetadataHelper {
 
-    private final OracleSchemaRepository oracleSchemaRepository;
+    private final OracleTableRepository oracleTableRepository;
+    private final OracleViewRepository oracleViewRepository;
+    private final OracleProcedureRepository oracleProcedureRepository;
+    private final OracleFunctionRepository oracleFunctionRepository;
+    private final OraclePackageRepository oraclePackageRepository;
+    private final OracleOtherObjectsRepository oracleOtherObjectsRepository;
+    private final OracleObjectRepository oracleObjectRepository;
     private final JdbcTemplate oracleJdbcTemplate;
 
-    public ApiMetadataHelper(OracleSchemaRepository oracleSchemaRepository, JdbcTemplate oracleJdbcTemplate) {
-        this.oracleSchemaRepository = oracleSchemaRepository;
+    public ApiMetadataHelper(
+            OracleTableRepository oracleTableRepository,
+            OracleViewRepository oracleViewRepository,
+            OracleProcedureRepository oracleProcedureRepository,
+            OracleFunctionRepository oracleFunctionRepository,
+            OraclePackageRepository oraclePackageRepository,
+            OracleOtherObjectsRepository oracleOtherObjectsRepository,
+            OracleObjectRepository oracleObjectRepository,
+            JdbcTemplate oracleJdbcTemplate) {
+        this.oracleTableRepository = oracleTableRepository;
+        this.oracleViewRepository = oracleViewRepository;
+        this.oracleProcedureRepository = oracleProcedureRepository;
+        this.oracleFunctionRepository = oracleFunctionRepository;
+        this.oraclePackageRepository = oraclePackageRepository;
+        this.oracleOtherObjectsRepository = oracleOtherObjectsRepository;
+        this.oracleObjectRepository = oracleObjectRepository;
         this.oracleJdbcTemplate = oracleJdbcTemplate;
     }
 
@@ -221,15 +241,15 @@ public class ApiMetadataHelper {
      */
     private void getTableDetails(Map<String, Object> details, String tableName, String owner) {
         try {
-            Map<String, Object> tableDetails = oracleSchemaRepository.getTableDetails(owner, tableName);
+            Map<String, Object> tableDetails = oracleTableRepository.getTableDetails(owner, tableName);
 
             if (tableDetails != null && !tableDetails.isEmpty()) {
                 // Get columns
-                List<Map<String, Object>> columns = oracleSchemaRepository.getTableColumns(owner, tableName);
+                List<Map<String, Object>> columns = oracleTableRepository.getTableColumns(owner, tableName);
                 details.put("columns", transformColumns(columns));
 
                 // Get primary key
-                List<Map<String, Object>> constraints = oracleSchemaRepository.getTableConstraints(owner, tableName);
+                List<Map<String, Object>> constraints = oracleTableRepository.getTableConstraints(owner, tableName);
                 Map<String, Object> primaryKey = findPrimaryKey(constraints);
                 if (primaryKey != null) {
                     details.put("primaryKey", primaryKey);
@@ -245,7 +265,7 @@ public class ApiMetadataHelper {
                 }
 
                 // Get indexes
-                List<Map<String, Object>> indexes = oracleSchemaRepository.getTableIndexes(owner, tableName);
+                List<Map<String, Object>> indexes = oracleTableRepository.getTableIndexes(owner, tableName);
                 if (!indexes.isEmpty()) {
                     details.put("indexes", indexes);
                 }
@@ -270,11 +290,11 @@ public class ApiMetadataHelper {
      */
     private void getViewDetails(Map<String, Object> details, String viewName, String owner) {
         try {
-            Map<String, Object> viewDetails = oracleSchemaRepository.getViewDetails(owner, viewName);
+            Map<String, Object> viewDetails = oracleViewRepository.getViewDetails(owner, viewName);
 
             if (viewDetails != null && !viewDetails.isEmpty()) {
                 // Get columns
-                List<Map<String, Object>> columns = oracleSchemaRepository.getViewColumns(owner, viewName);
+                List<Map<String, Object>> columns = oracleViewRepository.getViewColumns(owner, viewName);
                 details.put("columns", transformColumns(columns));
 
                 // Get view text/source
@@ -304,7 +324,7 @@ public class ApiMetadataHelper {
     private void getProcedureDetails(Map<String, Object> details, String procedureName, String owner) {
         try {
             // Try to get from database first
-            Map<String, Object> procDetails = oracleSchemaRepository.getProcedureDetails(owner, procedureName);
+            Map<String, Object> procDetails = oracleProcedureRepository.getProcedureDetails(owner, procedureName);
 
             if (procDetails != null && !procDetails.isEmpty()) {
                 List<Map<String, Object>> parameters = (List<Map<String, Object>>) procDetails.get("parameters");
@@ -364,11 +384,6 @@ public class ApiMetadataHelper {
             details.put("error", e.getMessage());
         }
     }
-
-
-
-
-
 
 
     /**
@@ -496,7 +511,7 @@ public class ApiMetadataHelper {
             }
 
             // Try to get from repository as fallback (but don't override parameters we already found)
-            Map<String, Object> funcDetails = oracleSchemaRepository.getFunctionDetails(owner, functionName);
+            Map<String, Object> funcDetails = oracleFunctionRepository.getFunctionDetails(owner, functionName);
             if (funcDetails != null && !funcDetails.isEmpty()) {
                 copyCommonDetails(details, funcDetails);
 
@@ -536,8 +551,6 @@ public class ApiMetadataHelper {
             details.put("error", e.getMessage());
         }
     }
-
-
 
 
     /**
@@ -645,7 +658,7 @@ public class ApiMetadataHelper {
      */
     private void getPackageDetails(Map<String, Object> details, String packageName, String owner) {
         try {
-            Map<String, Object> pkgDetails = oracleSchemaRepository.getPackageDetails(owner, packageName);
+            Map<String, Object> pkgDetails = oraclePackageRepository.getPackageDetails(owner, packageName);
 
             if (pkgDetails != null && !pkgDetails.isEmpty()) {
                 // Get procedures
@@ -692,7 +705,7 @@ public class ApiMetadataHelper {
      */
     private void getSequenceDetails(Map<String, Object> details, String sequenceName, String owner) {
         try {
-            Map<String, Object> seqDetails = oracleSchemaRepository.getSequenceDetails(owner, sequenceName);
+            Map<String, Object> seqDetails = oracleOtherObjectsRepository.getSequenceDetails(owner, sequenceName);
 
             if (seqDetails != null && !seqDetails.isEmpty()) {
                 details.put("minValue", seqDetails.get("min_value"));
@@ -722,7 +735,7 @@ public class ApiMetadataHelper {
      */
     private void getTriggerDetails(Map<String, Object> details, String triggerName, String owner) {
         try {
-            Map<String, Object> triggerDetails = oracleSchemaRepository.getTriggerDetails(owner, triggerName);
+            Map<String, Object> triggerDetails = oracleOtherObjectsRepository.getTriggerDetails(owner, triggerName);
 
             if (triggerDetails != null && !triggerDetails.isEmpty()) {
                 details.put("triggerType", triggerDetails.get("trigger_type"));
@@ -750,7 +763,7 @@ public class ApiMetadataHelper {
      */
     private void getSynonymDetails(Map<String, Object> details, String synonymName, String owner) {
         try {
-            Map<String, Object> synonymDetails = oracleSchemaRepository.getSynonymDetails(synonymName);
+            Map<String, Object> synonymDetails = oracleOtherObjectsRepository.getSynonymDetails(synonymName);
 
             if (synonymDetails != null && !synonymDetails.isEmpty()) {
                 details.put("targetOwner", synonymDetails.get("target_owner"));
@@ -759,7 +772,7 @@ public class ApiMetadataHelper {
                 details.put("dbLink", synonymDetails.get("db_link"));
                 details.put("isRemote", synonymDetails.get("db_link") != null);
 
-                if (synonymDetails.containsKey("targetStatus")) {
+                if (synonymDetails.containsKey("target_status")) {
                     details.put("targetStatus", synonymDetails.get("target_status"));
                 }
 
@@ -776,7 +789,7 @@ public class ApiMetadataHelper {
      */
     private void getIndexDetails(Map<String, Object> details, String indexName, String owner) {
         try {
-            Map<String, Object> indexDetails = oracleSchemaRepository.getIndexDetails(owner, indexName);
+            Map<String, Object> indexDetails = oracleObjectRepository.getObjectDetails(indexName, "INDEX", owner);
 
             if (indexDetails != null && !indexDetails.isEmpty()) {
                 details.put("tableName", indexDetails.get("table_name"));
@@ -804,7 +817,7 @@ public class ApiMetadataHelper {
      */
     private void getTypeDetails(Map<String, Object> details, String typeName, String owner) {
         try {
-            Map<String, Object> typeDetails = oracleSchemaRepository.getTypeDetails(owner, typeName);
+            Map<String, Object> typeDetails = oracleOtherObjectsRepository.getTypeDetails(owner, typeName);
 
             if (typeDetails != null && !typeDetails.isEmpty()) {
                 details.put("typecode", typeDetails.get("typecode"));
@@ -834,7 +847,7 @@ public class ApiMetadataHelper {
      */
     private void getMaterializedViewDetails(Map<String, Object> details, String mvName, String owner) {
         try {
-            Map<String, Object> mvDetails = oracleSchemaRepository.getMaterializedViewDetails(owner, mvName);
+            Map<String, Object> mvDetails = oracleOtherObjectsRepository.getMaterializedViewDetails(owner, mvName);
 
             if (mvDetails != null && !mvDetails.isEmpty()) {
                 details.put("containerName", mvDetails.get("container_name"));
@@ -870,7 +883,7 @@ public class ApiMetadataHelper {
      */
     private void getDatabaseLinkDetails(Map<String, Object> details, String dbLinkName, String owner) {
         try {
-            Map<String, Object> dbLinkDetails = oracleSchemaRepository.getDatabaseLinkDetails(owner, dbLinkName);
+            Map<String, Object> dbLinkDetails = oracleOtherObjectsRepository.getDatabaseLinkDetails(owner, dbLinkName);
 
             if (dbLinkDetails != null && !dbLinkDetails.isEmpty()) {
                 details.put("username", dbLinkDetails.get("username"));
@@ -1326,9 +1339,6 @@ public class ApiMetadataHelper {
 
         return result.toString();
     }
-
-
-
 
 
     /**
