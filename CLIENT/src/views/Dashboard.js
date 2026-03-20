@@ -508,7 +508,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
   // Top collections state (first 3 by endpoints)
   const [topCollections, setTopCollections] = useState([]);
   
-  // Endpoints pagination state
+  // Endpoints pagination state - RESET TO DEFAULT ON INITIAL LOAD
   const [endpointPage, setEndpointPage] = useState(DEFAULT_PAGE);
   const [endpointsPerPage, setEndpointsPerPage] = useState(DEFAULT_PAGE_SIZE);
   const [endpointFilters, setEndpointFilters] = useState({
@@ -785,20 +785,45 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
     if (!authToken) return;
     
     setLoading(prev => ({ ...prev, refresh: true }));
+    
+    // RESET ALL PAGINATION STATE TO DEFAULTS
+    console.log('🔄 Refreshing - Resetting to page 1');
+    
+    // Reset page to 0
+    setEndpointPage(DEFAULT_PAGE);
+    
+    // Reset per page to default
+    setEndpointsPerPage(DEFAULT_PAGE_SIZE);
+    
+    // Reset filters
+    setEndpointFilters({
+      collectionId: null,
+      method: null,
+      search: ''
+    });
+    
+    // Reset search query
+    setApiSearchQuery('');
+    
+    // Clear any pending search timer
+    if (endpointSearchTimer.current) {
+      clearTimeout(endpointSearchTimer.current);
+    }
+    
     try {
       await Promise.all([
         fetchStats(),
         fetchTopCollections(),
-        fetchEndpoints(endpointPage, endpointsPerPage, endpointFilters)
+        fetchEndpoints(DEFAULT_PAGE, DEFAULT_PAGE_SIZE, { collectionId: null, method: null, search: '' })
       ]);
     } catch (error) {
       console.error('Error refreshing:', error);
     } finally {
       setLoading(prev => ({ ...prev, refresh: false }));
     }
-  }, [authToken, fetchStats, fetchTopCollections, endpointPage, endpointsPerPage, endpointFilters, fetchEndpoints]);
+  }, [authToken, fetchStats, fetchTopCollections, fetchEndpoints]);
 
-  // FIXED: Load all dashboard data
+  // FIXED: Load all dashboard data - RESET ALL PAGINATION STATE
   const loadAllDashboardData = useCallback(async () => {
     if (!authToken) {
       setError('Authentication required');
@@ -806,11 +831,35 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
       return;
     }
 
+    // RESET ALL PAGINATION STATE TO DEFAULTS
+    console.log('🔄 Loading dashboard data - Resetting pagination to defaults');
+    
+    // Reset page to 0
+    setEndpointPage(DEFAULT_PAGE);
+    
+    // Reset per page to default
+    setEndpointsPerPage(DEFAULT_PAGE_SIZE);
+    
+    // Reset filters
+    setEndpointFilters({
+      collectionId: null,
+      method: null,
+      search: ''
+    });
+    
+    // Reset search query
+    setApiSearchQuery('');
+    
+    // Clear any pending search timer
+    if (endpointSearchTimer.current) {
+      clearTimeout(endpointSearchTimer.current);
+    }
+
     try {
       await Promise.all([
         fetchStats(),
         fetchTopCollections(),
-        fetchEndpoints(DEFAULT_PAGE, endpointsPerPage, endpointFilters)
+        fetchEndpoints(DEFAULT_PAGE, DEFAULT_PAGE_SIZE, { collectionId: null, method: null, search: '' })
       ]);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
@@ -818,10 +867,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
     } finally {
       setLoading(prev => ({ ...prev, initialLoad: false }));
     }
-  }, [authToken, fetchStats, fetchTopCollections, endpointsPerPage, endpointFilters, fetchEndpoints]);
-
-  // REMOVED the problematic useEffect that was causing loops
-  // The fetch is now triggered directly by user actions
+  }, [authToken, fetchStats, fetchTopCollections, fetchEndpoints]);
 
   // NEW: Function to refresh endpoints table (called after updates)
   const refreshEndpointsTable = useCallback(() => {
@@ -888,9 +934,37 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
 
   // NEW: Handle API update (called from modal after successful update)
   const handleApiUpdate = useCallback(() => {
-    // Trigger endpoints table refresh
-    refreshEndpointsTable();
-  }, [refreshEndpointsTable]);
+    // Reset to first page when API is updated
+    console.log('🔄 API updated - Resetting to page 1');
+    
+    // Reset page to 0
+    setEndpointPage(DEFAULT_PAGE);
+    
+    // Reset per page to default
+    setEndpointsPerPage(DEFAULT_PAGE_SIZE);
+    
+    // Reset filters
+    setEndpointFilters({
+      collectionId: null,
+      method: null,
+      search: ''
+    });
+    
+    // Reset search query
+    setApiSearchQuery('');
+    
+    // Clear any pending search timer
+    if (endpointSearchTimer.current) {
+      clearTimeout(endpointSearchTimer.current);
+    }
+    
+    // Refresh endpoints from page 1
+    fetchEndpoints(DEFAULT_PAGE, DEFAULT_PAGE_SIZE, { collectionId: null, method: null, search: '' });
+    
+    // Also refresh stats and collections to keep everything in sync
+    fetchStats();
+    fetchTopCollections();
+  }, [fetchEndpoints, fetchStats, fetchTopCollections]);
 
  const handleEndpointClick = useCallback(async (endpoint) => {
   console.log("endpoint:::::::" + JSON.stringify(endpoint));
@@ -964,7 +1038,6 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
     stats.totalCollections > 0 || endpointData.totalElements > 0,
     [stats.totalCollections, endpointData.totalElements]
   );
-
 
   // Add this to see what values are being used (for debugging)
   useEffect(() => {
