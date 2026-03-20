@@ -1372,6 +1372,110 @@ const handleSearch = useCallback((searchTerm) => {
   // Track resolved synonym info
   const [synonymInfo, setSynonymInfo] = useState(null);
 
+
+  // Add this useEffect right after the loadProperties function and before other useEffects
+// Replace the existing useEffect with this improved version
+useEffect(() => {
+  const propertiesData = tabData.properties.data;
+  
+  if (!propertiesData || !activeObject) return;
+  
+  // Get the current active object ID (this should be consistent)
+  const currentActiveId = activeObject.id;
+  
+  // Create the expected object ID from properties data
+  // Use the same logic as in handleObjectSelect
+  const owner = propertiesData.owner || propertiesData.OWNER || activeObject.owner;
+  const name = propertiesData.name || propertiesData.OBJECT_NAME || activeObject.name;
+  const expectedObjectId = `${owner}_${name}`;
+  
+  // Also check using the original name if available
+  const originalOwner = propertiesData.synonymOwner || propertiesData.originalType ? activeObject.owner : owner;
+  const originalName = propertiesData.originalName || propertiesData.synonymName || name;
+  const originalObjectId = `${originalOwner}_${originalName}`;
+  
+  // Check if this properties data belongs to the current active object
+  const isMatchingObject = currentActiveId === expectedObjectId || 
+                          currentActiveId === originalObjectId ||
+                          (activeObject.name === name && activeObject.owner === owner);
+  
+  if (!isMatchingObject) {
+    console.log('Properties data does not match current active object, skipping update', {
+      currentActiveId,
+      expectedObjectId,
+      originalObjectId,
+      activeObjectName: activeObject.name,
+      propertiesName: name
+    });
+    return;
+  }
+  
+  console.log('Checking if active object needs update:', {
+    currentType: activeObject.type,
+    propertiesType: propertiesData.type,
+    isSynonym: propertiesData.isSynonym,
+    targetType: propertiesData.synonymInfo?.targetType,
+    currentActiveId,
+    expectedObjectId
+  });
+  
+  // Check if this is a synonym that needs to be updated to its target type
+  if (propertiesData.isSynonym && propertiesData.synonymInfo?.targetType) {
+    const targetType = propertiesData.synonymInfo.targetType;
+    
+    if (activeObject.type !== targetType) {
+      console.log(`Updating active object from ${activeObject.type} to ${targetType} (synonym target)`);
+      
+      setActiveObject(prev => ({
+        ...prev,
+        type: targetType,
+        originalType: activeObject.type,
+        isSynonym: true,
+        synonymInfo: propertiesData.synonymInfo
+      }));
+      
+      // Update tabs with the new type
+      setTabs(prev => prev.map(tab => {
+        if (tab.objectId === currentActiveId) {
+          return {
+            ...tab,
+            type: targetType
+          };
+        }
+        return tab;
+      }));
+      
+      // Force tab refresh by setting activeTab to itself
+      setActiveTab(prev => prev);
+    }
+  }
+  // For non-synonyms, ensure type matches
+  else if (propertiesData.type && propertiesData.type !== activeObject.type) {
+    console.log(`Updating active object type from ${activeObject.type} to ${propertiesData.type}`);
+    
+    setActiveObject(prev => ({
+      ...prev,
+      type: propertiesData.type
+    }));
+    
+    // Update tabs with the new type
+    setTabs(prev => prev.map(tab => {
+      if (tab.objectId === currentActiveId) {
+        return {
+          ...tab,
+          type: propertiesData.type
+        };
+      }
+      return tab;
+    }));
+  }
+  
+  // Also update synonymInfo state if needed
+  if (propertiesData.isSynonym && propertiesData.synonymInfo && !synonymInfo) {
+    setSynonymInfo(propertiesData.synonymInfo);
+  }
+}, [tabData.properties.data, activeObject]);
+
   // Cleanup on unmount
 useEffect(() => {
   return () => {
@@ -1884,7 +1988,7 @@ useEffect(() => {
     setObjectTree(prev => ({ ...prev, [type]: !prev[type] }));
   }, []);
 
-// Load Properties (Basic Info) - FIXED with mounted check
+// Update the loadProperties function with dynamic fallback to check other target owners
 const loadProperties = useCallback(async (object, type, owner) => {
   if (!authToken || !object || !type) return;
   
@@ -1907,6 +2011,7 @@ const loadProperties = useCallback(async (object, type, owner) => {
     let effectiveOwner = owner;
     let synonymResolutionData = null;
     let isSynonym = isSynonymFromObject;
+    let fallbackAttempted = false;
     
     // Resolve synonym if needed
     if (isSynonymFromObject || type === 'SYNONYM' || object.objectType === 'SYNONYM') {
@@ -1931,17 +2036,137 @@ const loadProperties = useCallback(async (object, type, owner) => {
           };
         }
       } catch (synonymErr) {
-        // Not a synonym or resolution failed
+        console.warn('Synonym resolution failed:', synonymErr);
       }
     }
     
-    const response = await getObjectBasicInfo(authToken, {
-      objectType: effectiveType,
-      objectName: effectiveName,
-      owner: effectiveOwner
-    });
+    // Try to fetch object info
+    let data = null;
+    let fetchError = null;
     
-    const data = handleSchemaBrowserResponse(response);
+    try {
+      const response = await getObjectBasicInfo(authToken, {
+        objectType: effectiveType,
+        objectName: effectiveName,
+        owner: effectiveOwner
+      });
+      data = handleSchemaBrowserResponse(response);
+    } catch (err) {
+      fetchError = err;
+      console.warn(`Failed to fetch object info for ${effectiveType} ${effectiveName} from owner ${effectiveOwner}:`, err);
+    }
+    
+    // If fetch failed and this is a synonym, try fallback to other potential target owners
+    if ((!data || fetchError) && (isSynonym || type === 'SYNONYM')) {
+      fallbackAttempted = true;
+      console.log(`Properties fetch failed, attempting fallback to other target owners for ${object.name}`);
+      
+      // Dynamically collect potential owners from the object itself and its target info
+      const potentialTargetOwners = [];
+      
+      // Add the original owner
+      if (owner && !potentialTargetOwners.includes(owner)) {
+        potentialTargetOwners.push(owner);
+      }
+      
+      // Add the resolved target owner
+      if (effectiveOwner && !potentialTargetOwners.includes(effectiveOwner)) {
+        potentialTargetOwners.push(effectiveOwner);
+      }
+      
+      // Add target owner from search result if available
+      if (object.targetOwner && !potentialTargetOwners.includes(object.targetOwner)) {
+        potentialTargetOwners.push(object.targetOwner);
+      }
+      
+      // If we have synonym info from properties, add those owners
+      if (tabData.properties.data?.synonymInfo?.targetOwner && 
+          !potentialTargetOwners.includes(tabData.properties.data.synonymInfo.targetOwner)) {
+        potentialTargetOwners.push(tabData.properties.data.synonymInfo.targetOwner);
+      }
+      
+      // If we have synonym info from state, add those owners
+      if (synonymInfo?.targetOwner && !potentialTargetOwners.includes(synonymInfo.targetOwner)) {
+        potentialTargetOwners.push(synonymInfo.targetOwner);
+      }
+      
+      console.log('Potential target owners to try (dynamic):', potentialTargetOwners);
+      
+      // Try each potential target owner until we find one that works
+      for (const tryOwner of potentialTargetOwners) {
+        if (tryOwner === effectiveOwner) continue; // Skip the one we already tried
+        if (tryOwner === owner) continue; // Skip the original owner if we already tried
+        
+        console.log(`Trying fallback with owner: ${tryOwner}`);
+        
+        try {
+          const fallbackResponse = await getObjectBasicInfo(authToken, {
+            objectType: effectiveType,
+            objectName: effectiveName,
+            owner: tryOwner
+          });
+          
+          const fallbackData = handleSchemaBrowserResponse(fallbackResponse);
+          
+          if (fallbackData && (fallbackData.OBJECT_NAME || fallbackData.objectName)) {
+            console.log(`Successfully found object with owner: ${tryOwner}`);
+            data = fallbackData;
+            effectiveOwner = tryOwner;
+            break;
+          }
+        } catch (fallbackErr) {
+          console.warn(`Fallback failed for owner ${tryOwner}:`, fallbackErr);
+          continue;
+        }
+      }
+    }
+    
+    // If still no data, try with original object name (not resolved) using the same dynamic owners
+    if ((!data || fetchError) && !fallbackAttempted) {
+      fallbackAttempted = true;
+      console.log(`Attempting fallback with original object name: ${object.name}`);
+      
+      // Collect potential owners for original object
+      const originalOwners = [];
+      
+      if (owner && !originalOwners.includes(owner)) {
+        originalOwners.push(owner);
+      }
+      
+      if (object.targetOwner && !originalOwners.includes(object.targetOwner)) {
+        originalOwners.push(object.targetOwner);
+      }
+      
+      if (effectiveOwner && !originalOwners.includes(effectiveOwner)) {
+        originalOwners.push(effectiveOwner);
+      }
+      
+      console.log('Original object owners to try:', originalOwners);
+      
+      for (const tryOwner of originalOwners) {
+        try {
+          const originalResponse = await getObjectBasicInfo(authToken, {
+            objectType: type,
+            objectName: object.name,
+            owner: tryOwner
+          });
+          
+          const originalData = handleSchemaBrowserResponse(originalResponse);
+          
+          if (originalData && (originalData.OBJECT_NAME || originalData.objectName)) {
+            console.log(`Successfully found original object with owner: ${tryOwner}`);
+            data = originalData;
+            effectiveType = type;
+            effectiveName = object.name;
+            effectiveOwner = tryOwner;
+            isSynonym = false;
+            break;
+          }
+        } catch (originalErr) {
+          console.warn(`Original object fetch failed for owner ${tryOwner}:`, originalErr);
+        }
+      }
+    }
     
     // Check if still mounted before updating state
     if (!isMounted) return;
@@ -1955,6 +2180,20 @@ const loadProperties = useCallback(async (object, type, owner) => {
       return;
     }
     
+    // If we still have no data after all fallbacks, show error state
+    if (!data) {
+      console.error('All attempts to fetch object properties failed');
+      setTabData(prev => ({
+        ...prev,
+        properties: { 
+          loading: false, 
+          data: null,
+          error: `Unable to load properties for ${object.name} (${type}) from any owner`
+        }
+      }));
+      return;
+    }
+    
     // Create enriched data
     const enrichedData = {
       ...data,
@@ -1964,6 +2203,7 @@ const loadProperties = useCallback(async (object, type, owner) => {
       originalType: type,
       owner: effectiveOwner,
       isSynonym: isSynonym,
+      fallbackUsed: fallbackAttempted,
       synonymInfo: isSynonym ? {
         synonymName: object.name,
         synonymOwner: owner,
@@ -1974,7 +2214,8 @@ const loadProperties = useCallback(async (object, type, owner) => {
       } : null,
     };
     
-    console.log('Properties loaded for object:', enrichedData.type, enrichedData.name);
+    console.log('Properties loaded for object:', enrichedData.type, enrichedData.name, 
+                fallbackAttempted ? '(using fallback)' : '');
     
     setTabData(prev => ({
       ...prev,
@@ -1994,7 +2235,7 @@ const loadProperties = useCallback(async (object, type, owner) => {
     }
     return null;
   }
-}, [authToken, activeObject]);
+}, [authToken, activeObject, synonymInfo, tabData.properties.data]);
 
   // ============================================================
 // Load Columns (for Tables/Views) or Parameters (for Procedures/Functions)
@@ -2007,11 +2248,67 @@ const loadColumns = useCallback(async (object, type, owner, page = 1, pageSize =
   let effectiveName = object.name;
   let effectiveOwner = owner;
   
-  if (type === 'SYNONYM' && synonymInfo && synonymInfo.valid) {
+  // Priority 1: Check if active object has been updated with synonym info
+  if (activeObject?.synonymInfo && activeObject?.synonymInfo.valid && activeObject?.synonymInfo.targetType) {
+    effectiveType = activeObject.synonymInfo.targetType;
+    effectiveName = activeObject.synonymInfo.targetName;
+    effectiveOwner = activeObject.synonymInfo.targetOwner;
+    console.log('Using synonym target info from activeObject:', { 
+      effectiveType, 
+      effectiveName, 
+      effectiveOwner,
+      originalType: type,
+      originalName: object.name
+    });
+  }
+  // Priority 2: Check if we have properties data with synonym info
+  else if (tabData.properties.data?.isSynonym && tabData.properties.data?.synonymInfo) {
+    const targetInfo = tabData.properties.data.synonymInfo;
+    effectiveType = targetInfo.targetType;
+    effectiveName = targetInfo.targetName;
+    effectiveOwner = targetInfo.targetOwner;
+    console.log('Using synonym target info from properties:', { 
+      effectiveType, 
+      effectiveName, 
+      effectiveOwner,
+      originalType: type,
+      originalName: object.name
+    });
+  }
+  // Priority 3: Check if we have synonym info from state and the current type is SYNONYM
+  else if ((type === 'SYNONYM' || object.type === 'SYNONYM') && synonymInfo && synonymInfo.valid) {
     effectiveType = synonymInfo.targetType;
     effectiveName = synonymInfo.targetName;
     effectiveOwner = synonymInfo.targetOwner;
+    console.log('Using synonym target info from state:', { 
+      effectiveType, 
+      effectiveName, 
+      effectiveOwner,
+      originalType: type,
+      originalName: object.name
+    });
   }
+  // Priority 4: If the object itself has target information (from search results)
+  else if (object.targetType && object.targetName) {
+    effectiveType = object.targetType;
+    effectiveName = object.targetName;
+    effectiveOwner = object.targetOwner || owner;
+    console.log('Using target info from object:', { 
+      effectiveType, 
+      effectiveName, 
+      effectiveOwner,
+      originalType: type,
+      originalName: object.name
+    });
+  }
+  
+  console.log('Final effective info for loadColumns:', {
+    effectiveType,
+    effectiveName,
+    effectiveOwner,
+    originalType: type,
+    originalName: object.name
+  });
   
   const cacheKey = `columns_${effectiveType}_${effectiveOwner || 'unknown'}_${effectiveName}_page${page}`;
   const cached = objectCache.get(cacheKey);
@@ -2041,6 +2338,8 @@ const loadColumns = useCallback(async (object, type, owner, page = 1, pageSize =
     let currentPage = page;
     
     if (effectiveType === 'TABLE' || effectiveType === 'VIEW') {
+      console.log(`Fetching columns for ${effectiveType} ${effectiveName}...`);
+      
       response = await getTableColumnsPaginated(authToken, {
         tableName: effectiveName,
         owner: effectiveOwner,
@@ -2053,7 +2352,11 @@ const loadColumns = useCallback(async (object, type, owner, page = 1, pageSize =
       totalPages = extracted.totalPages;
       currentPage = extracted.page;
       
+      console.log(`Loaded ${items.length} columns for ${effectiveType} ${effectiveName}`);
+      
     } else if (effectiveType === 'PROCEDURE') {
+      console.log(`Fetching parameters for procedure ${effectiveName}...`);
+      
       response = await getProcedureParametersPaginated(authToken, {
         procedureName: effectiveName,
         owner: effectiveOwner,
@@ -2066,8 +2369,10 @@ const loadColumns = useCallback(async (object, type, owner, page = 1, pageSize =
       totalPages = extracted.totalPages;
       currentPage = extracted.page;
       
+      console.log(`Loaded ${items.length} parameters for procedure ${effectiveName}`);
+      
     } else if (effectiveType === 'FUNCTION') {
-      console.log('Loading function parameters for:', effectiveName);
+      console.log(`Fetching parameters for function ${effectiveName}...`);
       
       response = await getFunctionParametersPaginated(authToken, {
         functionName: effectiveName,
@@ -2076,17 +2381,16 @@ const loadColumns = useCallback(async (object, type, owner, page = 1, pageSize =
         pageSize
       });
       
-      console.log('Function parameters response:', response);
-      
-      // The transformer already formatted the data with 'items' array
       const responseData = response?.data || {};
       items = responseData.items || [];
       totalPages = responseData.totalPages || 1;
       currentPage = responseData.page || page;
       
-      console.log('Processed parameters:', items.length, items);
+      console.log(`Loaded ${items.length} parameters for function ${effectiveName}`);
       
     } else if (effectiveType === 'PACKAGE') {
+      console.log(`Fetching package items for ${effectiveName}...`);
+      
       response = await getPackageItemsPaginated(authToken, {
         packageName: effectiveName,
         owner: effectiveOwner,
@@ -2100,15 +2404,21 @@ const loadColumns = useCallback(async (object, type, owner, page = 1, pageSize =
       totalPages = extracted.totalPages;
       currentPage = extracted.page;
       
+      console.log(`Loaded ${items.length} items for package ${effectiveName}`);
+      
     } else if (effectiveType === 'TYPE') {
+      console.log(`Fetching type details for ${effectiveName}...`);
+      
       const typeDetails = await getTypeDetails(authToken, effectiveName);
       const typeData = handleSchemaBrowserResponse(typeDetails);
       items = typeData.attributes || [];
       totalPages = 1;
       currentPage = 1;
       
+      console.log(`Loaded ${items.length} attributes for type ${effectiveName}`);
+      
     } else {
-      // Unsupported type for columns
+      console.log(`Unsupported type for columns/parameters: ${effectiveType}`);
       setTabData(prev => ({
         ...prev,
         columns: { loading: false, data: [] }
@@ -2133,13 +2443,14 @@ const loadColumns = useCallback(async (object, type, owner, page = 1, pageSize =
     }));
     
   } catch (err) {
-    Logger.error('SchemaBrowser', 'loadColumns', 'Error loading columns', err);
+    console.error('Error loading columns/parameters:', err);
+    Logger.error('SchemaBrowser', 'loadColumns', `Error loading ${effectiveType} columns/parameters`, err);
     setTabData(prev => ({
       ...prev,
       columns: { loading: false, data: [] }
     }));
   }
-}, [authToken, synonymInfo]);
+}, [authToken, synonymInfo, tabData.properties.data, activeObject]);
 
   // ============================================================
 // Load Data (for Tables/Views) - FIXED VERSION WITH DEBUGGING
@@ -2657,7 +2968,7 @@ useEffect(() => {
     }
   }, []);
 
- // Handle object selection - ONLY set the object, don't load data
+ // Update handleObjectSelect to preserve target info from search results
 const handleObjectSelect = useCallback(async (object, type) => {
   if (!authToken || !object) {
     console.error('Cannot select object: missing authToken or object', { authToken: !!authToken, object });
@@ -2706,11 +3017,16 @@ const handleObjectSelect = useCallback(async (object, type) => {
   setLoadedTabs({});
   setSynonymInfo(null);
   
-  // Set the active object FIRST (this will trigger the useEffect)
+  // Preserve any target information from search results
   const enrichedObject = {
     ...object,
     id: objectId,
-    type: type?.toUpperCase()
+    type: type?.toUpperCase(),
+    // Preserve target info if this is a synonym from search
+    targetType: object.targetType,
+    targetName: object.targetName,
+    targetOwner: object.targetOwner,
+    isSynonym: object.isSynonym || type === 'SYNONYM'
   };
   
   setActiveObject(enrichedObject);
@@ -2752,6 +3068,253 @@ const handleObjectSelect = useCallback(async (object, type) => {
   }, 1000);
 }, [authToken, tabs, activeObject]);
 
+// Updated renderPropertiesTab with better null checks
+// Replace your renderPropertiesTab function with this enhanced version
+const renderPropertiesTab = () => {
+  const data = tabData.properties.data;
+  const loading = tabData.properties.loading;
+  
+  if (loading) {
+    return <TabLoader colors={colors} message="Loading properties..." />;
+  }
+  
+  if (!data) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-4">
+        <div className="text-center" style={{ color: colors.textSecondary }}>
+          No properties available. Please wait while we load the object details.
+        </div>
+      </div>
+    );
+  }
+  
+  const renderStatusBadge = (status) => {
+    const isValid = status === 'VALID' || status === 'ENABLED';
+    return (
+      <span className={`px-2 py-0.5 rounded text-xs ${
+        isValid ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+      }`}>
+        {status || '-'}
+      </span>
+    );
+  };
+
+  const renderPropertyItem = (label, value, isStatus = false) => (
+    <div className="space-y-1">
+      <div className="text-xs" style={{ color: colors.textSecondary }}>{label}</div>
+      <div className="text-sm truncate" style={{ color: colors.text }}>
+        {isStatus ? renderStatusBadge(value) : (value || '-')}
+      </div>
+    </div>
+  );
+
+  // Check if this is a synonym (based on data or active object)
+  const isSynonym = data.isSynonym === true || 
+                    data.objectType === 'SYNONYM' || 
+                    data.type === 'SYNONYM' ||
+                    activeObject?.isSynonym === true;
+  
+  // Get the actual object type (resolve synonym if needed)
+  const effectiveType = isSynonym && data.synonymInfo?.targetType 
+    ? data.synonymInfo.targetType 
+    : (data.objectType || data.type || activeObject?.type);
+  
+  // For synonyms, show both synonym info AND target object info
+  if (isSynonym && data.synonymInfo) {
+    const synonymInfo = data.synonymInfo;
+    const targetType = synonymInfo.targetType || data.targetType || data.objectType;
+    const targetName = synonymInfo.targetName || data.targetName || data.OBJECT_NAME;
+    const targetOwner = synonymInfo.targetOwner || data.targetOwner || data.OWNER;
+    const targetStatus = synonymInfo.targetStatus || data.targetStatus || data.STATUS;
+    
+    return (
+      <div className="flex-1 overflow-auto p-4">
+        <div className="space-y-4">
+          {/* Synonym Information Section */}
+          <div className="border rounded" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
+            <div className="p-4 border-b" style={{ borderColor: colors.border }}>
+              <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Synonym Information</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {renderPropertyItem("Synonym Name", data.synonymName || synonymInfo.synonymName || data.originalName || data.objectName || activeObject?.name)}
+                {renderPropertyItem("Synonym Owner", synonymInfo.synonymOwner || data.synonymOwner || data.owner || activeObject?.owner)}
+                {renderPropertyItem("DB Link", data.dbLink || synonymInfo.dbLink || '-')}
+                {renderPropertyItem("Created", data.CREATED ? formatDateForDisplay(data.CREATED) : (data.created ? formatDateForDisplay(data.created) : '-'))}
+                {renderPropertyItem("Last Modified", data.LAST_DDL_TIME ? formatDateForDisplay(data.LAST_DDL_TIME) : (data.lastModified ? formatDateForDisplay(data.lastModified) : '-'))}
+              </div>
+            </div>
+          </div>
+          
+          {/* Target Object Information Section */}
+          <div className="border rounded" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
+            <div className="p-4 border-b" style={{ borderColor: colors.border }}>
+              <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Target Object Information</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {renderPropertyItem("Target Type", targetType)}
+                {renderPropertyItem("Target Name", targetName)}
+                {renderPropertyItem("Target Owner", targetOwner)}
+                {targetStatus && renderPropertyItem("Target Status", targetStatus, true)}
+                {data.columnCount !== undefined && renderPropertyItem("Column Count", data.columnCount)}
+                {data.dependencyCount !== undefined && renderPropertyItem("Dependencies", data.dependencyCount)}
+                {data.dependentCount !== undefined && renderPropertyItem("Used By Count", data.dependentCount)}
+                {data.indexCount !== undefined && renderPropertyItem("Index Count", data.indexCount)}
+                {data.triggerCount !== undefined && renderPropertyItem("Trigger Count", data.triggerCount)}
+              </div>
+            </div>
+            
+            {/* Table Statistics for Target Table */}
+            {targetType === 'TABLE' && (data.tableInfo || data.statistics) && (
+              <div className="p-4 border-t" style={{ borderColor: colors.border }}>
+                <h4 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Table Statistics</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {(data.tableInfo?.NUM_ROWS !== undefined || data.statistics?.NUM_ROWS !== undefined) && (
+                    renderPropertyItem("Row Count", data.tableInfo?.NUM_ROWS || data.statistics?.NUM_ROWS)
+                  )}
+                  {(data.tableInfo?.BLOCKS !== undefined || data.statistics?.BLOCKS !== undefined) && (
+                    renderPropertyItem("Blocks", data.tableInfo?.BLOCKS || data.statistics?.BLOCKS)
+                  )}
+                  {(data.tableInfo?.AVG_ROW_LEN !== undefined || data.statistics?.AVG_ROW_LEN !== undefined) && (
+                    renderPropertyItem("Avg Row Length", data.tableInfo?.AVG_ROW_LEN || data.statistics?.AVG_ROW_LEN)
+                  )}
+                  {(data.tableInfo?.LAST_ANALYZED !== undefined || data.statistics?.LAST_ANALYZED !== undefined) && (
+                    renderPropertyItem("Last Analyzed", formatDateForDisplay(data.tableInfo?.LAST_ANALYZED || data.statistics?.LAST_ANALYZED))
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {/* Table Info for Target Table */}
+            {targetType === 'TABLE' && data.tableInfo && (
+              <div className="p-4 border-t" style={{ borderColor: colors.border }}>
+                <h4 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Table Properties</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {renderPropertyItem("Tablespace", data.tableInfo.TABLESPACE_NAME)}
+                  {renderPropertyItem("Compression", data.tableInfo.COMPRESSION)}
+                  {renderPropertyItem("Row Movement", data.tableInfo.ROW_MOVEMENT)}
+                  {renderPropertyItem("Table Lock", data.tableInfo.TABLE_LOCK)}
+                  {renderPropertyItem("Dropped", data.tableInfo.DROPPED)}
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* View Definition - Only show if target is a view */}
+          {(targetType === 'VIEW' || data.objectType === 'VIEW') && data.viewInfo && (
+            <div className="border rounded" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
+              <div className="p-4">
+                <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>View Definition</h4>
+                <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
+                  <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
+                    {data.viewInfo.TEXT || 'No view definition available'}
+                  </pre>
+                  {data.viewInfo.TEXT_LENGTH && (
+                    <div className="mt-2 text-xs" style={{ color: colors.textSecondary }}>
+                      Length: {data.viewInfo.TEXT_LENGTH} characters
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+  
+  // For regular objects (non-synonyms)
+  const properties = [
+    { label: 'Name', value: data.objectName || data.OBJECT_NAME || data.name || activeObject?.name },
+    { label: 'Owner', value: data.owner || data.OWNER || activeObject?.owner },
+    { label: 'Type', value: data.objectType || data.OBJECT_TYPE || data.type || activeObject?.type },
+    { label: 'Status', value: data.status || data.STATUS || 'VALID', isStatus: true },
+    { label: 'Created', value: data.CREATED ? formatDateForDisplay(data.CREATED) : (data.created ? formatDateForDisplay(data.created) : null) },
+    { label: 'Last Modified', value: data.LAST_DDL_TIME ? formatDateForDisplay(data.LAST_DDL_TIME) : (data.lastModified ? formatDateForDisplay(data.lastModified) : null) },
+  ].filter(p => p.value !== null && p.value !== undefined && p.value !== '');
+  
+  // Add additional properties based on object type
+  if (effectiveType === 'TABLE') {
+    if (data.columnCount !== undefined) {
+      properties.push({ label: 'Column Count', value: data.columnCount });
+    }
+    if (data.indexCount !== undefined) {
+      properties.push({ label: 'Index Count', value: data.indexCount });
+    }
+    if (data.triggerCount !== undefined) {
+      properties.push({ label: 'Trigger Count', value: data.triggerCount });
+    }
+    if (data.dependencyCount !== undefined) {
+      properties.push({ label: 'Dependencies', value: data.dependencyCount });
+    }
+    if (data.dependentCount !== undefined) {
+      properties.push({ label: 'Used By Count', value: data.dependentCount });
+    }
+  }
+  
+  return (
+    <div className="flex-1 overflow-auto p-4">
+      <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
+        <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Properties</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {properties.map((prop, i) => (
+            <div key={i} className="space-y-1">
+              <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
+              <div className="text-sm truncate" style={{ color: colors.text }}>
+                {prop.isStatus ? renderStatusBadge(prop.value) : (prop.value || '-')}
+              </div>
+            </div>
+          ))}
+        </div>
+        
+        {/* Table Statistics for Regular Tables */}
+        {effectiveType === 'TABLE' && (data.tableInfo || data.statistics) && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <h4 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Table Statistics</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {(data.tableInfo?.NUM_ROWS !== undefined || data.statistics?.NUM_ROWS !== undefined) && (
+                renderPropertyItem("Row Count", data.tableInfo?.NUM_ROWS || data.statistics?.NUM_ROWS)
+              )}
+              {(data.tableInfo?.BLOCKS !== undefined || data.statistics?.BLOCKS !== undefined) && (
+                renderPropertyItem("Blocks", data.tableInfo?.BLOCKS || data.statistics?.BLOCKS)
+              )}
+              {(data.tableInfo?.AVG_ROW_LEN !== undefined || data.statistics?.AVG_ROW_LEN !== undefined) && (
+                renderPropertyItem("Avg Row Length", data.tableInfo?.AVG_ROW_LEN || data.statistics?.AVG_ROW_LEN)
+              )}
+              {(data.tableInfo?.LAST_ANALYZED !== undefined || data.statistics?.LAST_ANALYZED !== undefined) && (
+                renderPropertyItem("Last Analyzed", formatDateForDisplay(data.tableInfo?.LAST_ANALYZED || data.statistics?.LAST_ANALYZED))
+              )}
+            </div>
+          </div>
+        )}
+        
+        {/* Table Properties for Regular Tables */}
+        {effectiveType === 'TABLE' && data.tableInfo && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <h4 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Table Properties</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {renderPropertyItem("Tablespace", data.tableInfo.TABLESPACE_NAME)}
+              {renderPropertyItem("Compression", data.tableInfo.COMPRESSION)}
+              {renderPropertyItem("Row Movement", data.tableInfo.ROW_MOVEMENT)}
+              {renderPropertyItem("Table Lock", data.tableInfo.TABLE_LOCK)}
+              {renderPropertyItem("Dropped", data.tableInfo.DROPPED)}
+            </div>
+          </div>
+        )}
+        
+        {/* View Definition for Regular Views */}
+        {(effectiveType === 'VIEW' || data.objectType === 'VIEW') && data.viewInfo && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>View Definition</h4>
+            <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
+              <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
+                {data.viewInfo.TEXT || 'No view definition available'}
+              </pre>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
   // Handle context menu
   const handleContextMenu = useCallback((e, object, type) => {
     e.preventDefault();
@@ -2762,114 +3325,206 @@ const handleObjectSelect = useCallback(async (object, type) => {
     setShowContextMenu(true);
   }, []);
 
-  // Search objects - REMOVED SYNONYMS FROM SEARCH RESULTS
-  const searchObjects = useCallback(async (searchTerm, owner) => {
-    if (!authToken || !searchTerm || searchTerm.length < 2) {
-      setFilteredResults({});
-      setSearchPerformed(false);
-      return;
+// Update the searchObjects function to filter out duplicate objects and only show the correct ones
+const searchObjects = useCallback(async (searchTerm, owner) => {
+  if (!authToken || !searchTerm || searchTerm.length < 2) {
+    setFilteredResults({});
+    setSearchPerformed(false);
+    return;
+  }
+
+  const requestKey = `search_${searchTerm}_${owner}`;
+  
+  if (searchAbortController.current) {
+    searchAbortController.current.abort();
+  }
+  
+  searchAbortController.current = new AbortController();
+  
+  if (ongoingRequests.has(requestKey)) {
+    Logger.debug('SchemaBrowser', 'searchObjects', `Already searching for "${searchTerm}", skipping`);
+    return;
+  }
+
+  Logger.info('SchemaBrowser', 'searchObjects', `Searching for "${searchTerm}" in ${owner === 'ALL' ? 'all schemas' : owner}`);
+
+  setIsFiltering(true);
+  ongoingRequests.set(requestKey, true);
+
+  try {
+    const params = {
+      query: searchTerm,
+      page: 1,
+      pageSize: 100
+    };
+
+    if (owner !== 'ALL') {
+      params.owner = owner;
     }
 
-    const requestKey = `search_${searchTerm}_${owner}`;
+    const response = await searchObjectsPaginated(authToken, params, {
+      signal: searchAbortController.current.signal
+    });
     
-    if (searchAbortController.current) {
-      searchAbortController.current.abort();
+    if (searchAbortController.current.signal.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
     }
     
-    searchAbortController.current = new AbortController();
+    // Group results
+    const groupedResults = {
+      procedures: [],
+      views: [],
+      functions: [],
+      tables: [],
+      packages: [],
+      sequences: [],
+      types: [],
+      triggers: []
+    };
+
+    let resultsArray = [];
     
-    if (ongoingRequests.has(requestKey)) {
-      Logger.debug('SchemaBrowser', 'searchObjects', `Already searching for "${searchTerm}", skipping`);
-      return;
+    if (response?.data?.items && Array.isArray(response.data.items)) {
+      resultsArray = response.data.items;
+    } else if (response?.data?.results && Array.isArray(response.data.results)) {
+      resultsArray = response.data.results;
+    } else if (response?.results && Array.isArray(response.results)) {
+      resultsArray = response.results;
+    } else if (Array.isArray(response)) {
+      resultsArray = response;
+    } else if (response?.data && Array.isArray(response.data)) {
+      resultsArray = response.data;
     }
 
-    Logger.info('SchemaBrowser', 'searchObjects', `Searching for "${searchTerm}" in ${owner === 'ALL' ? 'all schemas' : owner}`);
+    // Track objects by name to prevent duplicates
+    const objectsByName = new Map();
 
-    setIsFiltering(true);
-    ongoingRequests.set(requestKey, true);
-
-    try {
-      const params = {
-        query: searchTerm,
-        page: 1,
-        pageSize: 100
-      };
-
-      if (owner !== 'ALL') {
-        params.owner = owner;
-      }
-
-      const response = await searchObjectsPaginated(authToken, params, {
-        signal: searchAbortController.current.signal
-      });
+    resultsArray.forEach(item => {
+      const objectType = (
+        item.object_type || 
+        item.type || 
+        item.OBJECT_TYPE || 
+        ''
+      ).toUpperCase();
       
-      if (searchAbortController.current.signal.aborted) {
-        throw new DOMException('Aborted', 'AbortError');
-      }
+      const itemName = 
+        item.name ||
+        item.table_name ||
+        item.procedure_name ||
+        item.view_name ||
+        item.function_name ||
+        item.package_name ||
+        item.sequence_name ||
+        item.type_name ||
+        item.trigger_name;
       
-      // REMOVED SYNONYMS FROM GROUPED RESULTS
-      const groupedResults = {
-        procedures: [],
-        views: [],
-        functions: [],
-        tables: [],
-        packages: [],
-        sequences: [],
-        types: [],
-        triggers: []
-      };
-
-      let resultsArray = [];
+      if (!itemName || !objectType) return;
       
-      if (response?.data?.items && Array.isArray(response.data.items)) {
-        resultsArray = response.data.items;
-      } else if (response?.data?.results && Array.isArray(response.data.results)) {
-        resultsArray = response.data.results;
-      } else if (response?.results && Array.isArray(response.results)) {
-        resultsArray = response.results;
-      } else if (Array.isArray(response)) {
-        resultsArray = response;
-      } else if (response?.data && Array.isArray(response.data)) {
-        resultsArray = response.data;
-      }
-
-      resultsArray.forEach(item => {
-        const objectType = (
-          item.object_type || 
-          item.type || 
-          item.OBJECT_TYPE || 
-          ''
-        ).toUpperCase();
+      // Check if this is a synonym
+      const isSynonym = item.isSynonym === true || 
+                        objectType === 'SYNONYM' ||
+                        (item.object_type === 'SYNONYM');
+      
+      const objOwner = item.owner || item.OWNER;
+      const targetOwner = item.targetOwner || item.TARGET_OWNER;
+      const targetName = item.targetName || item.TARGET_NAME;
+      const targetType = item.targetType || item.TARGET_TYPE;
+      
+      // Create a key based on the object name and target type
+      const key = `${itemName}_${targetType || objectType}`;
+      
+      // If we've seen this object name before, check if the current one is better
+      if (objectsByName.has(key)) {
+        const existing = objectsByName.get(key);
         
-        const itemName = 
-          item.name ||
-          item.table_name ||
-          item.procedure_name ||
-          item.view_name ||
-          item.function_name ||
-          item.package_name ||
-          item.sequence_name ||
-          item.type_name ||
-          item.trigger_name;
+        // Priority: Prefer the object from the current user's schema (synonym owner)
+        // over objects from other schemas
+        const currentUserSchema = schemaInfo?.currentUser || schemaInfo?.currentSchema;
         
-        if (!itemName || !objectType) return;
+        // Check if this object is from the current user's schema
+        const isCurrentUser = objOwner === currentUserSchema;
+        const existingIsCurrentUser = existing.owner === currentUserSchema;
         
-        const normalizedObj = {
+        // Check if this is a synonym with valid target info
+        const hasValidTarget = isSynonym && targetName && targetType;
+        const existingHasValidTarget = existing.isSynonym && existing.targetName && existing.targetType;
+        
+        // Keep the object that:
+        // 1. Is from current user's schema (priority)
+        // 2. Or has valid target info if it's a synonym
+        // 3. Or keep the first one
+        if ((isCurrentUser && !existingIsCurrentUser) || 
+            (hasValidTarget && !existingHasValidTarget)) {
+          objectsByName.set(key, {
+            ...item,
+            name: itemName,
+            owner: objOwner,
+            type: objectType,
+            isSynonym: isSynonym,
+            targetName: targetName,
+            targetOwner: targetOwner,
+            targetType: targetType,
+            status: item.status || item.STATUS || 'VALID',
+            id: item.id || `${objOwner || 'unknown'}_${itemName}`
+          });
+        }
+      } else {
+        // First time seeing this object, add it
+        objectsByName.set(key, {
+          ...item,
           name: itemName,
-          owner: item.owner || item.OWNER,
+          owner: objOwner,
           type: objectType,
-          objectType: objectType,
+          isSynonym: isSynonym,
+          targetName: targetName,
+          targetOwner: targetOwner,
+          targetType: targetType,
           status: item.status || item.STATUS || 'VALID',
-          id: item.id || `${item.owner || 'unknown'}_${itemName}`,
-          targetName: item.targetName || item.TARGET_NAME,
-          targetOwner: item.targetOwner || item.TARGET_OWNER,
-          targetType: item.targetType || item.TARGET_TYPE,
-          isSynonym: item.isSynonym === true || objectType === 'SYNONYM',
-          icon: item.icon,
-          created: item.created || item.CREATED,
-          lastModified: item.lastModified || item.last_ddl_time || item.LAST_DDL_TIME
+          id: item.id || `${objOwner || 'unknown'}_${itemName}`
+        });
+      }
+    });
+
+    // Now process the unique objects
+    for (const [key, normalizedObj] of objectsByName) {
+      const objectType = normalizedObj.type;
+      const isSynonym = normalizedObj.isSynonym;
+      const targetType = normalizedObj.targetType;
+      
+      // For synonyms, display them under their target type category
+      if (isSynonym && targetType) {
+        const displayType = targetType.toUpperCase();
+        
+        const synonymObj = {
+          ...normalizedObj,
+          originalOwner: normalizedObj.owner,
+          apiOwner: normalizedObj.owner, // Use synonym owner for API
+          apiName: normalizedObj.name,
+          apiType: objectType,
+          isSynonym: true,
+          displayAs: displayType
         };
         
+        // Add to appropriate category based on target type
+        if (displayType.includes('PROCEDURE')) {
+          groupedResults.procedures.push(synonymObj);
+        } else if (displayType.includes('VIEW')) {
+          groupedResults.views.push(synonymObj);
+        } else if (displayType.includes('FUNCTION')) {
+          groupedResults.functions.push(synonymObj);
+        } else if (displayType.includes('TABLE')) {
+          groupedResults.tables.push(synonymObj);
+        } else if (displayType.includes('PACKAGE')) {
+          groupedResults.packages.push(synonymObj);
+        } else if (displayType.includes('SEQUENCE')) {
+          groupedResults.sequences.push(synonymObj);
+        } else if (displayType.includes('TYPE')) {
+          groupedResults.types.push(synonymObj);
+        } else if (displayType.includes('TRIGGER')) {
+          groupedResults.triggers.push(synonymObj);
+        }
+      } else {
+        // Regular object - add to appropriate category
         if (objectType.includes('PROCEDURE')) {
           groupedResults.procedures.push(normalizedObj);
         } else if (objectType.includes('VIEW')) {
@@ -2887,45 +3542,46 @@ const handleObjectSelect = useCallback(async (object, type) => {
         } else if (objectType.includes('TRIGGER')) {
           groupedResults.triggers.push(normalizedObj);
         }
-      });
-      
-      if (searchAbortController.current?.signal.aborted) {
-        return;
       }
-      
-      setFilteredResults(groupedResults);
-      setSearchPerformed(true);
-      
-      setObjectTree(prev => ({
-        ...prev,
-        procedures: groupedResults.procedures.length > 0,
-        views: groupedResults.views.length > 0,
-        functions: groupedResults.functions.length > 0,
-        tables: groupedResults.tables.length > 0,
-        packages: groupedResults.packages.length > 0,
-        sequences: groupedResults.sequences.length > 0,
-        types: groupedResults.types.length > 0,
-        triggers: groupedResults.triggers.length > 0
-      }));
-
-      const totalResults = Object.values(groupedResults).reduce((acc, curr) => acc + curr.length, 0);
-      Logger.info('SchemaBrowser', 'searchObjects', `Found ${totalResults} results`);
-
-    } catch (err) {
-      if (err.name === 'AbortError' || err.message === 'Aborted') {
-        Logger.info('SchemaBrowser', 'searchObjects', 'Search was cancelled');
-        setSearchPerformed(false);
-        return;
-      }
-      Logger.error('SchemaBrowser', 'searchObjects', 'Error searching objects', err);
-      setFilteredResults({});
-      setSearchPerformed(false);
-    } finally {
-      setIsFiltering(false);
-      ongoingRequests.delete(requestKey);
-      searchAbortController.current = null;
     }
-  }, [authToken]);
+    
+    if (searchAbortController.current?.signal.aborted) {
+      return;
+    }
+    
+    setFilteredResults(groupedResults);
+    setSearchPerformed(true);
+    
+    setObjectTree(prev => ({
+      ...prev,
+      procedures: groupedResults.procedures.length > 0,
+      views: groupedResults.views.length > 0,
+      functions: groupedResults.functions.length > 0,
+      tables: groupedResults.tables.length > 0,
+      packages: groupedResults.packages.length > 0,
+      sequences: groupedResults.sequences.length > 0,
+      types: groupedResults.types.length > 0,
+      triggers: groupedResults.triggers.length > 0
+    }));
+
+    const totalResults = Object.values(groupedResults).reduce((acc, curr) => acc + curr.length, 0);
+    Logger.info('SchemaBrowser', 'searchObjects', `Found ${totalResults} unique results`);
+
+  } catch (err) {
+    if (err.name === 'AbortError' || err.message === 'Aborted') {
+      Logger.info('SchemaBrowser', 'searchObjects', 'Search was cancelled');
+      setSearchPerformed(false);
+      return;
+    }
+    Logger.error('SchemaBrowser', 'searchObjects', 'Error searching objects', err);
+    setFilteredResults({});
+    setSearchPerformed(false);
+  } finally {
+    setIsFiltering(false);
+    ongoingRequests.delete(requestKey);
+    searchAbortController.current = null;
+  }
+}, [authToken, schemaInfo]);
 
   // Handle filter changes
   const handleFilterChange = useCallback((value) => {
@@ -3136,98 +3792,6 @@ const getTabsForObject = useCallback((type, propertiesData) => {
   // ============================================================
   // RENDER FUNCTIONS FOR EACH TAB
   // ============================================================
-
-  // Render Properties Tab
-  const renderPropertiesTab = () => {
-    const data = tabData.properties.data;
-    const loading = tabData.properties.loading;
-    
-    if (loading) {
-      return <TabLoader colors={colors} message="Loading properties..." />;
-    }
-    
-    if (!data) {
-      return (
-        <div className="flex-1 flex items-center justify-center p-4">
-          <div className="text-center" style={{ color: colors.textSecondary }}>
-            No properties available
-          </div>
-        </div>
-      );
-    }
-    
-    const renderStatusBadge = (status) => {
-      const isValid = status === 'VALID' || status === 'ENABLED';
-      return (
-        <span className={`px-2 py-0.5 rounded text-xs ${
-          isValid ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
-        }`}>
-          {status || '-'}
-        </span>
-      );
-    };
-
-    const renderPropertyItem = (label, value, isStatus = false) => (
-      <div className="space-y-1">
-        <div className="text-xs" style={{ color: colors.textSecondary }}>{label}</div>
-        <div className="text-sm truncate" style={{ color: colors.text }}>
-          {isStatus ? renderStatusBadge(value) : (value || '-')}
-        </div>
-      </div>
-    );
-
-    // For synonyms
-    if (data.isSynonym || activeObject?.type === 'SYNONYM') {
-      return (
-        <div className="flex-1 overflow-auto p-4">
-          <div className="border rounded" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
-            <div className="p-4 border-b" style={{ borderColor: colors.border }}>
-              <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Synonym Properties</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {renderPropertyItem("Synonym Name", data.synonymName || data.originalName || data.objectName || data.name || activeObject?.name)}
-                {renderPropertyItem("Synonym Owner", data.owner || activeObject?.owner)}
-                {renderPropertyItem("Target Owner", data.targetOwner || data.TARGET_OWNER)}
-                {renderPropertyItem("Target Name", data.targetName || data.TARGET_NAME)}
-                {renderPropertyItem("Target Type", data.targetType || data.TARGET_TYPE || data.objectType)}
-                {renderPropertyItem("Target Status", data.targetStatus || data.STATUS || data.status, true)}
-                {renderPropertyItem("Created", data.CREATED ? formatDateForDisplay(data.CREATED) : (data.created ? formatDateForDisplay(data.created) : '-'))}
-                {renderPropertyItem("Last Modified", data.LAST_DDL_TIME ? formatDateForDisplay(data.LAST_DDL_TIME) : (data.lastModified ? formatDateForDisplay(data.lastModified) : '-'))}
-                {renderPropertyItem("DB Link", data.dbLink || data.DB_LINK || '-')}
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    
-    // For regular objects
-    const properties = [
-      { label: 'Name', value: data.objectName || data.OBJECT_NAME || data.name || activeObject?.name },
-      { label: 'Owner', value: data.owner || data.OWNER },
-      { label: 'Type', value: data.objectType || data.OBJECT_TYPE || data.type },
-      { label: 'Status', value: data.status || data.STATUS || 'VALID', isStatus: true },
-      { label: 'Created', value: data.CREATED ? formatDateForDisplay(data.CREATED) : (data.created ? formatDateForDisplay(data.created) : null) },
-      { label: 'Last Modified', value: data.LAST_DDL_TIME ? formatDateForDisplay(data.LAST_DDL_TIME) : (data.lastModified ? formatDateForDisplay(data.lastModified) : null) },
-    ].filter(p => p.value !== null && p.value !== undefined && p.value !== '');
-
-    return (
-      <div className="flex-1 overflow-auto p-4">
-        <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
-          <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Properties</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {properties.map((prop, i) => (
-              <div key={i} className="space-y-1">
-                <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
-                <div className="text-sm truncate" style={{ color: colors.text }}>
-                  {prop.isStatus ? renderStatusBadge(prop.value) : (prop.value || '-')}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   // Render Columns Tab
   const renderColumnsTab = () => {
@@ -4033,63 +4597,72 @@ const renderDataTab = () => {
     );
   };
 
-  // Render tab content based on active tab
-  const renderTabContent = () => {
-    if (!activeObject) {
-      return (
-        <div className="h-full flex flex-col items-center justify-center p-4">
-          {isLoadingSchemaObjects ? (
-            <>
-              <div className="relative mb-6">
-                <Loader className="animate-spin" size={48} style={{ color: colors.primary }} />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <Database size={24} style={{ color: colors.primary, opacity: 0.3 }} />
-                </div>
+  // Update the renderTabContent function to log what's being rendered
+const renderTabContent = () => {
+  if (!activeObject) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center p-4">
+        {isLoadingSchemaObjects ? (
+          <>
+            <div className="relative mb-6">
+              <Loader className="animate-spin" size={48} style={{ color: colors.primary }} />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Database size={24} style={{ color: colors.primary, opacity: 0.3 }} />
               </div>
-              <p className="text-sm font-medium text-center" style={{ color: colors.text }}>
-                Loading schema objects...
-              </p>
-              <p className="text-xs mt-2 text-center" style={{ color: colors.textSecondary }}>
-                Fetching procedures and other database objects
-              </p>
-            </>
-          ) : (
-            <>
-              <Database size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mb-4" />
-              <p className="text-sm text-center" style={{ color: colors.textSecondary }}>
-                Select an object from the schema browser to view details
-              </p>
-            </>
-          )}
-        </div>
-      );
-    }
+            </div>
+            <p className="text-sm font-medium text-center" style={{ color: colors.text }}>
+              Loading schema objects...
+            </p>
+            <p className="text-xs mt-2 text-center" style={{ color: colors.textSecondary }}>
+              Fetching procedures and other database objects
+            </p>
+          </>
+        ) : (
+          <>
+            <Database size={48} style={{ color: colors.textSecondary, opacity: 0.5 }} className="mb-4" />
+            <p className="text-sm text-center" style={{ color: colors.textSecondary }}>
+              Select an object from the schema browser to view details
+            </p>
+          </>
+        )}
+      </div>
+    );
+  }
 
-    switch(activeTab.toLowerCase()) {
-      case 'properties':
-        return renderPropertiesTab();
-      case 'columns':
-      case 'parameters':
-        return renderColumnsTab();
-      case 'data':
-        return renderDataTab();
-      case 'constraints':
-        return renderConstraintsTab();
-      case 'ddl':
-      case 'definition':
-        return renderDDLTab();
-      case 'spec':
-        return renderSpecTab();
-      case 'body':
-        return renderBodyTab();
-      case 'attributes':
-        return renderAttributesTab();
-      case 'used by':
-        return renderUsedByTab();
-      default:
-        return renderPropertiesTab();
-    }
-  };
+  // Log the current state for debugging
+  console.log('renderTabContent - activeObject:', {
+    type: activeObject.type,
+    name: activeObject.name,
+    isSynonym: activeObject.isSynonym,
+    propertiesData: tabData.properties.data?.isSynonym,
+    activeTab: activeTab
+  });
+
+  switch(activeTab.toLowerCase()) {
+    case 'properties':
+      return renderPropertiesTab();
+    case 'columns':
+    case 'parameters':
+      return renderColumnsTab();
+    case 'data':
+      return renderDataTab();
+    case 'constraints':
+      return renderConstraintsTab();
+    case 'ddl':
+    case 'definition':
+      return renderDDLTab();
+    case 'spec':
+      return renderSpecTab();
+    case 'body':
+      return renderBodyTab();
+    case 'attributes':
+      return renderAttributesTab();
+    case 'used by':
+      return renderUsedByTab();
+    default:
+      return renderPropertiesTab();
+  }
+};
 
   // Render context menu
   const renderContextMenu = () => {

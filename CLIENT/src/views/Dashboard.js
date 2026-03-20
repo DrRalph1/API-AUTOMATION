@@ -1,4 +1,4 @@
-// Dashboard.jsx - FIXED VERSION WITH WORKING PAGINATION AND LOADING INDICATOR
+// Dashboard.jsx - FIXED VERSION WITH DUPLICATE REMOVAL
 import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense, useRef } from 'react';
 import {
   Database, FileCode, Activity, Zap, Settings,
@@ -207,7 +207,7 @@ const CollectionCard = React.memo(({ collection, colors, onClick }) => {
   );
 });
 
-// API Endpoint Item
+// API Endpoint Item - With duplicate prevention via ID
 const ApiEndpointItem = React.memo(({ api, colors, isDark, onClick }) => {
   const methodColorClass = getMethodColor(api?.method, isDark);
   
@@ -630,7 +630,7 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
     }
   }, [authToken]);
 
-  // Fetch paginated endpoints - FIXED with race condition prevention and loading state
+  // Fetch paginated endpoints - FIXED with duplicate removal
   const fetchEndpoints = useCallback(async (page, size, filters) => {
     if (!authToken) return;
     
@@ -664,38 +664,49 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
       const response = await getDashboardEndpoints(authToken, params);
       const handledResponse = handleDashboardResponse(response);
 
-      // Add this right after setting endpointData in fetchEndpoints (around line 330)
-      console.log('API Response - last:', handledResponse.data.last);
-      console.log('API Response - totalPages:', handledResponse.data.totalPages);
-      console.log('API Response - pageNumber:', handledResponse.data.pageNumber);
-      
       if (handledResponse?.responseCode === 200 && handledResponse.data) {
-        const transformedContent = (handledResponse.data.content || []).map(endpoint => ({
-          id: endpoint.id,
-          apiId: endpoint.apiId,
-          name: endpoint.name || 'Unnamed API',
-          description: endpoint.description,
-          method: endpoint.method || 'GET',
-          url: endpoint.url,
-          status: 'active',
-          owner: endpoint.owner || 'System',
-          collectionId: endpoint.collectionId,
-          collectionName: endpoint.collectionName,
-          folderName: endpoint.folderName,
-          lastUpdated: endpoint.lastUpdated,
-          parameters: endpoint.parameters || [],
-          responseMappings: endpoint.responseMappings || [],
-          tags: endpoint.tags || [],
-          headers: endpoint.headers || []
-        }));
+        // Transform and DEDUPLICATE by ID
+        const rawContent = handledResponse.data.content || [];
+        
+        // Use a Map to deduplicate by ID (keeping the first occurrence)
+        const uniqueEndpointsMap = new Map();
+        
+        rawContent.forEach(endpoint => {
+          const endpointId = endpoint.id;
+          if (!uniqueEndpointsMap.has(endpointId)) {
+            uniqueEndpointsMap.set(endpointId, {
+              id: endpoint.id,
+              apiId: endpoint.apiId,
+              name: endpoint.name || 'Unnamed API',
+              description: endpoint.description,
+              method: endpoint.method || 'GET',
+              url: endpoint.url,
+              status: 'active',
+              owner: endpoint.owner || 'System',
+              collectionId: endpoint.collectionId,
+              collectionName: endpoint.collectionName,
+              folderName: endpoint.folderName,
+              lastUpdated: endpoint.lastUpdated,
+              parameters: endpoint.parameters || [],
+              responseMappings: endpoint.responseMappings || [],
+              tags: endpoint.tags || [],
+              headers: endpoint.headers || []
+            });
+          }
+        });
+        
+        // Convert Map back to array
+        const transformedContent = Array.from(uniqueEndpointsMap.values());
+
+        console.log(`Original count: ${rawContent.length}, Unique count: ${transformedContent.length}`);
 
         setEndpointData({
           content: transformedContent,
           pageNumber: handledResponse.data.pageNumber || 0,
           pageSize: handledResponse.data.pageSize || size,
-          totalElements: handledResponse.data.totalElements || 0,
+          totalElements: uniqueEndpointsMap.size, // Use unique count
           totalPages: handledResponse.data.totalPages || 0,
-          last: handledResponse.data.last || false // Change this from true to false
+          last: handledResponse.data.last || false
         });
       }
     } catch (error) {
@@ -966,35 +977,33 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
     fetchTopCollections();
   }, [fetchEndpoints, fetchStats, fetchTopCollections]);
 
- const handleEndpointClick = useCallback(async (endpoint) => {
-  console.log("endpoint:::::::" + JSON.stringify(endpoint));
-  
-  // Open modal immediately with a loading state
-  // We'll set a temporary object that indicates loading
-  setSelectedForApiGeneration({ 
-    loading: true,
-    endpointId: endpoint.apiId,
-    data: endpoint  // Store the basic endpoint data for reference
-  });
-  setShowApiModal(true);
-  
-  // Then fetch the details in the background
-  try {
-    const details = await getGeneratedApiDetails(authToken, endpoint.apiId);
-    console.log('📦 Received API details for editing:', details);
+  const handleEndpointClick = useCallback(async (endpoint) => {
+    console.log("endpoint:::::::" + JSON.stringify(endpoint));
     
-    // Update with the actual data once loaded
-    setSelectedForApiGeneration(details);
-  } catch (error) {
-    console.error('Error loading API details:', error);
-    // You might want to show an error state here
+    // Open modal immediately with a loading state
     setSelectedForApiGeneration({ 
-      error: true,
-      message: error.message,
-      data: endpoint 
+      loading: true,
+      endpointId: endpoint.apiId,
+      data: endpoint
     });
-  }
-}, [authToken]);
+    setShowApiModal(true);
+    
+    // Then fetch the details in the background
+    try {
+      const details = await getGeneratedApiDetails(authToken, endpoint.apiId);
+      console.log('📦 Received API details for editing:', details);
+      
+      // Update with the actual data once loaded
+      setSelectedForApiGeneration(details);
+    } catch (error) {
+      console.error('Error loading API details:', error);
+      setSelectedForApiGeneration({ 
+        error: true,
+        message: error.message,
+        data: endpoint 
+      });
+    }
+  }, [authToken]);
 
   // Handle collection click
   const handleCollectionClick = useCallback((collection) => {
@@ -1023,13 +1032,11 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
 
   const startItem = useMemo(() => {
     if (endpointData.totalElements === 0) return 0;
-    // Calculate based on current page and page size
     return (endpointPage * endpointsPerPage) + 1;
   }, [endpointPage, endpointsPerPage, endpointData.totalElements]);
 
   const endItem = useMemo(() => {
     if (endpointData.totalElements === 0) return 0;
-    // Calculate based on current page, page size, and total elements
     const calculatedEnd = (endpointPage + 1) * endpointsPerPage;
     return Math.min(calculatedEnd, endpointData.totalElements);
   }, [endpointPage, endpointsPerPage, endpointData.totalElements]);
@@ -1060,15 +1067,15 @@ const Dashboard = ({ theme, isDark, toggleTheme, navigateTo, setActiveTab, authT
     };
   }, []); // Empty dependency array - only run once on mount
 
-  // Add this near your other useEffect hooks (around line 550)
-useEffect(() => {
-  console.log('endpointData updated:', {
-    last: endpointData.last,
-    pageNumber: endpointData.pageNumber,
-    totalPages: endpointData.totalPages,
-    totalElements: endpointData.totalElements
-  });
-}, [endpointData]);
+  // Add this near your other useEffect hooks
+  useEffect(() => {
+    console.log('endpointData updated:', {
+      last: endpointData.last,
+      pageNumber: endpointData.pageNumber,
+      totalPages: endpointData.totalPages,
+      totalElements: endpointData.totalElements
+    });
+  }, [endpointData]);
 
   // Add scrollbar styles
   useEffect(() => {
@@ -1114,7 +1121,7 @@ useEffect(() => {
           onClose={() => setIsRightSidebarVisible(false)}
           onNavigate={handleNavigate}
           onGenerate={handleApiGeneration}
-          statsData={completeStats} // Pass the complete stats, not the filtered stats
+          statsData={completeStats}
         />
 
         <div className="flex-1 overflow-auto p-4 h-full relative z-10">
@@ -1349,7 +1356,7 @@ useEffect(() => {
             fromDashboard={true}
             onGenerateAPI={handleApiUpdate}
             authToken={authToken}
-            isEditing={!!selectedForApiGeneration?.data?.id} // Check for data.id, not just id
+            isEditing={!!selectedForApiGeneration?.data?.id}
           />
         </Suspense>
       )}
