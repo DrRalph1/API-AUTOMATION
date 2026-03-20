@@ -2421,31 +2421,38 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
     }
   }
   else if (authTypeFromRequest === 'basic') {
-    processedAuthConfig = {
-      type: 'basic',
-      username: authConfigFromRequest.username || '',
-      password: authConfigFromRequest.password || ''
-    };
-    console.log('🔐 Setting Basic config (initial):', processedAuthConfig);
-    setAuthType('basic');
-    
-    // Add Authorization header for Basic auth
-    if (processedAuthConfig.username && processedAuthConfig.password) {
-      const credentials = btoa(`${processedAuthConfig.username}:${processedAuthConfig.password}`);
-      authHeaders.push({
-        id: `auth-header-${Date.now()}`,
-        key: 'Authorization',
-        value: `Basic ${credentials}`,
-        description: 'Basic authentication',
-        enabled: true,
-        required: true
-      });
-    }
+  processedAuthConfig = {
+    type: 'basic',
+    username: authConfigFromRequest.username || authConfigFromRequest.basicUsername || '',
+    password: authConfigFromRequest.password || authConfigFromRequest.basicPassword || ''
+  };
+  console.log('🔐 Setting Basic config (initial):', {
+    ...processedAuthConfig,
+    password: processedAuthConfig.password ? '***' : '(empty)'
+  });
+  setAuthType('basic');
+  
+  // CRITICAL FIX: Switch to authorization tab when Basic Auth is set
+  setActiveTab('authorization');
+  
+  // Add Authorization header for Basic auth
+  if (processedAuthConfig.username && processedAuthConfig.password) {
+    const credentials = btoa(`${processedAuthConfig.username}:${processedAuthConfig.password}`);
+    authHeaders.push({
+      id: `auth-header-${Date.now()}`,
+      key: 'Authorization',
+      value: `Basic ${credentials}`,
+      description: 'Basic authentication',
+      enabled: true,
+      required: true
+    });
   }
+}
   else if (authTypeFromRequest === 'oauth2') {
     processedAuthConfig = {
       type: 'oauth2',
-      token: authConfigFromRequest.token || ''
+      token: authConfigFromRequest.token || authConfigFromRequest.jwtToken || '',
+      tokenType: authConfigFromRequest.tokenType || 'Bearer'
     };
     console.log('🔐 Setting OAuth2 config (initial):', processedAuthConfig);
     setAuthType('oauth2');
@@ -2456,7 +2463,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
         id: `auth-header-${Date.now()}`,
         key: 'Authorization',
         value: `Bearer ${processedAuthConfig.token}`,
-        description: 'OAuth2 token authentication',
+        description: 'OAuth2/JWT token authentication',
         enabled: true,
         required: true
       });
@@ -2529,7 +2536,8 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
           parametersCount: details.parameters?.length,
           authType: details.authType,
           authConfig: details.authConfig,
-          headersCount: details.headers?.length
+          headersCount: details.headers?.length,
+          jwtToken: details.authConfig?.jwtToken ? 'present' : 'absent'
         });
         
         // ============== FIX: Declare apiAuthHeaders at the beginning ==============
@@ -2538,23 +2546,66 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
         
         // ============== FIXED: Update auth from API details ==============
         if (details.authConfig) {
-          console.log('🔐 Updating auth config from API:', details.authConfig);
+          console.log('🔐 Full auth config from API:', details.authConfig);
           
-          const apiAuthType = details.authType || authTypeFromRequest;
+          // Get the auth type from the config - this is where the issue is
+          const apiAuthType = details.authConfig.authType || details.authType || authTypeFromRequest;
           
-          if (apiAuthType === 'apikey' || details.authConfig.authType === 'apiKey') {
+          console.log('🔐 Detected auth type:', apiAuthType);
+          
+          // CRITICAL FIX: Check for basic auth first (since it's the one we're having issues with)
+          if (apiAuthType === 'basic') {
+            // ============== FIX: Properly handle Basic Auth ==============
+            const apiProcessedConfig = {
+              type: 'basic',
+              username: details.authConfig.basicUsername || 
+                        details.authConfig.username || 
+                        processedAuthConfig.username || '',
+              password: details.authConfig.basicPassword || 
+                        details.authConfig.password || 
+                        processedAuthConfig.password || '',
+              realm: details.authConfig.basicRealm || ''
+            };
+            
+            console.log('🔐 Setting Basic config from API:', {
+              ...apiProcessedConfig,
+              password: apiProcessedConfig.password ? '***' : '(empty)'
+            });
+            
+            // CRITICAL FIX: Set authType to 'basic' for UI
+            setAuthType('basic');
+            setAuthConfig(apiProcessedConfig);
+            
+            // Switch to authorization tab so user can see the Basic Auth form
+            setActiveTab('authorization');
+            
+            // Build Authorization header for Basic auth
+            if (apiProcessedConfig.username && apiProcessedConfig.password) {
+              const credentials = btoa(`${apiProcessedConfig.username}:${apiProcessedConfig.password}`);
+              apiAuthHeaders.push({
+                id: `auth-header-${Date.now()}`,
+                key: 'Authorization',
+                value: `Basic ${credentials}`,
+                description: 'Basic authentication',
+                enabled: true,
+                required: true
+              });
+              console.log('✅ Added Basic Authorization header');
+            } else {
+              console.warn('⚠️ Basic auth missing username or password');
+            }
+            // ============== END BASIC AUTH FIX ==============
+          }
+          else if (apiAuthType === 'apikey' || details.authConfig.authType === 'apiKey') {
             // Handle API Key from API
             const apiProcessedConfig = {
               type: 'apikey',
               key: details.authConfig.key || 
-                    details.authConfig.apiKey || 
                     details.authConfig.apiKeyHeader || 
                     processedAuthConfig.key || '',
               value: details.authConfig.value || 
-                     details.authConfig.apiSecret || 
-                     details.authConfig.apiKeyValue || 
-                     details.authConfig.secret || 
-                     processedAuthConfig.value || '',
+                    details.authConfig.apiKeyValue || 
+                    processedAuthConfig.value || '',
               addTo: details.authConfig.addTo || processedAuthConfig.addTo || 'header'
             };
             console.log('🔐 Processing API Key config from API:', apiProcessedConfig);
@@ -2574,25 +2625,15 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
               });
             }
             
-            // Check for API Secret (if different from key)
-            if (details.authConfig.apiSecretHeader && details.authConfig.apiSecretValue) {
-              apiAuthHeaders.push({
-                id: `auth-header-${Date.now()}-secret`,
-                key: details.authConfig.apiSecretHeader,
-                value: details.authConfig.apiSecretValue,
-                description: 'API Secret authentication',
-                enabled: true,
-                required: true
-              });
-            }
-            
             // Update the auth config in state
             setAuthConfig(apiProcessedConfig);
           } 
           else if (apiAuthType === 'bearer') {
             const apiProcessedConfig = {
               type: 'bearer',
-              token: details.authConfig.token || details.authConfig.bearerToken || processedAuthConfig.token || '',
+              token: details.authConfig.token || 
+                    details.authConfig.bearerToken || 
+                    processedAuthConfig.token || '',
               tokenType: details.authConfig.tokenType || processedAuthConfig.tokenType || 'Bearer'
             };
             console.log('🔐 Setting Bearer config from API:', apiProcessedConfig);
@@ -2611,54 +2652,62 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
               });
             }
           }
-          else if (apiAuthType === 'basic') {
-            const apiProcessedConfig = {
-              type: 'basic',
-              username: details.authConfig.username || processedAuthConfig.username || '',
-              password: details.authConfig.password || processedAuthConfig.password || ''
-            };
-            console.log('🔐 Setting Basic config from API:', apiProcessedConfig);
-            
-            setAuthType('basic');
-            setAuthConfig(apiProcessedConfig);
-            
-            if (apiProcessedConfig.username && apiProcessedConfig.password) {
-              const credentials = btoa(`${apiProcessedConfig.username}:${apiProcessedConfig.password}`);
-              apiAuthHeaders.push({
-                id: `auth-header-${Date.now()}`,
-                key: 'Authorization',
-                value: `Basic ${credentials}`,
-                description: 'Basic authentication',
-                enabled: true,
-                required: true
-              });
-            }
-          }
           else if (apiAuthType === 'oauth2') {
+            // Handle OAuth2/JWT token
+            let jwtToken = '';
+            
+            // Check all possible sources for the JWT token
+            if (details.authConfig.jwtToken) {
+              jwtToken = details.authConfig.jwtToken;
+              console.log('✅ Found jwtToken in authConfig.jwtToken');
+            } else if (details.authConfig.token) {
+              jwtToken = details.authConfig.token;
+              console.log('✅ Found token in authConfig.token');
+            } else if (details.authConfig.oauthToken) {
+              jwtToken = details.authConfig.oauthToken;
+              console.log('✅ Found token in authConfig.oauthToken');
+            } else if (processedAuthConfig.token) {
+              jwtToken = processedAuthConfig.token;
+              console.log('✅ Using existing token from processedAuthConfig');
+            }
+            
             const apiProcessedConfig = {
               type: 'oauth2',
-              token: details.authConfig.token || processedAuthConfig.token || ''
+              token: jwtToken,
+              tokenType: 'Bearer',
+              jwtToken: jwtToken,
+              jwtIssuer: details.authConfig.jwtIssuer || '',
+              jwtAudience: details.authConfig.jwtAudience || '',
+              jwtExpiration: details.authConfig.jwtExpiration || null
             };
-            console.log('🔐 Setting OAuth2 config from API:', apiProcessedConfig);
+            
+            console.log('🔐 Setting OAuth2 config from API:', {
+              ...apiProcessedConfig,
+              token: apiProcessedConfig.token ? `${apiProcessedConfig.token.substring(0, 50)}...` : '(empty)',
+              tokenLength: apiProcessedConfig.token?.length || 0
+            });
             
             setAuthType('oauth2');
             setAuthConfig(apiProcessedConfig);
             
-            if (apiProcessedConfig.token) {
+            if (jwtToken && jwtToken.trim() !== '') {
               apiAuthHeaders.push({
                 id: `auth-header-${Date.now()}`,
                 key: 'Authorization',
-                value: `Bearer ${apiProcessedConfig.token}`,
-                description: 'OAuth2 token authentication',
+                value: `Bearer ${jwtToken}`,
+                description: 'OAuth2/JWT token authentication',
                 enabled: true,
                 required: true
               });
+              console.log('✅ Added Authorization header with JWT token');
+            } else {
+              console.warn('⚠️ No JWT token found in API response');
             }
           }
           
           // If we have API auth headers, store them for later merging
           if (apiAuthHeaders.length > 0) {
-            console.log('📌 API auth headers prepared:', apiAuthHeaders);
+            console.log('📌 API auth headers prepared:', apiAuthHeaders.map(h => h.key));
             // We'll merge these with other headers after processing parameters
           }
         }
@@ -2958,7 +3007,7 @@ const handleSelectRequest = useCallback(async (request, collectionId, folderId) 
             }
           });
           
-          console.log('📌 Final headers (all included, no filtering):', uniqueHeaders);
+          console.log('📌 Final headers (all included, no filtering):', uniqueHeaders.map(h => h.key));
           setRequestHeaders(uniqueHeaders);
           // ============== END SIMPLIFIED FIX ==============
           
@@ -4068,16 +4117,16 @@ const renderAuthTab = () => {
   ];
 
   // Check if the request has API Key auth config (even though authType is 'noauth')
-  const hasApiKeyConfig = authConfig && authConfig.type === 'apikey';
+  const hasApiKeyConfig = authConfig && authConfig.type === 'noauth';
   
   // Determine what to display in the type dropdown
   let displayAuthType = authType;
   
   // If we have API Key config but authType is 'noauth', still show the type as 'apikey' in the dropdown
   // but we'll handle it differently in the UI
-  if (hasApiKeyConfig) {
-    displayAuthType = 'apikey';
-  }
+  // if (hasApiKeyConfig) {
+  //   displayAuthType = 'apikey';
+  // }
   
   const currentAuthType = authTypes.find(type => type.id === displayAuthType);
 
@@ -4233,7 +4282,7 @@ const renderAuthTab = () => {
                   onChange={(e) => setAuthConfig({ ...authConfig, tokenType: e.target.value })}
                   className="w-full px-3 py-2 border rounded text-sm focus:outline-none hover-lift"
                   style={{
-                    backgroundColor: colors.inputBg,
+                    backgroundColor: colors.bg,
                     borderColor: colors.border,
                     color: colors.text
                   }}>
@@ -4383,36 +4432,107 @@ const renderAuthTab = () => {
         )}
 
         {authType === 'oauth2' && (
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
-                Access Token
-              </label>
-              <div className="relative">
-                <input
-                  type={showToken ? "text" : "password"}
-                  value={authConfig.token || ''}
-                  onChange={(e) => setAuthConfig({ ...authConfig, token: e.target.value })}
-                  className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 hover-lift"
-                  style={{
-                    backgroundColor: colors.inputBg,
-                    borderColor: colors.border,
-                    color: colors.text
-                  }}
-                  placeholder="Enter OAuth 2.0 token"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowToken(!showToken)}
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover-lift"
-                  style={{ color: colors.textSecondary }}
-                >
-                  {showToken ? <EyeOff size={16} /> : <EyeIcon size={16} />}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+  <div className="space-y-4">
+    <div>
+      <label className="block text-sm font-medium mb-2" style={{ color: colors.text }}>
+        JWT / Access Token
+      </label>
+      <div className="relative">
+        <textarea
+          rows={3}
+          value={authConfig.token || ''}
+          onChange={(e) => setAuthConfig({ ...authConfig, token: e.target.value })}
+          className="w-full px-3 py-2 border rounded text-sm focus:outline-none pr-10 font-mono hover-lift"
+          style={{
+            backgroundColor: colors.inputBg,
+            borderColor: colors.border,
+            color: colors.text,
+            resize: 'vertical'
+          }}
+          placeholder="Enter JWT token or OAuth 2.0 access token"
+        />
+        <button
+          type="button"
+          onClick={() => setShowToken(!showToken)}
+          className="absolute right-2 top-2 p-1 hover-lift"
+          style={{ color: colors.textSecondary }}
+        >
+          {showToken ? <EyeOff size={16} /> : <EyeIcon size={16} />}
+        </button>
+      </div>
+      <p className="text-xs mt-2" style={{ color: colors.textSecondary }}>
+        Token will be sent as: Bearer [your_token]
+      </p>
+    </div>
+    
+    {authConfig.token && (
+      <div className="p-3 rounded text-xs" style={{ backgroundColor: colors.hover }}>
+        <div className="flex items-center justify-between mb-1">
+          <span className="font-medium" style={{ color: colors.text }}>Token Preview:</span>
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(authConfig.token);
+              showToast('Token copied to clipboard!', 'success');
+            }}
+            className="p-1 rounded hover:bg-opacity-50 transition-colors"
+            style={{ backgroundColor: colors.card }}
+          >
+            <Copy size={12} style={{ color: colors.textSecondary }} />
+          </button>
+        </div>
+        <code className="break-all" style={{ color: colors.textSecondary }}>
+          {authConfig.token.length > 100 
+            ? `${authConfig.token.substring(0, 100)}...` 
+            : authConfig.token}
+        </code>
+        <p className="mt-2 text-xs" style={{ color: colors.textTertiary }}>
+          Token length: {authConfig.token.length} characters
+        </p>
+      </div>
+    )}
+    
+    <div className="flex justify-end">
+      <button
+        type="button"
+        onClick={() => {
+          if (authConfig.token && authConfig.token.trim() !== '') {
+            // Update headers with the token
+            setRequestHeaders(prevHeaders => {
+              const existingAuthIndex = prevHeaders.findIndex(
+                h => h.key.toLowerCase() === 'authorization'
+              );
+              
+              const authHeader = {
+                id: `auth-header-${Date.now()}`,
+                key: 'Authorization',
+                value: `Bearer ${authConfig.token}`,
+                description: 'Bearer token authentication',
+                enabled: true,
+                required: true
+              };
+              
+              if (existingAuthIndex >= 0) {
+                const newHeaders = [...prevHeaders];
+                newHeaders[existingAuthIndex] = authHeader;
+                return newHeaders;
+              } else {
+                return [...prevHeaders, authHeader];
+              }
+            });
+            showToast('Authorization header updated', 'success');
+          } else {
+            showToast('Please enter a token first', 'warning');
+          }
+        }}
+        className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90 transition-colors hover-lift"
+        style={{ backgroundColor: colors.primaryDark, color: colors.white }}
+      >
+        Apply to Headers
+      </button>
+    </div>
+  </div>
+)}
 
         {authType === 'noauth' && !hasApiKeyConfig && (
           <div className="text-center py-8">

@@ -852,6 +852,7 @@ public class ApiConversionHelper {
                 .basicRealm(entity.getBasicRealm())
                 .jwtSecret(entity.getJwtSecret())
                 .jwtIssuer(entity.getJwtIssuer())
+                .jwtToken(entity.getJwtToken())
                 .jwtAudience(entity.getJwtAudience())
                 .jwtExpiration(entity.getJwtExpiration())
                 .jwtAlgorithm(entity.getJwtAlgorithm())

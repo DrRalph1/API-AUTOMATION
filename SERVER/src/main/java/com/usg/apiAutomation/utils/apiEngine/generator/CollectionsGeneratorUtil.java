@@ -397,52 +397,128 @@ public class CollectionsGeneratorUtil {
 
 
     /**
-     * Update auth config for an existing request
+     * Update auth config for an existing request - COMPLETELY REPLACES old config
      */
     private void updateAuthConfig(com.usg.apiAutomation.entities.postgres.collections.RequestEntity request,
                                   GeneratedApiEntity api, String generatedApiId) {
-        // Delete existing auth config if present
-        if (request.getAuthConfig() != null) {
-            collectionsAuthConfigRepository.delete(request.getAuthConfig());
-            request.setAuthConfig(null);
-        }
+        try {
+            // CRITICAL: Delete existing auth config if present
+            if (request.getAuthConfig() != null) {
+                AuthConfigEntity oldAuthConfig = request.getAuthConfig();
+                log.info("Removing existing auth config: type={}, id={}",
+                        oldAuthConfig.getType(), oldAuthConfig.getId());
 
-        // Create new auth config if needed
-        if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
-            AuthConfigEntity authConfig = new AuthConfigEntity();
-            authConfig.setId(UUID.randomUUID().toString());
-            authConfig.setGeneratedApiId(generatedApiId);
-            authConfig.setRequest(request);
-            authConfig.setType(api.getAuthConfig().getAuthType());
+                // First, break the relationship
+                request.setAuthConfig(null);
+                collectionsRequestRepository.save(request);
 
-            switch (api.getAuthConfig().getAuthType()) {
-                case "API_KEY":
-                    authConfig.setKey(api.getAuthConfig().getApiKeyHeader() != null ?
-                            api.getAuthConfig().getApiKeyHeader() : "X-API-Key");
-                    authConfig.setValue("{{apiKey}}");
-                    authConfig.setAddTo("header");
-                    break;
-                case "BEARER":
-                case "JWT":
-                    authConfig.setType("bearer");
-                    authConfig.setToken("{{jwtToken}}");
-                    authConfig.setAddTo("header");
-                    break;
-                case "BASIC":
-                    authConfig.setUsername("{{username}}");
-                    authConfig.setPassword("{{password}}");
-                    authConfig.setAddTo("header");
-                    break;
-                case "ORACLE_ROLES":
-                    authConfig.setKey("X-Oracle-Session");
-                    authConfig.setValue("{{oracleSessionId}}");
-                    authConfig.setAddTo("header");
-                    break;
+                // Force flush to ensure relationship is broken
+                collectionsRequestRepository.flush();
+
+                // Now delete the old auth config
+                collectionsAuthConfigRepository.delete(oldAuthConfig);
+                collectionsAuthConfigRepository.flush();
+
+                log.info("Successfully deleted old auth config");
             }
 
-            collectionsAuthConfigRepository.save(authConfig);
-            request.setAuthConfig(authConfig);
-            collectionsRequestRepository.save(request);
+            // Create new auth config if needed
+            if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
+                AuthConfigEntity authConfig = new AuthConfigEntity();
+                authConfig.setId(UUID.randomUUID().toString());
+                authConfig.setGeneratedApiId(generatedApiId);
+                authConfig.setRequest(request);
+
+                // Set fields based on auth type - CLEAR ALL FIELDS FIRST
+                String authType = api.getAuthConfig().getAuthType();
+                authConfig.setType(authType);
+
+                // Clear all fields initially
+                authConfig.setKey(null);
+                authConfig.setValue(null);
+                authConfig.setToken(null);
+                authConfig.setTokenType(null);
+                authConfig.setUsername(null);
+                authConfig.setPassword(null);
+                authConfig.setAddTo("header"); // Default to header
+
+                switch (authType) {
+                    case "API_KEY":
+                        authConfig.setKey(api.getAuthConfig().getApiKeyHeader() != null ?
+                                api.getAuthConfig().getApiKeyHeader() : "X-API-Key");
+                        authConfig.setValue("{{apiKey}}");
+                        // Clear any JWT/Basic specific fields
+                        authConfig.setToken(null);
+                        authConfig.setTokenType(null);
+                        authConfig.setUsername(null);
+                        authConfig.setPassword(null);
+                        break;
+
+                    case "BEARER":
+                    case "JWT":
+                        authConfig.setType("bearer");
+                        authConfig.setToken("{{jwtToken}}");
+                        authConfig.setTokenType("Bearer");
+                        // Clear API Key and Basic specific fields
+                        authConfig.setKey(null);
+                        authConfig.setValue(null);
+                        authConfig.setUsername(null);
+                        authConfig.setPassword(null);
+                        break;
+
+                    case "BASIC":
+                        authConfig.setUsername("{{username}}");
+                        authConfig.setPassword("{{password}}");
+                        // Clear other auth fields
+                        authConfig.setKey(null);
+                        authConfig.setValue(null);
+                        authConfig.setToken(null);
+                        authConfig.setTokenType(null);
+                        break;
+
+                    case "OAUTH2":
+                        authConfig.setType("oauth2");
+                        authConfig.setKey("client_id");
+                        authConfig.setValue("{{clientId}}");
+                        authConfig.setToken("{{accessToken}}");
+                        authConfig.setTokenType("Bearer");
+                        // Clear Basic auth fields
+                        authConfig.setUsername(null);
+                        authConfig.setPassword(null);
+                        break;
+
+                    case "ORACLE_ROLES":
+                        authConfig.setKey("X-Oracle-Session");
+                        authConfig.setValue("{{oracleSessionId}}");
+                        // Clear other auth fields
+                        authConfig.setToken(null);
+                        authConfig.setTokenType(null);
+                        authConfig.setUsername(null);
+                        authConfig.setPassword(null);
+                        break;
+
+                    default:
+                        log.warn("Unknown auth type: {}", authType);
+                        return;
+                }
+
+                // Save the new auth config
+                collectionsAuthConfigRepository.save(authConfig);
+                request.setAuthConfig(authConfig);
+                collectionsRequestRepository.save(request);
+
+                log.info("Successfully created new auth config: type={}, key={}, hasToken={}",
+                        authConfig.getType(),
+                        authConfig.getKey() != null,
+                        authConfig.getToken() != null);
+            } else {
+                // If no auth config or auth type is NONE, ensure no auth config is attached
+                log.info("No auth config needed for API: {}", api.getApiCode());
+            }
+
+        } catch (Exception e) {
+            log.error("Error updating auth config: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update auth config: " + e.getMessage(), e);
         }
     }
 
@@ -808,6 +884,9 @@ public class CollectionsGeneratorUtil {
     /**
      * Update the content of an existing request (without changing parent structure)
      */
+    /**
+     * Update the content of an existing request (without changing parent structure)
+     */
     @Transactional
     public void updateRequestContent(
             com.usg.apiAutomation.entities.postgres.collections.RequestEntity existingRequest,
@@ -840,6 +919,8 @@ public class CollectionsGeneratorUtil {
             // Set auth type
             if (api.getAuthConfig() != null && !"NONE".equals(api.getAuthConfig().getAuthType())) {
                 existingRequest.setAuthType(api.getAuthConfig().getAuthType().toLowerCase());
+            } else {
+                existingRequest.setAuthType(null);
             }
 
             // Save the request first
@@ -863,8 +944,9 @@ public class CollectionsGeneratorUtil {
                 collectionsParameterRepository.saveAll(newParams);
             }
 
-            // Create new auth config
-            createAuthConfigForRequest(api, existingRequest, generatedApiId);
+            // Create new auth config (old one was already deleted in clearRequestRelationships)
+            // Now update auth config with complete replacement logic
+            updateAuthConfig(existingRequest, api, generatedApiId);
 
             // Final save
             collectionsRequestRepository.save(existingRequest);
@@ -903,10 +985,20 @@ public class CollectionsGeneratorUtil {
             }
         }
 
-        // Clear auth config
+        // CRITICAL: Clear auth config properly
         if (request.getAuthConfig() != null) {
             AuthConfigEntity authConfig = request.getAuthConfig();
+            log.info("Clearing existing auth config: type={}, id={}",
+                    authConfig.getType(), authConfig.getId());
+
+            // First, break the relationship
             request.setAuthConfig(null);
+            collectionsRequestRepository.save(request);
+
+            // Force flush to ensure relationship is broken
+            collectionsRequestRepository.flush();
+
+            // Now delete the old auth config
             collectionsAuthConfigRepository.delete(authConfig);
             log.debug("Deleted auth config for request: {}", request.getId());
         }

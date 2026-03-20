@@ -1425,7 +1425,7 @@ const APIRequest = ({ theme, isDark, customTheme, toggleTheme, authToken }) => {
   const [toast, setToast] = useState(null);
   const [pagination, setPagination] = useState({
     page: 0,
-    size: 12,
+    size: 10,
     totalElements: 0,
     totalPages: 0
   });

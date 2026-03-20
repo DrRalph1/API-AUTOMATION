@@ -1661,7 +1661,7 @@ export default function ApiGenerationModal({
   fromDashboard = false // NEW: Flag to indicate if modal is opened from dashboard
 }) {
 
-  console.log("selectedObject::::::::" + JSON.stringify(selectedObject));
+  // console.log("selectedObject::::::::" + JSON.stringify(selectedObject));
 
   const [activeTab, setActiveTab] = useState('definition');
   const [loading, setLoading] = useState(false);
@@ -1691,6 +1691,8 @@ export default function ApiGenerationModal({
 
   // Validation errors state
   const [validationErrors, setValidationErrors] = useState({});
+
+  const [showBasicPassword, setShowBasicPassword] = useState(false);
 
   const [apiDetails, setApiDetails] = useState({
     apiName: '',
@@ -5937,23 +5939,62 @@ const handlePreviewConfirm = async () => {
                         </h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div className="space-y-4">
-                            {renderRequiredInput(
-                              'basicUsername',
-                              'Username',
-                              authConfig.basicUsername,
-                              handleAuthConfigChange,
-                              'username'
-                            )}
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium flex items-center gap-1" style={{ color: themeColors.text }}>
+                                Username <span style={{ color: "red" }}>*</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={authConfig.basicUsername}
+                                onChange={(e) => handleAuthConfigChange('basicUsername', e.target.value)}
+                                className="w-full px-3 py-2 border rounded-lg text-xs hover-lift"
+                                style={{ 
+                                  backgroundColor: themeColors.card,
+                                  borderColor: authConfig.basicUsername ? themeColors.success : themeColors.border,
+                                  color: themeColors.text
+                                }}
+                                placeholder="Enter username"
+                              />
+                              <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                                Will be used for Basic authentication
+                              </p>
+                            </div>
                           </div>
                           <div className="space-y-4">
-                            {renderRequiredInput(
-                              'basicPassword',
-                              'Password',
-                              authConfig.basicPassword,
-                              handleAuthConfigChange,
-                              '••••••••',
-                              'password'
-                            )}
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium flex items-center gap-1" style={{ color: themeColors.text }}>
+                                Password <span style={{ color: "red" }}>*</span>
+                              </label>
+                              <div className="relative">
+                                <input
+                                  type={showBasicPassword ? 'text' : 'password'}
+                                  value={authConfig.basicPassword}
+                                  onChange={(e) => handleAuthConfigChange('basicPassword', e.target.value)}
+                                  className="w-full px-3 py-2 border rounded-lg text-xs hover-lift pr-10"
+                                  style={{ 
+                                    backgroundColor: themeColors.card,
+                                    borderColor: authConfig.basicPassword ? themeColors.success : themeColors.border,
+                                    color: themeColors.text
+                                  }}
+                                  placeholder="••••••••"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setShowBasicPassword(!showBasicPassword)}
+                                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded transition-colors hover-lift"
+                                  style={{ 
+                                    backgroundColor: 'transparent',
+                                    color: themeColors.textSecondary
+                                  }}
+                                  title={showBasicPassword ? 'Hide password' : 'Show password'}
+                                >
+                                  {showBasicPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                </button>
+                              </div>
+                              <p className="text-xs" style={{ color: themeColors.textSecondary }}>
+                                Will be sent as: Basic base64(username:password)
+                              </p>
+                            </div>
                           </div>
                         </div>
                         <div className="mt-4 p-3 rounded" style={{ backgroundColor: themeColors.hover }}>

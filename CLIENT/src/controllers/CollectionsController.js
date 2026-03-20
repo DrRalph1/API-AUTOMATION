@@ -449,6 +449,56 @@ export const extractRequestDetails = (response) => {
     console.log(`📦 [Extract] Constructed requestBody from ${bodyParams.length} body parameters with type: ${bodyType}`);
   }
   
+  // ============== FIX: Process authConfig to include jwtToken ==============
+  let processedAuthConfig = data.authConfig || {};
+  
+  // CRITICAL FIX: Ensure jwtToken is properly extracted and included
+  if (data.authConfig && data.authConfig.jwtToken) {
+    console.log('✅ [Extract] Found jwtToken in authConfig:', data.authConfig.jwtToken.substring(0, 50) + '...');
+    processedAuthConfig = {
+      ...data.authConfig,
+      token: data.authConfig.jwtToken, // Also set token field for compatibility
+      jwtToken: data.authConfig.jwtToken // Keep original field
+    };
+  } else if (data.authConfig && data.authConfig.token) {
+    console.log('✅ [Extract] Found token in authConfig:', data.authConfig.token.substring(0, 50) + '...');
+    processedAuthConfig = {
+      ...data.authConfig,
+      token: data.authConfig.token,
+      jwtToken: data.authConfig.token // Also set jwtToken for consistency
+    };
+  } else if (data.authConfig && data.authConfig.oauthToken) {
+    console.log('✅ [Extract] Found oauthToken in authConfig:', data.authConfig.oauthToken.substring(0, 50) + '...');
+    processedAuthConfig = {
+      ...data.authConfig,
+      token: data.authConfig.oauthToken,
+      jwtToken: data.authConfig.oauthToken
+    };
+  }
+  
+  // Determine auth type from the config
+  let authType = data.authType;
+  if (!authType && processedAuthConfig) {
+    if (processedAuthConfig.jwtToken || processedAuthConfig.token) {
+      authType = 'oauth2';
+    } else if (processedAuthConfig.apiKeyHeader) {
+      authType = 'apikey';
+    } else if (processedAuthConfig.basicUsername) {
+      authType = 'basic';
+    } else if (processedAuthConfig.bearerToken) {
+      authType = 'bearer';
+    }
+  }
+  
+  console.log('🔐 [Extract] Processed auth config:', {
+    authType: authType,
+    hasJwtToken: !!processedAuthConfig.jwtToken,
+    hasToken: !!processedAuthConfig.token,
+    tokenLength: processedAuthConfig.token?.length || 0,
+    jwtTokenLength: processedAuthConfig.jwtToken?.length || 0
+  });
+  // ============== END FIX ==============
+  
   const extracted = {
     id: data.id,
     name: data.name,
@@ -459,8 +509,8 @@ export const extractRequestDetails = (response) => {
     parameters: data.parameters || [],
     body: data.body,
     requestBody: requestBody,
-    authType: data.authType,
-    authConfig: data.authConfig,
+    authType: authType,
+    authConfig: processedAuthConfig, // Use processed config with jwtToken
     tests: data.tests,
     preRequestScript: data.preRequestScript
   };
@@ -473,7 +523,9 @@ export const extractRequestDetails = (response) => {
     hasRequestBody: !!extracted.requestBody,
     requestBodyType: extracted.requestBody?.bodyType,
     parametersCount: extracted.parameters?.length,
-    bodyParamsCount: bodyParams.length
+    bodyParamsCount: bodyParams.length,
+    authType: extracted.authType,
+    hasJwtToken: !!extracted.authConfig?.jwtToken
   });
   
   return extracted;
