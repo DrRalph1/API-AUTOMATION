@@ -4353,6 +4353,43 @@ const handlePreviewConfirm = async () => {
                     Editing existing API
                   </p>
                 )}
+
+                {/* Dashboard selected object indicator */}
+                {fromDashboard && selectedDbObject && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-xs" style={{ color: themeColors.success }}>
+                      <CheckCircle className="h-3 w-3 inline mr-1" />
+                      Selected: {selectedDbObject.owner}.{selectedDbObject.name} ({selectedDbObject.type})
+                    </p>
+                    <button
+                      onClick={() => setShowObjectSelector(true)}
+                      className="text-xs underline hover:no-underline"
+                      style={{ color: themeColors.info }}
+                    >
+                      Change object
+                    </button>
+                  </div>
+                )}
+                
+                {/* UPDATED: API Code Already Exists Warning - Using apiCodeExists state */}
+                {!isEditing && apiCodeExists && (
+                  <div className="mt-2 p-2 rounded-lg border flex items-center gap-2" style={{ 
+                    backgroundColor: themeColors.error + '20',
+                    borderColor: themeColors.error,
+                  }}>
+                    <AlertCircle className="h-4 w-4 flex-shrink-0" style={{ color: themeColors.error }} />
+                    <div>
+                      <p className="text-xs font-medium" style={{ color: themeColors.error }}>
+                        ⚠️ API Already Exists
+                      </p>
+                      <p className="text-xs mt-0.5" style={{ color: themeColors.textSecondary }}>
+                        An API with code "{apiDetails.apiCode}" already exists. 
+                        You must choose a different API code to continue.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
               </div>
             </div>
             
