@@ -1968,147 +1968,219 @@ const PostgreSQLSchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   }, [authToken, activeObject]);
 
   // Load Columns (for Tables/Views) or Parameters (for Procedures/Functions)
-const loadColumns = useCallback(async (object, type, owner, page = 1, pageSize = 50) => {
-  if (!authToken || !object || !type) return;
-  
-  let effectiveType = type;
-  let effectiveName = object.name;
-  let effectiveOwner = owner;
-  
-  const cacheKey = `columns_${effectiveType}_${effectiveOwner || 'unknown'}_${effectiveName}_page${page}`;
-  const cached = objectCache.get(cacheKey);
-  
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    setTabData(prev => ({
-      ...prev,
-      columns: { 
-        loading: false, 
-        data: cached.data.items,
-        page: cached.data.page,
-        totalPages: cached.data.totalPages
-      }
-    }));
-    return;
-  }
-  
-  setTabData(prev => ({
-    ...prev,
-    columns: { ...prev.columns, loading: true }
-  }));
-  
-  try {
-    let response;
-    let items = [];
-    let totalPages = 1;
-    let currentPage = page;
+  const loadColumns = useCallback(async (object, type, owner, page = 1, pageSize = 50) => {
+    if (!authToken || !object || !type) return;
     
-    if (effectiveType === 'TABLE' || effectiveType === 'VIEW' || effectiveType === 'MATERIALIZED VIEW') {
-      response = await getTableColumnsPaginated(authToken, {
-        tableName: effectiveName,
-        owner: effectiveOwner,
-        page,
-        pageSize
-      });
-      
-      const extracted = extractItemsFromResponse(response);
-      items = extracted.items;
-      totalPages = extracted.totalPages;
-      currentPage = extracted.page;
-      
-      // For tables/views, keep the original column data structure (lowercase fields)
-      // Don't transform to parameter format
-      
-    } else if (effectiveType === 'PROCEDURE') {
-      response = await getProcedureParametersPaginated(authToken, {
-        procedureName: effectiveName,
-        owner: effectiveOwner,
-        page,
-        pageSize
-      });
-      
-      // Handle parameters response
-      if (response?.data?.parameters && Array.isArray(response.data.parameters)) {
-        items = response.data.parameters;
-        totalPages = response.data.totalPages || 1;
-        currentPage = response.data.page || page;
-        
-        // Transform parameters to expected format with uppercase fields
-        items = items.map(param => ({
-          POSITION: param.sequence || param.position,
-          ARGUMENT_NAME: param.argument_name || param.name,
-          DATA_TYPE: param.data_type || param.type,
-          IN_OUT: param.in_out || param.mode || 'IN',
-          DATA_LENGTH: param.data_length || '-',
-          DEFAULT_VALUE: param.default_value,
-          DEFAULTED: param.defaulted || 'N'
-        }));
-      }
-      
-    } else if (effectiveType === 'FUNCTION') {
-      response = await getFunctionParametersPaginated(authToken, {
-        functionName: effectiveName,
-        owner: effectiveOwner,
-        page,
-        pageSize
-      });
-      
-      // Handle parameters response
-      if (response?.data?.parameters && Array.isArray(response.data.parameters)) {
-        items = response.data.parameters;
-        totalPages = response.data.totalPages || 1;
-        currentPage = response.data.page || page;
-        
-        // Transform parameters to expected format with uppercase fields
-        items = items.map(param => ({
-          POSITION: param.sequence || param.position,
-          ARGUMENT_NAME: param.argument_name || param.name,
-          DATA_TYPE: param.data_type || param.type,
-          IN_OUT: param.in_out || param.mode || 'IN',
-          DATA_LENGTH: param.data_length || '-',
-          DEFAULT_VALUE: param.default_value,
-          DEFAULTED: param.defaulted || 'N'
-        }));
-      }
-      
-    } else if (effectiveType === 'TYPE') {
-      const typeDetails = await getTypeDetails(authToken, effectiveName);
-      const typeData = handlePostgreSQLSchemaBrowserResponse(typeDetails);
-      items = typeData.attributes || [];
-      totalPages = 1;
-      currentPage = 1;
-      
-    } else {
+    let effectiveType = type;
+    let effectiveName = object.name;
+    let effectiveOwner = owner;
+    
+    const cacheKey = `columns_${effectiveType}_${effectiveOwner || 'unknown'}_${effectiveName}_page${page}`;
+    const cached = objectCache.get(cacheKey);
+    
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
       setTabData(prev => ({
         ...prev,
-        columns: { loading: false, data: [] }
+        columns: { 
+          loading: false, 
+          data: cached.data.items,
+          page: cached.data.page,
+          totalPages: cached.data.totalPages
+        }
       }));
       return;
     }
     
-    objectCache.set(cacheKey, { 
-      data: { items, page: currentPage, totalPages }, 
-      timestamp: Date.now() 
-    });
-    
     setTabData(prev => ({
       ...prev,
-      columns: { 
-        loading: false, 
-        data: items,
-        page: currentPage,
-        totalPages: totalPages
+      columns: { ...prev.columns, loading: true }
+    }));
+    
+    try {
+      let response;
+      let items = [];
+      let totalPages = 1;
+      let currentPage = page;
+      
+      if (effectiveType === 'TABLE' || effectiveType === 'VIEW' || effectiveType === 'MATERIALIZED VIEW') {
+        response = await getTableColumnsPaginated(authToken, {
+          tableName: effectiveName,
+          owner: effectiveOwner,
+          page,
+          pageSize
+        });
+        
+        const extracted = extractItemsFromResponse(response);
+        items = extracted.items;
+        totalPages = extracted.totalPages;
+        currentPage = extracted.page;
+        
+        // For tables/views, keep the original column data structure (lowercase fields)
+        // Don't transform to parameter format
+        
+      } else if (effectiveType === 'PROCEDURE') {
+        response = await getProcedureParametersPaginated(authToken, {
+          procedureName: effectiveName,
+          owner: effectiveOwner,
+          page,
+          pageSize
+        });
+        
+        console.log('Procedure parameters response:', response); // Debug log
+        
+        // Handle parameters response - check various possible structures
+        let parameters = [];
+        
+        // Check if response.data exists
+        if (response && response.data) {
+          const data = response.data;
+          
+          // Check if data has items array (from transformFunctionParametersResponse)
+          if (data.items && Array.isArray(data.items)) {
+            parameters = data.items;
+            totalPages = data.totalPages || 1;
+            currentPage = data.page || page;
+          }
+          // Check if data has parameters array directly
+          else if (data.parameters && Array.isArray(data.parameters)) {
+            parameters = data.parameters;
+            totalPages = data.totalPages || 1;
+            currentPage = data.page || page;
+          }
+          // Check if data itself is an array
+          else if (Array.isArray(data)) {
+            parameters = data;
+            totalPages = 1;
+            currentPage = page;
+          }
+        }
+        // Check if response has parameters directly
+        else if (response && response.parameters && Array.isArray(response.parameters)) {
+          parameters = response.parameters;
+          totalPages = response.totalPages || 1;
+          currentPage = response.page || page;
+        }
+        // Check if response is an array
+        else if (Array.isArray(response)) {
+          parameters = response;
+          totalPages = 1;
+          currentPage = page;
+        }
+        
+        // Transform parameters to expected format with uppercase fields
+        items = parameters.map((param, index) => ({
+          POSITION: param.sequence || param.position || param.POSITION || index + 1,
+          ARGUMENT_NAME: param.argument_name || param.name || param.ARGUMENT_NAME,
+          DATA_TYPE: param.data_type || param.type || param.DATA_TYPE,
+          IN_OUT: param.in_out || param.mode || param.IN_OUT || 'IN',
+          DATA_LENGTH: param.data_length || param.DATA_LENGTH || '-',
+          DEFAULT_VALUE: param.default_value || param.DEFAULT_VALUE,
+          DEFAULTED: param.defaulted || param.DEFAULTED || 'N'
+        }));
+        
+        console.log('Processed procedure parameters:', items); // Debug log
+        
+      } else if (effectiveType === 'FUNCTION') {
+        response = await getFunctionParametersPaginated(authToken, {
+          functionName: effectiveName,
+          owner: effectiveOwner,
+          page,
+          pageSize
+        });
+        
+        console.log('Function parameters response:', response); // Debug log
+        
+        // Handle parameters response - check various possible structures
+        let parameters = [];
+        
+        // Check if response.data exists
+        if (response && response.data) {
+          const data = response.data;
+          
+          // Check if data has items array (from transformFunctionParametersResponse)
+          if (data.items && Array.isArray(data.items)) {
+            parameters = data.items;
+            totalPages = data.totalPages || 1;
+            currentPage = data.page || page;
+          }
+          // Check if data has parameters array directly
+          else if (data.parameters && Array.isArray(data.parameters)) {
+            parameters = data.parameters;
+            totalPages = data.totalPages || 1;
+            currentPage = data.page || page;
+          }
+          // Check if data itself is an array
+          else if (Array.isArray(data)) {
+            parameters = data;
+            totalPages = 1;
+            currentPage = page;
+          }
+        }
+        // Check if response has parameters directly
+        else if (response && response.parameters && Array.isArray(response.parameters)) {
+          parameters = response.parameters;
+          totalPages = response.totalPages || 1;
+          currentPage = response.page || page;
+        }
+        // Check if response is an array
+        else if (Array.isArray(response)) {
+          parameters = response;
+          totalPages = 1;
+          currentPage = page;
+        }
+        
+        // Transform parameters to expected format with uppercase fields
+        items = parameters.map((param, index) => ({
+          POSITION: param.sequence || param.position || param.POSITION || index + 1,
+          ARGUMENT_NAME: param.argument_name || param.name || param.ARGUMENT_NAME,
+          DATA_TYPE: param.data_type || param.type || param.DATA_TYPE,
+          IN_OUT: param.in_out || param.mode || param.IN_OUT || 'IN',
+          DATA_LENGTH: param.data_length || param.DATA_LENGTH || '-',
+          DEFAULT_VALUE: param.default_value || param.DEFAULT_VALUE,
+          DEFAULTED: param.defaulted || param.DEFAULTED || 'N'
+        }));
+        
+        console.log('Processed function parameters:', items); // Debug log
+        
+      } else if (effectiveType === 'TYPE') {
+        const typeDetails = await getTypeDetails(authToken, effectiveName);
+        const typeData = handlePostgreSQLSchemaBrowserResponse(typeDetails);
+        items = typeData.attributes || [];
+        totalPages = 1;
+        currentPage = 1;
+        
+      } else {
+        setTabData(prev => ({
+          ...prev,
+          columns: { loading: false, data: [] }
+        }));
+        return;
       }
-    }));
-    
-  } catch (err) {
-    console.error('Error loading columns/parameters:', err);
-    Logger.error('PostgreSQLSchemaBrowser', 'loadColumns', `Error loading ${effectiveType} columns/parameters`, err);
-    setTabData(prev => ({
-      ...prev,
-      columns: { loading: false, data: [] }
-    }));
-  }
-}, [authToken]);
+      
+      objectCache.set(cacheKey, { 
+        data: { items, page: currentPage, totalPages }, 
+        timestamp: Date.now() 
+      });
+      
+      setTabData(prev => ({
+        ...prev,
+        columns: { 
+          loading: false, 
+          data: items,
+          page: currentPage,
+          totalPages: totalPages
+        }
+      }));
+      
+    } catch (err) {
+      console.error('Error loading columns/parameters:', err);
+      Logger.error('PostgreSQLSchemaBrowser', 'loadColumns', `Error loading ${effectiveType} columns/parameters`, err);
+      setTabData(prev => ({
+        ...prev,
+        columns: { loading: false, data: [] }
+      }));
+    }
+  }, [authToken]);
 
 // Load Data (for Tables/Views)
 const loadData = useCallback(async (object, type, owner, params = {}) => {
@@ -4676,8 +4748,7 @@ if (isProcedure) {
     }
   }, []);
 
-  // Render Columns Tab
-// Render Columns Tab
+ // Render Columns Tab
 const renderColumnsTab = () => {
   const data = tabData.columns.data;
   const loading = tabData.columns.loading;
@@ -4712,94 +4783,90 @@ const renderColumnsTab = () => {
   const effectiveType = objectType;
   const isParameterMode = effectiveType === 'PROCEDURE' || effectiveType === 'FUNCTION';
   
+  // For Parameters (Procedures/Functions)
   if (isParameterMode) {
-    // Parameter display logic
-   // In the renderColumnsTab, after mapping data
-return (
-  <div className="flex-1 overflow-auto">
-    <div className="flex items-center justify-between p-3 border-b" style={{ borderColor: colors.border }}>
-      <span className="text-sm font-medium" style={{ color: colors.text }}>
-        Columns ({data.length})
-      </span>
-      {/* ... rest of the header */}
-    </div>
-    <div className="overflow-auto">
-      <table className="w-full">
-        <thead style={{ backgroundColor: colors.tableHeader }}>
-          <tr>
-            <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>#</th>
-            <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Column</th>
-            <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Type</th>
-            <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Length</th>
-            <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Nullable</th>
-            <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Default</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((col, i) => {
-            // Debug: log each column
-            if (i === 0) {
-              console.log('Processing column:', col);
-            }
-            
-            // Try to get values from various possible field names
-            const columnId = col.column_id !== undefined && col.column_id !== null ? col.column_id : 
-                            (col.COLUMN_ID !== undefined && col.COLUMN_ID !== null ? col.COLUMN_ID : 
-                            (col.id !== undefined && col.id !== null ? col.id : i + 1));
-            
-            const columnName = col.column_name || col.COLUMN_NAME || col.name || col.NAME || `Column ${i + 1}`;
-            const dataType = col.data_type || col.DATA_TYPE || col.type || col.TYPE || 'VARCHAR';
-            const dataLength = col.data_length || col.DATA_LENGTH || col.length || col.LENGTH;
-            const dataPrecision = col.data_precision || col.DATA_PRECISION || col.precision;
-            const dataScale = col.data_scale || col.DATA_SCALE || col.scale;
-            const nullable = col.nullable || col.NULLABLE || col.is_nullable;
-            const dataDefault = col.data_default || col.DATA_DEFAULT || col.default_value || col.DEFAULT_VALUE;
-            const charLength = col.char_length || col.CHAR_LENGTH;
-            
-            let typeDisplay = dataType;
-            if (dataLength) {
-              typeDisplay = `${dataType}(${dataLength})`;
-            } else if (dataPrecision !== null && dataPrecision !== undefined) {
-              typeDisplay = dataScale !== null && dataScale !== undefined
-                ? `${dataType}(${dataPrecision},${dataScale})`
-                : `${dataType}(${dataPrecision})`;
-            } else if (charLength && charLength > 0) {
-              typeDisplay = `${dataType}(${charLength})`;
-            }
-            
-            const isNullable = nullable === 'YES' || nullable === true || nullable === 'Y';
-            const nullableDisplay = isNullable ? 'YES' : 'NO';
-            
-            const uniqueKey = `${columnName}-${i}-${columnId}`;
-            
-            return (
-              <tr key={uniqueKey} style={{ 
-                backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
-                borderBottom: `1px solid ${colors.gridBorder}`
-              }}>
-                <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{columnId}</td>
-                <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{columnName}</td>
-                <td className="p-2 text-xs" style={{ color: colors.text }}>{typeDisplay}</td>
-                <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{dataLength || charLength || '-'}</td>
-                <td className="p-2 text-xs">
-                  <span className={`px-2 py-0.5 rounded text-xs ${
-                    isNullable ? 
-                    'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
-                  }`}>
-                    {nullableDisplay}
-                  </span>
-                </td>
-                <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>
-                  {dataDefault || '-'}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  </div>
-);
+    return (
+      <div className="flex-1 overflow-auto">
+        <div className="flex items-center justify-between p-3 border-b" style={{ borderColor: colors.border }}>
+          <span className="text-sm font-medium" style={{ color: colors.text }}>
+            Parameters ({data.length})
+          </span>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs" style={{ color: colors.textSecondary }}>
+                Page {page} of {totalPages}
+              </span>
+              <button
+                onClick={() => handleColumnsPageChange(page - 1)}
+                disabled={loading || page <= 1}
+                className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
+                style={{ color: colors.text }}
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <button
+                onClick={() => handleColumnsPageChange(page + 1)}
+                disabled={loading || page >= totalPages}
+                className="p-1 rounded hover:bg-opacity-50 disabled:opacity-50"
+                style={{ color: colors.text }}
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="overflow-auto">
+          <table className="w-full">
+            <thead style={{ backgroundColor: colors.tableHeader }}>
+              <tr>
+                <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>#</th>
+                <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Parameter</th>
+                <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Type</th>
+                <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Mode</th>
+                <th className="text-left p-2 text-xs hidden md:table-cell" style={{ color: colors.textSecondary }}>Default</th>
+               </tr>
+            </thead>
+            <tbody>
+              {data.map((param, index) => {
+                // Handle both uppercase and lowercase field names
+                const position = param.POSITION || param.position || param.sequence || index + 1;
+                const name = param.ARGUMENT_NAME || param.argument_name || param.name;
+                const dataType = param.DATA_TYPE || param.data_type || param.type;
+                const mode = param.IN_OUT || param.in_out || param.mode || 'IN';
+                const defaultValue = param.DEFAULT_VALUE || param.default_value;
+                const defaulted = param.DEFAULTED || param.defaulted;
+                
+                const uniqueKey = `${name}-${index}-${position}`;
+                
+                return (
+                  <tr key={uniqueKey} style={{ 
+                    backgroundColor: index % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                    borderBottom: `1px solid ${colors.gridBorder}`
+                  }}>
+                    <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{position}</td>
+                    <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{name}</td>
+                    <td className="p-2 text-xs" style={{ color: colors.text }}>{dataType}</td>
+                    <td className="p-2 text-xs">
+                      <span className={`px-2 py-0.5 rounded text-xs ${
+                        mode === 'IN' ? 'bg-blue-500/10 text-blue-400' :
+                        mode === 'OUT' ? 'bg-purple-500/10 text-purple-400' :
+                        mode === 'INOUT' ? 'bg-green-500/10 text-green-400' :
+                        'bg-gray-500/10 text-gray-400'
+                      }`}>
+                        {mode}
+                      </span>
+                    </td>
+                    <td className="p-2 text-xs hidden md:table-cell" style={{ color: colors.textSecondary }}>
+                      {defaultValue || (defaulted === 'Y' ? 'Optional' : '-')}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
   }
   
   // Regular columns display for tables/views
@@ -4843,7 +4910,7 @@ return (
               <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Length</th>
               <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Nullable</th>
               <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Default</th>
-            </tr>
+             </tr>
           </thead>
           <tbody>
             {data.map((col, i) => {
