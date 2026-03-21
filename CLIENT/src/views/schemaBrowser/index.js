@@ -36,7 +36,7 @@ const ComingSoonModal = ({ isOpen, onClose, database, colors, isDark }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-1 flex items-center justify-center p-4 animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
       {/* Backdrop */}
       <div 
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -705,7 +705,7 @@ const SchemaBrowserIndex = ({
 
         {/* Enhanced Error Toast */}
         {error && (
-          <div className="fixed top-20 right-4 z- animate-slide-in">
+          <div className="fixed top-20 right-4 z-50 animate-slide-in">
             <div 
               className="flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl backdrop-blur-lg"
               style={{

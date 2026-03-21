@@ -2633,38 +2633,50 @@ const transformTableConstraintsResponse = (response) => {
  * Transform paginated used by response
  */
 const transformPaginatedUsedByResponse = (response) => {
-    const data = response.data || {};
+  const data = response.data || {};
+  
+  // Your actual payload structure might be different for the items list
+  // Adjust based on your actual API response
+  const items = (data.items || []).map((item, index) => {
+    // Handle both uppercase/lowercase field names
+    const name = item.name || item.NAME || item.object_name || item.OBJECT_NAME;
+    const owner = item.owner || item.OWNER;
+    const type = item.type || item.TYPE || item.object_type || item.OBJECT_TYPE;
+    const status = item.status || item.STATUS;
     
-    const transformedData = {
-        items: (data.items || []).map((item, index) => ({
-            id: `usedby-${index + 1}`,
-            name: item.name || item.dependent_name,
-            owner: item.owner || item.dependent_owner,
-            type: item.type || item.object_type,
-            objectType: item.object_type || item.type,
-            status: item.status || item.dependent_status,
-            created: item.created || item.dependent_created,
-            lastModified: item.lastModified || item.dependent_modified,
-            dependencyType: item.dependency_type,
-            parameterCount: item.parameterCount || item.parameter_count || 0,
-            hasParameters: item.hasParameters || false,
-            icon: getObjectTypeIcon(item.type || item.object_type)
-        })),
-        totalCount: data.totalCount || 0,
-        totalPages: data.totalPages || 1,
-        page: data.page || 1,
-        pageSize: data.pageSize || 10,
-        hasNext: (data.page || 1) < (data.totalPages || 1),
-        hasPrev: (data.page || 1) > 1,
-        objectName: data.objectName || '',
-        objectType: data.objectType || '',
-        owner: data.owner || ''
-    };
-
     return {
-        ...response,
-        data: transformedData
+      id: `usedby-${index + 1}`,
+      name: name,
+      owner: owner,
+      type: type,
+      objectType: type,
+      status: status,
+      created: item.created || item.CREATED,
+      lastModified: item.last_modified || item.LAST_MODIFIED || item.lastModified,
+      dependencyType: item.dependency_type || item.DEPENDENCY_TYPE,
+      parameterCount: item.parameter_count || item.parameterCount || 0,
+      hasParameters: (item.parameter_count || item.parameterCount || 0) > 0,
+      icon: getObjectTypeIcon(type)
     };
+  });
+  
+  const transformedData = {
+    items: items,
+    totalCount: data.totalCount || data.total_count || 0,
+    totalPages: data.totalPages || data.total_pages || 1,
+    page: data.page || 1,
+    pageSize: data.pageSize || data.page_size || 10,
+    hasNext: (data.page || 1) < (data.totalPages || data.total_pages || 1),
+    hasPrev: (data.page || 1) > 1,
+    objectName: data.objectName || data.object_name || '',
+    objectType: data.objectType || data.object_type || '',
+    owner: data.owner || ''
+  };
+
+  return {
+    ...response,
+    data: transformedData
+  };
 };
 
 
@@ -2749,26 +2761,30 @@ const transformSearchPaginatedResponse = (response) => {
  * Transform used by summary response
  */
 const transformUsedBySummaryResponse = (response) => {
-    const data = response.data || {};
-    
-    const transformedData = {
-        byType: (data.byType || []).map(item => ({
-            dependentType: item.dependentType || item.DEPENDENT_TYPE || 'Unknown',
-            count: item.count || item.COUNT || 0,
-            validCount: item.validCount || item.VALID_COUNT || 0,
-            invalidCount: item.invalidCount || item.INVALID_COUNT || 0
-        })),
-        totalCount: data.totalCount || data.total_count || 0,
-        objectName: data.objectName || data.object_name || '',
-        objectType: data.objectType || data.object_type || '',
-        owner: data.owner || '',
-        generatedAt: data.generatedAt || data.generated_at || new Date().toISOString()
-    };
+  const data = response.data || {};
+  
+  // Handle both uppercase and lowercase field names
+  const transformedData = {
+    byType: (data.byType || []).map(item => ({
+      // Handle lowercase fields (as in your payload)
+      dependentType: item.dependent_type || item.dependentType || item.DEPENDENT_TYPE || 'Unknown',
+      count: item.count || item.COUNT || 0,
+      validCount: item.valid_count || item.validCount || item.VALID_COUNT || 0,
+      invalidCount: item.invalid_count || item.invalidCount || item.INVALID_COUNT || 0
+    })),
+    totalCount: data.totalCount || data.total_count || 0,
+    objectName: data.objectName || data.object_name || '',
+    objectType: data.objectType || data.object_type || '',
+    owner: data.owner || '',
+    schema: data.schema || '',
+    generatedAt: data.generatedAt || data.generated_at || new Date().toISOString(),
+    generatedBy: data.generatedBy || data.generated_by || ''
+  };
 
-    return {
-        ...response,
-        data: transformedData
-    };
+  return {
+    ...response,
+    data: transformedData
+  };
 };
 
 /**
