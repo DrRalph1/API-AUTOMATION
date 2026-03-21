@@ -42,12 +42,12 @@ const DatabaseCard = ({
   
   return (
     <div
-      className="group relative cursor-pointer transition-all duration-500 overflow-hidden hover-lift"
+      className="group relative cursor-pointer transition-all duration-500 overflow-hidden"
       style={{
         background: isDark 
           ? `linear-gradient(135deg, ${colors.card} 0%, ${colors.cardGradient} 100%)`
           : colors.card,
-        backdropFilter: isDark ? 'blur(10px)' : 'none',
+        backdropFilter: 'blur(10px)',
         borderRadius: '24px',
         border: `1px solid ${isHovered ? color : colors.border}`,
         transform: isHovered ? 'translateY(-8px) scale(1.02)' : 'translateY(0) scale(1)',
@@ -169,12 +169,12 @@ const DatabaseTopNav = ({
             {/* Enhanced Back Button */}
             <button
               onClick={onBackToSelection}
-              className="group flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-300 hover:scale-105 hover-lift"
+              className="group flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-300 hover:scale-105"
               style={{
                 color: colors.textSecondary,
                 background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
                 border: `1px solid ${colors.border}`,
-                backdropFilter: isDark ? 'blur(8px)' : 'none'
+                backdropFilter: 'blur(8px)'
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = colors.hover;
@@ -203,7 +203,7 @@ const DatabaseTopNav = ({
                     onClick={() => hasComponent && onSelectDatabase(db)}
                     disabled={!hasComponent}
                     className={`group relative px-4 py-2 rounded-xl transition-all duration-300 ${
-                      hasComponent ? 'cursor-pointer hover:scale-105 hover-lift' : 'cursor-not-allowed opacity-50'
+                      hasComponent ? 'cursor-pointer hover:scale-105' : 'cursor-not-allowed opacity-50'
                     }`}
                     style={{
                       background: isSelected 
@@ -266,17 +266,17 @@ const DatabaseTopNav = ({
 // Enhanced Welcome Header with animated gradient
 const WelcomeHeader = ({ colors }) => {
   return (
-    <div className="text-center mb-16 animate-fade-in">
+    <div className="text-center mb-16">
       <div className="relative inline-block mb-6">
         <div 
           className="absolute inset-0 rounded-2xl blur-xl animate-pulse"
           style={{ background: `radial-gradient(circle, ${colors.primary}40, transparent 70%)` }}
         />
       </div>
-      <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">
+      <h1 className="text-3xl font-bold mb-4 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">
         Schema Browser
       </h1>
-      <p className="text-lg max-w-2xl mx-auto" style={{ color: colors.textSecondary }}>
+      <p className="text-md max-w-2xl mx-auto" style={{ color: colors.textSecondary }}>
         Explore and manage your database schemas with an intuitive, modern interface
       </p>
     </div>
@@ -287,7 +287,7 @@ const WelcomeHeader = ({ colors }) => {
 const StatsCard = ({ icon: Icon, label, value, color, colors }) => {
   return (
     <div 
-      className="rounded-2xl p-4 backdrop-blur-sm transition-all duration-300 hover:scale-105 hover-lift"
+      className="rounded-2xl p-4 backdrop-blur-sm transition-all duration-300 hover:scale-105"
       style={{
         background: `linear-gradient(135deg, ${color}15, ${color}05)`,
         border: `1px solid ${color}30`
@@ -320,73 +320,25 @@ const SchemaBrowserIndex = ({
   const [selectedDatabase, setSelectedDatabase] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Enhanced color scheme - MATCHING LOGIN COMPONENT EXACTLY
+  // Enhanced color scheme
   const colors = useMemo(() => isDark ? {
-    // Using exact same colors as Login/Dashboard
     bg: 'rgb(1 14 35)',
-    white: '#FFFFFF',
-    sidebar: 'rgb(41 53 72 / 19%)',
-    main: 'rgb(1 14 35)',
-    header: 'rgb(20 26 38)',
-    card: 'rgb(41 53 72 / 19%)',
+    bgGradient: 'radial-gradient(circle at 10% 20%, rgb(17 34 64), rgb(1 14 35))',
+    card: 'rgba(41, 53, 72, 0.3)',
     cardGradient: 'rgba(41, 53, 72, 0.1)',
-    
-    // Text - coordinating grays
     text: '#F1F5F9',
     textSecondary: 'rgb(148 163 184)',
     textTertiary: 'rgb(100 116 139)',
-    
-    // Borders
-    border: 'rgb(51 65 85 / 19%)',
-    borderLight: 'rgb(45 55 72)',
-    borderDark: 'rgb(71 85 105)',
-    
-    // Interactive
-    hover: 'rgb(45 46 72 / 33%)',
-    active: 'rgb(59 74 99)',
+    border: 'rgba(51, 65, 85, 0.3)',
+    hover: 'rgba(45, 46, 72, 0.5)',
     selected: 'rgb(44 82 130)',
-    
-    // Primary colors
     primary: 'rgb(96 165 250)',
-    primaryLight: 'rgb(147 197 253)',
     primaryDark: 'rgb(37 99 235)',
-    
-    // Status colors
     success: 'rgb(52 211 153)',
     warning: 'rgb(251 191 36)',
     error: 'rgb(248 113 113)',
-    info: 'rgb(96 165 250)',
-    
-    // UI Components
-    tabActive: 'rgb(96 165 250)',
-    tabInactive: 'rgb(148 163 184)',
-    sidebarActive: 'rgb(96 165 250)',
-    sidebarhover: 'rgb(45 46 72 / 33%)',
-    inputBg: 'rgb(41 53 72 / 19%)',
-    inputborder: 'rgb(51 65 85 / 19%)',
-    tableHeader: 'rgb(41 53 72 / 19%)',
-    tableRow: 'rgb(41 53 72 / 19%)',
-    tableRowhover: 'rgb(45 46 72 / 33%)',
-    dropdownBg: 'rgb(41 53 72 / 19%)',
-    dropdownborder: 'rgb(51 65 85 / 19%)',
-    modalBg: 'rgb(41 53 72 / 19%)',
-    modalborder: 'rgb(51 65 85 / 19%)',
-    codeBg: 'rgb(41 53 72 / 19%)',
-    
-    // Connection status
-    connectionOnline: 'rgb(52 211 153)',
-    connectionOffline: 'rgb(248 113 113)',
-    connectionIdle: 'rgb(251 191 36)',
-    
-    // Accent colors
-    accentPurple: 'rgb(167 139 250)',
-    accentPink: 'rgb(244 114 182)',
-    accentCyan: 'rgb(34 211 238)',
-    
-    // Gradient for backgrounds
-    gradient: 'from-blue-500/20 via-violet-500/20 to-orange-500/20',
-    
-    // Object type colors
+    inputBg: 'rgba(41, 53, 72, 0.5)',
+    inputBorder: 'rgba(51, 65, 85, 0.3)',
     objectType: {
       oracle: '#60a5fa',
       postgresql: '#3b82f6',
@@ -402,48 +354,23 @@ const SchemaBrowserIndex = ({
       firebird: '#e05a3a'
     }
   } : {
-    // Light mode
     bg: '#f8fafc',
-    white: '#f8fafc',
-    sidebar: '#ffffff',
-    main: '#f8fafc',
-    header: '#ffffff',
+    bgGradient: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
     card: '#ffffff',
     cardGradient: '#ffffff',
     text: '#1e293b',
     textSecondary: '#64748b',
     textTertiary: '#94a3b8',
     border: '#e2e8f0',
-    borderLight: '#f1f5f9',
-    borderDark: '#cbd5e1',
     hover: '#f1f5f9',
-    active: '#e2e8f0',
     selected: '#dbeafe',
     primary: '#1e293b',
-    primaryLight: '#60a5fa',
     primaryDark: '#2563eb',
     success: '#10b981',
     warning: '#f59e0b',
     error: '#ef4444',
-    info: '#3b82f6',
-    tabActive: '#3b82f6',
-    tabInactive: '#64748b',
-    sidebarActive: '#3b82f6',
-    sidebarHover: '#f1f5f9',
     inputBg: '#ffffff',
     inputBorder: '#e2e8f0',
-    tableHeader: '#f8fafc',
-    tableRow: '#ffffff',
-    tableRowHover: '#f8fafc',
-    dropdownBg: '#ffffff',
-    dropdownBorder: '#e2e8f0',
-    modalBg: '#ffffff',
-    modalBorder: '#e2e8f0',
-    codeBg: '#f1f5f9',
-    connectionOnline: '#10b981',
-    connectionOffline: '#ef4444',
-    connectionIdle: '#f59e0b',
-    gradient: 'from-blue-400/20 via-violet-400/20 to-orange-400/20',
     objectType: {
       oracle: '#3b82f6',
       postgresql: '#10b981',
@@ -590,13 +517,7 @@ const SchemaBrowserIndex = ({
   if (selectedDatabase) {
     const SelectedComponent = selectedDatabase.component;
     return (
-      <div className="min-h-screen relative overflow-hidden" style={{ backgroundColor: colors.bg }}>
-        {/* Animated Background Elements - Matching Login component */}
-        <div className="absolute inset-0 overflow-hidden">
-          <div className={`absolute -top-40 -right-40 w-80 h-80 rounded-full bg-gradient-to-br ${colors.gradient} blur-3xl animate-pulse`}></div>
-          <div className={`absolute -bottom-40 -left-40 w-80 h-80 rounded-full bg-gradient-to-br ${colors.gradient} blur-3xl animate-pulse delay-1000`}></div>
-        </div>
-
+      <div className="min-h-screen" style={{ background: colors.bgGradient }}>
         {/* Enhanced Error Toast */}
         {error && (
           <div className="fixed top-20 right-4 z-50 animate-slide-in">
@@ -628,16 +549,14 @@ const SchemaBrowserIndex = ({
         />
         
         {/* Render the selected database schema browser */}
-        <div className="relative z-10">
-          <SelectedComponent 
-            theme={theme}
-            isDark={isDark}
-            toggleTheme={toggleTheme}
-            authToken={authToken}
-            customTheme={customTheme}
-            setCustomTheme={setCustomTheme}
-          />
-        </div>
+        <SelectedComponent 
+          theme={theme}
+          isDark={isDark}
+          toggleTheme={toggleTheme}
+          authToken={authToken}
+          customTheme={customTheme}
+          setCustomTheme={setCustomTheme}
+        />
       </div>
     );
   }
@@ -646,21 +565,23 @@ const SchemaBrowserIndex = ({
   return (
     <div 
       className="min-h-screen relative overflow-hidden"
-      style={{ backgroundColor: colors.bg }}
+      style={{ background: colors.bgGradient }}
     >
-      {/* Animated Background Elements - Matching Login component */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className={`absolute -top-40 -right-40 w-80 h-80 rounded-full bg-gradient-to-br ${colors.gradient} blur-3xl animate-pulse`}></div>
-        <div className={`absolute -bottom-40 -left-40 w-80 h-80 rounded-full bg-gradient-to-br ${colors.gradient} blur-3xl animate-pulse delay-1000`}></div>
+      {/* Animated background elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full blur-3xl opacity-20 animate-pulse"
+          style={{ background: 'radial-gradient(circle, #60a5fa, transparent)' }} />
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 rounded-full blur-3xl opacity-20 animate-pulse animation-delay-1000"
+          style={{ background: 'radial-gradient(circle, #8b5cf6, transparent)' }} />
       </div>
       
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 relative z-10">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 relative z-10" style={{ zoom: "0.9" }}>
         {/* Welcome Header */}
         <WelcomeHeader colors={colors} />
       
         
         {/* Enhanced Search Bar */}
-        <div className="mb-12 max-w-2xl mx-auto">
+        {/* <div className="mb-12 max-w-2xl mx-auto">
           <div className="relative group">
             <Search 
               size={20} 
@@ -675,10 +596,10 @@ const SchemaBrowserIndex = ({
               className="w-full pl-12 pr-12 py-4 rounded-2xl transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
               style={{
                 background: colors.inputBg,
-                border: `1px solid ${colors.inputborder}`,
+                border: `1px solid ${colors.inputBorder}`,
                 color: colors.text,
                 fontSize: '15px',
-                backdropFilter: isDark ? 'blur(10px)' : 'none'
+                backdropFilter: 'blur(10px)'
               }}
             />
             {searchQuery && (
@@ -690,7 +611,7 @@ const SchemaBrowserIndex = ({
               </button>
             )}
           </div>
-        </div>
+        </div> */}
         
         {/* Enhanced Error Display */}
         {error && (
@@ -744,7 +665,7 @@ const SchemaBrowserIndex = ({
             </p>
             <button
               onClick={() => setSearchQuery('')}
-              className="px-6 py-2 rounded-xl transition-all duration-300 hover:scale-105 font-medium hover-lift"
+              className="px-6 py-2 rounded-xl transition-all duration-300 hover:scale-105 font-medium"
               style={{
                 background: `linear-gradient(135deg, ${colors.primary}, ${colors.primaryDark})`,
                 color: '#ffffff',
@@ -755,10 +676,10 @@ const SchemaBrowserIndex = ({
             </button>
           </div>
         )}
-        
+
       </div>
       
-      {/* Enhanced animation styles - Matching Login component */}
+      {/* Enhanced animation styles */}
       <style jsx>{`
         @keyframes slide-in {
           from {
@@ -793,12 +714,6 @@ const SchemaBrowserIndex = ({
           }
         }
         
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
-          20%, 40%, 60%, 80% { transform: translateX(5px); }
-        }
-        
         .animate-slide-in {
           animation: slide-in 0.3s ease-out;
         }
@@ -809,10 +724,6 @@ const SchemaBrowserIndex = ({
         
         .animate-fade-in {
           animation: fade-in 0.5s ease-out;
-        }
-        
-        .animate-shake {
-          animation: shake 0.5s ease-in-out;
         }
         
         .animation-delay-1000 {
@@ -832,61 +743,6 @@ const SchemaBrowserIndex = ({
         
         .animate-pulse-slow {
           animation: pulse-slow 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-        
-        /* Hover effects - Matching Login component */
-        .hover-lift:hover {
-          transform: translateY(-2px);
-          transition: transform 0.2s ease;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-        
-        /* Smooth transitions */
-        * {
-          transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
-        }
-        
-        /* Custom scrollbar - Matching Login component */
-        ::-webkit-scrollbar {
-          width: 6px;
-          height: 6px;
-        }
-        
-        ::-webkit-scrollbar-track {
-          background: rgb(51 65 85);
-          border-radius: 4px;
-        }
-        
-        ::-webkit-scrollbar-thumb {
-          background: rgb(100 116 139);
-          border-radius: 4px;
-        }
-        
-        ::-webkit-scrollbar-thumb:hover {
-          background: rgb(148 163 184);
-        }
-        
-        /* Mobile optimizations */
-        @media (max-width: 640px) {
-          .text-xs { font-size: 11px; }
-          .text-sm { font-size: 12px; }
-          .text-lg { font-size: 16px; }
-          .text-xl { font-size: 18px; }
-          .text-2xl { font-size: 20px; }
-        }
-        
-        /* Cursor styles */
-        button, 
-        [role="button"],
-        input[type="submit"],
-        input[type="button"],
-        .cursor-pointer {
-          cursor: pointer;
-        }
-        
-        button:disabled,
-        [role="button"]:disabled {
-          cursor: not-allowed;
         }
       `}</style>
     </div>
