@@ -2669,6 +2669,57 @@ const transformPaginatedUsedByResponse = (response) => {
 
 
 /**
+ * Transform function parameters response
+ */
+const transformFunctionParametersResponse = (response) => {
+    const data = response.data || {};
+    
+    // Check if parameters are in data.parameters (as in your response)
+    let parameters = [];
+    let totalCount = 0;
+    let totalPages = 1;
+    let page = data.page || 1;
+    let pageSize = data.pageSize || 10;
+    
+    if (data.parameters && Array.isArray(data.parameters)) {
+        parameters = data.parameters;
+        totalCount = data.totalCount || parameters.length;
+        totalPages = data.totalPages || Math.ceil(totalCount / pageSize);
+    } else if (data.items && Array.isArray(data.items)) {
+        parameters = data.items;
+        totalCount = data.totalCount || parameters.length;
+        totalPages = data.totalPages || Math.ceil(totalCount / pageSize);
+    } else if (Array.isArray(data)) {
+        parameters = data;
+        totalCount = parameters.length;
+        totalPages = 1;
+    }
+    
+    const transformedData = {
+        items: parameters.map((param, index) => ({
+            POSITION: param.sequence || param.position || index + 1,
+            ARGUMENT_NAME: param.argument_name || param.name,
+            DATA_TYPE: param.data_type || param.type,
+            IN_OUT: param.in_out || param.mode || 'IN',
+            DATA_LENGTH: param.data_length || '-',
+            DEFAULT_VALUE: param.default_value,
+            DEFAULTED: param.defaulted || 'N'
+        })),
+        totalCount: totalCount,
+        totalPages: totalPages,
+        page: page,
+        pageSize: pageSize
+    };
+
+    return {
+        ...response,
+        data: transformedData
+    };
+};
+
+
+
+/**
  * Transform search response (special handling for search results)
  */
 const transformSearchPaginatedResponse = (response) => {

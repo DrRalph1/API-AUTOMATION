@@ -1959,118 +1959,174 @@ const PostgreSQLSchemaBrowser = ({ theme, isDark, toggleTheme, authToken }) => {
   }, [authToken, activeObject]);
 
   // Load Columns (for Tables/Views) or Parameters (for Procedures/Functions)
-  const loadColumns = useCallback(async (object, type, owner, page = 1, pageSize = 50) => {
-    if (!authToken || !object || !type) return;
-    
-    let effectiveType = type;
-    let effectiveName = object.name;
-    let effectiveOwner = owner;
-    
-    const cacheKey = `columns_${effectiveType}_${effectiveOwner || 'unknown'}_${effectiveName}_page${page}`;
-    const cached = objectCache.get(cacheKey);
-    
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      setTabData(prev => ({
-        ...prev,
-        columns: { 
-          loading: false, 
-          data: cached.data.items,
-          page: cached.data.page,
-          totalPages: cached.data.totalPages
-        }
-      }));
-      return;
-    }
-    
+  // Load Columns (for Tables/Views) or Parameters (for Procedures/Functions)
+const loadColumns = useCallback(async (object, type, owner, page = 1, pageSize = 50) => {
+  if (!authToken || !object || !type) return;
+  
+  let effectiveType = type;
+  let effectiveName = object.name;
+  let effectiveOwner = owner;
+  
+  const cacheKey = `columns_${effectiveType}_${effectiveOwner || 'unknown'}_${effectiveName}_page${page}`;
+  const cached = objectCache.get(cacheKey);
+  
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     setTabData(prev => ({
       ...prev,
-      columns: { ...prev.columns, loading: true }
-    }));
-    
-    try {
-      let response;
-      let items = [];
-      let totalPages = 1;
-      let currentPage = page;
-      
-      if (effectiveType === 'TABLE' || effectiveType === 'VIEW' || effectiveType === 'MATERIALIZED VIEW') {
-        response = await getTableColumnsPaginated(authToken, {
-          tableName: effectiveName,
-          owner: effectiveOwner,
-          page,
-          pageSize
-        });
-        
-        const extracted = extractItemsFromResponse(response);
-        items = extracted.items;
-        totalPages = extracted.totalPages;
-        currentPage = extracted.page;
-        
-      } else if (effectiveType === 'PROCEDURE') {
-        response = await getProcedureParametersPaginated(authToken, {
-          procedureName: effectiveName,
-          owner: effectiveOwner,
-          page,
-          pageSize
-        });
-        
-        const extracted = extractItemsFromResponse(response);
-        items = extracted.items;
-        totalPages = extracted.totalPages;
-        currentPage = extracted.page;
-        
-      } else if (effectiveType === 'FUNCTION') {
-        response = await getFunctionParametersPaginated(authToken, {
-          functionName: effectiveName,
-          owner: effectiveOwner,
-          page,
-          pageSize
-        });
-        
-        const responseData = response?.data || {};
-        items = responseData.items || [];
-        totalPages = responseData.totalPages || 1;
-        currentPage = responseData.page || page;
-        
-      } else if (effectiveType === 'TYPE') {
-        const typeDetails = await getTypeDetails(authToken, effectiveName);
-        const typeData = handlePostgreSQLSchemaBrowserResponse(typeDetails);
-        items = typeData.attributes || [];
-        totalPages = 1;
-        currentPage = 1;
-        
-      } else {
-        setTabData(prev => ({
-          ...prev,
-          columns: { loading: false, data: [] }
-        }));
-        return;
+      columns: { 
+        loading: false, 
+        data: cached.data.items,
+        page: cached.data.page,
+        totalPages: cached.data.totalPages
       }
-      
-      objectCache.set(cacheKey, { 
-        data: { items, page: currentPage, totalPages }, 
-        timestamp: Date.now() 
+    }));
+    return;
+  }
+  
+  setTabData(prev => ({
+    ...prev,
+    columns: { ...prev.columns, loading: true }
+  }));
+  
+  try {
+    let response;
+    let items = [];
+    let totalPages = 1;
+    let currentPage = page;
+    
+    if (effectiveType === 'TABLE' || effectiveType === 'VIEW' || effectiveType === 'MATERIALIZED VIEW') {
+      response = await getTableColumnsPaginated(authToken, {
+        tableName: effectiveName,
+        owner: effectiveOwner,
+        page,
+        pageSize
       });
       
-      setTabData(prev => ({
-        ...prev,
-        columns: { 
-          loading: false, 
-          data: items,
-          page: currentPage,
-          totalPages: totalPages
-        }
-      }));
+      const extracted = extractItemsFromResponse(response);
+      items = extracted.items;
+      totalPages = extracted.totalPages;
+      currentPage = extracted.page;
       
-    } catch (err) {
-      console.error('Error loading columns/parameters:', err);
-      Logger.error('PostgreSQLSchemaBrowser', 'loadColumns', `Error loading ${effectiveType} columns/parameters`, err);
+    } else if (effectiveType === 'PROCEDURE') {
+      response = await getProcedureParametersPaginated(authToken, {
+        procedureName: effectiveName,
+        owner: effectiveOwner,
+        page,
+        pageSize
+      });
+      
+      // FIX: Handle the parameters response structure
+      if (response?.data?.parameters && Array.isArray(response.data.parameters)) {
+        items = response.data.parameters;
+        totalPages = response.data.totalPages || 1;
+        currentPage = response.data.page || page;
+        const totalCount = response.data.totalCount || items.length;
+        
+        // If totalPages is still 1 but totalCount > pageSize, calculate properly
+        if (totalPages === 1 && totalCount > pageSize) {
+          totalPages = Math.ceil(totalCount / pageSize);
+        }
+      } else if (response?.parameters && Array.isArray(response.parameters)) {
+        items = response.parameters;
+        totalPages = response.totalPages || 1;
+        currentPage = response.page || page;
+      } else {
+        // Fallback to extractItemsFromResponse for other structures
+        const extracted = extractItemsFromResponse(response);
+        items = extracted.items;
+        totalPages = extracted.totalPages;
+        currentPage = extracted.page;
+      }
+      
+    } else if (effectiveType === 'FUNCTION') {
+      response = await getFunctionParametersPaginated(authToken, {
+        functionName: effectiveName,
+        owner: effectiveOwner,
+        page,
+        pageSize
+      });
+      
+      // FIX: Handle the function parameters response structure
+      if (response?.data?.parameters && Array.isArray(response.data.parameters)) {
+        items = response.data.parameters;
+        totalPages = response.data.totalPages || 1;
+        currentPage = response.data.page || page;
+        const totalCount = response.data.totalCount || items.length;
+        
+        // If totalPages is still 1 but totalCount > pageSize, calculate properly
+        if (totalPages === 1 && totalCount > pageSize) {
+          totalPages = Math.ceil(totalCount / pageSize);
+        }
+      } else if (response?.parameters && Array.isArray(response.parameters)) {
+        items = response.parameters;
+        totalPages = response.totalPages || 1;
+        currentPage = response.page || page;
+      } else if (response?.data?.items && Array.isArray(response.data.items)) {
+        // Alternative structure with items
+        items = response.data.items;
+        totalPages = response.data.totalPages || 1;
+        currentPage = response.data.page || page;
+      } else {
+        // Fallback to extractItemsFromResponse for other structures
+        const extracted = extractItemsFromResponse(response);
+        items = extracted.items;
+        totalPages = extracted.totalPages;
+        currentPage = extracted.page;
+      }
+      
+    } else if (effectiveType === 'TYPE') {
+      const typeDetails = await getTypeDetails(authToken, effectiveName);
+      const typeData = handlePostgreSQLSchemaBrowserResponse(typeDetails);
+      items = typeData.attributes || [];
+      totalPages = 1;
+      currentPage = 1;
+      
+    } else {
       setTabData(prev => ({
         ...prev,
         columns: { loading: false, data: [] }
       }));
+      return;
     }
-  }, [authToken]);
+    
+    // Transform the parameter data to match what your renderColumnsTab expects
+    // The renderColumnsTab expects properties like: POSITION, ARGUMENT_NAME, DATA_TYPE, IN_OUT, etc.
+    // Your data has: sequence, argument_name, data_type, in_out, etc.
+    // Let's map them to the expected format
+    const mappedItems = items.map(param => ({
+      POSITION: param.sequence || param.position || param.POSITION,
+      ARGUMENT_NAME: param.argument_name || param.name || param.ARGUMENT_NAME,
+      DATA_TYPE: param.data_type || param.type || param.DATA_TYPE,
+      IN_OUT: param.in_out || param.mode || param.IN_OUT,
+      DATA_LENGTH: param.data_length || param.DATA_LENGTH || '-',
+      DEFAULT_VALUE: param.default_value || param.DEFAULT_VALUE,
+      DEFAULTED: param.defaulted || param.DEFAULTED
+    }));
+    
+    objectCache.set(cacheKey, { 
+      data: { items: mappedItems, page: currentPage, totalPages }, 
+      timestamp: Date.now() 
+    });
+    
+    setTabData(prev => ({
+      ...prev,
+      columns: { 
+        loading: false, 
+        data: mappedItems,
+        page: currentPage,
+        totalPages: totalPages
+      }
+    }));
+    
+  } catch (err) {
+    console.error('Error loading columns/parameters:', err);
+    Logger.error('PostgreSQLSchemaBrowser', 'loadColumns', `Error loading ${effectiveType} columns/parameters`, err);
+    setTabData(prev => ({
+      ...prev,
+      columns: { loading: false, data: [] }
+    }));
+  }
+}, [authToken]);
 
 // Load Data (for Tables/Views)
 const loadData = useCallback(async (object, type, owner, params = {}) => {

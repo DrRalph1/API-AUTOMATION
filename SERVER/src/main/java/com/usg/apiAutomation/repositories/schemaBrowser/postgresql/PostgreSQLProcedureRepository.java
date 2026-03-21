@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 public class PostgreSQLProcedureRepository extends PostgreSQLRepository {
 
     // ============================================================
-    // PROCEDURE METHODS - POSTGRESQL VERSION
+    // PROCEDURE METHODS - POSTGRESQL VERSION WITH FALLBACK
     // ============================================================
 
     public List<Map<String, Object>> getAllProceduresForFrontend() {
@@ -125,7 +125,7 @@ public class PostgreSQLProcedureRepository extends PostgreSQLRepository {
     }
 
     /**
-     * Get procedure details with owner
+     * Get procedure details with owner - WITH FALLBACK TO SOURCE PARSING
      */
     public Map<String, Object> getProcedureDetails(String owner, String procedureName) {
         Map<String, Object> details = new HashMap<>();
@@ -167,12 +167,12 @@ public class PostgreSQLProcedureRepository extends PostgreSQLRepository {
                 details.putAll(procInfo);
             }
 
-            // Get parameters
+            // Get parameters from database first
             List<Map<String, Object>> params = getProcedureParametersFromDatabase(owner, procedureName);
 
-            // If no parameters found, try parsing from source
+            // If no parameters found in database, fallback to source parsing
             if (params.isEmpty()) {
-                log.info("No parameters found in database for {}.{}, trying source parsing", owner, procedureName);
+                log.info("No parameters found in database for {}.{}, falling back to source parsing", owner, procedureName);
                 params = parseProcedureParametersFromSource(owner, procedureName);
             }
 
@@ -240,6 +240,9 @@ public class PostgreSQLProcedureRepository extends PostgreSQLRepository {
         }
     }
 
+    /**
+     * Get procedure parameters with pagination - WITH FALLBACK TO SOURCE PARSING
+     */
     public Map<String, Object> getProcedureParametersPaginated(String procedureName, String owner,
                                                                int page, int pageSize) {
         Map<String, Object> result = new HashMap<>();
@@ -249,35 +252,67 @@ public class PostgreSQLProcedureRepository extends PostgreSQLRepository {
                 owner = getCurrentSchema();
             }
 
+            log.info("Getting paginated parameters for {}.{}, page: {}, pageSize: {}",
+                    owner, procedureName, page, pageSize);
+
             int offset = (page - 1) * pageSize;
+            int totalCount = 0;
+            List<Map<String, Object>> parameters = new ArrayList<>();
+            boolean fromSource = false;
 
-            // Get parameters from database
-            List<Map<String, Object>> allParams = getProcedureParametersFromDatabase(owner, procedureName);
+            // Try to get parameters from database first
+            try {
+                List<Map<String, Object>> allParams = getProcedureParametersFromDatabase(owner, procedureName);
 
-            // If no parameters found, try parsing from source
-            if (allParams.isEmpty()) {
-                allParams = parseProcedureParametersFromSource(owner, procedureName);
+                if (!allParams.isEmpty()) {
+                    totalCount = allParams.size();
+
+                    // Apply pagination
+                    if (!allParams.isEmpty() && offset < allParams.size()) {
+                        int endIndex = Math.min(offset + pageSize, allParams.size());
+                        parameters = allParams.subList(offset, endIndex);
+                    }
+
+                    log.info("Found {} parameters in database for {}.{}", totalCount, owner, procedureName);
+                }
+            } catch (Exception e) {
+                log.debug("Error getting database parameters: {}", e.getMessage());
             }
 
-            int totalCount = allParams.size();
+            // If no parameters found in database, fallback to source parsing
+            if (parameters.isEmpty()) {
+                log.info("No parameters found in database for {}.{}, falling back to source parsing",
+                        owner, procedureName);
 
-            // Apply pagination
-            List<Map<String, Object>> parameters = new ArrayList<>();
-            if (!allParams.isEmpty() && offset < allParams.size()) {
-                int endIndex = Math.min(offset + pageSize, allParams.size());
-                parameters = allParams.subList(offset, endIndex);
+                List<Map<String, Object>> allParams = parseProcedureParametersFromSource(owner, procedureName);
+                totalCount = allParams.size();
+
+                // Apply pagination to the parsed parameters
+                if (!allParams.isEmpty() && offset < allParams.size()) {
+                    int endIndex = Math.min(offset + pageSize, allParams.size());
+                    parameters = allParams.subList(offset, endIndex);
+                }
+
+                fromSource = true;
+                log.info("Parsed {} parameters from source for {}.{}", totalCount, owner, procedureName);
             }
 
             result.put("items", parameters);
             result.put("totalCount", totalCount);
             result.put("page", page);
             result.put("pageSize", pageSize);
-            result.put("totalPages", (int) Math.ceil((double) totalCount / pageSize));
+            result.put("totalPages", pageSize > 0 ? (int) Math.ceil((double) totalCount / pageSize) : 0);
+
+            if (fromSource) {
+                result.put("fromSource", true);
+                result.put("message", "Parameters parsed from source code");
+            }
 
             return result;
 
         } catch (Exception e) {
-            log.error("Error in getProcedureParametersPaginated for {}.{}: {}", owner, procedureName, e.getMessage(), e);
+            log.error("Error in getProcedureParametersPaginated for {}.{}: {}",
+                    owner, procedureName, e.getMessage(), e);
             throw new RuntimeException("Failed to retrieve procedure parameters: " + e.getMessage(), e);
         }
     }
@@ -363,22 +398,47 @@ public class PostgreSQLProcedureRepository extends PostgreSQLRepository {
     }
 
     // ============================================================
+    // PUBLIC DEBUGGING METHODS
+    // ============================================================
+
+    public boolean checkProcedureExists(String procedureName, String schema) {
+        try {
+            String sql = "SELECT COUNT(*) FROM pg_proc p " +
+                    "JOIN pg_namespace n ON p.pronamespace = n.oid " +
+                    "WHERE n.nspname = ? AND p.proname = ?";
+            Integer count = getJdbcTemplate().queryForObject(sql, Integer.class, schema, procedureName);
+            log.info("Procedure {}.{} exists count: {}", schema, procedureName, count);
+            return count != null && count > 0;
+        } catch (Exception e) {
+            log.error("Error checking procedure existence: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    // ============================================================
     // PRIVATE HELPER METHODS
     // ============================================================
 
+    /**
+     * Get procedure parameters from PostgreSQL system catalogs
+     */
     private List<Map<String, Object>> getProcedureParametersFromDatabase(String owner, String procedureName) {
         List<Map<String, Object>> params = new ArrayList<>();
 
         try {
+            log.debug("Getting parameters from database for {}.{}", owner, procedureName);
+
             // Get procedure OID
             String oidSql = "SELECT p.oid FROM pg_proc p " +
                     "JOIN pg_namespace n ON p.pronamespace = n.oid " +
-                    "WHERE n.nspname = ? AND p.proname = ? AND p.prokind = 'p'";
+                    "WHERE n.nspname = ? AND p.proname = ?";
 
             Long procOid;
             try {
                 procOid = getJdbcTemplate().queryForObject(oidSql, Long.class, owner, procedureName);
+                log.debug("Found procedure OID: {} for {}.{}", procOid, owner, procedureName);
             } catch (EmptyResultDataAccessException e) {
+                log.debug("Procedure {}.{} not found in database", owner, procedureName);
                 return params;
             }
 
@@ -411,9 +471,11 @@ public class PostgreSQLProcedureRepository extends PostgreSQLRepository {
                 param.put("data_type", getDataTypeName(argTypes[i]));
                 param.put("in_out", getParameterMode(i < argModes.length ? argModes[i] : "i"));
                 param.put("defaulted", (i >= argNames.length - defaultCount) ? "Y" : "N");
-
                 params.add(param);
             }
+
+            log.debug("Successfully retrieved {} parameters from database for {}.{}",
+                    params.size(), owner, procedureName);
 
         } catch (Exception e) {
             log.debug("Error getting database parameters: {}", e.getMessage());
@@ -422,114 +484,207 @@ public class PostgreSQLProcedureRepository extends PostgreSQLRepository {
         return params;
     }
 
+    /**
+     * Parse procedure parameters directly from source code - FALLBACK METHOD
+     */
     private List<Map<String, Object>> parseProcedureParametersFromSource(String owner, String procedureName) {
         List<Map<String, Object>> params = new ArrayList<>();
 
         try {
             String source = getProcedureSource(owner, procedureName);
             if (source == null || source.isEmpty()) {
+                log.debug("No source found for {}.{}", owner, procedureName);
                 return params;
             }
 
+            log.debug("Parsing parameters from source for {}.{}", owner, procedureName);
+
+            // Remove comments first
             String sourceWithoutComments = removeComments(source);
 
-            // Pattern to find procedure signature
-            String patternStr = "CREATE\\s+(?:OR\\s+REPLACE\\s+)?PROCEDURE\\s+" +
-                    Pattern.quote(procedureName) +
-                    "\\s*\\(([\\s\\S]*?)\\)\\s*(?:AS|IS|LANGUAGE)";
-            Pattern pattern = Pattern.compile(patternStr, Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-            Matcher matcher = pattern.matcher(sourceWithoutComments);
+            // Multiple patterns to match different procedure signatures
+            String[] patterns = {
+                    // Pattern 1: CREATE OR REPLACE PROCEDURE name ( ... ) AS/LANGUAGE
+                    "CREATE\\s+(?:OR\\s+REPLACE\\s+)?PROCEDURE\\s+" +
+                            "(?:" + Pattern.quote(owner) + "\\.)?" +
+                            Pattern.quote(procedureName) +
+                            "\\s*\\(([\\s\\S]*?)\\)\\s*(?:AS|IS|LANGUAGE|\\$\\w+\\$)",
 
-            if (matcher.find()) {
-                String paramsSection = matcher.group(1).trim();
-                if (!paramsSection.isEmpty()) {
-                    List<String> paramDeclarations = splitParametersByComma(paramsSection);
-                    int position = 1;
-                    for (String paramDecl : paramDeclarations) {
-                        Map<String, Object> param = parseParameterDeclaration(paramDecl, position++);
-                        if (param != null && !param.isEmpty()) {
-                            params.add(param);
-                        }
-                    }
+                    // Pattern 2: PROCEDURE name ( ... ) AS/IS
+                    "PROCEDURE\\s+" +
+                            "(?:" + Pattern.quote(owner) + "\\.)?" +
+                            Pattern.quote(procedureName) +
+                            "\\s*\\(([\\s\\S]*?)\\)\\s*(?:AS|IS)",
+
+                    // Pattern 3: Just the signature without CREATE
+                    Pattern.quote(procedureName) +
+                            "\\s*\\(([\\s\\S]*?)\\)\\s*(?:AS|IS|LANGUAGE|RETURNS|\\$\\w+\\$)"
+            };
+
+            String paramsSection = null;
+
+            for (String patternStr : patterns) {
+                Pattern pattern = Pattern.compile(patternStr, Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+                Matcher matcher = pattern.matcher(sourceWithoutComments);
+
+                if (matcher.find()) {
+                    paramsSection = matcher.group(1).trim();
+                    log.debug("Found parameter section using pattern: {}", patternStr);
+                    break;
                 }
             }
 
-            log.info("Parsed {} parameters from source for {}", params.size(), procedureName);
+            if (paramsSection == null || paramsSection.isEmpty()) {
+                log.debug("Could not find parameter section for {}.{}", owner, procedureName);
+                return params;
+            }
+
+            log.debug("Parameter section: {}", paramsSection.length() > 200 ?
+                    paramsSection.substring(0, 200) + "..." : paramsSection);
+
+            // Split parameters by comma, respecting parentheses
+            List<String> paramDeclarations = splitParametersByComma(paramsSection);
+
+            int position = 1;
+            for (String paramDecl : paramDeclarations) {
+                Map<String, Object> param = parseParameterDeclaration(paramDecl, position++);
+                if (param != null && !param.isEmpty()) {
+                    params.add(param);
+                    log.debug("Parsed parameter {}: {}", position-1, param);
+                }
+            }
+
+            log.info("Parsed {} parameters from source for {}.{}", params.size(), owner, procedureName);
 
         } catch (Exception e) {
-            log.error("Error parsing parameters from source: {}", e.getMessage());
+            log.error("Error parsing parameters from source for {}.{}: {}",
+                    owner, procedureName, e.getMessage(), e);
         }
 
         return params;
     }
 
+    /**
+     * Parse a single parameter declaration
+     */
     private Map<String, Object> parseParameterDeclaration(String paramDecl, int position) {
         Map<String, Object> param = new HashMap<>();
 
-        paramDecl = paramDecl.replaceAll("--.*$", "").trim();
+        try {
+            // Remove trailing commas and whitespace
+            paramDecl = paramDecl.replaceAll(",\\s*$", "").trim();
 
-        // PostgreSQL parameter format: [mode] name data_type [DEFAULT value]
-        Pattern pattern = Pattern.compile(
-                "^(?:IN|OUT|INOUT)?\\s*(\\w+)\\s+(\\w+(?:\\([^)]*\\))?)\\s*(?:DEFAULT\\s+(.+))?$",
-                Pattern.CASE_INSENSITIVE
-        );
+            // Handle DEFAULT values that might contain commas
+            String defaultValue = null;
+            String defaultPattern = "\\s+DEFAULT\\s+";
 
-        Matcher matcher = pattern.matcher(paramDecl);
-        if (matcher.find()) {
-            String paramName = matcher.group(1);
-            String dataType = matcher.group(2);
-            String defaultValue = matcher.group(3);
-            String mode = extractMode(paramDecl);
+            if (paramDecl.toUpperCase().contains("DEFAULT")) {
+                String[] parts = paramDecl.split(defaultPattern, 2);
+                paramDecl = parts[0].trim();
+                defaultValue = parts[1].trim();
+                // Remove trailing comma if exists
+                if (defaultValue.endsWith(",")) {
+                    defaultValue = defaultValue.substring(0, defaultValue.length() - 1).trim();
+                }
+            }
 
-            param.put("argument_name", paramName);
-            param.put("position", position);
-            param.put("sequence", position);
-            param.put("data_type", dataType.toUpperCase());
-            param.put("in_out", mode);
-            param.put("defaulted", defaultValue != null ? "Y" : "N");
+            // PostgreSQL parameter format: [mode] name data_type
+            // Patterns to match different parameter styles
+            String[] patterns = {
+                    // Pattern with explicit mode: IN name data_type
+                    "^(IN|OUT|INOUT|IN OUT)\\s+(\\w+)\\s+(\\w+(?:\\([^)]*\\))?(?:\\[\\])?)",
+                    // Pattern without explicit mode (default IN): name data_type
+                    "^(\\w+)\\s+(\\w+(?:\\([^)]*\\))?(?:\\[\\])?)"
+            };
+
+            String paramName = null;
+            String dataType = null;
+            String mode = "IN"; // Default mode
+
+            for (String patternStr : patterns) {
+                Pattern pattern = Pattern.compile(patternStr, Pattern.CASE_INSENSITIVE);
+                Matcher matcher = pattern.matcher(paramDecl);
+
+                if (matcher.find()) {
+                    if (patternStr.contains("IN|OUT|INOUT")) {
+                        mode = matcher.group(1).toUpperCase().replace(" ", "_");
+                        paramName = matcher.group(2);
+                        dataType = matcher.group(3);
+                    } else {
+                        paramName = matcher.group(1);
+                        dataType = matcher.group(2);
+                    }
+                    break;
+                }
+            }
+
+            if (paramName != null && dataType != null) {
+                param.put("argument_name", paramName);
+                param.put("position", position);
+                param.put("sequence", position);
+                param.put("data_type", dataType.toUpperCase());
+                param.put("in_out", mode);
+                param.put("defaulted", defaultValue != null ? "Y" : "N");
+                if (defaultValue != null) {
+                    param.put("default_value", defaultValue);
+                }
+            } else {
+                log.debug("Could not parse parameter declaration: {}", paramDecl);
+            }
+
+        } catch (Exception e) {
+            log.debug("Error parsing parameter declaration: {}", e.getMessage());
         }
 
         return param.isEmpty() ? null : param;
     }
 
-    private String extractMode(String paramDecl) {
-        String upperDecl = paramDecl.toUpperCase();
-        if (upperDecl.startsWith("INOUT")) {
-            return "IN/OUT";
-        } else if (upperDecl.startsWith("OUT")) {
-            return "OUT";
-        } else if (upperDecl.startsWith("IN")) {
-            return "IN";
-        }
-        return "IN";
-    }
-
+    /**
+     * Get parameter mode string from PostgreSQL mode code
+     */
     private String getParameterMode(String modeCode) {
         if (modeCode == null) return "IN";
-        switch (modeCode) {
+        switch (modeCode.toLowerCase()) {
             case "i": return "IN";
             case "o": return "OUT";
             case "b": return "IN/OUT";
             case "v": return "VARIADIC";
+            case "t": return "TABLE";
             default: return "IN";
         }
     }
 
+    /**
+     * Get data type name from PostgreSQL type OID
+     */
     private String getDataTypeName(String typeOid) {
         try {
-            String sql = "SELECT typname FROM pg_type WHERE oid = ?::regtype::oid";
-            return getJdbcTemplate().queryForObject(sql, String.class, typeOid);
+            if (typeOid == null || typeOid.isEmpty()) {
+                return "UNKNOWN";
+            }
+
+            try {
+                int oid = Integer.parseInt(typeOid);
+                String sql = "SELECT typname FROM pg_type WHERE oid = ?";
+                return getJdbcTemplate().queryForObject(sql, String.class, oid);
+            } catch (NumberFormatException e) {
+                return typeOid;
+            }
         } catch (Exception e) {
+            log.debug("Error getting type name for OID {}: {}", typeOid, e.getMessage());
             return typeOid;
         }
     }
 
+    /**
+     * Get procedure source code
+     */
     private String getProcedureSource(String owner, String procedureName) {
         try {
             String sql = "SELECT pg_get_functiondef(p.oid) as source " +
                     "FROM pg_proc p " +
                     "JOIN pg_namespace n ON p.pronamespace = n.oid " +
-                    "WHERE n.nspname = ? AND p.proname = ? AND p.prokind = 'p'";
+                    "WHERE n.nspname = ? AND p.proname = ?";
             return getJdbcTemplate().queryForObject(sql, String.class, owner, procedureName);
         } catch (Exception e) {
             log.debug("Error getting procedure source: {}", e.getMessage());
@@ -537,6 +692,67 @@ public class PostgreSQLProcedureRepository extends PostgreSQLRepository {
         }
     }
 
+    /**
+     * Split parameters by comma, respecting parentheses and quotes
+     */
+    public List<String> splitParametersByComma(String paramsSection) {
+        List<String> params = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        int parenthesesLevel = 0;
+        boolean inQuotes = false;
+        boolean inSingleQuotes = false;
+
+        for (int i = 0; i < paramsSection.length(); i++) {
+            char c = paramsSection.charAt(i);
+
+            // Handle string literals
+            if (c == '"' && !inSingleQuotes) {
+                inQuotes = !inQuotes;
+                current.append(c);
+            } else if (c == '\'' && !inQuotes) {
+                inSingleQuotes = !inSingleQuotes;
+                current.append(c);
+            } else if (!inQuotes && !inSingleQuotes && c == '(') {
+                parenthesesLevel++;
+                current.append(c);
+            } else if (!inQuotes && !inSingleQuotes && c == ')') {
+                parenthesesLevel--;
+                current.append(c);
+            } else if (!inQuotes && !inSingleQuotes && c == ',' && parenthesesLevel == 0) {
+                params.add(current.toString().trim());
+                current.setLength(0);
+            } else {
+                current.append(c);
+            }
+        }
+
+        if (current.length() > 0) {
+            String lastParam = current.toString().trim();
+            if (!lastParam.isEmpty()) {
+                params.add(lastParam);
+            }
+        }
+
+        return params;
+    }
+
+    /**
+     * Remove SQL comments from source
+     */
+    public String removeComments(String source) {
+        if (source == null) return null;
+
+        // Remove line comments
+        String noLineComments = source.replaceAll("--.*$", "");
+        // Remove block comments
+        String noBlockComments = noLineComments.replaceAll("/\\*[\\s\\S]*?\\*/", "");
+
+        return noBlockComments;
+    }
+
+    /**
+     * Transform procedure items for frontend
+     */
     private List<Map<String, Object>> transformProcedureItems(List<Map<String, Object>> items) {
         List<Map<String, Object>> transformed = new ArrayList<>();
         for (Map<String, Object> item : items) {
