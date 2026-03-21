@@ -17,7 +17,11 @@ import {
   Star,
   TrendingUp,
   Zap,
-  Compass
+  Compass,
+  Rocket,
+  Calendar,
+  Mail,
+  X
 } from 'lucide-react';
 
 // Import database icons
@@ -27,18 +31,156 @@ import { SiPostgresql as SiOracle, SiPostgresql, SiMariadb, SiApachecassandra, S
 import OracleSchemaBrowser from './OracleSchemaBrowser.js';
 import PostgreSQLSchemaBrowser from './PostgreSQLSchemaBrowser.js';
 
+// Coming Soon Modal Component
+const ComingSoonModal = ({ isOpen, onClose, database, colors, isDark }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
+      {/* Backdrop */}
+      <div 
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      
+      {/* Modal */}
+      <div 
+        className="relative max-w-md w-full rounded-2xl shadow-2xl transform transition-all duration-300 animate-scale-in"
+        style={{
+          background: colors.card,
+          border: `1px solid ${colors.border}`,
+          backdropFilter: isDark ? 'blur(20px)' : 'none'
+        }}
+      >
+        {/* Gradient Header */}
+        <div className="h-1.5 rounded-t-2xl bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500" />
+        
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 p-1 rounded-lg transition-all duration-300 hover:scale-110 hover-lift"
+          style={{
+            color: colors.textTertiary,
+            background: `${colors.hover}`,
+            border: `1px solid ${colors.border}`
+          }}
+        >
+          <X size={18} />
+        </button>
+        
+        {/* Modal Content */}
+        <div className="p-6 text-center">
+          {/* Icon */}
+          <div className="flex justify-center mb-4">
+            <div 
+              className="p-3 rounded-full animate-pulse"
+              style={{
+                background: `linear-gradient(135deg, ${database.color}20, ${database.color}05)`,
+                border: `1px solid ${database.color}40`
+              }}
+            >
+              <database.icon size={48} style={{ color: database.color }} />
+            </div>
+          </div>
+          
+          {/* Title */}
+          <h3 className="text-2xl font-bold mb-2" style={{ color: colors.text }}>
+            {database.title}
+          </h3>
+          
+          {/* Coming Soon Badge */}
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-4">
+            <Rocket size={16} style={{ color: colors.warning }} />
+            <span className="text-sm font-semibold" style={{ color: colors.warning }}>
+              Coming Soon
+            </span>
+          </div>
+          
+          {/* Description */}
+          <p className="text-sm mb-6" style={{ color: colors.textSecondary }}>
+            We're working hard to bring you the {database.title} schema browser. 
+            This feature is currently under development and will be available soon!
+          </p>
+          
+          {/* Feature List */}
+          <div className="mb-6 p-4 rounded-xl" style={{ background: `${colors.hover}` }}>
+            <p className="text-xs font-medium mb-2" style={{ color: colors.textTertiary }}>
+              Coming features include:
+            </p>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {['Table Browser', 'Schema Viewer', 'Query Builder', 'Data Export', 'Performance Stats', 'Index Manager'].map(feature => (
+                <div key={feature} className="flex items-center gap-1.5">
+                  <Sparkles size={10} style={{ color: colors.primary }} />
+                  <span style={{ color: colors.textSecondary }}>{feature}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {/* Estimated Timeline */}
+          <div className="flex items-center justify-center gap-2 mb-6 p-3 rounded-xl" style={{ background: `${colors.primary}10` }}>
+            <Calendar size={16} style={{ color: colors.primary }} />
+            <span className="text-xs" style={{ color: colors.textSecondary }}>
+              Estimated release: Q2 2026
+            </span>
+          </div>
+          
+          {/* Action Buttons */}
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="flex-1 px-4 py-2.5 rounded-xl font-medium transition-all duration-300 hover:scale-105 hover-lift"
+              style={{
+                background: colors.hover,
+                border: `1px solid ${colors.border}`,
+                color: colors.text
+              }}
+            >
+              Close
+            </button>
+            <button
+              onClick={() => {
+                // You can add notification subscription logic here
+                alert(`We'll notify you when ${database.title} becomes available!`);
+                onClose();
+              }}
+              className="flex-1 px-4 py-2.5 rounded-xl font-medium transition-all duration-300 hover:scale-105 hover-lift flex items-center justify-center gap-2"
+              style={{
+                background: `linear-gradient(135deg, ${database.color}, ${database.color}CC)`,
+                color: '#ffffff'
+              }}
+            >
+              <Mail size={16} />
+              Notify Me
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Enhanced Database Card Component with glass morphism
 const DatabaseCard = ({ 
   title, 
   icon: Icon, 
   color, 
   onClick, 
+  onComingSoonClick,
   isDark,
   colors,
   description,
   isAvailable
 }) => {
   const [isHovered, setIsHovered] = useState(false);
+  
+  const handleClick = () => {
+    if (isAvailable && onClick) {
+      onClick();
+    } else if (!isAvailable && onComingSoonClick) {
+      onComingSoonClick();
+    }
+  };
   
   return (
     <div
@@ -58,7 +200,7 @@ const DatabaseCard = ({
       }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      onClick={onClick}
+      onClick={handleClick}
     >
       {/* Gradient overlay on hover */}
       <div 
@@ -138,6 +280,7 @@ const DatabaseTopNav = ({
   selectedDatabaseId, 
   onSelectDatabase, 
   onBackToSelection,
+  onComingSoonClick,
   isDark, 
   colors 
 }) => {
@@ -200,10 +343,16 @@ const DatabaseTopNav = ({
                 return (
                   <button
                     key={db.id}
-                    onClick={() => hasComponent && onSelectDatabase(db)}
+                    onClick={() => {
+                      if (hasComponent) {
+                        onSelectDatabase(db);
+                      } else {
+                        onComingSoonClick(db);
+                      }
+                    }}
                     disabled={!hasComponent}
                     className={`group relative px-4 py-2 rounded-xl transition-all duration-300 ${
-                      hasComponent ? 'cursor-pointer hover:scale-105 hover-lift' : 'cursor-not-allowed opacity-50'
+                      hasComponent ? 'cursor-pointer hover:scale-105 hover-lift' : 'cursor-pointer hover:scale-105 hover-lift'
                     }`}
                     style={{
                       background: isSelected 
@@ -236,19 +385,6 @@ const DatabaseTopNav = ({
                         />
                       )}
                     </div>
-                    
-                    {/* Tooltip on hover */}
-                    {!hasComponent && (
-                      <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50"
-                        style={{
-                          background: colors.card,
-                          border: `1px solid ${colors.border}`,
-                          color: colors.text
-                        }}
-                      >
-                        Coming soon
-                      </div>
-                    )}
                   </button>
                 );
               })}
@@ -273,33 +409,12 @@ const WelcomeHeader = ({ colors }) => {
           style={{ background: `radial-gradient(circle, ${colors.primary}40, transparent 70%)` }}
         />
       </div>
-      <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">
+      <h1 className="text-4xl font-bold mb-4 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">
         Schema Browser
       </h1>
       <p className="text-lg max-w-2xl mx-auto" style={{ color: colors.textSecondary }}>
         Explore and manage your database schemas with an intuitive, modern interface
       </p>
-    </div>
-  );
-};
-
-// Stats Card Component
-const StatsCard = ({ icon: Icon, label, value, color, colors }) => {
-  return (
-    <div 
-      className="rounded-2xl p-4 backdrop-blur-sm transition-all duration-300 hover:scale-105 hover-lift"
-      style={{
-        background: `linear-gradient(135deg, ${color}15, ${color}05)`,
-        border: `1px solid ${color}30`
-      }}
-    >
-      <div className="flex items-center gap-3">
-        <Icon size={24} style={{ color }} />
-        <div>
-          <p className="text-2xl font-bold" style={{ color: colors.text }}>{value}</p>
-          <p className="text-xs" style={{ color: colors.textSecondary }}>{label}</p>
-        </div>
-      </div>
     </div>
   );
 };
@@ -318,6 +433,7 @@ const SchemaBrowserIndex = ({
   const [isGridView, setIsGridView] = useState(true);
   const [error, setError] = useState(null);
   const [selectedDatabase, setSelectedDatabase] = useState(null);
+  const [comingSoonModal, setComingSoonModal] = useState({ isOpen: false, database: null });
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Enhanced color scheme - MATCHING LOGIN COMPONENT EXACTLY
@@ -542,20 +658,17 @@ const SchemaBrowserIndex = ({
     );
   }, [searchQuery, databases]);
 
-  // Calculate available databases count
-  const availableCount = databases.filter(db => db.available).length;
-
   // Handle database selection
   const handleDatabaseSelect = (database) => {
     if (database && database.component) {
       setSelectedDatabase(database);
       setError(null);
-    } else if (database === null) {
-      setSelectedDatabase(null);
-    } else {
-      setError(`${database.title} schema browser is coming soon! We're working hard to add support for this database.`);
-      setTimeout(() => setError(null), 4000);
     }
+  };
+
+  // Handle coming soon click
+  const handleComingSoonClick = (database) => {
+    setComingSoonModal({ isOpen: true, database });
   };
 
   // Handle back to selection
@@ -567,6 +680,11 @@ const SchemaBrowserIndex = ({
   // Clear error
   const clearError = () => {
     setError(null);
+  };
+
+  // Close modal
+  const closeModal = () => {
+    setComingSoonModal({ isOpen: false, database: null });
   };
 
   // Mark as initialized on mount
@@ -611,6 +729,7 @@ const SchemaBrowserIndex = ({
           selectedDatabaseId={selectedDatabase.id}
           onSelectDatabase={handleDatabaseSelect}
           onBackToSelection={handleBackToSelection}
+          onComingSoonClick={handleComingSoonClick}
           isDark={isDark}
           colors={colors}
         />
@@ -626,6 +745,15 @@ const SchemaBrowserIndex = ({
             setCustomTheme={setCustomTheme}
           />
         </div>
+
+        {/* Coming Soon Modal */}
+        <ComingSoonModal
+          isOpen={comingSoonModal.isOpen}
+          onClose={closeModal}
+          database={comingSoonModal.database || databases[0]}
+          colors={colors}
+          isDark={isDark}
+        />
       </div>
     );
   }
@@ -666,7 +794,7 @@ const SchemaBrowserIndex = ({
         )}
         
         {/* Enhanced Database Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
           {filteredDatabases.map(db => (
             <DatabaseCard
               key={db.id}
@@ -674,7 +802,8 @@ const SchemaBrowserIndex = ({
               icon={db.icon}
               color={db.color}
               description={db.description}
-              onClick={db.available ? () => handleDatabaseSelect(db) : null}
+              onClick={() => handleDatabaseSelect(db)}
+              onComingSoonClick={() => handleComingSoonClick(db)}
               isAvailable={db.available}
               isDark={isDark}
               colors={colors}
@@ -710,6 +839,14 @@ const SchemaBrowserIndex = ({
           </div>
         )}
 
+        {/* Coming Soon Modal */}
+        <ComingSoonModal
+          isOpen={comingSoonModal.isOpen}
+          onClose={closeModal}
+          database={comingSoonModal.database || databases[0]}
+          colors={colors}
+          isDark={isDark}
+        />
       </div>
       
       {/* Enhanced animation styles */}
@@ -747,6 +884,17 @@ const SchemaBrowserIndex = ({
           }
         }
         
+        @keyframes scale-in {
+          from {
+            opacity: 0;
+            transform: scale(0.9);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+        
         @keyframes shake {
           0%, 100% { transform: translateX(0); }
           10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
@@ -763,6 +911,10 @@ const SchemaBrowserIndex = ({
         
         .animate-fade-in {
           animation: fade-in 0.5s ease-out;
+        }
+        
+        .animate-scale-in {
+          animation: scale-in 0.3s ease-out;
         }
         
         .animate-shake {

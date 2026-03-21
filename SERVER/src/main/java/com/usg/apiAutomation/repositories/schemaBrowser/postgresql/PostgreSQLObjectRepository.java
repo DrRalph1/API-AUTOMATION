@@ -613,30 +613,71 @@ public class PostgreSQLObjectRepository extends PostgreSQLRepository {
             Map<String, Object> basicInfo = getBasicObjectInfo(owner, objectName, objectType);
             details.putAll(basicInfo);
 
-            // Get column information
-            List<Map<String, Object>> columns = getColumnInfo(owner, objectName);
-            details.put("columns", columns);
+            // Get column information - only for table-like objects
+            String upperType = objectType.toUpperCase();
+            if ("TABLE".equals(upperType) || "VIEW".equals(upperType) || "MATERIALIZED VIEW".equals(upperType)) {
+                List<Map<String, Object>> columns = getColumnInfo(owner, objectName);
+                details.put("columns", columns);
 
-            // Get constraints
-            List<Map<String, Object>> constraints = getConstraints(owner, objectName);
-            details.put("constraints", constraints);
+                // Get constraints - only for tables
+                if ("TABLE".equals(upperType)) {
+                    List<Map<String, Object>> constraints = getConstraints(owner, objectName);
+                    details.put("constraints", constraints);
+                }
 
-            // Get indexes
-            List<Map<String, Object>> indexes = getIndexes(owner, objectName);
-            details.put("indexes", indexes);
+                // Get indexes - only for tables
+                if ("TABLE".equals(upperType)) {
+                    List<Map<String, Object>> indexes = getIndexes(owner, objectName);
+                    details.put("indexes", indexes);
+                }
+            }
 
-            // Get statistics
-            Map<String, Object> statistics = getTableStatistics(owner, objectName);
-            details.put("statistics", statistics);
+            // Get statistics - ONLY for table-like objects (TABLE, VIEW, MATERIALIZED VIEW)
+            if ("TABLE".equals(upperType) || "VIEW".equals(upperType) || "MATERIALIZED VIEW".equals(upperType)) {
+                try {
+                    // Check if this is actually a table-like object
+                    boolean isTableLike = isTableLikeObject(owner, objectName);
+                    if (isTableLike) {
+                        try {
+                            Map<String, Object> statistics = getTableStatistics(owner, objectName);
+                            details.put("statistics", statistics);
+                        } catch (EmptyResultDataAccessException e) {
+                            // Handle gracefully
+                            Map<String, Object> emptyStats = new HashMap<>();
+                            emptyStats.put("message", "Statistics not available");
+                            details.put("statistics", emptyStats);
+                        }
+                    } else {
+                        Map<String, Object> note = new HashMap<>();
+                        note.put("message", "Statistics not applicable for " + objectType);
+                        details.put("statistics", note);
+                    }
+                } catch (EmptyResultDataAccessException e) {
+                    // Statistics not available for this object, log and continue
+                    log.debug("No statistics found for {}.{} (type: {}): {}",
+                            owner, objectName, objectType, e.getMessage());
+                    Map<String, Object> emptyStats = new HashMap<>();
+                    emptyStats.put("message", "Statistics not available for this object type");
+                    emptyStats.put("estimated_row_count", 0);
+                    emptyStats.put("page_count", 0);
+                    details.put("statistics", emptyStats);
+                }
+            } else {
+                // For non-table objects, add a note that statistics aren't applicable
+                Map<String, Object> note = new HashMap<>();
+                note.put("message", "Statistics not applicable for " + objectType);
+                details.put("statistics", note);
+            }
 
-            // Get dependencies
+            // Get dependencies (applicable to all object types)
             List<Map<String, Object>> dependencies = getDependencies(owner, objectName);
             details.put("dependencies", dependencies);
 
             return details;
 
         } catch (Exception e) {
-            log.error("Error getting detailed object info", e);
+            log.error("Error getting detailed object info for {}.{} (type: {}): {}",
+                    owner, objectName, objectType, e.getMessage(), e);
             throw new RuntimeException("Failed to get detailed object info", e);
         }
     }
@@ -709,7 +750,25 @@ public class PostgreSQLObjectRepository extends PostgreSQLRepository {
                 "JOIN pg_namespace n ON c.relnamespace = n.oid " +
                 "WHERE n.nspname = ? AND c.relname = ?";
 
-        return getJdbcTemplate().queryForMap(sql, owner, objectName);
+        try {
+            return getJdbcTemplate().queryForMap(sql, owner, objectName);
+        } catch (EmptyResultDataAccessException e) {
+            // Return empty statistics with meaningful message instead of throwing
+            log.debug("No statistics found for {}.{}", owner, objectName);
+            Map<String, Object> emptyStats = new HashMap<>();
+            emptyStats.put("estimated_row_count", 0);
+            emptyStats.put("page_count", 0);
+            emptyStats.put("all_visible_pages", 0);
+            emptyStats.put("last_vacuum", null);
+            emptyStats.put("last_autovacuum", null);
+            emptyStats.put("last_analyze", null);
+            emptyStats.put("last_autoanalyze", null);
+            emptyStats.put("live_tuples", 0);
+            emptyStats.put("dead_tuples", 0);
+            emptyStats.put("modifications_since_analyze", 0);
+            emptyStats.put("message", "Statistics not available for this object");
+            return emptyStats;
+        }
     }
 
     private List<Map<String, Object>> getDependencies(String owner, String objectName) {
@@ -1017,6 +1076,20 @@ public class PostgreSQLObjectRepository extends PostgreSQLRepository {
         } catch (Exception e) {
             log.debug("getTableColumns failed: {}", e.getMessage());
             return new ArrayList<>();
+        }
+    }
+
+
+    private boolean isTableLikeObject(String owner, String objectName) {
+        String sql = "SELECT relkind FROM pg_class c " +
+                "JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                "WHERE n.nspname = ? AND c.relname = ?";
+
+        try {
+            String relKind = getJdbcTemplate().queryForObject(sql, String.class, owner, objectName);
+            return "r".equals(relKind) || "v".equals(relKind) || "m".equals(relKind);
+        } catch (Exception e) {
+            return false;
         }
     }
 }

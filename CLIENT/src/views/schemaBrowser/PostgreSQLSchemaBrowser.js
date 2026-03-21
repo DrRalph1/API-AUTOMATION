@@ -2645,8 +2645,8 @@ useEffect(() => {
     }, 1000);
   }, [authToken, tabs, activeObject]);
 
-  // Render Properties Tab (simplified - no synonym handling)
-  const renderPropertiesTab = () => {
+  // Render Properties Tab - Updated to handle tables, indexes, sequences, views, triggers, and types
+const renderPropertiesTab = () => {
   const data = tabData.properties.data;
   const loading = tabData.properties.loading;
   
@@ -2684,63 +2684,207 @@ useEffect(() => {
     </div>
   );
   
-  // Check if this is a synonym
-  const isSynonym = data.isSynonym === true || 
-                    data.objectType === 'SYNONYM' || 
-                    data.type === 'SYNONYM' ||
-                    activeObject?.isSynonym === true ||
-                    (data.targetName && data.targetOwner && data.targetType);
+  // Determine object type from data
+  const objectType = data.objectType || data.object_type || data.type || activeObject?.type;
+  const isIndex = objectType === 'INDEXE' || objectType === 'INDEX' || 
+                  (data.object_name && data.object_name.includes('_pkey')) ||
+                  (data.indexes && Array.isArray(data.indexes) && data.indexes.length > 0);
+  const isSequence = objectType === 'SEQUENCE' || 
+                     (data.object_name && data.object_name.includes('_seq')) ||
+                     (data.columns && data.columns.length === 3 && 
+                      data.columns[0]?.column_name === 'last_value' &&
+                      data.columns[1]?.column_name === 'log_cnt' &&
+                      data.columns[2]?.column_name === 'is_called');
+  const isView = objectType === 'VIEW' || 
+                 (data.object_name && data.object_name.startsWith('vw_')) ||
+                 (data.objectType === 'VIEW') ||
+                 (data.object_type === 'VIEW');
+  const isTrigger = objectType === 'TRIGGER' || 
+                    data.objectType === 'TRIGGER' || 
+                    data.object_type === 'TRIGGER' ||
+                    (data.object_name && data.object_name.startsWith('trg_'));
+  const isType = objectType === 'TYPE' || 
+                 data.objectType === 'TYPE' || 
+                 data.object_type === 'TYPE' ||
+                 (data.statistics?.message === 'Statistics not applicable for TYPE');
   
-  // Get the actual object type (resolve synonym if needed)
-  const effectiveType = isSynonym && data.targetType 
-    ? data.targetType 
-    : (data.objectType || data.type || activeObject?.type);
+  // Basic properties common to all objects
+  const properties = [
+    { label: 'Name', value: data.objectName || data.object_name || data.name || activeObject?.name },
+    { label: 'Owner', value: data.owner || data.owner_name || activeObject?.owner },
+    { label: 'Type', value: objectType || data.object_type || activeObject?.type },
+    { label: 'Status', value: data.status || 'VALID', isStatus: true },
+    { label: 'Created', value: data.CREATED ? formatDateForDisplay(data.CREATED) : (data.created ? formatDateForDisplay(data.created) : null) },
+    { label: 'Last Modified', value: data.LAST_DDL_TIME ? formatDateForDisplay(data.LAST_DDL_TIME) : (data.lastModified ? formatDateForDisplay(data.lastModified) : null) },
+  ].filter(p => p.value !== null && p.value !== undefined && p.value !== '');
   
-  // For synonyms, show both synonym info AND target object info
-  if (isSynonym && (data.targetName || data.targetName)) {
-    const synonymInfo = {
-      synonymName: data.synonymName || data.synonym_name || data.originalName || data.objectName || activeObject?.name,
-      synonymOwner: data.synonymOwner || data.synonym_owner || data.owner || activeObject?.owner,
-      targetName: data.targetName || data.target_name || data.TARGET_NAME,
-      targetOwner: data.targetOwner || data.target_owner || data.TARGET_OWNER,
-      targetType: data.targetType || data.target_type || data.TARGET_TYPE,
-      targetStatus: data.targetStatus || data.target_status || data.TARGET_STATUS,
-      dbLink: data.dbLink || data.db_link,
-      valid: data.targetStatus === 'VALID' || data.targetStatus === 'ENABLED'
-    };
+  // For TYPE objects
+  if (isType) {
+    // Add type-specific properties
+    if (data.relation_kind) {
+      properties.push({ label: 'Relation Kind', value: data.relation_kind });
+    }
+    if (data.row_count !== undefined && data.row_count !== null) {
+      properties.push({ label: 'Row Count', value: data.row_count });
+    }
+    if (data.page_count !== undefined && data.page_count !== null) {
+      properties.push({ label: 'Page Count', value: data.page_count });
+    }
+    if (data.storage_options) {
+      properties.push({ label: 'Storage Options', value: data.storage_options });
+    }
     
-    const targetType = synonymInfo.targetType || data.targetType || data.objectType;
-    const targetName = synonymInfo.targetName || data.targetName || data.OBJECT_NAME;
-    const targetOwner = synonymInfo.targetOwner || data.targetOwner || data.OWNER;
-    const targetStatus = synonymInfo.targetStatus || data.targetStatus || data.STATUS;
+    // Add PostgreSQL version
+    if (data.postgres_version) {
+      properties.push({ label: 'PostgreSQL Version', value: data.postgres_version });
+    }
+    
+    // Add current time if available
+    if (data.current_time) {
+      properties.push({ label: 'Current Time', value: formatDateForDisplay(data.current_time) });
+    }
+    
+    // Try to determine if this is a composite type, enum, or domain
+    let typeCategory = 'Custom Type';
+    if (data.object_name && data.object_name.includes('_type')) {
+      typeCategory = 'Composite Type';
+    } else if (data.object_name && data.object_name.includes('_enum')) {
+      typeCategory = 'Enum Type';
+    }
     
     return (
       <div className="flex-1 overflow-auto p-4">
-        <div className="space-y-4">
-          {/* Synonym Information Section */}
-          <div className="border rounded" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
-            <div className="p-4 border-b" style={{ borderColor: colors.border }}>
-              <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Synonym Information</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {renderPropertyItem("Synonym Name", synonymInfo.synonymName)}
-                {renderPropertyItem("Synonym Owner", synonymInfo.synonymOwner)}
-                {renderPropertyItem("DB Link", synonymInfo.dbLink || '-')}
-                {renderPropertyItem("Created", data.CREATED ? formatDateForDisplay(data.CREATED) : (data.created ? formatDateForDisplay(data.created) : '-'))}
-                {renderPropertyItem("Last Modified", data.LAST_DDL_TIME ? formatDateForDisplay(data.LAST_DDL_TIME) : (data.lastModified ? formatDateForDisplay(data.lastModified) : '-'))}
+        <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
+          <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Properties</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {properties.map((prop, i) => (
+              <div key={i} className="space-y-1">
+                <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
+                <div className="text-sm truncate" style={{ color: colors.text }}>
+                  {prop.isStatus ? renderStatusBadge(prop.value) : (prop.value || '-')}
+                </div>
               </div>
+            ))}
+          </div>
+          
+          {/* Type Category Information */}
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <h4 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Type Information</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {renderPropertyItem("Type Category", typeCategory)}
+              {renderPropertyItem("Schema", data.owner || data.owner_name || 'public')}
             </div>
           </div>
           
-          {/* Target Object Information Section */}
-          <div className="border rounded" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
-            <div className="p-4 border-b" style={{ borderColor: colors.border }}>
-              <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Target Object Information</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {renderPropertyItem("Target Type", targetType)}
-                {renderPropertyItem("Target Name", targetName)}
-                {renderPropertyItem("Target Owner", targetOwner)}
-                {targetStatus && renderPropertyItem("Target Status", targetStatus, true)}
+          {/* Type Size Information */}
+          {(data.sizeInfo || data.row_count !== undefined || data.page_count !== undefined) && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Type Size Information</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Size information */}
+                {data.sizeInfo?.total_size && data.sizeInfo.total_size !== 'unknown' && 
+                  renderPropertyItem("Total Size", data.sizeInfo.total_size)
+                }
+                {data.sizeInfo?.table_size && data.sizeInfo.table_size !== 'unknown' && 
+                  renderPropertyItem("Table Size", data.sizeInfo.table_size)
+                }
+                {data.sizeInfo?.indexes_size && data.sizeInfo.indexes_size !== 'unknown' && 
+                  renderPropertyItem("Indexes Size", data.sizeInfo.indexes_size)
+                }
+                {data.sizeInfo?.toast_size && data.sizeInfo.toast_size !== 'unknown' && 
+                  renderPropertyItem("TOAST Size", data.sizeInfo.toast_size)
+                }
+                
+                {/* Storage metrics */}
+                {data.row_count !== undefined && data.row_count > 0 && 
+                  renderPropertyItem("Row Count", data.row_count)
+                }
+                {data.page_count !== undefined && data.page_count > 0 && 
+                  renderPropertyItem("Page Count", data.page_count)
+                }
               </div>
+            </div>
+          )}
+          
+          {/* Type Attributes/Columns (if available) */}
+          {data.columns && data.columns.length > 0 && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Type Attributes ({data.columns.length})</h4>
+              <div className="overflow-auto max-h-96">
+                <table className="w-full">
+                  <thead style={{ backgroundColor: colors.tableHeader }}>
+                    <tr>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>#</th>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Attribute Name</th>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Data Type</th>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Nullable</th>
+                     </tr>
+                  </thead>
+                  <tbody>
+                    {data.columns.map((col, i) => (
+                      <tr key={col.column_name || col.attribute_name || i} style={{ 
+                        backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                        borderBottom: `1px solid ${colors.gridBorder}`
+                      }}>
+                        <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{col.ordinal_position || i + 1}</td>
+                        <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>
+                          {col.column_name || col.attribute_name}
+                        </td>
+                        <td className="p-2 text-xs" style={{ color: colors.text }}>
+                          {col.data_type || col.type}
+                        </td>
+                        <td className="p-2 text-xs">
+                          <span className={`px-2 py-0.5 rounded text-xs ${
+                            col.is_nullable === false ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'
+                          }`}>
+                            {col.is_nullable === false ? 'NOT NULL' : 'NULL'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          
+          {/* Type Definition/DDL (if available) */}
+          {data.definition && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Type Definition</h4>
+              <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
+                <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
+                  {data.definition}
+                </pre>
+              </div>
+              <div className="mt-2 flex justify-end">
+                <button 
+                  className="px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1"
+                  style={{ backgroundColor: colors.hover, color: colors.text }}
+                  onClick={() => handleCopyToClipboard(data.definition, 'Type Definition')}
+                >
+                  <Copy size={12} className="inline mr-1" />
+                  Copy Definition
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {/* Statistics note for types */}
+          {data.statistics && data.statistics.message && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <div className="text-xs text-center" style={{ color: colors.textTertiary }}>
+                <Info size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
+                {data.statistics.message}
+              </div>
+            </div>
+          )}
+          
+          {/* Type usage note */}
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="text-xs text-center" style={{ color: colors.textTertiary }}>
+              <Type size={12} className="inline mr-1" style={{ color: colors.info }} />
+              This is a custom PostgreSQL data type used for column definitions and functions
             </div>
           </div>
         </div>
@@ -2748,17 +2892,716 @@ useEffect(() => {
     );
   }
   
-  // For regular objects (non-synonyms)
-  const properties = [
-    { label: 'Name', value: data.objectName || data.OBJECT_NAME || data.name || activeObject?.name },
-    { label: 'Owner', value: data.owner || data.OWNER || activeObject?.owner },
-    { label: 'Type', value: data.objectType || data.OBJECT_TYPE || data.type || activeObject?.type },
-    { label: 'Status', value: data.status || data.STATUS || 'VALID', isStatus: true },
-    { label: 'Created', value: data.CREATED ? formatDateForDisplay(data.CREATED) : (data.created ? formatDateForDisplay(data.created) : null) },
-    { label: 'Last Modified', value: data.LAST_DDL_TIME ? formatDateForDisplay(data.LAST_DDL_TIME) : (data.lastModified ? formatDateForDisplay(data.lastModified) : null) },
-  ].filter(p => p.value !== null && p.value !== undefined && p.value !== '');
+  // For TRIGGER objects
+  if (isTrigger) {
+    // Add trigger-specific properties
+    if (data.trigger_name) {
+      properties.push({ label: 'Trigger Name', value: data.trigger_name });
+    }
+    if (data.table_name) {
+      properties.push({ label: 'Table Name', value: data.table_name });
+    }
+    if (data.timing) {
+      properties.push({ label: 'Timing', value: data.timing });
+    }
+    if (data.event) {
+      properties.push({ label: 'Event', value: data.event });
+    }
+    if (data.orientation) {
+      properties.push({ label: 'Orientation', value: data.orientation });
+    }
+    if (data.function_name) {
+      properties.push({ label: 'Function Name', value: data.function_name });
+    }
+    if (data.function_owner) {
+      properties.push({ label: 'Function Owner', value: data.function_owner });
+    }
+    if (data.condition) {
+      properties.push({ label: 'Condition', value: data.condition });
+    }
+    if (data.constraint_name) {
+      properties.push({ label: 'Constraint', value: data.constraint_name });
+    }
+    if (data.is_constraint !== undefined) {
+      properties.push({ label: 'Is Constraint Trigger', value: data.is_constraint ? 'Yes' : 'No' });
+    }
+    if (data.deferrable !== undefined) {
+      properties.push({ label: 'Deferrable', value: data.deferrable ? 'Yes' : 'No' });
+    }
+    if (data.initially_immediate !== undefined) {
+      properties.push({ label: 'Initially Immediate', value: data.initially_immediate ? 'Yes' : 'No' });
+    }
+    if (data.enabled !== undefined) {
+      properties.push({ label: 'Enabled', value: data.enabled ? 'Yes' : 'No' });
+    }
+    
+    // Try to extract table name from trigger name if not explicitly provided
+    let tableName = data.table_name;
+    if (!tableName && data.object_name) {
+      // Common patterns: trg_table_event, trg_table_before_insert, etc.
+      const match = data.object_name.match(/trg_([^_]+)/);
+      if (match && match[1]) {
+        tableName = match[1];
+      }
+    }
+    
+    // Try to extract event type from trigger name
+    let eventType = data.event;
+    if (!eventType && data.object_name) {
+      if (data.object_name.includes('_insert')) eventType = 'INSERT';
+      else if (data.object_name.includes('_update')) eventType = 'UPDATE';
+      else if (data.object_name.includes('_delete')) eventType = 'DELETE';
+      else if (data.object_name.includes('_truncate')) eventType = 'TRUNCATE';
+    }
+    
+    // Try to extract timing from trigger name
+    let timing = data.timing;
+    if (!timing && data.object_name) {
+      if (data.object_name.includes('_before_')) timing = 'BEFORE';
+      else if (data.object_name.includes('_after_')) timing = 'AFTER';
+      else if (data.object_name.includes('_instead_of_')) timing = 'INSTEAD OF';
+    }
+    
+    return (
+      <div className="flex-1 overflow-auto p-4">
+        <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
+          <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Properties</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {properties.map((prop, i) => (
+              <div key={i} className="space-y-1">
+                <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
+                <div className="text-sm truncate" style={{ color: colors.text }}>
+                  {prop.isStatus ? renderStatusBadge(prop.value) : (prop.value || '-')}
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          {/* Trigger Summary */}
+          {(timing || eventType || tableName) && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Trigger Summary</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {timing && renderPropertyItem("Timing", timing)}
+                {eventType && renderPropertyItem("Event", eventType)}
+                {tableName && renderPropertyItem("Table", tableName)}
+              </div>
+            </div>
+          )}
+          
+          {/* Trigger Details */}
+          {(data.function_name || data.function_owner) && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Trigger Function</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {data.function_name && renderPropertyItem("Function Name", data.function_name)}
+                {data.function_owner && renderPropertyItem("Function Owner", data.function_owner)}
+                {data.function_arguments && renderPropertyItem("Function Arguments", data.function_arguments)}
+              </div>
+            </div>
+          )}
+          
+          {/* Trigger Condition */}
+          {data.condition && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Condition</h4>
+              <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
+                <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
+                  {data.condition}
+                </pre>
+              </div>
+            </div>
+          )}
+          
+          {/* Trigger Definition */}
+          {data.definition && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Trigger Definition</h4>
+              <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
+                <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
+                  {data.definition}
+                </pre>
+              </div>
+              <div className="mt-2 flex justify-end">
+                <button 
+                  className="px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1"
+                  style={{ backgroundColor: colors.hover, color: colors.text }}
+                  onClick={() => handleCopyToClipboard(data.definition, 'Trigger Definition')}
+                >
+                  <Copy size={12} className="inline mr-1" />
+                  Copy Definition
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {/* Statistics note for triggers */}
+          {data.statistics && data.statistics.message && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <div className="text-xs text-center" style={{ color: colors.textTertiary }}>
+                <Info size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
+                {data.statistics.message}
+              </div>
+            </div>
+          )}
+          
+          {/* Trigger usage note */}
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="text-xs text-center" style={{ color: colors.textTertiary }}>
+              <Zap size={12} className="inline mr-1" style={{ color: colors.warning }} />
+              This trigger automatically fires on specified database events
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
   
-  // Add additional properties based on object type
+  // For VIEW objects
+  if (isView) {
+    // Add view-specific properties
+    if (data.view_definition) {
+      properties.push({ label: 'View Definition', value: 'Available (see below)' });
+    }
+    if (data.is_updatable !== undefined) {
+      properties.push({ label: 'Updatable', value: data.is_updatable ? 'Yes' : 'No' });
+    }
+    if (data.check_option) {
+      properties.push({ label: 'Check Option', value: data.check_option });
+    }
+    
+    // Calculate derived metrics
+    const columnCount = data.columns?.length || 0;
+    const hasJsonColumns = data.columns?.some(col => col.data_type === 'jsonb' || col.data_type === 'json') || false;
+    const computedColumns = data.columns?.filter(col => 
+      col.column_name.includes('_formatted') || 
+      col.column_name.includes('_ago') || 
+      col.column_name.includes('_hour') ||
+      col.column_name.includes('_status') ||
+      col.column_name.includes('_category')
+    ).length || 0;
+    
+    return (
+      <div className="flex-1 overflow-auto p-4">
+        <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
+          <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Properties</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {properties.map((prop, i) => (
+              <div key={i} className="space-y-1">
+                <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
+                <div className="text-sm truncate" style={{ color: colors.text }}>
+                  {prop.isStatus ? renderStatusBadge(prop.value) : (prop.value || '-')}
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          {/* View Summary Information */}
+          {columnCount > 0 && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-3" style={{ color: colors.text }}>View Summary</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="space-y-1">
+                  <div className="text-xs" style={{ color: colors.textSecondary }}>Total Columns</div>
+                  <div className="text-sm font-medium" style={{ color: colors.text }}>{columnCount}</div>
+                </div>
+                {computedColumns > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>Computed Columns</div>
+                    <div className="text-sm font-medium" style={{ color: colors.primary }}>{computedColumns}</div>
+                  </div>
+                )}
+                {hasJsonColumns && (
+                  <div className="space-y-1">
+                    <div className="text-xs" style={{ color: colors.textSecondary }}>JSON/JSONB Columns</div>
+                    <div className="text-sm font-medium" style={{ color: colors.success }}>Yes</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {/* View Statistics */}
+          {(data.statistics || data.sizeInfo) && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-3" style={{ color: colors.text }}>View Statistics</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Size information */}
+                {data.sizeInfo?.total_size && data.sizeInfo.total_size !== '0 bytes' && 
+                  renderPropertyItem("Total Size", data.sizeInfo.total_size)
+                }
+                {data.sizeInfo?.table_size && data.sizeInfo.table_size !== '0 bytes' && 
+                  renderPropertyItem("Table Size", data.sizeInfo.table_size)
+                }
+                {data.sizeInfo?.indexes_size && data.sizeInfo.indexes_size !== '0 bytes' && 
+                  renderPropertyItem("Indexes Size", data.sizeInfo.indexes_size)
+                }
+                {data.sizeInfo?.toast_size && data.sizeInfo.toast_size !== '0 bytes' && 
+                  renderPropertyItem("TOAST Size", data.sizeInfo.toast_size)
+                }
+                
+                {/* Statistics - only show if they have meaningful values */}
+                {data.statistics?.estimated_row_count !== undefined && data.statistics.estimated_row_count > 0 && 
+                  renderPropertyItem("Estimated Rows", data.statistics.estimated_row_count)
+                }
+                {data.statistics?.page_count !== undefined && data.statistics.page_count > 0 && 
+                  renderPropertyItem("Page Count", data.statistics.page_count)
+                }
+                {data.statistics?.live_tuples !== undefined && data.statistics.live_tuples > 0 && 
+                  renderPropertyItem("Live Tuples", data.statistics.live_tuples)
+                }
+                
+                {/* Show note if view has no data */}
+                {data.statistics?.estimated_row_count === -1 && (
+                  <div className="col-span-full">
+                    <div className="text-xs italic" style={{ color: colors.textTertiary }}>
+                      Note: Statistics may not be available for this view
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {/* View Columns */}
+          {data.columns && data.columns.length > 0 && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>View Columns ({data.columns.length})</h4>
+              <div className="overflow-auto max-h-96">
+                <table className="w-full">
+                  <thead style={{ backgroundColor: colors.tableHeader }}>
+                    <tr>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>#</th>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Column Name</th>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Data Type</th>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Nullable</th>
+                     </tr>
+                  </thead>
+                  <tbody>
+                    {data.columns.map((col, i) => {
+                      // Highlight computed/formatted columns
+                      const isComputed = col.column_name.includes('_formatted') || 
+                                        col.column_name.includes('_ago') || 
+                                        col.column_name.includes('_hour') ||
+                                        col.column_name.includes('_status') ||
+                                        col.column_name.includes('_category');
+                      const isJson = col.data_type === 'jsonb' || col.data_type === 'json';
+                      
+                      return (
+                        <tr key={col.column_name || i} style={{ 
+                          backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                          borderBottom: `1px solid ${colors.gridBorder}`
+                        }}>
+                          <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{col.ordinal_position || i + 1}</td>
+                          <td className="p-2 text-xs font-medium" style={{ 
+                            color: isComputed ? colors.primary : colors.text,
+                            fontStyle: isComputed ? 'italic' : 'normal'
+                          }}>
+                            {col.column_name}
+                            {isComputed && (
+                              <span className="ml-2 text-xs" style={{ color: colors.textTertiary }}>(computed)</span>
+                            )}
+                          </td>
+                          <td className="p-2 text-xs" style={{ 
+                            color: isJson ? colors.success : colors.text
+                          }}>
+                            {col.data_type}
+                            {isJson && (
+                              <span className="ml-2 text-xs" style={{ color: colors.textTertiary }}>📦</span>
+                            )}
+                          </td>
+                          <td className="p-2 text-xs">
+                            <span className={`px-2 py-0.5 rounded text-xs ${
+                              col.is_nullable === false ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'
+                            }`}>
+                              {col.is_nullable === false ? 'NOT NULL' : 'NULL'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          
+          {/* View Definition (if available) */}
+          {data.view_definition && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>View Definition</h4>
+              <div className="border rounded p-3" style={{ borderColor: colors.border, backgroundColor: colors.codeBg }}>
+                <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: colors.text }}>
+                  {data.view_definition}
+                </pre>
+              </div>
+              <div className="mt-2 flex justify-end">
+                <button 
+                  className="px-3 py-1 text-xs rounded hover:bg-opacity-50 transition-colors flex items-center gap-1"
+                  style={{ backgroundColor: colors.hover, color: colors.text }}
+                  onClick={() => handleCopyToClipboard(data.view_definition, 'View Definition')}
+                >
+                  <Copy size={12} className="inline mr-1" />
+                  Copy Definition
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {/* Note about views */}
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <div className="text-xs text-center" style={{ color: colors.textTertiary }}>
+              <Info size={12} className="inline mr-1" style={{ color: colors.textTertiary }} />
+              This is a database view. Data is read-only and derived from underlying tables.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
+  // For SEQUENCE objects
+  if (isSequence) {
+    // Add sequence-specific properties
+    if (data.current_value !== undefined && data.current_value !== null) {
+      properties.push({ label: 'Current Value', value: data.current_value });
+    }
+    if (data.increment_by !== undefined && data.increment_by !== null) {
+      properties.push({ label: 'Increment By', value: data.increment_by });
+    }
+    if (data.min_value !== undefined && data.min_value !== null) {
+      properties.push({ label: 'Min Value', value: data.min_value });
+    }
+    if (data.max_value !== undefined && data.max_value !== null) {
+      properties.push({ label: 'Max Value', value: data.max_value });
+    }
+    if (data.cache_size !== undefined && data.cache_size !== null) {
+      properties.push({ label: 'Cache Size', value: data.cache_size });
+    }
+    if (data.cycle !== undefined && data.cycle !== null) {
+      properties.push({ label: 'Cycle', value: data.cycle ? 'Yes' : 'No' });
+    }
+    if (data.start_value !== undefined && data.start_value !== null) {
+      properties.push({ label: 'Start Value', value: data.start_value });
+    }
+    
+    // Get sequence values from columns if available
+    let lastValue = null;
+    let logCnt = null;
+    let isCalled = null;
+    
+    if (data.columns && data.columns.length >= 3) {
+      const lastValueCol = data.columns.find(col => col.column_name === 'last_value');
+      const logCntCol = data.columns.find(col => col.column_name === 'log_cnt');
+      const isCalledCol = data.columns.find(col => col.column_name === 'is_called');
+      
+      if (lastValueCol && lastValueCol.last_value !== undefined) {
+        lastValue = lastValueCol.last_value;
+      }
+      if (logCntCol && logCntCol.log_cnt !== undefined) {
+        logCnt = logCntCol.log_cnt;
+      }
+      if (isCalledCol && isCalledCol.is_called !== undefined) {
+        isCalled = isCalledCol.is_called;
+      }
+    }
+    
+    return (
+      <div className="flex-1 overflow-auto p-4">
+        <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
+          <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Properties</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {properties.map((prop, i) => (
+              <div key={i} className="space-y-1">
+                <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
+                <div className="text-sm truncate" style={{ color: colors.text }}>
+                  {prop.isStatus ? renderStatusBadge(prop.value) : (prop.value || '-')}
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          {/* Sequence Current State */}
+          {(lastValue !== null || logCnt !== null || isCalled !== null) && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Sequence State</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {lastValue !== null && renderPropertyItem("Last Value", lastValue)}
+                {logCnt !== null && renderPropertyItem("Log Count", logCnt)}
+                {isCalled !== null && renderPropertyItem("Is Called", isCalled ? 'Yes' : 'No')}
+              </div>
+            </div>
+          )}
+          
+          {/* Sequence Statistics */}
+          {(data.statistics || data.sizeInfo) && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Sequence Statistics</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Size information */}
+                {data.sizeInfo?.total_size && 
+                  renderPropertyItem("Total Size", data.sizeInfo.total_size)
+                }
+                {data.sizeInfo?.table_size && 
+                  renderPropertyItem("Table Size", data.sizeInfo.table_size)
+                }
+                {data.sizeInfo?.indexes_size && 
+                  renderPropertyItem("Indexes Size", data.sizeInfo.indexes_size)
+                }
+                {data.sizeInfo?.toast_size && 
+                  renderPropertyItem("TOAST Size", data.sizeInfo.toast_size)
+                }
+                
+                {/* Statistics */}
+                {data.statistics?.estimated_row_count !== undefined && 
+                  renderPropertyItem("Estimated Rows", data.statistics.estimated_row_count)
+                }
+                {data.statistics?.page_count !== undefined && 
+                  renderPropertyItem("Page Count", data.statistics.page_count)
+                }
+                {data.statistics?.live_tuples !== undefined && 
+                  renderPropertyItem("Live Tuples", data.statistics.live_tuples)
+                }
+                {data.statistics?.dead_tuples !== undefined && 
+                  renderPropertyItem("Dead Tuples", data.statistics.dead_tuples)
+                }
+              </div>
+            </div>
+          )}
+          
+          {/* Sequence Columns Information */}
+          {data.columns && data.columns.length > 0 && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Sequence Columns</h4>
+              <div className="overflow-auto">
+                <table className="w-full">
+                  <thead style={{ backgroundColor: colors.tableHeader }}>
+                    <tr>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Column Name</th>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Data Type</th>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Nullable</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.columns.map((col, i) => (
+                      <tr key={col.column_name || i} style={{ 
+                        backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                        borderBottom: `1px solid ${colors.gridBorder}`
+                      }}>
+                        <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{col.column_name}</td>
+                        <td className="p-2 text-xs" style={{ color: colors.text }}>{col.data_type}</td>
+                        <td className="p-2 text-xs">
+                          <span className={`px-2 py-0.5 rounded text-xs ${
+                            col.is_nullable === false ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'
+                          }`}>
+                            {col.is_nullable === false ? 'NOT NULL' : 'NULL'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          
+          {/* Related Table for Sequences */}
+          {data.object_name && data.object_name.includes('_seq') && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Related Table</h4>
+              <div className="grid grid-cols-1 gap-4">
+                <div className="space-y-1">
+                  <div className="text-xs" style={{ color: colors.textSecondary }}>Table Name</div>
+                  <div className="text-sm" style={{ color: colors.primary }}>
+                    {data.object_name.replace(/_seq$/, '')}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+  
+  // For INDEX objects
+  if (isIndex) {
+    // Add index-specific properties
+    if (data.relation_kind) {
+      properties.push({ label: 'Relation Kind', value: data.relation_kind });
+    }
+    if (data.row_count !== undefined && data.row_count !== null) {
+      properties.push({ label: 'Row Count', value: data.row_count });
+    }
+    if (data.page_count !== undefined && data.page_count !== null) {
+      properties.push({ label: 'Page Count', value: data.page_count });
+    }
+    if (data.storage_options) {
+      properties.push({ label: 'Storage Options', value: data.storage_options });
+    }
+    
+    // Add PostgreSQL version
+    if (data.postgres_version) {
+      properties.push({ label: 'PostgreSQL Version', value: data.postgres_version });
+    }
+    
+    // Get the table name from the index name (for primary keys)
+    let tableName = '';
+    if (data.object_name) {
+      // Remove '_pkey' suffix if present
+      tableName = data.object_name.replace(/_pkey$/, '');
+    }
+    
+    return (
+      <div className="flex-1 overflow-auto p-4">
+        <div className="border rounded p-4" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
+          <h3 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Properties</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {properties.map((prop, i) => (
+              <div key={i} className="space-y-1">
+                <div className="text-xs" style={{ color: colors.textSecondary }}>{prop.label}</div>
+                <div className="text-sm truncate" style={{ color: colors.text }}>
+                  {prop.isStatus ? renderStatusBadge(prop.value) : (prop.value || '-')}
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          {/* Show table name for primary key indexes */}
+          {tableName && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Related Table</h4>
+              <div className="grid grid-cols-1 gap-4">
+                <div className="space-y-1">
+                  <div className="text-xs" style={{ color: colors.textSecondary }}>Table Name</div>
+                  <div className="text-sm" style={{ color: colors.primary }}>{tableName}</div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Index Columns Information */}
+          {data.columns && data.columns.length > 0 && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Indexed Columns</h4>
+              <div className="overflow-auto">
+                <table className="w-full">
+                  <thead style={{ backgroundColor: colors.tableHeader }}>
+                    <tr>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Column Name</th>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Data Type</th>
+                      <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Nullable</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.columns.map((col, i) => (
+                      <tr key={col.column_name || i} style={{ 
+                        backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                        borderBottom: `1px solid ${colors.gridBorder}`
+                      }}>
+                        <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{col.column_name}</td>
+                        <td className="p-2 text-xs" style={{ color: colors.text }}>{col.data_type}</td>
+                        <td className="p-2 text-xs">
+                          <span className={`px-2 py-0.5 rounded text-xs ${
+                            col.is_nullable === false ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'
+                          }`}>
+                            {col.is_nullable === false ? 'NOT NULL' : 'NULL'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          
+          {/* Index Statistics */}
+          {(data.statistics || data.sizeInfo) && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+              <h4 className="text-sm font-medium mb-3" style={{ color: colors.text }}>Index Statistics</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Row count from statistics */}
+                {data.statistics?.estimated_row_count !== undefined && 
+                  renderPropertyItem("Estimated Rows", data.statistics.estimated_row_count)
+                }
+                
+                {/* Page count */}
+                {data.statistics?.page_count !== undefined && 
+                  renderPropertyItem("Page Count", data.statistics.page_count)
+                }
+                
+                {/* Index size from sizeInfo */}
+                {data.sizeInfo?.total_size && 
+                  renderPropertyItem("Total Size", data.sizeInfo.total_size)
+                }
+                
+                {/* Table size */}
+                {data.sizeInfo?.table_size && 
+                  renderPropertyItem("Table Size", data.sizeInfo.table_size)
+                }
+                
+                {/* Indexes size */}
+                {data.sizeInfo?.indexes_size && 
+                  renderPropertyItem("Indexes Size", data.sizeInfo.indexes_size)
+                }
+                
+                {/* Toast size */}
+                {data.sizeInfo?.toast_size && 
+                  renderPropertyItem("TOAST Size", data.sizeInfo.toast_size)
+                }
+                
+                {/* Live tuples */}
+                {data.statistics?.live_tuples !== undefined && 
+                  renderPropertyItem("Live Tuples", data.statistics.live_tuples)
+                }
+                
+                {/* Dead tuples */}
+                {data.statistics?.dead_tuples !== undefined && 
+                  renderPropertyItem("Dead Tuples", data.statistics.dead_tuples)
+                }
+                
+                {/* All visible pages */}
+                {data.statistics?.all_visible_pages !== undefined && 
+                  renderPropertyItem("All Visible Pages", data.statistics.all_visible_pages)
+                }
+                
+                {/* Modifications since analyze */}
+                {data.statistics?.modifications_since_analyze !== undefined && 
+                  renderPropertyItem("Modifications Since Analyze", data.statistics.modifications_since_analyze)
+                }
+                
+                {/* Last vacuum */}
+                {data.statistics?.last_vacuum && 
+                  renderPropertyItem("Last Vacuum", formatDateForDisplay(data.statistics.last_vacuum))
+                }
+                
+                {/* Last autovacuum */}
+                {data.statistics?.last_autovacuum && 
+                  renderPropertyItem("Last Autovacuum", formatDateForDisplay(data.statistics.last_autovacuum))
+                }
+                
+                {/* Last analyze */}
+                {data.statistics?.last_analyze && 
+                  renderPropertyItem("Last Analyze", formatDateForDisplay(data.statistics.last_analyze))
+                }
+                
+                {/* Last autoanalyze */}
+                {data.statistics?.last_autoanalyze && 
+                  renderPropertyItem("Last Autoanalyze", formatDateForDisplay(data.statistics.last_autoanalyze))
+                }
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+  
+  // For TABLE objects and other regular objects (non-indexes, non-sequences, non-views, non-triggers, non-types)
+  const effectiveType = objectType || data.objectType || activeObject?.type;
+  
+  // Add additional properties based on object type for tables
   if (effectiveType === 'TABLE') {
     if (data.columnCount !== undefined) {
       properties.push({ label: 'Column Count', value: data.columnCount });
@@ -2876,6 +3719,131 @@ useEffect(() => {
               {data.statistics?.modifications_since_analyze !== undefined && 
                 renderPropertyItem("Modifications Since Analyze", data.statistics.modifications_since_analyze)
               }
+            </div>
+          </div>
+        )}
+        
+        {/* Table Columns Summary (quick view) */}
+        {effectiveType === 'TABLE' && data.columns && data.columns.length > 0 && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Columns Summary</h4>
+            <div className="overflow-auto max-h-64">
+              <table className="w-full">
+                <thead style={{ backgroundColor: colors.tableHeader }}>
+                  <tr>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Column Name</th>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Data Type</th>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Nullable</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.columns.slice(0, 10).map((col, i) => (
+                    <tr key={col.column_name || i} style={{ 
+                      backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                      borderBottom: `1px solid ${colors.gridBorder}`
+                    }}>
+                      <td className="p-2 text-xs font-medium" style={{ color: colors.text }}>{col.column_name}</td>
+                      <td className="p-2 text-xs" style={{ color: colors.text }}>{col.data_type}</td>
+                      <td className="p-2 text-xs">
+                        <span className={`px-2 py-0.5 rounded text-xs ${
+                          col.is_nullable === false ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'
+                        }`}>
+                          {col.is_nullable === false ? 'NOT NULL' : 'NULL'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {data.columns.length > 10 && (
+                <div className="text-center mt-2 text-xs" style={{ color: colors.textTertiary }}>
+                  Showing 10 of {data.columns.length} columns
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        
+        {/* Indexes Summary for Tables */}
+        {effectiveType === 'TABLE' && data.indexes && data.indexes.length > 0 && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Indexes Summary</h4>
+            <div className="overflow-auto">
+              <table className="w-full">
+                <thead style={{ backgroundColor: colors.tableHeader }}>
+                  <tr>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Index Name</th>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Type</th>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Columns</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.indexes.map((idx, i) => (
+                    <tr key={idx.index_name || i} style={{ 
+                      backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                      borderBottom: `1px solid ${colors.gridBorder}`
+                    }}>
+                      <td className="p-2 text-xs font-mono" style={{ color: colors.text }}>{idx.index_name}</td>
+                      <td className="p-2 text-xs">
+                        <span className={`px-2 py-0.5 rounded text-xs ${
+                          idx.is_primary ? 'bg-purple-500/10 text-purple-400' :
+                          idx.is_unique ? 'bg-blue-500/10 text-blue-400' : 'bg-green-500/10 text-green-400'
+                        }`}>
+                          {idx.is_primary ? 'PRIMARY KEY' : idx.is_unique ? 'UNIQUE' : 'INDEX'}
+                        </span>
+                      </td>
+                      <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{idx.columns}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+        
+        {/* Constraints Summary for Tables */}
+        {effectiveType === 'TABLE' && data.constraints && data.constraints.length > 0 && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <h4 className="text-sm font-medium mb-2" style={{ color: colors.text }}>Constraints Summary</h4>
+            <div className="overflow-auto">
+              <table className="w-full">
+                <thead style={{ backgroundColor: colors.tableHeader }}>
+                  <tr>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Constraint Name</th>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Type</th>
+                    <th className="text-left p-2 text-xs" style={{ color: colors.textSecondary }}>Definition</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.constraints.map((con, i) => {
+                    let typeDisplay = con.constraint_type;
+                    if (con.constraint_type === 'p') typeDisplay = 'Primary Key';
+                    else if (con.constraint_type === 'f') typeDisplay = 'Foreign Key';
+                    else if (con.constraint_type === 'u') typeDisplay = 'Unique';
+                    else if (con.constraint_type === 'c') typeDisplay = 'Check';
+                    else if (con.constraint_type === 'n') typeDisplay = 'Not Null';
+                    
+                    return (
+                      <tr key={con.constraint_name || i} style={{ 
+                        backgroundColor: i % 2 === 0 ? colors.gridRowEven : colors.gridRowOdd,
+                        borderBottom: `1px solid ${colors.gridBorder}`
+                      }}>
+                        <td className="p-2 text-xs font-mono" style={{ color: colors.text }}>{con.constraint_name}</td>
+                        <td className="p-2 text-xs">
+                          <span className={`px-2 py-0.5 rounded text-xs ${
+                            con.constraint_type === 'p' ? 'bg-purple-500/10 text-purple-400' :
+                            con.constraint_type === 'f' ? 'bg-yellow-500/10 text-yellow-400' :
+                            con.constraint_type === 'u' ? 'bg-blue-500/10 text-blue-400' : 'bg-green-500/10 text-green-400'
+                          }`}>
+                            {typeDisplay}
+                          </span>
+                        </td>
+                        <td className="p-2 text-xs" style={{ color: colors.textSecondary }}>{con.constraint_definition}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
